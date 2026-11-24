@@ -752,7 +752,8 @@ and it has no status list.
   reads its receipt only once the server admits it (D697). No step ruled; for
   the maintainer. (A duplicate of an admitted send is answered from the receipt
   record on any instance, its terminal receipt included, so the rest of D678's
-  case is closed.)
+  case is closed on a server with a shared record; a memory-only server's
+  restart loses the record, so a duplicate there is still answered nothing.)
 - The WS server does not report to its sender a retained send that reaches its
   deadline still kept: the handle reads `expired` at the deadline. It stays so
   by the maintainer's ruling of 2026-11-20 ("No, the handle's own deadline",
@@ -1055,18 +1056,27 @@ and it has no status list.
   It is either the receipt row's republication (one control id, above) or the
   answer to a re-sent copy (a fresh control id); the run did not read which.
 - A WS server's receipts backlog under five publishers at +5 ms per round
-  trip: with five publishers at 2 Hz the receipts backlog after their
-  enqueue, on the server's one outbound identity. About 75 % of receipt
-  enqueues conflict on its version fence, and unconflicted ones also wait 5 to
-  8 s in its drain, while the enqueue attempts stay flat (about 205 ms); the
-  last ten messages read `complete` 4 to 6 times later than the first ten (p50
-  7 to 11 s). Every receipt stays exact and arrives before its 30 s deadline,
-  the count stays at about 71 ms from the last ACK, and one publisher keeps up.
-  The room messages' own fan-out is strained too (p95 about 6 s in one run).
-  The lever: take receipts off the server's one outbound identity, for example
-  delivering them from the receipt record's own work rows; the cause between
-  the fence, the drain's throughput and the pool is measured first. For the
-  maintainer.
+  trip: with five publishers at 2 Hz the receipts backlog after their enqueue,
+  and the last ten messages read `complete` 4.0 to 6.3 times later than the
+  first ten (p50 7 168 to 10 650 ms against 1 699 to 1 795 ms). The count
+  keeps up (70 to 73 ms from the last ACK), and so do the enqueue attempts
+  (about 205 ms). The cause is measured: each instance's one outbound worker
+  runs one batch at a time, its claims one after another except that a batch's
+  dequeued rows are admitted together; it was busy throughout (19 to 24
+  batches of 0.79 to 0.96 s each, back to back, nearly all full pages of 16),
+  and completed 13 to 17 rows a second while the sends ran and 11 to 17 after.
+  The pool is ruled out (a transaction waited 0.6 ms from its `begin`, the
+  median), and so is the fence as a cause: 75 to 80 % of the receipt enqueues
+  conflict on the server's outbound version row, but 85 to 88 % of their
+  replays commit at their first attempt; the fence only adds replay claims to
+  the same worker. Every receipt stays exact and arrives before its 30 s
+  deadline, and one publisher keeps up. The worker is not the server
+  identity's: room messages under their publishers' identities share it, and
+  their p95 from the send to the last ACK, 6.2 to 6.9 s, is not yet attributed
+  to it. The lever: take the receipts' delivery off each instance's outbound
+  worker, and with it off the server identity's fence, for example by
+  delivering them from the receipt record's own work rows, or raise that
+  worker's throughput. For the maintainer.
 - A stall longer than half an ACK window on a server publication's receipt
   (D778): when the receipt record's end and its ended work together take
   longer (a stalled instance; a survivor that learns of the row only at its

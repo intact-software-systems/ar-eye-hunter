@@ -4,8 +4,7 @@
 counts every receipt it answers for in it: a client's `receiver` or `leader` room send and the server's own logically
 receipted publications. Every instance of a server reads and writes the same record, so any instance counts any ACK,
 ends any receipt and answers any re-sent copy, and a receipt stays exact when the instance that admitted the send
-crashes or restarts. The maintainer ruled 2026-11-22 that the receipt after such a loss must be exact, not a truthful
-terminal receipt that forgets the ACKs counted before the crash.
+crashes or restarts. A receipt after such a loss is exact: it keeps every ACK counted before the crash.
 
 The record is one more AL runtime store (D770). It is written directly at WS ingress, guard first and in one
 transaction, as the AL runtime's inbound and outbound stores are; it does not pass through AppInbox. Its only caller
@@ -168,7 +167,7 @@ message.
   server's pending receipt row that the dequeue commit wrote: the row's expected recipients, snapshot version 0 and
   the message's trace, and no `admitted` receipt, since the server is the origin. Its deadline is the end of the row's
   retransmission budget less half an ACK window, `deadlineAtMs + timeoutMs × (maxAttempts − attempts) −
-  floor(timeoutMs / 2)`, never beyond the message's own expiry or the window: a group-state delta's head ends 7 s
+  floor(timeoutMs / 2)`, never beyond the message's own expiry or the window: a group-state delta's head is due 7 s
   after its first dequeue, its row's budget at about 8 s. A head the dequeue did not open (the store failed, or the
   instance was lost after the dequeue commit) opens at the row's next `ack-timeout` window, which also counts
   `outside` the recipients the row places outside that the record holds no row for, ends a complete open head, and
@@ -189,8 +188,9 @@ admission. The record's own `malformed-opening` is the backstop.
 
 ## What it costs
 
-Each figure is pinned by a test, so a change that adds a statement or a transaction shows there. Round trips count
-BEGIN and COMMIT; none of the ACK's statements is serialized against another ACK.
+The 5, 8, 5 and 17 are pinned by the tests the table names, so a change that adds a statement or a transaction shows
+there; the 11 is that 17 less the worker's two lease sweeps. The enqueue's 9 and 13 below are measured, not pinned.
+Round trips count BEGIN and COMMIT; none of the ACK's statements is serialized against another ACK.
 
 | Path                                                                    | Round trips | Pinned in                                                                     |
 | ----------------------------------------------------------------------- | ----------- | ----------------------------------------------------------------------------- |
@@ -231,15 +231,24 @@ Real PostgreSQL, three instances, each client delaying every statement, BEGIN an
 
 ## Stated limits
 
-- **A burst of receipts on the server's one outbound identity.** With five publishers at 2 Hz and +5 ms per round
-  trip the receipts backlog after their enqueue, on the server's one outbound identity: the last ten messages read
-  `complete` 4 to 6 times later than the first ten (p50 7 to 11 s); about 75 % of the receipt enqueues conflict on
-  its version fence, and the unconflicted ones also wait 5 to 8 s in its drain, while the enqueue attempts stay flat
-  at about 205 ms. Every receipt stays exact and arrives before its 30 s deadline, and the count stays at about 71 ms
-  from the last ACK. The room messages' own fan-out is strained too (p95 about 6 s in one run). Sends kept up for
-  longer would, derived and not run, end messages `timed-out`. The lever is to take receipts off the server's one
-  outbound identity, for example delivering them from the record's own work rows; the cause between the fence, the
-  drain's throughput and the pool is measured first.
+- **A burst of receipts on each instance's one outbound worker.** With five publishers at 2 Hz and +5 ms per round
+  trip the receipts backlog after their enqueue: the last ten messages read `complete` 4.0 to 6.3 times later than
+  the first ten (p50 7 168 to 10 650 ms against 1 699 to 1 795 ms), and 116 to 118 of 200 terminal receipts were
+  still unread when the sends stopped. The count keeps up (70 to 73 ms from the last ACK to a complete count), and
+  so do the enqueue attempts (about 205 ms from the send). The cause is measured: each instance's one outbound worker
+  runs one batch at a time, its claims one after another except that a batch's dequeued rows are admitted together;
+  it was busy throughout (19 to 24 batches of 0.79 to 0.96 s each, back to back, nearly all full pages of 16), and it
+  completed 13 to 17 rows a second while the sends ran and 11 to 17 after they stopped. The pool is ruled out: a
+  transaction waited 0.6 ms from its `begin` to its callback (the median; at most 1.2 ms). So is the fence as a
+  cause: 75 to 80 % of the receipt enqueues conflict on the server's outbound version row, but 85 to 88 % of their
+  replays commit at their first attempt; the fence only adds a replay claim to the same worker, and a receipt that
+  did not conflict waits in it too. Every receipt stays exact and arrives before its 30 s deadline, the slowest
+  23 765 ms after its last ACK; sends kept up for longer would, derived and not run, end messages `timed-out`. The
+  worker is not the server identity's: the room messages, under their publishers' identities, share it, and their
+  p95 from the send to the last ACK offered, 6.2 to 6.9 s, is not yet attributed to it. The lever is to take the
+  receipts' delivery off each instance's outbound worker, and with it off the server identity's fence, for example
+  by delivering them from the record's own work rows, or to raise that worker's throughput. Neither brings the lag to
+  the record alone's 60 ms: the `end` and its ended work (170 to 420 ms) stay.
 - **A stall longer than half an ACK window, for a server publication.** When the record's end and its ended work
   together take longer than half a window (a stalled instance; a survivor that learns of the row only at its next
   readiness read, up to 3 s), the row's budget ends first and the process-local admin read says `receipt-exhausted`

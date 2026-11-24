@@ -756,10 +756,11 @@ terminal receipt included once the receipt has ended. An ACK that finds no recor
 yet is proven against the shared inbound admission store's audience and fails
 closed. The cluster recipe `api-v1-cluster-publisher-instance-loss` kills the
 process that admitted a broadcast, and the publisher, reconnected to a survivor,
-reads `complete` (`packages/shared/alm/receipt-record/README.md`). The server's own
-acknowledgement of a message addressed to it reaches the sender on any process:
-a process that claims it without the sender's socket hands it to the cluster
-outbound route (D107).
+reads `complete`
+([the receipt record](../../packages/shared/alm/receipt-record/README.md)). The
+server's own acknowledgement of a message addressed to it reaches the sender on
+any process: a process that claims it without the sender's socket hands it to
+the cluster outbound route (D107).
 Durable replay rechecks snapshot readiness, preserves predecessor order, and
 ACKs the admitted upstream relay. Current coverage includes
 [durable replay](../../packages/tests/shared/multicast/rtc-snapshot-durable-replay.test.ts),
