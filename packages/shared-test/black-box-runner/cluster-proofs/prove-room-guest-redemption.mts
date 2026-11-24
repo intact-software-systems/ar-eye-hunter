@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
-import { requestJson, type ProofSession } from '../topology-replay/api-v1-rtc-topology-proof-api.mts';
+import { requestJson, requireRecord, type ProofSession } from '../topology-replay/api-v1-rtc-topology-proof-api.mts';
 
 interface GuestRedemptionProof {
     readonly owner: ProofSession;
@@ -49,6 +49,21 @@ export async function proveRoomGuestRedemption({ owner, secondOrigin }: GuestRed
     assert.equal(await readAsGuest(group + '/topology'), 200);
     assert.equal(await readAsGuest(collection + '/different/topology'), 403);
     assert.equal(await readAsGuest(collection.replace(/groups$/, 'clients/') + owner.clientId), 403);
+    for (const [method, path, body] of [
+        ['POST', group + '/owner/transfer', { newOwnerPrincipalId: guest.clientId }],
+        ['PUT', group + '/members/' + guest.clientId + '/role', { role: 'admin' }]
+    ] as const) {
+        const attempt = toApiMutationRequestPath(path, crypto.randomUUID());
+        for (const origin of [owner.apiBaseUrl, secondOrigin]) {
+            const result = await requestJson(origin, attempt, { method, session: owner, body, expectedStatus: 400 });
+            assert.equal(result.code, 'group-mutation-rejected');
+        }
+    }
+    const snapshot = await requestJson(secondOrigin, group, { method: 'GET', session: owner });
+    assert.equal(requireRecord(snapshot.group, 'Stored room').ownerPrincipalId, owner.clientId);
+    assert.ok(Array.isArray(snapshot.members));
+    const members = snapshot.members.map(value => requireRecord(value, 'Stored member'));
+    assert.equal(members.find(member => member.principalId === guest.clientId)?.role, 'member');
     const remove = () => requestJson(owner.apiBaseUrl, toApiMutationRequestPath(group + '/members/' + guest.clientId + '/remove', crypto.randomUUID()), {
         method: 'POST', session: owner, body: {}
     });

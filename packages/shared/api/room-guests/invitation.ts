@@ -34,8 +34,9 @@ export interface RoomGuestLease {
 
 export const ROOM_GUEST_LIFETIME_MS = 4 * 60 * 60_000;
 
-export function isRoomGuestLease(value: unknown): value is RoomGuestLease {
-    return typeof value === 'object' && value !== null &&
+export function hasValidRoomGuestLease(member: Readonly<Record<string, unknown>>): boolean {
+    const value = member.guestLease;
+    return (member.role === 'member' || member.role === 'spectator') && typeof value === 'object' && value !== null &&
         'admittedAtEpochMs' in value && typeof value.admittedAtEpochMs === 'number' &&
         Number.isSafeInteger(value.admittedAtEpochMs) && value.admittedAtEpochMs >= 0 &&
         'expiresAtEpochMs' in value && Number.isSafeInteger(value.expiresAtEpochMs) &&

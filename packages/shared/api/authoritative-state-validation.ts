@@ -1,4 +1,4 @@
-import { isRoomGuestInvitation, isRoomGuestLease } from './room-guests/invitation.ts';
+import { isRoomGuestInvitation, hasValidRoomGuestLease } from './room-guests/invitation.ts';
 import { decodeRoomLobbyPolicy, ROOM_LOBBY_METADATA_KEY } from './room-lobbies/room-lobby-policy.ts';
 import type { ApiJsonValue } from './api-json-value.ts';
 import { toScopedOverlayId } from './api-type-utils.ts';
@@ -913,7 +913,7 @@ function validateGroupMember(value: WireValue, ref: GroupRef): void {
     const member = decodeRecord(value, 'GroupSnapshot.member');
     const hasGuestLease = Object.hasOwn(member, 'guestLease');
     exact(member, hasGuestLease ? [...GROUP_MEMBER_KEYS, 'guestLease'] : GROUP_MEMBER_KEYS, 'GroupSnapshot.member');
-    if (hasGuestLease && !isRoomGuestLease(member.guestLease)) {
+    if (hasGuestLease && !hasValidRoomGuestLease(member)) {
         fail('Room guest lease is invalid.');
     }
     sameGroupRef(member, ref, 'GroupSnapshot.member');

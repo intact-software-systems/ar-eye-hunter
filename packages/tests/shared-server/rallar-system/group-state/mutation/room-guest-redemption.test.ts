@@ -1,3 +1,5 @@
+import { validateStoredMember } from '@shared-server/rallar-system/group-state/persistence/validate-persisted-group.ts';
+import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import { AuthSessionPersistence } from '@shared-server/rallar-system/auth/persistence/auth-session-persistence.ts';
 import { roomGuestTransportSessionId } from '@shared-server/rallar-system/auth/credentials/room-guest-credential.ts';
 import { toGroupGuestSeatExpiryCommand } from '@shared-server/rallar-system/group-state/schedule/group-guest-seat-deadline.ts';
@@ -38,6 +40,15 @@ it('commits one four-hour guest lease in the final seat and retires the link ato
             admittedAtEpochMs: fixture.nowEpochMs, expiresAtEpochMs: fixture.nowEpochMs + 14_400_000, displayName: 'Grumpy Gull'
         });
         expect(snapshot?.members.some(member => member.principalId === principals[1])).toBe(false);
+        const member = snapshot?.members.find(entry => entry.principalId === principals[0]);
+        if (!snapshot || !member?.guestLease) throw new Error('Guest admission missing from snapshot');
+        for (const role of ['owner', 'admin'] as const) {
+            const elevated = { ...member, role };
+            expect(() => validateStoredMember(elevated, RETENTION_REF, 'Guest')).toThrow();
+            expect(() => validateAuthoritativeGroupSnapshot({
+                ...snapshot, members: snapshot.members.map(row => row.principalId === member.principalId ? elevated : row)
+            }, RETENTION_REF)).toThrow();
+        }
         const held = await fixture.repository.findLobbyCommitmentEntry(RETENTION_REF, principals[0]);
         expect(held?.value.seat?.roomRef).toEqual(RETENTION_REF);
         await expect(prepareMutation(fixture, mutationDescriptor({
