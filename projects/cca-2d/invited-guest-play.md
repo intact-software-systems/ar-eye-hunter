@@ -44,8 +44,9 @@ The iPhone guest reached gameplay on the second trial. Its WebSocket closed duri
 
 A Chromium host and mobile WebKit guest subsequently completed the three-minute round. The guest reloaded at tick 910, resumed the same match and dashed. Both screens reached tick 5400 with scores of 10 and 0. This pair used WebSocket fallback. A separate Chromium trial exercised RTC and then forced WebSocket fallback.
 
-1. Complete the physical iPhone round with a desktop host. Compare final scores and verify that the guest can reload and rematch.
-2. Exercise host handoff and WebSocket fallback on the device. If it stops, record the last confirmed tick, WebSocket close code and visibility state shown by the local diagnostics.
+The next physical iPhone trial completed over RTC. The guest reloaded midround, both screens showed Doctor Drip winning 131–50, and both players entered a rematch.
+
+Exercise host handoff and WebSocket fallback on the device. If it stops, record the last confirmed tick, WebSocket close code and visibility state shown by the local diagnostics.
 
 The account-registration prototype would leave a regular account behind.
 The chosen design calls for a genuinely expiring identity in Rallar.
