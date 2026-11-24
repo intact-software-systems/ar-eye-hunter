@@ -6,13 +6,11 @@ import { requirePracticeElement } from '../practice-controls.ts';
 import { OnlineMatch } from './online-match.ts';
 import { renderFriends, renderMatchmaking, renderRoom } from './online-panels.ts';
 import { OnlineSession } from './online-session.ts';
+import { townApiBaseUrl } from './town-server.ts';
 
 export class OnlineLobby {
     private readonly root: HTMLElement;
-    private readonly session = new OnlineSession(
-        rallar,
-        import.meta.env.VITE_RALLAR_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:8084' : location.origin)
-    );
+    private readonly session = new OnlineSession(rallar, townApiBaseUrl);
     private readonly lifetime = new AbortController();
     private readonly unsubscribe: () => void;
     private signedIn = false;

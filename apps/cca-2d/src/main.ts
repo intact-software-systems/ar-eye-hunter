@@ -1,4 +1,3 @@
-import { openGuestInvitation } from './online/guest-invitation.ts';
 import './style.css';
 
 const root = document.getElementById('app');
@@ -10,7 +9,11 @@ let current: { stop(): void | Promise<void>; } | undefined;
 let teardown: Promise<void> = import.meta.hot?.data.teardown ?? Promise.resolve();
 let generation = 0;
 if (location.pathname.replace(/\/$/, '') === `${import.meta.env.BASE_URL}guest`) {
-    openGuestInvitation(root, lifetime.signal);
+    void import('./online/guest-invitation.ts').then(({ openGuestInvitation }) => {
+        if (!lifetime.signal.aborted) {
+            openGuestInvitation(root, lifetime.signal);
+        }
+    });
 }
 else {
     void openMode(root, 'solo');

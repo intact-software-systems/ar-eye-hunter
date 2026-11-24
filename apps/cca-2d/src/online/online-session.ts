@@ -2,6 +2,7 @@ import type { AuthenticatedResource } from '@shared-web/browser/api/authenticate
 import { RallarFriends } from '@shared-web/browser/friends/rallar-friends.ts';
 import { RallarMatchmaking } from '@shared-web/browser/matchmaking/rallar-matchmaking.ts';
 import type { RallarFacade, RallarRoomState } from '@shared-web/browser/rallar.ts';
+import { createRoomGuestSecret } from '@shared-web/browser/rooms/room-guest-access.ts';
 import { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
 import type { LoginRequest } from '@shared/api/api-config.ts';
 import { hashRoomInvitationSecret } from '@shared/api/room-guest-invitation.ts';
@@ -11,7 +12,8 @@ import type { MatchmakingSnapshot } from '@shared/api/matchmaking/matchmaking-sn
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 
-export const CCA_SCOPE = { applicationId: 'cca-2d', workspaceId: 'default' } as const;
+import { CCA_SCOPE } from './town-server.ts';
+
 const START_OPTIONS = { connect: true, refreshRooms: true, refreshPeople: true } as const;
 
 export namespace OnlineSession {
@@ -155,9 +157,7 @@ export class OnlineSession {
             }
             clearTimeout(this.invitationTimeout);
             this.invitation = undefined;
-            const secret = Array.from(crypto.getRandomValues(new Uint8Array(32)), byte =>
-                byte.toString(16).padStart(2, '0')
-            ).join('');
+            const secret = createRoomGuestSecret();
             const issuedAt = performance.now();
             await this.browser.rooms.update({
                 roomRef: room,
