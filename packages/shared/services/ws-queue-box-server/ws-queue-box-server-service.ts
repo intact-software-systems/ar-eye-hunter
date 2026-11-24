@@ -1045,6 +1045,9 @@ export class WsQueueBoxServerService {
             ) {
                 return { status: 'no-targets', submissionAttempted: false };
             }
+            if (this.socket.connections.get(prepared.connectionId)?.socket.acceptsOutbound?.(encoded.text) === false) {
+                return { status: 'no-targets', submissionAttempted: false };
+            }
             this.socket.sendEncoded(prepared.connectionId, encoded, transport);
             this.recordPreparedRecipientSent(message, encoded.text.length);
             return { status: 'sent', submissionAttempted: true };

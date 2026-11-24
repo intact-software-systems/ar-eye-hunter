@@ -1500,3 +1500,18 @@ test('formation view fails rather than state no held reshape when the gate recor
 
     assert.equal(response.status, 400);
 });
+
+test('room guest can read only its active room topology during the guest lease', async () => {
+    const { toRoomGuestCredential } = await import('@shared-server/rallar-system/auth/credentials/room-guest-credential.ts');
+    const room = { ...TEST_SCOPE, groupId: 'room-1' };
+    const credential = await toRoomGuestCredential(room, 'ab'.repeat(32));
+    const headers = { authorization: 'Bearer ' + credential.accessToken, 'x-client-id': credential.clientId };
+    const snapshot = createGroupSnapshot('room-1', [credential.clientId]);
+    const members = snapshot.members.map(member => ({ ...member, guestLease: { admittedAtEpochMs: 0, expiresAtEpochMs: 9999999999999 } }));
+    const app = createRouteApp({ group: { ...snapshot, members }, strictReadAuthorization: true, session: createIssuedSession('ordinary', 'ordinary') });
+    assert.equal((await app.request(TOPOLOGY_MUTATION_BASE, { headers })).status, 200);
+    assert.equal((await app.request(TOPOLOGY_MUTATION_BASE.replace('room-1', 'unrelated'), { headers })).status, 403);
+    assert.equal((await app.request(TOPOLOGY_MUTATION_BASE + '/config', { headers })).status, 403);
+    const revoked = createRouteApp({ group: { ...snapshot, members: [] }, strictReadAuthorization: true });
+    assert.equal((await revoked.request(TOPOLOGY_MUTATION_BASE, { headers })).status, 403);
+});

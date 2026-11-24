@@ -78,6 +78,10 @@ export class RoomGuestSocket {
         return {
             get readyState() { return socket.readyState; },
             close: (code, reason) => socket.close(code, reason),
+            acceptsOutbound: text => {
+                const frame = readFrame(text);
+                return frame !== undefined && this.permits(frame, 'outbound');
+            },
             send: text => {
                 const frame = readFrame(text);
                 if (!frame || !this.permits(frame, 'outbound')) return 0;
