@@ -79,13 +79,17 @@ describe('director delivery admission', () => {
     it('admits a director heartbeat once on the room WebSocket even when local RTC accepts sends', async () => {
         const rtc = createMessageDelivery('rtc', { kind: 'admitted', durable: true, queuedAttempts: 1 });
         const ws = createMessageDelivery('ws', { kind: 'admitted', durable: true, queuedAttempts: 1 });
-        const rtcSend = vi.fn(async () => rtc.handle);
-        const wsSend = vi.fn(async () => ws.handle);
-        const transport = createTransport(rtc, wsSend, { rtcSend });
+        const delivered: string[] = [];
+        const transport = createTransport(rtc, async message => {
+            delivered.push(`ws:${message.roomRef?.groupId}`);
+            return ws.handle;
+        }, { rtcSend: async message => {
+            delivered.push(`rtc:${message.roomRef?.groupId}`);
+            return rtc.handle;
+        } });
         const result = await transport.sendRoomEnvelope({ ...envelopeInput, bestEffortFirst: 'ws' });
         expect(result).toEqual({ status: 'sent', ws: ws.handle });
-        expect(wsSend).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ roomRef: current.roomRef }));
-        expect(rtcSend).not.toHaveBeenCalled();
+        expect(delivered).toEqual([`ws:${current.roomRef.groupId}`]);
     });
 
     it('lets a director heartbeat use RTC if the WS carrier failed, and honors a WS refusal', async () => {

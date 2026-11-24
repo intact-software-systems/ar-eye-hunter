@@ -1252,6 +1252,7 @@ paths:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -1267,6 +1268,11 @@ paths:
       responses:
         '200':
           description: Room-scoped guest session
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
           content:
             application/json:
               schema:
@@ -1278,10 +1284,14 @@ paths:
                   accessToken: { type: string }
                   issuedAtEpochMs: { type: integer }
                   expiresAtEpochMs: { type: integer }
-        '400': { description: Invalid request }
-        '403': { description: Invitation or guest access denied }
-        '409': { description: Admission conflict }
-        '429': { description: Admission rate limit reached }
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '403':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '409':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '429':
+          $ref: '#/components/responses/RateLimitedApiMutationFailure'
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/{requestId}:
     put:
       tags: [Group State]
