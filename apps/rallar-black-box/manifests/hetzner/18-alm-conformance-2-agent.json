@@ -9194,7 +9194,7 @@
             "kind": "messages.send",
             "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-sender-send-1",
             "connection": "almConformanceSender",
-            "carrier": "ws",
+            "carrier": "ws-then-rtc",
             "typeId": "alm.conformance.rtc-with-ws-fallback.cross-carrier-duplicate-ws-then-rtc",
             "topicId": "room.alm-conformance",
             "payload": {

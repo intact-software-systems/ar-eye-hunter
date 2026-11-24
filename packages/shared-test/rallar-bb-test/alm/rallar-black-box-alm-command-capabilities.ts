@@ -9,7 +9,7 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
         kind: 'messages.send',
         title: 'Send ALM Message',
         description:
-            'Sends an ALM-addressed message over ws, rtc, or rtc-with-ws-fallback and returns delivery status. ' +
+            'Sends an ALM-addressed message over ws, rtc, ws-then-rtc, or rtc-with-ws-fallback and returns delivery status. ' +
             'purpose (command, notification, live) names the typed channel the page opens; absent, a toPeer send ' +
             'opens a command channel and any other a notification one. publication { cadenceMs, retainNewest, ' +
             'drain: { messages, bytes } } is a live channel\'s pacing, required with purpose live and refused with ' +

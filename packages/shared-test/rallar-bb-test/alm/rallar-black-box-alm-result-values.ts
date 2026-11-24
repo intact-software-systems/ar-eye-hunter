@@ -10,12 +10,12 @@ import type {
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { TransportFaultActedCounts } from '@shared/transport-faults/to-transport-fault-acted-counts.ts';
 
-import type { RallarBlackBoxTestMessagesCarrier } from '../rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxTestMessagesSendCarrier } from '../rallar-black-box-test-contracts.ts';
 
 export interface RallarBlackBoxTestMessagesSendResultValue {
     readonly handleId: string;
     readonly msgId?: string;
-    readonly carrier: RallarBlackBoxTestMessagesCarrier;
+    readonly carrier: RallarBlackBoxTestMessagesSendCarrier;
     readonly status: ALDeliveryState;
     readonly reason?: string;
     readonly traceId: string;

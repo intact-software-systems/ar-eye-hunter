@@ -44,7 +44,12 @@ type MessageSendAudience = Pick<
 /** Everything an ordinary send names but the channel it opens. */
 type MessageSendFields = Omit<BlackBoxRallarMessageSendInput, keyof BlackBoxRallarMessageChannel>;
 
-const MESSAGE_CARRIERS: readonly BlackBoxRallarMessageSendInput['carrier'][] = ['ws', 'rtc', 'rtc-with-ws-fallback'];
+const MESSAGE_CARRIERS: readonly BlackBoxRallarMessageSendInput['carrier'][] = [
+    'ws',
+    'rtc',
+    'ws-then-rtc',
+    'rtc-with-ws-fallback'
+];
 const MESSAGE_SCOPES: readonly NonNullable<BlackBoxRallarMessageSendInput['scope']>[] = ['room', 'world', 'principal'];
 const MESSAGE_RELIABILITIES: readonly NonNullable<BlackBoxRallarMessageSendInput['reliability']>[] = [
     'best-effort',
@@ -230,7 +235,9 @@ function decodeMessageSendIdentity(
     }
     const carrier = MESSAGE_CARRIERS.find((candidate) => candidate === record.carrier);
     if (carrier === undefined) {
-        return Either.ofLeft({ message: 'messages.send.carrier must be ws, rtc, or rtc-with-ws-fallback.' });
+        return Either.ofLeft({
+            message: 'messages.send.carrier must be ws, rtc, ws-then-rtc, or rtc-with-ws-fallback.'
+        });
     }
     const typeId = decodeBlackBoxCommandString(record.typeId);
     if (typeId === undefined) {
