@@ -246,6 +246,7 @@ export class TownMatchGame {
             }
             this.renderedMatchId = match.matchId;
             this.renderedPhase = match.phase;
+            if (this.renderedZoom !== zoom) this.root.dataset.zoom = zoom.toFixed(2);
             this.renderedZoom = zoom;
             this.root.dataset.renderX = String(shown.x);
             this.root.dataset.renderDashes = String(shown.consumedDash);
