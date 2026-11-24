@@ -36,17 +36,14 @@ expiry and revocation. The app supplies names and presentation. If the owner's
 browser disconnects, an eligible guest can take over the simulation and host
 rematches. Invitations and removal remain with the signed-in owner.
 
-## Proposed development sequence
+## Verification before release
 
-1. Deliver the reusable guest admission and lifecycle in a Rallar PR. Verify
-   concurrent claims on the last seat, reload with the same identity, exact
-   expiry, bounded completion of an active round, removal and invitation
-   rotation against the standard server. The cutoff must be enforceable
-   after the host disconnects, using a deadline Rallar can verify.
-2. Stack a CCA PR for QR/link entry, nickname shuffle, lobby and next-round
-   readiness. Test with a signed-in host and guest browsers, then on a phone.
-   Exercise host loss and confirm the successor can run the match while only
-   the owner can manage guests.
+The standard server has passed a three-process PostgreSQL race for the final seat and tests for invitation replay, removal, fixed expiry and the current-round cutoff. Browser trials covered guest entry, a delayed countdown, remote movement over RTC and WebSockets, a completed three-minute round with matching scores, and a guest hosting a rematch after the owner left.
+
+The iPhone guest reached gameplay on the second trial. Its WebSocket closed during the round and the match stopped at tick 673. The [phone trial notes](babylon-local-trial.md) distinguish this from the earlier countdown failure.
+
+1. Verify a midround reload in a phone-sized WebKit browser. Check that the guest resumes the same seat and round. Capture the browser's close code and visibility state on interruption.
+2. Repeat the physical iPhone round with a desktop host. Compare final scores, reload and rematch, then exercise host handoff and WebSocket fallback on the device.
 
 The account-registration prototype would leave a regular account behind.
 The chosen design calls for a genuinely expiring identity in Rallar.
