@@ -2,6 +2,7 @@ import type { RallarFacade } from '@shared-web/browser/rallar.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 
+import type { GuestConnectionDiagnostics } from './guest-connection-diagnostics.ts';
 import { TownMatchGame } from '../match/presentation/town-match-game.ts';
 import type { TownMatchState } from '../match/town-match.ts';
 import { TownMatchSession } from '../match/town-match-session.ts';
@@ -13,6 +14,7 @@ export namespace OnlineMatch {
         readonly browser: RallarFacade;
         readonly onLeave: () => void;
         readonly onSolo: () => void;
+        readonly diagnostics?: GuestConnectionDiagnostics;
     }
     export interface Button {
         readonly label: string;
@@ -36,6 +38,7 @@ export class OnlineMatch {
     private readonly browser: RallarFacade;
     private readonly onLeave: () => void;
     private readonly onSolo: () => void;
+    private readonly diagnostics: GuestConnectionDiagnostics | undefined;
 
     constructor(input: OnlineMatch.Input) {
         const { root, browser, onLeave, onSolo } = input;
@@ -43,6 +46,7 @@ export class OnlineMatch {
         this.browser = browser;
         this.onLeave = onLeave;
         this.onSolo = onSolo;
+        this.diagnostics = input.diagnostics;
     }
 
     reconcile(): void {
@@ -93,6 +97,7 @@ export class OnlineMatch {
             this.completedRound = undefined;
         }
         this.renderGame(view);
+        this.diagnostics?.display(view);
         const key = JSON.stringify([
             this.game?.isReady(),
             this.game?.getError(),

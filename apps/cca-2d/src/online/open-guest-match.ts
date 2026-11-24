@@ -5,6 +5,7 @@ import { rallar } from '@shared-web/browser/rallar.ts';
 import { clearSession, configureAuthSessionStorage, resetAuthSessionStorage, writeSession } from '@shared/api/auth.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
+import { GuestConnectionDiagnostics } from './guest-connection-diagnostics.ts';
 import { OnlineMatch } from './online-match.ts';
 import { saveGuestVisit, type AdmittedGuestVisit } from './guest-visit.ts';
 import { CCA_SCOPE, townApiBaseUrl, townGroupPresence } from './town-server.ts';
@@ -50,7 +51,9 @@ export function openGuestMatch({ root, visit, snapshot, pageSignal }: OpenGuestM
     }
     syncTransportDeadline(snapshot);
     const leave = () => location.assign(import.meta.env.BASE_URL);
-    const match = new OnlineMatch({ root, browser: rallar, onLeave: leave, onSolo: leave });
+    const diagnostics = new URLSearchParams(location.search).get('diagnostics') === '1'
+        ? new GuestConnectionDiagnostics(root, signal) : undefined;
+    const match = new OnlineMatch({ root, browser: rallar, onLeave: leave, onSolo: leave, diagnostics });
     const unsubscribe = rallar.rooms.onChange(state => {
         if (state.currentRoom?.group.groupId === visit.room) {
             renderOccupants(state.currentRoom);
@@ -59,6 +62,7 @@ export function openGuestMatch({ root, visit, snapshot, pageSignal }: OpenGuestM
         match.reconcile();
     });
     const stopSocket = rallar.ws.onLifecycle(event => {
+        if (event.kind === 'close') diagnostics?.closed(event.code);
         if (event.kind === 'close' && event.code === 1008) {
             void recheckAccess();
         }
@@ -106,6 +110,7 @@ export function openGuestMatch({ root, visit, snapshot, pageSignal }: OpenGuestM
         root.querySelector('h1')!.textContent = results ? 'Round complete' : 'Town invitation';
         root.querySelector('a')!.href = import.meta.env.BASE_URL;
         const scores = root.querySelector('ul')!;
+        diagnostics?.show(root.querySelector('main'));
         for (const result of results ?? []) {
             const row = document.createElement('li');
             row.textContent = `${result.displayName}: ${result.score}${result.qualified ? ' — WINNER!' : ''}`;

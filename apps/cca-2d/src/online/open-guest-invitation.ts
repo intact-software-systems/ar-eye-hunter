@@ -104,7 +104,8 @@ export function openGuestInvitation(root: HTMLElement, signal: AbortSignal): voi
             if (signal.aborted) {
                 return;
             }
-            history.replaceState(history.state, '', location.pathname);
+            const diagnostics = new URLSearchParams(location.search).get('diagnostics') === '1';
+            history.replaceState(history.state, '', location.pathname + (diagnostics ? '?diagnostics=1' : ''));
             const { openGuestMatch } = await import('./open-guest-match.ts');
             if (!signal.aborted) {
                 openGuestMatch({ root, visit, snapshot, pageSignal: signal });
