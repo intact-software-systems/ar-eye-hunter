@@ -6,16 +6,18 @@ import { clearSession, configureAuthSessionStorage, resetAuthSessionStorage, wri
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { OnlineMatch } from './online-match.ts';
-import { saveGuestVisit, type GuestVisit } from './guest-visit.ts';
+import { saveGuestVisit, type AdmittedGuestVisit } from './guest-visit.ts';
 import { CCA_SCOPE, townApiBaseUrl, townGroupPresence } from './town-server.ts';
 import './online.css';
 
-export function openGuestMatch(
-    root: HTMLElement,
-    visit: Extract<GuestVisit, { access: unknown }>,
-    snapshot: GroupSnapshot,
-    pageSignal: AbortSignal
-): void {
+interface OpenGuestMatchInput {
+    readonly root: HTMLElement;
+    readonly visit: AdmittedGuestVisit;
+    readonly snapshot: GroupSnapshot;
+    readonly pageSignal: AbortSignal;
+}
+
+export function openGuestMatch({ root, visit, snapshot, pageSignal }: OpenGuestMatchInput): void {
     const lifetime = new AbortController();
     const signal = AbortSignal.any([pageSignal, lifetime.signal]);
     const roomRef = { ...CCA_SCOPE, groupId: visit.room };

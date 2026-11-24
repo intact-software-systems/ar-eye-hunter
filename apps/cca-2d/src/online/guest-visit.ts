@@ -1,7 +1,14 @@
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { isGuestInvitationVerifier, isRoomGuestAccess, type RoomGuestAccess } from '@shared/api/room-guests/invitation.ts';
 
+export interface AdmittedGuestVisit {
+    room: string;
+    nickname: string;
+    access: RoomGuestAccess;
+}
+
 export type GuestVisit =
-    | { room: string; nickname: string; access: RoomGuestAccess }
+    | AdmittedGuestVisit
     | { room: string; nickname: string; invitationVerifier: string; guestSecret: string; requestId: string };
 
 const storageKey = 'cca.guest-visit';
@@ -11,7 +18,7 @@ export function readGuestVisit(): GuestVisit | undefined {
     if (!raw) {
         return;
     }
-    let value: unknown;
+    let value: ApiJsonValue;
     try {
         value = JSON.parse(raw);
     }

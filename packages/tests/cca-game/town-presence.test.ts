@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { expect, it } from 'vitest';
-import { initialTownHostPolicy, townHostCommand } from '../../../apps/cca-2d/src/match/town-host-succession.ts';
+import { initialTownHostPolicy, townHostCommand } from '../../../apps/cca-2d/src/match/town-host-command.ts';
 import { changeRoomDirectorSuccession } from '@shared/api/room-directors/change-room-director-succession.ts';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 import { townGroupPresence } from '../../../apps/cca-2d/src/online/town-server.ts';

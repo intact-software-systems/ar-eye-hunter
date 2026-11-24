@@ -1,10 +1,10 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
-import type { RoomTimelineExtension } from '@shared/api/group-deadlines/room-timeline.ts';
+import type { RoomTimelineAdvance, RoomTimelineExtension } from '@shared/api/group-deadlines/room-timeline.ts';
 import { expect, it } from 'vitest';
 import { permitsFinishingGuestAction, writeGuestRoundClock } from '../../../apps/cca-2d/src/match/guest-round-clock.ts';
 
 it('binds only the starting players and includes the countdown in the server deadline', async () => {
-    const writes: unknown[] = [];
+    const writes: RoomTimelineAdvance[] = [];
     const room = { applicationId: 'game', workspaceId: 'friends', groupId: 'square' };
     await writeGuestRoundClock({
         advanceTimeline: async (_room, change) => { writes.push(change); },

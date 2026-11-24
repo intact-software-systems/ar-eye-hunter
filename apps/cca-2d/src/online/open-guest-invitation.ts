@@ -105,9 +105,9 @@ export function openGuestInvitation(root: HTMLElement, signal: AbortSignal): voi
                 return;
             }
             history.replaceState(history.state, '', location.pathname);
-            const { openGuestMatch } = await import('./guest-match.ts');
+            const { openGuestMatch } = await import('./open-guest-match.ts');
             if (!signal.aborted) {
-                openGuestMatch(root, visit, snapshot, signal);
+                openGuestMatch({ root, visit, snapshot, pageSignal: signal });
             }
         }
         catch (error) {

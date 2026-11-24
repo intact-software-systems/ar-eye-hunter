@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { townHostCommand } from '../../../apps/cca-2d/src/match/town-host-succession.ts';
+import { townHostCommand } from '../../../apps/cca-2d/src/match/town-host-command.ts';
 import { mergeRallarGroupDirectorMetadata, createRallarGroupDirectorAppointment } from '../../shared/api/group-director.ts';
 import { storeRoomDirectorSuccession } from '../../shared/api/room-directors/room-director-succession-record.ts';
 

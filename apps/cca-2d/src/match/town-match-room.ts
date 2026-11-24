@@ -10,7 +10,7 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
 
 import { readRoomDirectorSuccession } from '@shared/api/room-directors/room-director-succession-record.ts';
-import { initialTownHostPolicy, townHostCommand } from './town-host-succession.ts';
+import { initialTownHostPolicy, townHostCommand } from './town-host-command.ts';
 import type { TownMatchIdentity } from './town-match.ts';
 
 export namespace TownMatchRoom {

@@ -1,9 +1,12 @@
+import { readRoomTimeline } from '@shared/api/group-deadlines/room-timeline.ts';
+import { roomGuestAccessMode } from '@shared/api/room-guests/access.ts';
+import type { TownMatchFrame } from './match-protocol.ts';
 import type { RoomTimeline, RoomTimelineAdvance, RoomTimelineExtension } from '@shared/api/group-deadlines/room-timeline.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 interface GuestRoundClockPort {
-    advanceTimeline(room: GroupRef, change: RoomTimelineAdvance, requestId: string): Promise<unknown>;
-    extendTimeline(room: GroupRef, change: RoomTimelineExtension, requestId: string): Promise<unknown>;
+    advanceTimeline(room: GroupRef, change: RoomTimelineAdvance, requestId: string): Promise<RoomTimeline | void>;
+    extendTimeline(room: GroupRef, change: RoomTimelineExtension, requestId: string): Promise<RoomTimeline | void>;
 }
 
 interface GuestRoundClockChange {
@@ -44,4 +47,22 @@ export function permitsFinishingGuestAction(
     phase: string | undefined, frame: { readonly matchId: string; readonly action: { readonly kind: string } }
 ): boolean {
     return phase === frame.matchId && !['ready', 'start', 'extend', 'rematch'].includes(frame.action.kind);
+}
+
+interface GuestFrameExchange {
+    readonly sender: string;
+    readonly receiver: string;
+    readonly frame: TownMatchFrame;
+    readonly now: number | undefined;
+}
+
+export function permitsGuestFrame(snapshot: GroupSnapshot, exchange: GuestFrameExchange): boolean {
+    for (const member of snapshot.members) {
+        if (!member.guestLease || (member.principalId !== exchange.sender && member.principalId !== exchange.receiver)) continue;
+        if (exchange.now === undefined) return false;
+        const mode = roomGuestAccessMode(snapshot.group, member, exchange.now);
+        if (mode === 'expired' || (mode === 'finish-round' &&
+            !permitsFinishingGuestAction(readRoomTimeline(snapshot.group.metadata, 'guest-play')?.phase, exchange.frame))) return false;
+    }
+    return true;
 }

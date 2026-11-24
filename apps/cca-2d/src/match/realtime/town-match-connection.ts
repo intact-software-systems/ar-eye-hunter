@@ -1,6 +1,4 @@
-import { readRoomTimeline } from '@shared/api/group-deadlines/room-timeline.ts';
-import { roomGuestAccessMode } from '@shared/api/room-guests/access.ts';
-import { permitsFinishingGuestAction } from '../guest-round-clock.ts';
+import { permitsGuestFrame } from '../guest-round-clock.ts';
 import type { TownMatchFrame } from '../match-protocol.ts';
 import type { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import type { TownMatchRoom } from '../town-match-room.ts';
@@ -154,15 +152,7 @@ export class TownMatchConnection {
         const browser = this.dependencies.browser;
         const snapshot = browser.rooms.current();
         if (!snapshot) return false;
-        for (const member of snapshot.members) {
-            if (!member.guestLease || (member.principalId !== sender.id && member.principalId !== receiver.id)) continue;
-            const now = browser.deadlineAfter(0);
-            if (now === undefined) return false;
-            const mode = roomGuestAccessMode(snapshot.group, member, now);
-            if (mode === 'expired' || (mode === 'finish-round' &&
-                !permitsFinishingGuestAction(readRoomTimeline(snapshot.group.metadata, 'guest-play')?.phase, frame))) return false;
-        }
-        return true;
+        return permitsGuestFrame(snapshot, { sender: sender.id, receiver: receiver.id, frame, now: browser.deadlineAfter(0) });
     }
 
     isCurrent(generation: number): boolean {
