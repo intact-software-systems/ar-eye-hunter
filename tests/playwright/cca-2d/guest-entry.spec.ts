@@ -11,3 +11,22 @@ test('a friend can shuffle a town nickname and enter practice from an invitation
     await page.getByRole('link', { name: 'Play solo' }).click();
     await expect(page.getByRole('button', { name: 'Dash and drop' })).toBeVisible();
 });
+
+test('the town owner can issue and replace a locally rendered guest QR and link', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Play with friends' }).click();
+    await page.getByLabel('Username', { exact: true }).fill(`guest-host-${Date.now()}`);
+    await page.getByLabel('Password', { exact: true }).fill('x');
+    await page.getByRole('button', { name: 'Create account' }).click();
+    await page.getByRole('button', { name: 'Create town' }).click();
+    await page.getByRole('button', { name: 'Invite guests' }).click({ timeout: 5000 });
+    const link = page.getByLabel('Guest invitation link');
+    const roomId = await page.getByLabel('Room code').inputValue();
+    await expect(link).toHaveValue(/\/guest#/);
+    const first = new URL(await link.inputValue());
+    expect(new URLSearchParams(first.hash.slice(1)).get('room')).toBe(roomId);
+    expect(first.search).toBe('');
+    await expect(page.getByRole('img', { name: 'Scan to join this town' })).toBeVisible();
+    await page.getByRole('button', { name: 'Replace invitation' }).click();
+    await expect(link).not.toHaveValue(first.href);
+});

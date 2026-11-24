@@ -4,6 +4,7 @@ import { RallarMatchmaking } from '@shared-web/browser/matchmaking/rallar-matchm
 import type { RallarFacade, RallarRoomState } from '@shared-web/browser/rallar.ts';
 import { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
 import type { LoginRequest } from '@shared/api/api-config.ts';
+import { hashRoomInvitationSecret } from '@shared/api/room-guest-invitation.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { FriendsView } from '@shared/api/friends/friends-view.ts';
 import type { MatchmakingSnapshot } from '@shared/api/matchmaking/matchmaking-snapshot.ts';
@@ -17,6 +18,8 @@ export namespace OnlineSession {
     export type MatchmakingAction = 'find' | 'confirm' | 'cancel' | 'retry';
     export interface State {
         readonly username: string | undefined;
+        readonly ownsTown: boolean;
+        readonly invitation: URL | null;
         readonly connected: boolean;
         readonly busy: boolean;
         readonly error: string;
@@ -39,6 +42,8 @@ export class OnlineSession {
         console.error('Lobby listener failed', error)
     );
     private rooms: RallarRoomState = { rooms: [], members: [] };
+    private invitation: { groupId: string; owner: string; link: URL } | undefined;
+    private invitationTimeout: ReturnType<typeof setTimeout> | undefined;
     private error = '';
     private busy = false;
     private connected = false;
@@ -57,7 +62,13 @@ export class OnlineSession {
     }
 
     getState(): OnlineSession.State {
+        const room = this.rooms.currentRoom?.group;
+        const principal = this.browser.session()?.clientId;
+        const ownsTown = Boolean(room && principal && room.ownerPrincipalId === principal);
         return {
+            ownsTown,
+            invitation: ownsTown && this.invitation && this.invitation.owner === principal &&
+                this.invitation.groupId === room?.groupId ? this.invitation.link : null,
             username: this.browser.session()?.username,
             connected: this.connected,
             busy: this.busy,
@@ -132,6 +143,37 @@ export class OnlineSession {
                 maxSessionsPerMember: 1,
                 signal: this.lifetime.signal
             });
+        });
+    }
+
+    async inviteGuests(): Promise<void> {
+        await this.run(async () => {
+            const room = this.rooms.currentRoomRef;
+            const owner = this.browser.session()?.clientId;
+            if (!room || !owner || !this.getState().ownsTown) {
+                return;
+            }
+            clearTimeout(this.invitationTimeout);
+            this.invitation = undefined;
+            const secret = Array.from(crypto.getRandomValues(new Uint8Array(32)), byte =>
+                byte.toString(16).padStart(2, '0')
+            ).join('');
+            const issuedAt = performance.now();
+            await this.browser.rooms.update({
+                roomRef: room,
+                guestInvitationVerifier: await hashRoomInvitationSecret(secret),
+                signal: this.lifetime.signal
+            });
+            if (this.lifetime.signal.aborted) {
+                return;
+            }
+            const link = new URL(`${import.meta.env.BASE_URL}guest`, location.origin);
+            link.hash = new URLSearchParams({ room: room.groupId, invite: secret }).toString();
+            this.invitation = { groupId: room.groupId, owner, link };
+            this.invitationTimeout = setTimeout(() => {
+                this.invitation = undefined;
+                this.publish();
+            }, Math.max(0, 15 * 60_000 - (performance.now() - issuedAt)));
         });
     }
 
@@ -210,6 +252,7 @@ export class OnlineSession {
         if (this.lifetime.signal.aborted) {
             return;
         }
+        clearTimeout(this.invitationTimeout);
         this.lifetime.abort();
         this.subscriptions.unsubscribe();
         this.entry.stop();

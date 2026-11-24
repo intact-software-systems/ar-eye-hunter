@@ -115,6 +115,9 @@ export class OnlineLobby {
             case 'create':
                 void this.session.createTown();
                 break;
+            case 'invite-guests':
+                void this.session.inviteGuests();
+                break;
             case 'leave':
                 void this.session.leaveTown();
                 break;
