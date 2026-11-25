@@ -83,7 +83,7 @@ function toResultValue(posted: PostedCommand): ApiJsonObject {
 
 /** A send's receiver records the message; a stats read and a report recipe each report for their agent. */
 function toRunEvents(posted: readonly PostedCommand[], kind: 'rtc.send' | 'stats' | 'recipe.run'): readonly ApiJsonObject[] {
-    return posted.filter(({ command }) => command.kind === kind).map(({ agentId, command }) => {
+    return posted.filter(({ command }) => command.kind === kind).map(({ agentId, command }): ApiJsonObject => {
         if (command.kind !== 'rtc.send') {
             return { agentId };
         }
@@ -91,7 +91,7 @@ function toRunEvents(posted: readonly PostedCommand[], kind: 'rtc.send' | 'stats
         const peers = (send.peerIds ?? send.nextHopPeerIds) as readonly string[];
         return {
             agentId: peers[0].replace('session-', ''),
-            payload: { kind: 'message', transport: command.transport, payload: { data: send.data ?? send.payload } }
+            payload: { kind: 'message', transport: command.transport ?? null, payload: { data: send.data ?? send.payload ?? null } }
         };
     });
 }
