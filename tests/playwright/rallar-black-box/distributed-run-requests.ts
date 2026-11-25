@@ -1,5 +1,7 @@
 import { expect, type APIRequestContext } from '@playwright/test';
 
+import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
+
 import type { ControlDistributedRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 import { decodeControlDistributedRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-distributed-run-snapshot.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
@@ -11,7 +13,8 @@ export async function createDistributedRun(
     manifest: RallarBlackBoxDistributedRunManifest
 ): Promise<ControlDistributedRunSnapshot> {
     const response = await request.post(`${FULL_STACK_CONTROL_BASE_URL}/distributed-runs`, {
-        data: { manifest }
+        data: { manifest },
+        timeout: CONTROL_REQUEST_TIMEOUT_MS
     });
     const body = await readDisposedResponse(response, async (created) => {
         expect(created.status()).toBe(201);
@@ -27,7 +30,10 @@ export async function mutateDistributedRun(
 ): Promise<ControlDistributedRunSnapshot> {
     const response = await request.post(
         `${FULL_STACK_CONTROL_BASE_URL}/distributed-runs/${encodeURIComponent(distributedRunId)}/${action}`,
-        action === 'cancel' ? { data: { reason: 'Playwright distributed recipe QA cleanup.' } } : undefined
+        {
+            data: action === 'cancel' ? { reason: 'Playwright distributed recipe QA cleanup.' } : undefined,
+            timeout: CONTROL_REQUEST_TIMEOUT_MS
+        }
     );
     const body = await readDisposedResponse(response, async (accepted) => {
         expect(accepted.status()).toBe(202);

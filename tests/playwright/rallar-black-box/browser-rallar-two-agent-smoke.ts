@@ -9,6 +9,7 @@ import {
 
 import { computeCommandResultWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 import { CONTROL_AGENT_OPENING_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-agent-opening-timeout-ms.ts';
+import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
 import { REALTIME_SEND_OPEN_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/realtime-send-open-timeout-ms.ts';
 import {
     RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS,
@@ -521,7 +522,7 @@ export class BrowserRallarTwoAgentSmoke {
             `${CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}/agents/${
                 encodeURIComponent(agent.agentId)
             }/commands`,
-            { data: { commandId, command } }
+            { data: { commandId, command }, timeout: CONTROL_REQUEST_TIMEOUT_MS }
         );
         expect(response.status()).toBe(202);
         let latest: ControlResult | undefined;
@@ -538,7 +539,9 @@ export class BrowserRallarTwoAgentSmoke {
 
     private async readRun(): Promise<ControlRunSnapshot> {
         const { request, runId } = this.dependencies;
-        const response = await request.get(`${CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}`);
+        const response = await request.get(`${CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}`, {
+            timeout: CONTROL_REQUEST_TIMEOUT_MS
+        });
         expect(response.ok()).toBe(true);
         const run = toRecord(await response.json());
         return {

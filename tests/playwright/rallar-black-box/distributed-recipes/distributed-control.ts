@@ -1,5 +1,7 @@
 import { expect, type APIRequestContext } from '@playwright/test';
 
+import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
+
 import { type ControlResultEnvelope } from '../../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 import {
     type ControlDistributedRunArtifactBundle,
@@ -101,7 +103,8 @@ async function readDistributedRun(
     distributedRunId: string
 ): Promise<ControlDistributedRunSnapshot> {
     const response = await request.get(
-        `${FULL_STACK_CONTROL_BASE_URL}/distributed-runs/${encodeURIComponent(distributedRunId)}`
+        `${FULL_STACK_CONTROL_BASE_URL}/distributed-runs/${encodeURIComponent(distributedRunId)}`,
+        { timeout: CONTROL_REQUEST_TIMEOUT_MS }
     );
     expect(response.ok()).toBe(true);
     return decodeControlDistributedRunSnapshot(await response.json()).fold(throwBoundaryError, (value) => value);
@@ -150,7 +153,8 @@ export async function readDistributedArtifact(
     distributedRunId: string
 ): Promise<ControlDistributedRunArtifactBundle> {
     const response = await request.get(
-        `${FULL_STACK_CONTROL_BASE_URL}/distributed-runs/${encodeURIComponent(distributedRunId)}/artifacts`
+        `${FULL_STACK_CONTROL_BASE_URL}/distributed-runs/${encodeURIComponent(distributedRunId)}/artifacts`,
+        { timeout: CONTROL_REQUEST_TIMEOUT_MS }
     );
     expect(response.ok()).toBe(true);
     return decodeControlDistributedRunArtifactBundle(await response.json()).fold(throwBoundaryError, (value) => value);

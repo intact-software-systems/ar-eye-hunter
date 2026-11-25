@@ -15,6 +15,7 @@ import {
     type RtcNativeCapturedConnection
 } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
 import { computeCommandResultWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
+import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
 import {
     LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS,
     LIVE_RTC_DIAGNOSTICS_READ_TIMEOUT_MS,
@@ -268,7 +269,8 @@ export class LiveRtcControlClient {
 
     async fetchRun(runId: string): Promise<LiveRtcControlClient.RunSnapshot> {
         const response = await this.#request.get(
-            `${this.#baseUrl}/runs/${encodeURIComponent(runId)}`
+            `${this.#baseUrl}/runs/${encodeURIComponent(runId)}`,
+            { timeout: CONTROL_REQUEST_TIMEOUT_MS }
         );
         return await readDisposedResponse(response, async (read) => {
             expect(read.ok()).toBe(true);
@@ -287,7 +289,8 @@ export class LiveRtcControlClient {
                 async () => {
                     const response = await this.#request.get(
                         `${this.#baseUrl}/runs/${encodeURIComponent(input.runId)}` +
-                            '?limitEvents=0&limitStats=0&limitReports=0&limitHeartbeats=0'
+                            '?limitEvents=0&limitStats=0&limitReports=0&limitHeartbeats=0',
+                        { timeout: CONTROL_REQUEST_TIMEOUT_MS }
                     );
                     return await readDisposedResponse(response, async (read) => {
                         expect(read.ok()).toBe(true);
@@ -320,7 +323,8 @@ export class LiveRtcControlClient {
                 data: {
                     commandId: input.commandId,
                     command: input.command
-                }
+                },
+                timeout: CONTROL_REQUEST_TIMEOUT_MS
             }
         );
         await readDisposedResponse(response, async (enqueued) => {
@@ -707,7 +711,8 @@ export class LiveRtcControlClient {
         input: LiveRtcControlClient.ArtifactBundleInput
     ): Promise<void> {
         const response = await this.#request.get(
-            `${this.#baseUrl}/runs/${encodeURIComponent(input.runId)}/artifacts`
+            `${this.#baseUrl}/runs/${encodeURIComponent(input.runId)}/artifacts`,
+            { timeout: CONTROL_REQUEST_TIMEOUT_MS }
         );
         const bundle = await readDisposedResponse(response, async (read) => {
             expect(read.ok()).toBe(true);

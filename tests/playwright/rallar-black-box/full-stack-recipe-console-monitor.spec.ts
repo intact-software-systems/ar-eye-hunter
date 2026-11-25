@@ -18,6 +18,7 @@ import {
 } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
 import { RtcNativeChannelAttachments } from '@shared-test/black-box-runner/artifacts/rtc-native-channel-attachments.ts';
 import { toRtcNativeObservationProjection } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts';
+import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
 import { decodeRallarBlackBoxTestResult } from '@shared-test/rallar-bb-test/composite-results.ts';
 import type { ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type {
@@ -1043,7 +1044,8 @@ async function readDistributedRun(
     distributedRunId: string
 ): Promise<ControlDistributedRunSnapshot> {
     const response = await request.get(
-        `${CONFIGURED_POSTGRES.controlBaseUrl}/distributed-runs/${encodeURIComponent(distributedRunId)}`
+        `${CONFIGURED_POSTGRES.controlBaseUrl}/distributed-runs/${encodeURIComponent(distributedRunId)}`,
+        { timeout: CONTROL_REQUEST_TIMEOUT_MS }
     );
     expect(response.ok()).toBe(true);
     return decodeControlDistributedRunSnapshot(await response.json()).fold(

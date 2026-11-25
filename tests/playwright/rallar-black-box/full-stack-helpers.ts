@@ -9,6 +9,7 @@ import {
 } from '@playwright/test';
 
 import { CONTROL_AGENT_OPENING_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-agent-opening-timeout-ms.ts';
+import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
 import { isRallarBlackBoxTestError } from '@shared-test/rallar-bb-test/composite-results.ts';
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import { computeAlmRecipeRunTimeoutMs } from '@shared-test/rallar-bb-test/conformance/alm/alm-recipe-run-extension.ts';
@@ -472,7 +473,8 @@ export async function expectFullStackApiReady(
     const configResponse = await request.get(`${config.apiBaseUrl}/api/config`, {
         headers: {
             origin: FULL_STACK_SPA_ORIGIN
-        }
+        },
+        timeout: CONTROL_REQUEST_TIMEOUT_MS
     });
     await readDisposedResponse(configResponse, async (response) => {
         expect(response.ok()).toBe(true);
@@ -603,7 +605,7 @@ export async function enqueueControlCommand(input: EnqueueControlCommandInput): 
         `${FULL_STACK_CONTROL_BASE_URL}/runs/${encodeURIComponent(input.runId)}/agents/${
             encodeURIComponent(input.agentId)
         }/commands`,
-        { data: { commandId: input.commandId, command: input.command } }
+        { data: { commandId: input.commandId, command: input.command }, timeout: CONTROL_REQUEST_TIMEOUT_MS }
     );
     await readDisposedResponse(response, async (enqueued) => {
         expect(enqueued.status()).toBe(202);
@@ -615,7 +617,9 @@ export async function readControlRun(
     runId: string
 ): Promise<ControlRunSnapshot> {
     const response = await readControlGetResponse(async () =>
-        await request.get(`${FULL_STACK_CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}`)
+        await request.get(`${FULL_STACK_CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}`, {
+            timeout: CONTROL_REQUEST_TIMEOUT_MS
+        })
     );
     const body = await readDisposedResponse(response, async (read) => {
         expect(read.ok()).toBe(true);
@@ -660,7 +664,9 @@ export async function exportControlRunArtifacts(
     runId: string
 ): Promise<ControlRunArtifactBundle> {
     const response = await readControlGetResponse(async () =>
-        await request.get(`${FULL_STACK_CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}/artifacts`)
+        await request.get(`${FULL_STACK_CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}/artifacts`, {
+            timeout: CONTROL_REQUEST_TIMEOUT_MS
+        })
     );
     const body = await readDisposedResponse(response, async (read) => {
         expect(read.ok()).toBe(true);

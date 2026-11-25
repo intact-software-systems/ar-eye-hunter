@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { findLiteralWaitBounds } from './find-literal-wait-bounds.ts';
+import { findUntimedRequests } from './find-untimed-requests.ts';
 
 const repoRoot = path.resolve(__dirname, '../../..');
 
@@ -196,6 +197,40 @@ describe('literal waits on the derived tests\' paths', () => {
         );
 
         expect(paired).toEqual({});
+    });
+
+    // Every request ran under the request context's own 30 s default, which no derivation counted.
+    it('finds a request through a request context that names no timeout of its own', () => {
+        expect(findUntimedRequests([
+            'const response = await request.get(url);',
+            'await this.#request.post(url, { data: { commandId } });',
+            'run.request.get(`${base}/artifacts`).then(read);',
+            'await this.dependencies.request.fetch(String(url), { method: init?.method });',
+            'await input.request.post(url, options);',
+            'await request.get(url, { timeout: CONTROL_REQUEST_TIMEOUT_MS });',
+            'await this.#request.post(url, { data, timeout: CONTROL_REQUEST_TIMEOUT_MS });',
+            'const value = params.get(\'runId\') ?? headers.get(\'content-type\');',
+            'const sent = route.request().headers();'
+        ].join('\n'))).toEqual([
+            '1: const response = await request.get(url);',
+            '2: await this.#request.post(url, { data: { commandId } });',
+            '3: run.request.get(`${base}/artifacts`).then(read);',
+            '4: await this.dependencies.request.fetch(String(url), { method: init?.method });',
+            '5: await input.request.post(url, options);'
+        ]);
+    });
+
+    it('names a timeout for every request on the derived tests\' paths', () => {
+        const untimed = Object.fromEntries(
+            DERIVED_TEST_PATH_FILES.filter((relativePath) => existsSync(path.join(repoRoot, relativePath))).flatMap(
+                (relativePath) => {
+                    const found = findUntimedRequests(readPathFile(relativePath));
+                    return found.length === 0 ? [] : [[relativePath, found]];
+                }
+            )
+        );
+
+        expect(untimed).toEqual({});
     });
 
     it('passes every wait bound on the derived tests\' paths as a named constant', () => {

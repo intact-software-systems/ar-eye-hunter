@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
+
 import {
     deriveDistributedRunMonitor,
     deriveDistributedRunWarningRegressionReport
@@ -156,7 +158,8 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
                         distributedRunId: `dist-invalid-${suffix}`,
                         recipes: []
                     }
-                }
+                },
+                timeout: CONTROL_REQUEST_TIMEOUT_MS
             });
             expect(schemaFailureResponse.status()).toBe(400);
             expect(await schemaFailureResponse.text()).toMatch(/group|recipes|required/i);

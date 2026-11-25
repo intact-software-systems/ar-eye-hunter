@@ -15,6 +15,7 @@ import {
 
 import { BROWSER_TEST_HARNESS_MARGIN_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/browser-test-harness-margin-ms.ts';
 import { computeCommandResultWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
+import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
 import { RALLAR_BLACK_BOX_EXPECT_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/playwright-expect-timeouts.ts';
 
 import { RESTORED_SESSION_LIFETIME_MS } from './restored-session-lifetime-ms.ts';
@@ -76,7 +77,8 @@ async function fetchRun(
     runId: string
 ): Promise<ControlRunSnapshot> {
     const response = await request.get(
-        `${CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}`
+        `${CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}`,
+        { timeout: CONTROL_REQUEST_TIMEOUT_MS }
     );
     expect(response.ok()).toBe(true);
     return decodeControlRunSnapshot(await response.json()).fold(
@@ -100,7 +102,8 @@ async function enqueueCommand(
             data: {
                 commandId,
                 command
-            }
+            },
+            timeout: CONTROL_REQUEST_TIMEOUT_MS
         }
     );
     expect(response.status()).toBe(202);

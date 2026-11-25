@@ -14,6 +14,7 @@ import type {
     RtcNativeCapturedConnection,
     RtcNativeRecipeAttribution
 } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
+import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
 import { REALTIME_SEND_OPEN_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/realtime-send-open-timeout-ms.ts';
 import { toRtcCaptureReadout } from '@shared-web/browser/connection/to-rtc-capture-readout.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -262,7 +263,9 @@ test.describe('actual default headless worker HOST capture', () => {
             expect(exited).toEqual({ code: 1, signal: null });
             expect(worker.getOutput()).toContain('RALLAR_BLACK_BOX_RTC_CAPTURE_MODE');
             expect(worker.getOutput()).not.toContain('Opening agent');
-            const response = await request.get(`${controlBaseUrl}/runs/${encodeURIComponent(run.runId)}`);
+            const response = await request.get(`${controlBaseUrl}/runs/${encodeURIComponent(run.runId)}`, {
+                timeout: CONTROL_REQUEST_TIMEOUT_MS
+            });
             expect(response.status()).toBe(404);
             await writeEvidence(run, 'startup-refusal.json', { exited, controlRunStatus: response.status() });
         }
@@ -598,12 +601,16 @@ async function retireWorkerRun(
 ): Promise<WorkerCaptureProcess.Exit> {
     const cleanup = await Promise.allSettled([
         worker.stop(),
-        run.request.get(`${controlBaseUrl}/runs/${encodeURIComponent(run.runId)}/artifacts`).then(async (response) => {
+        run.request.get(`${controlBaseUrl}/runs/${encodeURIComponent(run.runId)}/artifacts`, {
+            timeout: CONTROL_REQUEST_TIMEOUT_MS
+        }).then(async (response) => {
             if (response.ok()) {
                 await writeEvidence(run, 'control-artifact-bundle.json', await response.json());
             }
         }),
-        run.request.get(`${controlBaseUrl}/runs/${encodeURIComponent(run.runId)}/events.jsonl`).then(
+        run.request.get(`${controlBaseUrl}/runs/${encodeURIComponent(run.runId)}/events.jsonl`, {
+            timeout: CONTROL_REQUEST_TIMEOUT_MS
+        }).then(
             async (response) => {
                 if (response.ok()) {
                     await writeFile(run.testInfo.outputPath('recorder-events.jsonl'), await response.text());
