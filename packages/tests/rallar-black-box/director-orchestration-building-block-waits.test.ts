@@ -136,7 +136,7 @@ describe('the director scenario waits what its derivation counts', () => {
 describe('the director scenario\'s status reading', () => {
     // A reading without a numeric epoch decoded to an undefined epoch, so two such readings matched where comparing the
     // raw field had failed.
-    it.each([
+    it.each<Readonly<{ case: string; appointment: ApiJsonObject; }>>([
         { case: 'no epoch', appointment: { sessionId: toSessionId('A') } },
         { case: 'a text epoch', appointment: { sessionId: toSessionId('A'), epoch: '1' } }
     ])('refuses an appointment with $case', async ({ appointment }) => {
