@@ -812,7 +812,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         const outcome = this.sendControls.cancel(msgId);
         if (outcome === 'cancelled') {
             this.emitSettlement({ kind: 'cancelled', msgId, traceId }, undefined);
-            void this.messageEnds.start(msgId);
+            void this.messageEnds.start(msgId, 'cancelled');
         }
         return outcome;
     }
@@ -826,7 +826,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         if (this.disposed || this.sendControls.handOver(msgId) === 'already-ended') {
             return;
         }
-        await this.messageEnds.start(msgId);
+        await this.messageEnds.start(msgId, 'handed-over');
     }
 
     /**

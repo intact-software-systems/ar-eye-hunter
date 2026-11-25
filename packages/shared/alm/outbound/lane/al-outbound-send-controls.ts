@@ -8,6 +8,9 @@ export type ALOutboundCancelOutcome = 'cancelled' | 'already-cancelled';
 /** What a `handOver` call decided: only the first call for a message not already ended hands it over. */
 export type ALOutboundHandOverOutcome = 'handed-over' | 'already-ended';
 
+/** Why the page ended a message: it cancelled it, or handed it to another carrier's owner. */
+export type ALOutboundEndedReason = 'cancelled' | 'handed-over';
+
 /** One message's live transport controller, shared by its concurrent attempts, and how many hold it open. */
 interface ALOutboundLiveSendControl {
     readonly controller: AbortController;
@@ -78,7 +81,7 @@ export class ALOutboundSendControls {
     }
 
     /** Names why later work is skipped without changing the retained control state. */
-    readEndedReason(msgId: string): 'cancelled' | 'handed-over' | undefined {
+    readEndedReason(msgId: string): ALOutboundEndedReason | undefined {
         const nowMs = this.input.nowMs();
         if (this.cancelledMsgIds.readAt(msgId, nowMs) !== undefined) {
             return 'cancelled';

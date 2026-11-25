@@ -116,6 +116,7 @@ export function decodeALOutboundEffectPayload<TPrepared>(
         'msg',
         'source',
         'expiresAtMs',
+        'endedReason',
         'admissionEffectId'
     ]);
     switch (payload.kind) {
@@ -161,8 +162,11 @@ function decodeALOutboundEndMessage(
     value: unknown,
     effectId: string
 ): Extract<ALOutboundDurableEffect<never>, { kind: 'end-message'; }> {
-    const end = decodeALAdmissionRecord(value, ['kind', 'msgId', 'admissionEffectId']);
+    const end = decodeALAdmissionRecord(value, ['kind', 'msgId', 'endedReason', 'admissionEffectId']);
     requirePersistedALNonEmptyString(end.msgId, 'message end message id');
+    if (end.endedReason !== 'cancelled' && end.endedReason !== 'handed-over') {
+        throw new TypeError('Persisted AL message end reason is invalid');
+    }
     if (effectId !== toALOutboundEndMessageEffectId(end.msgId as string)) {
         throw new TypeError('Persisted AL message end identity does not match its message');
     }

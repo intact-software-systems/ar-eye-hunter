@@ -258,6 +258,7 @@ function readALOutboundWorkMessageReference(entry: ResourceEntry): ALOutboundMes
             'reason',
             'policy',
             'preparedMessages',
+            'endedReason',
             'admissionEffectId'
         ]);
         return payload.kind === 'send-prepared' || payload.kind === 'admit-message'

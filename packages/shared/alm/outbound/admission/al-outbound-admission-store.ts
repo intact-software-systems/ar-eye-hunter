@@ -56,6 +56,7 @@ import type { ALOutboundReceiptAdmissionSurface } from '../control/compute-al-ou
 import { toALOutboundOutsideAudienceCommit } from '../control/to-al-outbound-outside-audience-commit.ts';
 import { writeALOutboundTimeoutCompletions } from '../control/write-al-outbound-timeout-completions.ts';
 import type { ALOutboundFirstHopWaitSnapshot } from '../first-hop/compute-al-outbound-first-hop-wait.ts';
+import type { ALOutboundEndedReason } from '../lane/al-outbound-send-controls.ts';
 import type {
     ALOrderingIndexedSequence,
     ALOrderingStoredPredecessors
@@ -369,6 +370,8 @@ export type ALOutboundDurableEffect<TPrepared> =
     | Readonly<{
         kind: 'end-message';
         msgId: string;
+        /** A hand-over's run deletes the receipt row too, as its first commit would have. */
+        endedReason: ALOutboundEndedReason;
         /**
          * The retained `admit-message` row the end could not complete, which its run completes first (D751); `null`
          * when the end held none.

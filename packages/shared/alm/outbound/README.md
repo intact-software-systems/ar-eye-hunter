@@ -1588,8 +1588,8 @@ Every receipt this owner tracks ends in a settlement (S3b, D63, D64):
 holds for the message, and from then on the sender writes no frame and starts no timer for it. Terminal are the receipt
 completed, `receipt-exhausted` (its budget spent or a hop's refusal), a server's `timed-out` receipt, a first-hop wait
 spent, `repair-exhausted`, a re-plan refused for good and a relay's rejection. An empty frozen audience's completion at
-admission is a receipt completed, and a cancel and a hand-over end their message with the same commit (below). The
-commit is
+admission is a receipt completed, and a cancel and a hand-over end their message with the same commit (below), to
+which a hand-over adds the receipt row's delete. The commit is
 [`toALOutboundMessageEndBundle`](./message-end/to-al-outbound-message-end-bundle.ts): the repair-attempt row's delete,
 the first-hop wait's delete, the completion of both timers, and the marker: the field `ended` of the stored message row
 every message already has (`<namespace>:sent:<msgId>`), so the marker costs no read and one more row write per message
@@ -1597,7 +1597,7 @@ end. The receipt row stays, whatever the carrier, as the final snapshot of who c
 version, so a commit decided on an older read conflicts and decides again on a read that holds the marker. A message
 this sender only dequeues from an external source holds no row and gets no marker; every later path stops at the missing
 row. Every end through this bundle keeps the receipt row as a final snapshot to its expiry -- an open receipt the end
-settles, a complete one and a server's terminal one (a terminal NACK's removal still deletes it) -- since
+settles, a complete one and a server's terminal one (a terminal NACK's removal and a hand-over still delete it) -- since
 a gap request, own-word or relayed, is admitted by reading its revealing message's row, so the renewals of a gap
 revealed by a message whose receipt ended still reach the origin. The marker lives as long as the row, past the
 deadline, so a terminal fact is stated once per message across reloads. Afterwards a dispatch of the message answers
@@ -1681,8 +1681,8 @@ reader treats a complete receipt as ended.
 **The hand-over (D66).** `ALOutboundMessageRuntime.handOver(msgId)` gives a message to another carrier's
 owner: it remembers the id for `DEFAULT_AL_REPOSITORY_TTL_MS` (60 minutes, D181), aborts the live attempt (which still settles its own
 `attempt-settled`), completes every later effect of the message silently, ends the message on the carrier it
-leaves (below) and states no settlement -- the message is not cancelled. RTC reaches it through
-`WebRtcRxStreamerService.handOverOutbox` -> `WebRtcOverlayMulticastManager.handOver`. Only the page's live
+leaves and deletes its receipt row there (below), and states no settlement -- the message is not cancelled.
+RTC reaches it through `WebRtcRxStreamerService.handOverOutbox` -> `WebRtcOverlayMulticastManager.handOver`. Only the page's live
 handles hand over: a durable RTC message resumed after a reload is not handed over (D64), and one that handed
 over before the reload stays ended on RTC, so the reloaded page sends nothing for it there.
 
@@ -1703,11 +1703,15 @@ which orders the page's own ends of one message:
   stored row, the sender's and the message's versions, the open receipt and the first-hop wait without planning
   the message
   ([`readALOutboundMessageEnd`](./message-end/read-al-outbound-message-end.ts)) and commits
-  `toALOutboundMessageEndBundle`. It states nothing. A lane that stores no row for the message, or whose row is
-  already ended, writes nothing, so a carrier that never admitted the message pays one read and a memory lane
-  pays no IndexedDB operation.
+  `toALOutboundMessageEndBundle`. It states nothing. A cancel keeps the receipt row, as every end does; a
+  hand-over also deletes it in the same commit, since the carrier the message moves to owns its receipt now,
+  and deletes it alone from a row an earlier end marked (an RTC receipt exhausted before its fallback hands the
+  message to WS). A lane that stores no row for the message, or a cancel whose row is already ended, writes
+  nothing, so a carrier that never admitted the message pays one read and a memory lane pays no IndexedDB
+  operation.
 - **A conflict is retained as work.** The commit is fenced on the sender's and the message's versions. When it conflicts the lane
-  writes one `end-message` work row, unfenced and write-if-absent (one id per message), due before every other
+  writes one `end-message` work row, unfenced and write-if-absent (one id per message), naming whether the end
+  was a cancel or a hand-over (`endedReason`), due before every other
   row and expiring with the message, and announces it as a commit's rows are. The runtime that owns the
   session's work runs it: the same end, and a conflict there is redelivered by the queue. A tab that does not
   own the work therefore needs no claim of its own. The page's memory guard never completes an `end-message`

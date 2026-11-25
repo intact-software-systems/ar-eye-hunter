@@ -69,7 +69,7 @@ import { ALOutboundLaneMessageEnd } from '../message-end/al-outbound-lane-messag
 import type { ALOutboundCanonicalHandoff } from './al-outbound-canonical-handoff.ts';
 import { ALOutboundDequeuedAdmission } from './al-outbound-dequeued-admission.ts';
 import type { ALOutboundReceiptWorkEvidence } from './al-outbound-receipt-observation.ts';
-import type { ALOutboundSendControls } from './al-outbound-send-controls.ts';
+import type { ALOutboundEndedReason, ALOutboundSendControls } from './al-outbound-send-controls.ts';
 import { computeALOutboundSettledCommittedRows } from './compute-al-outbound-settled-committed-rows.ts';
 import { recordALOutboundDequeueTiming } from './record-al-outbound-dequeue-timing.ts';
 import { runALOutboundDequeueClaimGroup } from './run-al-outbound-dequeue-claim-group.ts';
@@ -350,8 +350,8 @@ export class ALOutboundStoreLane<TPrepared> {
      * Ends a cancelled or handed-over message in this lane's store and states nothing. An end whose commit conflicts
      * is retained as work, announced as a commit's rows are; a store that cannot end it records that failure.
      */
-    async endMessage(msgId: string): Promise<void> {
-        await this.readiness.runStoreOperation(() => this.messageEnd.end(msgId), () => undefined);
+    async endMessage(msgId: string, endedReason: ALOutboundEndedReason): Promise<void> {
+        await this.readiness.runStoreOperation(() => this.messageEnd.end(msgId, endedReason), () => undefined);
     }
 
     /** What the admission states, as this lane's store holds it: nothing on the memory pair survives the document. */

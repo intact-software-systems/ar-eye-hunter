@@ -8,6 +8,7 @@ import {
 } from 'vitest';
 
 import { computeALOutboundWorkEntry } from '@shared/alm/outbound/al-outbound-work-entry.ts';
+import type { ALOutboundLaneMessageEnd } from '@shared/alm/outbound/message-end/al-outbound-lane-message-end.ts';
 import { toALOutboundEndMessageEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
@@ -142,7 +143,7 @@ describe('an end-message row that cannot run harms nothing', () => {
         await page.stores.workQueue.enqueueIfAbsent(computeALOutboundWorkEntry({
             namespace: NAMESPACE,
             effectId: toALOutboundEndMessageEffectId(message.id.msgId),
-            payload: { kind: 'end-message', msgId: message.id.msgId, admissionEffectId: null },
+            payload: { kind: 'end-message', msgId: message.id.msgId, endedReason: 'cancelled', admissionEffectId: null },
             observedAtMs: Date.now() - 2,
             retryAtMs: 0,
             expireAtTimestamp: Date.now() - 1
@@ -155,16 +156,25 @@ describe('an end-message row that cannot run harms nothing', () => {
         expect(page.sent).toEqual([message.id.msgId]);
     });
 
-    it('rejects a row whose identity names another message, and the message still sends', async () => {
+    it.each([
+        { corruption: 'whose identity names another message', rowMsgId: 'another-message', endedReason: 'cancelled' },
+        { corruption: 'whose ended reason is neither a cancel nor a hand-over', rowMsgId: undefined, endedReason: 'expired' }
+    ])('rejects a row $corruption, and the message still sends', async ({ rowMsgId, endedReason }) => {
         const page = openPageOwner(`end-undecodable-${crypto.randomUUID()}`, NAMESPACE);
         const claims = holdOutboundClaims(page.stores);
         const message = createOutboundMessage('durable-end-undecodable');
         await page.runtime.enqueueIfAbsent(message);
-        const effectId = toALOutboundEndMessageEffectId('another-message');
+        const effectMsgId = rowMsgId ?? message.id.msgId;
         await page.stores.workQueue.enqueueIfAbsent(computeALOutboundWorkEntry({
             namespace: NAMESPACE,
-            effectId,
-            payload: { kind: 'end-message', msgId: message.id.msgId, admissionEffectId: null },
+            effectId: toALOutboundEndMessageEffectId(effectMsgId),
+            // A corrupt row: the decoder, not the type, refuses it.
+            payload: {
+                kind: 'end-message',
+                msgId: message.id.msgId,
+                endedReason,
+                admissionEffectId: null
+            } as ALOutboundLaneMessageEnd.EndMessage,
             observedAtMs: Date.now(),
             retryAtMs: 0,
             expireAtTimestamp: Date.now() + 30_000
@@ -174,7 +184,7 @@ describe('an end-message row that cannot run harms nothing', () => {
         await drainOutboundWorkDueNow(page.runtime, page.stores);
 
         expect(await readSendGuardKind(page.stores, message)).toBe('current');
-        expect((await readEndMessageRow(page.stores, 'another-message'))?.status).toBe(EntityStatus.NON_RETRYABLE);
+        expect((await readEndMessageRow(page.stores, effectMsgId))?.status).toBe(EntityStatus.NON_RETRYABLE);
         expect(page.sent).toEqual([message.id.msgId]);
     });
 });

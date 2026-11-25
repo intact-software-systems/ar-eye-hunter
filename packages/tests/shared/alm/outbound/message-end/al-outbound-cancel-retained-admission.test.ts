@@ -11,6 +11,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
 import {
+    conflictOutboundCommitAttempts,
     createOutboundMessage,
     drainOutboundWorkDueNow,
     holdOutboundClaims,
@@ -42,7 +43,7 @@ async function openPageWithRetainedAdmission(name: string): Promise<{ page: Page
     const page = openPageOwner(`${name}-${crypto.randomUUID()}`, NAMESPACE);
     const claims = holdOutboundClaims(page.stores);
     const message = createOutboundMessage(`durable-${name}`);
-    vi.spyOn(page.stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
+    conflictOutboundCommitAttempts(page.stores.admissionStore);
     expect((await page.runtime.enqueueIfAbsent(message)).verdict.kind).toBe('pending');
     expect(await page.stores.admissionStore.hasSentMessageAdmission(message.id.msgId)).toBe(false);
     await claims.release(page.runtime);
@@ -93,7 +94,7 @@ describe('a cancel or hand-over of a message whose admission was retained (D751)
         const owner = createSessionOutboundTestRuntime(session, createTestDurableWorkOwnership(true));
         const other = createSessionOutboundTestRuntime(session, createTestDurableWorkOwnership(false));
         const message = createOutboundMessage('durable-other-tab-retained');
-        vi.spyOn(other.stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
+        conflictOutboundCommitAttempts(other.stores.admissionStore);
         expect((await other.runtime.enqueueIfAbsent(message)).verdict.kind).toBe('pending');
 
         other.runtime.cancel(message.id.msgId, message.id.traceId);
@@ -109,7 +110,7 @@ describe('a cancel or hand-over of a message whose admission was retained (D751)
         const page = openPageOwner(`held-end-${crypto.randomUUID()}`, NAMESPACE);
         holdOutboundClaims(page.stores);
         const message = createOutboundMessage('durable-held-end');
-        vi.spyOn(page.stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
+        conflictOutboundCommitAttempts(page.stores.admissionStore);
         expect((await page.runtime.enqueueIfAbsent(message)).verdict.kind).toBe('pending');
 
         page.runtime.cancel(message.id.msgId, message.id.traceId);
@@ -129,10 +130,10 @@ describe('a cancel or hand-over of a message whose admission was retained (D751)
         // The cancelling tab runs none of the session's work: its claims stay held.
         holdOutboundClaims(tab.stores);
         const message = createOutboundMessage('durable-replay-conflicted');
-        vi.spyOn(tab.stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
+        conflictOutboundCommitAttempts(tab.stores.admissionStore);
         expect((await tab.runtime.enqueueIfAbsent(message)).verdict.kind).toBe('pending');
         const owner = openPageOwner(dbName, NAMESPACE);
-        vi.spyOn(owner.stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
+        conflictOutboundCommitAttempts(owner.stores.admissionStore);
         await owner.runtime.ready();
         await runOutboundWorkTask(owner.runtime);
         expect(await owner.stores.admissionStore.hasSentMessageAdmission(message.id.msgId)).toBe(false);
@@ -160,7 +161,7 @@ describe('a retained admission in a memory lane is ended in that lane', () => {
         const tab = createSessionOutboundTestRuntime(session, createTestDurableWorkOwnership(false));
         const checkpointClaims = holdOutboundClaims(tab.checkpointStores);
         const message = createOutboundMessage('checkpoint-retained');
-        vi.spyOn(tab.checkpointStores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
+        conflictOutboundCommitAttempts(tab.checkpointStores.admissionStore);
         expect((await tab.runtime.enqueueIfAbsent(message)).verdict.kind).toBe('pending');
         session.durableObserver.reset();
 
@@ -180,7 +181,7 @@ describe('a retained admission in a memory lane is ended in that lane', () => {
         await page.runtime.ready();
         const volatileClaims = holdOutboundClaims(page.volatileStores);
         const message = createOutboundMessage('volatile-retained');
-        vi.spyOn(page.volatileStores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
+        conflictOutboundCommitAttempts(page.volatileStores.admissionStore);
         expect((await page.runtime.enqueueIfAbsent(message)).verdict.kind).toBe('pending');
         page.observer.reset();
 

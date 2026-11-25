@@ -17,6 +17,7 @@ import {
     toALOutboundWorkKey
 } from '../al-outbound-work-entry.ts';
 import type { ALOutboundComputedDto } from '../compute-al-outbound-dispatch.ts';
+import type { ALOutboundEndedReason } from '../lane/al-outbound-send-controls.ts';
 import { toALOutboundEndMessageEffectId } from '../to-al-outbound-effect-id.ts';
 import { writeALOutboundMessageEnd, type ALOutboundMessageEndOutcome } from './write-al-outbound-message-end.ts';
 
@@ -97,18 +98,18 @@ export class ALOutboundLaneMessageEnd<TPrepared> {
     }
 
     /** Ends the message, and announces the work rows the end wrote: a retained end, or a completed admission. */
-    async end(msgId: string): Promise<void> {
+    async end(msgId: string, endedReason: ALOutboundEndedReason): Promise<void> {
         const written = await this.writes.admit(msgId, async () => {
             const retained = this.retainedAdmissions.readAt(msgId, this.input.nowMs());
             const admissionEnd = await this.completeAdmission(retained?.effectId ?? null);
             if (admissionEnd.kind !== 'held') {
                 this.retainedAdmissions.delete(msgId);
             }
-            const outcome = await writeALOutboundMessageEnd(this.input.admissionStore, msgId);
+            const outcome = await writeALOutboundMessageEnd(this.input.admissionStore, msgId, endedReason);
             const owed = toOwedEnd(outcome, admissionEnd, retained);
             if (owed !== undefined) {
                 return await this.retainEnd(
-                    { kind: 'end-message', msgId, admissionEffectId: owed.admissionEffectId },
+                    { kind: 'end-message', msgId, endedReason, admissionEffectId: owed.admissionEffectId },
                     owed.expiresAtMs
                 );
             }
@@ -129,7 +130,7 @@ export class ALOutboundLaneMessageEnd<TPrepared> {
             if (admissionEnd.kind === 'held') {
                 return { status: 'not-ready', readyAtMs: admissionEnd.readyAtMs };
             }
-            const outcome = await writeALOutboundMessageEnd(this.input.admissionStore, end.msgId);
+            const outcome = await writeALOutboundMessageEnd(this.input.admissionStore, end.msgId, end.endedReason);
             if (outcome.kind === 'conflict') {
                 throw new RetryableConflictError('Outbound message end commit conflict');
             }

@@ -24,6 +24,7 @@ import {
     enqueueAndDrain
 } from '../../multicast/rtc-origin-overlay-fixture.ts';
 import {
+    conflictOutboundCommitAttempts,
     createDefaultOutboundTestRuntime,
     createIndexedDbOutboundTestStores,
     createOutboundMessage,
@@ -177,8 +178,8 @@ describe('a cancelled durable message stays cancelled across a reload', () => {
         const page = openPageOwner(`ended-cancel-retained-${crypto.randomUUID()}`, OUTBOUND_TEST_SEND_PLANNER);
         const claims = holdOutboundClaims(page.stores);
         const message = createOutboundMessage('durable-cancel-retained');
-        // A conflicting first commit retains the admission as `admit-message` work: no stored message row exists yet.
-        vi.spyOn(page.stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
+        // Every attempt of the admission's commit conflicts, so it is retained as `admit-message` work: no stored row exists yet.
+        conflictOutboundCommitAttempts(page.stores.admissionStore);
         expect((await page.runtime.enqueueIfAbsent(message)).verdict.kind).toBe('pending');
         expect(await page.stores.admissionStore.hasSentMessageAdmission(message.id.msgId)).toBe(false);
 
