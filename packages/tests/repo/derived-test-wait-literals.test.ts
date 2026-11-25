@@ -270,7 +270,10 @@ describe('literal waits on the derived tests\' paths', () => {
 
     // Every request ran under the request context's own 30 s default, which no derivation counted; the review then
     // found a request through a fetch, a context under another name, an alias, a cast, a quoted method or an undefined
-    // timeout passing, and a quoted `timeout` key refused.
+    // timeout passing, and a quoted `timeout` key refused, and after that a zero or `void 0` timeout and a cast
+    // `undefined` passing. The guard is a tripwire for the forms a harness author plausibly writes, not a proof: it
+    // does not catch a destructured method, an alias chain or reassignment, `.call`, `fetch.bind(...)`, `window.fetch`
+    // or `const send = fetch`.
     it('finds a request through a request context that names no timeout of its own', () => {
         expect(findUntimedRequests([
             'const response = await request.get(url);',
@@ -288,7 +291,10 @@ describe('literal waits on the derived tests\' paths', () => {
             'await (request as APIRequestContext).get(url);',
             'await request[\'get\'](url);',
             'await request.get(url, { timeout: undefined });',
-            'await request.get(url, { \'timeout\': CONTROL_REQUEST_TIMEOUT_MS });'
+            'await request.get(url, { \'timeout\': CONTROL_REQUEST_TIMEOUT_MS });',
+            'await request.get(url, { timeout: 0 });',
+            'await request.get(url, { timeout: void 0 });',
+            'await request.get(url, { timeout: undefined as unknown as number });'
         ].join('\n'))).toEqual([
             '1: const response = await request.get(url);',
             '2: await this.#request.post(url, { data: { commandId } });',
@@ -299,13 +305,16 @@ describe('literal waits on the derived tests\' paths', () => {
             '12: await r.get(url);',
             '13: await (request as APIRequestContext).get(url);',
             '14: await request[\'get\'](url);',
-            '15: await request.get(url, { timeout: undefined });'
+            '15: await request.get(url, { timeout: undefined });',
+            '17: await request.get(url, { timeout: 0 });',
+            '18: await request.get(url, { timeout: void 0 });',
+            '19: await request.get(url, { timeout: undefined as unknown as number });'
         ]);
     });
 
     // An injected fetch is timed where it is injected: a derived spec hands an operator `toControlTimedFetch(fetch)`,
     // never the bare global, and the operator's own `dependencies.fetch(...)` calls are then the injector's to time.
-    it('finds a fetch with no signal of its own and the bare global fetch injected as a dependency', () => {
+    it('finds a fetch with no signal of its own and the bare global fetch injected or passed as a dependency', () => {
         expect(findUntimedRequests([
             'await fetch(url);',
             'await globalThis.fetch(url, { method: \'POST\' });',
@@ -314,13 +323,17 @@ describe('literal waits on the derived tests\' paths', () => {
             'await run.dependencies.fetch(url, { method: \'GET\' });',
             'run(options, { fetch, log });',
             'run(options, { fetch: globalThis.fetch });',
-            'run(options, { fetch: toControlTimedFetch(fetch) });'
+            'run(options, { fetch: toControlTimedFetch(fetch) });',
+            'await releaseControlResults(input, fetch);',
+            'await releaseControlResults(input, globalThis.fetch);'
         ].join('\n'))).toEqual([
             '1: await fetch(url);',
             '2: await globalThis.fetch(url, { method: \'POST\' });',
             '3: await fetch(url, { signal: undefined });',
             '6: run(options, { fetch, log });',
-            '7: run(options, { fetch: globalThis.fetch });'
+            '7: run(options, { fetch: globalThis.fetch });',
+            '9: await releaseControlResults(input, fetch);',
+            '10: await releaseControlResults(input, globalThis.fetch);'
         ]);
     });
 
