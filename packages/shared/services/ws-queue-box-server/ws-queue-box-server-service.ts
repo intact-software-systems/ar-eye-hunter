@@ -540,7 +540,7 @@ export class WsQueueBoxServerService {
         message: ALMessage,
         request: ALOutboundRepairRequest
     ): Promise<ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage> | undefined> {
-        const view = await this.readRepairView(message, request);
+        const view = await this.writeRepairView(message, request);
         if (view?.head.phase === 'open' && view.tally.complete) {
             await this.receipts.endReceipt(view.head.opening);
             return undefined;
@@ -558,14 +558,17 @@ export class WsQueueBoxServerService {
         return this.outboundPlanning.planRepairMessage(message, { ...narrowed, admittedAudience: audience.eligible });
     }
 
-    /** The record's view of the receipt a receipt retry serves; undefined for any other repair. */
-    private async readRepairView(
+    /**
+     * The record's view of the receipt a receipt retry serves, once the record healed what a server publication's
+     * record lost; undefined for any other repair.
+     */
+    private async writeRepairView(
         message: ALMessage,
         request: ALOutboundRepairRequest
     ): Promise<ALReceiptRecord.View | undefined> {
-        const readsRecord = request.trigger === 'ack-timeout' &&
+        const servesReceipt = request.trigger === 'ack-timeout' &&
             isALLogicalReceiptMode(this.outboundPlanning.resolvePolicy(message).effective.ack.algo);
-        return readsRecord ? await this.receipts.readRepairView(message) : undefined;
+        return servesReceipt ? await this.receipts.writeRepairView(message) : undefined;
     }
 
     /** The work runtime's authority becomes the WS planner's phase-specific request. */

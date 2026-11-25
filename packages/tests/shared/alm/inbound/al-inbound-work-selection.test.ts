@@ -23,7 +23,6 @@ import {
     AL_INBOUND_WORK_LEASE_MS,
     computeALInboundWorkEntry,
     decodeALInboundWorkEntry,
-    resolveALInboundWorkDueAtMs,
     type ALPersistedInboundEffect
 } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import type { ALInboundRotationPage } from '@shared/alm/inbound/lane/al-inbound-rotation-page.ts';
@@ -41,6 +40,7 @@ import {
     type ALWorkReadinessProbeDiagnostics
 } from '@shared/alm/work/al-work-handler.ts';
 import type { ALWorkClaim, ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
+import { resolveALWorkEntryDueAtMs } from '@shared/alm/work/read-al-work-ready-at.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import {
@@ -396,7 +396,7 @@ describe('ALInboundWorkSelector completed rotations', () => {
         expect(await selector.readNextReadyAtMs(fixture.port, Date.now())).toBeUndefined();
 
         const oldestFirst = fixture.effects
-            .map((effect) => ({ effectId: effect.effectId, dueAtMs: resolveALInboundWorkDueAtMs(effect.entry) }))
+            .map((effect) => ({ effectId: effect.effectId, dueAtMs: resolveALWorkEntryDueAtMs(effect.entry) }))
             .sort((left, right) => left.dueAtMs - right.dueAtMs);
         expect(new Set(oldestFirst.map((held) => held.dueAtMs)).size, 'every row has its own due time').toBe(heldRows);
         expect(rotations.map((rotation) => rotation.deferred)).toEqual([oldestFirst.slice(0, AL_INBOUND_WORK_PAGE_SIZE)]);
@@ -641,7 +641,7 @@ describe('ALInboundWorkSelector eligibility reads', () => {
 
         expect(selection.claims).toEqual([]);
         expect(fixture.selector.getUnreservedDue()).toEqual([
-            { effectId: deferred!.effectId, dueAtMs: resolveALInboundWorkDueAtMs(deferred!.entry) }
+            { effectId: deferred!.effectId, dueAtMs: resolveALWorkEntryDueAtMs(deferred!.entry) }
         ]);
     });
 });

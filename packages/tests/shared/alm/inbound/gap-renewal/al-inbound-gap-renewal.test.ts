@@ -19,9 +19,10 @@ import type {
 import { toALInboundMessageKey, toALInboundMessageReference } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
 import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
-import { resolveALInboundWorkDueAtMs, type ALPersistedInboundEffect } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import type { ALPersistedInboundEffect } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { ALInboundGapRenewal } from '@shared/alm/inbound/gap-renewal/al-inbound-gap-renewal.ts';
 import type { ALInboundReceiptProofs } from '@shared/alm/inbound/receipt-proof/sign-al-inbound-receipt-controls.ts';
+import { resolveALWorkEntryDueAtMs } from '@shared/alm/work/read-al-work-ready-at.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { RtcReceiptProofSigner } from '@shared/multicast/receipt-proof/rtc-receipt-proof-signer.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
@@ -1098,7 +1099,7 @@ async function readPendingInboundWork(fixture: InboundTestRuntime): Promise<read
 async function readRenewalDueTimes(fixture: InboundTestRuntime): Promise<readonly number[]> {
     return (await readInboundTestWorkRows(fixture.stores))
         .filter((effect) => effect.payload.kind === 'renew-gap')
-        .map((effect) => resolveALInboundWorkDueAtMs(effect.entry));
+        .map((effect) => resolveALWorkEntryDueAtMs(effect.entry));
 }
 
 async function readRenewalExpiries(fixture: InboundTestRuntime): Promise<readonly number[]> {
@@ -1130,7 +1131,7 @@ async function readRenewalTimer(fixture: InboundTestRuntime, requestNumber: numb
         effect.payload.kind === 'renew-gap' && effect.payload.requestNumber === requestNumber
     );
     return timer?.payload.kind === 'renew-gap'
-        ? { toPeerId: timer.payload.toPeerId, dueAtMs: resolveALInboundWorkDueAtMs(timer.entry) }
+        ? { toPeerId: timer.payload.toPeerId, dueAtMs: resolveALWorkEntryDueAtMs(timer.entry) }
         : undefined;
 }
 

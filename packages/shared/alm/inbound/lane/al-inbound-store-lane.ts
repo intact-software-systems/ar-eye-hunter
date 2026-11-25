@@ -27,6 +27,7 @@ import {
     type ALWorkQueuePort
 } from '../../work/al-work-queue-port.ts';
 import { AL_WORK_UNDESCRIBED_COMMIT } from '../../work/al-work-readiness-memory.ts';
+import { resolveALWorkEntryDueAtMs } from '../../work/read-al-work-ready-at.ts';
 import type { ALInboundGapRenewalEffect, ALInboundPlanner } from '../al-inbound-admission-store.ts';
 import { ALInboundAdmittedDelivery } from '../al-inbound-admitted-delivery.ts';
 import { toALInboundLocalDeliveryEffectIds } from '../al-inbound-effect-intent.ts';
@@ -44,7 +45,6 @@ import {
     AL_INBOUND_WORK_LEASE_MS,
     assertALInboundWorkCarrier,
     decodeALInboundWorkEntry,
-    resolveALInboundWorkDueAtMs,
     toALInboundWorkKey,
     toALInboundWorkType,
     type ALPersistedInboundEffect
@@ -473,7 +473,9 @@ export class ALInboundStoreLane {
 
     private recordClaimSettled(settled: ALInboundClaimSettlement): void {
         try {
-            const dueAtMs = resolveALInboundWorkDueAtMs(settled.claim.entry);
+            // A reservation clears the retry stamp, so a claimed row that had been retried answers from when it was
+            // written; the wait a batch reports precisely is the one read before the reservation.
+            const dueAtMs = resolveALWorkEntryDueAtMs(settled.claim.entry);
             this.dependencies.diagnostics?.({
                 kind: 'claim-settled',
                 lane: this.input.lane,
@@ -694,7 +696,7 @@ function createALInboundLaneControlAdmission(
 }
 
 function isALInboundRetryDueAfter(entry: ResourceEntry, nowMs: number): boolean {
-    return entry.status === EntityStatus.RETRY && resolveALInboundWorkDueAtMs(entry) > nowMs;
+    return entry.status === EntityStatus.RETRY && resolveALWorkEntryDueAtMs(entry) > nowMs;
 }
 
 function toALInboundRetryDueAt(entry: ResourceEntry, nowMs: number): ResourceEntry {

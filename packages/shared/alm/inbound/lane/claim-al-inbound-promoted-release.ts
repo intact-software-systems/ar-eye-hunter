@@ -2,9 +2,10 @@ import { NonRetryableException } from '../../../queuebox/resource-inbox/create-d
 import type { ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
 import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
 import type { ALWorkClaim, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
+import { resolveALWorkEntryReadyAt } from '../../work/read-al-work-ready-at.ts';
 import type { ALInboundAdmittedDelivery } from '../al-inbound-admitted-delivery.ts';
 import { toALInboundReleaseEffectId } from '../al-inbound-effect-intent.ts';
-import { decodeALInboundWorkEntry, resolveALInboundWorkReadyAt, toALInboundWorkKey } from '../al-inbound-work-entry.ts';
+import { AL_INBOUND_WORK_LEASE_MS, decodeALInboundWorkEntry, toALInboundWorkKey } from '../al-inbound-work-entry.ts';
 
 export namespace ClaimALInboundPromotedRelease {
     export interface Input {
@@ -52,7 +53,10 @@ async function isALInboundReleaseClaimableNow(
     entry: ResourceEntry,
     input: ClaimALInboundPromotedRelease.Input
 ): Promise<boolean> {
-    if (entry.audit.expiryTs.epochMilliseconds <= input.nowMs || resolveALInboundWorkReadyAt(entry) > input.nowMs) {
+    if (
+        entry.audit.expiryTs.epochMilliseconds <= input.nowMs ||
+        resolveALWorkEntryReadyAt(entry, AL_INBOUND_WORK_LEASE_MS) > input.nowMs
+    ) {
         return false;
     }
     try {

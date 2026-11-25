@@ -128,7 +128,7 @@ export function toALInboundWorkEntryWithPayload(
         namespace,
         effectId: write.effectId,
         payload,
-        observedAtMs: resolveALInboundWorkDueAtMs(write.entry),
+        observedAtMs: resolveALWorkEntryDueAtMs(write.entry),
         expireAtTimestamp: write.expireAtTimestamp,
         carrier: write.carrier,
         signsForRecipient: false
@@ -168,9 +168,11 @@ export function decodeALInboundWorkEntry(entry: ResourceEntry, namespace: string
             payload,
             entry,
             attempts: entry.dequeueAudit.attempts,
-            retryAtMs: resolveALInboundWorkDueAtMs(entry),
+            retryAtMs: resolveALWorkEntryDueAtMs(entry),
             expireAtTimestamp: Number(entry.audit.expiryTs.epochMilliseconds),
-            leaseUntilMs: entry.status === EntityStatus.RESERVED ? resolveALInboundWorkReadyAt(entry) : undefined,
+            leaseUntilMs: entry.status === EntityStatus.RESERVED
+                ? resolveALWorkEntryReadyAt(entry, AL_INBOUND_WORK_LEASE_MS)
+                : undefined,
             carrier
         };
     }
@@ -195,20 +197,6 @@ function decodeALInboundWorkCarrier(entry: ResourceEntry, namespace: string): AL
         throw new TypeError('Inbound work type names no carrier of its admission scope');
     }
     return carrier;
-}
-
-/** When the row is next claimable: the lease end while it is reserved, and its own due time otherwise. */
-export function resolveALInboundWorkReadyAt(entry: ResourceEntry): number {
-    return resolveALWorkEntryReadyAt(entry, AL_INBOUND_WORK_LEASE_MS);
-}
-
-/**
- * When the row became due, whatever status it now carries -- the wait half of the pair above, never
- * a lease. A reservation clears the retry stamp, so a claimed row that had been retried answers from
- * when it was written; the wait a batch reports precisely is the one read before the reservation.
- */
-export function resolveALInboundWorkDueAtMs(entry: ResourceEntry): number {
-    return resolveALWorkEntryDueAtMs(entry);
 }
 
 function decodeInboundDurableEffect(value: PersistedALValue): ALInboundDurableEffect {

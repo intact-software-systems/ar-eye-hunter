@@ -26,7 +26,7 @@ import {
 import type { ALReceiptRecord } from './al-receipt-record.ts';
 
 export const AL_RECEIPT_RECORD_WORK_LEASE_MS = 10_000;
-export const AL_RECEIPT_RECORD_WORK_PAGE_SIZE = 16;
+const AL_RECEIPT_RECORD_WORK_PAGE_SIZE = 16;
 /** The least a deadline row waits when the queue called it due and the record did not. */
 export const AL_RECEIPT_RECORD_NOT_DUE_WAIT_MS = 250;
 

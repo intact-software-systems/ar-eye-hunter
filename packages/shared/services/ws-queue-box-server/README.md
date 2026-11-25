@@ -202,7 +202,7 @@ Follow these production paths directly when reviewing a change:
    An outside-audience NACK reaches the outbound owner first; `writeOutsideAudienceNack`
    then counts it `outside` when the row names that recipient outside.
    Its retry: the row's `ack-timeout` window → service `planRepairMessage` →
-   `readRepairView` → aggregation `readRepairView`. A missing head opens from the
+   `writeRepairView` → aggregation `writeRepairView`. A missing head opens from the
    pending row (`openOwnRepairView` → `readOwnPendingReceipt` → `openOwnReceipt`,
    as at the dequeue; on `conflict` the winning head is read); an open head first
    counts `outside` each recipient the row places outside and the record does not

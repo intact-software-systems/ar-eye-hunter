@@ -590,16 +590,8 @@ describe('full-stack private upstream receipt capture', () => {
         { failedGuards: Array.from({ length: 7 }, () => 'deadline-expired') },
         { failedGuards: ['already-confirmed'] },
         { failedGuards: ['already-outside'] },
-        {
-            failedGuards: [
-                'origin-addressee-mismatch',
-                'sender-recipient-mismatch',
-                'outside-frozen-audience',
-                'deadline-expired',
-                'never-sent',
-                'aggregate-absent'
-            ]
-        },
+        { failedGuards: ['sender-recipient-mismatch'] },
+        { failedGuards: ['origin-addressee-mismatch', 'outside-frozen-audience', 'deadline-expired', 'never-sent'] },
         { failedGuards: ['origin-addressee-mismatch', 'deadline-expired'], deadlineAtMs: undefined },
         { validationAtEpochMs: undefined },
         { validationAtEpochMs: -1 },
@@ -614,21 +606,10 @@ describe('full-stack private upstream receipt capture', () => {
         expect(toSafeApiWsReceiptObservation({ ...ACK_REJECTION, ...corruption })).toBeUndefined();
     });
 
-    it.each([
-        { failedGuards: ['never-sent'] },
-        {
-            failedGuards: [
-                'origin-addressee-mismatch',
-                'sender-recipient-mismatch',
-                'outside-frozen-audience',
-                'already-confirmed',
-                'already-outside',
-                'deadline-expired',
-                'never-sent'
-            ]
-        }
-    ])('keeps an aggregate ACK rejection whose every guard is a known aggregate guard %j', (guards) => {
-        const rejection = { ...ACK_REJECTION, ...guards };
+    // Pins the projection's list naming a guard no refusal emits, or its maximum falling short of the three a refusal
+    // that read a head can state.
+    it('keeps an aggregate ACK rejection that names every guard of a head it read', () => {
+        const rejection = { ...ACK_REJECTION, failedGuards: ['outside-frozen-audience', 'deadline-expired', 'never-sent'] };
         expect(toSafeApiWsReceiptObservation(rejection)).toEqual(rejection);
     });
 

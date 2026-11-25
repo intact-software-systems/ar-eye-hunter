@@ -1257,8 +1257,9 @@ owner. The ACK records are these:
 - `socket-decision`: the socket's admission decision for the ACK control.
 - `ack-rejection`: an ACK refused by its owner, `inbound-authority` (currentness) or
   `receipt-aggregation` (the receipt hook's guards: `aggregate-absent`,
-  `origin-addressee-mismatch`, `sender-recipient-mismatch`, `outside-frozen-audience`,
-  `deadline-expired`, `never-sent`); a refusal that read no head states no deadline.
+  `origin-addressee-mismatch`, `outside-frozen-audience`, `deadline-expired`,
+  `never-sent`); a refusal that read a head states at most its three guards, and
+  one that read no head states one guard and no deadline.
 - `ack-count`: what one count read. `outcome` is `rejected`, `conflict` (the record
   refused the write, and the origin's retry recovers it), `partial` or `complete`
   (an open view whose tally is complete); `after` is the view a counted ACK returned,

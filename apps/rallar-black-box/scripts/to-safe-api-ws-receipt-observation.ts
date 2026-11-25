@@ -44,11 +44,13 @@ const ACK_REJECTION_FIELDS: readonly ReceiptReturnField[] = [
 const AGGREGATE_ACK_GUARDS = [
     'aggregate-absent',
     'origin-addressee-mismatch',
-    'sender-recipient-mismatch',
     'outside-frozen-audience',
     'deadline-expired',
     'never-sent'
 ];
+
+/** A refusal that read a head states at most its three guards; one that read none states one guard. */
+const MAX_ACK_REJECTION_GUARDS = 3;
 
 /** A refusal that read no head states no deadline: an absent or ended receipt, or an ACK addressed elsewhere. */
 const HEADLESS_ACK_GUARDS = ['aggregate-absent', 'origin-addressee-mismatch'];
@@ -329,7 +331,7 @@ function decodeSafeApiAggregateAckRejection(record: unknown): ApiJsonObject | un
 }
 
 function isSafeAckRejectionGuards(value: unknown, allowed: readonly string[]): value is readonly string[] {
-    return Array.isArray(value) && value.length > 0 && value.length <= 5 &&
+    return Array.isArray(value) && value.length > 0 && value.length <= MAX_ACK_REJECTION_GUARDS &&
         new Set(value).size === value.length && value.every((guard) => isAllowedApiTimingString(guard, allowed));
 }
 

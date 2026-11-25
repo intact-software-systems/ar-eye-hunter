@@ -140,7 +140,6 @@ export namespace WsQueueBoxServerReceiptAggregation {
     export type AckGuard =
         | 'aggregate-absent'
         | 'origin-addressee-mismatch'
-        | 'sender-recipient-mismatch'
         | 'outside-frozen-audience'
         | 'deadline-expired'
         | 'never-sent';
@@ -321,7 +320,7 @@ export class WsQueueBoxServerReceiptAggregation {
      * row's window a server publication heals what its record lost: a head its dequeue did not open opens from its
      * pending row, and an open head counts the outside recipients that row proves.
      */
-    async readRepairView(message: ALMessage): Promise<ALReceiptRecord.View | undefined> {
+    async writeRepairView(message: ALMessage): Promise<ALReceiptRecord.View | undefined> {
         const ref = { originPeerId: message.id.senderId, msgId: message.id.msgId };
         const read = await this.#record.read(ref);
         if (ref.originPeerId !== this.#dependencies.serverPeerId) {

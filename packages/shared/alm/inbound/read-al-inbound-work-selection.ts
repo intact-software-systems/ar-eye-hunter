@@ -10,6 +10,7 @@ import {
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALWorkReadySelection } from '../work/al-work-handler.ts';
 import type { ALWorkClaim, ALWorkQueuePort } from '../work/al-work-queue-port.ts';
+import { resolveALWorkEntryDueAtMs, resolveALWorkEntryReadyAt } from '../work/read-al-work-ready-at.ts';
 import type { ALInboundDurableEffect } from './al-inbound-admission-store.ts';
 import type {
     ALInboundAdmittedDelivery,
@@ -17,9 +18,8 @@ import type {
 } from './al-inbound-admitted-delivery.ts';
 import type { ALInboundDeferredEffect } from './al-inbound-runtime-diagnostics.ts';
 import {
+    AL_INBOUND_WORK_LEASE_MS,
     decodeALInboundWorkEntry,
-    resolveALInboundWorkDueAtMs,
-    resolveALInboundWorkReadyAt,
     type ALPersistedInboundEffect
 } from './al-inbound-work-entry.ts';
 import { ALInboundRotationPage, type ALInboundWorkScan } from './lane/al-inbound-rotation-page.ts';
@@ -254,7 +254,7 @@ function computeALInboundPageEligibilityWithRow(
     if (row.kind === 'not-due') {
         return { ...page, readyAtMs: resolveALInboundScannedReadyAtMs(entry, row.readyAtMs, page.readyAtMs) };
     }
-    const due = { effectId: row.effect.effectId, dueAtMs: resolveALInboundWorkDueAtMs(entry) };
+    const due = { effectId: row.effect.effectId, dueAtMs: resolveALWorkEntryDueAtMs(entry) };
     if (row.kind === 'deferred') {
         return { ...page, deferred: [...page.deferred, due] };
     }
@@ -280,7 +280,7 @@ async function readALInboundRowEligibility(
     input: ALInboundWorkSelectionReadInput,
     delivery: ALInboundAdmittedDelivery
 ): Promise<ALInboundRowEligibility> {
-    const readyAt = resolveALInboundWorkReadyAt(entry);
+    const readyAt = resolveALWorkEntryReadyAt(entry, AL_INBOUND_WORK_LEASE_MS);
     if (readyAt > input.nowMs) {
         return { kind: 'not-due', readyAtMs: readyAt };
     }
@@ -490,7 +490,7 @@ function toUnreservedClaimableDue(
 function computeEarliestALInboundDueAtMs(entries: readonly ResourceEntry[]): number | undefined {
     let earliest: number | undefined;
     for (const entry of entries) {
-        const dueAtMs = resolveALInboundWorkDueAtMs(entry);
+        const dueAtMs = resolveALWorkEntryDueAtMs(entry);
         earliest = earliest === undefined ? dueAtMs : Math.min(earliest, dueAtMs);
     }
     return earliest;
