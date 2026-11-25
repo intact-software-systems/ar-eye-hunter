@@ -22,7 +22,7 @@ import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
-import { advanceUntil } from '../advance-until.ts';
+import { advanceUntil, drainUntil } from '../advance-until.ts';
 import { room, RtcEndpointFixture } from '../rtc-endpoint-fixture.ts';
 
 import {
@@ -40,8 +40,8 @@ import {
 type LeaderAudience = 'room multicast' | 'room broadcast' | 'room except' | 'principal' | 'list';
 
 const LEADER_FLOORS = { minSnapshotVersion: 4, rosterVersion: 4 } as const;
-/** A `command` send's first ACK timeout: a receipt confirmed before it needed no retransmission. */
-const LEADER_ACK_TIMEOUT_MS = 2_000;
+/** Real event-loop turns for a five-hop send whose every hop signs, hashes, and verifies with WebCrypto on a loaded runner. */
+const SIGNED_HOPS_MAX_DRAIN_CYCLES = 2_000;
 
 describe('the RTC leg of a group-leader room send', () => {
     beforeEach(() => {
@@ -337,9 +337,19 @@ describe('the RTC leg of a group-leader room send', () => {
         vi.spyOn(bySession.get('director')!.peers.get('silent')!.channel, 'sendJson')
             .mockReturnValue({ status: 'sent', bufferedAmount: 0 });
 
-        const admitted = await bySession.get('origin')!.multicast.enqueueIfAbsent(message);
-        // The RTC hops sign and verify asynchronously. Drive them to the receipt before the first retry.
-        await advanceUntil(() => receipts.some(receipt => receipt.kind === 'acknowledgement' && receipt.complete), 50, (LEADER_ACK_TIMEOUT_MS / 50) - 1);
+        const origin = bySession.get('origin')!;
+        const director = bySession.get('director')!;
+
+        const admitted = await origin.multicast.enqueueIfAbsent(message);
+        // Every hop signs and verifies with real WebCrypto, which fake time does not wait for. The clock stands still
+        // until the receipt and each hop's ACK have arrived, so no ACK timeout can retransmit before them.
+        await drainUntil(
+            () =>
+                receipts.some((receipt) => receipt.kind === 'acknowledgement' && receipt.complete) &&
+                readAckSenders(director, message).length >= 2 &&
+                readAckSenders(origin, message).length >= 1,
+            SIGNED_HOPS_MAX_DRAIN_CYCLES
+        );
 
         expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
         expect(receipts.filter((receipt) => receipt.kind === 'acknowledgement' && receipt.complete)).toEqual([
@@ -350,8 +360,8 @@ describe('the RTC leg of a group-leader room send', () => {
                 complete: true
             })
         ]);
-        expect(readAckSenders(bySession.get('director')!, message)).toEqual(['leaf-a', 'leaf-b']);
-        expect(readAckSenders(bySession.get('origin')!, message)).toEqual(['relay']);
+        expect(readAckSenders(director, message)).toEqual(['leaf-a', 'leaf-b']);
+        expect(readAckSenders(origin, message)).toEqual(['relay']);
     });
 
     it.each([{ readyPeerIds: [] }, { readyPeerIds: ['r'] }])(
