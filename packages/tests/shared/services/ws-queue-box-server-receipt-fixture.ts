@@ -17,8 +17,9 @@ import { createInMemoryALAdmissionState, InMemoryAdmissionBackend, type ALAdmiss
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
 import { createDefaultInMemoryALInboundRuntimeStores, createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALInboundRuntimeStores, ALVolatileInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { toALReceiptRecordNamespace } from '@shared/alm/receipt-record/al-receipt-record-keys.ts';
+import { toALReceiptRecordNamespace, type ALReceiptRecordRef } from '@shared/alm/receipt-record/al-receipt-record-keys.ts';
 import type { ALReceiptRecordStores } from '@shared/alm/receipt-record/al-receipt-record-stores.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
@@ -117,6 +118,13 @@ export interface SentReceipt {
 }
 
 /** One refusal, count or receipt the receipt aggregation recorded: `kind`, then the count's outcome or the receipt's phase and outbox verdict. */
+export interface RowEndedPoll {
+    readonly store: Pick<ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>, 'readStoredMessage'>;
+    readonly msgId: string;
+    readonly advance: () => Promise<void>;
+    readonly timeoutMs: number;
+}
+
 export type ReceiptAggregationVerdict =
     | 'ack-rejection'
     | `ack-count:${Extract<WsQueueBoxServerReceiptObservation, { readonly kind: 'ack-count'; }>['outcome']}`
@@ -124,6 +132,8 @@ export type ReceiptAggregationVerdict =
 
 /** The peer id of the server the receipt suites build; a session's ACK names it. */
 export const RECEIPT_SERVER_PEER_ID = 'server';
+/** Vitest's own poll timeout, enough for memory stores, which settle on microtasks. */
+export const MEMORY_POLL_TIMEOUT_MS = 1_000;
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
 const SCOPE = { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId };
@@ -403,6 +413,23 @@ export function sessionAck(message: ALMessage, recipient: string, status: ALAckS
             observedAtEpochMs: Date.now()
         })
     );
+}
+
+/** The receipt record's reference of a publication of the server's own. */
+export function toOwnReceiptRef(message: ALMessage): ALReceiptRecordRef {
+    return { originPeerId: RECEIPT_SERVER_PEER_ID, msgId: message.id.msgId };
+}
+
+/**
+ * Polls until the server's stored row of `msgId` is ended: its terminal receipt, or its own budget, ended it.
+ * `advance` runs before each read: the work that may end the row, or nothing when the instances run it themselves.
+ */
+export async function pollRowEnded(poll: RowEndedPoll): Promise<void> {
+    const { store, msgId, advance, timeoutMs } = poll;
+    await expect.poll(async () => {
+        await advance();
+        return (await store.readStoredMessage(msgId))?.ended;
+    }, { timeout: timeoutMs }).toBe(true);
 }
 
 /** Every receipt the sockets were sent for the message `msgId`, in the order each socket was sent them. */

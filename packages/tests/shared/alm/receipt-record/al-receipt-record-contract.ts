@@ -650,13 +650,14 @@ export function describeALReceiptRecordContract(
             expect((await f.b.record.read(f.ref)).right?.head).toEqual({ phase: 'open', opening: f.opening });
         });
 
-        // D708: a recipient its owner never sent cannot have received the message. Its own ACK is refused and writes
-        // nothing; the owner's `not-sent` word counts it outside, so the set completes on the recipients that got it.
+        // D708: a recipient its owner never sent cannot have received the message. Its own ACK, counted on another
+        // instance than the one that opened the head, is refused and writes nothing; the owner's `not-sent` word counts
+        // it outside, so the set completes on the recipients that got it.
         it('counts only the owner\'s word for a recipient it never sent', async () => {
             const f = await fixture();
             await f.a.record.open({ ...f.opening, neverSentRecipientPeerIds: ['r2'] });
 
-            const forged = await confirm(f, f.a, 'r2');
+            const forged = await confirm(f, f.b, 'r2');
             expect(forged.left?.kind).toBe('invalid-confirmation');
             expect(forged.left?.kind === 'invalid-confirmation' ? forged.left.issues.map(({ code }) => code) : [])
                 .toEqual(['never-sent']);

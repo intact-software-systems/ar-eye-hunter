@@ -11,6 +11,7 @@ import {
 import { ALReceiptRecord } from '@shared/alm/receipt-record/al-receipt-record.ts';
 import { AL_RECEIPT_RECORD_WINDOW_MS } from '@shared/alm/receipt-record/validate-al-receipt-record-opening.ts';
 
+import { createWorkerHold, type WorkerHold } from '../../../shared/alm/create-worker-hold.ts';
 import {
     describeALReceiptRecordContract,
     type ALReceiptRecordContractInstance,
@@ -27,7 +28,6 @@ import {
     readPostgresRunRowCounts
 } from './test-support/delete-postgres-run-rows.ts';
 import { holdPostgresCommit } from './test-support/hold-postgres-commit.ts';
-import { createWorkerHold, type WorkerHold } from './test-support/postgres-worker-hold.ts';
 import { racePastHeldCommit } from './test-support/race-past-held-commit.ts';
 import {
     recordPostgresStatements,

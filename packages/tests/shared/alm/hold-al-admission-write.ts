@@ -1,7 +1,7 @@
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
 
-import type { WorkerHold } from '../../shared-server/integration/postgres/test-support/postgres-worker-hold.ts';
 import { createDelegatingALAdmissionWorkBackend } from './create-delegating-al-admission-work-backend.ts';
+import type { WorkerHold } from './create-worker-hold.ts';
 
 /**
  * Holds the next `write` before it enters the backend: it arrives at the hold and starts only once the hold is

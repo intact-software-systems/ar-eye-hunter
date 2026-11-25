@@ -4,6 +4,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALReceiptRecordRef } from '@shared/alm/receipt-record/al-receipt-record-keys.ts';
 import type { WsQueueBoxServerReceiptOutboxVerdict } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 
+import { createWorkerHold, type WorkerHold } from '../../../shared/alm/create-worker-hold.ts';
 import type { SimulatedWebSocket } from '../../../shared/native-websocket-fixture.ts';
 import {
     connect,
@@ -35,7 +36,6 @@ import {
     type StartAcceptance
 } from './test-support/create-receipt-cluster.ts';
 import { holdPostgresAfterCommit, holdPostgresCommit } from './test-support/hold-postgres-commit.ts';
-import { createWorkerHold, type WorkerHold } from './test-support/postgres-worker-hold.ts';
 import { awaitHoldArrival, racePastHeldCommit } from './test-support/race-past-held-commit.ts';
 import { toRecordedPostgresStatementShape, type PostgresStatementLog } from './test-support/record-postgres-statements.ts';
 

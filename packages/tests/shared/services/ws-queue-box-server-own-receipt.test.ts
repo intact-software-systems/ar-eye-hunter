@@ -14,7 +14,7 @@ import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@share
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
-import { toALReceiptRecordConfirmationPrefix, type ALReceiptRecordRef } from '@shared/alm/receipt-record/al-receipt-record-keys.ts';
+import { toALReceiptRecordConfirmationPrefix } from '@shared/alm/receipt-record/al-receipt-record-keys.ts';
 import { decodeALReceiptRecordConfirmation, type ALReceiptRecordConfirmation } from '@shared/alm/receipt-record/al-receipt-record-rows.ts';
 import { toALReceiptRecordWorkKey } from '@shared/alm/receipt-record/al-receipt-record-work-entry.ts';
 import { ALReceiptRecord } from '@shared/alm/receipt-record/al-receipt-record.ts';
@@ -27,9 +27,9 @@ import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-
 import type { WsQueueBoxServerReceiptObservation } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 
-import { createWorkerHold, type WorkerHold } from '../../shared-server/integration/postgres/test-support/postgres-worker-hold.ts';
 import { createGroupDeltaStateSync } from '../../shared-server/rallar-system/state-sync/create-state-sync-effect-fixture.ts';
 import { createDelegatingALAdmissionWorkBackend } from '../alm/create-delegating-al-admission-work-backend.ts';
+import { createWorkerHold, type WorkerHold } from '../alm/create-worker-hold.ts';
 import { holdALAdmissionWrite } from '../alm/hold-al-admission-write.ts';
 import type { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 import {
@@ -42,13 +42,17 @@ import {
     createReceiptOutbox,
     createReceiptServer,
     installClock,
+    MEMORY_POLL_TIMEOUT_MS,
+    pollRowEnded,
     readReceiptAggregationVerdicts,
     RECEIPT_SERVER_PEER_ID,
     serverNotification,
     sessionAck,
+    toOwnReceiptRef,
     type ClusterInstance,
     type ReceiptClock,
-    type ReceiptServerInstance
+    type ReceiptServerInstance,
+    type RowEndedPoll
 } from './ws-queue-box-server-receipt-fixture.ts';
 
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
@@ -101,7 +105,7 @@ interface FailedHookPublication {
 }
 
 describe('the receipt of a server publication is counted in the receipt record', () => {
-    it('1 opens one head at the first dequeue, expecting the judged audience, and answers nobody', async () => {
+    it('opens one head at the first dequeue, expecting the judged audience, and answers nobody', async () => {
         // Pins a head opened from the policy an enqueued publication committed, which expects nobody, so it opened
         // nothing; and an `admitted` receipt written for a publication nobody awaits.
         const clock = installClock();
@@ -109,14 +113,14 @@ describe('the receipt of a server publication is counted in the receipt record',
 
         const delta = await publishDelta(server, clock, ['a', 'b']);
 
-        expect((await server.record.read(ownRef(delta))).right?.head).toMatchObject({
+        expect((await server.record.read(toOwnReceiptRef(delta))).right?.head).toMatchObject({
             phase: 'open',
             opening: { originPeerId: RECEIPT_SERVER_PEER_ID, expectedRecipientPeerIds: ['a', 'b'], snapshotVersion: 0 }
         });
         expect(server.observations.filter((observation) => observation.kind === 'receipt-outbox')).toEqual([]);
     });
 
-    it('2 counts a session\'s ACK in the record and leaves the server\'s row and the publication\'s version as they were', async () => {
+    it('counts a session\'s ACK in the record and leaves the server\'s row and the publication\'s version as they were', async () => {
         // Pins every ACK of a server publication being one fenced commit on the publication's version row.
         const clock = installClock();
         const server = await createOwnReceiptServer(clock, defaultOptions(['a', 'b']));
@@ -128,12 +132,12 @@ describe('the receipt of a server publication is counted in the receipt record',
         await server.service.acceptIncomingMessage(sessionAck(delta, 'a', 'delivered'), 'a');
 
         const after = await server.store.readReceiptAdmission(read);
-        expect((await server.record.read(ownRef(delta))).right?.tally.confirmedRecipientPeerIds).toEqual(['a']);
+        expect((await server.record.read(toOwnReceiptRef(delta))).right?.tally.confirmedRecipientPeerIds).toEqual(['a']);
         expect(after.messageVersion?.version).toBe(before.messageVersion?.version);
         expect(after.pending?.ackedPeerIds).toEqual([]);
     });
 
-    it('3 completes: the head ends complete, the row ends, and the admin read names every recipient confirmed', async () => {
+    it('completes: the head ends complete, the row ends, and the admin read names every recipient confirmed', async () => {
         // Pins a complete record that never reached the server's row, which then retried and exhausted the receipt.
         const clock = installClock();
         const server = await createOwnReceiptServer(clock, defaultOptions(['a', 'b']));
@@ -141,9 +145,9 @@ describe('the receipt of a server publication is counted in the receipt record',
 
         await server.service.acceptIncomingMessage(sessionAck(delta, 'a', 'delivered'), 'a');
         await server.service.acceptIncomingMessage(sessionAck(delta, 'b', 'delivered'), 'b');
-        await pollRowEnded(server, clock, delta);
+        await pollRowEnded(toRowEndedPoll(server, clock, delta));
 
-        expect((await server.record.read(ownRef(delta))).right?.head.phase).toBe('complete');
+        expect((await server.record.read(toOwnReceiptRef(delta))).right?.head.phase).toBe('complete');
         expect(server.recorder.readDiagnostics().messages).toEqual([expect.objectContaining({
             confirmedPeerIds: ['a', 'b'],
             unconfirmedPeerIds: [],
@@ -152,7 +156,7 @@ describe('the receipt of a server publication is counted in the receipt record',
         })]);
     });
 
-    it('4 ends timed-out half a window before the row\'s budget, and the row states no exhaustion', async () => {
+    it('ends timed-out half a window before the row\'s budget, and the row states no exhaustion', async () => {
         // Pins the row's own budget ending the message from a row that counted nobody, naming `a` unconfirmed.
         const clock = installClock();
         const server = await createOwnReceiptServer(clock, defaultOptions(['a', 'b']));
@@ -169,7 +173,7 @@ describe('the receipt of a server publication is counted in the receipt record',
 
         expect((await server.store.readStoredMessage(delta.id.msgId))?.ended).toBe(true);
 
-        expect((await server.record.read(ownRef(delta))).right?.head).toMatchObject({ phase: 'timed-out', confirmedRecipientPeerIds: ['a'] });
+        expect((await server.record.read(toOwnReceiptRef(delta))).right?.head).toMatchObject({ phase: 'timed-out', confirmedRecipientPeerIds: ['a'] });
         expect(server.recorder.readDiagnostics().messages).toEqual([expect.objectContaining({
             confirmedPeerIds: ['a'],
             unconfirmedPeerIds: ['b'],
@@ -180,7 +184,7 @@ describe('the receipt of a server publication is counted in the receipt record',
         expect(copiesOf(server.sockets, delta)).toEqual([1, 4]);
     });
 
-    it('5 counts an ACK that overtakes the head, and the head that opens completes on it', async () => {
+    it('counts an ACK that overtakes the head, and the head that opens completes on it', async () => {
         // Pins an ACK that reached the server before its publication's head was open being lost, so a receipt every
         // recipient confirmed waited for its deadline.
         const clock = installClock();
@@ -193,7 +197,7 @@ describe('the receipt of a server publication is counted in the receipt record',
             await hold.arrived;
             await server.service.acceptIncomingMessage(sessionAck(delta, 'a', 'delivered'), 'a');
             await server.service.acceptIncomingMessage(sessionAck(delta, 'b', 'delivered'), 'b');
-            expect((await server.record.read(ownRef(delta))).left).toEqual({ kind: 'head-absent' });
+            expect((await server.record.read(toOwnReceiptRef(delta))).left).toEqual({ kind: 'head-absent' });
             hold.release();
             await dequeued;
         }
@@ -201,11 +205,11 @@ describe('the receipt of a server publication is counted in the receipt record',
             hold.release();
         }
 
-        await pollRowEnded(server, clock, delta);
-        expect((await server.record.read(ownRef(delta))).right?.head).toMatchObject({ phase: 'complete', confirmedRecipientPeerIds: ['a', 'b'] });
+        await pollRowEnded(toRowEndedPoll(server, clock, delta));
+        expect((await server.record.read(toOwnReceiptRef(delta))).right?.head).toMatchObject({ phase: 'complete', confirmedRecipientPeerIds: ['a', 'b'] });
     });
 
-    it('6 writes nothing for an ACK ahead of its head from a session the pending row does not expect', async () => {
+    it('writes nothing for an ACK ahead of its head from a session the pending row does not expect', async () => {
         // Pins an ACK no pending row proves leaving a stray confirmation: a session confirming a publication it was
         // never sent.
         const clock = installClock();
@@ -228,7 +232,7 @@ describe('the receipt of a server publication is counted in the receipt record',
         }
     });
 
-    it('7 records a session a retry drops as outside; one dropped at the first dequeue writes nothing', async () => {
+    it('records a session a retry drops as outside; one dropped at the first dequeue writes nothing', async () => {
         // Pins a retry's drop being written where the record never reads it, and a first dequeue's drop, which
         // precedes the pending row that would prove it, being counted ahead as a row no head ever reads.
         const clock = installClock();
@@ -241,14 +245,14 @@ describe('the receipt of a server publication is counted in the receipt record',
             return copiesOf(server.sockets, delta);
         }).toEqual([1, 1, 0]);
         expect(await readConfirmations(server, delta)).toEqual([]);
-        expect((await server.record.read(ownRef(delta))).right?.head.opening.expectedRecipientPeerIds).toEqual(['a', 'b']);
+        expect((await server.record.read(toOwnReceiptRef(delta))).right?.head.opening.expectedRecipientPeerIds).toEqual(['a', 'b']);
         await server.service.acceptIncomingMessage(sessionAck(delta, 'a', 'delivered'), 'a');
 
         left.add('b');
         clock.nowMs += ACK_TIMEOUT_MS + 1;
-        await pollRowEnded(server, clock, delta);
+        await pollRowEnded(toRowEndedPoll(server, clock, delta));
 
-        expect((await server.record.read(ownRef(delta))).right?.head).toMatchObject({
+        expect((await server.record.read(toOwnReceiptRef(delta))).right?.head).toMatchObject({
             phase: 'complete',
             confirmedRecipientPeerIds: ['a'],
             outsideAudienceRecipientPeerIds: ['b']
@@ -256,7 +260,7 @@ describe('the receipt of a server publication is counted in the receipt record',
         expect(copiesOf(server.sockets, delta)).toEqual([1, 1, 0]);
     });
 
-    it('8 leaves a hop-receipted server message to the outbound owner', async () => {
+    it('leaves a hop-receipted server message to the outbound owner', async () => {
         // Pins an ACK of a receipt no record counts being written into the record, where nothing reads it.
         const clock = installClock();
         const server = await createOwnReceiptServer(clock, defaultOptions(['a', 'b']));
@@ -270,12 +274,12 @@ describe('the receipt of a server publication is counted in the receipt record',
         await server.service.acceptIncomingMessage(sessionAck(notification, 'a', 'delivered'), 'a');
         await server.service.acceptIncomingMessage(sessionAck(notification, 'b', 'delivered'), 'b');
 
-        await pollRowEnded(server, clock, notification);
-        expect((await server.record.read(ownRef(notification))).left).toEqual({ kind: 'head-absent' });
+        await pollRowEnded(toRowEndedPoll(server, clock, notification));
+        expect((await server.record.read(toOwnReceiptRef(notification))).left).toEqual({ kind: 'head-absent' });
         expect(await readConfirmations(server, notification)).toEqual([]);
     });
 
-    it('9 publishes the publication when the record cannot be written at the dequeue, and the failure propagates', async () => {
+    it('publishes the publication when the record cannot be written at the dequeue, and the failure propagates', async () => {
         // Pins a failed `open` stopping the dequeue hook: a cluster's copies all go out inside the hook, so the
         // publication went unsent. The failure propagates, so the attempt is dequeued again, and its retry opens the head.
         const clock = installClock();
@@ -283,17 +287,17 @@ describe('the receipt of a server publication is counted in the receipt record',
 
         expect(failing.armed).toBe(false);
         expect(copiesOf(cluster.sockets, delta)).toEqual([1, 1]);
-        expect(await cluster.store.readPendingAck(ownRef(delta))).toMatchObject({ expectedPeerIds: ['a', 'b'] });
-        expect((await cluster.record.read(ownRef(delta))).left).toEqual({ kind: 'head-absent' });
+        expect(await cluster.store.readPendingAck(toOwnReceiptRef(delta))).toMatchObject({ expectedPeerIds: ['a', 'b'] });
+        expect((await cluster.record.read(toOwnReceiptRef(delta))).left).toEqual({ kind: 'head-absent' });
         await expect.poll(async () => {
             clock.nowMs += 5;
             await cluster.instance.engine.executeOnce();
-            return (await cluster.record.read(ownRef(delta))).right?.head.phase;
+            return (await cluster.record.read(toOwnReceiptRef(delta))).right?.head.phase;
         }).toBe('open');
         expect((await readOutboxRow(cluster.outbox))?.dequeueAudit.attempts).toBe(2);
     });
 
-    it('9b a dequeue retried after a failed hook sends every copy again', async () => {
+    it('a dequeue retried after a failed hook sends every copy again', async () => {
         // Pins what a propagated record failure costs: the retry dispatches the row again, so each session holds the
         // copy of each attempt.
         const clock = installClock();
@@ -306,7 +310,7 @@ describe('the receipt of a server publication is counted in the receipt record',
         }).toEqual([2, 2]);
     });
 
-    it('10 a row dequeued again changes no head', async () => {
+    it('a row dequeued again changes no head', async () => {
         // Pins a second dequeue of one row opening its head again, moving its deadline and its deadline row.
         const clock = installClock();
         const failing = { armed: false };
@@ -333,20 +337,20 @@ describe('the receipt of a server publication is counted in the receipt record',
             await cluster.instance.engine.executeOnce();
             return failing.armed;
         }).toBe(false);
-        expect((await cluster.record.read(ownRef(delta))).right?.head.opening.deadlineAtMs).toBe(firstDequeueAtMs + HEAD_LIFETIME_MS);
+        expect((await cluster.record.read(toOwnReceiptRef(delta))).right?.head.opening.deadlineAtMs).toBe(firstDequeueAtMs + HEAD_LIFETIME_MS);
         await expect.poll(async () => {
             clock.nowMs += 5;
             await cluster.instance.engine.executeOnce();
             return copiesOf(cluster.sockets, delta);
         }).toEqual([1, 1]);
 
-        expect((await cluster.store.readPendingAck(ownRef(delta)))?.deadlineAtMs).toBeGreaterThan(firstDequeueAtMs + ACK_TIMEOUT_MS);
-        expect((await cluster.record.read(ownRef(delta))).right?.head).toMatchObject({
+        expect((await cluster.store.readPendingAck(toOwnReceiptRef(delta)))?.deadlineAtMs).toBeGreaterThan(firstDequeueAtMs + ACK_TIMEOUT_MS);
+        expect((await cluster.record.read(toOwnReceiptRef(delta))).right?.head).toMatchObject({
             phase: 'open',
             opening: { deadlineAtMs: firstDequeueAtMs + HEAD_LIFETIME_MS }
         });
         const deadlineRow = await cluster.recordBackend.workQueue.getItem(
-            toALReceiptRecordWorkKey(cluster.recordNamespace, 'deadline', ownRef(delta))
+            toALReceiptRecordWorkKey(cluster.recordNamespace, 'deadline', toOwnReceiptRef(delta))
         );
         expect(deadlineRow?.dequeueAudit.nextTs?.epochMilliseconds).toBe(firstDequeueAtMs + HEAD_LIFETIME_MS);
     });
@@ -359,7 +363,7 @@ describe('the receipt of a server publication is counted in the receipt record',
                 (delta: ALMessage) => sessionAck(delta, 'b', 'subtree-complete-not-subscribed')
             ]]
         ] as const
-    )('11 completes a server publication a recipient answers outside its audience: %s', async (_reason, frames) => {
+    )('completes a server publication a recipient answers outside its audience: %s', async (_reason, frames) => {
         // Pins a recipient outside the audience keeping the receipt open until its deadline: the server's row moves
         // it outside, and the record, which decides when the receipt ends, never heard. The frames are what a
         // recipient's inbound runtime sends for each reason: a `before-entry` NACK alone, or a `not-subscribed` NACK
@@ -373,15 +377,15 @@ describe('the receipt of a server publication is counted in the receipt record',
             await server.service.acceptIncomingMessage(frame(delta), 'b');
         }
 
-        await pollRowEnded(server, clock, delta);
-        expect((await server.record.read(ownRef(delta))).right?.head).toMatchObject({
+        await pollRowEnded(toRowEndedPoll(server, clock, delta));
+        expect((await server.record.read(toOwnReceiptRef(delta))).right?.head).toMatchObject({
             phase: 'complete',
             confirmedRecipientPeerIds: ['a'],
             outsideAudienceRecipientPeerIds: ['b']
         });
     });
 
-    it('12 opens at the first window a head its dequeue failed to open, and resends only to the unconfirmed', async () => {
+    it('opens at the first window a head its dequeue failed to open, and resends only to the unconfirmed', async () => {
         // Pins a record store that failed at the dequeue leaving the publication with no head, its ACKs counted ahead
         // and never read, and the retry resending to every recipient. Every attempt of the dequeue fails while armed;
         // each is dispatched again, so each session holds one copy per attempt.
@@ -395,14 +399,14 @@ describe('the receipt of a server publication is counted in the receipt record',
 
         await runRowWindow(server, clock, delta);
 
-        expect((await server.record.read(ownRef(delta))).right).toMatchObject({
+        expect((await server.record.read(toOwnReceiptRef(delta))).right).toMatchObject({
             head: { phase: 'open' },
             tally: { confirmedRecipientPeerIds: ['a', 'b'] }
         });
         expect(copiesOf(server.sockets, delta)).toEqual([sent, sent, sent + 1]);
     });
 
-    it('13 ends complete at the first window when every recipient was confirmed ahead, and resends nothing', async () => {
+    it('ends complete at the first window when every recipient was confirmed ahead, and resends nothing', async () => {
         // Pins a head the window opened complete being left open to its deadline while the row resent to everyone.
         const clock = installClock();
         const failing = { armed: false };
@@ -412,15 +416,15 @@ describe('the receipt of a server publication is counted in the receipt record',
             await server.service.acceptIncomingMessage(sessionAck(delta, sessionId, 'delivered'), sessionId);
         }
         const sent = countCopies(getSessionSocket(server, 'a'), delta.id.msgId);
-        const attempts = (await server.store.readReceiptState(ownRef(delta)))?.attempts;
+        const attempts = (await server.store.readReceiptState(toOwnReceiptRef(delta)))?.attempts;
         if (attempts === undefined) {
             throw new Error('The server has no receipt row for the publication');
         }
 
         await runRowWindow(server, clock, delta);
 
-        expect((await server.store.readReceiptState(ownRef(delta)))?.attempts).toBe(attempts + 1);
-        expect((await server.record.read(ownRef(delta))).right?.head).toMatchObject({
+        expect((await server.store.readReceiptState(toOwnReceiptRef(delta)))?.attempts).toBe(attempts + 1);
+        expect((await server.record.read(toOwnReceiptRef(delta))).right?.head).toMatchObject({
             phase: 'complete',
             confirmedRecipientPeerIds: ['a', 'b', 'c']
         });
@@ -439,19 +443,19 @@ describe('the receipt of a server publication is counted in the receipt record',
         failing.armed = true;
         await settleDueWork(server, clock);
         failing.armed = false;
-        expect((await server.record.read(ownRef(notification))).left).toEqual({ kind: 'head-absent' });
+        expect((await server.record.read(toOwnReceiptRef(notification))).left).toEqual({ kind: 'head-absent' });
         await runRowWindow(server, clock, notification);
         expect((await server.store.readStoredMessage(notification.id.msgId))?.ended).toBe(true);
-        expect((await server.store.readReceiptState(ownRef(notification)))?.ackedPeerIds).toEqual([]);
+        expect((await server.store.readReceiptState(toOwnReceiptRef(notification)))?.ackedPeerIds).toEqual([]);
 
         await server.service.acceptIncomingMessage(sessionAck(notification, 'a', 'delivered'), 'a');
 
         expect(await readConfirmations(server, notification)).toEqual([]);
         expect(readReceiptAggregationVerdicts(server.observations, notification.id.msgId)).toEqual([]);
-        expect((await server.record.read(ownRef(notification))).left).toEqual({ kind: 'head-absent' });
+        expect((await server.record.read(toOwnReceiptRef(notification))).left).toEqual({ kind: 'head-absent' });
     });
 
-    it('14 keeps the per-ACK count for a publication whose opening the record refuses', async () => {
+    it('keeps the per-ACK count for a publication whose opening the record refuses', async () => {
         // Pins the ACKs of a publication with no head, and none possible, being dropped: the row would resend to every
         // recipient and keep a stray confirmation row per ACK.
         const clock = installClock();
@@ -461,17 +465,17 @@ describe('the receipt of a server publication is counted in the receipt record',
         await server.service.enqueueOutboxIfAbsent(notification, audience(undefined));
         await expect.poll(async () => {
             await server.engine.executeOnce();
-            return (await server.store.readPendingAck(ownRef(notification)))?.expectedPeerIds.length;
+            return (await server.store.readPendingAck(toOwnReceiptRef(notification)))?.expectedPeerIds.length;
         }).toBe(sessions.length);
 
         await server.service.acceptIncomingMessage(sessionAck(notification, 's0', 'delivered'), 's0');
 
-        expect((await server.record.read(ownRef(notification))).left).toEqual({ kind: 'head-absent' });
+        expect((await server.record.read(toOwnReceiptRef(notification))).left).toEqual({ kind: 'head-absent' });
         expect(await readConfirmations(server, notification)).toEqual([]);
-        expect((await server.store.readReceiptState(ownRef(notification)))?.ackedPeerIds).toEqual(['s0']);
+        expect((await server.store.readReceiptState(toOwnReceiptRef(notification)))?.ackedPeerIds).toEqual(['s0']);
     });
 
-    it('15 counts at the next window an outside-audience NACK whose record write failed, and ends complete at once', async () => {
+    it('counts at the next window an outside-audience NACK whose record write failed, and ends complete at once', async () => {
         // Pins the record's outside confirmation of an admitted NACK being one-shot: a write that failed after the
         // server's row admitted the NACK was never tried again, so the receipt waited for its deadline.
         const clock = installClock();
@@ -484,11 +488,11 @@ describe('the receipt of a server publication is counted in the receipt record',
         await expect(server.service.acceptIncomingMessage(sessionNack(delta, 'b', 'before-entry'), 'b'))
             .rejects.toThrow('Receipt record store unavailable');
 
-        expect((await server.store.readReceiptState(ownRef(delta)))?.outsideAudiencePeerIds).toEqual(['b']);
-        expect((await server.record.read(ownRef(delta))).right?.tally.outsideAudienceRecipientPeerIds).toEqual([]);
+        expect((await server.store.readReceiptState(toOwnReceiptRef(delta)))?.outsideAudiencePeerIds).toEqual(['b']);
+        expect((await server.record.read(toOwnReceiptRef(delta))).right?.tally.outsideAudienceRecipientPeerIds).toEqual([]);
         await runRowWindow(server, clock, delta);
 
-        expect((await server.record.read(ownRef(delta))).right?.head).toMatchObject({
+        expect((await server.record.read(toOwnReceiptRef(delta))).right?.head).toMatchObject({
             phase: 'complete',
             confirmedRecipientPeerIds: ['a'],
             outsideAudienceRecipientPeerIds: ['b']
@@ -532,10 +536,6 @@ function createNoRetryNotification(clock: ReceiptClock): ALMessage {
 
 function audience(admittedAudience: readonly string[] | undefined): WsQueueBoxServerService.EnqueueAuthority {
     return { admittedAudience, admittedConnectionGenerationIds: undefined, recipientScope: undefined };
-}
-
-function ownRef(message: ALMessage): ALReceiptRecordRef {
-    return { originPeerId: RECEIPT_SERVER_PEER_ID, msgId: message.id.msgId };
 }
 
 function defaultOptions(peerIds: readonly string[]): OwnReceiptServerOptions {
@@ -583,7 +583,7 @@ function sessionNack(message: ALMessage, recipient: string, reason: ALNackReason
 
 /** The confirmations the record holds for the message, whatever its head expects. */
 async function readConfirmations(server: OwnReceiptServer, message: ALMessage): Promise<readonly ALReceiptRecordConfirmation[]> {
-    const prefix = toALReceiptRecordConfirmationPrefix(server.recordNamespace, ownRef(message));
+    const prefix = toALReceiptRecordConfirmationPrefix(server.recordNamespace, toOwnReceiptRef(message));
     const keys = server.recordBackend.peekKeys().filter((key) => key.startsWith(prefix));
     const rows = await Promise.all(keys.map((key) => server.recordBackend.read(key, decodeALReceiptRecordConfirmation)));
     return rows.filter((row) => row !== undefined);
@@ -638,7 +638,7 @@ async function publishWithFailedOpens(
         await settleDueWork(server, clock);
         const row = await readOutboxRow(server.outbox);
         const retryAtMs = row?.dequeueAudit.nextTs?.epochMilliseconds;
-        const windowAtMs = (await server.store.readPendingAck(ownRef(delta)))?.deadlineAtMs;
+        const windowAtMs = (await server.store.readPendingAck(toOwnReceiptRef(delta)))?.deadlineAtMs;
         if (
             row === undefined || !NOT_COMPLETED_RETRYABLE_STATUSES.has(row.status) || retryAtMs === undefined || retryAtMs <= clock.nowMs ||
             windowAtMs === undefined
@@ -647,7 +647,7 @@ async function publishWithFailedOpens(
         }
         if (retryAtMs > windowAtMs + 1) {
             failing.armed = false;
-            expect((await server.record.read(ownRef(delta))).left).toEqual({ kind: 'head-absent' });
+            expect((await server.record.read(toOwnReceiptRef(delta))).left).toEqual({ kind: 'head-absent' });
             return delta;
         }
         clock.nowMs = retryAtMs;
@@ -657,7 +657,7 @@ async function publishWithFailedOpens(
 
 /** Steps the clock just past the row's window, which falls before the dequeue's next retry, and runs what is due. */
 async function runRowWindow(server: OwnReceiptServer, clock: ReceiptClock, message: ALMessage): Promise<void> {
-    const windowAtMs = (await server.store.readPendingAck(ownRef(message)))?.deadlineAtMs;
+    const windowAtMs = (await server.store.readPendingAck(toOwnReceiptRef(message)))?.deadlineAtMs;
     if (windowAtMs === undefined) {
         throw new Error('The publication has no pending row');
     }
@@ -702,13 +702,17 @@ async function settleDueWork(server: OwnReceiptServer, clock: ReceiptClock): Pro
     }).toBe(false);
 }
 
-/** The server's row for the message is ended: a terminal receipt, or its own budget, ended it. */
-async function pollRowEnded(server: OwnReceiptServer, clock: ReceiptClock, message: ALMessage): Promise<void> {
-    await expect.poll(async () => {
-        clock.nowMs += 5;
-        await server.engine.executeOnce();
-        return (await server.store.readStoredMessage(message.id.msgId))?.ended;
-    }).toBe(true);
+/** Each poll steps the clock a little and runs the engine once, so the row's due work runs. */
+function toRowEndedPoll(server: OwnReceiptServer, clock: ReceiptClock, message: ALMessage): RowEndedPoll {
+    return {
+        store: server.store,
+        msgId: message.id.msgId,
+        advance: async () => {
+            clock.nowMs += 5;
+            await server.engine.executeOnce();
+        },
+        timeoutMs: MEMORY_POLL_TIMEOUT_MS
+    };
 }
 
 async function createOwnReceiptServer(receiptClock: ReceiptClock, options: OwnReceiptServerOptions): Promise<OwnReceiptServer> {

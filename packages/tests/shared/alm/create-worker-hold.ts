@@ -4,7 +4,10 @@ export interface WorkerHold {
     release(): void;
 }
 
-/** Holds one AppInbox worker after its read and compute, just before its mutation transaction opens. */
+/**
+ * A hold any worker arrives at: `arrive()` resolves `arrived` and waits until `release()`, so a test can act while the
+ * worker that arrived waits there.
+ */
 export function createWorkerHold(): WorkerHold {
     const arrived = Promise.withResolvers<void>();
     const released = Promise.withResolvers<void>();

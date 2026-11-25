@@ -21,6 +21,7 @@ import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsQueueBoxServerReceiptObservation } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 
+import type { WorkerHold } from '../../../../shared/alm/create-worker-hold.ts';
 import type { SimulatedWebSocket } from '../../../../shared/native-websocket-fixture.ts';
 import {
     createBridgeBus,
@@ -34,7 +35,6 @@ import {
     type TerminablePostgresSql
 } from '../../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 import { deletePostgresRunRows, NO_POSTGRES_RUN_ROWS, readPostgresRunRowCounts } from './delete-postgres-run-rows.ts';
-import type { WorkerHold } from './postgres-worker-hold.ts';
 import { awaitHoldArrival } from './race-past-held-commit.ts';
 import { recordPostgresStatements, type PostgresStatementLog } from './record-postgres-statements.ts';
 

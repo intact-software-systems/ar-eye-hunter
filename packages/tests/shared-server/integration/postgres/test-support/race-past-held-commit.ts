@@ -1,4 +1,4 @@
-import type { WorkerHold } from './postgres-worker-hold.ts';
+import type { WorkerHold } from '../../../../shared/alm/create-worker-hold.ts';
 
 export interface PastHeldCommitRace<Held, Raced> {
     readonly hold: WorkerHold;

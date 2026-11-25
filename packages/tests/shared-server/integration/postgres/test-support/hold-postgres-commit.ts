@@ -1,7 +1,7 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 
+import type { WorkerHold } from '../../../../shared/alm/create-worker-hold.ts';
 import { createPostgresSqlCall } from './create-postgres-sql-call.ts';
-import type { WorkerHold } from './postgres-worker-hold.ts';
 
 /**
  * Keeps every transaction open after its write has run: each `begin` runs its write, arrives at the hold and commits

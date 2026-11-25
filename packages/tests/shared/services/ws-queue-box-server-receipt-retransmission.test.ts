@@ -12,8 +12,8 @@ import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue
 import type { WsCapturedRecipientEligibilityFilters } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 
-import { createWorkerHold } from '../../shared-server/integration/postgres/test-support/postgres-worker-hold.ts';
 import { createDelegatingALAdmissionWorkBackend } from '../alm/create-delegating-al-admission-work-backend.ts';
+import { createWorkerHold } from '../alm/create-worker-hold.ts';
 import { holdALAdmissionWrite } from '../alm/hold-al-admission-write.ts';
 import {
     countCopies,
@@ -22,11 +22,14 @@ import {
     createReceiptOutbox,
     createReceiptServer,
     installClock,
+    MEMORY_POLL_TIMEOUT_MS,
+    pollRowEnded,
     readOriginTerminalReceipt,
     receiverAck,
     roomMessage,
     type ReceiptClock,
-    type ReceiptServerInstance
+    type ReceiptServerInstance,
+    type RowEndedPoll
 } from './ws-queue-box-server-receipt-fixture.ts';
 
 const MSG = 'room-message-1';
@@ -163,7 +166,7 @@ describe('a receipt retry of a client\'s outbox-fanned send', () => {
             expect(countCopies(server.sockets.r2, MSG)).toBe(copiesBeforeTheEnd);
 
             hold.release();
-            await pollRowEnded(server);
+            await pollRowEnded(toRowEndedPoll(server));
         }
         finally {
             hold.release();
@@ -207,7 +210,7 @@ describe('a receipt retry of a client\'s outbox-fanned send', () => {
             await server.engine.executeOnce();
             return readOriginTerminalReceipt([server.sockets.o], MSG)?.phase;
         }).toBe('complete');
-        await pollRowEnded(server);
+        await pollRowEnded(toRowEndedPoll(server));
         await pollRetrySettled(server);
 
         expect((await server.record.read(REF)).right?.head).toMatchObject({ confirmedRecipientPeerIds: ['r1', 'r2'] });
@@ -277,12 +280,16 @@ async function admitRoomMessage(
     }).toEqual([1, 1]);
 }
 
-/** The server's row for the message is ended: the terminal receipt reached it. */
-async function pollRowEnded(server: RetransmissionServer): Promise<void> {
-    await expect.poll(async () => {
-        await server.engine.executeOnce();
-        return (await server.store.readStoredMessage(MSG))?.ended;
-    }).toBe(true);
+/** Each poll runs the engine once, so the terminal receipt reaches the server's row. */
+function toRowEndedPoll(server: RetransmissionServer): RowEndedPoll {
+    return {
+        store: server.store,
+        msgId: MSG,
+        advance: async () => {
+            await server.engine.executeOnce();
+        },
+        timeoutMs: MEMORY_POLL_TIMEOUT_MS
+    };
 }
 
 /** Every repair hint the retry wrote has run, and every send a retransmission prepared has been made. */

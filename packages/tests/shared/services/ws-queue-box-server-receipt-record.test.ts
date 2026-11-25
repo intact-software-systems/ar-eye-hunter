@@ -47,8 +47,8 @@ import {
 } from './ws-queue-box-server-receipt-fixture.ts';
 
 import { AL_RECEIPT_RECORD_WINDOW_MS } from '@shared/alm/receipt-record/validate-al-receipt-record-opening.ts';
-import { createWorkerHold, type WorkerHold } from '../../shared-server/integration/postgres/test-support/postgres-worker-hold.ts';
 import { createDelegatingALAdmissionWorkBackend } from '../alm/create-delegating-al-admission-work-backend.ts';
+import { createWorkerHold, type WorkerHold } from '../alm/create-worker-hold.ts';
 import { holdALAdmissionWrite } from '../alm/hold-al-admission-write.ts';
 
 const MSG_ID = 'room-message-record';

@@ -204,7 +204,7 @@ export namespace WsQueueBoxServerReceiptAggregation {
         readonly originPeerId: string;
         readonly roomAudience: WsServerRoomAudience | undefined;
         readonly acceptance: ALInboundMessageRuntime.Acceptance | undefined;
-        /** Expected recipients this server never sent the message (#869, D708): `[]` at ingress. */
+        /** Expected recipients this server never sent the message (D708): `[]` at ingress. */
         readonly neverSentRecipientPeerIds: readonly string[];
     }
 }

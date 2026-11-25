@@ -37,10 +37,11 @@ import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import { WsQueueBoxServerReceiptAggregation } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts';
+import type { WsQueueBoxServerReceiptObservation } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
-import { createWorkerHold } from '../../shared-server/integration/postgres/test-support/postgres-worker-hold.ts';
+import { createWorkerHold } from '../alm/create-worker-hold.ts';
 import { holdALAdmissionWrite } from '../alm/hold-al-admission-write.ts';
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 import { settleQueueEngine } from './ws-queue-box-server-receipt-fixture.ts';
@@ -736,14 +737,26 @@ describe('WS server receipt aggregation over the receipt record', () => {
     });
 });
 
-describe('WS server receipt aggregation of recipients never sent the message (#869, D708)', () => {
-    it('refuses at the runtime check the own ACK of a recipient this server never sent the message', async () => {
+describe('WS server receipt aggregation of recipients never sent the message (D708)', () => {
+    // Pins a never-sent recipient's own ACK being counted, or refused as anything but a typed `unauthorized` whose
+    // observations name the guard and the refused count.
+    it('refuses at the runtime check the own ACK of a recipient this server never sent the message, and counts nothing', async () => {
         const fixture = createAggregation();
         await fixture.aggregation.writeAdmittedReceipt({ ...admittedRoomMessage({ kind: 'admitted' }), neverSentRecipientPeerIds: ['c'] });
+        const ack = aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c' });
+        const control = aggregateAckControl(ack);
 
-        const refused = await readRuntimeRejection(fixture, aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c' }));
+        expect(await fixture.aggregation.readRelayedAckRejection(ack, { stage: 'runtime-protocol', controlIdentity: control.id })).toEqual({
+            code: 'unauthorized',
+            message: 'AL acknowledgement comes from a recipient this server never sent the message'
+        });
+        await fixture.aggregation.acceptControlMessage(control);
 
-        expect(refused?.message).toContain('never sent the message');
+        expect(fixture.observations.filter(({ kind }) => kind === 'ack-rejection' || kind === 'ack-count')).toMatchObject([
+            { kind: 'ack-rejection', owner: 'receipt-aggregation', stage: 'runtime-protocol', failedGuards: ['never-sent'] },
+            { kind: 'ack-count', outcome: 'rejected', rejectionCode: 'unauthorized' }
+        ]);
+        expect((await fixture.record.read(RECORD_REF)).right?.tally.confirmedRecipientPeerIds).toEqual([]);
     });
 
     // The record takes any `not-sent` as the owner's word, so a recipient's own ACK must never become one.
@@ -856,6 +869,8 @@ interface AggregationFixture {
     readonly recordStores: ALReceiptRecordStores;
     /** The test's own reader of the record the aggregation counts in. */
     readonly record: ALReceiptRecord;
+    /** What the aggregation recorded through its receipt observer. */
+    readonly observations: WsQueueBoxServerReceiptObservation[];
 }
 
 interface AggregationFixtureOptions {
@@ -872,9 +887,11 @@ function createAggregation(
     const engine = new InboxOutboxEngine({ nowEpochMs: () => clock.nowMs, random: () => 0, reportTaskFailure: () => undefined });
     const enqueued: ALMessage[] = [];
     const ownerControls: ALMessage[] = [];
+    const observations: WsQueueBoxServerReceiptObservation[] = [];
     const recordStores = options.recordStores ?? createInMemoryALReceiptRecordStores('server-ws-qbox:test', () => clock.nowMs);
     const aggregation = new WsQueueBoxServerReceiptAggregation({
         serverPeerId: 'server',
+        receiptObserver: (observation) => observations.push(observation),
         clock: { nowMs: () => clock.nowMs },
         random: () => 0,
         newControlId: () => `receipt-${enqueued.length + 1}`,
@@ -896,7 +913,7 @@ function createAggregation(
     });
     onTestFinished(() => aggregation.dispose());
     const record = new ALReceiptRecord({ ...recordStores, nowMs: () => clock.nowMs });
-    return { aggregation, engine, enqueued, ownerControls, clock, recordStores, record };
+    return { aggregation, engine, enqueued, ownerControls, clock, recordStores, record, observations };
 }
 
 /** Drives the record's worker as its own tests do: `executeOnce` starts a batch it does not wait for. */

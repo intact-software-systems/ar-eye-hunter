@@ -5,17 +5,20 @@ import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgre
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
 import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
-import type { ALReceiptRecordRef } from '@shared/alm/receipt-record/al-receipt-record-keys.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 
+import { createWorkerHold, type WorkerHold } from '../../../shared/alm/create-worker-hold.ts';
 import type { SimulatedWebSocket } from '../../../shared/native-websocket-fixture.ts';
 import {
     connect,
     countCopies,
+    pollRowEnded,
     RECEIPT_SERVER_PEER_ID,
     serverNotification,
-    sessionAck
+    sessionAck,
+    toOwnReceiptRef,
+    type RowEndedPoll
 } from '../../../shared/services/ws-queue-box-server-receipt-fixture.ts';
 import {
     countTogether,
@@ -33,7 +36,6 @@ import {
     type ReceiptTrio
 } from './test-support/create-receipt-cluster.ts';
 import { holdPostgresAfterCommit, holdPostgresCommit, holdPostgresCommitUntilLost } from './test-support/hold-postgres-commit.ts';
-import { createWorkerHold, type WorkerHold } from './test-support/postgres-worker-hold.ts';
 import {
     recordPostgresStatements,
     toRecordedPostgresStatementShape,
@@ -75,13 +77,13 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL rec
         await publish(trio.a, { sent, sessions });
         await confirmTogether(sessions, sent);
 
-        await expect.poll(async () => (await cluster.reader.read(ownRef(sent))).right?.head.phase, POLL).toBe('complete');
-        await expectStoredEnd(cluster, ownRef(sent), {
+        await expect.poll(async () => (await cluster.reader.read(toOwnReceiptRef(sent))).right?.head.phase, POLL).toBe('complete');
+        await expectStoredEnd(cluster, toOwnReceiptRef(sent), {
             phase: 'complete',
             confirmedRecipientPeerIds: sessionIds,
             outsideAudienceRecipientPeerIds: []
         });
-        await pollRowEnded(readOwnReceiptStore(cluster), sent);
+        await pollRowEnded(toRowEndedPoll(readOwnReceiptStore(cluster), sent));
         expect(await readHeadCount(cluster, sent.id.msgId)).toBe(1);
     }, CASE_TIMEOUT_MS);
 
@@ -118,7 +120,7 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL rec
         // A server publication's head opens only at its dequeue, which this instance's engine runs.
         await expect.poll(async () => {
             await only.engine.executeOnce();
-            return (await cluster.reader.read(ownRef(sent))).right?.head.phase;
+            return (await cluster.reader.read(toOwnReceiptRef(sent))).right?.head.phase;
         }, POLL).toBe('open');
         // An instance's first inbound message runs the inbound work handler's one bootstrap batch (a finalization
         // sweep in its own transaction and a page read); s2's ACK spends it, as a client's admission does before its
@@ -138,7 +140,7 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL rec
             { verb: 'insert', transaction: 1 },
             { verb: 'select', transaction: null }
         ]);
-        expect((await cluster.reader.read(ownRef(sent))).right?.tally.confirmedRecipientPeerIds).toEqual(['s0', 's2']);
+        expect((await cluster.reader.read(toOwnReceiptRef(sent))).right?.tally.confirmedRecipientPeerIds).toEqual(['s0', 's2']);
     }, CASE_TIMEOUT_MS);
 
     // Pins what the dequeue of a receipted server publication adds for its receipt, so a change that adds a statement
@@ -174,7 +176,7 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL rec
         await waitForQuietStatements(outboundLog);
         const afterDispatchCommit = outboundLog.statements.slice(outboundLog.statements.findLastIndex(({ transaction }) => transaction !== null) + 1);
         opening.release();
-        await expect.poll(async () => (await cluster.reader.read(ownRef(sent))).right?.head.phase, POLL).toBe('open');
+        await expect.poll(async () => (await cluster.reader.read(toOwnReceiptRef(sent))).right?.head.phase, POLL).toBe('open');
         await waitForQuietStatements(recordLog);
 
         // The pending receipt row, on the outbound store's client.
@@ -202,11 +204,11 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL rec
         await publish(only, { sent, sessions });
 
         await confirmTogether(sessions.slice(0, 2), sent);
-        expect((await cluster.reader.read(ownRef(sent))).right?.tally.confirmedRecipientPeerIds).toEqual(['s0', 's1']);
+        expect((await cluster.reader.read(toOwnReceiptRef(sent))).right?.tally.confirmedRecipientPeerIds).toEqual(['s0', 's1']);
 
         await expect.poll(() => readCopies(sessions, sent)[2], POLL).toBe(2);
         expect(readCopies(sessions, sent)).toEqual([1, 1, 2]);
-        expect((await readOwnReceiptStore(cluster).readReceiptState(ownRef(sent)))?.attempts).toBeGreaterThanOrEqual(1);
+        expect((await readOwnReceiptStore(cluster).readReceiptState(toOwnReceiptRef(sent)))?.attempts).toBeGreaterThanOrEqual(1);
     }, CASE_TIMEOUT_MS);
 
     // Pins a receipt that dies with the instance that dequeued its publication and opened its head.
@@ -226,8 +228,12 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL rec
         c.engine.start();
         await confirmTogether(sessions, sent);
 
-        await expectStoredEnd(cluster, ownRef(sent), { phase: 'complete', confirmedRecipientPeerIds: sessionIds, outsideAudienceRecipientPeerIds: [] });
-        await pollRowEnded(readOwnReceiptStore(cluster), sent);
+        await expectStoredEnd(cluster, toOwnReceiptRef(sent), {
+            phase: 'complete',
+            confirmedRecipientPeerIds: sessionIds,
+            outsideAudienceRecipientPeerIds: []
+        });
+        await pollRowEnded(toRowEndedPoll(readOwnReceiptStore(cluster), sent));
     }, CASE_TIMEOUT_MS);
 
     // Pins a losing `end` that settles the server's row twice (the publication's version row moving twice) or surfaces
@@ -260,8 +266,12 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL rec
         ]);
 
         expect(results.map((result) => result.left)).toEqual([undefined, undefined]);
-        await expectStoredEnd(cluster, ownRef(sent), { phase: 'complete', confirmedRecipientPeerIds: sessionIds, outsideAudienceRecipientPeerIds: [] });
-        await pollRowEnded(store, sent);
+        await expectStoredEnd(cluster, toOwnReceiptRef(sent), {
+            phase: 'complete',
+            confirmedRecipientPeerIds: sessionIds,
+            outsideAudienceRecipientPeerIds: []
+        });
+        await pollRowEnded(toRowEndedPoll(store, sent));
         expect(await readPublicationVersion(store, sent) - before).toBe(1);
         expect(readCountOutcomes(cluster, sent.id.msgId)).toEqual<ReturnType<typeof readCountOutcomes>>(['partial', 'complete', 'complete']);
     }, CASE_TIMEOUT_MS);
@@ -285,18 +295,22 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL rec
 
         const release = await loseInsideHeldDequeue(a, loss, { sent, sessions });
         try {
-            expect((await cluster.reader.read(ownRef(sent))).left).toEqual({ kind: 'head-absent' });
+            expect((await cluster.reader.read(toOwnReceiptRef(sent))).left).toEqual({ kind: 'head-absent' });
             expect(readCopies(sessions, sent)).toEqual([0, 0, 0]);
             b.engine.start();
             await expect.poll(() => readCopies(sessions, sent).every((copies) => copies > 0), POLL).toBe(true);
             await confirmTogether(sessions, sent);
 
-            await expectStoredEnd(cluster, ownRef(sent), { phase: 'complete', confirmedRecipientPeerIds: sessionIds, outsideAudienceRecipientPeerIds: [] });
+            await expectStoredEnd(cluster, toOwnReceiptRef(sent), {
+                phase: 'complete',
+                confirmedRecipientPeerIds: sessionIds,
+                outsideAudienceRecipientPeerIds: []
+            });
             expect(await readHeadCount(cluster, sent.id.msgId)).toBe(1);
-            await pollRowEnded(store, sent);
-            expect(await store.readPendingAck(ownRef(sent))).toBeUndefined();
+            await pollRowEnded(toRowEndedPoll(store, sent));
+            expect(await store.readPendingAck(toOwnReceiptRef(sent))).toBeUndefined();
             // A window charged an attempt; a second dequeue would have rewritten the row with none.
-            expect((await store.readReceiptState(ownRef(sent)))?.attempts).toBeGreaterThanOrEqual(1);
+            expect((await store.readReceiptState(toOwnReceiptRef(sent)))?.attempts).toBeGreaterThanOrEqual(1);
         }
         finally {
             await release();
@@ -408,7 +422,7 @@ async function measureVersionMoves(store: OwnReceiptStore, instance: ReceiptInst
     await publish(instance, publication);
     const before = await readPublicationVersion(store, sent);
     await confirmTogether(sessions, sent);
-    await pollRowEnded(store, sent);
+    await pollRowEnded(toRowEndedPoll(store, sent));
     return await readPublicationVersion(store, sent) - before;
 }
 
@@ -421,9 +435,9 @@ async function readPublicationVersion(store: OwnReceiptStore, sent: ALMessage): 
     return version;
 }
 
-/** The server's stored row of the publication is ended: its terminal receipt, or its own budget, ended it. */
-async function pollRowEnded(store: OwnReceiptStore, sent: ALMessage): Promise<void> {
-    await expect.poll(async () => (await store.readStoredMessage(sent.id.msgId))?.ended, POLL).toBe(true);
+/** The instances run their own work, so each poll only reads the row. */
+function toRowEndedPoll(store: OwnReceiptStore, sent: ALMessage): RowEndedPoll {
+    return { store, msgId: sent.id.msgId, advance: async () => {}, timeoutMs: POLL.timeout };
 }
 
 /** The server's outbound admission state, read through the client no instance uses. */
@@ -433,8 +447,4 @@ function readOwnReceiptStore(cluster: ReceiptCluster): OwnReceiptStore {
         namespace: cluster.storeId,
         decodePrepared: decodeWsQueueBoxServerPreparedMessage
     }).admissionStore;
-}
-
-function ownRef(sent: ALMessage): ALReceiptRecordRef {
-    return { originPeerId: RECEIPT_SERVER_PEER_ID, msgId: sent.id.msgId };
 }

@@ -10,6 +10,7 @@ import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgre
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
+import { createWorkerHold, type WorkerHold } from '../../../shared/alm/create-worker-hold.ts';
 import { createTestGroupStateRuntime } from '../../rallar-system/group-state/group-state-test-runtime.ts';
 import {
     createRuntimeStatePostgresSql,
@@ -23,7 +24,6 @@ import {
     type PostgresAppInboxWorkerRuntime
 } from './test-support/postgres-app-inbox-worker-runtime.ts';
 import { createPostgresAppInboxTestAuthority, unwrapAppInboxResult } from './test-support/postgres-group-app-inbox-mutation.ts';
-import { createWorkerHold, type WorkerHold } from './test-support/postgres-worker-hold.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 

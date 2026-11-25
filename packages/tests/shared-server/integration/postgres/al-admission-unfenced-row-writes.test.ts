@@ -4,6 +4,7 @@ import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-s
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { decodeALAdmissionString } from '@shared/alm/al-admission-value-validation.ts';
 
+import { createWorkerHold, type WorkerHold } from '../../../shared/alm/create-worker-hold.ts';
 import {
     createRuntimeStatePostgresSql,
     requirePostgresDatabaseUrl,
@@ -15,7 +16,6 @@ import {
     readPostgresRunRowCounts
 } from './test-support/delete-postgres-run-rows.ts';
 import { holdPostgresCommit } from './test-support/hold-postgres-commit.ts';
-import { createWorkerHold, type WorkerHold } from './test-support/postgres-worker-hold.ts';
 import { racePastHeldCommit } from './test-support/race-past-held-commit.ts';
 import {
     recordPostgresStatements,
