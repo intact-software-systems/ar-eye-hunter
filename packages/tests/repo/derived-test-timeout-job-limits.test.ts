@@ -36,7 +36,7 @@ import {
     computeRtcB06AttemptTimeoutMs,
     RTC_B06_ATTEMPT_PRODUCTION_BUILD_MS,
     toRtcB06AttemptTestTimeoutMs
-} from '../../shared-rtc-bench/baseline/observation/to-rtc-b06-attempt-test-timeout-ms.ts';
+} from '../../shared-rtc-bench/baseline/observation/compute-rtc-b06-attempt-timeout-ms.ts';
 
 interface WorkflowMatrix {
     readonly case?: readonly string[];

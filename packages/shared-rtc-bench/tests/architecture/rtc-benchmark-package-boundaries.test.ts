@@ -214,7 +214,7 @@ describe('shared RTC benchmark package boundaries', () => {
 
     // The capture starts an attempt only while its job budget covers the attempt's test timeout, as the spec derives it.
     it('admits only the matrix test timeouts and the web server start limits of the shared-test wait budgets', () => {
-        const consumer = path.join(packageRoot, 'baseline/observation/to-rtc-b06-attempt-test-timeout-ms.ts');
+        const consumer = path.join(packageRoot, 'baseline/observation/compute-rtc-b06-attempt-timeout-ms.ts');
         expect(isApprovedImport(consumer, path.relative(path.dirname(consumer), liveRtcMatrixTestTimeoutsPath))).toBe(true);
         expect(isApprovedImport(consumer, path.relative(path.dirname(consumer), fullStackWebServerStartTimeoutsPath)))
             .toBe(true);
@@ -232,7 +232,7 @@ describe('shared RTC benchmark package boundaries', () => {
 
     // Its budget modules sat in tests/playwright; the bench's closure must stay out of the test tree and off Playwright.
     it('loads only package modules outside packages/tests to derive an attempt\'s timeout', () => {
-        const inputs = readBundledInputs(path.join(packageRoot, 'baseline/observation/to-rtc-b06-attempt-test-timeout-ms.ts'));
+        const inputs = readBundledInputs(path.join(packageRoot, 'baseline/observation/compute-rtc-b06-attempt-timeout-ms.ts'));
 
         expect(inputs).toContain(path.relative(repoRoot, liveRtcMatrixTestTimeoutsPath));
         expect(inputs.filter((input) => !input.startsWith('packages/') || input.startsWith('packages/tests/'))).toEqual([]);

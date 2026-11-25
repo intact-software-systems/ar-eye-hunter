@@ -28,7 +28,7 @@ import { runRtcPerformanceObservationCli } from '../../../baseline/observation/r
 import {
     computeRtcB06AttemptTimeoutMs,
     toRtcB06AttemptTestTimeoutMs
-} from '../../../baseline/observation/to-rtc-b06-attempt-test-timeout-ms.ts';
+} from '../../../baseline/observation/compute-rtc-b06-attempt-timeout-ms.ts';
 import { createRtcB06FinalizedArtifacts, createRtcB06JobBudgetIncompleteArtifacts } from './rtc-performance-observation-fixture.ts';
 
 const artifactFixture = await createRtcB06FinalizedArtifacts('20260830T100000Z-c0cadb8216cf-e3-memory-gh987654321-a3');

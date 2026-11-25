@@ -146,17 +146,7 @@ export async function createRtcB06JobBudgetIncompleteArtifacts(baselineId: strin
         kind: 'sample',
         identity: owner.identity
     });
-    const summary = toB06Summary(manifest, startedSamples, []);
-    const notStartedSampleOutcomes = notStarted.flatMap((artifact) =>
-        'sampleId' in artifact.identity
-            ? [{ identity: artifact.identity, outcome: artifact.outcome, issues: artifact.issues }]
-            : []
-    );
-    const blockedCohortOutcomes = notStarted.flatMap((artifact) =>
-        'cohortId' in artifact.identity
-            ? [{ identity: artifact.identity, outcome: 'failed' as const, issues: artifact.issues }]
-            : []
-    );
+    const summary = toJobBudgetIncompleteSummary(toB06Summary(manifest, startedSamples, []), notStarted);
     return withChecksums(
         new Map([
             ['environment.json', toJson(toB06Environment(baselineId, runtimeObservation, null))],
@@ -168,17 +158,32 @@ export async function createRtcB06JobBudgetIncompleteArtifacts(baselineId: strin
                 ] as const
             ),
             ...notStarted.map((artifact) => [toAcceptedArtifactPath(artifact), toJson(artifact)] as const),
-            [
-                'summary.json',
-                toJson({
-                    ...summary,
-                    sampleOutcomes: [...summary.sampleOutcomes, ...notStartedSampleOutcomes]
-                        .sort((left, right) => left.identity.sampleId.localeCompare(right.identity.sampleId)),
-                    cohortOutcomes: blockedCohortOutcomes
-                })
-            ]
+            ['summary.json', toJson(summary)]
         ])
     );
+}
+
+/** The passed attempts' summary, with every not-started sample and the cohort it blocks among its outcomes. */
+function toJobBudgetIncompleteSummary(
+    summary: RtcBaselineSummaryArtifactRecord,
+    notStarted: ReturnType<typeof buildRtcBaselineJobBudgetNotStartedSequence>
+): RtcBaselineSummaryArtifactRecord {
+    const notStartedSampleOutcomes = notStarted.flatMap((artifact) =>
+        'sampleId' in artifact.identity
+            ? [{ identity: artifact.identity, outcome: artifact.outcome, issues: artifact.issues }]
+            : []
+    );
+    const blockedCohortOutcomes = notStarted.flatMap((artifact) =>
+        'cohortId' in artifact.identity
+            ? [{ identity: artifact.identity, outcome: 'failed' as const, issues: artifact.issues }]
+            : []
+    );
+    return {
+        ...summary,
+        sampleOutcomes: [...summary.sampleOutcomes, ...notStartedSampleOutcomes]
+            .sort((left, right) => left.identity.sampleId.localeCompare(right.identity.sampleId)),
+        cohortOutcomes: blockedCohortOutcomes
+    };
 }
 
 function toAcceptedArtifactPath(artifact: Parameters<typeof resolveRtcBaselineAcceptedArtifactPath>[0]): string {

@@ -498,7 +498,15 @@ export function deriveRtcBaselineSampleIdentitiesFromOwner(
         (identity) => identity.workloadId === ownerIdentity.workloadId
     );
     const ownerIndex = identities.findIndex((identity) => rtcBaselineSampleIdentityEquals(identity, ownerIdentity));
+    assertRtcBaselineOwnerIndexFound(ownerIndex, ownerIdentity);
     return identities.slice(ownerIndex);
+}
+
+/** Every owner is read from the manifest it accounts against, so an owner outside it is a programming error. */
+function assertRtcBaselineOwnerIndexFound(ownerIndex: number, ownerIdentity: RtcBaselineSampleIdentityDto): void {
+    if (ownerIndex < 0) {
+        throw new Error(`RTC baseline sample ${ownerIdentity.sampleId} is not a sample of its manifest.`);
+    }
 }
 
 /** A cohort with any blocked sample among its members cannot be asserted. */

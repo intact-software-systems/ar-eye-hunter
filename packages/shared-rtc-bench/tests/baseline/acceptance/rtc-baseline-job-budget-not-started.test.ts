@@ -91,6 +91,19 @@ describe('RTC baseline job budget not-started receipts', () => {
         ).toBe(true);
     });
 
+    // An owner outside its manifest used to account only for the workload's last sample.
+    it('refuses an owner that is not a sample of its manifest', () => {
+        const owner = findRtcBaselineAttemptFailureOwner(manifest, retentionWarmup);
+        if (!owner) {
+            throw new Error('The locator names no declared attempt.');
+        }
+        const foreign = { ...owner, identity: { ...owner.identity, sampleId: 'not-a-declared-sample' } };
+
+        expect(() => buildRtcBaselineJobBudgetNotStartedSequence(manifest, foreign)).toThrow(
+            'RTC baseline sample not-a-declared-sample is not a sample of its manifest.'
+        );
+    });
+
     it('tells a job budget outcome apart from a failed one', () => {
         expect(isRtcBaselineJobBudgetOutcome({ issues: [] })).toBe(false);
         expect(isRtcBaselineJobBudgetOutcome({

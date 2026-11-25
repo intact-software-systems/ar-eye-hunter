@@ -69,6 +69,9 @@ const required = {
     'capture-live-rtc': allowed['observe-browser']
 };
 
+/** A capture that names no environment captures in E3-memory. */
+const DEFAULT_CAPTURE_ENVIRONMENT_ID = 'E3-memory';
+
 interface RtcPerformanceObservationCommandInput {
     readonly sourceRef: 'main';
     readonly githubRunId: number;
@@ -156,9 +159,9 @@ function parseObservationInputs(
     }
     validateObservationSourceRef(name, options, issues);
     validateObservationOptions(options, runId.ok ? runId.value : undefined, issues);
-    issues.push(
-        ...validateCaptureEnvironment(name === 'capture-live-rtc' ? options.environment ?? 'E3-memory' : 'E3-memory')
-    );
+    if (name === 'capture-live-rtc') {
+        issues.push(...validateCaptureEnvironment(toCaptureEnvironmentId(options)));
+    }
     const capture = parseRtcCaptureMode(name !== 'observe-browser' ? options['rtc-capture-mode'] : undefined);
     for (const captureIssue of capture.left ?? []) {
         issues.push(createRtcBaselineCliIssue('$.rtc-capture-mode', captureIssue.code, captureIssue.message));
@@ -209,7 +212,7 @@ function toParsedObservationCommand(
                 ...normalized,
                 kind: name,
                 sourceRef: options['source-ref']!,
-                environmentId: (options.environment ?? 'E3-memory') as 'E3-memory' | 'E4-pg'
+                environmentId: toCaptureEnvironmentId(options) as 'E3-memory' | 'E4-pg'
             }
         }
         : { ok: true, value: { ...normalized, kind: name, sourceRef: 'main' } };
@@ -270,6 +273,10 @@ function validWorkflowUrl(value: string, runId: number) {
     catch {
         return false;
     }
+}
+
+function toCaptureEnvironmentId(options: RtcBaselineCliOptions): string {
+    return options.environment ?? DEFAULT_CAPTURE_ENVIRONMENT_ID;
 }
 
 function validateCaptureEnvironment(environmentId: string): RtcBaselineCliIssue[] {
