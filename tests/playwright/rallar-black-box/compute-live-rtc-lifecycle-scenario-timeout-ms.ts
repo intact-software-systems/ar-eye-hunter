@@ -24,6 +24,7 @@ export const PRESENCE_CONNECT_TIMING: RallarBlackBoxTestRtcConnectCommand = {
     timeoutMs: RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
 };
 
+/** How long a presence connect waits in all: its enqueue request, its room-joining timeout, then the result poll. */
 export const PRESENCE_CONNECT_RESULT_WAIT_MS = computeCommandResultWaitMs(
     PRESENCE_CONNECT_TIMING,
     LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS

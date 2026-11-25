@@ -3,8 +3,10 @@ import type { RallarBlackBoxDistributedGroupRef } from '../distributed-run.ts';
 import type { RallarBlackBoxTestCommand } from '../rallar-black-box-test-contracts.ts';
 export const RALLAR_BLACK_BOX_LIVE_API_BASE_URL = 'https://api.rallar.intactss.com';
 
+/** What an RTC connect's or ensure request's budget allows past the server's completion waits it may meet. */
 export const RALLAR_BLACK_BOX_RTC_CONNECT_COMPLETION_MARGIN_MS = 5_000;
 
+/** The readiness wait live recipes give an RTC connect for its expected peers. */
 export const RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS = 45_000;
 
 /**

@@ -59,6 +59,12 @@ import { validateProgressSeries } from './live-rtc-readiness-progress.ts';
  * Presence restores the same session; readiness explicitly refreshes the current room before waiting.
  */
 
+/** How long the reopened member's progress diagnostics poll pauses between its reads. */
+const LIFECYCLE_PROGRESS_DIAGNOSTICS_POLL_INTERVAL_MS = 250;
+
+/** How long a reset agent's lane teardown poll pauses between its health reads. */
+const LIFECYCLE_LANE_TEARDOWN_POLL_INTERVAL_MS = 1_000;
+
 const formationOperations = createLiveRtcFormationOperations();
 const deliveryOperations = createLiveRtcDeliveryOperations({
     apiBaseUrl,
@@ -147,7 +153,10 @@ test.describe('live RTC lifecycle acceptance', () => {
                         sinceEpochMs: reopenedAt
                     });
                     return validateProgressSeries(samples, 'successive-revisions');
-                }, { timeout: LIFECYCLE_PROGRESS_DIAGNOSTICS_POLL_TIMEOUT_MS, intervals: [250] }).toEqual([]);
+                }, {
+                    timeout: LIFECYCLE_PROGRESS_DIAGNOSTICS_POLL_TIMEOUT_MS,
+                    intervals: [LIFECYCLE_PROGRESS_DIAGNOSTICS_POLL_INTERVAL_MS]
+                }).toEqual([]);
             }
             finally {
                 const evidencePath = testInfo.outputPath('reopening-readiness.json');
@@ -246,7 +255,10 @@ test.describe('live RTC lifecycle acceptance', () => {
                                 ...sampled.rtcStatus.readyPeerIds
                             ].length;
                         },
-                        { timeout: LIFECYCLE_LANE_TEARDOWN_POLL_TIMEOUT_MS, intervals: [1_000] }
+                        {
+                            timeout: LIFECYCLE_LANE_TEARDOWN_POLL_TIMEOUT_MS,
+                            intervals: [LIFECYCLE_LANE_TEARDOWN_POLL_INTERVAL_MS]
+                        }
                     )
                     .toBe(0);
                 const health = await formationOperations.health(

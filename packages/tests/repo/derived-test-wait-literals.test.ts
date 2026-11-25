@@ -94,24 +94,31 @@ function readPathFile(relativePath: string): string {
     return readFileSync(path.join(repoRoot, relativePath), 'utf8');
 }
 
-/** The names a source declares for its numeric constants. */
+/** A named wait's declaration, at any depth. */
+const NAMED_WAIT_DECLARATION = /^\s*(?:export )?const ([A-Z][A-Z\d_]*_MS) =/;
+
+/** The names a source declares for its named waits, at any depth. */
 function findNumericConstantNames(source: string): readonly string[] {
-    return [...source.matchAll(/^(?:export )?const ([A-Z][A-Z\d_]*_MS) =/gm)].map((match) => match[1]);
+    return source.split('\n').flatMap((line) => {
+        const name = NAMED_WAIT_DECLARATION.exec(line)?.[1];
+        return name === undefined ? [] : [name];
+    });
 }
 
-/** Each named wait declared straight after another declaration, so that it shares the doc above the first, as `line: text`. */
-function findUndocumentedPairedConstants(source: string): readonly string[] {
+/** Each named wait, at any depth, without a comment of its own on the line directly above it, as `line: text`. */
+function findUndocumentedWaitConstants(source: string): readonly string[] {
     const lines = source.split('\n');
     return lines.flatMap((line, index) => {
         const previous = lines[index - 1]?.trim() ?? '';
-        const shared = /^(?:export )?const [A-Z][A-Z\d_]*_MS =/.test(line) && previous.endsWith(';');
-        return shared ? [`${index + 1}: ${line.trim()}`] : [];
+        const documented = previous.endsWith('*/') || previous.startsWith('//');
+        return NAMED_WAIT_DECLARATION.test(line) && !documented ? [`${index + 1}: ${line.trim()}`] : [];
     });
 }
 
 describe('literal waits on the derived tests\' paths', () => {
     // The 2069fbae8 health read wait in `live-rtc-control-client.ts` and the view push spec's state poll were literal
-    // waits the earlier line patterns did not see; the review named the other forms.
+    // waits the earlier line patterns did not see; the reviews named the other forms, among them a poll's options under
+    // a value matcher, which the matcher's exemption let through.
     it('finds a literal in every position that passes it as a wait bound', () => {
         expect(findLiteralWaitBounds([
             'const healthTimeoutMs = Math.min(',
@@ -130,7 +137,22 @@ describe('literal waits on the derived tests\' paths', () => {
             'await page.waitForTimeout(500);',
             'setTimeout(() => {',
             '}, 10_000);',
-            'const command = { readiness: { minReadyPeers: 1, timeoutMs: 10_000 }, intervals: [1_000] };'
+            'const command = { readiness: { minReadyPeers: 1, timeoutMs: 10_000 }, intervals: [1_000] };',
+            'await expect.poll(async () => await read(), { timeout: 15_000 }).toBe(true);',
+            'expect(await sleep(5_000)).toBe(undefined);',
+            'class Reader {',
+            '    readonly pollMs = 250;',
+            '    private timeoutMs = 30_000;',
+            '}',
+            'timeoutMs = 5_000;',
+            'run({ timeout: 15_000 * agents.length });',
+            'run({ timeoutMs: attempts * 2_000 });',
+            'function readTimeoutMs(): number {',
+            '    return 15_000;',
+            '}',
+            'function readRun(): void {',
+            '    const RUN_POLL_INTERVAL_MS = 250;',
+            '}'
         ].join('\n'))).toEqual([
             '2: 15_000,',
             '5: run({ pollMs: 250, readinessTimeoutMs: deadlines.readinessTimeoutMs });',
@@ -144,7 +166,16 @@ describe('literal waits on the derived tests\' paths', () => {
             '13: await expect(panel).toContainText(id, { timeout: 15_000 });',
             '14: await page.waitForTimeout(500);',
             '16: }, 10_000);',
-            '17: const command = { readiness: { minReadyPeers: 1, timeoutMs: 10_000 }, intervals: [1_000] };'
+            '17: const command = { readiness: { minReadyPeers: 1, timeoutMs: 10_000 }, intervals: [1_000] };',
+            '18: await expect.poll(async () => await read(), { timeout: 15_000 }).toBe(true);',
+            '19: expect(await sleep(5_000)).toBe(undefined);',
+            '21: readonly pollMs = 250;',
+            '22: private timeoutMs = 30_000;',
+            '24: timeoutMs = 5_000;',
+            '25: run({ timeout: 15_000 * agents.length });',
+            '26: run({ timeoutMs: attempts * 2_000 });',
+            '28: return 15_000;',
+            '31: const RUN_POLL_INTERVAL_MS = 250;'
         ]);
     });
 
@@ -178,26 +209,40 @@ describe('literal waits on the derived tests\' paths', () => {
         expect(duplicated).toEqual({});
     });
 
-    // Pairs of waits shared one doc, which then described the second constant only by implication.
+    // Pairs of waits shared one doc, which then described the second constant only by implication, and the check saw
+    // only the second of a pair, so a named wait with no doc at all, or one inside a function, passed it.
     it('gives each named wait its own doc', () => {
-        expect(findUndocumentedPairedConstants([
+        expect(findUndocumentedWaitConstants([
             '/** The appointment\'s own budget, and each relay start\'s. */',
             'export const APPOINT_TIMEOUT_MS = 20_000;',
             'export const RELAY_START_TIMEOUT_MS = 20_000;',
             '',
             '/** Documented. */',
-            'const OWN_TIMEOUT_MS = 1_000;'
-        ].join('\n'))).toEqual(['3: export const RELAY_START_TIMEOUT_MS = 20_000;']);
-        const paired = Object.fromEntries(
+            'const OWN_TIMEOUT_MS = 1_000;',
+            '',
+            'export const UNDOCUMENTED_TIMEOUT_MS = 1_000;',
+            '// Documented too.',
+            'const LINE_DOCUMENTED_TIMEOUT_MS = 1_000;',
+            'function wait(): void {',
+            '    const INNER_TIMEOUT_MS = OWN_TIMEOUT_MS + 1;',
+            '}'
+        ].join('\n'))).toEqual([
+            '3: export const RELAY_START_TIMEOUT_MS = 20_000;',
+            '8: export const UNDOCUMENTED_TIMEOUT_MS = 1_000;',
+            '12: const INNER_TIMEOUT_MS = OWN_TIMEOUT_MS + 1;'
+        ]);
+        expect(findNumericConstantNames('function wait(): void {\n    const INNER_TIMEOUT_MS = 1;\n}'))
+            .toEqual(['INNER_TIMEOUT_MS']);
+        const undocumented = Object.fromEntries(
             DERIVED_TEST_PATH_FILES.filter((relativePath) => existsSync(path.join(repoRoot, relativePath))).flatMap(
                 (relativePath) => {
-                    const found = findUndocumentedPairedConstants(readPathFile(relativePath));
+                    const found = findUndocumentedWaitConstants(readPathFile(relativePath));
                     return found.length === 0 ? [] : [[relativePath, found]];
                 }
             )
         );
 
-        expect(paired).toEqual({});
+        expect(undocumented).toEqual({});
     });
 
     // Every request ran under the request context's own 30 s default, which no derivation counted.
