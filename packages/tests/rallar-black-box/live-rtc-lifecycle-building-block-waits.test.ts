@@ -11,7 +11,11 @@ import { LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS } from '@shared-test/rallar-bb-test
 import { FULL_STACK_EXPECT_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/playwright-expect-timeouts.ts';
 import type { RtcBaselineJson } from '../../shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 
-import { LIVE_RTC_LIFECYCLE_OPERATION_BOUNDED_WAITS_MS } from '../../../tests/playwright/rallar-black-box/compute-live-rtc-lifecycle-scenario-timeout-ms.ts';
+import {
+    LIFECYCLE_CONNECT_RETRY_INTERVAL_MS,
+    LIFECYCLE_CONNECT_WHEN_PLANNED_TIMEOUT_MS,
+    LIVE_RTC_LIFECYCLE_OPERATION_BOUNDED_WAITS_MS
+} from '../../../tests/playwright/rallar-black-box/compute-live-rtc-lifecycle-scenario-timeout-ms.ts';
 import type { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
 import { createLiveRtcDeliveryOperations } from '../../../tests/playwright/rallar-black-box/live-rtc-delivery-operations.ts';
 import { createLiveRtcFormationOperations } from '../../../tests/playwright/rallar-black-box/live-rtc-formation-operations.ts';
@@ -63,6 +67,16 @@ const DORMANT_HEALTH: RtcBaselineJson = {
 
 useBoundedWaitClock();
 
+/** The fake clock's resolution: the connect's last attempt starts this long before its deadline at the latest. */
+const CLOCK_TICK_MS = 1;
+
+/**
+ * How long the first of two refused connects is held, beyond its own command wait and the retry interval, so that the
+ * second starts one tick before the connect's deadline.
+ */
+const LATE_SECOND_CONNECT_HOLD_MS = LIFECYCLE_CONNECT_WHEN_PLANNED_TIMEOUT_MS - CLOCK_TICK_MS -
+    (LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS + LIFECYCLE_CONNECT_RETRY_INTERVAL_MS);
+
 /**
  * The session a counted page holds, or nothing for an evaluation that names a bound: a room refresh, which the page
  * spends as the browser would.
@@ -95,17 +109,23 @@ function toDialedRun(agents: readonly LiveRtcControlClient.Agent[]): LiveRtcCont
 /**
  * The recording control as a managed group answers the lifecycle: every connect restores the session it expects,
  * every formation command reports the active stage, every health reads `health`, and each run read is one control
- * request. The owner's first `refusingConnects` layout connects are refused for naming no planned layout.
+ * request. The owner's first layout connects, one per entry of `refusedConnectHoldsMs`, are refused for naming no
+ * planned layout, each after its command wait and then its hold.
  */
-function createLifecycleRun(health: RtcBaselineJson = DORMANT_HEALTH, refusingConnects = 0): LiveRtcLifecycleOperations.Run {
+function createLifecycleRun(
+    health: RtcBaselineJson = DORMANT_HEALTH,
+    refusedConnectHoldsMs: readonly number[] = []
+): LiveRtcLifecycleOperations.Run {
     const recording = new RecordingLiveRtcControl({ lifecycleState: 'active', acceptedSessions: [] }, spendBoundedWait);
     const recordCommand = recording.executeOk;
-    let refusals = refusingConnects;
+    let refusals = 0;
     const executeOk = async (input: LiveRtcControlClient.ExecuteInput): Promise<LiveRtcControlClient.Result> => {
         const recorded = await recordCommand(input);
         const { command } = input;
-        if (command.kind === 'formation.command' && command.command === 'connect' && refusals > 0) {
-            refusals -= 1;
+        const refusalHoldMs = refusedConnectHoldsMs[refusals];
+        if (command.kind === 'formation.command' && command.command === 'connect' && refusalHoldMs !== undefined) {
+            refusals += 1;
+            await spendBoundedWait(refusalHoldMs);
             return { ...recorded, ok: false, error: { message: 'no planned layout' } };
         }
         if (command.kind === 'rtc.connect') {
@@ -151,21 +171,21 @@ describe('the live RTC lifecycle building blocks wait what their derivation coun
         );
     });
 
-    it('retries a connect that finds no planned layout no longer than its bound', async () => {
-        const run = createLifecycleRun(DORMANT_HEALTH, Number.POSITIVE_INFINITY);
+    // The connect was checked only against an upper bound, which a derivation without its retry interval also met.
+    it('retries a connect that finds no planned layout for its whole bound when its last attempt starts at the deadline', async () => {
+        const run = createLifecycleRun(DORMANT_HEALTH, [LATE_SECOND_CONNECT_HOLD_MS, 0]);
 
-        expect(await measureBoundedWaitsMs(() => lifecycle.connectWhenPlanned(run).catch(() => undefined))).toBeLessThanOrEqual(
-            LIVE_RTC_LIFECYCLE_OPERATION_BOUNDED_WAITS_MS.connectWhenPlanned
+        expect(await measureBoundedWaitsMs(() => lifecycle.connectWhenPlanned(run).catch(() => undefined))).toBe(
+            LIVE_RTC_LIFECYCLE_OPERATION_BOUNDED_WAITS_MS.connectWhenPlanned - CLOCK_TICK_MS
         );
     });
 
-    // An accepted first connect waits one unbudgeted command where the derivation counts the retry loop's bound.
+    // A connect accepted at the deadline ends the loop without its retry interval, the one term no activation reaches.
     it('activates the group within the activation\'s bounded waits', async () => {
-        const run = createLifecycleRun();
+        const run = createLifecycleRun(DORMANT_HEALTH, [LATE_SECOND_CONNECT_HOLD_MS]);
 
         expect(await measureBoundedWaitsMs(() => lifecycle.activateGroup(run))).toBe(
-            LIVE_RTC_LIFECYCLE_OPERATION_BOUNDED_WAITS_MS.activation - LIVE_RTC_LIFECYCLE_OPERATION_BOUNDED_WAITS_MS.connectWhenPlanned +
-                LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS
+            LIVE_RTC_LIFECYCLE_OPERATION_BOUNDED_WAITS_MS.activation - LIFECYCLE_CONNECT_RETRY_INTERVAL_MS - CLOCK_TICK_MS
         );
     });
 
@@ -220,13 +240,12 @@ describe('the live RTC lifecycle building blocks wait what their derivation coun
         );
     });
 
-    // As for activation, an accepted first connect waits one unbudgeted command.
+    // As for activation, a connect accepted at the deadline waits all but the retry interval.
     it('starts and plans the next series and dials again within the redial\'s bounded waits', async () => {
-        const run = createLifecycleRun();
+        const run = createLifecycleRun(DORMANT_HEALTH, [LATE_SECOND_CONNECT_HOLD_MS]);
 
         expect(await measureBoundedWaitsMs(() => lifecycle.redial(run, [0, 0, 0]))).toBe(
-            LIVE_RTC_LIFECYCLE_OPERATION_BOUNDED_WAITS_MS.redial - LIVE_RTC_LIFECYCLE_OPERATION_BOUNDED_WAITS_MS.connectWhenPlanned +
-                LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS
+            LIVE_RTC_LIFECYCLE_OPERATION_BOUNDED_WAITS_MS.redial - LIFECYCLE_CONNECT_RETRY_INTERVAL_MS - CLOCK_TICK_MS
         );
     });
 
