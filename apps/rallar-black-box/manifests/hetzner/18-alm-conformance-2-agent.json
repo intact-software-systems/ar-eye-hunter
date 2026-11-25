@@ -17528,32 +17528,18 @@
           },
           {
             "kind": "wait",
-            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-receiver-duplicate-outcome-latest",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-receiver-duplicate-outcome",
             "match": {
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.inbound_diagnostics",
               "payloadFields": {
                 "data.kind": "admission-outcome",
-                "data.typeId": "alm.conformance.rtc-with-ws-fallback.cross-carrier-duplicate-rtc-then-ws"
+                "data.typeId": "alm.conformance.rtc-with-ws-fallback.cross-carrier-duplicate-rtc-then-ws",
+                "data.outcome": "not-handled",
+                "data.reason": "duplicate"
               },
               "sinceCommandIdPrefix": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-receiver-"
             },
-            "timeoutMs": 2000
-          },
-          {
-            "kind": "assert",
-            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-receiver-assert-duplicate-outcome-outcome",
-            "source": "resultCache.alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-receiver-duplicate-outcome-latest.value.event.payload.data.outcome",
-            "operator": "equals",
-            "expected": "not-handled",
-            "timeoutMs": 2000
-          },
-          {
-            "kind": "assert",
-            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-receiver-assert-duplicate-outcome-reason",
-            "source": "resultCache.alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-receiver-duplicate-outcome-latest.value.event.payload.data.reason",
-            "operator": "equals",
-            "expected": "duplicate",
             "timeoutMs": 2000
           },
           {

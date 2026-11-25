@@ -171,7 +171,7 @@ describe('Hetzner ALM conformance catalog', () => {
 
         const commandIds = toHetznerManifestCommands(entry!.manifest)
             .map((command) => command.commandId ?? '');
-        expect(commandIds).toContain('alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-receiver-duplicate-outcome-latest');
+        expect(commandIds).toContain('alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-receiver-duplicate-outcome');
         for (const carrier of ['rtc', 'rtc-with-ws-fallback']) {
             expect(commandIds).toContain(`alm-${carrier}-not-yet-in-sync-expires-receiver-not-yet-in-sync-outcome`);
         }

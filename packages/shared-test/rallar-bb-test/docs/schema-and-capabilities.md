@@ -800,8 +800,8 @@ A scenario definition's optional `connect.minReadyPeers` sets the readiness its 
 absent, each connect waits for every other agent of the cell.
 
 The `cross-carrier-duplicate` conformance scenario (`cross-carrier-duplicate-rtc-then-ws`) replays the first RTC
-send's envelope on WS over `rtc-with-ws-fallback`, and its receiver reads the pair's latest `admission-outcome` on
-either carrier and asserts it refuses the second copy as `not-handled`/`duplicate`. Neither carrier's
+send's envelope on WS over `rtc-with-ws-fallback`, and its receiver waits for the `admission-outcome` that refuses the
+second copy as `not-handled`/`duplicate`, on either carrier. Neither carrier's
 `transport-accepted` is the receiver's admission (over RTC it is the frame leaving the sender's data channel), so the
 WS copy may commit first. The reverse order does not run: the product never admits a message on RTC while its WS
 admission lives (D56), and the receiver's refusal in both arrival orders is a unit test

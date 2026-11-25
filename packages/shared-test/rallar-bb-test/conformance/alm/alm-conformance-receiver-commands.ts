@@ -43,6 +43,8 @@ interface AlmConformanceAdmissionOutcomeInput {
     readonly name: string;
     /** Omitted when the admission outcome's reason is unrestricted. */
     readonly contains?: string;
+    /** Outcome fields matched by path, in any key order; omitted when they are unrestricted. */
+    readonly fields?: Readonly<Partial<Record<'carrier' | 'outcome' | 'reason', string>>>;
     readonly timeoutMs: number;
 }
 
@@ -132,7 +134,8 @@ export function toControlAdmissionOutcomeWait(
 
 /**
  * Exact admission kind and scenario scope apply to one event. Optional refusal fragments retain
- * their emitted key-order contract; absence selects the latest scoped admission outcome.
+ * their emitted key-order contract, while `fields` match by path in any order; with neither, the
+ * wait selects the latest scoped admission outcome.
  */
 export function toAdmissionOutcomeWait(
     step: AlmConformanceStepInput,
@@ -146,7 +149,10 @@ export function toAdmissionOutcomeWait(
             topic: INBOUND_DIAGNOSTICS_TOPIC,
             payloadFields: {
                 'data.kind': 'admission-outcome',
-                'data.typeId': toScenarioTypeId(step)
+                'data.typeId': toScenarioTypeId(step),
+                ...Object.fromEntries(
+                    Object.entries(outcome.fields ?? {}).map(([key, value]) => [`data.${key}`, value])
+                )
             },
             ...(outcome.contains === undefined ? {} : {
                 payloadPath: 'data',
