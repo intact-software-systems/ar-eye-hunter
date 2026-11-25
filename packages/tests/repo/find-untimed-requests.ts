@@ -88,6 +88,18 @@ function isUntimedRequestCall(node: Node, aliases: ReadonlySet<string>): boolean
         (REQUEST_RECEIVER_NAME.test(receiver) || aliases.has(receiver)) && !namesOption(node, 'timeout');
 }
 
+/** The name of the function a node sits in, nearest first, if that function has one. */
+function toEnclosingFunctionName(ancestors: readonly Node[]): string | undefined {
+    const enclosing = ancestors.find((ancestor) =>
+        ancestor.type === 'FunctionDeclaration' || ancestor.type === 'FunctionExpression' ||
+        ancestor.type === 'ArrowFunctionExpression' || ancestor.type === 'ObjectMethod' || ancestor.type === 'ClassMethod'
+    );
+    if (enclosing?.type === 'FunctionDeclaration' || enclosing?.type === 'FunctionExpression') {
+        return toNodeName(enclosing.id);
+    }
+    return enclosing?.type === 'ObjectMethod' || enclosing?.type === 'ClassMethod' ? toNodeName(enclosing.key) : undefined;
+}
+
 /**
  * Whether a node hands an operator the bare global `fetch` as a dependency, untimed: as its `fetch` property, or as a
  * call's argument to anything but a fetch timer.
@@ -107,11 +119,17 @@ function isUntimedFetchInjection(node: Node): boolean {
  * named for a Playwright request context, or bound to one, must name a `timeout` in its options literal; the global
  * `fetch` must name a `signal`; `undefined`, `void …` and `0` name neither. A `fetch` an operator takes as a dependency
  * is timed where it is injected, so handing one the bare global, as a property or an argument, is refused there.
- * Without type information a context or fetch held under another name goes unseen.
+ * Without type information a context or fetch held under another name goes unseen. An injection inside one of
+ * `hostedEntryFunctions`, an entry point off every timed path, is not reported.
  */
-export function findUntimedRequests(source: string): readonly string[] {
+export function findUntimedRequests(
+    source: string,
+    hostedEntryFunctions: ReadonlySet<string> = new Set()
+): readonly string[] {
     return findSourceLines(source, (program): SourceNodeMatch => {
         const aliases = toRequestAliases(program);
-        return (node) => isUntimedRequestCall(node, aliases) || isUntimedFetchInjection(node);
+        return (node, ancestors) =>
+            isUntimedRequestCall(node, aliases) ||
+            (isUntimedFetchInjection(node) && !hostedEntryFunctions.has(toEnclosingFunctionName(ancestors) ?? ''));
     });
 }

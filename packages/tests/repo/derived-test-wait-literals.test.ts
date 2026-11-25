@@ -104,12 +104,13 @@ const DERIVED_TEST_PATH_FILES = [
 ] as const;
 
 /**
- * The untimed `fetch` injections off every derived test's path: the world-fleet CLI's own entry point hands the hosted
- * operator the global `fetch`, while the view push spec calls the operator itself with a timed one.
+ * The functions whose untimed `fetch` injections are off every derived test's path, by file: the world-fleet CLI's own
+ * `main` hands the hosted operator the global `fetch`, while the view push spec calls the operator itself with a timed
+ * one.
  */
-const HOSTED_ENTRY_FETCH_INJECTIONS = [
-    { relativePath: 'apps/rallar-black-box/scripts/run-world-fleet-distributed-recipe.ts', text: 'fetch,' }
-] as const;
+const HOSTED_ENTRY_FETCH_INJECTORS: Readonly<Record<string, ReadonlySet<string>>> = {
+    'apps/rallar-black-box/scripts/run-world-fleet-distributed-recipe.ts': new Set(['main'])
+};
 
 function readPathFile(relativePath: string): string {
     return readFileSync(path.join(repoRoot, relativePath), 'utf8');
@@ -337,13 +338,30 @@ describe('literal waits on the derived tests\' paths', () => {
         ]);
     });
 
+    // The hosted entry's exemption matched any `fetch,` line in its file, so a second injection there passed too.
+    it('exempts only the injections inside a hosted entry function', () => {
+        expect(findUntimedRequests(
+            [
+                'async function main(): Promise<void> {',
+                '    await run(options, { fetch, log });',
+                '}',
+                'async function resolveTargets(): Promise<void> {',
+                '    await run(options, { fetch });',
+                '    await releaseControlResults(input, fetch);',
+                '}'
+            ].join('\n'),
+            new Set(['main'])
+        )).toEqual([
+            '5: await run(options, { fetch });',
+            '6: await releaseControlResults(input, fetch);'
+        ]);
+    });
+
     it('names a timeout for every request on the derived tests\' paths', () => {
         const untimed = Object.fromEntries(
             DERIVED_TEST_PATH_FILES.filter((relativePath) => existsSync(path.join(repoRoot, relativePath))).flatMap(
                 (relativePath) => {
-                    const found = findUntimedRequests(readPathFile(relativePath)).filter((line) =>
-                        !HOSTED_ENTRY_FETCH_INJECTIONS.some((exempt) => exempt.relativePath === relativePath && line.endsWith(`: ${exempt.text}`))
-                    );
+                    const found = findUntimedRequests(readPathFile(relativePath), HOSTED_ENTRY_FETCH_INJECTORS[relativePath]);
                     return found.length === 0 ? [] : [[relativePath, found]];
                 }
             )
