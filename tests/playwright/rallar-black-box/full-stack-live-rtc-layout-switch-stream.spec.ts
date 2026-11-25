@@ -7,7 +7,6 @@ import {
 } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 
-import { FORMATION_RUN_CONNECT_RESULT_WAIT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-formation-waits.ts';
 import { RALLAR_BLACK_BOX_RTC_STREAM_DEFAULT_DRAIN_TIMEOUT_MS } from '@shared-test/rallar-bb-test/rtc-stream.ts';
 import { AL_CHANNEL_SEND_DEFAULTS } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import {
@@ -41,6 +40,16 @@ import { createLiveRtcDeliveryOperations, type AgentPrefix } from './live-rtc-de
 import { createLiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
 import { LiveRtcLayoutSwitchOperations, type LiveRtcStreamQos } from './live-rtc-layout-switch-operations.ts';
 import {
+    LAYOUT_SWITCH_HOLD_MS,
+    LAYOUT_SWITCH_PROMOTION_POLL_INTERVAL_MS,
+    LAYOUT_SWITCH_PROMOTION_POLL_TIMEOUT_MS,
+    LAYOUT_SWITCH_RECEIVER_DRAIN_POLL_INTERVAL_MS,
+    LAYOUT_SWITCH_RECEIVER_DRAIN_TIMEOUT_MS,
+    LAYOUT_SWITCH_STREAM_DURATION_MS,
+    LAYOUT_SWITCH_STREAM_LEAD_MS,
+    LIVE_RTC_LAYOUT_SWITCH_TEST_TIMEOUT_MS
+} from './live-rtc-layout-switch-test-timeouts.ts';
+import {
     resolveLiveRtcLayoutShape,
     toLiveRtcAcceptedLayout,
     type LiveRtcAcceptedLayout,
@@ -73,12 +82,6 @@ const MESSAGES_RTC = { typeId: 'manual.type', topicId: 'manual.topic' } as const
  * still holds its admission until its deadline, as an unacknowledged one does.
  */
 const STREAM_RATE_HZ = 10;
-const STREAM_LEAD_MS = 3_000;
-/** Outside the 15 s overlap of the previous switch, so the two promotions never share one overlap. */
-const SWITCH_HOLD_MS = 16_000;
-/** This spec's bound on each promotion poll; it also sizes the streams, which must be fixed before they start. */
-const PROMOTION_POLL_TIMEOUT_MS = 15_000;
-const STREAM_DURATION_MS = STREAM_LEAD_MS + 2 * (PROMOTION_POLL_TIMEOUT_MS + SWITCH_HOLD_MS);
 /** The overlap the managed API serves by default. */
 const SERVED_OVERLAP_MS = 15_000;
 /**
@@ -95,8 +98,6 @@ const STREAM_VARIANTS: readonly Readonly<{ label: string; qos: LiveRtcStreamQos;
 ];
 const REPORTED_RECORDS = 20;
 
-/** Opening the trio, the membership, the two switches with their streams, and the evidence reads. */
-const LAYOUT_SWITCH_STEPS_TIMEOUT_MS = 360_000;
 /** Slack on the direct-edge bound, for timestamp granularity; the rule itself needs none. */
 const DIRECT_BOUND_SLACK_MS = 250;
 
@@ -176,8 +177,7 @@ test.describe('live RTC layout switch stream', () => {
             `three ${variant.label} 10 Hz streams cross an owner-issued tree switch and its reversal; ` +
                 'every receiver takes 20 messages a second',
             async ({ browser, request }, testInfo) => {
-                // The room's formation connects the trio on top of the scenario's other steps.
-                test.setTimeout(LAYOUT_SWITCH_STEPS_TIMEOUT_MS + FORMATION_RUN_CONNECT_RESULT_WAIT_MS);
+                test.setTimeout(LIVE_RTC_LAYOUT_SWITCH_TEST_TIMEOUT_MS);
                 expectEvidenceSources();
                 const scenario = await openScenario(browser, request);
                 let failure: Error | undefined;
@@ -289,7 +289,7 @@ async function runLayoutSwitches(
     const sessionIds: SessionIds = [sessions.A, sessions.B, sessions.C];
     const formed = await readFormedLayout(scenario, sessionIds);
     const streams = startStreams(scenario, qos);
-    await holdFor(scenario, STREAM_LEAD_MS);
+    await holdFor(scenario, LAYOUT_SWITCH_STREAM_LEAD_MS);
     const switched = await runSwitches(scenario, { sessions, sessionIds, formed });
     const settledStreams = requireStreams(scenario, sessions, await streams);
     const events = await drainReceivers(scenario, settledStreams);
@@ -327,7 +327,7 @@ async function runSwitches(
         sessionIds
     });
     const treeShape = resolveTree(tree.layout, sessionIds);
-    await holdFor(scenario, tree.detectedAtEpochMs + SWITCH_HOLD_MS - Date.now());
+    await holdFor(scenario, tree.detectedAtEpochMs + LAYOUT_SWITCH_HOLD_MS - Date.now());
     await expectTreeHeld(scenario, tree.layout);
     const leafToLeafReadyAtSwitch2 = await readLeafToLeafReadiness(scenario, room.sessions, treeShape);
     scenario.progress.leafToLeafReadyAtSwitch2 = leafToLeafReadyAtSwitch2;
@@ -366,7 +366,7 @@ function startStreams(
             agent,
             qos,
             rateHz: STREAM_RATE_HZ,
-            durationMs: STREAM_DURATION_MS
+            durationMs: LAYOUT_SWITCH_STREAM_DURATION_MS
         })
     ));
 }
@@ -447,11 +447,14 @@ async function waitForPromotion(
             const common = toCommonLayout(latest);
             return common !== undefined && !isSameGroupLayoutIdentity(common.identity, expected.previous) &&
                 resolveLiveRtcLayoutShape(common, expected.sessionIds).kind === expected.kind;
-        }, { timeout: PROMOTION_POLL_TIMEOUT_MS, intervals: [1_000] }).toBe(true);
+        }, {
+            timeout: LAYOUT_SWITCH_PROMOTION_POLL_TIMEOUT_MS,
+            intervals: [LAYOUT_SWITCH_PROMOTION_POLL_INTERVAL_MS]
+        }).toBe(true);
     }
     catch (cause) {
         throw new Error(
-            `${expected.label}: not every browser promoted a ${expected.kind} layout within ${PROMOTION_POLL_TIMEOUT_MS} ms; ` +
+            `${expected.label}: not every browser promoted a ${expected.kind} layout within ${LAYOUT_SWITCH_PROMOTION_POLL_TIMEOUT_MS} ms; ` +
                 `last read: ${JSON.stringify(latest)}`,
             { cause }
         );
@@ -511,12 +514,13 @@ async function readLeafToLeafReadiness(
 /**
  * Reads the run until every receiver holds every planned frame, or until the missing count has not changed for the
  * agent stream's own drain bound (`RALLAR_BLACK_BOX_RTC_STREAM_DEFAULT_DRAIN_TIMEOUT_MS`), so frames whose events
- * are still being published are waited for as long as they keep arriving.
+ * are still being published are waited for as long as they keep arriving, within the receivers' drain limit.
  */
 async function drainReceivers(
     scenario: LayoutSwitchScenario,
     streams: readonly LiveRtcLayoutSwitchStream[]
 ): Promise<readonly LiveRtcControlClient.Event[]> {
+    const deadlineAtMs = Date.now() + LAYOUT_SWITCH_RECEIVER_DRAIN_TIMEOUT_MS;
     let lastMissing = Infinity;
     let lastChangedAtMs = Date.now();
     for (;;) {
@@ -526,10 +530,13 @@ async function drainReceivers(
             lastMissing = missing;
             lastChangedAtMs = Date.now();
         }
-        if (missing === 0 || Date.now() - lastChangedAtMs >= RALLAR_BLACK_BOX_RTC_STREAM_DEFAULT_DRAIN_TIMEOUT_MS) {
+        if (
+            missing === 0 || Date.now() - lastChangedAtMs >= RALLAR_BLACK_BOX_RTC_STREAM_DEFAULT_DRAIN_TIMEOUT_MS ||
+            Date.now() >= deadlineAtMs
+        ) {
             return events;
         }
-        await holdFor(scenario, 1_000);
+        await holdFor(scenario, LAYOUT_SWITCH_RECEIVER_DRAIN_POLL_INTERVAL_MS);
     }
 }
 
@@ -728,8 +735,8 @@ function expectPromotionsInsideStreams(run: LayoutSwitchRun): void {
     const lastSwitchOne = Math.max(...switchOnePromotions.map((promotedAt) => promotedAt ?? Infinity));
     expect.soft(
         run.requestedAtEpochMs[1] - lastSwitchOne,
-        `Switch 2 was issued less than ${SWITCH_HOLD_MS} ms after the last browser promoted switch 1`
-    ).toBeGreaterThanOrEqual(SWITCH_HOLD_MS);
+        `Switch 2 was issued less than ${LAYOUT_SWITCH_HOLD_MS} ms after the last browser promoted switch 1`
+    ).toBeGreaterThanOrEqual(LAYOUT_SWITCH_HOLD_MS);
     for (const promotion of run.evidence.promotions) {
         const window =
             `browser ${promotion.prefix}'s stream ran ${promotion.firstFrameAtEpochMs}..${promotion.lastFrameAtEpochMs}`;
@@ -744,8 +751,8 @@ function expectPromotionsInsideStreams(run: LayoutSwitchRun): void {
         }
         expect.soft(
             (promotion.lastFrameAtEpochMs ?? -Infinity) - (promotion.promotedAtEpochMs[1] ?? Infinity),
-            `${window}, under ${SWITCH_HOLD_MS} ms past its promotion of switch 2`
-        ).toBeGreaterThanOrEqual(SWITCH_HOLD_MS);
+            `${window}, under ${LAYOUT_SWITCH_HOLD_MS} ms past its promotion of switch 2`
+        ).toBeGreaterThanOrEqual(LAYOUT_SWITCH_HOLD_MS);
     }
 }
 

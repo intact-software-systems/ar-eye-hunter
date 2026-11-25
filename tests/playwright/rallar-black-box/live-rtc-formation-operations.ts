@@ -35,7 +35,7 @@ export interface FormationCommandIdInput {
 
 export interface FormationAgentInput extends FormationCommandIdInput {
     readonly timeoutMs?: number;
-    readonly control: LiveRtcControlClient;
+    readonly control: Pick<LiveRtcControlClient, 'executeOk' | 'executeResult' | 'resultValue' | 'fetchRun'>;
     readonly runId: string;
     readonly agent: LiveRtcControlClient.Agent;
     readonly roomRef: GroupRef;

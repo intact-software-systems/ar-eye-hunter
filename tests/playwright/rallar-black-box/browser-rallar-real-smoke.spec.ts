@@ -13,7 +13,9 @@ import {
     decodeText
 } from '../../../packages/shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 
+import { BROWSER_TEST_HARNESS_MARGIN_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/browser-test-harness-margin-ms.ts';
 import { computeCommandResultWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
+import { RALLAR_BLACK_BOX_EXPECT_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/playwright-expect-timeouts.ts';
 
 const CONTROL_BASE_URL = 'http://127.0.0.1:5180';
 const CONTROL_WS_URL = 'ws://127.0.0.1:5180/control';
@@ -23,6 +25,12 @@ const RESULT_POLL_TIMEOUT_MS = 30_000;
 
 /** How long the smoke polls the run's events for the connect and send evidence. */
 const EVENT_POLL_TIMEOUT_MS = 10_000;
+
+/** The send's own budget for opening the data channel and delivering. */
+const SEND_TIMEOUT_MS = 20_000;
+
+/** The agent page shows itself registered, and finally lists the send's result. */
+const DEFAULT_LIMIT_ASSERTIONS = 2;
 
 const apiBaseUrl = process.env.VITE_RALLAR_API_BASE_URL?.trim();
 const roomId = process.env.VITE_RALLAR_ROOM_ID?.trim();
@@ -96,10 +104,7 @@ async function enqueueCommand(
     expect(response.status()).toBe(202);
 }
 
-test('browser-rallar provider performs live RTC connect and realtime send when configured', async ({
-    page,
-    request
-}, testInfo) => {
+test('browser-rallar provider performs live RTC connect and realtime send when configured', async ({ page, request }) => {
     const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const runId = `real-rallar-smoke-${suffix}`;
     const agentId = `real-rallar-agent-${suffix}`;
@@ -151,7 +156,7 @@ test('browser-rallar provider performs live RTC connect and realtime send when c
         kind: 'rtc.send',
         connection,
         transport: 'realtime',
-        timeoutMs: 20_000,
+        timeoutMs: SEND_TIMEOUT_MS,
         send: {
             roomId,
             ...(peerIds.length > 0 ? { peerIds } : {}),
@@ -165,8 +170,10 @@ test('browser-rallar provider performs live RTC connect and realtime send when c
     };
     const connectWaitMs = computeCommandResultWaitMs(connectCommand, RESULT_POLL_TIMEOUT_MS);
     const sendWaitMs = computeCommandResultWaitMs(sendCommand, RESULT_POLL_TIMEOUT_MS);
-    // The configured timeout covers opening the agent page; each wait below comes on top.
-    test.setTimeout(testInfo.timeout + connectWaitMs + sendWaitMs + EVENT_POLL_TIMEOUT_MS);
+    test.setTimeout(
+        BROWSER_TEST_HARNESS_MARGIN_MS + DEFAULT_LIMIT_ASSERTIONS * RALLAR_BLACK_BOX_EXPECT_TIMEOUT_MS + connectWaitMs +
+            sendWaitMs + EVENT_POLL_TIMEOUT_MS
+    );
 
     await enqueueCommand(request, runId, agentId, connectCommandId, connectCommand);
     await expect.poll(async () => {

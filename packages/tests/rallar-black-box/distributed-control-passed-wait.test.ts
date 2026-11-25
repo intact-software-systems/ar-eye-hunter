@@ -14,6 +14,7 @@ import {
     computeSimulatedAckTestTimeoutMs,
     createLiveDistributedRecipeRuns,
     createSimulatedAckManifest,
+    SIMULATED_FAILURES_TEST_TIMEOUT_MS,
     toLiveDistributedRecipeManifests
 } from '../../../tests/playwright/rallar-black-box/distributed-recipes/distributed-recipe-test-runs.ts';
 import {
@@ -138,5 +139,19 @@ describe('distributed recipe test timeouts', () => {
         expect(computeDistributedRunPassedWaitMs(manifest)).toBe(57_000);
         expect(computeSimulatedAckTestTimeoutMs(manifest))
             .toBe(margin + threeAgents + 45_000 + 57_000 + 15_000 + 15_000 + controlRead);
+    });
+
+    // The test held a fixed 180 s, while its agents, scripted agents and state waits alone wait about 555 s.
+    it('gives the simulated failure test its agents, scripted agents, state waits, disconnect poll and control read', () => {
+        /** Each scripted agent's 10 s socket open, then the 20 s in-group poll. */
+        const scriptedAgents = 2 * (10_000 + 20_000);
+        /** The ACK run's 15 s timed-out wait, the failing run's ready and failed waits and the disconnect run's ready. */
+        const stateWaits = 15_000 + 3 * 45_000;
+        /** The closed agent's 10 s disconnect poll, then the disconnect run's 15 s running wait. */
+        const disconnect = 10_000 + 15_000;
+
+        expect(SIMULATED_FAILURES_TEST_TIMEOUT_MS).toBe(
+            margin + threeAgents + scriptedAgents + stateWaits + disconnect + controlRead
+        );
     });
 });

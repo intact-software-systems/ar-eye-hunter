@@ -11,9 +11,14 @@ import { CONTROL_GET_RETRY_BOUNDED_WAITS_MS } from '../read-control-get-response
 import {
     CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS,
     DISTRIBUTED_AGENT_CONFIGURE_RESULT_WAIT_MS,
-    DISTRIBUTED_GROUP_REQUEST_RESULT_WAIT_MS
+    DISTRIBUTED_GROUP_REQUEST_RESULT_WAIT_MS,
+    SCRIPTED_CONTROL_AGENT_OPEN_TIMEOUT_MS
 } from './browser-agents.ts';
-import { AGENTS_IN_GROUP_POLL_TIMEOUT_MS, computeDistributedRunToPassedWaitMs } from './distributed-control.ts';
+import {
+    AGENTS_IN_GROUP_POLL_TIMEOUT_MS,
+    computeDistributedRunToPassedWaitMs,
+    DISTRIBUTED_STATE_POLL_TIMEOUT_MS
+} from './distributed-control.ts';
 import {
     compositeEvidenceRecipe,
     createDistributedManifest,
@@ -32,14 +37,14 @@ import {
 /** How long the simulated test's Distributed Recipes panel may take to list its run. */
 export const SIMULATED_ACK_PANEL_TIMEOUT_MS = 15_000;
 
-/** The simulated failure test bounds each of its runs by an explicit state wait of its own. */
-export const SIMULATED_FAILURES_TEST_TIMEOUT_MS = 180_000;
-
 /** How long the simulated failure test waits for a staged run to time out its ACK, then for a started run to run. */
 export const SIMULATED_FAILURE_STATE_TIMEOUT_MS = 15_000;
 
 /** How long the simulated failure test polls the control run for a closed agent to disconnect. */
 export const SIMULATED_DISCONNECT_POLL_TIMEOUT_MS = 10_000;
+
+/** The simulated failure test's scripted agents: the one that never acknowledges and the one whose recipe fails. */
+const SIMULATED_FAILURE_SCRIPTED_AGENT_COUNT = 2;
 
 /** The ACK timeout the simulated failure test gives its silent agent's run. */
 export const SIMULATED_ACK_TIMEOUT_MS = 100;
@@ -80,6 +85,17 @@ export const LIVE_DISTRIBUTED_CLEANUP_CLOSE_TIMEOUT_MS = 15_000;
 
 /** The live test reads the control run for the WS and RTC warning reports and the realtime monitor, then its summary. */
 const LIVE_CONTROL_RUN_READS = 4;
+
+/**
+ * Three simulated agents; each scripted agent's socket and its in-group poll; the ACK run's timed-out wait, the
+ * failing run's ready and failed waits and the disconnect run's ready wait; the closed agent's disconnect poll and the
+ * disconnect run's running wait; then the control run read after it.
+ */
+export const SIMULATED_FAILURES_TEST_TIMEOUT_MS = BROWSER_TEST_HARNESS_MARGIN_MS + THREE_AGENTS_BOUNDED_WAITS_MS +
+    SIMULATED_FAILURE_SCRIPTED_AGENT_COUNT *
+        (SCRIPTED_CONTROL_AGENT_OPEN_TIMEOUT_MS + AGENTS_IN_GROUP_POLL_TIMEOUT_MS) +
+    SIMULATED_FAILURE_STATE_TIMEOUT_MS + 3 * DISTRIBUTED_STATE_POLL_TIMEOUT_MS + SIMULATED_DISCONNECT_POLL_TIMEOUT_MS +
+    SIMULATED_FAILURE_STATE_TIMEOUT_MS + CONTROL_GET_RETRY_BOUNDED_WAITS_MS;
 
 /** Three simulated agents, the run to passed, the panel listing it and showing it passed, then the run's summary read. */
 export function computeSimulatedAckTestTimeoutMs(manifest: RallarBlackBoxDistributedRunManifest): number {

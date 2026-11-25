@@ -338,7 +338,7 @@ jobs:
   e2e-live-recipes:
     name: Browser tests (live distributed recipes and Console)
     runs-on: ubuntu-latest
-    timeout-minutes: 80
+    timeout-minutes: 100
     services:
       postgres:
         image: postgres:16

@@ -4,6 +4,7 @@ import { computeDistributedRunPassedWaitMs } from '../../../tests/playwright/ral
 import { createDistributedManifest, rtcConnectRecipe } from '../../../tests/playwright/rallar-black-box/distributed-recipes/recipe-manifests.ts';
 import {
     computeConsoleNativeTestTimeoutMs,
+    CONSOLE_LIFECYCLE_TEST_TIMEOUT_MS,
     CONSOLE_NATIVE_SETUP_TIMEOUT_MS
 } from '../../../tests/playwright/rallar-black-box/recipe-console-monitor-test-timeouts.ts';
 
@@ -40,6 +41,25 @@ describe('Console Native test timeout', () => {
         expect(computeConsoleNativeTestTimeoutMs(manifest)).toBe(
             425_000 + assertions + 60_000 + computeDistributedRunPassedWaitMs(manifest) + controlReads + 2 * 30_000 +
                 30_000 + cleanup
+        );
+    });
+
+    // The lifecycle test held a fixed 240 s, while its sign-in, launch, two runs through Execute and the Monitor, the
+    // cancel dialog, the cancel proof and the cleanup wait about 1,100 s.
+    it('gives the lifecycle test its sign-in, three agents, both runs, the cancel and its proof, and the cleanup', () => {
+        const E = 15_000;
+        const signIn = E + 30_000 + 2 * E;
+        const launch = 2 * E + 30_000 + 60_000;
+        /** The selected recipe's three checks, the 30 s target list, each of the three targets, then their match. */
+        const targets = 3 * E + 30_000 + 3 * E + E;
+        /** Each Monitor visit checks its address twice, then waits 30 s for the verdict. */
+        const monitor = 2 * E + 30_000;
+        /** The cancel dialog shows, names the run and its state, then closes. */
+        const cancelDialog = 4 * E;
+
+        expect(CONSOLE_LIFECYCLE_TEST_TIMEOUT_MS).toBe(
+            60_000 + 5_000 + signIn + E + launch + 30_000 + 2 * targets + 2 * E + 2 * 60_000 + 90_000 + 2 * monitor +
+                2 * E + cancelDialog + 30_000 + 30_000 + 2 * 250 + 7 * 2_000
         );
     });
 });

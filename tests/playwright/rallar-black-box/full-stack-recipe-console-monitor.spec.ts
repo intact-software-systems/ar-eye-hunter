@@ -65,16 +65,21 @@ import {
 import { readLiveRtcRecorderRows } from './live-rtc-recorder-reader.ts';
 import {
     computeConsoleNativeTestTimeoutMs,
+    CONSOLE_CANCEL_PROOF_POLL_TIMEOUT_MS,
+    CONSOLE_COMPOSITE_PASSED_WAIT_MS,
+    CONSOLE_LIFECYCLE_AGENT_COUNT,
+    CONSOLE_LIFECYCLE_TEST_TIMEOUT_MS,
+    CONSOLE_NATIVE_AGENT_COUNT,
+    CONSOLE_NATIVE_SETUP_TIMEOUT_MS
+} from './recipe-console-monitor-test-timeouts.ts';
+import {
     CONSOLE_AGENT_PAGES_POLL_TIMEOUT_MS,
     CONSOLE_AGENTS_READY_STATUS_TIMEOUT_MS,
-    CONSOLE_LIFECYCLE_TEST_TIMEOUT_MS,
     CONSOLE_MONITOR_VERDICT_TIMEOUT_MS,
-    CONSOLE_NATIVE_AGENT_COUNT,
-    CONSOLE_NATIVE_SETUP_TIMEOUT_MS,
     CONSOLE_SERVICE_PROBE_TIMEOUT_MS,
     CONSOLE_STAGE_READY_TIMEOUT_MS,
     CONSOLE_TARGETS_TIMEOUT_MS
-} from './recipe-console-monitor-test-timeouts.ts';
+} from './recipe-console-operator-waits.ts';
 
 interface OperatorUrlInput {
     readonly actor: string;
@@ -113,12 +118,6 @@ interface ConsoleNativeAttachment {
     readonly proof: RtcNativeAcquisitionProof;
     readonly event: ApiJsonObject;
 }
-
-/** The composite recipe's commands read local state and name no budget; its run passes well inside this wait. */
-const COMPOSITE_PASSED_WAIT_MS = 90_000;
-
-/** How long the lifecycle test polls the distributed and control runs until they complete the cancel proof. */
-const CANCEL_PROOF_POLL_TIMEOUT_MS = 30_000;
 
 /** The readiness limit the Stability recipe authors for its connect. */
 const STABILITY_CONNECT_READINESS_TIMEOUT_MS = 10_000;
@@ -186,7 +185,7 @@ test('completes the configured live distributed run lifecycle and exports its ar
             controlRunId,
             groupId,
             prefix: 'recipe-console-live-agent',
-            count: 3
+            count: CONSOLE_LIFECYCLE_AGENT_COUNT
         });
         agentPages.push(...launched.pages);
         agentIds = launched.agentIds;
@@ -195,7 +194,7 @@ test('completes the configured live distributed run lifecycle and exports its ar
         await assertLiveExecuteTargets(page, agentIds, COMPOSITE_RECIPE);
         const passedRunId = await createDraftThroughVisibleExecuteControls(page);
         await stageThroughVisibleExecuteControls(page);
-        await startThroughVisibleExecuteControls(page, COMPOSITE_PASSED_WAIT_MS);
+        await startThroughVisibleExecuteControls(page, CONSOLE_COMPOSITE_PASSED_WAIT_MS);
         await navigateToMonitor(page, passedRunId, 'passed');
         assertSchemaV2Artifact(
             await exportMonitorArtifact(page, passedRunId, testInfo.outputPath('lifecycle-artifact.json')),
@@ -1066,7 +1065,7 @@ async function expectCompletedCancelProof(
             readControlRun(request, controlRunId)
         ]);
         return hasCompletedCancelProof(distributedRun, controlRun);
-    }, { timeout: CANCEL_PROOF_POLL_TIMEOUT_MS }).toBe(true);
+    }, { timeout: CONSOLE_CANCEL_PROOF_POLL_TIMEOUT_MS }).toBe(true);
 
     const [distributedRun, controlRun] = await Promise.all([
         readDistributedRun(request, distributedRunId),

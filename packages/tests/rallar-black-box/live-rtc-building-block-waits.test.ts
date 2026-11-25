@@ -35,6 +35,11 @@ import {
 } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
 import { createLiveRtcDeliveryOperations } from '../../../tests/playwright/rallar-black-box/live-rtc-delivery-operations.ts';
 import { createLiveRtcFormationOperations } from '../../../tests/playwright/rallar-black-box/live-rtc-formation-operations.ts';
+import { LiveRtcLayoutSwitchOperations } from '../../../tests/playwright/rallar-black-box/live-rtc-layout-switch-operations.ts';
+import {
+    LAYOUT_SWITCH_STREAM_DURATION_MS,
+    LIVE_RTC_LAYOUT_SWITCH_OPERATION_BOUNDED_WAITS_MS
+} from '../../../tests/playwright/rallar-black-box/live-rtc-layout-switch-test-timeouts.ts';
 import {
     createCountedPage,
     measureBoundedWaitsMs,
@@ -286,5 +291,42 @@ describe('the live RTC building blocks wait what their derivations count', () =>
                 });
             })
         ).toBe(MESSAGES_PROBES_BOUNDED_WAITS_MS);
+    });
+});
+
+describe('the layout-switch operations wait what their derivation counts', () => {
+    function createLayoutSwitchOperations(control: RecordingLiveRtcControl): LiveRtcLayoutSwitchOperations {
+        return new LiveRtcLayoutSwitchOperations({
+            control: Object.assign(control, {
+                fetchRun: async () => ({ agents: [], commands: [], results: [], events: [], stats: [], reports: [] })
+            }),
+            formation: createLiveRtcFormationOperations(),
+            runId: run.runId,
+            roomRef: { applicationId: 'app', workspaceId: 'work', groupId: run.groupId },
+            suffix: run.suffix,
+            owner: toPagedAgents(control)[0],
+            messagesRtc: { typeId: 'type', topicId: 'topic' }
+        });
+    }
+
+    it('reads the served overlap, writes the topology, reads a health and streams within their bounded waits', async () => {
+        const control = createControl();
+        await formTrio(control, 'messages.rtc');
+        const layoutSwitch = createLayoutSwitchOperations(control);
+        const [a] = toPagedAgents(control);
+
+        expect({
+            configRead: await measureBoundedWaitsMs(() => layoutSwitch.readServedOverlapMs()),
+            topologyWrite: await measureBoundedWaitsMs(() => layoutSwitch.writeTopologyKind('tree')),
+            health: await measureBoundedWaitsMs(() => layoutSwitch.readHealth(a).catch(() => undefined)),
+            stream: await measureBoundedWaitsMs(() =>
+                layoutSwitch.runStream({
+                    agent: a,
+                    qos: { reliability: 'best-effort', ack: 'none' },
+                    rateHz: 10,
+                    durationMs: LAYOUT_SWITCH_STREAM_DURATION_MS
+                })
+            )
+        }).toEqual(LIVE_RTC_LAYOUT_SWITCH_OPERATION_BOUNDED_WAITS_MS);
     });
 });

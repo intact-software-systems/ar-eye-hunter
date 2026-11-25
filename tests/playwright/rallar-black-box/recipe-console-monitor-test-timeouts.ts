@@ -1,65 +1,35 @@
 import { BROWSER_TEST_HARNESS_MARGIN_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/browser-test-harness-margin-ms.ts';
 import { LIVE_RTC_RECORDER_READ_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-recorder-read-waits.ts';
-import {
-    FULL_STACK_EXPECT_TIMEOUT_MS,
-    FULL_STACK_TAB_OPEN_BOUNDED_WAITS_MS
-} from '@shared-test/rallar-bb-test/browser-test-budgets/playwright-expect-timeouts.ts';
+import { FULL_STACK_EXPECT_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/playwright-expect-timeouts.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 
 import { computeDistributedRunPassedWaitMs } from './distributed-recipes/distributed-control.ts';
 import {
     CONTROL_RUN_AGENT_POLL_TIMEOUT_MS,
-    LOGIN_RUN_HEADER_TIMEOUT_MS,
     RALLAR_PAGE_CLEANUP_BOUNDED_WAITS_MS
 } from './full-stack-helpers.ts';
 import { CONTROL_GET_RETRY_BOUNDED_WAITS_MS } from './read-control-get-response.ts';
-
-/** The Console lifecycle test's limit; its composite run's passed wait is part of it. */
-export const CONSOLE_LIFECYCLE_TEST_TIMEOUT_MS = 240_000;
-
-/** How long each configured-service probe may take; the API and control probes run side by side. */
-export const CONSOLE_SERVICE_PROBE_TIMEOUT_MS = 5_000;
-
-/** How long the Console's launch control may take to open the agents' pages. */
-export const CONSOLE_AGENT_PAGES_POLL_TIMEOUT_MS = 30_000;
-
-/** How long the Console may take to report its launched agents ready and selected. */
-export const CONSOLE_AGENTS_READY_STATUS_TIMEOUT_MS = 60_000;
-
-/** How long the Execute view may take to list every launched agent as a target. */
-export const CONSOLE_TARGETS_TIMEOUT_MS = 30_000;
-
-/** How long a staged run may take to show ready in the Execute view. */
-export const CONSOLE_STAGE_READY_TIMEOUT_MS = 60_000;
-
-/** How long the Monitor view may take to show a run's verdict. */
-export const CONSOLE_MONITOR_VERDICT_TIMEOUT_MS = 30_000;
+import {
+    computeConsoleExecuteTargetsBoundedWaitsMs,
+    CONSOLE_AGENT_LAUNCH_BOUNDED_WAITS_MS,
+    CONSOLE_MONITOR_VERDICT_TIMEOUT_MS,
+    CONSOLE_MONITOR_VISIT_BOUNDED_WAITS_MS,
+    CONSOLE_OPERATOR_SIGN_IN_BOUNDED_WAITS_MS,
+    CONSOLE_SERVICE_PROBE_TIMEOUT_MS,
+    CONSOLE_STAGE_READY_TIMEOUT_MS
+} from './recipe-console-operator-waits.ts';
 
 /** How many browser agents the Native test launches through the Console. */
 export const CONSOLE_NATIVE_AGENT_COUNT = 2;
-
-/** The operator signs in: its login gate, its run header, then its Rallar Server tab. */
-const OPERATOR_SIGN_IN_BOUNDED_WAITS_MS = FULL_STACK_EXPECT_TIMEOUT_MS + LOGIN_RUN_HEADER_TIMEOUT_MS +
-    FULL_STACK_TAB_OPEN_BOUNDED_WAITS_MS;
-
-/** The agent setup and its control run ID show, the launched pages open, then the agents report ready and selected. */
-const AGENT_LAUNCH_BOUNDED_WAITS_MS = 2 * FULL_STACK_EXPECT_TIMEOUT_MS + CONSOLE_AGENT_PAGES_POLL_TIMEOUT_MS +
-    CONSOLE_AGENTS_READY_STATUS_TIMEOUT_MS;
-
-/**
- * The selected recipe shows selected with its provider and prerequisite, the targets list every agent, show each, and
- * show them all matched.
- */
-const EXECUTE_TARGETS_BOUNDED_WAITS_MS = 3 * FULL_STACK_EXPECT_TIMEOUT_MS + CONSOLE_TARGETS_TIMEOUT_MS +
-    CONSOLE_NATIVE_AGENT_COUNT * FULL_STACK_EXPECT_TIMEOUT_MS + FULL_STACK_EXPECT_TIMEOUT_MS;
 
 /**
  * The Native test's limit until it reads its manifest: the service probes, the operator's sign-in, the launched agents,
  * their connection, the targets they become and the agent pages' addresses side by side.
  */
 export const CONSOLE_NATIVE_SETUP_TIMEOUT_MS = BROWSER_TEST_HARNESS_MARGIN_MS + CONSOLE_SERVICE_PROBE_TIMEOUT_MS +
-    OPERATOR_SIGN_IN_BOUNDED_WAITS_MS + AGENT_LAUNCH_BOUNDED_WAITS_MS + CONTROL_RUN_AGENT_POLL_TIMEOUT_MS +
-    EXECUTE_TARGETS_BOUNDED_WAITS_MS + FULL_STACK_EXPECT_TIMEOUT_MS;
+    CONSOLE_OPERATOR_SIGN_IN_BOUNDED_WAITS_MS + CONSOLE_AGENT_LAUNCH_BOUNDED_WAITS_MS +
+    CONTROL_RUN_AGENT_POLL_TIMEOUT_MS + computeConsoleExecuteTargetsBoundedWaitsMs(CONSOLE_NATIVE_AGENT_COUNT) +
+    FULL_STACK_EXPECT_TIMEOUT_MS;
 
 /**
  * The capture control's empty value, the draft state, the control disabled with its native value, the started run's
@@ -81,3 +51,36 @@ export function computeConsoleNativeTestTimeoutMs(manifest: RallarBlackBoxDistri
         CONSOLE_NATIVE_AGENT_COUNT * LIVE_RTC_RECORDER_READ_TIMEOUT_MS + CONSOLE_MONITOR_VERDICT_TIMEOUT_MS +
         RALLAR_PAGE_CLEANUP_BOUNDED_WAITS_MS;
 }
+
+/** The composite recipe's commands read local state and name no budget; its run passes well inside this wait. */
+export const CONSOLE_COMPOSITE_PASSED_WAIT_MS = 90_000;
+
+/** How long the lifecycle test polls the distributed and control runs until they complete the cancel proof. */
+export const CONSOLE_CANCEL_PROOF_POLL_TIMEOUT_MS = 30_000;
+
+/** How many browser agents the lifecycle test launches through the Console. */
+export const CONSOLE_LIFECYCLE_AGENT_COUNT = 3;
+
+/** The operator's address after it opens the Console, the Execute workspace, then its address without the run. */
+const CONSOLE_LIFECYCLE_ADDRESS_ASSERTIONS = 3;
+
+/** The cancel dialog shows, names the run and its state, then closes. */
+const CONSOLE_CANCEL_DIALOG_ASSERTIONS = 4;
+
+/** Each run is drafted, then staged, through the Execute view. */
+const CONSOLE_DRAFT_AND_STAGE_BOUNDED_WAITS_MS = FULL_STACK_EXPECT_TIMEOUT_MS + CONSOLE_STAGE_READY_TIMEOUT_MS;
+
+/**
+ * The probes, the operator's sign-in, the launched agents and their connection; per run the targets, the draft and the
+ * stage; the first run to passed; both Monitor visits; the addresses the test checks; the cancel dialog, the cancelled
+ * verdict and the cancel proof, the control run read after it, and the pages' cleanup.
+ */
+export const CONSOLE_LIFECYCLE_TEST_TIMEOUT_MS = BROWSER_TEST_HARNESS_MARGIN_MS + CONSOLE_SERVICE_PROBE_TIMEOUT_MS +
+    CONSOLE_OPERATOR_SIGN_IN_BOUNDED_WAITS_MS + CONSOLE_AGENT_LAUNCH_BOUNDED_WAITS_MS +
+    CONTROL_RUN_AGENT_POLL_TIMEOUT_MS +
+    2 * (computeConsoleExecuteTargetsBoundedWaitsMs(CONSOLE_LIFECYCLE_AGENT_COUNT) +
+            CONSOLE_DRAFT_AND_STAGE_BOUNDED_WAITS_MS) +
+    CONSOLE_COMPOSITE_PASSED_WAIT_MS + 2 * CONSOLE_MONITOR_VISIT_BOUNDED_WAITS_MS +
+    (CONSOLE_LIFECYCLE_ADDRESS_ASSERTIONS + CONSOLE_CANCEL_DIALOG_ASSERTIONS) * FULL_STACK_EXPECT_TIMEOUT_MS +
+    CONSOLE_MONITOR_VERDICT_TIMEOUT_MS + CONSOLE_CANCEL_PROOF_POLL_TIMEOUT_MS + CONTROL_GET_RETRY_BOUNDED_WAITS_MS +
+    RALLAR_PAGE_CLEANUP_BOUNDED_WAITS_MS;
