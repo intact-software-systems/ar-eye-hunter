@@ -23,8 +23,7 @@ import type { ALOutboundCapturedPolicy } from '@shared/alm/outbound/admission/al
 import { ALOutboundMessageRuntime, type ALOutboundDropReasonCode } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     AL_OUTBOUND_WORK_PAGE_SIZE,
-    computeALOutboundWorkEntry,
-    toALOutboundWorkType
+    computeALOutboundWorkEntry
 } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { createDefaultALOutboundRuntimeResources } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { ALOutboundDequeuedAdmission } from '@shared/alm/outbound/lane/al-outbound-dequeued-admission.ts';
@@ -42,12 +41,14 @@ import {
     type ResourceEntry
 } from '@shared/mod.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
+import { toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import { waitForSettledOutboundWork } from '../../wait-for-al-outbound-work.ts';
 import {
+    commitCompetingOutboundMessageCommit,
     createDefaultOutboundTestRuntime,
     createDefaultOutboundTestStores,
     drainEngine,
@@ -894,14 +895,15 @@ describe('AL outbound dequeue work', () => {
         const batch = await createMixedFenceBatch();
         onTestFinished(async () => await batch.runtime.dispose());
 
-        await runOutboundWorkTask(batch.runtime);
+        await runMixedFenceBatch(batch);
 
         for (const message of batch.messages) {
             expect(await batch.stores.admissionStore.readStoredMessage(message.id.msgId), message.id.msgId).toBeDefined();
             expect(await readMixedBatchMessageVersion(batch.stores, message), message.id.msgId).toBe(1);
         }
         expect(await readMixedBatchSenderVersion(batch.stores)).toBe(1);
-        expect(batch.groups.map(({ memberCount, outcome }) => ({ memberCount, outcome }))).toEqual(expect.arrayContaining([
+        expectEachRowDispatchedAndSentOnce(batch);
+        expect(toMixedBatchGroupOutcomes(batch)).toEqual(expect.arrayContaining([
             { memberCount: 1, outcome: 'committed' },
             { memberCount: 3, outcome: 'committed' }
         ]));
@@ -911,9 +913,10 @@ describe('AL outbound dequeue work', () => {
         }
     });
 
-    it('when the sequenced row of a mixed batch loses its fence, the receipts\' write stands and each is sent once', async () => {
+    it('when the sequenced row of a mixed batch loses its fence, the receipts\' write stands and is not committed again', async () => {
         // Pins a mixed batch whose lost sender fence fails the receipts' write too, so each receipt commits a second
-        // time and its copy is queued twice.
+        // time and its message version moves twice. A second commit names the same send effects, so the transport sends
+        // one copy of each either way: the sends below show the batch ran, not this defect.
         const batch = await createMixedFenceBatch();
         onTestFinished(async () => await batch.runtime.dispose());
         const commitBundles = batch.stores.admissionStore.commitBundles.bind(batch.stores.admissionStore);
@@ -933,9 +936,9 @@ describe('AL outbound dequeue work', () => {
             return await commitBundles(bundles);
         });
 
-        await runOutboundWorkTask(batch.runtime);
+        await runMixedFenceBatch(batch);
 
-        expect(batch.groups.map(({ memberCount, outcome }) => ({ memberCount, outcome }))).toEqual(expect.arrayContaining([
+        expect(toMixedBatchGroupOutcomes(batch)).toEqual(expect.arrayContaining([
             { memberCount: 1, outcome: 'conflict' },
             { memberCount: 3, outcome: 'committed' }
         ]));
@@ -944,13 +947,69 @@ describe('AL outbound dequeue work', () => {
         for (const message of batch.messages) {
             expect(await readMixedBatchMessageVersion(batch.stores, message), message.id.msgId).toBe(1);
         }
-        const sends = await readSendEffectMsgIds(batch.stores);
-        for (const receipt of batch.receipts) {
-            expect(sends.filter((msgId) => msgId === receipt.id.msgId), receipt.id.msgId).toHaveLength(1);
-        }
-        expect(await batch.stores.admissionStore.readStoredMessage(batch.sequenced.id.msgId)).toBeDefined();
+        expectEachRowDispatchedAndSentOnce(batch);
         // The interleaved frame's commit and the sequenced row's own single commit after it.
         expect(await readMixedBatchSenderVersion(batch.stores)).toBe(2);
+    });
+
+    it('when a receipt of a mixed batch loses its own fence, the sequenced row\'s write stands and only the receipts commit alone', async () => {
+        // Pins a lost message fence of the receipts' write sending the committed sequenced row to commit again, or
+        // handing a row the commit of another.
+        const batch = await createMixedFenceBatch();
+        onTestFinished(async () => await batch.runtime.dispose());
+        const commitBundles = batch.stores.admissionStore.commitBundles.bind(batch.stores.admissionStore);
+        let interleaved = false;
+        vi.spyOn(batch.stores.admissionStore, 'commitBundles').mockImplementation(async (bundles) => {
+            const [losing] = bundles;
+            if (!interleaved && losing !== undefined && !losing.fencesSender && bundles.length > 1) {
+                interleaved = true;
+                // Another commit of the first receipt's own message lands after the group read its version.
+                await commitCompetingOutboundMessageCommit<OutboundTestPayload>(async (bundle) => await commitBundles([bundle]), losing);
+            }
+            return await commitBundles(bundles);
+        });
+
+        await runMixedFenceBatch(batch);
+
+        expect(toMixedBatchGroupOutcomes(batch)).toEqual(expect.arrayContaining([
+            { memberCount: 1, outcome: 'committed' },
+            { memberCount: 3, outcome: 'conflict' }
+        ]));
+        expect(batch.groups).toHaveLength(2);
+        // The competitor and the receipt's own commit alone; every other row moved its version once.
+        const versions = await Promise.all(batch.messages.map((message) => readMixedBatchMessageVersion(batch.stores, message)));
+        expect(versions).toEqual([2, 1, 1, 1]);
+        expect(await readMixedBatchSenderVersion(batch.stores)).toBe(1);
+        expectEachRowDispatchedAndSentOnce(batch);
+    });
+
+    it('when the receipts\' write of a mixed batch throws, the sequenced row\'s write stands and only the receipts commit alone', async () => {
+        // Pins a throw of one part's write sending every member of the group, the committed part's too, to commit alone.
+        const batch = await createMixedFenceBatch();
+        onTestFinished(async () => await batch.runtime.dispose());
+        const commitBundles = batch.stores.admissionStore.commitBundles.bind(batch.stores.admissionStore);
+        let thrown = false;
+        vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        vi.spyOn(batch.stores.admissionStore, 'commitBundles').mockImplementation((bundles) => {
+            if (!thrown && bundles.length > 1 && bundles.every((bundle) => !bundle.fencesSender)) {
+                thrown = true;
+                throw new Error('receipts write failed');
+            }
+            return commitBundles(bundles);
+        });
+
+        await runMixedFenceBatch(batch);
+
+        for (const message of batch.messages) {
+            expect(await readMixedBatchMessageVersion(batch.stores, message), message.id.msgId).toBe(1);
+        }
+        expect(toMixedBatchGroupOutcomes(batch)).toEqual(expect.arrayContaining([
+            { memberCount: 1, outcome: 'committed' },
+            { memberCount: 3, outcome: 'error' }
+        ]));
+        expect(batch.groups).toHaveLength(2);
+        expect(await readMixedBatchSenderVersion(batch.stores)).toBe(1);
+        expectEachRowDispatchedAndSentOnce(batch);
     });
 
     it('opens no supersedence session for a group whose every row the gate decided', async () => {
@@ -1406,7 +1465,11 @@ async function writeCorruptSentMessage(stores: OutboundTestStores, msgId: string
     });
 }
 
-/** One page of the server's outbox: three receipt controls and, among them, one frame on a track. */
+/**
+ * One page of the server's outbox: three receipt controls and, among them, one frame on a track. Each receipt names
+ * its own subject: an outbox row is keyed by the route, which a receipt addresses by its subject, so receipts of one
+ * subject would share one row and the page would hold one of them.
+ */
 interface MixedFenceBatch {
     readonly outbox: InMemoryQueueBox;
     readonly stores: OutboundTestStores;
@@ -1417,6 +1480,10 @@ interface MixedFenceBatch {
     readonly entries: readonly ResourceEntry[];
     /** The `admission-group` observations the batch's dequeue records. */
     readonly groups: readonly Extract<ALOutboundDequeuedAdmission.TimingObservation, { kind: 'admission-group'; }>[];
+    /** Each copy the transport sent, by the message it carries, in send order. */
+    readonly sent: readonly string[];
+    /** Each claimed row's ordered dispatch: the row's key, beside the key of the row its commit answered with. */
+    readonly dispatched: readonly Readonly<{ claimedKey: string; publicationKey: string; }>[];
 }
 
 /** The batch enqueued on a ready runtime whose every plan sends one copy, its rows not yet claimed. */
@@ -1424,6 +1491,8 @@ async function createMixedFenceBatch(): Promise<MixedFenceBatch> {
     const outbox = createOutboxQueue();
     const stores = createDefaultOutboundTestStores(outbox);
     const groups: Extract<ALOutboundDequeuedAdmission.TimingObservation, { kind: 'admission-group'; }>[] = [];
+    const sent: string[] = [];
+    const dispatched: { claimedKey: string; publicationKey: string; }[] = [];
     const runtime = createDefaultOutboundTestRuntime({
         outbox,
         stores,
@@ -1432,9 +1501,18 @@ async function createMixedFenceBatch(): Promise<MixedFenceBatch> {
             if (observation.kind === 'admission-group') {
                 groups.push(observation);
             }
+            if (observation.kind === 'admission-stage' && observation.publicationKey !== undefined) {
+                dispatched.push({
+                    claimedKey: toKeyAsString(observation.member.effect.entry.key),
+                    publicationKey: toKeyAsString(observation.publicationKey)
+                });
+            }
         },
         planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ peer: 'origin' }] }),
-        sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+        sendPreparedMessage: async (_prepared, _phase, lifecycle) => {
+            sent.push(lifecycle.canonicalMessage.id.msgId);
+            return { status: 'sent', submissionAttempted: true };
+        }
     });
     await runtime.ready();
     const receipts = ['1', '2', '3'].map((index) => createDequeuedReceipt(`receipt-${index}`, `subject-${index}`));
@@ -1444,7 +1522,28 @@ async function createMixedFenceBatch(): Promise<MixedFenceBatch> {
     for (const entry of entries) {
         await outbox.enqueueIfAbsent(entry);
     }
-    return { outbox, stores, runtime, receipts, sequenced, messages, entries, groups };
+    return { outbox, stores, runtime, receipts, sequenced, messages, entries, groups, sent, dispatched };
+}
+
+/** Runs the batch's dequeue, then the batch of sends its commits queued. */
+async function runMixedFenceBatch(batch: MixedFenceBatch): Promise<void> {
+    await runOutboundWorkTask(batch.runtime);
+    await runOutboundWorkTask(batch.runtime);
+}
+
+/** The batch's `admission-group` observations as member count and outcome. */
+function toMixedBatchGroupOutcomes(batch: MixedFenceBatch): readonly Readonly<{ memberCount: number; outcome: string; }>[] {
+    return batch.groups.map(({ memberCount, outcome }) => ({ memberCount, outcome }));
+}
+
+/** Every claimed row of the batch dispatched on its own commit's answer, and every message sent exactly once. */
+function expectEachRowDispatchedAndSentOnce(batch: MixedFenceBatch): void {
+    const claimedKeys = batch.entries.map((entry) => toKeyAsString(entry.key)).sort();
+    expect(batch.dispatched.map(({ claimedKey }) => claimedKey).sort()).toEqual(claimedKeys);
+    for (const { claimedKey, publicationKey } of batch.dispatched) {
+        expect(publicationKey).toBe(claimedKey);
+    }
+    expect([...batch.sent].sort()).toEqual(batch.messages.map((message) => message.id.msgId).sort());
 }
 
 async function readMixedBatchSenderVersion(stores: OutboundTestStores): Promise<number | undefined> {
@@ -1460,24 +1559,6 @@ async function readMixedBatchMessageVersion(stores: OutboundTestStores, message:
         toALOutboundOriginMessageKey({ row: 'msg-version', namespace: stores.admissionStore.namespace, originPeerId: senderId, msgId }),
         (value) => decodeALOutboundMessageVersion(value, msgId).version
     );
-}
-
-/** The fields of a stored outbound work row this file reads: its payload's kind and the message a send names. */
-interface StoredOutboundWorkRow {
-    readonly payload: Readonly<{ kind: string; message?: Readonly<{ msgId: string; }>; }>;
-}
-
-/** The message each `send-prepared` work row the store holds sends, one entry per row. */
-async function readSendEffectMsgIds(stores: OutboundTestStores): Promise<readonly string[]> {
-    const workType = toALOutboundWorkType(stores.admissionStore.namespace);
-    const rows = await Promise.all((await stores.workQueue.getAllKeys()).map((key) => stores.workQueue.getItem(key)));
-    return rows.flatMap((row) => {
-        if (row?.typeId !== workType) {
-            return [];
-        }
-        const { payload }: StoredOutboundWorkRow = JSON.parse(row.resource);
-        return payload.kind === 'send-prepared' && payload.message !== undefined ? [payload.message.msgId] : [];
-    });
 }
 
 /** The server's terminal receipt `msgId` of the message `subjectMsgId`. */

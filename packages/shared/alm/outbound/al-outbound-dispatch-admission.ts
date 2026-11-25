@@ -133,10 +133,7 @@ interface ALOutboundDecidedMember<TPrepared> extends ALOutboundCommitDecision<TP
 }
 
 /** When the group's one read began and ended, which every fence group's `admission-group` timing reports. */
-interface ALOutboundGroupReadTiming {
-    readonly startedAtMs: number;
-    readonly decisionEndedAtMs: number;
-}
+type ALOutboundGroupReadTiming = Pick<ALOutboundAdmissionGroupTiming, 'startedAtMs' | 'decisionEndedAtMs'>;
 
 export namespace ALOutboundDispatchAdmission {
     export interface Result<TPrepared> {
@@ -207,9 +204,10 @@ export class ALOutboundDispatchAdmission<TPrepared> {
     /**
      * The dispatches of one sender, read together and written in one write per fence they take: the members that
      * fence the sender version in one, those that fence their own message alone in another, both at once. When a
-     * member settles before its write (it fails validation, finds its pending admission, has nothing to commit) or the
-     * group's read throws, every member commits again alone; when a write answers anything but `committed` or throws,
-     * its own members do, and a write that committed stands. Alone is one after another: a fresh read, compute and
+     * member settles before its write (it fails validation, finds its pending admission, has nothing to commit), the
+     * members name two senders, the members that fence the sender read different versions of it, or the group's read
+     * throws, every member commits again alone; when a write answers anything but `committed` or throws, its own
+     * members do, and a write that committed stands. Alone is one after another: a fresh read, compute and
      * conflict handling, as a single send gets. Each member keeps its own answer there. A dispatch that follows its batch
      * predecessor commits only behind it, so its positions are recorded in sequence order: whether in the group or
      * alone, it is left to the next pass when its predecessor did not reach the commit ahead of it. The members of a
@@ -254,15 +252,10 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         try {
             const grouped = await this.commitGroupOnce(members)
                 .catch((error) => {
-                    console.warn('AL outbound group commit threw; its members commit alone', error);
+                    console.warn('AL outbound group read threw; its members commit alone', error);
                     return undefined;
                 });
-            const uncommitted = members.filter((_, index) => grouped?.[index] === undefined);
-            const alone = await this.commitEachAlone(uncommitted);
-            return members.map((member, index) => {
-                const value = grouped?.[index];
-                return value === undefined ? alone[uncommitted.indexOf(member)]! : { status: 'fulfilled', value };
-            });
+            return await this.commitEachAlone(members, grouped);
         }
         finally {
             for (const { phases } of members) {
@@ -308,17 +301,23 @@ export class ALOutboundDispatchAdmission<TPrepared> {
     }
 
     /**
-     * Every member commits alone, one after another in the order given (a follower after its predecessor), whatever
-     * an earlier one answered; each keeps its own answer. A member that follows its batch predecessor commits only
-     * once its predecessor committed.
+     * Every member in the order given (a follower after its predecessor): one whose group write committed keeps that
+     * result, and every other commits alone, one after another, whatever an earlier one answered; each keeps its own
+     * answer. A member that follows its batch predecessor commits only once its predecessor committed, in a group
+     * write or alone; a follower and its predecessors hold places on one track, so they fence the sender and share
+     * one fence group.
      */
     private async commitEachAlone(
-        members: readonly ALOutboundGroupMember<TPrepared>[]
+        members: readonly ALOutboundGroupMember<TPrepared>[],
+        grouped: readonly (ALOutboundDispatchAdmission.Result<TPrepared> | undefined)[] | undefined
     ): Promise<readonly PromiseSettledResult<ALOutboundDispatchAdmission.Result<TPrepared>>[]> {
         const outcomes: PromiseSettledResult<ALOutboundDispatchAdmission.Result<TPrepared>>[] = [];
         const committed: ALMessage[] = [];
-        for (const { dispatch, phases } of members) {
-            const [outcome] = isALOutboundLeftBehindPredecessor(dispatch, committed)
+        for (const [index, { dispatch, phases }] of members.entries()) {
+            const value = grouped?.[index];
+            const [outcome] = value !== undefined
+                ? [{ status: 'fulfilled', value } as const]
+                : isALOutboundLeftBehindPredecessor(dispatch, committed)
                 ? [toALOutboundLeftBehindPredecessorOutcome<TPrepared>()]
                 : await Promise.allSettled([this.commitWithPhases(dispatch, phases)]);
             if (outcome!.status === 'fulfilled' && outcome!.value.committed) {
@@ -350,11 +349,9 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             this.recordGroupTiming(members, timing, 'not-attempted');
             return undefined;
         }
-        const committed = await Promise.all(groups.map((group) => this.commitFenceGroup(group, timing)));
+        const settled = await Promise.allSettled(groups.map((group) => this.commitFenceGroup(group, timing)));
         const results = new Map(
-            groups.flatMap((group, index) =>
-                group.map(({ member }, position) => [member, committed[index]![position]] as const)
-            )
+            groups.flatMap((group, index) => toALOutboundFenceGroupResults(group, settled[index]!))
         );
         return members.map((member) => results.get(member));
     }
@@ -369,15 +366,13 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         timing: ALOutboundGroupReadTiming
     ): Promise<readonly (ALOutboundDispatchAdmission.Result<TPrepared> | undefined)[]> {
         const members = group.map(({ member }) => member);
-        const written = this.admissionStore.commitBundles(group.map(({ bundle }) => bundle));
-        const outcome = await Promise.all(members.map(({ phases }) => phases.withCommitPhase(() => written))).then(
-            (statuses) => statuses[0]!,
-            (error) => {
-                console.warn('AL outbound group commit threw; its members commit alone', error);
-                return 'error' as const;
-            }
-        );
-        this.recordGroupTiming(members, timing, outcome);
+        let outcome: ALOutboundAdmissionGroupTiming['outcome'] = 'error';
+        try {
+            outcome = await this.writeFenceGroup(group);
+        }
+        finally {
+            this.recordGroupTiming(members, timing, outcome);
+        }
         if (outcome !== 'committed') {
             return group.map(() => undefined);
         }
@@ -392,10 +387,19 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         });
     }
 
+    /** The one `commitBundles` of a fence group, through each member's commit phase; a store that throws rejects. */
+    private async writeFenceGroup(
+        group: readonly ALOutboundDecidedMember<TPrepared>[]
+    ): Promise<'committed' | 'conflict' | 'expired'> {
+        const written = this.admissionStore.commitBundles(group.map(({ bundle }) => bundle));
+        const [status] = await Promise.all(group.map(({ member }) => member.phases.withCommitPhase(() => written)));
+        return status!;
+    }
+
     /** The `admission-group` observation of `members`, from the group's read to now. */
     private recordGroupTiming(
         members: readonly ALOutboundGroupMember<TPrepared>[],
-        read: Pick<ALOutboundAdmissionGroupTiming, 'startedAtMs' | 'decisionEndedAtMs'>,
+        read: ALOutboundGroupReadTiming,
         outcome: ALOutboundAdmissionGroupTiming['outcome']
     ): void {
         recordALOutboundAdmissionGroupTiming(this.dependencies.dequeueTiming, {
@@ -915,6 +919,23 @@ function toALOutboundGroupSettledValues<T>(settled: readonly PromiseSettledResul
         }
         return outcome.value;
     });
+}
+
+/**
+ * Each member of one fence group beside its result: a write that threw is warned and answers nothing for its members,
+ * which then commit alone, while the other fence groups' results stand.
+ */
+function toALOutboundFenceGroupResults<TPrepared>(
+    group: readonly ALOutboundDecidedMember<TPrepared>[],
+    settled: PromiseSettledResult<readonly (ALOutboundDispatchAdmission.Result<TPrepared> | undefined)[]>
+): readonly (readonly [ALOutboundGroupMember<TPrepared>, ALOutboundDispatchAdmission.Result<TPrepared> | undefined])[] {
+    if (settled.status === 'rejected') {
+        console.warn('AL outbound fence group commit threw; its members commit alone', settled.reason);
+    }
+    return group.map((
+        { member },
+        position
+    ) => [member, settled.status === 'fulfilled' ? settled.value[position] : undefined]);
 }
 
 /** A row left behind its batch predecessor: not ready, so its claim is due again at the next pass, uncharged. */

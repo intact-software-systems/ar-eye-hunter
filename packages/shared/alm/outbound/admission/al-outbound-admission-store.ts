@@ -971,8 +971,6 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         nowMs: number
     ): Promise<'committed' | 'conflict' | 'expired'> {
         const { bundle, versionExpireAt } = candidates[0]!;
-        const version = { senderId: bundle.senderId, version: (bundle.expectedVersion ?? 0) + 1 };
-        const versionKey = toALOutboundVersionKey(this.namespace, bundle.senderId);
         const canonicalWrites = candidates.flatMap((candidate) => candidate.canonicalWrites);
         const effects = candidates.flatMap((candidate) => candidate.effects);
         const mutations = candidates.flatMap((candidate) => candidate.mutations);
@@ -998,7 +996,11 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
                 await this.mutations.writeStateWrites(tx, mutations);
                 await writeALOutboundTimeoutCompletions(tx, this.namespace, endedTimeoutEffectIds);
                 if (bundle.fencesSender) {
-                    await tx.setFence(versionKey, version, versionExpireAt);
+                    await tx.setFence(
+                        toALOutboundVersionKey(this.namespace, bundle.senderId),
+                        { senderId: bundle.senderId, version: (bundle.expectedVersion ?? 0) + 1 },
+                        versionExpireAt
+                    );
                 }
                 for (const candidate of candidates) {
                     await this.mutations.writeMessageVersion(tx, candidate.bundle.message, nowMs);
@@ -1028,8 +1030,8 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
 
     /**
      * Every fence the commit owes, re-read inside the write and all at once: the one sender version of
-     * the group, then the fences of each bundle. The version decides first and the bundles in order
-     * after it, so the read order never changes which fence leaves the write.
+     * the group when the group fences it, then the fences of each bundle. That version decides first and
+     * the bundles in order after it, so the read order never changes which fence leaves the write.
      */
     private async assertCurrentCommitFence(
         tx: ALAdmissionWorkWriteContext,
