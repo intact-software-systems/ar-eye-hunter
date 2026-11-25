@@ -1,5 +1,5 @@
 import { BROWSER_TEST_HARNESS_MARGIN_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/browser-test-harness-margin-ms.ts';
-import { computeCommandWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
+import { computeEnqueuedCommandWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
 import { GROUP_MEMBERSHIP_BOUNDED_WAITS_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/group-membership-waits.ts';
 import {
@@ -51,12 +51,14 @@ export const LAYOUT_SWITCH_RECEIVER_DRAIN_POLL_INTERVAL_MS = 1_000;
  * then polled for its result; a browser's health read names no budget of its own.
  */
 export const LIVE_RTC_LAYOUT_SWITCH_OPERATION_BOUNDED_WAITS_MS = {
-    configRead: computeCommandWaitMs(LAYOUT_SWITCH_CONFIG_READ_TIMEOUT_MS + LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS),
-    topologyWrite: computeCommandWaitMs(
+    configRead: computeEnqueuedCommandWaitMs(
+        LAYOUT_SWITCH_CONFIG_READ_TIMEOUT_MS + LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS
+    ),
+    topologyWrite: computeEnqueuedCommandWaitMs(
         LAYOUT_SWITCH_TOPOLOGY_WRITE_TIMEOUT_MS + LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS
     ),
     health: LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS,
-    stream: computeCommandWaitMs(computeLayoutSwitchStreamResultPollTimeoutMs(LAYOUT_SWITCH_STREAM_DURATION_MS))
+    stream: computeEnqueuedCommandWaitMs(computeLayoutSwitchStreamResultPollTimeoutMs(LAYOUT_SWITCH_STREAM_DURATION_MS))
 };
 
 /** Every browser's accepted layout, read one browser after another. */

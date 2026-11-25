@@ -2,7 +2,7 @@ import { BROWSER_TEST_HARNESS_MARGIN_MS } from '@shared-test/rallar-bb-test/brow
 import {
     computeCommandResultPollTimeoutMs,
     computeCommandResultWaitMs,
-    computeCommandWaitMs
+    computeEnqueuedCommandWaitMs
 } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
 import {
@@ -93,7 +93,9 @@ export function computeWorkerHostCaptureTestTimeoutMs(mode: 'native' | 'off'): n
     const agentCount = WORKER_CAPTURE_AGENT_ORDINALS.length;
     return BROWSER_TEST_HARNESS_MARGIN_MS + agentCount * WORKER_REGISTRATION_TIMEOUT_MS +
         (1 + agentCount) *
-            computeCommandWaitMs(WORKER_MEMBERSHIP_REQUEST_TIMEOUT_MS + LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS) +
+            computeEnqueuedCommandWaitMs(
+                WORKER_MEMBERSHIP_REQUEST_TIMEOUT_MS + LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS
+            ) +
         2 * agentCount * LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS +
         computeWorkerRecipeResultWaitMs(WORKER_CONNECT_TIMING) +
         (mode === 'native' ? agentCount * LIVE_RTC_RECORDER_READ_TIMEOUT_MS : 0) +

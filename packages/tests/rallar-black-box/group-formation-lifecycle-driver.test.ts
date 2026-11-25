@@ -5,7 +5,7 @@ import {
 } from 'vitest';
 
 import type { RtcNativeCapturedConnection } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
-import { computeCommandWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
+import { computeEnqueuedCommandWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 import { FORMATION_CONNECT_RESULT_WAIT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-formation-waits.ts';
 import type { RallarRtcCaptureUnverifiedError } from '@shared-web/browser/connection/rallar-rtc-capture-unverified-error.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
@@ -321,7 +321,7 @@ describe('group formation lifecycle driver', () => {
         expect(connects[0].command).toMatchObject({ kind: 'rtc.connect', roomId: 'group', timeoutMs: 135_000 });
         expect(connects[0].timeoutMs).toBeUndefined();
         expect(resolveLiveRtcResultPollTimeoutMs(connects[0])).toBe(135_000 + 45_000);
-        expect(computeCommandWaitMs(resolveLiveRtcResultPollTimeoutMs(connects[0]))).toBe(FORMATION_CONNECT_RESULT_WAIT_MS);
+        expect(computeEnqueuedCommandWaitMs(resolveLiveRtcResultPollTimeoutMs(connects[0]))).toBe(FORMATION_CONNECT_RESULT_WAIT_MS);
     });
 
     it.each(['missing', 'mismatch', 'foreign-command', 'foreign-agent'])('refuses %s ALM application before reconnect readiness', async (failure) => {

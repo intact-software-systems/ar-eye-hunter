@@ -6,7 +6,7 @@ import {
 } from 'vitest';
 
 import type { RtcNativeAcquisitionProof, RtcNativeCapturedConnection } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
-import { computeCommandWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
+import { computeEnqueuedCommandWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 import { GROUP_MEMBERSHIP_REQUEST_RESULT_WAIT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/group-membership-waits.ts';
 import { MATRIX_SEND_RESULT_WAIT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-delivery-waits.ts';
 import {
@@ -571,7 +571,7 @@ describe('live RTC delivery owner', () => {
         const budgeted = recording.commands.filter(({ command }) => command.timeoutMs !== undefined);
         const waitsByCommand = new Map(budgeted.map((execution) => [
             execution.commandId.replace(/-(?:try\/d|messages-rtc).*$/, ''),
-            computeCommandWaitMs(resolveLiveRtcResultPollTimeoutMs(execution))
+            computeEnqueuedCommandWaitMs(resolveLiveRtcResultPollTimeoutMs(execution))
         ]));
 
         expect(budgeted.filter((execution) => execution.timeoutMs !== undefined)).toEqual([]);
@@ -584,7 +584,7 @@ describe('live RTC delivery owner', () => {
             'send-counted-send': MATRIX_SEND_RESULT_WAIT_MS
         });
         for (const execution of budgeted.filter(({ command }) => command.kind === 'formation.readiness')) {
-            expect(computeCommandWaitMs(resolveLiveRtcResultPollTimeoutMs(execution)))
+            expect(computeEnqueuedCommandWaitMs(resolveLiveRtcResultPollTimeoutMs(execution)))
                 .toBeLessThanOrEqual(FORMATION_READINESS_BOUNDED_WAITS_MS);
         }
     });

@@ -8,12 +8,12 @@ import type {
     RtcNativeAcquisitionProof,
     RtcNativeCapturedConnection
 } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
-import { LIVE_RTC_CLOSE_RESULT_WAIT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-control-waits.ts';
+import { LIVE_RTC_CLOSE_RESULT_POLL_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-control-waits.ts';
 import {
     CLUSTER_DIRECT_EXCHANGE_BOUNDED_WAITS_MS,
     GROUP_STATE_READBACK_REQUEST_TIMEOUT_MS,
     LIVE_RTC_ALL_SCENARIOS_TEST_TIMEOUT_MS,
-    LIVE_RTC_CLEANUP_CLOSE_TIMEOUT_MS,
+    LIVE_RTC_CLEANUP_CLOSE_RESULT_POLL_TIMEOUT_MS,
     LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS,
     LIVE_RTC_RETENTION_SOAK_TEST_TIMEOUT_MS,
     MATRIX_RUN_RESULTS_POLL_TIMEOUT_MS,
@@ -302,7 +302,7 @@ async function closeLiveRtcAttemptResources(input: FinalizeLiveRtcAttemptInput):
                 agentId: agent.agentId,
                 commandId: `best-effort-close-${agent.prefix.toLowerCase()}-${input.suffix}`,
                 command: { kind: 'close' },
-                timeoutMs: LIVE_RTC_CLEANUP_CLOSE_TIMEOUT_MS
+                timeoutMs: LIVE_RTC_CLEANUP_CLOSE_RESULT_POLL_TIMEOUT_MS
             });
             if (!result.ok) {
                 throw new Error(
@@ -1207,7 +1207,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                             agentId: agents[2].agentId,
                             commandId: closeCommandId,
                             command: { kind: 'close' },
-                            timeoutMs: LIVE_RTC_CLOSE_RESULT_WAIT_MS
+                            timeoutMs: LIVE_RTC_CLOSE_RESULT_POLL_TIMEOUT_MS
                         });
                         commandIds.push(closeCommandId);
                     }

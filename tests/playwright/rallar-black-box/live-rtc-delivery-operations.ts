@@ -6,8 +6,8 @@ import type {
     RtcNativeCapturedConnection
 } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
 import {
-    LIVE_RTC_CLOSE_RESULT_WAIT_MS,
-    LIVE_RTC_RESET_RESULT_WAIT_MS
+    LIVE_RTC_CLOSE_RESULT_POLL_TIMEOUT_MS,
+    LIVE_RTC_RESET_RESULT_POLL_TIMEOUT_MS
 } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-control-waits.ts';
 import {
     MATRIX_INBOX_TIMEOUT_MS,
@@ -677,7 +677,7 @@ async function expectClosedTransportFailure(
         agentId: input.agent.agentId,
         commandId: closeCommandId,
         command: { kind: 'close' },
-        timeoutMs: LIVE_RTC_CLOSE_RESULT_WAIT_MS
+        timeoutMs: LIVE_RTC_CLOSE_RESULT_POLL_TIMEOUT_MS
     });
 
     const staleSendCommandId = `stale-send-${input.agent.prefix.toLowerCase()}-${input.suffix}`;
@@ -724,14 +724,14 @@ async function closeAndResetAgents(
             agentId: agent.agentId,
             commandId: closeCommandId,
             command: { kind: 'close' },
-            timeoutMs: LIVE_RTC_CLOSE_RESULT_WAIT_MS
+            timeoutMs: LIVE_RTC_CLOSE_RESULT_POLL_TIMEOUT_MS
         });
         await input.control.executeResult({
             runId: input.runId,
             agentId: agent.agentId,
             commandId: resetCommandId,
             command: { kind: 'reset' },
-            timeoutMs: LIVE_RTC_RESET_RESULT_WAIT_MS
+            timeoutMs: LIVE_RTC_RESET_RESULT_POLL_TIMEOUT_MS
         });
     }
     return commandIds;
@@ -752,14 +752,14 @@ async function closeAndResetSettledAgentTrio(
             agentId: agent.agentId,
             commandId: closeCommandId,
             command: { kind: 'close' },
-            timeoutMs: LIVE_RTC_CLOSE_RESULT_WAIT_MS
+            timeoutMs: LIVE_RTC_CLOSE_RESULT_POLL_TIMEOUT_MS
         });
         await input.control.executeOk({
             runId: input.runId,
             agentId: agent.agentId,
             commandId: resetCommandId,
             command: { kind: 'reset' },
-            timeoutMs: LIVE_RTC_RESET_RESULT_WAIT_MS
+            timeoutMs: LIVE_RTC_RESET_RESULT_POLL_TIMEOUT_MS
         });
     };
 

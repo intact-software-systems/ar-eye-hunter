@@ -112,7 +112,7 @@ export const config = readFullStackConfig();
 export const CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS = 2 * CONTROL_AGENT_OPENING_TIMEOUT_MS;
 
 /** How long a control agent's configuration for the distributed group is polled for its result. */
-export const DISTRIBUTED_AGENT_CONFIGURE_RESULT_WAIT_MS = 20_000;
+export const DISTRIBUTED_AGENT_CONFIGURE_RESULT_POLL_TIMEOUT_MS = 20_000;
 
 /** Each group creation or membership request's own budget. */
 export const DISTRIBUTED_GROUP_REQUEST_TIMEOUT_MS = 15_000;
@@ -121,7 +121,7 @@ export const DISTRIBUTED_GROUP_REQUEST_TIMEOUT_MS = 15_000;
 const DISTRIBUTED_COMMAND_RESULT_POLL_MARGIN_MS = 30_000;
 
 /** How long a group creation or membership request is polled for its result: its budget, then the poll margin. */
-export const DISTRIBUTED_GROUP_REQUEST_RESULT_WAIT_MS = DISTRIBUTED_GROUP_REQUEST_TIMEOUT_MS +
+export const DISTRIBUTED_GROUP_REQUEST_RESULT_POLL_TIMEOUT_MS = DISTRIBUTED_GROUP_REQUEST_TIMEOUT_MS +
     DISTRIBUTED_COMMAND_RESULT_POLL_MARGIN_MS;
 
 /** How long a scripted control agent reports each of its commands took. */
@@ -431,7 +431,7 @@ async function configureAgentForDistributedGroup(input: ConfigureAgentForDistrib
                 }
             }
         },
-        timeout: DISTRIBUTED_AGENT_CONFIGURE_RESULT_WAIT_MS
+        timeout: DISTRIBUTED_AGENT_CONFIGURE_RESULT_POLL_TIMEOUT_MS
     });
 }
 

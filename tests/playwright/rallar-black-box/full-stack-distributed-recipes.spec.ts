@@ -32,7 +32,7 @@ import {
     computeSimulatedAckTestTimeoutMs,
     createLiveDistributedRecipeRuns,
     createSimulatedAckManifest,
-    LIVE_DISTRIBUTED_CLEANUP_CLOSE_TIMEOUT_MS,
+    LIVE_DISTRIBUTED_CLEANUP_CLOSE_RESULT_POLL_TIMEOUT_MS,
     SIMULATED_ACK_PANEL_TIMEOUT_MS,
     SIMULATED_ACK_TIMEOUT_MS,
     SIMULATED_DISCONNECT_POLL_TIMEOUT_MS,
@@ -667,7 +667,7 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
                     agentId: handle.agentId,
                     commandId: `best-effort-close-${handle.prefix.toLowerCase()}-${suffix}`,
                     command: { kind: 'close' },
-                    timeout: LIVE_DISTRIBUTED_CLEANUP_CLOSE_TIMEOUT_MS
+                    timeout: LIVE_DISTRIBUTED_CLEANUP_CLOSE_RESULT_POLL_TIMEOUT_MS
                 }).catch(() => undefined);
                 await handle.context.close().catch(() => undefined);
             }));

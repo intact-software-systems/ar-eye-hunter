@@ -5,7 +5,7 @@ import {
     vi
 } from 'vitest';
 
-import { computeCommandWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
+import { computeEnqueuedCommandWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 import { RALLAR_BLACK_BOX_EXPECT_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/playwright-expect-timeouts.ts';
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 
@@ -193,13 +193,13 @@ describe('the two-agent smoke\'s operations wait what their derivations count', 
         const health = { phase: 'counted', connected: true, readyPeerId: undefined, reconnectSuppressed: false };
 
         expect(await measureBoundedWaitsMs(() => smoke.expectHealth(connectedB, health))).toBe(
-            computeCommandWaitMs(TWO_AGENT_RESULT_POLL_TIMEOUT_MS)
+            computeEnqueuedCommandWaitMs(TWO_AGENT_RESULT_POLL_TIMEOUT_MS)
         );
         expect(await measureBoundedWaitsMs(() => smoke.reloadAgent(agentB))).toBe(
             TWO_AGENT_OPERATION_BOUNDED_WAITS_MS.reload
         );
         expect(await measureBoundedWaitsMs(() => smoke.disconnectAgent(agentB))).toBe(
-            computeCommandWaitMs(TWO_AGENT_RESULT_POLL_TIMEOUT_MS) + TWO_AGENT_DISCONNECT_SETTLE_MS
+            computeEnqueuedCommandWaitMs(TWO_AGENT_RESULT_POLL_TIMEOUT_MS) + TWO_AGENT_DISCONNECT_SETTLE_MS
         );
         expect(
             await measureBoundedWaitsMs(async () => {

@@ -5,7 +5,7 @@ import {
     vi
 } from 'vitest';
 
-import { computeCommandWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
+import { computeEnqueuedCommandWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 import { GROUP_MEMBERSHIP_BOUNDED_WAITS_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/group-membership-waits.ts';
 import { LIVE_RTC_RECORDING_ADMISSION_BOUNDED_WAITS_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-agent-opening-waits.ts';
 import { LIVE_RTC_CLOSE_AND_RESET_BOUNDED_WAITS_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-control-waits.ts';
@@ -239,7 +239,7 @@ describe('the live RTC building blocks wait what their derivations count', () =>
     it('admits each agent\'s browser recording within the admission\'s bounded waits', async () => {
         const recording = new LiveRtcBrowserRecording({
             executeOk: async (input) => {
-                await spendBoundedWait(computeCommandWaitMs(resolveLiveRtcResultPollTimeoutMs(input)));
+                await spendBoundedWait(computeEnqueuedCommandWaitMs(resolveLiveRtcResultPollTimeoutMs(input)));
                 return {
                     ok: true,
                     agentId: input.agentId,

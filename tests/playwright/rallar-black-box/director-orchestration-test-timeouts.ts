@@ -1,7 +1,7 @@
 import { BROWSER_TEST_HARNESS_MARGIN_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/browser-test-harness-margin-ms.ts';
 import {
     computeCommandResultWaitMs,
-    computeCommandWaitMs
+    computeEnqueuedCommandWaitMs
 } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 
 import { DIRECTOR_COMMAND_RESULT_POLL_TIMEOUT_MS } from './director-orchestration-operations.ts';
@@ -11,7 +11,7 @@ import {
     DIRECTOR_CONNECT_TIMING,
     DIRECTOR_EVENT_POLL_TIMEOUT_MS,
     DIRECTOR_GROUP_REQUEST_TIMEOUT_MS,
-    DIRECTOR_INTENT_RESULT_TIMEOUT_MS,
+    DIRECTOR_INTENT_RESULT_POLL_TIMEOUT_MS,
     DIRECTOR_PEER_READINESS_POLL_TIMEOUT_MS,
     DIRECTOR_RELAY_START_TIMEOUT_MS,
     DIRECTOR_STALE_HOLD_MS
@@ -26,11 +26,11 @@ import { CONTROL_GET_BOUNDED_WAITS_MS } from './read-control-get-response.ts';
 const DIRECTOR_CLIENT_COUNT = DIRECTOR_AGENT_PREFIXES.length - 1;
 
 /** A command that names no budget of its own waits its enqueue request, then the whole result poll. */
-const DIRECTOR_UNBUDGETED_COMMAND_WAIT_MS = computeCommandWaitMs(DIRECTOR_COMMAND_RESULT_POLL_TIMEOUT_MS);
+const DIRECTOR_UNBUDGETED_COMMAND_WAIT_MS = computeEnqueuedCommandWaitMs(DIRECTOR_COMMAND_RESULT_POLL_TIMEOUT_MS);
 
 /** The owner creates the group, then each agent joins it, each request its enqueue, its budget and the result poll. */
 const MEMBERSHIP_BOUNDED_WAITS_MS = (1 + DIRECTOR_AGENT_PREFIXES.length) *
-    computeCommandWaitMs(DIRECTOR_GROUP_REQUEST_TIMEOUT_MS + DIRECTOR_COMMAND_RESULT_POLL_TIMEOUT_MS);
+    computeEnqueuedCommandWaitMs(DIRECTOR_GROUP_REQUEST_TIMEOUT_MS + DIRECTOR_COMMAND_RESULT_POLL_TIMEOUT_MS);
 
 /** The agents connect side by side, then poll their peer readiness side by side. */
 const CONNECTS_BOUNDED_WAITS_MS = computeCommandResultWaitMs(
@@ -39,16 +39,17 @@ const CONNECTS_BOUNDED_WAITS_MS = computeCommandResultWaitMs(
 ) + DIRECTOR_PEER_READINESS_POLL_TIMEOUT_MS;
 
 /** A appoints itself under its budget, then each agent reads its status, a command that names no budget. */
-const APPOINTMENT_BOUNDED_WAITS_MS = computeCommandWaitMs(
+const APPOINTMENT_BOUNDED_WAITS_MS = computeEnqueuedCommandWaitMs(
     DIRECTOR_APPOINT_TIMEOUT_MS + DIRECTOR_COMMAND_RESULT_POLL_TIMEOUT_MS
 ) + DIRECTOR_AGENT_PREFIXES.length * DIRECTOR_UNBUDGETED_COMMAND_WAIT_MS;
 
 /** Each agent starts its relay under its budget, in turn. */
 const RELAYS_BOUNDED_WAITS_MS = DIRECTOR_AGENT_PREFIXES.length *
-    computeCommandWaitMs(DIRECTOR_RELAY_START_TIMEOUT_MS + DIRECTOR_COMMAND_RESULT_POLL_TIMEOUT_MS);
+    computeEnqueuedCommandWaitMs(DIRECTOR_RELAY_START_TIMEOUT_MS + DIRECTOR_COMMAND_RESULT_POLL_TIMEOUT_MS);
 
 /** Each client relays its intent in turn, then the intent and output events arrive side by side. */
-const INTENTS_BOUNDED_WAITS_MS = DIRECTOR_CLIENT_COUNT * computeCommandWaitMs(DIRECTOR_INTENT_RESULT_TIMEOUT_MS) +
+const INTENTS_BOUNDED_WAITS_MS =
+    DIRECTOR_CLIENT_COUNT * computeEnqueuedCommandWaitMs(DIRECTOR_INTENT_RESULT_POLL_TIMEOUT_MS) +
     DIRECTOR_EVENT_POLL_TIMEOUT_MS;
 
 /** Each client requests a sync in turn, then their snapshots arrive side by side. */

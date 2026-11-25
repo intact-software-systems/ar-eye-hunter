@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
     computeCommandResultPollTimeoutMs,
     computeCommandResultWaitMs,
-    computeCommandWaitMs
+    computeEnqueuedCommandWaitMs
 } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
 import { RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS } from '@shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
@@ -70,6 +70,6 @@ describe('computeCommandResultWaitMs', () => {
     });
 
     it('counts a command whose caller names its result poll by the enqueue request and that poll', () => {
-        expect(computeCommandWaitMs(15_000)).toBe(10_000 + 15_000);
+        expect(computeEnqueuedCommandWaitMs(15_000)).toBe(10_000 + 15_000);
     });
 });

@@ -18,12 +18,12 @@ import { computeCommandResultPollTimeoutMs } from '@shared-test/rallar-bb-test/b
 import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
 import {
     LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS,
-    LIVE_RTC_HEALTH_READ_TIMEOUT_MS,
+    LIVE_RTC_HEALTH_RESULT_POLL_TIMEOUT_MS,
     LIVE_RTC_MESSAGE_WAIT_TIMEOUT_MS,
     LIVE_RTC_PEER_ABSENCE_TIMEOUT_MS,
     LIVE_RTC_PEER_READINESS_TIMEOUT_MS
 } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-control-waits.ts';
-import { LIVE_RTC_DIAGNOSTICS_READ_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-diagnostics-waits.ts';
+import { LIVE_RTC_DIAGNOSTICS_RESULT_POLL_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-diagnostics-waits.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
@@ -503,7 +503,7 @@ export class LiveRtcControlClient {
                     safeFileName(agentId)
                 }`,
                 command: { kind: 'health', includeRtcDiagnostics: true },
-                timeoutMs: LIVE_RTC_HEALTH_READ_TIMEOUT_MS
+                timeoutMs: LIVE_RTC_HEALTH_RESULT_POLL_TIMEOUT_MS
             });
             return [
                 agentId,
@@ -582,7 +582,7 @@ export class LiveRtcControlClient {
         }
         await input.agent.refreshRoom({ refresh: 'always', timeoutMs: refreshTimeoutMs });
         const healthTimeoutMs = Math.min(
-            LIVE_RTC_HEALTH_READ_TIMEOUT_MS,
+            LIVE_RTC_HEALTH_RESULT_POLL_TIMEOUT_MS,
             deadlineMs - this.#monotonicNow()
         );
         if (healthTimeoutMs <= 0) {
@@ -618,7 +618,7 @@ export class LiveRtcControlClient {
             runId: input.runId,
             agentId: input.agent.agentId,
             commandId: `health-readiness-failure-${input.agent.prefix.toLowerCase()}-${input.suffix}-${attempt}`,
-            timeoutMs: LIVE_RTC_HEALTH_READ_TIMEOUT_MS
+            timeoutMs: LIVE_RTC_HEALTH_RESULT_POLL_TIMEOUT_MS
         });
         await this.#writeDiagnosticsArtifact(
             `live-rtc-readiness-failure-${safeFileName(input.agent.agentId)}-${safeFileName(input.suffix)}.json`,
@@ -677,7 +677,7 @@ export class LiveRtcControlClient {
                         agentId: input.agent.agentId,
                         commandId: `health-absent-${input.agent.prefix.toLowerCase()}-${input.suffix}-${attempt++}`,
                         command: { kind: 'health' },
-                        timeoutMs: LIVE_RTC_HEALTH_READ_TIMEOUT_MS
+                        timeoutMs: LIVE_RTC_HEALTH_RESULT_POLL_TIMEOUT_MS
                     }).catch(() => undefined);
                     if (!result?.ok) {
                         return input.departedPeerIds;
@@ -806,7 +806,7 @@ export class LiveRtcControlClient {
                     runId: input.runId,
                     agentId: agent.agentId,
                     commandId,
-                    timeoutMs: LIVE_RTC_DIAGNOSTICS_READ_TIMEOUT_MS
+                    timeoutMs: LIVE_RTC_DIAGNOSTICS_RESULT_POLL_TIMEOUT_MS
                 })
             );
         }
@@ -960,7 +960,7 @@ export class LiveRtcControlClient {
                 agentId,
                 commandId: `health-nack-failure-${safeFileName(input.commandId)}-${safeFileName(agentId)}`,
                 command: { kind: 'health', includeRtcDiagnostics: true },
-                timeoutMs: LIVE_RTC_HEALTH_READ_TIMEOUT_MS
+                timeoutMs: LIVE_RTC_HEALTH_RESULT_POLL_TIMEOUT_MS
             });
             return [
                 agentId,

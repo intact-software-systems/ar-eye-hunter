@@ -1,4 +1,4 @@
-import { computeCommandWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
+import { computeEnqueuedCommandWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 import {
     LIVE_RTC_MESSAGE_WAIT_TIMEOUT_MS,
     LIVE_RTC_PEER_ABSENCE_TIMEOUT_MS,
@@ -102,7 +102,7 @@ export class RecordingLiveRtcControl implements LiveRtcControlPort {
         input: LiveRtcControlClient.ExecuteInput
     ): Promise<LiveRtcControlClient.Result> => {
         this.commands.push(input);
-        await this.spendWait(computeCommandWaitMs(resolveLiveRtcResultPollTimeoutMs(input)));
+        await this.spendWait(computeEnqueuedCommandWaitMs(resolveLiveRtcResultPollTimeoutMs(input)));
         const command = input.command;
         if (command.kind === 'formation.readiness') {
             return await this.recordFormationReadiness(input);

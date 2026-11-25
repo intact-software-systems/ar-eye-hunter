@@ -1,5 +1,5 @@
 import { BROWSER_TEST_HARNESS_MARGIN_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/browser-test-harness-margin-ms.ts';
-import { computeCommandWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
+import { computeEnqueuedCommandWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 import { CONTROL_AGENT_OPENING_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-agent-opening-timeout-ms.ts';
 import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
 import { FULL_STACK_EXPECT_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/playwright-expect-timeouts.ts';
@@ -12,8 +12,8 @@ import { type RallarBlackBoxTestRecipe } from '../../../../packages/shared-test/
 import { CONTROL_GET_BOUNDED_WAITS_MS } from '../read-control-get-response.ts';
 import {
     CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS,
-    DISTRIBUTED_AGENT_CONFIGURE_RESULT_WAIT_MS,
-    DISTRIBUTED_GROUP_REQUEST_RESULT_WAIT_MS,
+    DISTRIBUTED_AGENT_CONFIGURE_RESULT_POLL_TIMEOUT_MS,
+    DISTRIBUTED_GROUP_REQUEST_RESULT_POLL_TIMEOUT_MS,
     SCRIPTED_CONTROL_AGENT_OPEN_TIMEOUT_MS
 } from './browser-agents.ts';
 import {
@@ -59,7 +59,8 @@ const LIVE_AGENT_COUNT = 3;
  * its result, then all are seen in the group.
  */
 const THREE_AGENTS_BOUNDED_WAITS_MS = 3 * CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS +
-    3 * computeCommandWaitMs(DISTRIBUTED_AGENT_CONFIGURE_RESULT_WAIT_MS) + AGENTS_IN_GROUP_POLL_TIMEOUT_MS;
+    3 * computeEnqueuedCommandWaitMs(DISTRIBUTED_AGENT_CONFIGURE_RESULT_POLL_TIMEOUT_MS) +
+    AGENTS_IN_GROUP_POLL_TIMEOUT_MS;
 
 /** The live test's agents sign in as they open, each first waiting for its login gate. */
 const THREE_SIGNED_IN_AGENTS_BOUNDED_WAITS_MS = THREE_AGENTS_BOUNDED_WAITS_MS +
@@ -67,7 +68,7 @@ const THREE_SIGNED_IN_AGENTS_BOUNDED_WAITS_MS = THREE_AGENTS_BOUNDED_WAITS_MS +
 
 /** The owner creates the live test's group, then each of the three agents joins it, one request after another. */
 const LIVE_GROUP_MEMBERSHIP_BOUNDED_WAITS_MS = (1 + LIVE_AGENT_COUNT) *
-    computeCommandWaitMs(DISTRIBUTED_GROUP_REQUEST_RESULT_WAIT_MS);
+    computeEnqueuedCommandWaitMs(DISTRIBUTED_GROUP_REQUEST_RESULT_POLL_TIMEOUT_MS);
 
 /** Each warning diagnostic row shows its group, its severity pill and its transport pill. */
 const LIVE_DIAGNOSTIC_ROW_ASSERTIONS = 3;
@@ -86,8 +87,8 @@ const LIVE_PANEL_BOUNDED_WAITS_MS = FULL_STACK_EXPECT_TIMEOUT_MS *
     (1 + 2 * LIVE_DIAGNOSTIC_ROW_ASSERTIONS + 1 + LIVE_AGENT_COUNT * LIVE_COMPOSITE_CARD_ASSERTIONS + 1 +
         LIVE_RECEIVED_MESSAGE_ASSERTIONS);
 
-/** How long the live test's cleanup waits for each agent's best-effort close; the closes run side by side. */
-export const LIVE_DISTRIBUTED_CLEANUP_CLOSE_TIMEOUT_MS = 15_000;
+/** How long the live test's cleanup polls for each agent's best-effort close result; the closes run side by side. */
+export const LIVE_DISTRIBUTED_CLEANUP_CLOSE_RESULT_POLL_TIMEOUT_MS = 15_000;
 
 /**
  * The live test reads the control run and a distributed run's artifact for the WS and RTC warning reports and the
@@ -141,7 +142,7 @@ export function computeLiveDistributedRecipesTestTimeoutMs(runs: LiveDistributed
         LIVE_GROUP_MEMBERSHIP_BOUNDED_WAITS_MS + toPassedMs + 2 * BROWSER_MESSAGE_POLL_TIMEOUT_MS +
         REALTIME_POSITION_POLL_TIMEOUT_MS + RUNTIME_DIAGNOSTIC_POLL_TIMEOUT_MS +
         LIVE_EVIDENCE_READS * DISTRIBUTED_EVIDENCE_READ_BOUNDED_WAITS_MS + LIVE_PANEL_BOUNDED_WAITS_MS +
-        computeCommandWaitMs(LIVE_DISTRIBUTED_CLEANUP_CLOSE_TIMEOUT_MS);
+        computeEnqueuedCommandWaitMs(LIVE_DISTRIBUTED_CLEANUP_CLOSE_RESULT_POLL_TIMEOUT_MS);
 }
 
 interface DistributedRecipeTestRunInput {

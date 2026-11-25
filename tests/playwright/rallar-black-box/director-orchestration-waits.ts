@@ -25,8 +25,8 @@ export const DIRECTOR_APPOINT_TIMEOUT_MS = 20_000;
 /** Each relay start's own budget. */
 export const DIRECTOR_RELAY_START_TIMEOUT_MS = 20_000;
 
-/** How long a relayed intent may take to report the director's receipt. */
-export const DIRECTOR_INTENT_RESULT_TIMEOUT_MS = 30_000;
+/** How long a relayed intent is polled for the director's receipt once the intent is enqueued. */
+export const DIRECTOR_INTENT_RESULT_POLL_TIMEOUT_MS = 30_000;
 
 /** How long the control run is polled for an agent's director event. */
 export const DIRECTOR_EVENT_POLL_TIMEOUT_MS = 60_000;

@@ -9,7 +9,7 @@ import type {
 import { GROUP_MEMBERSHIP_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/group-membership-waits.ts';
 import {
     FORMATION_CONNECT_TIMING,
-    FORMATION_GROUP_READ_TIMEOUT_MS,
+    FORMATION_GROUP_READ_RESULT_POLL_TIMEOUT_MS,
     FORMATION_PLANNED_LAYOUT_POLL_TIMEOUT_MS,
     FORMATION_PRESENCE_POLL_TIMEOUT_MS,
     FORMATION_TOPOLOGY_CONFIG_TIMEOUT_MS
@@ -40,8 +40,8 @@ import type { LiveRtcFormationOperations } from './live-rtc-formation-operations
 
 type TransportUnderTest = 'realtime' | 'messages.rtc';
 
-/** How long each topology read of the planned layout poll waits for its result; the poll's own limit bounds it. */
-const FORMATION_TOPOLOGY_READ_TIMEOUT_MS = 15_000;
+/** How long each topology read of the planned layout poll is polled for its result; the outer poll's limit bounds it. */
+const FORMATION_TOPOLOGY_READ_RESULT_POLL_TIMEOUT_MS = 15_000;
 
 type AgentPrefix = 'A' | 'B' | 'C';
 
@@ -820,7 +820,7 @@ async function enterGroupConnectionCycle(
         agentId: input.owner.agentId,
         commandId: readCommandId,
         command: groupReadCommand(config, input.groupId),
-        timeoutMs: FORMATION_GROUP_READ_TIMEOUT_MS
+        timeoutMs: FORMATION_GROUP_READ_RESULT_POLL_TIMEOUT_MS
     });
     const lifecycleState = toFormationEntryLifecycleState(
         input.control.resultValue(current)
@@ -939,7 +939,7 @@ async function waitForPlannedLayout(
                         agentId: input.owner.agentId,
                         commandId,
                         command: topologyReadCommand(config, input.groupId),
-                        timeoutMs: FORMATION_TOPOLOGY_READ_TIMEOUT_MS
+                        timeoutMs: FORMATION_TOPOLOGY_READ_RESULT_POLL_TIMEOUT_MS
                     })
                     .catch(() => undefined);
                 if (!result?.ok) {
@@ -995,7 +995,7 @@ async function waitForActiveSessions(
                         agentId: input.owner.agentId,
                         commandId,
                         command: groupReadCommand(config, input.groupId),
-                        timeoutMs: FORMATION_GROUP_READ_TIMEOUT_MS
+                        timeoutMs: FORMATION_GROUP_READ_RESULT_POLL_TIMEOUT_MS
                     })
                     .catch(() => undefined);
                 if (!result?.ok) {

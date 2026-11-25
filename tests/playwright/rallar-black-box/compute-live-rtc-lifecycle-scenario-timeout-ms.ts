@@ -1,7 +1,7 @@
 import { BROWSER_TEST_HARNESS_MARGIN_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/browser-test-harness-margin-ms.ts';
 import {
     computeCommandResultWaitMs,
-    computeCommandWaitMs
+    computeEnqueuedCommandWaitMs
 } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
 import { GROUP_MEMBERSHIP_BOUNDED_WAITS_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/group-membership-waits.ts';
@@ -83,7 +83,7 @@ const DIAL_BOUNDED_WAITS_MS = CONNECT_WHEN_PLANNED_BOUNDED_WAITS_MS +
     LIVE_RTC_TRIO_SIZE * LIFECYCLE_DIAL_POLL_TIMEOUT_MS;
 
 /** A stage wait is a command whose budget is the stage wait: its enqueue, that budget, then the result poll. */
-const STAGE_WAIT_BOUNDED_WAITS_MS = computeCommandWaitMs(
+const STAGE_WAIT_BOUNDED_WAITS_MS = computeEnqueuedCommandWaitMs(
     LIFECYCLE_STAGE_WAIT_MS + LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS
 );
 

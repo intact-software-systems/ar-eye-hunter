@@ -1,6 +1,6 @@
-import { computeCommandWaitMs } from './compute-command-result-wait-ms.ts';
+import { computeEnqueuedCommandWaitMs } from './compute-command-result-wait-ms.ts';
 import {
-    LIVE_RTC_CLOSE_RESULT_WAIT_MS,
+    LIVE_RTC_CLOSE_RESULT_POLL_TIMEOUT_MS,
     LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS,
     LIVE_RTC_MESSAGE_WAIT_TIMEOUT_MS,
     LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS
@@ -14,7 +14,7 @@ import { FULL_STACK_TAB_OPEN_BOUNDED_WAITS_MS } from './playwright-expect-timeou
 export const MATRIX_SEND_TIMEOUT_MS = 60_000;
 
 /** How long the control client waits on a matrix send: its enqueue, then its budget and its result poll. */
-export const MATRIX_SEND_RESULT_WAIT_MS = computeCommandWaitMs(
+export const MATRIX_SEND_RESULT_WAIT_MS = computeEnqueuedCommandWaitMs(
     MATRIX_SEND_TIMEOUT_MS + LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS
 );
 
@@ -44,5 +44,6 @@ export const WS_AGENT_OPEN_SEND_CLOSE_BOUNDED_WAITS_MS = WS_OPEN_TIMEOUT_MS + 4 
 
 /** The NACK probe's send and its receipt poll, then the transport's close and the refused send that follows it. */
 export const MESSAGES_PROBES_BOUNDED_WAITS_MS = NACK_PROBE_SEND_TIMEOUT_MS + LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS +
-    NACK_RECEIPT_POLL_TIMEOUT_MS + computeCommandWaitMs(LIVE_RTC_CLOSE_RESULT_WAIT_MS) + STALE_SEND_TIMEOUT_MS +
+    NACK_RECEIPT_POLL_TIMEOUT_MS + computeEnqueuedCommandWaitMs(LIVE_RTC_CLOSE_RESULT_POLL_TIMEOUT_MS) +
+    STALE_SEND_TIMEOUT_MS +
     LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS;

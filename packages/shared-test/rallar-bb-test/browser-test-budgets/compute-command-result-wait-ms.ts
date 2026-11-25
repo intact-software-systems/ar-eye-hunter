@@ -9,7 +9,7 @@ import { CONTROL_REQUEST_TIMEOUT_MS } from './control-request-timeout-ms.ts';
  * for the result, which lasts what the command may take and then the harness's own poll margin.
  */
 export function computeCommandResultWaitMs(command: RallarBlackBoxTestCommand, pollMarginMs: number): number {
-    return computeCommandWaitMs(computeCommandResultPollTimeoutMs(command, pollMarginMs));
+    return computeEnqueuedCommandWaitMs(computeCommandResultPollTimeoutMs(command, pollMarginMs));
 }
 
 /**
@@ -20,9 +20,13 @@ export function computeCommandResultPollTimeoutMs(command: RallarBlackBoxTestCom
     return computeCommandBudgetMs(command) + pollMarginMs;
 }
 
-/** A command whose result poll is known waits its enqueue request under the control request timeout, then that poll. */
-export function computeCommandWaitMs(resultPollTimeoutMs: number): number {
-    return CONTROL_REQUEST_TIMEOUT_MS + resultPollTimeoutMs;
+/**
+ * How long a harness waits on a command in all, given the limit of its result poll: its enqueue request under the
+ * control request timeout, then that poll. A `…_RESULT_POLL_TIMEOUT_MS` is such a limit; a `…_RESULT_WAIT_MS` is
+ * already the whole wait.
+ */
+export function computeEnqueuedCommandWaitMs(pollTimeoutMs: number): number {
+    return CONTROL_REQUEST_TIMEOUT_MS + pollTimeoutMs;
 }
 
 /**

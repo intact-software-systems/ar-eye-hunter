@@ -1,7 +1,7 @@
 import { RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS } from '../fixtures/live-rtc-setup.ts';
 import type { RallarBlackBoxTestRtcConnectCommand } from '../rallar-black-box-test-contracts.ts';
 
-import { computeCommandResultWaitMs, computeCommandWaitMs } from './compute-command-result-wait-ms.ts';
+import { computeCommandResultWaitMs, computeEnqueuedCommandWaitMs } from './compute-command-result-wait-ms.ts';
 import {
     LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS,
     LIVE_RTC_PEER_READINESS_TIMEOUT_MS,
@@ -22,8 +22,8 @@ export const FORMATION_READINESS_BOUNDED_WAITS_MS = FORMATION_READINESS_TIMEOUT_
 /** The formation's mesh topology configuration request's own budget. */
 export const FORMATION_TOPOLOGY_CONFIG_TIMEOUT_MS = 10_000;
 
-/** How long the formation driver waits for each read of the group's state. */
-export const FORMATION_GROUP_READ_TIMEOUT_MS = 15_000;
+/** How long the formation driver polls for the result of each enqueued read of the group's state. */
+export const FORMATION_GROUP_READ_RESULT_POLL_TIMEOUT_MS = 15_000;
 
 /** How long the formation driver polls the group for the sessions it has connected. */
 export const FORMATION_PRESENCE_POLL_TIMEOUT_MS = 30_000;
@@ -51,9 +51,10 @@ export const FORMATION_RUN_CONNECT_RESULT_WAIT_MS = LIVE_RTC_TRIO_SIZE * FORMATI
  * wait, the plan or reconfigure, the planned layout poll, the layout's connect and the activation. The plan, the
  * connect and the activation name no budget of their own; every command is enqueued, then polled for its result.
  */
-const FORMATION_CYCLE_COMMANDS_BOUNDED_WAITS_MS = computeCommandWaitMs(
+const FORMATION_CYCLE_COMMANDS_BOUNDED_WAITS_MS = computeEnqueuedCommandWaitMs(
     FORMATION_TOPOLOGY_CONFIG_TIMEOUT_MS + LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS
-) + computeCommandWaitMs(FORMATION_GROUP_READ_TIMEOUT_MS) + FORMATION_PLANNED_LAYOUT_POLL_TIMEOUT_MS +
+) + computeEnqueuedCommandWaitMs(FORMATION_GROUP_READ_RESULT_POLL_TIMEOUT_MS) +
+    FORMATION_PLANNED_LAYOUT_POLL_TIMEOUT_MS +
     3 * LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS;
 
 /**

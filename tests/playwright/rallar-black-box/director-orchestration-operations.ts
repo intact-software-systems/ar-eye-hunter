@@ -14,7 +14,7 @@ import {
     DIRECTOR_EVENT_POLL_TIMEOUT_MS,
     DIRECTOR_GROUP_REQUEST_TIMEOUT_MS,
     DIRECTOR_HEALTH_READ_TIMEOUT_MS,
-    DIRECTOR_INTENT_RESULT_TIMEOUT_MS,
+    DIRECTOR_INTENT_RESULT_POLL_TIMEOUT_MS,
     DIRECTOR_PEER_READINESS_POLL_TIMEOUT_MS,
     DIRECTOR_RELAY_START_TIMEOUT_MS,
     DIRECTOR_STALE_HOLD_MS
@@ -389,7 +389,7 @@ async function relayDirectorIntents(scenario: ScenarioState): Promise<void> {
                     handle: RELAY_HANDLE,
                     intent: { intentId: toIntentId(scenario, client), actor: client.actor, action }
                 },
-                timeout: DIRECTOR_INTENT_RESULT_TIMEOUT_MS
+                timeout: DIRECTOR_INTENT_RESULT_POLL_TIMEOUT_MS
             })
         );
     }
