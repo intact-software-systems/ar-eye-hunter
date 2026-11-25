@@ -15,8 +15,10 @@ it('starts the active checkpoint deadline at countdown after players wait in a r
     const current = { match: countdown, available: true, authorityAligned: true, recoveryRequired: false };
     expect(recovery.status({ ...current, now: 31000 }).recovering).toBe(false);
     recovery.confirm({ ...ready, sequence: 3, state: countdown }, 31000, 'alice', true);
-    expect(recovery.status({ ...current, now: 32500 }).recovering).toBe(true);
-    recovery.expire(countdown.matchId, 32500);
+    expect(recovery.status({ ...current, now: 35000 }).recovering).toBe(false);
+    expect(recovery.status({ ...current, available: false, now: 32500 }).recovering).toBe(true);
+    expect(recovery.status({ ...current, now: 35500 }).recovering).toBe(true);
+    recovery.expire(countdown.matchId, 35500);
     recovery.expire(countdown.matchId, 45499);
     expect(recovery.status({ ...current, now: 45499 }).interruption).toBeUndefined();
     recovery.expire(countdown.matchId, 45500);

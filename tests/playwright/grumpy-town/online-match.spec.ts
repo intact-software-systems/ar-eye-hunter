@@ -723,15 +723,16 @@ for (const lostPlayer of ['host', 'backup'] as const) {
         try {
             await startTownMatch([alice, bob]);
             const survivor = lostPlayer === 'host' ? bob : alice;
+            const disconnectedAt = Date.now();
             await (lostPlayer === 'host' ? first : second).close();
             await expect(survivor.locator('#round-status')).toContainText('Waiting for confirmed match state');
-            const pausedAt = Date.now();
+
             const clock = await survivor.locator('#round-clock').textContent();
             const score = await survivor.locator('#round-score').textContent();
             await expect(survivor.getByRole('heading', { name: 'Round interrupted', exact: true })).toBeVisible({
                 timeout: 15000
             });
-            expect(Date.now() - pausedAt).toBeGreaterThan(11500);
+            expect(Date.now() - disconnectedAt).toBeGreaterThan(13_000);
             await expect(survivor.locator('#round-clock')).toHaveText(clock!);
             await expect(survivor.locator('#round-score')).toHaveText(score!);
             await survivor.getByRole('button', { name: 'Back to solo', exact: true }).click();

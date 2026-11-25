@@ -22,6 +22,9 @@ export {
 } from './round-roster.ts';
 
 export const TOWN_MATCH_RATE = 30;
+// A peer may render this much host progress while a checkpoint completes its WAN round trips.
+export const TOWN_MATCH_CHECKPOINT_LEAD_MS = 4500;
+export const TOWN_MATCH_CHECKPOINT_LEAD_TICKS = TOWN_MATCH_RATE * TOWN_MATCH_CHECKPOINT_LEAD_MS / 1000;
 export const TOWN_MATCH_DURATION = 180;
 export const TOWN_MATCH_TARGET = 100;
 

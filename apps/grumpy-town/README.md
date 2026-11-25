@@ -155,11 +155,11 @@ while the older dash diagnostics count consumed attempts. These are developer
 observations, not new gameplay controls.
 
 The healthy shared-match flow and temporary checkpoint-loss pause/resume are implemented.
-If confirmation stops for 1.5 seconds, the game shows a pause while retrying checkpoints;
-movement and dash pressed during that pause are discarded. With three players, closing
+If confirmation stops for 4.5 seconds, the game pauses while retrying checkpoints.
+Movement and dash pressed during that pause are discarded. With three players, closing
 the host can appoint an eligible survivor and continue the same confirmed round with
-a backup. Losing either member of a two-player match pauses, then interrupts after
-the ten-second recovery window. Confirmed points remain visible and every player can
+a backup. Losing either member of a two-player match pauses play. It interrupts after at most
+14.5 seconds without a confirmed checkpoint. Confirmed points remain visible and every player can
 leave. After agreement returns, the director can open a fresh ready cycle.
 A newcomer during play interrupts the round. In a continuing three-player round,
 an original player can close and reopen their browser and rejoin within a ten-second

@@ -7,6 +7,7 @@ import {
     computeTownMatchRematch,
     computeTownMatchStart,
     computeTownMatchTick,
+    TOWN_MATCH_CHECKPOINT_LEAD_TICKS,
     TOWN_MATCH_RATE,
     type TownMatchState,
     type TownMatchTick
@@ -32,7 +33,7 @@ export class TownMatchSimulation {
     advance(now: number, committed: TownMatchState | undefined, clock: TownMatchTick['clock']): void {
         const confirmedTime = committed ? committed.tick - committed.countdownTicks : 0;
         const unconfirmedTime = this.state.tick - this.state.countdownTicks;
-        const maxAdvance = TOWN_MATCH_RATE * 2;
+        const maxAdvance = TOWN_MATCH_CHECKPOINT_LEAD_TICKS;
         const budget = committed ? maxAdvance - (unconfirmedTime - confirmedTime) : maxAdvance;
         if (budget <= 0) {
             this.lastTick = now;

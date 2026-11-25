@@ -406,7 +406,7 @@ after asynchronous work; repeated known proposals avoid redundant hashing. Pendi
 and committed checkpoints are retained for retransmission. Ready/start/rematch intents
 retry until committed state confirms them. Input sequences survive expiry, and blur
 or visibility loss clears the runtime's input directly rather than waiting for another
-render frame. Speculative simulation stops two seconds beyond confirmed progress.
+render frame. Speculative simulation stops 4.5 seconds beyond confirmed progress.
 
 A same-director newcomer produces an explicit interruption from committed state,
 never speculative scores. Current roster adoption discards the outstanding
@@ -429,7 +429,7 @@ expiry under replay and foreign-session/old-round refusal. These checks do not p
 physical-phone performance or three-minute results.
 
 A focused impaired-network trial now drops one peer's outgoing match messages
-while leaving its Rallar connection and authority traffic alive. After 1.5 seconds
+while leaving its Rallar connection and authority traffic alive. After 4.5 seconds
 without a new committed checkpoint, both clients show a confirmation pause and
 the director pauses speculative time. Checkpoint retransmission continues; restoring
 the missing acknowledgements resumes the same round. Device input during the pause

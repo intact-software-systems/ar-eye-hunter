@@ -87,17 +87,17 @@ describe('director clock and control admission', () => {
         simulation.stop();
     });
 
-    it('limits a long wake even without a checkpoint and keeps the two-second agreement lead', () => {
+    it('limits a long wake even without a checkpoint and keeps the bounded WAN agreement lead', () => {
         const countdown = createCountdown().getState();
         const simulation = new TownMatchSimulation({ ...countdown, phase: 'playing', countdownTicks: 0 }, 0);
         const start = simulation.getState();
         simulation.advance(1950, start, seatDeadlineClock(1950));
         simulation.advance(60000, start, seatDeadlineClock(60000));
-        expect(simulation.getState().tick).toBe(60);
+        expect(simulation.getState().tick).toBe(135);
         simulation.advance(60001, undefined, seatDeadlineClock(60001));
-        expect(simulation.getState().tick).toBe(60);
+        expect(simulation.getState().tick).toBe(135);
         simulation.advance(120000, undefined, seatDeadlineClock(120000));
-        expect(simulation.getState().tick).toBe(120);
+        expect(simulation.getState().tick).toBe(270);
         simulation.stop();
     });
 
@@ -112,7 +112,7 @@ describe('director clock and control admission', () => {
             simulation.advance(now, committed, seatDeadlineClock(now));
         }
         const state = simulation.getState();
-        expect(state.tick).toBe(60);
+        expect(state.tick).toBe(135);
         expect(Math.abs(state.players[1].vx)).toBeLessThan(0.01);
         expect(state.players[1].x).toBeLessThan(3);
         simulation.stop();

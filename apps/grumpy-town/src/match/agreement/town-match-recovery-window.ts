@@ -1,7 +1,7 @@
-import type { TownMatchState } from '../town-match.ts';
+import { TOWN_MATCH_CHECKPOINT_LEAD_MS, type TownMatchState } from '../town-match.ts';
 import type { TownCheckpoint } from './match-checkpoints.ts';
 
-const STALLED_COMMIT_MS = 1500;
+const MAX_COMMIT_SILENCE_MS = 14_500;
 // Allow the silent director’s room lease and reconnect reservation to expire, then give survivors time to agree.
 const INTERRUPT_AFTER_MS = 13_000;
 
@@ -18,7 +18,7 @@ export namespace TownMatchRecoveryWindow {
 /** Tracks the interval since agreement stalled and the epoch in which an active round timed out. */
 export class TownMatchRecoveryWindow {
     private lastActiveCommit: { readonly at: number; readonly epoch: number; readonly matchId: string; } | undefined;
-    private recoveryStartedAt: number | undefined;
+    private interruptAt: number | undefined;
     private interruptedMatch: { readonly matchId: string; readonly epoch: number; } | undefined;
 
     status(observation: TownMatchRecoveryWindow.Observation) {
@@ -27,7 +27,7 @@ export class TownMatchRecoveryWindow {
             ? 'Round interrupted: recovery could not be confirmed. Your last confirmed points are preserved.'
             : undefined;
         const stalled = this.lastActiveCommit !== undefined && this.lastActiveCommit.matchId === match?.matchId &&
-            now - this.lastActiveCommit.at >= STALLED_COMMIT_MS;
+            now - this.lastActiveCommit.at >= TOWN_MATCH_CHECKPOINT_LEAD_MS;
         const active = match?.phase === 'playing' || match?.phase === 'countdown';
         return {
             interruption,
@@ -36,15 +36,15 @@ export class TownMatchRecoveryWindow {
     }
 
     resetWait(): void {
-        this.recoveryStartedAt = undefined;
+        this.interruptAt = undefined;
     }
 
     expire(matchId: string | undefined, now: number): void {
         if (!this.lastActiveCommit || this.lastActiveCommit.matchId !== matchId) {
             return;
         }
-        this.recoveryStartedAt ??= Math.min(now, this.lastActiveCommit.at + STALLED_COMMIT_MS);
-        if (now - this.recoveryStartedAt >= INTERRUPT_AFTER_MS && this.interruptedMatch?.matchId !== matchId) {
+        this.interruptAt ??= Math.min(now + INTERRUPT_AFTER_MS, this.lastActiveCommit.at + MAX_COMMIT_SILENCE_MS);
+        if (now >= this.interruptAt && this.interruptedMatch?.matchId !== matchId) {
             this.interruptedMatch = { matchId: matchId, epoch: this.lastActiveCommit.epoch };
         }
     }
@@ -52,7 +52,7 @@ export class TownMatchRecoveryWindow {
     confirm(checkpoint: TownCheckpoint, now: number, localId: string | undefined, isDirector: boolean): void {
         const { state } = checkpoint;
         // Agreement ends the previous wait even if the next host pump is itself delayed.
-        this.recoveryStartedAt = undefined;
+        this.interruptAt = undefined;
         this.lastActiveCommit = state.phase === 'playing' || state.phase === 'countdown'
             ? { at: now, epoch: checkpoint.epoch, matchId: state.matchId }
             : undefined;
