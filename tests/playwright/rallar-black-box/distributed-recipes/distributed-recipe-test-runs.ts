@@ -1,4 +1,5 @@
 import { BROWSER_TEST_HARNESS_MARGIN_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/browser-test-harness-margin-ms.ts';
+import { CONTROL_AGENT_OPENING_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-agent-opening-timeout-ms.ts';
 import { FULL_STACK_EXPECT_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/playwright-expect-timeouts.ts';
 import {
     type RallarBlackBoxDistributedGroupRef,
@@ -9,7 +10,6 @@ import { type RallarBlackBoxTestRecipe } from '../../../../packages/shared-test/
 import { CONTROL_GET_RETRY_BOUNDED_WAITS_MS } from '../read-control-get-response.ts';
 import {
     CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS,
-    CONTROL_AGENT_SIGN_IN_BOUNDED_WAITS_MS,
     DISTRIBUTED_AGENT_CONFIGURE_RESULT_WAIT_MS,
     DISTRIBUTED_GROUP_REQUEST_RESULT_WAIT_MS
 } from './browser-agents.ts';
@@ -51,9 +51,9 @@ const LIVE_AGENT_COUNT = 3;
 const THREE_AGENTS_BOUNDED_WAITS_MS = 3 * CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS +
     3 * DISTRIBUTED_AGENT_CONFIGURE_RESULT_WAIT_MS + AGENTS_IN_GROUP_POLL_TIMEOUT_MS;
 
-/** The live test's agents sign in as they open. */
+/** The live test's agents sign in as they open, each first waiting for its login gate. */
 const THREE_SIGNED_IN_AGENTS_BOUNDED_WAITS_MS = THREE_AGENTS_BOUNDED_WAITS_MS +
-    LIVE_AGENT_COUNT * CONTROL_AGENT_SIGN_IN_BOUNDED_WAITS_MS;
+    LIVE_AGENT_COUNT * CONTROL_AGENT_OPENING_TIMEOUT_MS;
 
 /** The owner creates the live test's group, then each of the three agents joins it, one request after another. */
 const LIVE_GROUP_MEMBERSHIP_BOUNDED_WAITS_MS = (1 + LIVE_AGENT_COUNT) * DISTRIBUTED_GROUP_REQUEST_RESULT_WAIT_MS;

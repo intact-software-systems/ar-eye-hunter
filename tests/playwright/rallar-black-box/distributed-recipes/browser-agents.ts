@@ -110,9 +110,6 @@ export const config = readFullStackConfig();
 /** Opening a control agent waits for its Advanced tab, then for its registration. */
 export const CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS = 2 * CONTROL_AGENT_OPENING_TIMEOUT_MS;
 
-/** An agent that signs in first waits for its login gate. */
-export const CONTROL_AGENT_SIGN_IN_BOUNDED_WAITS_MS = CONTROL_AGENT_OPENING_TIMEOUT_MS;
-
 /** How long a control agent's configuration for the distributed group is polled for its result. */
 export const DISTRIBUTED_AGENT_CONFIGURE_RESULT_WAIT_MS = 20_000;
 

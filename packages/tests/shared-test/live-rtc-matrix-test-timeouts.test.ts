@@ -104,16 +104,17 @@ describe('live RTC three-browser matrix test timeouts', () => {
         );
     });
 
-    // Each reconnect is already bounded by its own wait, so the soak is capped at three hours below its derived sum: a
-    // trio, the formation, eleven checkpoints, per cycle C's 45 s close, the 60 s absence and the reconnect, the closes
+    // Each reconnect is already bounded by its own wait, so the soak is capped at three hours below its derived sum: the
+    // margin, a trio, the formation, eleven checkpoints, per cycle C's 45 s close, the 60 s absence and the reconnect, the closes
     // and resets, and the artifact evidence.
     it('caps the retention soak at its three-hour operational bound below its derived sum', () => {
         const cycle = 45_000 + 60_000 + CONNECT + READINESS;
-        const derived = MARGIN + TRIO + MEMBERSHIP + FORMATION + 11 * DIAGNOSTICS +
-            RETENTION_RECONNECT_CYCLES * cycle + 3 * CLOSE_AND_RESET + ARTIFACT_EVIDENCE + CLEANUP;
+        const boundedWaits = TRIO + MEMBERSHIP + FORMATION + 11 * DIAGNOSTICS + RETENTION_RECONNECT_CYCLES * cycle +
+            3 * CLOSE_AND_RESET + ARTIFACT_EVIDENCE + CLEANUP;
 
-        expect(LIVE_RTC_RETENTION_SOAK_BOUNDED_WAITS_MS).toBe(derived);
-        expect(derived).toBe(42_290_000);
+        // The bounded waits held the margin as well, which no other bounded-waits sum does.
+        expect(LIVE_RTC_RETENTION_SOAK_BOUNDED_WAITS_MS).toBe(boundedWaits);
+        expect(MARGIN + boundedWaits).toBe(42_290_000);
         expect(LIVE_RTC_RETENTION_SOAK_TEST_TIMEOUT_MS).toBe(3 * 60 * 60_000);
     });
 });

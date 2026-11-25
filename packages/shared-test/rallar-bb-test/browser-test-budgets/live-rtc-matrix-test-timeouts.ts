@@ -131,8 +131,7 @@ const RETENTION_CHECKPOINTS = 1 + RETENTION_RECONNECT_CYCLES / RETENTION_CHECKPO
  * A trio, its membership and formation, each checkpoint's diagnostics, every cycle, the closes and resets, the artifact
  * evidence and the cleanup.
  */
-export const LIVE_RTC_RETENTION_SOAK_BOUNDED_WAITS_MS = BROWSER_TEST_HARNESS_MARGIN_MS +
-    TRIO_OPENING_BOUNDED_WAITS_MS +
+export const LIVE_RTC_RETENTION_SOAK_BOUNDED_WAITS_MS = TRIO_OPENING_BOUNDED_WAITS_MS +
     GROUP_MEMBERSHIP_BOUNDED_WAITS_MS +
     FORMATION_RUN_BOUNDED_WAITS_MS +
     RETENTION_CHECKPOINTS * LIVE_RTC_DIAGNOSTICS_CAPTURE_BOUNDED_WAITS_MS +
@@ -147,8 +146,8 @@ export const LIVE_RTC_RETENTION_SOAK_BOUNDED_WAITS_MS = BROWSER_TEST_HARNESS_MAR
  */
 export const RETENTION_SOAK_OPERATIONAL_BOUND_MS = 3 * 60 * 60_000;
 
-/** The soak's derived sum, capped at its operational bound. */
+/** The soak's bounded waits and the margin, capped at its operational bound. */
 export const LIVE_RTC_RETENTION_SOAK_TEST_TIMEOUT_MS = Math.min(
-    LIVE_RTC_RETENTION_SOAK_BOUNDED_WAITS_MS,
+    BROWSER_TEST_HARNESS_MARGIN_MS + LIVE_RTC_RETENTION_SOAK_BOUNDED_WAITS_MS,
     RETENTION_SOAK_OPERATIONAL_BOUND_MS
 );

@@ -46,27 +46,24 @@ export const DIRECTOR_STALE_HOLD_MS = 1_900;
 /** The scenario's three agents. */
 const DIRECTOR_AGENT_COUNT = 3;
 
-/** A command that names no budget of its own is polled for its result alone. */
-const UNBUDGETED_COMMAND_RESULT_WAIT_MS = DIRECTOR_COMMAND_RESULT_POLL_TIMEOUT_MS;
-
 /** The owner creates the group, then each agent joins it, each request its budget and then the result poll. */
 const MEMBERSHIP_BOUNDED_WAITS_MS = (1 + DIRECTOR_AGENT_COUNT) *
     (DIRECTOR_GROUP_REQUEST_TIMEOUT_MS + DIRECTOR_COMMAND_RESULT_POLL_TIMEOUT_MS);
 
 /** A appoints itself under its budget, then each agent reads its status. */
 const APPOINTMENT_BOUNDED_WAITS_MS = DIRECTOR_APPOINT_TIMEOUT_MS + DIRECTOR_COMMAND_RESULT_POLL_TIMEOUT_MS +
-    DIRECTOR_AGENT_COUNT * UNBUDGETED_COMMAND_RESULT_WAIT_MS;
+    DIRECTOR_AGENT_COUNT * DIRECTOR_COMMAND_RESULT_POLL_TIMEOUT_MS;
 
 /** Each agent starts its relay under its budget, in turn. */
 const RELAYS_BOUNDED_WAITS_MS = DIRECTOR_AGENT_COUNT *
     (DIRECTOR_RELAY_START_TIMEOUT_MS + DIRECTOR_COMMAND_RESULT_POLL_TIMEOUT_MS);
 
 /** B and C request a sync in turn, then their snapshots arrive side by side. */
-const SYNCS_BOUNDED_WAITS_MS = 2 * UNBUDGETED_COMMAND_RESULT_WAIT_MS + DIRECTOR_EVENT_POLL_TIMEOUT_MS;
+const SYNCS_BOUNDED_WAITS_MS = 2 * DIRECTOR_COMMAND_RESULT_POLL_TIMEOUT_MS + DIRECTOR_EVENT_POLL_TIMEOUT_MS;
 
 /** A's relay stops, the stale hold, B's and C's status reads, then their relays stop. */
-const STALE_BOUNDED_WAITS_MS = UNBUDGETED_COMMAND_RESULT_WAIT_MS + DIRECTOR_STALE_HOLD_MS +
-    2 * UNBUDGETED_COMMAND_RESULT_WAIT_MS + 2 * UNBUDGETED_COMMAND_RESULT_WAIT_MS;
+const STALE_BOUNDED_WAITS_MS = DIRECTOR_COMMAND_RESULT_POLL_TIMEOUT_MS + DIRECTOR_STALE_HOLD_MS +
+    2 * DIRECTOR_COMMAND_RESULT_POLL_TIMEOUT_MS + 2 * DIRECTOR_COMMAND_RESULT_POLL_TIMEOUT_MS;
 
 /**
  * Three agents opened in turn; the membership; their connects and then their peer readiness side by side; the

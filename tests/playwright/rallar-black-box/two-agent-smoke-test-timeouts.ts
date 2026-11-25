@@ -30,9 +30,6 @@ export const TWO_AGENT_SEND_AFTER_RELOAD_TIMEOUT_MS = 45_000;
 /** The two agents of a stage connect side by side, so a stage takes one connect's wait. */
 export const TWO_AGENT_CONNECT_STAGE_WAIT_MS = computeTwoAgentConnectResultWaitMs(TWO_AGENT_PEER_READINESS);
 
-/** A command that names no budget of its own, such as a health read, is polled for its result alone. */
-const UNBUDGETED_COMMAND_RESULT_WAIT_MS = TWO_AGENT_RESULT_POLL_TIMEOUT_MS;
-
 /**
  * Each agent opens through its login gate, its workbench and its registration in turn, then the owner creates the
  * group and both agents join it, each request its budget and then the result poll.
@@ -44,7 +41,7 @@ const AGENTS_AND_MEMBERSHIP_BOUNDED_WAITS_MS = 2 * 3 * CONTROL_AGENT_OPENING_TIM
  * Each agent's health, stats, report recipe (whose one health names no budget), close and reset, the agents side by
  * side, then the evidence poll.
  */
-const FINALIZATION_BOUNDED_WAITS_MS = 5 * UNBUDGETED_COMMAND_RESULT_WAIT_MS + TWO_AGENT_EVIDENCE_POLL_TIMEOUT_MS;
+const FINALIZATION_BOUNDED_WAITS_MS = 5 * TWO_AGENT_RESULT_POLL_TIMEOUT_MS + TWO_AGENT_EVIDENCE_POLL_TIMEOUT_MS;
 
 /** The agents, the membership and the first connect stage every smoke opens with. */
 const OPENING_BOUNDED_WAITS_MS = BROWSER_TEST_HARNESS_MARGIN_MS + AGENTS_AND_MEMBERSHIP_BOUNDED_WAITS_MS +
@@ -65,18 +62,18 @@ export const TWO_AGENT_DELIVERY_SMOKE_TEST_TIMEOUT_MS = OPENING_BOUNDED_WAITS_MS
  * reconnects and reads it again; the pair delivers each way and reads both healths, then finalizes.
  */
 export const TWO_AGENT_RELOAD_SMOKE_TEST_TIMEOUT_MS = OPENING_BOUNDED_WAITS_MS +
-    computeDeliveryBoundedWaitsMs(TWO_AGENT_SEND_TIMEOUT_MS, false) + 2 * UNBUDGETED_COMMAND_RESULT_WAIT_MS +
-    2 * CONTROL_AGENT_OPENING_TIMEOUT_MS + UNBUDGETED_COMMAND_RESULT_WAIT_MS + TWO_AGENT_CONNECT_STAGE_WAIT_MS +
-    UNBUDGETED_COMMAND_RESULT_WAIT_MS +
+    computeDeliveryBoundedWaitsMs(TWO_AGENT_SEND_TIMEOUT_MS, false) + 2 * TWO_AGENT_RESULT_POLL_TIMEOUT_MS +
+    2 * CONTROL_AGENT_OPENING_TIMEOUT_MS + TWO_AGENT_RESULT_POLL_TIMEOUT_MS + TWO_AGENT_CONNECT_STAGE_WAIT_MS +
+    TWO_AGENT_RESULT_POLL_TIMEOUT_MS +
     2 * computeDeliveryBoundedWaitsMs(TWO_AGENT_SEND_AFTER_RELOAD_TIMEOUT_MS, true) +
-    2 * UNBUDGETED_COMMAND_RESULT_WAIT_MS + FINALIZATION_BOUNDED_WAITS_MS;
+    2 * TWO_AGENT_RESULT_POLL_TIMEOUT_MS + FINALIZATION_BOUNDED_WAITS_MS;
 
 /**
  * The pair delivers once and B reads its health; B closes and settles, reads its health, reconnects, receives a
  * delivery and reads its health, then the pair finalizes.
  */
 export const TWO_AGENT_DISCONNECT_SMOKE_TEST_TIMEOUT_MS = OPENING_BOUNDED_WAITS_MS +
-    computeDeliveryBoundedWaitsMs(TWO_AGENT_SEND_TIMEOUT_MS, false) + UNBUDGETED_COMMAND_RESULT_WAIT_MS +
-    UNBUDGETED_COMMAND_RESULT_WAIT_MS + TWO_AGENT_DISCONNECT_SETTLE_MS + UNBUDGETED_COMMAND_RESULT_WAIT_MS +
+    computeDeliveryBoundedWaitsMs(TWO_AGENT_SEND_TIMEOUT_MS, false) + TWO_AGENT_RESULT_POLL_TIMEOUT_MS +
+    TWO_AGENT_RESULT_POLL_TIMEOUT_MS + TWO_AGENT_DISCONNECT_SETTLE_MS + TWO_AGENT_RESULT_POLL_TIMEOUT_MS +
     TWO_AGENT_CONNECT_STAGE_WAIT_MS + computeDeliveryBoundedWaitsMs(TWO_AGENT_SEND_TIMEOUT_MS, false) +
-    UNBUDGETED_COMMAND_RESULT_WAIT_MS + FINALIZATION_BOUNDED_WAITS_MS;
+    TWO_AGENT_RESULT_POLL_TIMEOUT_MS + FINALIZATION_BOUNDED_WAITS_MS;
