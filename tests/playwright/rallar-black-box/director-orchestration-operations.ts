@@ -74,6 +74,13 @@ export namespace DirectorOrchestration {
 
 type Sessions = Readonly<Record<AgentPrefix, string>>;
 
+interface DirectorStatusReading {
+    readonly role: string | undefined;
+    readonly state: string | undefined;
+    readonly isDirector: boolean | undefined;
+    readonly appointment: Readonly<{ sessionId: string | undefined; epoch: number | undefined; }>;
+}
+
 interface ScenarioState extends DirectorOrchestration.Input {
     readonly sessions: Sessions;
 }
@@ -269,7 +276,7 @@ async function waitForDirectorPeerReadiness(
 }
 
 /** A appoints itself under its budget, then every agent reads its status; returns the appointment's epoch. */
-async function appointDirector(scenario: ScenarioState): Promise<unknown> {
+async function appointDirector(scenario: ScenarioState): Promise<number | undefined> {
     const appoint = await executeOk(scenario.control, {
         agentId: scenario.agents[0].agentId,
         commandId: 'director-appoint-a',
@@ -281,16 +288,16 @@ async function appointDirector(scenario: ScenarioState): Promise<unknown> {
         }
     });
     expect(directorStatusValue(appoint)).toMatchObject({ role: 'director', state: 'fresh', isDirector: true });
-    const statuses: Record<string, unknown>[] = [];
+    const statuses: DirectorStatusReading[] = [];
     for (const agent of scenario.agents) {
         statuses.push(await readDirectorStatus(scenario, agent, `director-status-${agent.prefix.toLowerCase()}`));
     }
     const [statusA, ...clientStatuses] = statuses;
-    const epoch = requireRecord(statusA.appointment).epoch;
+    const { epoch } = statusA.appointment;
     expect(statusA).toMatchObject({ role: 'director', isDirector: true });
     for (const status of clientStatuses) {
         expect(status).toMatchObject({ role: 'client', isDirector: false });
-        expect(requireRecord(status.appointment)).toMatchObject({ sessionId: scenario.sessions.A, epoch });
+        expect(status.appointment).toMatchObject({ sessionId: scenario.sessions.A, epoch });
     }
     return epoch;
 }
@@ -299,14 +306,28 @@ async function readDirectorStatus(
     scenario: ScenarioState,
     agent: DirectorOrchestration.Agent,
     commandId: string
-): Promise<Record<string, unknown>> {
-    return directorStatusValue(
-        await executeOk(scenario.control, {
-            agentId: agent.agentId,
-            commandId,
-            command: { kind: 'director.status', ...directorRoomFields(scenario.room), refresh: true }
-        })
-    );
+): Promise<DirectorStatusReading> {
+    const result = await executeOk(scenario.control, {
+        agentId: agent.agentId,
+        commandId,
+        command: { kind: 'director.status', ...directorRoomFields(scenario.room), refresh: true }
+    });
+    return decodeDirectorStatusReading(resultValue(result).directorStatus);
+}
+
+/** A director status read, its fields as the scenario checks them; a read without an appointment is refused. */
+function decodeDirectorStatusReading(value: unknown): DirectorStatusReading {
+    const status = requireRecord(value);
+    const appointment = requireRecord(status.appointment);
+    return {
+        role: typeof status.role === 'string' ? status.role : undefined,
+        state: typeof status.state === 'string' ? status.state : undefined,
+        isDirector: typeof status.isDirector === 'boolean' ? status.isDirector : undefined,
+        appointment: {
+            sessionId: typeof appointment.sessionId === 'string' ? appointment.sessionId : undefined,
+            epoch: typeof appointment.epoch === 'number' ? appointment.epoch : undefined
+        }
+    };
 }
 
 /** Each agent starts its relay under its budget, in turn. */
@@ -385,7 +406,7 @@ async function syncDirectorClients(scenario: ScenarioState): Promise<void> {
 }
 
 /** A's relay stops; after the stale hold B and C read their status in turn, see A stale, then stop their relays. */
-async function expectDirectorStale(scenario: ScenarioState, epoch: unknown): Promise<void> {
+async function expectDirectorStale(scenario: ScenarioState, epoch: number | undefined): Promise<void> {
     const [agentA, ...clients] = scenario.agents;
     await stopDirectorRelay(scenario, agentA);
     await agentA.page.waitForTimeout(DIRECTOR_STALE_HOLD_MS);
@@ -396,7 +417,7 @@ async function expectDirectorStale(scenario: ScenarioState, epoch: unknown): Pro
             `director-status-${client.prefix.toLowerCase()}-stale`
         );
         expect(status).toMatchObject({ role: 'client', state: 'stale', isDirector: false });
-        expect(requireRecord(status.appointment)).toMatchObject({ sessionId: scenario.sessions.A, epoch });
+        expect(status.appointment).toMatchObject({ sessionId: scenario.sessions.A, epoch });
     }
     for (const client of clients) {
         await stopDirectorRelay(scenario, client);

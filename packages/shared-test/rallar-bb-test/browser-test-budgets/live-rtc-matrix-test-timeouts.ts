@@ -30,7 +30,7 @@ import {
     FORMATION_RUN_BOUNDED_WAITS_MS
 } from './live-rtc-formation-waits.ts';
 import { LIVE_RTC_ARTIFACT_EVIDENCE_BOUNDED_WAITS_MS } from './live-rtc-recorder-read-waits.ts';
-import { SETTLED_TRIO_RETIREMENT_BOUNDED_WAITS_MS } from './live-rtc-retirement-waits.ts';
+import { SETTLED_TRIO_RETIREMENT_BOUNDED_WAITS_MS } from './settled-trio-retirement-bounded-waits-ms.ts';
 
 /** How long a matrix test polls the control run for every key command's result once its scenarios end. */
 export const MATRIX_RUN_RESULTS_POLL_TIMEOUT_MS = 20_000;

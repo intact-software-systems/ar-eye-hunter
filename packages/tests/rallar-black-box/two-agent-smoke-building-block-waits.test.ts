@@ -110,19 +110,19 @@ function toRunSnapshot(posted: readonly PostedCommand[]): ApiJsonObject {
 /** A smoke whose browser opens counted pages and whose control run answers every command it is sent. */
 function createCountedSmoke(): BrowserRallarTwoAgentSmoke {
     const posted: PostedCommand[] = [];
-    const request = {
+    const request = Object.assign({} as Playwright.APIRequestContext, {
         post: async (url: string, options: { data: { commandId: string; command: RallarBlackBoxTestCommand; }; }) => {
             posted.push({ agentId: decodeURIComponent(url.split('/').at(-2)!), ...options.data });
             return { status: () => 202 };
         },
         get: async () => ({ ok: () => true, json: async () => toRunSnapshot(posted) })
-    };
-    const browser = {
+    });
+    const browser = Object.assign({} as Playwright.Browser, {
         newContext: async () => ({ newPage: async () => createCountedPage(), close: async () => {} })
-    };
+    });
     return new BrowserRallarTwoAgentSmoke({
-        browser: browser as unknown as Playwright.Browser,
-        request: request as unknown as Playwright.APIRequestContext,
+        browser,
+        request,
         config,
         transport: 'realtime',
         suffix: 'counted',

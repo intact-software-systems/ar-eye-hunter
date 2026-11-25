@@ -46,20 +46,27 @@ export async function settleUnderFakeTimers<T>(run: () => Promise<T>): Promise<T
  * Runs a harness operation under fake timers whose every bounded wait spends its bound, and returns the fake time it
  * took: the sum of its bounded waits in order, waits side by side counting by the longest.
  */
-export async function measureBoundedWaitsMs(run: () => Promise<unknown>): Promise<number> {
+export async function measureBoundedWaitsMs<T>(run: () => Promise<T>): Promise<number> {
     const startedAtMs = performance.now();
     await settleUnderFakeTimers(run);
     return performance.now() - startedAtMs;
 }
 
+/** Any argument a Playwright matcher or poll may be given. */
+type PlaywrightArgument = string | number | boolean | bigint | symbol | object | null | undefined;
+
+/** A locator of a counted page, marked so the counted `expect` can tell it from any other value. */
+interface CountedLocator {
+    readonly [COUNTED_LOCATOR]: true;
+}
+
 /** Whether a value is a locator of a counted page. */
-function isCountedLocator(value: unknown): boolean {
+function isCountedLocator(value: PlaywrightArgument): value is CountedLocator {
     return typeof value === 'object' && value !== null && COUNTED_LOCATOR in value;
 }
 
-/** The options argument a Playwright matcher or poll was given last, if any. */
-function readTimeoutOption(args: readonly unknown[]): number | undefined {
-    const options = args.at(-1);
+/** The limit a Playwright matcher's or poll's options name, if they name one. */
+function decodeTimeoutOption(options: PlaywrightArgument): number | undefined {
     return typeof options === 'object' && options !== null && 'timeout' in options &&
             typeof options.timeout === 'number'
         ? options.timeout
@@ -72,24 +79,25 @@ function toCountedLocatorMatchers(expectTimeoutMs: number): object {
         get: (_target, property) =>
             property === 'not'
                 ? matchers
-                : async (...args: readonly unknown[]) => {
-                    await spendBoundedWait(readTimeoutOption(args) ?? expectTimeoutMs);
+                : async (...args: readonly PlaywrightArgument[]) => {
+                    await spendBoundedWait(decodeTimeoutOption(args.at(-1)) ?? expectTimeoutMs);
                 }
     });
     return matchers;
 }
 
 /** Every matcher of a counted poll reads the value once, spends the poll's limit, then asserts as Playwright does. */
-function toCountedPollMatchers(
+function toCountedPollMatchers<T>(
     actual: Playwright.Expect,
-    read: () => unknown,
-    options: unknown,
+    read: () => Promise<T> | T,
+    options: PlaywrightArgument,
     expectTimeoutMs: number
 ): object {
     return new Proxy({}, {
-        get: (_target, matcher: string) => async (...expected: readonly unknown[]) => {
-            const value = await pollBoundedWait(read, readTimeoutOption([options]) ?? expectTimeoutMs);
-            (actual(value) as unknown as Record<string, (...args: readonly unknown[]) => void>)[matcher](...expected);
+        get: (_target, matcher) => async (...expected: readonly PlaywrightArgument[]) => {
+            const value = await pollBoundedWait(read, decodeTimeoutOption(options) ?? expectTimeoutMs);
+            const matchers: object = actual(value);
+            Reflect.apply(Reflect.get(matchers, matcher), matchers, expected);
         }
     });
 }
@@ -103,29 +111,32 @@ export function toCountedPlaywrightModule(
     expectTimeoutMs: number
 ): typeof Playwright {
     const actual = actualModule.expect;
-    const counted = (value: unknown, message?: string) => isCountedLocator(value) ? toCountedLocatorMatchers(expectTimeoutMs) : actual(value, message);
-    const expect = new Proxy(counted, {
+    const expect = new Proxy(actual, {
+        apply: (_target, _thisArgument, [value, message]: readonly PlaywrightArgument[]) =>
+            isCountedLocator(value)
+                ? toCountedLocatorMatchers(expectTimeoutMs)
+                : actual(value, typeof message === 'string' ? message : undefined),
         get: (_target, property) =>
             property === 'poll'
-                ? (read: () => unknown, options?: unknown) => toCountedPollMatchers(actual, read, options, expectTimeoutMs)
+                ? <T>(read: () => Promise<T> | T, options?: PlaywrightArgument) => toCountedPollMatchers(actual, read, options, expectTimeoutMs)
                 : Reflect.get(actual, property)
     });
-    return { ...actualModule, expect: expect as unknown as Playwright.Expect };
+    return { ...actualModule, expect };
 }
 
 /** A locator whose every query returns a locator and whose every action does nothing. */
-function createCountedLocator(): object {
-    const locator: object = new Proxy({ [COUNTED_LOCATOR]: true }, {
-        get: (target, property) => property === COUNTED_LOCATOR ? true : property === 'then' ? undefined : () => locator
+function createCountedLocator(): CountedLocator {
+    const locator: CountedLocator = new Proxy({ [COUNTED_LOCATOR]: true as const }, {
+        get: (_target, property) => property === COUNTED_LOCATOR ? true : property === 'then' ? undefined : () => locator
     });
     return locator;
 }
 
 /**
- * A page whose locators are counted, whose `waitForTimeout` spends its delay and whose evaluations answer through
- * `evaluate`; every other call does nothing.
+ * A page whose locators are counted, whose `waitForTimeout` spends its delay and whose evaluations answer `evaluate`;
+ * every other call does nothing.
  */
-export function createCountedPage(evaluate: (...args: readonly unknown[]) => unknown = () => undefined): Playwright.Page {
+export function createCountedPage(evaluate: () => PlaywrightArgument = () => undefined): Playwright.Page {
     const page: object = new Proxy({}, {
         get: (_target, property) => {
             if (property === 'then') {
@@ -135,7 +146,7 @@ export function createCountedPage(evaluate: (...args: readonly unknown[]) => unk
                 return spendBoundedWait;
             }
             if (property === 'evaluate') {
-                return async (...args: readonly unknown[]) => await evaluate(...args);
+                return async () => await evaluate();
             }
             return () => createCountedLocator();
         }
