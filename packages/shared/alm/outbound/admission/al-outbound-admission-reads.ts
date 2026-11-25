@@ -110,7 +110,8 @@ export type ALOutboundControlHistoryKind = 'acks' | 'nacks' | 'repairs';
 /**
  * Whether a dispatch's decision read a row its sender's other messages share. The head, the sent positions and the
  * room sent floor of a track are read only for a message that holds a place on it, and the latest of a supersedence
- * key only for a plan that names one; every other dispatch reads and writes its own message's rows alone.
+ * key only for a plan that names one; every other dispatch reads no row another message of its sender writes, apart
+ * from the sender version it then does not fence, and writes its own message's rows alone.
  */
 export function hasALOutboundSenderSharedRead<TPrepared>(
     read: Pick<ALOutboundMessageReadDto<TPrepared>, 'msg' | 'supersedence'>

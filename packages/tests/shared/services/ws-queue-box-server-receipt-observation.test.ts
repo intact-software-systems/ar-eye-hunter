@@ -87,6 +87,8 @@ interface ReceiptClock {
 interface ReceiptCommitOutcome {
     readonly phase: ALReceiptPayload['phase'];
     readonly expectedVersion: number | undefined;
+    /** The commit carries the control's `send-prepared` effect: it is the control's dequeue, not its enqueue. */
+    readonly sendsPrepared: boolean;
     readonly status: 'committed' | 'conflict' | 'expired';
 }
 
@@ -371,7 +373,8 @@ describe('private upstream receipt observation', () => {
             }
             const status = await commitBundle(bundle, observation);
             if (phase !== undefined) {
-                commits.push({ phase, expectedVersion: bundle.expectedVersion, status });
+                const sendsPrepared = bundle.durableEffects.some((effect) => effect.payload.kind === 'send-prepared');
+                commits.push({ phase, expectedVersion: bundle.expectedVersion, sendsPrepared, status });
             }
             if (admittedDequeue) {
                 dequeueFinished.resolve();
@@ -398,12 +401,13 @@ describe('private upstream receipt observation', () => {
                 await runEngine(engine);
                 return events.some((event) => event.kind === 'receipt-outbox' && event.receipt.phase === 'complete');
             }).toBe(true);
-            expect(commits).toEqual(expect.arrayContaining([
-                // No receipt reads a row its sender's other messages share, so none writes the server's version.
-                { phase: 'admitted', expectedVersion: undefined, status: 'committed' },
-                { phase: 'admitted', expectedVersion: undefined, status: 'committed' },
-                { phase: 'complete', expectedVersion: undefined, status: 'conflict' }
-            ]));
+            // No receipt reads a row its sender's other messages share, so none writes the server's version: the admitted
+            // control's enqueue and its dequeue each commit once, and the complete control loses its own version.
+            expect(commits.filter((commit) => commit.phase === 'admitted')).toEqual([
+                { phase: 'admitted', expectedVersion: undefined, sendsPrepared: false, status: 'committed' },
+                { phase: 'admitted', expectedVersion: undefined, sendsPrepared: true, status: 'committed' }
+            ]);
+            expect(commits).toContainEqual({ phase: 'complete', expectedVersion: undefined, sendsPrepared: false, status: 'conflict' });
             const pending = events.find((event) => event.kind === 'receipt-outbox' && event.receipt.phase === 'complete');
             expect(pending).toMatchObject({ kind: 'receipt-outbox', verdict: { kind: 'pending' }, entryCount: 1, trackedReceiptAlgo: 'none' });
             if (pending?.kind !== 'receipt-outbox') {

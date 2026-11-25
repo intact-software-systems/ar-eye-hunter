@@ -189,7 +189,7 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
     // a sent row and a version per message), 16 holds on the claimed rows and 32 queue rows (an identity row and an
     // own-work row per message). The rows read nothing their sender's other messages share, so the group fences no
     // sender version. Every message version but the last is first written alone, a compare-and-set in key order, so no
-    // row is locked explicitly (ruling 24, option 1).
+    // row is locked explicitly.
     it('commits a dequeued WS group in one statement per kind of write', async () => {
         const storage = await createPSqlAdmissionTestStorage();
         const recorded = recordPGliteStatements(storage.sql.raw);

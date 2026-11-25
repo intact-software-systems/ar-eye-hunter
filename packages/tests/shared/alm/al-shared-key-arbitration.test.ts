@@ -506,12 +506,12 @@ const OUTBOUND_MINTING_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg, a
     mintsSequence: true
 });
 
-/** One sender's message on one track, naming its key and epoch but no sequence. */
 /** A message that states the first sequence of a track of its own. */
 function createTrackedOutboundMessage(resourceId: string, orderingKey: string): ALMessage {
     return { ...createOutboundMessage(resourceId), ordering: { orderingKey, epoch: 1, seq: 1 } };
 }
 
+/** One sender's message on one track, naming its key and epoch but no sequence. */
 function createMintRequest(resourceId: string): ALMessage {
     return { ...createOutboundMessage(resourceId), ordering: { orderingKey: 'round', epoch: 1 } };
 }

@@ -22,6 +22,7 @@ import type {
     ALOutboundPlanner,
     ALOutboundRepairHint
 } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import type { ALStoredOutboundMessage } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
 import type { ALOutboundMessageRuntime, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { ALOutboundRepairRetransmission } from '@shared/alm/outbound/al-outbound-repair-retransmission.ts';
@@ -370,6 +371,25 @@ const SCENARIOS: Readonly<Record<DispatchName, () => Promise<ArrangedDispatch>>>
 
 const NO_DEADLINE: DispatchName = 'a tracked message that names no deadline, minting';
 
+/** What a row's name says its decision read or its commit did, beyond the two versions. */
+const DISPATCH_FACTS: Partial<
+    Record<DispatchName, (read: ALOutboundMessageReadDto<OutboundTestPayload>, stored: ALStoredOutboundMessage | undefined) => void>
+> = {
+    'a sequenced message on a shared head that records no recipient': (read) => {
+        expect(read.orderingHead?.roomSentFloor, 'the read moves the room sent floor').toBeDefined();
+    },
+    'a tracked row dequeued again, its positions recorded': (read) => {
+        expect(read.orderingHead, 'the read moves no head').toBeUndefined();
+        expect(read.sentPositions, 'the read records no position').toBeUndefined();
+    },
+    'a dispatch that ends its message: a spent repair budget': (_read, stored) => {
+        expect(stored?.ended, 'the stored row reads the message ended').toBe(true);
+    },
+    'a dispatch that ends its message: a re-plan refused for good at its dequeue': (_read, stored) => {
+        expect(stored?.ended, 'the stored row reads the message ended').toBe(true);
+    }
+};
+
 describe('the sender version a dispatch\'s commit moves', () => {
     it.each(DISPATCHES.filter((row) => row.dispatch !== NO_DEADLINE))('$dispatch: the sender version is $sender', async ({ dispatch, sender }) => {
         // Pins every dispatch of a message that reads no row its sender's other messages share competing for its
@@ -392,6 +412,7 @@ describe('the sender version a dispatch\'s commit moves', () => {
             expect(after.sender).toBe(0);
         }
         expect(after.message - before.message).toBe(1);
+        DISPATCH_FACTS[dispatch]?.(read, await arranged.lane.stores.admissionStore.readStoredMessage(arranged.dispatch.msg.id.msgId));
     });
 
     it(`${NO_DEADLINE}: the read refuses it before a bundle exists`, async () => {

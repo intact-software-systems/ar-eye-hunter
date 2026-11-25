@@ -572,6 +572,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
         const control = createFenceReceiptControl('receipt-twice');
         const first = await readReceiptControlBundle(fixture.store, control);
         const second = await readReceiptControlBundle(fixture.store, control);
+        expect(second.fencesSender, 'the second commit fences its control alone').toBe(false);
 
         expect(await fixture.store.commitBundle(first)).toBe('committed');
         const before = await fixture.readAdmissionState();

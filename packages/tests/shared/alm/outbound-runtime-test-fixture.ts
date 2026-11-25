@@ -661,8 +661,8 @@ export function loseOutboundCommitAttempts<TPrepared>(
 }
 
 /**
- * Answers every attempt of the store's next `commits` single commits `conflict`, as a sender version that moved before
- * each attempt's write would: each such commit makes all its attempts and settles as a lost fence.
+ * Answers every attempt of the store's next `commits` single commits `conflict`, as a fence that moved before each
+ * attempt's write would: each such commit makes all its attempts and settles as a lost fence.
  */
 export function conflictOutboundCommitAttempts<TPrepared>(store: ALOutboundAdmissionStore<TPrepared>, commits = 1): void {
     const spy = vi.spyOn(store, 'commitBundle');
@@ -671,7 +671,11 @@ export function conflictOutboundCommitAttempts<TPrepared>(store: ALOutboundAdmis
     }
 }
 
-/** Commits another commit of the same message as `losing` through `commitBundle`, so `losing` finds its version moved. */
+/**
+ * Commits another commit of the same message as `losing` through `commitBundle`, so `losing` finds its version moved.
+ * For an unadmitted message it stands in for "some commit won the message fence"; `toCompetingOutboundMessageCommit`
+ * says what it stands for in each case.
+ */
 export async function commitCompetingOutboundMessageCommit<TPrepared>(
     commitBundle: ALOutboundAdmissionStore<TPrepared>['commitBundle'],
     losing: Pick<ALOutboundCommitBundle<TPrepared>, 'senderId' | 'expectedVersion' | 'message'>

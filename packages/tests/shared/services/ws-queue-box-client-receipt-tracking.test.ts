@@ -551,11 +551,19 @@ describe('WS client receipt admission edges', () => {
         const commitBundle = store.commitBundle.bind(store);
         const commit = vi.spyOn(store, 'commitBundle').mockImplementationOnce(async (bundle) => {
             const concurrent = roomMessage();
-            await fixture.service.enqueueOutboxIfAbsent({ ...concurrent, id: { ...concurrent.id, msgId: 'concurrent-send' } });
+            await fixture.service.enqueueOutboxIfAbsent({
+                ...concurrent,
+                id: { ...concurrent.id, msgId: 'concurrent-send' },
+                ordering: { orderingKey: 'concurrent-stream' }
+            });
             return await commitBundle(bundle);
         });
         await fixture.service.acceptIncomingMessage(receiptMessage('admitted', []));
-        // A send of another message of the sender writes none of this message's rows, so it costs the receipt nothing.
+        const after = await store.readReceiptAdmission({ originPeerId: 'self', msgId: 'room-message-1', phase: 'complete', expectedRecipientPeerIds: [] });
+        // A send on another track moves the sender version between the receipt's read and its write. The receipt reads no
+        // row the sender's other messages share, so it fences its own message alone and commits at its first attempt; a
+        // receipt that fenced the sender version would conflict here.
+        expect(after.clientRecord!.version).toBeGreaterThan(before.clientRecord!.version);
         expect(fixture.diagnostics.filter((event) => event.kind === 'receipt-confirmation')).toEqual([
             expect.objectContaining({
                 attempt: 1,
