@@ -951,17 +951,19 @@ describe('owned native signaling projection', () => {
         expect(JSON.stringify(history)).not.toContain('private-sentinel');
     });
 
-    it('carries the refused offer generation and the applied remote generation of a superseded offer, and only of one', () => {
+    it('carries the refused generation and the applied remote generation of a superseded offer or answer, and only of those', () => {
         const history = toNotificationHistory([
             '{"name":"superseded","agentId":"agent-a","atEpochMs":120,"value":{"topic":"rallar.browser.rtc.signaling_diagnostics","payload":{"data":{"kind":"native-signal-decision","disposition":"offer-superseded","atEpochMs":118,"localSessionId":"a","peerSessionId":"b","signalType":"Offer","offerId":"offer","capturedPeerConnection":true,"currentPeerConnection":true,"signalingState":"have-local-offer","connectionGeneration":19,"appliedRemoteGeneration":20}}}}',
             '{"name":"invalid","agentId":"agent-a","atEpochMs":120,"value":{"topic":"rallar.browser.rtc.signaling_diagnostics","payload":{"data":{"kind":"native-signal-decision","disposition":"offer-superseded","signalType":"Offer","offerId":"offer","connectionGeneration":-1,"appliedRemoteGeneration":"20"}}}}',
-            '{"name":"started","agentId":"agent-a","atEpochMs":120,"value":{"topic":"rallar.browser.rtc.signaling_diagnostics","payload":{"data":{"kind":"native-signal-decision","disposition":"application-started","signalType":"Offer","offerId":"offer","connectionGeneration":19,"appliedRemoteGeneration":20}}}}'
+            '{"name":"started","agentId":"agent-a","atEpochMs":120,"value":{"topic":"rallar.browser.rtc.signaling_diagnostics","payload":{"data":{"kind":"native-signal-decision","disposition":"application-started","signalType":"Offer","offerId":"offer","connectionGeneration":19,"appliedRemoteGeneration":20}}}}',
+            '{"name":"answer","agentId":"agent-a","atEpochMs":120,"value":{"topic":"rallar.browser.rtc.signaling_diagnostics","payload":{"data":{"kind":"native-signal-decision","disposition":"answer-superseded","signalType":"Answer","offerId":"offer","signalingState":"have-local-offer","connectionGeneration":19,"appliedRemoteGeneration":20}}}}'
         ].join('\n'));
         const events = requiredJsonArray(requiredJsonRecord(history, 'history').events, 'events');
         expect(events).toMatchObject([
             { disposition: 'offer-superseded', signalingState: 'have-local-offer', connectionGeneration: 19, appliedRemoteGeneration: 20 },
             { disposition: 'offer-superseded', connectionGeneration: null, appliedRemoteGeneration: null },
-            { disposition: 'application-started' }
+            { disposition: 'application-started' },
+            { disposition: 'answer-superseded', signalingState: 'have-local-offer', connectionGeneration: 19, appliedRemoteGeneration: 20 }
         ]);
         expect(requiredJsonRecord(events[2], 'started')).not.toHaveProperty('connectionGeneration');
         expect(requiredJsonRecord(events[2], 'started')).not.toHaveProperty('appliedRemoteGeneration');

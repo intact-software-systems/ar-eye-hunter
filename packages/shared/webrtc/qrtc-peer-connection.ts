@@ -78,6 +78,12 @@ export interface QRtcMediaPolicy {
     readonly preferredAudioCodecs?: readonly string[]; // e.g. ['audio/opus']
 }
 
+const GENERATION_REFUSAL_BY_SIGNAL_TYPE = {
+    Offer: 'offer-superseded',
+    Answer: 'answer-superseded',
+    IceCandidate: 'ice-superseded'
+} as const satisfies Record<QRtcSignalingType, RtcSignalingDiagnostics.GenerationRefusal>;
+
 type QRtcPeerConnectionDiagnosticCounters = {
     -readonly [
         Key in Exclude<
@@ -1301,6 +1307,9 @@ export class QRtcPeerConnection {
             });
             return;
         }
+        if (this.refuseSupersededDescription(capture, signal)) {
+            return;
+        }
         await this.applyRemoteDescription(pc, signal.payload.description, capture.nativeBatch);
         this.observeNativeSignal('remote-description-returned', capture, signal);
         if (!(await this.adoptAppliedRemoteGeneration(capture, signal.connectionGeneration))) {
@@ -1322,7 +1331,7 @@ export class QRtcPeerConnection {
     ): Promise<void> {
         const pc = capture.pc;
         this.diagnostics.inboundOfferCount++;
-        if (this.refuseSupersededOffer(capture, signal)) {
+        if (this.refuseSupersededDescription(capture, signal)) {
             return;
         }
         const collision = this.status.makingOffer || pc.signalingState !== 'stable';
@@ -1367,9 +1376,9 @@ export class QRtcPeerConnection {
         await this.sendAnswer(pc, signal.offerId);
     }
 
-    private refuseSupersededOffer(
+    private refuseSupersededDescription(
         capture: QRtcPeerConnection.NativeSignalCapture,
-        signal: Extract<QRtcSignal, { signalType: 'Offer'; }>
+        signal: Exclude<QRtcSignal, QRtcIceCandidateSignal>
     ): boolean {
         const appliedRemoteGeneration = this.highestAppliedRemoteGeneration;
         if (appliedRemoteGeneration === undefined || signal.connectionGeneration >= appliedRemoteGeneration) {
@@ -1441,18 +1450,23 @@ export class QRtcPeerConnection {
         }
     }
 
+    private ignoreIceCandidate(capture: QRtcPeerConnection.NativeSignalCapture, signal: QRtcIceCandidateSignal): void {
+        this.diagnostics.ignoredIceCandidateForIgnoredOfferCount++;
+        this.observeNativeSignal('ice-ignored', capture, signal);
+    }
+
     private observeGenerationRefusal(
         capture: QRtcPeerConnection.NativeSignalCapture,
-        signal: Extract<QRtcSignal, { signalType: 'Offer'; }> | QRtcIceCandidateSignal,
+        signal: QRtcSignal,
         appliedRemoteGeneration: number
     ): void {
         recordRtcSignalingObservation(this.dependencies.signalingDiagnostics, {
             kind: 'native-signal-decision',
-            disposition: signal.signalType === 'Offer' ? 'offer-superseded' : 'ice-superseded',
+            disposition: GENERATION_REFUSAL_BY_SIGNAL_TYPE[signal.signalType],
             localSessionId: this.input.sessionId,
             peerSessionId: this.input.peerSessionId,
             signalType: signal.signalType,
-            offerId: signal.signalType === 'Offer' ? signal.offerId : undefined,
+            offerId: signal.signalType === 'IceCandidate' ? undefined : signal.offerId,
             nativeIdentity: capture.nativeIdentity,
             capturedPeerConnection: true,
             currentPeerConnection: true,
@@ -1498,17 +1512,24 @@ export class QRtcPeerConnection {
     ): Promise<void> {
         const pc = capture.pc;
         this.diagnostics.inboundIceCandidateCount++;
-        if (this.status.ignoreOffer) {
-            this.diagnostics.ignoredIceCandidateForIgnoredOfferCount++;
-            this.observeNativeSignal('ice-ignored', capture, signal);
+        const appliedRemoteGeneration = pc.remoteDescription ? this.highestAppliedRemoteGeneration : undefined;
+        if (appliedRemoteGeneration === undefined) {
+            if (this.status.ignoreOffer) {
+                this.ignoreIceCandidate(capture, signal);
+            }
+            else {
+                this.holdIceCandidate(capture, signal);
+            }
             return;
         }
-        const appliedRemoteGeneration = pc.remoteDescription ? this.highestAppliedRemoteGeneration : undefined;
-        const admission = appliedRemoteGeneration === undefined
-            ? 'hold'
-            : resolveRtcIceCandidateAdmission(signal.connectionGeneration, appliedRemoteGeneration);
-        if (admission === 'hold' || appliedRemoteGeneration === undefined) {
+        const admission = resolveRtcIceCandidateAdmission(signal.connectionGeneration, appliedRemoteGeneration);
+        // Held even while a colliding offer is ignored: a newer remote connection may yet answer this side's offer.
+        if (admission === 'hold') {
             this.holdIceCandidate(capture, signal);
+            return;
+        }
+        if (this.status.ignoreOffer) {
+            this.ignoreIceCandidate(capture, signal);
             return;
         }
         if (admission === 'supersede') {

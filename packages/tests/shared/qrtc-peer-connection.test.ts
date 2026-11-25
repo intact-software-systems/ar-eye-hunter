@@ -783,6 +783,7 @@ describe('QRtcPeerConnection', () => {
         await peer.handleSignal(createRemoteOffer('first-offer', 1, 'first-offer-sdp'));
         await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
         await peer.handleSignal(createRemoteOffer('third-offer', 3, 'third-offer-sdp'));
+        await peer.handleSignal(createRemoteCandidate('early-third-candidate', 3));
         await peer.handleSignal(createRemoteAnswer('offer-1', 3, 'third-answer-sdp'));
         await peer.handleSignal(createRemoteOffer('second-offer', 2, 'second-offer-sdp'));
         await peer.handleSignal(createRemoteCandidate('third-candidate', 3));
@@ -792,13 +793,40 @@ describe('QRtcPeerConnection', () => {
             .toEqual(['first-offer-sdp', 'third-answer-sdp']);
         expect(sentSignals.map((signal) => [signal.signalType, 'offerId' in signal ? signal.offerId : undefined]))
             .toEqual([['Answer', 'first-offer'], ['Offer', 'offer-1']]);
-        expect(applications).toEqual([{ candidate: 'third-candidate', remoteSdp: 'third-answer-sdp' }]);
+        expect(applications).toEqual([
+            { candidate: 'early-third-candidate', remoteSdp: 'third-answer-sdp' },
+            { candidate: 'third-candidate', remoteSdp: 'third-answer-sdp' }
+        ]);
         expect(events.filter((event) => event.kind === 'native-signal-decision' && event.offerId === 'second-offer'))
             .toContainEqual(expect.objectContaining({
                 disposition: 'offer-superseded',
                 connectionGeneration: 2,
                 appliedRemoteGeneration: 3
             }));
+    });
+
+    it('refuses an answer below the applied remote generation, keeping its own offer outstanding for the right one', async () => {
+        const events: RtcSignalingDiagnostics.Event[] = [];
+        const { peer, native } = createPeerFixture(true, {}, createRecordingDependencies(events));
+        await peer.handleSignal(createRemoteOffer('current-offer', 5, 'current-offer-sdp'));
+        await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+        await peer.handleSignal(createRemoteAnswer('offer-1', 4, 'superseded-answer-sdp'));
+
+        expect(native.signalingState).toBe('have-local-offer');
+        expect(native.receivedDescriptions.map((description) => description.sdp)).toEqual(['current-offer-sdp']);
+        expect(events.filter((event) => event.kind === 'native-signal-decision' && event.signalType === 'Answer'))
+            .toContainEqual(expect.objectContaining({
+                disposition: 'answer-superseded',
+                offerId: 'offer-1',
+                signalingState: 'have-local-offer',
+                connectionGeneration: 4,
+                appliedRemoteGeneration: 5
+            }));
+
+        await peer.handleSignal(createRemoteAnswer('offer-1', 5, 'current-answer-sdp'));
+        expect(native.signalingState).toBe('stable');
+        expect(native.receivedDescriptions.map((description) => description.sdp))
+            .toEqual(['current-offer-sdp', 'current-answer-sdp']);
     });
 
     it('holds at most 64 candidates, displacing the oldest', async () => {

@@ -623,21 +623,27 @@ Generations from the two sides' clocks are never compared with each other: a
 receiver compares only generations the same remote runtime assigned.
 
 A connection keeps one mark, the highest remote generation whose Offer or
-Answer it has applied, for the lifetime of the instance. It refuses an offer
-below that mark before the collision handling: no remote description, no
-answer, and a `native-signal-decision` row with disposition `offer-superseded`
-carrying the refused signal's `connectionGeneration` and the
-`appliedRemoteGeneration`. An equal generation is the same remote connection
-renegotiating and is applied as before; a higher one is applied and raises the
-mark, and so does an applied Answer, so a remote connection that answered this
-side's offer outranks an older one whose offer arrives later.
+Answer it has applied, for the lifetime of the instance, and refuses every
+signal below it. An offer below the mark is refused before the collision
+handling: no remote description and no answer. An answer below the mark is
+refused unapplied, so the connection keeps its own offer outstanding and the
+establishment timeout redials if no current answer comes. Each refusal is a
+`native-signal-decision` row with disposition `offer-superseded` or
+`answer-superseded` carrying the refused signal's `connectionGeneration` and
+the `appliedRemoteGeneration`. An equal generation is the same remote
+connection renegotiating and is applied as before; a higher one is applied and
+raises the mark, so a remote connection that answered this side's offer
+outranks an older one whose offer arrives later.
 
 Once its native connection holds a remote description, a connection judges
 each remote candidate against the same mark. A candidate of the marked
 generation is applied. A candidate of a newer generation belongs to a remote
 connection whose description has not arrived yet, so it is held, as a
 candidate before any remote description is, until a description of its
-generation is applied. A candidate of an older generation belongs to a
+generation is applied; it is held even while an impolite connection ignores a
+colliding offer, because that newer remote connection may yet answer this
+side's offer. Other candidates that arrive while a colliding offer is ignored
+are dropped as `ice-ignored`. A candidate of an older generation belongs to a
 superseded remote connection; it is dropped, held or not, with a
 `native-signal-decision` row with disposition `ice-superseded` carrying its
 `connectionGeneration` and the `appliedRemoteGeneration`. At most 64 candidates

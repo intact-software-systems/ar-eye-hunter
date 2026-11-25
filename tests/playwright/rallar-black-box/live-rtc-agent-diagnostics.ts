@@ -14,6 +14,7 @@ import { AppTopics } from '../../../packages/shared/api/api-config.ts';
 import { isGroupLayoutIdentity } from '../../../packages/shared/api/group-lifecycle/group-layout-identity.ts';
 import { GROUP_LIFECYCLE_STATES } from '../../../packages/shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import {
+    RTC_GENERATION_REFUSALS,
     RTC_NATIVE_SIGNAL_DISPOSITIONS,
     RTC_SERVICE_SIGNAL_DISPOSITIONS,
     RTC_SIGNAL_CALLER_RELEASES
@@ -746,7 +747,7 @@ function toRtcSignalingObservation(event: LiveRtcJsonRecord): LiveRtcJsonRecord 
 
 /** The two connection generations a refusal compared; other dispositions carry none. */
 function toRtcGenerationRefusalObservation(disposition: string, event: LiveRtcJsonRecord): LiveRtcJsonRecord {
-    return disposition === 'offer-superseded' || disposition === 'ice-superseded'
+    return toAllowedLifecycleState(disposition, RTC_GENERATION_REFUSALS) !== null
         ? {
             connectionGeneration: toFiniteNonnegativeObservation(event.connectionGeneration),
             appliedRemoteGeneration: toFiniteNonnegativeObservation(event.appliedRemoteGeneration)
