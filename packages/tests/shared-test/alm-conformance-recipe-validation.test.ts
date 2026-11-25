@@ -24,7 +24,7 @@ import { toNestedCommands } from './to-nested-commands.ts';
 
 /**
  * `not-yet-in-sync` is withheld from `ws`: its first hop must be RTC.
- * `cross-carrier-duplicate` needs both transports, once per order.
+ * `cross-carrier-duplicate` needs both transports, in rtc-then-ws only (D760).
  * The fallback family (D56) needs the fallback cell.
  * The addressed family runs on two agents: server-command over ws only, unicast-fallback on the fallback cell.
  * The server's group-state deltas and client-state events reach a page over ws only, so server-originated and
@@ -178,7 +178,6 @@ const CARRIER_SCENARIO_IDS = {
         'checkpoint-recovery',
         'checkpoint-lag',
         'ordering-resync',
-        'cross-carrier-duplicate',
         'cross-carrier-duplicate',
         'not-yet-in-sync',
         'fallback-within-deadline',
