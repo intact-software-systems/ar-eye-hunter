@@ -157,10 +157,12 @@ function createCountedLocator(): CountedLocator {
 }
 
 /**
- * A page whose locators are counted, whose `waitForTimeout` spends its delay and whose evaluations answer `evaluate`;
- * every other call does nothing.
+ * A page whose locators are counted, whose `waitForTimeout` spends its delay and whose evaluations answer `evaluate`
+ * with the argument each was given; every other call does nothing.
  */
-export function createCountedPage(evaluate: () => PlaywrightArgument = () => undefined): Playwright.Page {
+export function createCountedPage(
+    evaluate: (argument: PlaywrightArgument) => PlaywrightArgument | Promise<PlaywrightArgument> = () => undefined
+): Playwright.Page {
     const page: object = new Proxy({}, {
         get: (_target, property) => {
             if (property === 'then') {
@@ -170,7 +172,7 @@ export function createCountedPage(evaluate: () => PlaywrightArgument = () => und
                 return spendBoundedWait;
             }
             if (property === 'evaluate') {
-                return async () => await evaluate();
+                return async (_pageFunction: PlaywrightArgument, argument?: PlaywrightArgument) => await evaluate(argument);
             }
             return () => createCountedLocator();
         }

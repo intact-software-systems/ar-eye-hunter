@@ -6,27 +6,13 @@ import {
 } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 
-import { RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS } from '@shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import {
     computeLiveRtcLifecycleScenarioTimeoutMs,
-    LIFECYCLE_CONNECT_RETRY_INTERVAL_MS,
-    LIFECYCLE_CONNECT_WHEN_PLANNED_TIMEOUT_MS,
-    LIFECYCLE_DIAL_POLL_TIMEOUT_MS,
     LIFECYCLE_HOLD_MS,
-    LIFECYCLE_HYDRATION_REFRESH_TIMEOUT_MS,
-    LIFECYCLE_LANE_TEARDOWN_POLL_TIMEOUT_MS,
-    LIFECYCLE_PRESENCE_SETTLE_MS,
-    LIFECYCLE_PROGRESS_DIAGNOSTICS_POLL_TIMEOUT_MS,
-    LIFECYCLE_ROOM_HELD_ATTEMPTS,
-    LIFECYCLE_ROOM_HELD_INTERVAL_MS,
-    LIFECYCLE_STAGE_WAIT_MS,
-    LIFECYCLE_SURVIVOR_REFRESH_TIMEOUT_MS,
-    PRESENCE_CONNECT_RESULT_WAIT_MS,
-    PRESENCE_CONNECT_TIMING
+    LIFECYCLE_PROGRESS_DIAGNOSTICS_POLL_TIMEOUT_MS
 } from './compute-live-rtc-lifecycle-scenario-timeout-ms.ts';
-import { MANUAL_TRIGGER_POLICY } from './create-group-formation-lifecycle-driver.ts';
 import {
     almDiagnostics,
     apiBaseUrl,
@@ -37,8 +23,7 @@ import {
     liveRtcAgentConfig,
     openAgentTrio,
     roomSeed,
-    workspaceId,
-    type LiveRtcAgentTrio
+    workspaceId
 } from './live-rtc-agent-environment.ts';
 import { closeLiveRtcBrowserAgentContexts } from './live-rtc-browser-agents.ts';
 import { LiveRtcControlClient } from './live-rtc-control-client.ts';
@@ -46,11 +31,10 @@ import { createLiveRtcDeliveryOperations } from './live-rtc-delivery-operations.
 import { jsonRecord } from './live-rtc-evidence-json.ts';
 import {
     createLiveRtcFormationOperations,
-    readRestoredSession,
-    type FormationAgentInput,
     type FormationDiagnosticEvent,
     type FormationHealth
 } from './live-rtc-formation-operations.ts';
+import { LiveRtcLifecycleOperations } from './live-rtc-lifecycle-operations.ts';
 import { validateProgressSeries } from './live-rtc-readiness-progress.ts';
 
 /**
@@ -62,18 +46,21 @@ import { validateProgressSeries } from './live-rtc-readiness-progress.ts';
 /** How long the reopened member's progress diagnostics poll pauses between its reads. */
 const LIFECYCLE_PROGRESS_DIAGNOSTICS_POLL_INTERVAL_MS = 250;
 
-/** How long a reset agent's lane teardown poll pauses between its health reads. */
-const LIFECYCLE_LANE_TEARDOWN_POLL_INTERVAL_MS = 1_000;
-
 const formationOperations = createLiveRtcFormationOperations();
-const deliveryOperations = createLiveRtcDeliveryOperations({
+const lifecycle = new LiveRtcLifecycleOperations({
+    formation: formationOperations,
+    delivery: createLiveRtcDeliveryOperations({
+        apiBaseUrl,
+        applicationId,
+        workspaceId,
+        messagesRtcTypeId: 'manual.type',
+        messagesRtcTopicId: 'manual.topic',
+        almDiagnostics,
+        formation: formationOperations
+    }),
     apiBaseUrl,
     applicationId,
-    workspaceId,
-    messagesRtcTypeId: 'manual.type',
-    messagesRtcTopicId: 'manual.topic',
-    almDiagnostics,
-    formation: formationOperations
+    workspaceId
 });
 
 test.describe('live RTC lifecycle acceptance', () => {
@@ -83,16 +70,12 @@ test.describe('live RTC lifecycle acceptance', () => {
         test.setTimeout(computeLiveRtcLifecycleScenarioTimeoutMs('discovery'));
         const scenario = await openScenario(browser, request, 'discovery');
         try {
-            const { agents } = scenario;
-            await setupMembership(scenario);
-            for (const agent of agents) {
-                await connectPresence(scenario, agent);
-            }
+            await lifecycle.connectTrioPresence(scenario);
 
-            await holdFor(agents[0], LIFECYCLE_HOLD_MS);
+            await scenario.agents[0].page.waitForTimeout(LIFECYCLE_HOLD_MS);
 
-            for (const agent of agents) {
-                const base = agentInput(scenario, agent);
+            for (const agent of scenario.agents) {
+                const base = lifecycle.toAgentInput(scenario, agent);
                 expect(await formationOperations.countPeerCreated(base)).toBe(0);
                 const health = await formationOperations.health(base);
                 expect(health.formation).toMatchObject({
@@ -102,12 +85,12 @@ test.describe('live RTC lifecycle acceptance', () => {
             }
 
             await formationOperations.command({
-                ...agentInput(scenario, agents[0]),
+                ...lifecycle.toAgentInput(scenario, scenario.agents[0]),
                 input: { command: 'plan' }
             });
-            await connectWhenPlanned(scenario, agents[0]);
-            for (const agent of agents) {
-                await expectDialed(scenario, agent, 1);
+            await lifecycle.connectWhenPlanned(scenario);
+            for (const agent of scenario.agents) {
+                await lifecycle.expectDialed(scenario, agent, 1);
             }
         }
         finally {
@@ -119,16 +102,10 @@ test.describe('live RTC lifecycle acceptance', () => {
         test.setTimeout(computeLiveRtcLifecycleScenarioTimeoutMs('monotonic-readiness'));
         const scenario = await openScenario(browser, request, 'progress');
         try {
-            await activateGroup(scenario);
-            const reopened = await formationOperations.reopen({
-                ...agentInput(scenario, scenario.agents[2]),
-                browser,
-                config: liveRtcAgentConfig(),
-                transport: 'realtime'
-            });
+            await lifecycle.activateGroup(scenario);
+            const reopened = await lifecycle.reopen(scenario, { browser, config: liveRtcAgentConfig(), index: 2 });
             // The agent ID survives reopening; the old page can emit while its context closes.
             const reopenedAt = await reopened.page.evaluate(() => performance.timeOrigin);
-            scenario.agents = [scenario.agents[0], scenario.agents[1], reopened];
             const recording = await scenario.control.executeOk({
                 runId: scenario.runId,
                 agentId: reopened.agentId,
@@ -140,15 +117,15 @@ test.describe('live RTC lifecycle acceptance', () => {
                 'Readiness progression requires routine diagnostics enabled on the actual reopened page'
             )
                 .toMatchObject({ routineBrowserDiagnostics: 'enabled', omittedRoutineBrowserDiagnostics: 0 });
-            await connectPresence(scenario, reopened);
-            await settleSurvivors(scenario, reopened);
-            await formationOperations.readiness(agentInput(scenario, reopened));
+            await lifecycle.connectPresence(scenario, reopened);
+            await lifecycle.settleSurvivors(scenario, reopened);
+            await formationOperations.readiness(lifecycle.toAgentInput(scenario, reopened));
             let samples: readonly FormationDiagnosticEvent[] = [];
             try {
                 // Diagnostics reach the control server independently of the readiness command result.
                 await expect.poll(async () => {
                     samples = await formationOperations.readFormationDiagnostics({
-                        ...agentInput(scenario, reopened),
+                        ...lifecycle.toAgentInput(scenario, reopened),
                         topic: 'rallar.browser.formation.room-status',
                         sinceEpochMs: reopenedAt
                     });
@@ -173,25 +150,17 @@ test.describe('live RTC lifecycle acceptance', () => {
         test.setTimeout(computeLiveRtcLifecycleScenarioTimeoutMs('accepted-layout-barrier'));
         const scenario = await openScenario(browser, request, 'barrier');
         try {
-            await activateGroup(scenario);
-            const reopened = await formationOperations.reopen({
-                ...agentInput(scenario, scenario.agents[1]),
-                browser,
-                config: liveRtcAgentConfig(),
-                transport: 'realtime'
-            });
+            await lifecycle.activateGroup(scenario);
+            const reopened = await lifecycle.reopen(scenario, { browser, config: liveRtcAgentConfig(), index: 1 });
             // The agent ID survives reopening; the old page can emit while its context closes.
             const reopenedAt = await reopened.page.evaluate(() => performance.timeOrigin);
-            scenario.agents = [scenario.agents[0], reopened, scenario.agents[2]];
-            await connectPresence(scenario, reopened);
-            await settleSurvivors(scenario, reopened);
-            await expectRoomHeld(scenario, reopened);
+            await lifecycle.connectPresence(scenario, reopened);
+            await lifecycle.settleSurvivors(scenario, reopened);
+            await lifecycle.expectRoomHeld(scenario, reopened);
 
-            const readiness = await formationOperations.readiness(
-                agentInput(scenario, reopened)
-            );
+            const readiness = await formationOperations.readiness(lifecycle.toAgentInput(scenario, reopened));
             const changes = await formationOperations.readFormationDiagnostics({
-                ...agentInput(scenario, reopened),
+                ...lifecycle.toAgentInput(scenario, reopened),
                 topic: 'rallar.browser.formation.changed',
                 sinceEpochMs: reopenedAt
             });
@@ -217,77 +186,27 @@ test.describe('live RTC lifecycle acceptance', () => {
         test.setTimeout(computeLiveRtcLifecycleScenarioTimeoutMs('reset'));
         const scenario = await openScenario(browser, request, 'reset');
         try {
-            await activateGroup(scenario);
+            await lifecycle.activateGroup(scenario);
             const beforeReset = await Promise.all(
                 scenario.agents.map(
-                    async (agent) =>
-                        await formationOperations.countPeerCreated(
-                            agentInput(scenario, agent)
-                        )
+                    async (agent) => await formationOperations.countPeerCreated(lifecycle.toAgentInput(scenario, agent))
                 )
             );
-            const resetAt = Date.now();
 
-            await formationOperations.command({
-                ...agentInput(scenario, scenario.agents[0]),
-                input: { command: 'reset' }
-            });
-
-            for (const agent of scenario.agents) {
-                await formationOperations.waitForStage({
-                    ...agentInput(scenario, agent),
-                    stage: 'dormant',
-                    timeoutMs: LIFECYCLE_STAGE_WAIT_MS,
-                    sinceEpochMs: resetAt
-                });
-                // The stage reaches `dormant` before the lanes finish closing, so the teardown is
-                // awaited rather than sampled: what the pin claims is that they end empty, not that
-                // they are empty the instant the stage changes.
-                await expect
-                    .poll(
-                        async () => {
-                            const sampled = await formationOperations.health(
-                                agentInput(scenario, agent)
-                            );
-                            return [
-                                ...sampled.rtcStatus.activePeerIds,
-                                ...sampled.rtcStatus.knownPeerIds,
-                                ...sampled.rtcStatus.readyPeerIds
-                            ].length;
-                        },
-                        {
-                            timeout: LIFECYCLE_LANE_TEARDOWN_POLL_TIMEOUT_MS,
-                            intervals: [LIFECYCLE_LANE_TEARDOWN_POLL_INTERVAL_MS]
-                        }
-                    )
-                    .toBe(0);
-                const health = await formationOperations.health(
-                    agentInput(scenario, agent)
-                );
+            for (const health of await lifecycle.resetTrioToDormant(scenario)) {
                 expect(health.formation.dialing).toBe('none');
                 expect(health.formation.accepted).toBeUndefined();
                 expect(health.formation.planned).toBeUndefined();
             }
 
-            await holdFor(scenario.agents[0], LIFECYCLE_HOLD_MS);
+            await scenario.agents[0].page.waitForTimeout(LIFECYCLE_HOLD_MS);
             for (const [index, agent] of scenario.agents.entries()) {
-                expect(
-                    await formationOperations.countPeerCreated(
-                        agentInput(scenario, agent)
-                    )
-                ).toBe(beforeReset[index]);
+                expect(await formationOperations.countPeerCreated(lifecycle.toAgentInput(scenario, agent))).toBe(
+                    beforeReset[index]
+                );
             }
 
-            for (const command of ['start', 'plan'] as const) {
-                await formationOperations.command({
-                    ...agentInput(scenario, scenario.agents[0]),
-                    input: { command }
-                });
-            }
-            await connectWhenPlanned(scenario, scenario.agents[0]);
-            for (const [index, agent] of scenario.agents.entries()) {
-                await expectDialed(scenario, agent, beforeReset[index] + 1);
-            }
+            await lifecycle.redial(scenario, beforeReset);
         }
         finally {
             await retire(scenario);
@@ -298,38 +217,15 @@ test.describe('live RTC lifecycle acceptance', () => {
         test.setTimeout(computeLiveRtcLifecycleScenarioTimeoutMs('hydration'));
         const scenario = await openScenario(browser, request, 'hydration');
         try {
-            await activateGroup(scenario);
-            const resetAt = Date.now();
-            await formationOperations.command({
-                ...agentInput(scenario, scenario.agents[0]),
-                input: { command: 'reset' }
-            });
-            await formationOperations.waitForStage({
-                ...agentInput(scenario, scenario.agents[0]),
-                stage: 'dormant',
-                timeoutMs: LIFECYCLE_STAGE_WAIT_MS,
-                sinceEpochMs: resetAt
-            });
+            await lifecycle.activateGroup(scenario);
+            await lifecycle.resetOwnerToDormant(scenario);
 
-            const reopened = await formationOperations.reopen({
-                ...agentInput(scenario, scenario.agents[2]),
-                browser,
-                config: liveRtcAgentConfig(),
-                transport: 'realtime'
-            });
-            scenario.agents = [scenario.agents[0], scenario.agents[1], reopened];
-            await connectPresence(scenario, reopened);
+            const reopened = await lifecycle.reopen(scenario, { browser, config: liveRtcAgentConfig(), index: 2 });
+            await lifecycle.connectPresence(scenario, reopened);
 
-            const hydrated = await formationOperations.health(
-                agentInput(scenario, reopened)
-            );
-            expectDormantAndEmpty(hydrated);
-
-            await reopened.refreshRoom({ refresh: 'always', timeoutMs: LIFECYCLE_HYDRATION_REFRESH_TIMEOUT_MS });
-            const refreshed = await formationOperations.health(
-                agentInput(scenario, reopened)
-            );
-            expectDormantAndEmpty(refreshed);
+            for (const health of await lifecycle.readHydratedHealths(scenario, reopened)) {
+                expectDormantAndEmpty(health);
+            }
         }
         finally {
             await retire(scenario);
@@ -337,19 +233,11 @@ test.describe('live RTC lifecycle acceptance', () => {
     });
 });
 
-interface AcceptanceScenario {
-    readonly control: LiveRtcControlClient;
-    readonly runId: string;
-    readonly groupId: string;
-    readonly suffix: string;
-    agents: LiveRtcAgentTrio;
-}
-
 async function openScenario(
     browser: Browser,
     request: APIRequestContext,
     label: string
-): Promise<AcceptanceScenario> {
+): Promise<LiveRtcLifecycleOperations.Run> {
     const control = new LiveRtcControlClient({
         request,
         baseUrl: CONTROL_BASE_URL,
@@ -368,102 +256,7 @@ async function openScenario(
     return { control, runId, groupId, suffix, agents };
 }
 
-/** The group every scenario runs on: managed, with the driver commanding each boundary itself. */
-async function setupMembership(scenario: AcceptanceScenario): Promise<void> {
-    await deliveryOperations.setupGroupMembership({
-        control: scenario.control,
-        runId: scenario.runId,
-        owner: scenario.agents[0],
-        members: scenario.agents,
-        groupId: scenario.groupId,
-        suffix: scenario.suffix,
-        lifecyclePolicy: MANUAL_TRIGGER_POLICY
-    });
-}
-
-/**
- * Presence without a readiness barrier: the browser connects, joins and hydrates on its own, which
- * is the entry every observing agent uses so nothing refreshes the room on its behalf.
- */
-async function connectPresence(
-    scenario: AcceptanceScenario,
-    agent: LiveRtcControlClient.Agent
-): Promise<void> {
-    const commandId = formationOperations.createCommandId(
-        agentInput(scenario, agent),
-        'presence'
-    );
-    // The accepted layout names this stored session, not the opener's agent ID.
-    const expectedSessionId = (await readRestoredSession(agent)).sessionId;
-    const result = await scenario.control.executeOk({
-        runId: scenario.runId,
-        agentId: agent.agentId,
-        commandId,
-        command: {
-            ...PRESENCE_CONNECT_TIMING,
-            commandId,
-            connection: agent.connection,
-            actor: agent.actor,
-            roomId: scenario.groupId,
-            applicationId,
-            workspaceId,
-            roomRef: { applicationId, workspaceId, groupId: scenario.groupId },
-            transport: 'realtime',
-            rallar: {
-                apiBaseUrl: apiBaseUrl ?? '',
-                expectedSessionId,
-                // Restore the stored session; credentials would mint a different layout peer.
-                // Closing a page preserves its session and membership for the reopening test.
-                logoutOnClose: false,
-                leaveRoomOnClose: false,
-                timeoutMs: RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS
-            }
-        },
-        timeoutMs: PRESENCE_CONNECT_RESULT_WAIT_MS
-    });
-    // A new session would test admission instead of restoring an accepted peer.
-    expect(
-        scenario.control.requireSessionId(result, commandId),
-        `Agent ${agent.prefix} connected as a different session than the one its page holds`
-    ).toBe(expectedSessionId);
-}
-
-/** Drives the group to the active lifecycle stage; transport readiness is a separate barrier. */
-async function activateGroup(scenario: AcceptanceScenario): Promise<void> {
-    await setupMembership(scenario);
-    for (const agent of scenario.agents) {
-        await connectPresence(scenario, agent);
-    }
-    // Presence is what the planner plans over, and it propagates asynchronously; planning before it
-    // settles yields a cycle with nothing to publish, so the group never gains a planned layout.
-    await holdFor(scenario.agents[0], LIFECYCLE_PRESENCE_SETTLE_MS);
-    // `readiness` is an after-activation instrument: the room's transport state is derived from the
-    // ACCEPTED layout, which the promotion at `activate` creates, so before that it reads `idle` and
-    // the barrier can never resolve. The dials are therefore awaited by their own evidence here, and
-    // readiness is used only once the group is active.
-    await formationOperations.command({
-        control: scenario.control,
-        runId: scenario.runId,
-        agent: scenario.agents[0],
-        roomRef: { applicationId, workspaceId, groupId: scenario.groupId },
-        suffix: scenario.suffix,
-        input: { command: 'plan' }
-    });
-    await connectWhenPlanned(scenario, scenario.agents[0]);
-    for (const agent of scenario.agents) {
-        await expectDialed(scenario, agent, 1);
-    }
-    await formationOperations.command({
-        control: scenario.control,
-        runId: scenario.runId,
-        agent: scenario.agents[0],
-        roomRef: { applicationId, workspaceId, groupId: scenario.groupId },
-        suffix: scenario.suffix,
-        input: { command: 'activate' }
-    });
-}
-
-async function retire(scenario: AcceptanceScenario): Promise<void> {
+async function retire(scenario: LiveRtcLifecycleOperations.Run): Promise<void> {
     const errors = await closeLiveRtcBrowserAgentContexts(scenario.agents);
     for (const error of errors) {
         console.error(
@@ -479,116 +272,6 @@ function expectDormantAndEmpty(health: FormationHealth): void {
     expect(health.formation.accepted).toBeUndefined();
     expect(health.formation.coverageRate).toBeUndefined();
     expect(health.rtcStatus.readyPeerIds).toEqual([]);
-}
-
-function agentInput(
-    scenario: AcceptanceScenario,
-    agent: LiveRtcControlClient.Agent
-): FormationAgentInput {
-    return {
-        control: scenario.control,
-        runId: scenario.runId,
-        agent,
-        roomRef: { applicationId, workspaceId, groupId: scenario.groupId },
-        suffix: scenario.suffix
-    };
-}
-
-/**
- * A reopened page must hold the room before anything it reports means anything. The health decoder
- * fails with the whole block when the formation summary is missing, so a page that connected but
- * never took the room says so here rather than inside a readiness timeout.
- */
-async function expectRoomHeld(
-    scenario: AcceptanceScenario,
-    agent: LiveRtcControlClient.Agent
-): Promise<void> {
-    let lastFailure = 'the room was never read';
-    for (let attempt = 0; attempt < LIFECYCLE_ROOM_HELD_ATTEMPTS; attempt++) {
-        try {
-            await formationOperations.health(agentInput(scenario, agent));
-            return;
-        }
-        catch (error) {
-            lastFailure = error instanceof Error ? error.message : String(error);
-        }
-        await agent.page.waitForTimeout(LIFECYCLE_ROOM_HELD_INTERVAL_MS);
-    }
-    throw new Error(
-        `Agent ${agent.prefix} reopened without taking the room. ${lastFailure}`
-    );
-}
-
-/**
- * A member that reopens returns to a mesh whose surviving peers still hold the lane it left with, so
- * they must reconcile those lanes before the reopened member waits for readiness.
- */
-async function settleSurvivors(
-    scenario: AcceptanceScenario,
-    reopened: LiveRtcControlClient.Agent
-): Promise<void> {
-    for (const agent of scenario.agents) {
-        if (agent.agentId !== reopened.agentId) {
-            await agent.refreshRoom({ refresh: 'always', timeoutMs: LIFECYCLE_SURVIVOR_REFRESH_TIMEOUT_MS });
-        }
-    }
-}
-
-/**
- * The planned layout is published by the topology worker, not by the `plan` receipt, so a `connect`
- * issued straight after `plan` can be refused for naming no planned layout. The browser's own cached
- * planned slot is not the gate either — it is delivered on its own schedule and a manager that never
- * subscribed may not hold it at all — so the connect is retried on exactly that refusal, which is
- * what the shipped quickstart tells an application to do.
- */
-async function connectWhenPlanned(
-    scenario: AcceptanceScenario,
-    agent: LiveRtcControlClient.Agent
-): Promise<void> {
-    const deadline = Date.now() + LIFECYCLE_CONNECT_WHEN_PLANNED_TIMEOUT_MS;
-    let lastError = 'the connect was never attempted';
-    while (Date.now() < deadline) {
-        const result = await formationOperations.tryCommand({
-            ...agentInput(scenario, agent),
-            input: { command: 'connect' }
-        });
-        if (result.ok) {
-            return;
-        }
-        lastError = JSON.stringify(result.error);
-        if (!lastError.includes('no planned layout')) {
-            break;
-        }
-        await agent.page.waitForTimeout(LIFECYCLE_CONNECT_RETRY_INTERVAL_MS);
-    }
-    throw new Error(`The connect never found a published layout: ${lastError}`);
-}
-
-/** How long the dial witness's poll pauses between its reads of the agent's events. */
-const LIFECYCLE_DIAL_POLL_INTERVAL_MS = 500;
-
-/** The dial witness the two positive controls assert: the agent's own recorded peer-created events. */
-async function expectDialed(
-    scenario: AcceptanceScenario,
-    agent: LiveRtcControlClient.Agent,
-    atLeast: number
-): Promise<void> {
-    await expect
-        .poll(
-            async () => await formationOperations.countPeerCreated(agentInput(scenario, agent)),
-            {
-                timeout: LIFECYCLE_DIAL_POLL_TIMEOUT_MS,
-                intervals: [LIFECYCLE_DIAL_POLL_INTERVAL_MS]
-            }
-        )
-        .toBeGreaterThanOrEqual(atLeast);
-}
-
-async function holdFor(
-    agent: LiveRtcControlClient.Agent,
-    ms: number
-): Promise<void> {
-    await agent.page.waitForTimeout(ms);
 }
 
 function lastAtEpochMs(events: readonly FormationDiagnosticEvent[]): number {

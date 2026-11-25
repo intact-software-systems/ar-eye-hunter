@@ -35,6 +35,7 @@ const DERIVED_TEST_PATH_FILES = [
     `${playwrightRoot}/retention-live-rtc-control-client.ts`,
     `${playwrightRoot}/live-rtc-delivery-operations.ts`,
     `${playwrightRoot}/live-rtc-formation-operations.ts`,
+    `${playwrightRoot}/live-rtc-lifecycle-operations.ts`,
     `${playwrightRoot}/live-rtc-layout-switch-operations.ts`,
     `${playwrightRoot}/drain-live-rtc-layout-switch-receivers.ts`,
     `${playwrightRoot}/live-rtc-wire-observation.ts`,

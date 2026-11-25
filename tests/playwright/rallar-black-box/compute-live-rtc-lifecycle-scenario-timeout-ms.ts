@@ -87,12 +87,12 @@ const STAGE_WAIT_BOUNDED_WAITS_MS = computeCommandWaitMs(
     LIFECYCLE_STAGE_WAIT_MS + LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS
 );
 
-/** The trio's membership and presence connects, then the presence settle. */
-const PRESENCE_BOUNDED_WAITS_MS = GROUP_MEMBERSHIP_BOUNDED_WAITS_MS +
+/** The trio's membership, then each member's presence connect. */
+const TRIO_PRESENCE_BOUNDED_WAITS_MS = GROUP_MEMBERSHIP_BOUNDED_WAITS_MS +
     LIVE_RTC_TRIO_SIZE * PRESENCE_CONNECT_RESULT_WAIT_MS;
 
-/** The trio's presence and the settle, the plan, the plan's connect dialing every member, then the activation. */
-const ACTIVATION_BOUNDED_WAITS_MS = PRESENCE_BOUNDED_WAITS_MS + LIFECYCLE_PRESENCE_SETTLE_MS +
+/** The trio's presence, the settle, the plan, the plan's connect dialing every member, then the activation. */
+const ACTIVATION_BOUNDED_WAITS_MS = TRIO_PRESENCE_BOUNDED_WAITS_MS + LIFECYCLE_PRESENCE_SETTLE_MS +
     LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS +
     DIAL_BOUNDED_WAITS_MS + LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS;
 
@@ -105,6 +105,36 @@ const REOPENING_BOUNDED_WAITS_MS = REOPENED_PRESENCE_BOUNDED_WAITS_MS + 2 * LIFE
 /** Each attempt to read the reopened member's health, then the interval before the next. */
 const ROOM_HELD_BOUNDED_WAITS_MS = LIFECYCLE_ROOM_HELD_ATTEMPTS *
     (LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS + LIFECYCLE_ROOM_HELD_INTERVAL_MS);
+
+/** The owner's reset, then each member's dormant stage, its lane teardown and its health in turn. */
+const TRIO_RESET_BOUNDED_WAITS_MS = LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS +
+    LIVE_RTC_TRIO_SIZE *
+        (STAGE_WAIT_BOUNDED_WAITS_MS + LIFECYCLE_LANE_TEARDOWN_POLL_TIMEOUT_MS + LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS);
+
+/** The owner's start and plan, then the plan's connect dialing every member again. */
+const REDIAL_BOUNDED_WAITS_MS = 2 * LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS + DIAL_BOUNDED_WAITS_MS;
+
+/** The owner's reset, then its own dormant stage. */
+const OWNER_RESET_BOUNDED_WAITS_MS = LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS + STAGE_WAIT_BOUNDED_WAITS_MS;
+
+/** A reopened member's health, its room refresh, then its health again. */
+const HYDRATED_HEALTHS_BOUNDED_WAITS_MS = LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS + LIFECYCLE_HYDRATION_REFRESH_TIMEOUT_MS +
+    LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS;
+
+/** The bounded waits of each lifecycle operation the scenarios compose, as their counting test measures them. */
+export const LIVE_RTC_LIFECYCLE_OPERATION_BOUNDED_WAITS_MS = {
+    presenceConnect: PRESENCE_CONNECT_RESULT_WAIT_MS,
+    trioPresence: TRIO_PRESENCE_BOUNDED_WAITS_MS,
+    connectWhenPlanned: CONNECT_WHEN_PLANNED_BOUNDED_WAITS_MS,
+    activation: ACTIVATION_BOUNDED_WAITS_MS,
+    reopenedPresence: REOPENED_PRESENCE_BOUNDED_WAITS_MS,
+    reopening: REOPENING_BOUNDED_WAITS_MS,
+    roomHeld: ROOM_HELD_BOUNDED_WAITS_MS,
+    trioReset: TRIO_RESET_BOUNDED_WAITS_MS,
+    redial: REDIAL_BOUNDED_WAITS_MS,
+    ownerReset: OWNER_RESET_BOUNDED_WAITS_MS,
+    hydratedHealths: HYDRATED_HEALTHS_BOUNDED_WAITS_MS
+} as const;
 
 export type LiveRtcLifecycleScenario =
     | 'discovery'
@@ -119,7 +149,7 @@ const SCENARIO_BOUNDED_WAITS_MS: Readonly<Record<LiveRtcLifecycleScenario, numbe
      * The trio's presence, a hold undialed, each member's recorded dials and health, the plan, then its connect dials
      * every member.
      */
-    discovery: PRESENCE_BOUNDED_WAITS_MS + LIFECYCLE_HOLD_MS +
+    discovery: TRIO_PRESENCE_BOUNDED_WAITS_MS + LIFECYCLE_HOLD_MS +
         LIVE_RTC_TRIO_SIZE * (CONTROL_REQUEST_TIMEOUT_MS + LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS) +
         LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS +
         DIAL_BOUNDED_WAITS_MS,
@@ -131,24 +161,14 @@ const SCENARIO_BOUNDED_WAITS_MS: Readonly<Record<LiveRtcLifecycleScenario, numbe
     'accepted-layout-barrier': ACTIVATION_BOUNDED_WAITS_MS + REOPENING_BOUNDED_WAITS_MS + ROOM_HELD_BOUNDED_WAITS_MS +
         FORMATION_READINESS_BOUNDED_WAITS_MS,
     /**
-     * Activation, every member's recorded dials side by side and the reset, every member's dormant stage, lane
-     * teardown and health, a hold, each member's recorded dials again, then start and plan before the next series dials
-     * again.
+     * Activation, every member's recorded dials side by side, the trio's reset to dormant, a hold, each member's
+     * recorded dials again, then the next series dials again.
      */
-    reset: ACTIVATION_BOUNDED_WAITS_MS + CONTROL_REQUEST_TIMEOUT_MS + LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS +
-        LIVE_RTC_TRIO_SIZE *
-            (STAGE_WAIT_BOUNDED_WAITS_MS + LIFECYCLE_LANE_TEARDOWN_POLL_TIMEOUT_MS +
-                LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS) +
-        LIFECYCLE_HOLD_MS + LIVE_RTC_TRIO_SIZE * CONTROL_REQUEST_TIMEOUT_MS + 2 * LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS +
-        DIAL_BOUNDED_WAITS_MS,
-    /**
-     * Activation and the reset, the owner's dormant stage, a reopening member's presence, its health, its room refresh
-     * and its health again.
-     */
-    hydration: ACTIVATION_BOUNDED_WAITS_MS + LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS + STAGE_WAIT_BOUNDED_WAITS_MS +
-        REOPENED_PRESENCE_BOUNDED_WAITS_MS + LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS +
-        LIFECYCLE_HYDRATION_REFRESH_TIMEOUT_MS +
-        LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS
+    reset: ACTIVATION_BOUNDED_WAITS_MS + CONTROL_REQUEST_TIMEOUT_MS + TRIO_RESET_BOUNDED_WAITS_MS +
+        LIFECYCLE_HOLD_MS + LIVE_RTC_TRIO_SIZE * CONTROL_REQUEST_TIMEOUT_MS + REDIAL_BOUNDED_WAITS_MS,
+    /** Activation, the owner's reset to dormant, a reopening member's presence, then its hydrated healths. */
+    hydration: ACTIVATION_BOUNDED_WAITS_MS + OWNER_RESET_BOUNDED_WAITS_MS + REOPENED_PRESENCE_BOUNDED_WAITS_MS +
+        HYDRATED_HEALTHS_BOUNDED_WAITS_MS
 };
 
 /** A scenario's timeout: its trio opening, the bounded waits it then runs in order, and the harness margin. */
