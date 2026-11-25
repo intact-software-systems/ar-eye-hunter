@@ -117,8 +117,7 @@ interface ConsoleNativeAttachment {
 /** The composite recipe's commands read local state and name no budget; its run passes well inside this wait. */
 const COMPOSITE_PASSED_WAIT_MS = 90_000;
 
-/** How long the lifecycle test's Monitor may take to show its run cancelled, then to complete the cancel proof. */
-const CANCELLED_VERDICT_TIMEOUT_MS = 30_000;
+/** How long the lifecycle test polls the distributed and control runs until they complete the cancel proof. */
 const CANCEL_PROOF_POLL_TIMEOUT_MS = 30_000;
 
 /** The readiness limit the Stability recipe authors for its connect. */
@@ -242,7 +241,7 @@ test('completes the configured live distributed run lifecycle and exports its ar
         await expect(cancelDialog).toHaveCount(0);
         await expect(
             page.locator('[data-monitor-section="verdict"]')
-        ).toHaveAttribute('data-run-state', 'cancelled', { timeout: CANCELLED_VERDICT_TIMEOUT_MS });
+        ).toHaveAttribute('data-run-state', 'cancelled', { timeout: CONSOLE_MONITOR_VERDICT_TIMEOUT_MS });
         await expectCompletedCancelProof(
             request,
             controlRunId,

@@ -1,3 +1,4 @@
+import { REALTIME_SEND_OPEN_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/realtime-send-open-timeout-ms.ts';
 import {
     type RallarBlackBoxDistributedGroupRef,
     type RallarBlackBoxDistributedRunManifest
@@ -21,9 +22,8 @@ const WS_SEND_RECIPE_TIMEOUT_MS = 45_000;
 /** How long the RTC connect recipe waits for its two peers to be ready. */
 const RTC_CONNECT_RECIPE_READINESS_TIMEOUT_MS = 30_000;
 
-/** The RTC send recipe's budget for its broadcast, and how long that send may take to open its data channel. */
+/** The RTC send recipe's budget for its broadcast. */
 const RTC_SEND_RECIPE_TIMEOUT_MS = 60_000;
-const RTC_SEND_RECIPE_OPEN_TIMEOUT_MS = 20_000;
 
 /** How long a distributed run waits for its targets to acknowledge a phase, unless its manifest names its own. */
 const DISTRIBUTED_MANIFEST_ACK_TIMEOUT_MS = 10_000;
@@ -191,7 +191,7 @@ export function rtcSendRecipe(input: RtcSendRecipeInput): RallarBlackBoxTestReci
             roomRef: group,
             send: {
                 roomId: group.groupId,
-                openTimeoutMs: RTC_SEND_RECIPE_OPEN_TIMEOUT_MS,
+                openTimeoutMs: REALTIME_SEND_OPEN_TIMEOUT_MS,
                 data: {
                     topic: 'rallar.black-box.distributed.recipe.qa',
                     distributedRunId,

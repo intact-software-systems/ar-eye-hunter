@@ -17,6 +17,7 @@ import {
     STALE_SEND_TIMEOUT_MS,
     WS_OPEN_TIMEOUT_MS
 } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-delivery-waits.ts';
+import { REALTIME_SEND_OPEN_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/realtime-send-open-timeout-ms.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import type { BlackBoxRallarSendInput } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
@@ -56,9 +57,6 @@ export interface CreateLiveRtcDeliveryOperationsConfig {
     readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
     readonly formation: Pick<LiveRtcFormationOperations, 'readiness'>;
 }
-
-/** How long a realtime send may take to open its data channel; the send's own budget bounds it. */
-const REALTIME_SEND_OPEN_TIMEOUT_MS = 20_000;
 
 interface LiveRtcDeliveryRuntime extends CreateLiveRtcDeliveryOperationsConfig {
     readonly groupFormationLifecycleDriver: GroupFormationLifecycleDriver;

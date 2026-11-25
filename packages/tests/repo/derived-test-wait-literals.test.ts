@@ -87,6 +87,11 @@ function readPathFile(relativePath: string): string {
     return readFileSync(path.join(repoRoot, relativePath), 'utf8');
 }
 
+/** The names a source declares for its numeric constants. */
+function findNumericConstantNames(source: string): readonly string[] {
+    return [...source.matchAll(/^(?:export )?const ([A-Z][A-Z\d_]*_MS) =/gm)].map((match) => match[1]);
+}
+
 describe('literal waits on the derived tests\' paths', () => {
     it('finds each way a literal wait bound is passed and passes over named ones', () => {
         expect(findLiteralWaits([
@@ -109,6 +114,23 @@ describe('literal waits on the derived tests\' paths', () => {
             '5: await page.waitForTimeout(500);',
             '6: }, 10_000);'
         ]);
+    });
+
+    // Two modules declared the same realtime open budget apart, each with its own copy of the doc.
+    it('declares each named wait once across the derived tests\' paths', () => {
+        const ownersByName = Object.groupBy(
+            DERIVED_TEST_PATH_FILES.filter((relativePath) => existsSync(path.join(repoRoot, relativePath))).flatMap(
+                (relativePath) => findNumericConstantNames(readPathFile(relativePath)).map((name) => ({ name, relativePath }))
+            ),
+            ({ name }) => name
+        );
+        const duplicated = Object.fromEntries(
+            Object.entries(ownersByName).flatMap(([name, owners]) =>
+                (owners ?? []).length > 1 ? [[name, (owners ?? []).map(({ relativePath }) => relativePath)]] : []
+            )
+        );
+
+        expect(duplicated).toEqual({});
     });
 
     // Two rounds each left a literal wait on these paths uncounted; a literal can no longer join a counted path.

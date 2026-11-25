@@ -9,6 +9,7 @@ import {
 
 import { computeCommandResultWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 import { CONTROL_AGENT_OPENING_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-agent-opening-timeout-ms.ts';
+import { REALTIME_SEND_OPEN_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/realtime-send-open-timeout-ms.ts';
 import {
     RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS,
     RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
@@ -42,9 +43,6 @@ export const TWO_AGENT_GROUP_REQUEST_TIMEOUT_MS = 5_000;
 
 /** How long a disconnected agent settles before its health is read. */
 export const TWO_AGENT_DISCONNECT_SETTLE_MS = 1_000;
-
-/** How long a realtime send may take to open its data channel; the send's own budget bounds it. */
-const REALTIME_SEND_OPEN_TIMEOUT_MS = 20_000;
 
 /** How long the run is polled for the smoke's complete evidence. */
 export const TWO_AGENT_EVIDENCE_POLL_TIMEOUT_MS = 20_000;
