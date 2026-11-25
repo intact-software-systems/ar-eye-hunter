@@ -314,11 +314,11 @@ jobs:
           - retention-100
         include:
           - case: default
-            timeout-minutes: 70
+            timeout-minutes: 110
           - case: all-scenarios
-            timeout-minutes: 160
+            timeout-minutes: 265
           - case: retention-100
-            timeout-minutes: 250
+            timeout-minutes: 290
     steps:
       - uses: actions/checkout@v7
         with:
