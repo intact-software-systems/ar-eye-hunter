@@ -47,6 +47,33 @@ export const TWO_AGENT_DISCONNECT_SETTLE_MS = 1_000;
 /** How long the run is polled for the smoke's complete evidence. */
 export const TWO_AGENT_EVIDENCE_POLL_TIMEOUT_MS = 20_000;
 
+/** The smoke's two agents, which it opens in this order. */
+export const TWO_AGENT_SIDES = ['a', 'b'] as const;
+
+/** What an agent's finalization reads, reports and retires, one command after another. */
+export function toTwoAgentFinalizationCommands(
+    agentId: string,
+    suffix: string
+): readonly Omit<BrowserRallarTwoAgentSmoke.ControlCommand, 'agent'>[] {
+    return [
+        { commandId: `health-${agentId}-${suffix}`, command: { kind: 'health' } },
+        { commandId: `stats-${agentId}-${suffix}`, command: { kind: 'stats' } },
+        {
+            commandId: `report-${agentId}-${suffix}`,
+            command: {
+                kind: 'recipe.run',
+                recipe: {
+                    schemaVersion: 1,
+                    recipeId: `two-agent-final-report-${agentId}-${suffix}`,
+                    commands: [{ kind: 'health', commandId: `report-health-${agentId}-${suffix}` }]
+                }
+            }
+        },
+        { commandId: `close-${agentId}-${suffix}`, command: { kind: 'close' } },
+        { commandId: `reset-${agentId}-${suffix}`, command: { kind: 'reset' } }
+    ];
+}
+
 /** A connect joins the room under the establishment SDK timeout, then waits for its readiness. */
 function toConnectTiming(
     readiness: RallarBlackBoxTestRtcConnectReadiness | undefined
@@ -158,7 +185,7 @@ export class BrowserRallarTwoAgentSmoke {
         this.dependencies = dependencies;
     }
 
-    async openAgent(side: 'a' | 'b'): Promise<BrowserRallarTwoAgentSmoke.Agent> {
+    async openAgent(side: typeof TWO_AGENT_SIDES[number]): Promise<BrowserRallarTwoAgentSmoke.Agent> {
         const { browser, config, suffix } = this.dependencies;
         const auth = side === 'a' ? config.agentAAuth : config.agentBAuth;
         if (!auth) {
@@ -361,23 +388,9 @@ export class BrowserRallarTwoAgentSmoke {
     }
 
     async finalizeAgent(agent: BrowserRallarTwoAgentSmoke.Agent): Promise<void> {
-        const { suffix } = this.dependencies;
-        await this.writeCommand({ agent, commandId: `health-${agent.agentId}-${suffix}`, command: { kind: 'health' } });
-        await this.writeCommand({ agent, commandId: `stats-${agent.agentId}-${suffix}`, command: { kind: 'stats' } });
-        await this.writeCommand({
-            agent,
-            commandId: `report-${agent.agentId}-${suffix}`,
-            command: {
-                kind: 'recipe.run',
-                recipe: {
-                    schemaVersion: 1,
-                    recipeId: `two-agent-final-report-${agent.agentId}-${suffix}`,
-                    commands: [{ kind: 'health', commandId: `report-health-${agent.agentId}-${suffix}` }]
-                }
-            }
-        });
-        await this.writeCommand({ agent, commandId: `close-${agent.agentId}-${suffix}`, command: { kind: 'close' } });
-        await this.writeCommand({ agent, commandId: `reset-${agent.agentId}-${suffix}`, command: { kind: 'reset' } });
+        for (const finalization of toTwoAgentFinalizationCommands(agent.agentId, this.dependencies.suffix)) {
+            await this.writeCommand({ agent, ...finalization });
+        }
     }
 
     async expectEvidence(kind: 'delivery' | 'reload' | 'disconnect'): Promise<void> {
