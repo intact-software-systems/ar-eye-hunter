@@ -1,76 +1,101 @@
-import { parse } from '@babel/parser';
-import type { CallExpression, Node, OptionalCallExpression } from '@babel/types';
+import type { CallExpression, Node, OptionalCallExpression, Program } from '@babel/types';
+
+import { findSourceLines, toNodeName, walkNodes, type SourceNodeMatch } from './find-source-lines.ts';
 
 /** The `APIRequestContext` methods that send a request, each taking its options second. */
 const REQUEST_METHODS: ReadonlySet<string> = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'fetch']);
 
-/** A receiver the harnesses name for the request context it is: `request`, `#request`, `input.request`, `page.request`. */
-const REQUEST_RECEIVER_NAME = /request$/i;
+/**
+ * A receiver the harnesses name for the request context it is: `request`, `#request`, `input.request`, `page.request`,
+ * `requestContext`.
+ */
+const REQUEST_RECEIVER_NAME = /request(?:Context)?$/i;
 
-/** The name an identifier, private name or member expression is known by, if it has one. */
-function toName(node: Node | null | undefined): string | undefined {
-    if (!node) {
-        return undefined;
-    }
+/** A node with its casts, non-null assertions and parentheses taken off. */
+function unwrap(node: Node): Node {
     switch (node.type) {
-        case 'Identifier':
-            return node.name;
-        case 'PrivateName':
-            return node.id.name;
-        case 'MemberExpression':
-        case 'OptionalMemberExpression':
-            return toName(node.property);
+        case 'ParenthesizedExpression':
+        case 'TSAsExpression':
+        case 'TSSatisfiesExpression':
+        case 'TSNonNullExpression':
+        case 'TSTypeAssertion':
+            return unwrap(node.expression);
         default:
-            return undefined;
+            return node;
     }
 }
 
-/** Whether a call sends a request through a request context: a request method of a receiver named for one. */
-function isRequestCall(node: Node): node is CallExpression | OptionalCallExpression {
-    if (node.type !== 'CallExpression' && node.type !== 'OptionalCallExpression') {
-        return false;
+/** The global `fetch` itself, whether named bare or through `globalThis`. */
+function isGlobalFetch(node: Node): boolean {
+    const value = unwrap(node);
+    if (value.type === 'Identifier') {
+        return value.name === 'fetch';
     }
-    const callee = node.callee;
-    return (callee.type === 'MemberExpression' || callee.type === 'OptionalMemberExpression') &&
-        REQUEST_METHODS.has(toName(callee.property) ?? '') && REQUEST_RECEIVER_NAME.test(toName(callee.object) ?? '');
+    return (value.type === 'MemberExpression' || value.type === 'OptionalMemberExpression') &&
+        toNodeName(value.property) === 'fetch' && toNodeName(unwrap(value.object)) === 'globalThis';
 }
 
-/** Whether a request call's options are written out and name a `timeout` of their own. */
-function namesTimeout(call: CallExpression | OptionalCallExpression): boolean {
+/** Every name a source binds to a request context by copying one: `const r = request`. */
+function toRequestAliases(program: Program): ReadonlySet<string> {
+    const aliases = new Set<string>();
+    walkNodes(program, [], (node) => {
+        if (
+            node.type === 'VariableDeclarator' && node.id.type === 'Identifier' && node.init &&
+            REQUEST_RECEIVER_NAME.test(toNodeName(unwrap(node.init)) ?? '')
+        ) {
+            aliases.add(node.id.name);
+        }
+    });
+    return aliases;
+}
+
+/** Whether a call's options are written out and give `key` a value other than `undefined`. */
+function namesOption(call: CallExpression | OptionalCallExpression, key: string): boolean {
     const options = call.arguments[1];
     return options?.type === 'ObjectExpression' &&
-        options.properties.some((property) => property.type === 'ObjectProperty' && toName(property.key) === 'timeout');
-}
-
-/** Calls `visit` with every node of the tree. */
-function walk(node: Node, visit: (node: Node) => void): void {
-    visit(node);
-    for (const [key, value] of Object.entries(node)) {
-        if (key === 'loc' || key.endsWith('Comments')) {
-            continue;
-        }
-        for (const child of Array.isArray(value) ? value : [value]) {
-            if (typeof child === 'object' && child !== null && typeof child.type === 'string') {
-                walk(child, visit);
-            }
-        }
-    }
+        options.properties.some((property) =>
+            property.type === 'ObjectProperty' && toNodeName(property.key) === key &&
+            !(property.value.type === 'Identifier' && property.value.name === 'undefined')
+        );
 }
 
 /**
- * Each line of a TypeScript source that sends a request through a Playwright request context without naming its
- * timeout, as `line: text`, so that no request runs under the context's own default. A request is known by its form:
- * a request method called on a receiver named for a request context, whose options must be an object literal with a
- * `timeout` property. Without type information a context held under another name goes unseen.
+ * Whether a call sends a request with no bound of its own: a request context's method that names no `timeout`, or
+ * the global `fetch` that names no `signal`. A `fetch` called on any other receiver is an injected dependency, which
+ * the injector times.
+ */
+function isUntimedRequestCall(node: Node, aliases: ReadonlySet<string>): boolean {
+    if (node.type !== 'CallExpression' && node.type !== 'OptionalCallExpression') {
+        return false;
+    }
+    if (isGlobalFetch(node.callee)) {
+        return !namesOption(node, 'signal');
+    }
+    const callee = unwrap(node.callee);
+    if (callee.type !== 'MemberExpression' && callee.type !== 'OptionalMemberExpression') {
+        return false;
+    }
+    const receiver = toNodeName(unwrap(callee.object)) ?? '';
+    return REQUEST_METHODS.has(toNodeName(callee.property) ?? '') &&
+        (REQUEST_RECEIVER_NAME.test(receiver) || aliases.has(receiver)) && !namesOption(node, 'timeout');
+}
+
+/** Whether a node hands an operator the bare global `fetch` as its `fetch` dependency, untimed. */
+function isUntimedFetchInjection(node: Node): boolean {
+    return node.type === 'ObjectProperty' && toNodeName(node.key) === 'fetch' && isGlobalFetch(node.value);
+}
+
+/**
+ * Each line of a TypeScript source that sends a request without a bound of its own, as `line: text`, so that no
+ * request runs under a default limit or none. A request is known by its form: a request method called on a receiver
+ * named for a Playwright request context, or bound to one, must name a `timeout` in its options literal; the global
+ * `fetch` must name a `signal`. A `fetch` an operator takes as a dependency is timed where it is injected, so handing
+ * one the bare global is refused there. Without type information a context or fetch held under another name goes
+ * unseen.
  */
 export function findUntimedRequests(source: string): readonly string[] {
-    const lines = source.split('\n');
-    const program = parse(source, { sourceType: 'module', plugins: ['typescript'], errorRecovery: true }).program;
-    const found = new Set<number>();
-    walk(program, (node) => {
-        if (isRequestCall(node) && !namesTimeout(node) && node.loc) {
-            found.add(node.loc.start.line);
-        }
+    return findSourceLines(source, (program): SourceNodeMatch => {
+        const aliases = toRequestAliases(program);
+        return (node) => isUntimedRequestCall(node, aliases) || isUntimedFetchInjection(node);
     });
-    return [...found].sort((left, right) => left - right).map((line) => `${line}: ${lines[line - 1].trim()}`);
 }

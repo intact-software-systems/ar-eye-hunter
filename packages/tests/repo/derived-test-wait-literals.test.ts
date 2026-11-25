@@ -102,6 +102,14 @@ const DERIVED_TEST_PATH_FILES = [
     `${budgetsRoot}/settled-trio-retirement-bounded-waits-ms.ts`
 ] as const;
 
+/**
+ * The untimed `fetch` injections off every derived test's path: the world-fleet CLI's own entry point hands the hosted
+ * operator the global `fetch`, while the view push spec calls the operator itself with a timed one.
+ */
+const HOSTED_ENTRY_FETCH_INJECTIONS = [
+    { relativePath: 'apps/rallar-black-box/scripts/run-world-fleet-distributed-recipe.ts', text: 'fetch,' }
+] as const;
+
 function readPathFile(relativePath: string): string {
     return readFileSync(path.join(repoRoot, relativePath), 'utf8');
 }
@@ -164,7 +172,8 @@ describe('literal waits on the derived tests\' paths', () => {
             '}',
             'function readRun(): void {',
             '    const RUN_POLL_INTERVAL_MS = 250;',
-            '}'
+            '}',
+            'await sleep(Math.min(remaining, 15_000));'
         ].join('\n'))).toEqual([
             '2: 15_000,',
             '5: run({ pollMs: 250, readinessTimeoutMs: deadlines.readinessTimeoutMs });',
@@ -187,7 +196,8 @@ describe('literal waits on the derived tests\' paths', () => {
             '25: run({ timeout: 15_000 * agents.length });',
             '26: run({ timeoutMs: attempts * 2_000 });',
             '28: return 15_000;',
-            '31: const RUN_POLL_INTERVAL_MS = 250;'
+            '31: const RUN_POLL_INTERVAL_MS = 250;',
+            '33: await sleep(Math.min(remaining, 15_000));'
         ]);
     });
 
@@ -257,7 +267,9 @@ describe('literal waits on the derived tests\' paths', () => {
         expect(undocumented).toEqual({});
     });
 
-    // Every request ran under the request context's own 30 s default, which no derivation counted.
+    // Every request ran under the request context's own 30 s default, which no derivation counted; the review then
+    // found a request through a fetch, a context under another name, an alias, a cast, a quoted method or an undefined
+    // timeout passing, and a quoted `timeout` key refused.
     it('finds a request through a request context that names no timeout of its own', () => {
         expect(findUntimedRequests([
             'const response = await request.get(url);',
@@ -268,13 +280,46 @@ describe('literal waits on the derived tests\' paths', () => {
             'await request.get(url, { timeout: CONTROL_REQUEST_TIMEOUT_MS });',
             'await this.#request.post(url, { data, timeout: CONTROL_REQUEST_TIMEOUT_MS });',
             'const value = params.get(\'runId\') ?? headers.get(\'content-type\');',
-            'const sent = route.request().headers();'
+            'const sent = route.request().headers();',
+            'await requestContext.get(url);',
+            'const r = request;',
+            'await r.get(url);',
+            'await (request as APIRequestContext).get(url);',
+            'await request[\'get\'](url);',
+            'await request.get(url, { timeout: undefined });',
+            'await request.get(url, { \'timeout\': CONTROL_REQUEST_TIMEOUT_MS });'
         ].join('\n'))).toEqual([
             '1: const response = await request.get(url);',
             '2: await this.#request.post(url, { data: { commandId } });',
             '3: run.request.get(`${base}/artifacts`).then(read);',
             '4: await this.dependencies.request.fetch(String(url), { method: init?.method });',
-            '5: await input.request.post(url, options);'
+            '5: await input.request.post(url, options);',
+            '10: await requestContext.get(url);',
+            '12: await r.get(url);',
+            '13: await (request as APIRequestContext).get(url);',
+            '14: await request[\'get\'](url);',
+            '15: await request.get(url, { timeout: undefined });'
+        ]);
+    });
+
+    // An injected fetch is timed where it is injected: a derived spec hands an operator `toControlTimedFetch(fetch)`,
+    // never the bare global, and the operator's own `dependencies.fetch(...)` calls are then the injector's to time.
+    it('finds a fetch with no signal of its own and the bare global fetch injected as a dependency', () => {
+        expect(findUntimedRequests([
+            'await fetch(url);',
+            'await globalThis.fetch(url, { method: \'POST\' });',
+            'await fetch(url, { signal: undefined });',
+            'await fetch(url, { signal: AbortSignal.timeout(CONTROL_REQUEST_TIMEOUT_MS) });',
+            'await run.dependencies.fetch(url, { method: \'GET\' });',
+            'run(options, { fetch, log });',
+            'run(options, { fetch: globalThis.fetch });',
+            'run(options, { fetch: toControlTimedFetch(fetch) });'
+        ].join('\n'))).toEqual([
+            '1: await fetch(url);',
+            '2: await globalThis.fetch(url, { method: \'POST\' });',
+            '3: await fetch(url, { signal: undefined });',
+            '6: run(options, { fetch, log });',
+            '7: run(options, { fetch: globalThis.fetch });'
         ]);
     });
 
@@ -282,7 +327,9 @@ describe('literal waits on the derived tests\' paths', () => {
         const untimed = Object.fromEntries(
             DERIVED_TEST_PATH_FILES.filter((relativePath) => existsSync(path.join(repoRoot, relativePath))).flatMap(
                 (relativePath) => {
-                    const found = findUntimedRequests(readPathFile(relativePath));
+                    const found = findUntimedRequests(readPathFile(relativePath)).filter((line) =>
+                        !HOSTED_ENTRY_FETCH_INJECTIONS.some((exempt) => exempt.relativePath === relativePath && line.endsWith(`: ${exempt.text}`))
+                    );
                     return found.length === 0 ? [] : [[relativePath, found]];
                 }
             )
