@@ -25,7 +25,8 @@ import {
     measureBoundedWaitsMs,
     settleUnderFakeTimers,
     spendBoundedWait,
-    useBoundedWaitClock
+    useBoundedWaitClock,
+    type PlaywrightArgument
 } from './bounded-wait-clock-fixture.ts';
 import { RecordingLiveRtcControl } from './recording-live-rtc-control-fixture.ts';
 
@@ -82,7 +83,7 @@ const LATE_SECOND_CONNECT_HOLD_MS = LIFECYCLE_CONNECT_WHEN_PLANNED_TIMEOUT_MS - 
  * The session a counted page holds, or nothing for an evaluation that names a bound: a room refresh, which the page
  * spends as the browser would.
  */
-async function evaluateCountedPage(argument: object | string | number | boolean | bigint | symbol | null | undefined) {
+async function evaluateCountedPage(argument: PlaywrightArgument) {
     if (typeof argument === 'object' && argument !== null && 'timeoutMs' in argument && typeof argument.timeoutMs === 'number') {
         await spendBoundedWait(argument.timeoutMs);
         return undefined;

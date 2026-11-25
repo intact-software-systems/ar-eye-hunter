@@ -77,7 +77,7 @@ export async function measureBoundedWaitsMs<T>(run: () => Promise<T>): Promise<n
 }
 
 /** Any argument a Playwright matcher or poll may be given. */
-type PlaywrightArgument = string | number | boolean | bigint | symbol | object | null | undefined;
+export type PlaywrightArgument = string | number | boolean | bigint | symbol | object | null | undefined;
 
 /** A locator of a counted page, marked so the counted `expect` can tell it from any other value. */
 interface CountedLocator {
