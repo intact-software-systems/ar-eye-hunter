@@ -214,7 +214,9 @@ test('the guest keeps the confirmed score when the owner closes the finished tow
         await page.getByRole('button', { name: 'Start round' }).click();
         await expect(phone.locator('#round-results')).toBeVisible({ timeout: 225000 });
         await expect(phone.locator('#round-result-title')).toHaveText('Round complete');
-        const scores = (await phone.locator('#round-winners').innerText()).split(' · ');
+        const scoreboard = await phone.locator('#round-winners').innerText();
+        await expect(page.locator('#round-winners')).toHaveText(scoreboard);
+        const scores = scoreboard.split(' · ');
         expect(scores).toHaveLength(2);
         await page.locator('#leave-results').click();
         await expect(phone.getByRole('alert')).toContainText('fresh invitation', { timeout: 10000 });
