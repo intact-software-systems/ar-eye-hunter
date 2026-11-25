@@ -1087,6 +1087,40 @@ describe('original native owner evidence', () => {
         runtime.dispose();
     });
 
+    it('records a peer replaced for an older remote connection answer under its own issuer', async () => {
+        const runtime = installNativeRtcRuntime();
+        const events: RtcSignalingDiagnostics.Event[] = [];
+        const service = createService(events);
+        const peer = service.ensurePeerConnectionStarted('z-peer', true).right?.peer;
+        if (!peer) {
+            throw new Error('Expected started peer');
+        }
+        const native = runtime.createdConnections[0];
+        await peer.connection.handleSignal({
+            signalType: 'Offer',
+            offerId: 'remote-offer',
+            connectionGeneration: 5,
+            payload: { description: { type: 'offer', sdp: 'private-sdp' }, candidate: null }
+        });
+        await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+        await peer.connection.handleSignal({
+            signalType: 'Answer',
+            offerId: 'offer',
+            connectionGeneration: 4,
+            payload: { description: { type: 'answer', sdp: 'private-sdp' }, candidate: null }
+        });
+
+        expect(service.readPeer('z-peer')).toBeUndefined();
+        const terminating = events.filter((row) => row.kind === 'service-peer-observation' && row.service.stage === 'terminating');
+        expect(terminating).toEqual([
+            expect.objectContaining({ service: expect.objectContaining({ issuer: { status: 'observed', value: 'superseded-answer' } }) })
+        ]);
+        expect(toRtcNativeObservationProjection(JSON.parse(JSON.stringify(terminating[0]))).event).toMatchObject({
+            service: { issuer: { status: 'observed', value: 'superseded-answer' } }
+        });
+        runtime.dispose();
+    });
+
     it('retains the original timeout and actual deletion issuer when an observer replaces its peer', async () => {
         vi.useFakeTimers();
         const runtime = installNativeRtcRuntime();

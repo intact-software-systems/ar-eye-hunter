@@ -914,10 +914,10 @@ export class WebRtcConnectionService {
             onConnected: async () => {
                 this.markPeerEstablished(peer);
             },
-            onClosed: async () => {
+            onClosed: async (_peerId, issuer) => {
                 this.clearPeerEstablishmentTimeout(peer.peerId);
                 // Churn must not refund the consumed establishment attempts.
-                this.removePeer(peer.peerId, { resetAttemptBudget: false }, 'native-closed');
+                this.removePeer(peer.peerId, { resetAttemptBudget: false }, issuer);
             },
             onSignalingFailed: (failure) =>
                 this.notifyPeerLifecycle('onSignalingFailed', (listener) => listener.onSignalingFailed?.(peer, failure))

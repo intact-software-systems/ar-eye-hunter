@@ -625,10 +625,20 @@ receiver compares only generations the same remote runtime assigned.
 A connection keeps one mark, the highest remote generation whose Offer or
 Answer it has applied, for the lifetime of the instance, and refuses every
 signal below it. An offer below the mark is refused before the collision
-handling: no remote description and no answer. An answer below the mark is
-refused unapplied and the connection reports itself closed, so the connection
-service removes the peer as it does a natively closed one and the group
-manager dials it again with a new connection instance. Only a new instance
+handling: no remote description and no answer. Each refusal is a
+`native-signal-decision` row with disposition `offer-superseded` or
+`answer-superseded` carrying the refused signal's `connectionGeneration` and
+the `appliedRemoteGeneration`. An equal generation is the same remote
+connection renegotiating and is applied as before; a higher one is applied and
+raises the mark, so a remote connection that answered this side's offer
+outranks an older one whose offer arrives later.
+
+The answer rule applies only to an answer to the offer this side has
+outstanding: a stale answer is `answer-ineligible` first, whatever its
+generation, and replaces nothing. An answer to the outstanding offer that is
+below the mark is refused unapplied and the connection reports itself closed
+with the termination issuer `superseded-answer`, so the connection service
+removes the peer as it does a natively closed one. Only a new instance
 recovers: the remote runtime that answered is older than one this instance
 applied, which happens when that runtime's clock stepped back or a second
 runtime shares its session id, so every later signal it sends would stay below
@@ -636,13 +646,19 @@ the mark this instance keeps for its lifetime, and a rollback would only
 re-offer into the same refusal. A new instance starts without a mark and
 accepts that runtime's generation. The rule is the same for an established
 connection and one still establishing; waiting for the establishment timeout
-would only delay the same replacement. Each refusal is a
-`native-signal-decision` row with disposition `offer-superseded` or
-`answer-superseded` carrying the refused signal's `connectionGeneration` and
-the `appliedRemoteGeneration`. An equal generation is the same remote
-connection renegotiating and is applied as before; a higher one is applied and
-raises the mark, so a remote connection that answered this side's offer
-outranks an older one whose offer arrives later.
+would only delay the same replacement. The group manager dials the peer again
+while it is still dial-allowed and within its attempt budget; on the waiting
+side the new instance waits for the remote's offer. A remote that alternates
+higher offers with lower answers ends `connect-exhausted` with the budget's
+cooldown, so the replacements are bounded.
+
+An offer below the mark stays refused rather than replacing the instance:
+replacing would tear down the instance negotiating with the newest remote
+connection and bring back the reordering defect the offer generation exists to
+prevent. After a remote restart with a stepped-back clock the local native
+connection dies with the old association, and the next inbound signal reaches
+a replacement instance, at worst after one establishment timeout. The refusal
+persists only while two live runtimes share one session id.
 
 A candidate that arrives before its native connection holds a remote
 description is held. Once the native connection holds one, a connection judges

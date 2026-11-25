@@ -220,6 +220,7 @@ export namespace RtcSignalingDiagnostics {
         | 'explicit-remove'
         | 'disconnect-peer'
         | 'native-closed'
+        | 'superseded-answer'
         | 'lane-wait-cleanup'
         | 'unusable-peer-replacement'
         | 'establishment-timeout'

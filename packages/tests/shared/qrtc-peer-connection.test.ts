@@ -821,7 +821,7 @@ describe('QRtcPeerConnection', () => {
         await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
         await peer.handleSignal(createRemoteAnswer('offer-1', 4, 'superseded-answer-sdp'));
 
-        expect(onClosed).toHaveBeenCalledExactlyOnceWith('peer-1');
+        expect(onClosed).toHaveBeenCalledExactlyOnceWith('peer-1', 'superseded-answer');
         expect(native.receivedDescriptions.map((description) => description.sdp)).toEqual(['current-offer-sdp']);
         expect(native.signalingState).toBe('have-local-offer');
         expect(events.filter((event) => event.kind === 'native-signal-decision' && event.signalType === 'Answer'))
@@ -832,6 +832,24 @@ describe('QRtcPeerConnection', () => {
                 connectionGeneration: 4,
                 appliedRemoteGeneration: 5
             }));
+    });
+
+    it('ignores a candidate of the applied generation while it ignores that connection colliding offer', async () => {
+        const events: RtcSignalingDiagnostics.Event[] = [];
+        const { peer, native } = createPeerFixture(false, {}, createRecordingDependencies(events));
+        await peer.handleSignal(createRemoteOffer('current-offer', 5, 'current-offer-sdp'));
+        await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+        await peer.handleSignal(createRemoteOffer('colliding-offer', 5, 'colliding-offer-sdp'));
+        await peer.handleSignal(createRemoteCandidate('colliding-candidate', 5));
+
+        expect(native.receivedCandidates).toEqual([]);
+        expect(peer.readDiagnostics()).toMatchObject({
+            ignoredOfferCollisionCount: 1,
+            ignoredIceCandidateForIgnoredOfferCount: 1,
+            pendingIceCandidateQueueLength: 0
+        });
+        expect(events.filter((event) => event.kind === 'native-signal-decision' && event.signalType === 'IceCandidate'))
+            .toContainEqual(expect.objectContaining({ disposition: 'ice-ignored' }));
     });
 
     it('holds at most 64 candidates, displacing the oldest', async () => {

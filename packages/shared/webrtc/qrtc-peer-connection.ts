@@ -161,7 +161,12 @@ export namespace QRtcPeerConnection {
         onConnected?: () => Promise<void>;
         onDisconnected?: () => Promise<void>;
         onFailed?: () => Promise<void>;
-        onClosed?: (peerId: string) => Promise<void>;
+        /**
+         * The connection ended: its native connection closed, or it refused an answer from a remote connection older
+         * than one it applied, which it would refuse for the rest of its lifetime. Either way the owner removes this
+         * instance; `issuer` names which.
+         */
+        onClosed?: (peerId: string, issuer: QRtcPeerConnection.CloseIssuer) => Promise<void>;
         /**
          * A signal this peer could not hand to the transport. A terminal admission strands the
          * peer -- an offer that never left leaves it in `have-local-offer`, where
@@ -172,6 +177,8 @@ export namespace QRtcPeerConnection {
     }
 
     /** One outbound signal that never reached the transport, named by the hop that produced it. */
+    export type CloseIssuer = Extract<RtcSignalingDiagnostics.TerminationIssuer, 'native-closed' | 'superseded-answer'>;
+
     export interface SignalingFailure {
         readonly peerSessionId: string;
         readonly signalType: QRtcSignalingType;
@@ -1153,7 +1160,7 @@ export class QRtcPeerConnection {
                     this.status.state = QRtcSessionState.Closed;
                     this.clearDisconnectTimer();
 
-                    callbacks.onClosed?.(this.input.peerSessionId);
+                    callbacks.onClosed?.(this.input.peerSessionId, 'native-closed');
                     break;
                 case 'connecting':
                 case 'new':
@@ -1309,7 +1316,7 @@ export class QRtcPeerConnection {
         }
         if (this.refuseSupersededDescription(capture, signal)) {
             // The mark refuses that remote runtime for this instance's lifetime; a replacement starts without one.
-            void this.stateCallbacks.onClosed?.(this.input.peerSessionId);
+            void this.stateCallbacks.onClosed?.(this.input.peerSessionId, 'superseded-answer');
             return;
         }
         await this.applyRemoteDescription(pc, signal.payload.description, capture.nativeBatch);
@@ -1391,19 +1398,19 @@ export class QRtcPeerConnection {
     }
 
     /**
-     * Raises the applied remote generation for a description just applied and, while its native connection is
-     * current, releases the candidates held for it. Answers whether the native connection was still current.
+     * Records the generation of a description just applied as the mark, which it can only raise because a lower one
+     * was refused, and, while its native connection is current, releases the candidates held for it. Answers whether
+     * the native connection was still current.
      */
     private async adoptAppliedRemoteGeneration(
         capture: QRtcPeerConnection.NativeSignalCapture,
         connectionGeneration: number
     ): Promise<boolean> {
-        const appliedRemoteGeneration = Math.max(this.highestAppliedRemoteGeneration ?? 0, connectionGeneration);
-        this.highestAppliedRemoteGeneration = appliedRemoteGeneration;
+        this.highestAppliedRemoteGeneration = connectionGeneration;
         if (this.status.pc !== capture.pc) {
             return false;
         }
-        await this.flushIceCandidates(capture, appliedRemoteGeneration);
+        await this.flushIceCandidates(capture, connectionGeneration);
         return true;
     }
 
