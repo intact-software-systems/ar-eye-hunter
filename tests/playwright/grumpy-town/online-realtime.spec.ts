@@ -83,11 +83,15 @@ for (const initialTransport of ['rtc', 'ws'] as const) {
                     timeout: 5000
                 });
             }
-            const guestX = Number(await guest.locator('#online-game').getAttribute('data-x'));
-            await guest.keyboard.down('KeyD');
-            await expect.poll(async () => Number(await host.locator('#online-game').getAttribute('data-peer-x')))
-                .toBeGreaterThan(guestX + 0.3);
-            await guest.keyboard.up('KeyD');
+            // Resume from a confirmed checkpoint before sending fresh input back towards spawn.
+            await expect.poll(async () => Number(await guest.locator('#online-game').getAttribute('data-tick')))
+                .toBeGreaterThan(tick);
+            const hostGame = host.locator('#online-game');
+            const guestX = Number(await hostGame.getAttribute('data-peer-x'));
+            await guest.keyboard.down('KeyA');
+            await expect.poll(async () => Number(await hostGame.getAttribute('data-peer-x')))
+                .toBeLessThan(guestX - 0.3);
+            await guest.keyboard.up('KeyA');
             await guest.getByRole('button', { name: 'Dash and drop', exact: true }).tap();
             await expect(guest.locator('#online-game')).toHaveAttribute('data-dashes', '1');
             await guest.screenshot({ path: test.info().outputPath(`live-${initialTransport}-phone.png`) });
