@@ -27,7 +27,6 @@ export namespace RelicGameInboxService {
     export interface Dependencies {
         readonly service: RelicGameMutationService;
         readonly appInbox: RallarServerAppInbox;
-        readonly wakeQueue: () => void;
     }
 
     export interface Config {
@@ -144,7 +143,7 @@ export class RelicGameInboxService {
                 throw issue.cause;
             }
         });
-        const result = await timeRallarAsync(
+        return await timeRallarAsync(
             this.config.timing,
             { ...timing, operation: 'write' },
             () =>
@@ -154,8 +153,6 @@ export class RelicGameInboxService {
                     (transaction) => service.write(transaction, computed)
                 )
         );
-        this.dependencies.wakeQueue();
-        return result;
     }
 }
 
