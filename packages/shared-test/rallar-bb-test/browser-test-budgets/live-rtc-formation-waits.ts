@@ -8,6 +8,7 @@ import {
     LIVE_RTC_TRIO_SIZE,
     LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS
 } from './live-rtc-control-waits.ts';
+import { FORMATION_CYCLE_UNBUDGETED_COMMANDS } from './live-rtc-formation-command-counts.ts';
 
 /** How long a formation readiness refreshes the room and waits for the formation's exact peers. */
 export const FORMATION_READINESS_TIMEOUT_MS = 60_000;
@@ -46,12 +47,6 @@ export const FORMATION_CONNECT_RESULT_WAIT_MS = computeCommandResultWaitMs(
 /** A formation run connects A, B and C one after another. */
 export const FORMATION_RUN_CONNECT_RESULT_WAIT_MS = LIVE_RTC_TRIO_SIZE * FORMATION_CONNECT_RESULT_WAIT_MS;
 
-/** A formation cycle's owner commands that name no budget: the plan or reconfigure, the connect, the activation. */
-const FORMATION_CYCLE_UNBUDGETED_COMMANDS = 3;
-
-/** A formation cycle's owner commands: the mesh configuration, the group read, then its unbudgeted commands. */
-const FORMATION_CYCLE_COMMANDS = 2 + FORMATION_CYCLE_UNBUDGETED_COMMANDS;
-
 /**
  * One formation cycle's owner commands: the mesh configuration under its budget, the group read under its result
  * wait, the plan or reconfigure, the planned layout poll, the layout's connect and the activation. Every command is
@@ -76,12 +71,3 @@ export const FORMATION_RUN_BOUNDED_WAITS_MS = FORMATION_RUN_CONNECT_RESULT_WAIT_
 /** A reconnecting member connects, then it and the survivors wait for readiness side by side. */
 export const FORMATION_RECONNECT_BOUNDED_WAITS_MS = FORMATION_CONNECT_RESULT_WAIT_MS +
     FORMATION_READINESS_BOUNDED_WAITS_MS;
-
-/**
- * The commands a formation run waits on outside its polls, one after another: its connects, then per cycle the owner's
- * commands and the last of the readiness reads, which run side by side and count once.
- */
-export const FORMATION_RUN_COMMANDS = LIVE_RTC_TRIO_SIZE + 2 * (FORMATION_CYCLE_COMMANDS + 1);
-
-/** A reconnect waits on its connect, then on the last of the readiness reads that run side by side. */
-export const FORMATION_RECONNECT_COMMANDS = 2;

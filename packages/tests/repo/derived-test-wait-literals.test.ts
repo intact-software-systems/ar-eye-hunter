@@ -94,6 +94,7 @@ const DERIVED_TEST_PATH_FILES = [
     `${budgetsRoot}/live-rtc-delivery-matrix-waits.ts`,
     `${budgetsRoot}/live-rtc-delivery-waits.ts`,
     `${budgetsRoot}/live-rtc-diagnostics-waits.ts`,
+    `${budgetsRoot}/live-rtc-formation-command-counts.ts`,
     `${budgetsRoot}/live-rtc-formation-waits.ts`,
     `${budgetsRoot}/live-rtc-matrix-test-timeouts.ts`,
     `${budgetsRoot}/live-rtc-recorder-read-waits.ts`,

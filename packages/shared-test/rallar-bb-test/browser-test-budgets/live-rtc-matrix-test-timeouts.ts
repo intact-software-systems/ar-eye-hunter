@@ -27,11 +27,10 @@ import {
     WS_AGENT_OPEN_SEND_CLOSE_BOUNDED_WAITS_MS
 } from './live-rtc-delivery-waits.ts';
 import { LIVE_RTC_DIAGNOSTICS_CAPTURE_BOUNDED_WAITS_MS } from './live-rtc-diagnostics-waits.ts';
+import { FORMATION_RECONNECT_COMMANDS, FORMATION_RUN_COMMANDS } from './live-rtc-formation-command-counts.ts';
 import {
     FORMATION_RECONNECT_BOUNDED_WAITS_MS,
-    FORMATION_RECONNECT_COMMANDS,
-    FORMATION_RUN_BOUNDED_WAITS_MS,
-    FORMATION_RUN_COMMANDS
+    FORMATION_RUN_BOUNDED_WAITS_MS
 } from './live-rtc-formation-waits.ts';
 import { LIVE_RTC_ARTIFACT_EVIDENCE_BOUNDED_WAITS_MS } from './live-rtc-recorder-read-waits.ts';
 import { SETTLED_TRIO_RETIREMENT_BOUNDED_WAITS_MS } from './settled-trio-retirement-bounded-waits-ms.ts';
