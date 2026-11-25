@@ -31,8 +31,9 @@ const RECEIVE = 60_000 + REQUEST;
 const RETIREMENT = Math.max(10_000, REQUEST);
 
 describe('worker HOST capture test timeouts', () => {
-    // No command's enqueue request and no control run read outside a poll was counted. Earlier, the configuration's 90 s covered the registrations, the memberships, the session reads, the receive and the
-    // retirement, which wait about 600 s once each membership waits its 45 s budget and then the result poll.
+    // No command's enqueue request and no control run read outside a poll were counted. Earlier, the configuration's 90
+    // s covered the registrations, the memberships, the session reads, the receive and the retirement, which wait about
+    // 600 s once each membership waits its 45 s budget and then the result poll.
     it.each([
         { mode: 'native' as const, nativeReads: NATIVE_READS },
         { mode: 'off' as const, nativeReads: 0 }

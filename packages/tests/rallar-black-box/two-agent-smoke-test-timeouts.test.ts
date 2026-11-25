@@ -29,8 +29,9 @@ describe('two-agent smoke test timeouts', () => {
         expect(TWO_AGENT_CONNECT_STAGE_WAIT_MS).toBe(CONNECT_STAGE);
     });
 
-    // No command's enqueue request was counted; earlier, the smokes counted neither their agents' opening screens, their membership requests, their sends' result
-    // polls, their visible inboxes, their health reads nor their agents' finalization.
+    // No command's enqueue request was counted; earlier, the smokes counted neither their agents' opening screens,
+    // their membership requests, their sends' result polls, their visible inboxes, their health reads nor their agents'
+    // finalization.
     it('gives the delivery smoke its agents, membership, connects, two deliveries and the finalization', () => {
         expect(TWO_AGENT_DELIVERY_SMOKE_TEST_TIMEOUT_MS).toBe(
             MARGIN + AGENTS + MEMBERSHIP + CONNECT_STAGE + 2 * delivery(30_000, true) + FINALIZE

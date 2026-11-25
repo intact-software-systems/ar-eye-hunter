@@ -75,7 +75,7 @@ describe('live RTC three-browser matrix test timeouts', () => {
         expect(FORMATION_RUN_BOUNDED_WAITS_MS).toBe(FORMATION);
     });
 
-    // No command's enqueue request and no control run read outside a poll was counted; earlier, the proof counted
+    // No command's enqueue request and no control run read outside a poll were counted; earlier, the proof counted
     // neither its agents' opening screens under the default assertion limit, its recording
     // admission, its membership's result polls, the sends' and probes' result polls, the inboxes' tab opening, the
     // realtime sender's health nor the artifact evidence's recorder reads.
@@ -112,11 +112,11 @@ describe('live RTC three-browser matrix test timeouts', () => {
         );
     });
 
-    // Each reconnect is already bounded by its own wait, so the soak is capped at three hours below its derived sum: the
-    // margin, a trio, the formation, eleven checkpoints, per cycle C's close (enqueued, then 45 s), the 60 s absence and
-    // the reconnect, the closes and resets, the artifact evidence, the cleanup and the recorder drain under release.
-    // Under result release each command outside a poll also sent an uncounted release request: the trio's three
-    // admission reads and three membership requests, the formation's three connects and per cycle its five owner
+    // Each reconnect is already bounded by its own wait, so the soak is capped at three hours below its derived sum:
+    // the margin, a trio, the formation, eleven checkpoints, per cycle C's close (enqueued, then 45 s), the 60 s
+    // absence and the reconnect, the closes and resets, the artifact evidence, the cleanup and the recorder drain under
+    // release. Under result release each command outside a poll also sent an uncounted release request: the trio's
+    // three admission reads and three membership requests, the formation's three connects and per cycle its five owner
     // commands and last readiness read, three reads per checkpoint, per cycle C's close, connect and last readiness
     // read, the six closes and resets and the cleanup's side-by-side closes.
     it('caps the retention soak at its three-hour operational bound below its derived sum', () => {

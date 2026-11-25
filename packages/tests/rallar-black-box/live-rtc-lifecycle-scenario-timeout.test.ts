@@ -39,7 +39,7 @@ describe('live RTC lifecycle scenario timeouts', () => {
         expect(BROWSER_TEST_HARNESS_MARGIN_MS).toBe(MARGIN);
     });
 
-    // No command's enqueue request and no control run read outside a poll was counted; earlier, the scenarios counted
+    // No command's enqueue request and no control run read outside a poll were counted; earlier, the scenarios counted
     // neither the commands polled under the default result poll, the opening screens waited
     // under the default assertion limit, the membership requests' result polls, the readiness's and the stage wait's
     // result polls, nor the reopened member's health reads.
@@ -51,8 +51,8 @@ describe('live RTC lifecycle scenario timeouts', () => {
             reset: computeLiveRtcLifecycleScenarioTimeoutMs('reset'),
             hydration: computeLiveRtcLifecycleScenarioTimeoutMs('hydration')
         }).toEqual({
-            // Membership and the trio's connects, a 5 s hold undialed, each member's recorded dials read and its health,
-            // the plan, then the dials.
+            // Membership and the trio's connects, a 5 s hold undialed, each member's recorded dials read and its
+            // health, the plan, then the dials.
             discovery: MARGIN + TRIO_OPEN + MEMBERSHIP + 3 * CONNECT + 5_000 + 3 * (REQUEST + POLL) + POLL + DIALS,
             // The reopened member's recording health, its readiness, then its 15 s diagnostics poll.
             monotonicReadiness: MARGIN + TRIO_OPEN + ACTIVATION + REOPENING + POLL + READINESS + 15_000,

@@ -35,8 +35,9 @@ const DIAGNOSTICS = 3 * (REQUEST + 30_000);
 const RUN_SUMMARY = REQUEST;
 
 describe('live RTC layout switch test timeout', () => {
-    // No command's enqueue request and no control run read outside a poll was counted. Earlier, the test gave its steps a fixed 360 s beside the formation's connects, while its counted waits alone ran to
-    // about 1,940 s once each budgeted command waited its budget and then the result poll.
+    // No command's enqueue request and no control run read outside a poll were counted. Earlier, the test gave its
+    // steps a fixed 360 s beside the formation's connects, while its counted waits alone ran to about 1,940 s once each
+    // budgeted command waited its budget and then the result poll.
     it('gives each switch test its trio, formation, layout reads, switches beside the streams, drain and diagnostics', () => {
         expect(LIVE_RTC_LAYOUT_SWITCH_TEST_TIMEOUT_MS).toBe(
             MARGIN + TRIO_OPEN + ADMISSION + MEMBERSHIP + FORMATION + OWNER_REQUEST + COMMON_LAYOUT_READ +
