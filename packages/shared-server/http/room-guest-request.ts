@@ -57,11 +57,16 @@ export function assertRoomGuestSeat(
     return mode;
 }
 
+export interface RoomGuestSessionInput {
+    readonly request: { header(name: string): string | undefined; };
+    readonly readSnapshot: (ref: GroupRef) => Promise<GroupSnapshot | undefined>;
+    readonly nowEpochMs: () => number;
+    /** Present at a room-scoped route, where the credential must belong to that room. */
+    readonly roomRef?: GroupRef;
+}
+
 export async function readRoomGuestSession(
-    request: { header(name: string): string | undefined; },
-    readSnapshot: (ref: GroupRef) => Promise<GroupSnapshot | undefined>,
-    nowEpochMs: () => number,
-    roomRef?: GroupRef
+    { request, readSnapshot, nowEpochMs, roomRef }: RoomGuestSessionInput
 ): Promise<IssuedAuthSession | undefined> {
     const guest = await readRoomGuestRequest(request, roomRef);
     if (!guest) {
