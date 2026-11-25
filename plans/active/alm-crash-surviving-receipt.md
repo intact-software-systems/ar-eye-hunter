@@ -4,7 +4,8 @@ A sender's receipt on WebSocket stays exact when the server instance that admitt
 restarts. The count of who confirmed a receipted room send moves out of one instance's memory into a
 durable record every instance reads and writes.
 
-Status: approved by the maintainer on 2026-11-22; slices 1 to 4 built.
+Status: approved by the maintainer on 2026-11-22; slices 1 to 4 built; slice 5's review, gates and documents, and
+slice 6, in progress.
 
 ## Why
 
@@ -29,7 +30,7 @@ publisher-loss recipe now reads `complete`.
 The first hosted campaign's first fault stops one of three replicas for 30 s and passes only when every
 receipt settles within 45 s. On `main` that run cannot pass.
 
-## The maintainer's rulings (2026-11-22, each asked alone)
+## The maintainer's rulings (2026-11-22 and 2026-11-25, each asked alone)
 
 1. What the receipt must read after the admitting server dies: **"Exact receipt"**, over a truthful
    terminal receipt that forgets the ACKs counted before the crash.
@@ -43,6 +44,17 @@ receipt settles within 45 s. On `main` that run cannot pass.
    over staying silent.
 6. Whether the record goes through AppInbox: **"One more ALM runtime store"**, written directly at WS
    ingress.
+7. Where the fix for the five-publisher backlog in the receipts' delivery is built (2026-11-25): **"Fix in
+   #885"**, in this pull request, over a separate one.
+8. How the branch takes `main` (2026-11-25): **"rebase onto main"**, over merging it in.
+9. Which fix the receipts' delivery takes (2026-11-25), among the measured options of section 10: **the two
+   fixes together, as recommended**, over the fence alone and over every receipt sent live: a commit that read
+   no state its sender's messages share fences on its own message's version only, and the `admitted` receipt is
+   written on the admitting socket, with the stored outbox row as the fallback. Confirmed again after the fence
+   and its conditional write were explained.
+10. How far that fence rule reaches (2026-11-25): **"Wide (Recommended)"**, over receipt controls only: every
+    commit that read no shared sender state, so receipts, the server's handed-off controls, its unsequenced
+    publications and a client's plain broadcast, in the browser too.
 
 ## What the measurement found
 
@@ -175,7 +187,7 @@ its grace; the caller clamps.
 ### 2. Admission opens the record
 
 Where `writeAdmittedReceipt` records an aggregate today, the server opens the record and writes the
-`admitted` receipt as it does now. This holds for a send admitted at ingress and for a kept send admitted
+`admitted` receipt, on the admitting socket where it can (section 10). This holds for a send admitted at ingress and for a kept send admitted
 by its replay (D697), with the same expected audience as today. An empty audience is complete as it is
 admitted and opens no record, as today. After `open` commits, the server reads the confirmations once: an
 ACK that overtook it (below) may already have completed the set.
@@ -239,7 +251,7 @@ and sets, and one ended work row. The work row is claimed by any instance and, f
 control id derived from the origin and the message id, so a work row that is claimed twice enqueues one receipt;
 then `acceptServerReceipt` settles the server's own pending row on an `outbox` topic (D38) with it. A server
 publication's ended work enqueues nothing and admits the receipt into the server's row (section 7). The
-`admitted` receipt is enqueued at admission, as today.
+`admitted` receipt is written at admission (section 10).
 
 "Exactly one terminal receipt" means one stored head with one terminal phase. The outbox may deliver that receipt
 more than once, under the same control id, until the origin acknowledges it: the receipt row's republication,
@@ -423,6 +435,150 @@ runtime's inbound and outbound stores are; D770 states it.
   kind and refusal owner, and the count observation's `source` and `relayPublisherId`.
 - The tests of the cap, the sweep and the relay; the tests of receipt phases are restated on the record.
 
+### 10. The receipts' delivery
+
+Five publishers at +5 ms backlog in the receipts' delivery ("Measured through the WS server"). An investigation
+that varied one factor at a time, with prototypes kept out of the tree, isolated the cause; the fix is the two
+rules below (ruling 9), with the fence rule at its full reach (ruling 10).
+
+**The cause.** A receipted client send produces two receipt controls, each its own message under the server's
+identity: `admitted`, under a fresh control id, and the terminal receipt, under `al-receipt-ended:<hash>`. Each is
+a durable `WS_OUTBOX` row with no prepared sends and no ACK tracking, so the origin acknowledges no receipt control
+and no control names one. One message to 14 recipients over three instances, traced at each commit on the code
+before this section (statements of the write transaction, BEGIN and COMMIT not counted):
+
+| Commit (instance)                                                           | Rows it fences on                                                                                     | Statements                                     | Conflicts with                                                                        |
+| --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `admitted` enqueue (the admitting instance)                                 | `msg-version:[server, <control>]` alone, then `version:server` (the guard; owner and sent rows on it) | 3: version insert, guarded batch, work insert  | every receipt commit of every message on all three instances, on `version:server`     |
+| `admitted` replay (any instance's worker, only if the enqueue was retained) | as the enqueue                                                                                        | 3, and the hold                                | as above                                                                              |
+| `admitted` dequeue (any instance's worker)                                  | `msg-version:[server, <control>]`, then `version:server`                                              | 4: version update, guarded batch, hold, insert | as above                                                                              |
+| send to the origin's socket                                                 | none (the claim's settle)                                                                             | 1 work update per claim step                   | none                                                                                  |
+| the record's `end` and its ended work                                       | the head row                                                                                          | 2, and 1 for each losing `end`                 | the message's other `end`s                                                            |
+| terminal enqueue (the record worker's ended claim)                          | `msg-version:[server, al-receipt-ended:…]`, then `version:server`                                     | 3                                              | every receipt commit, on `version:server`                                             |
+| settle of the server's own row (`acceptServerReceipt`)                      | `msg-version:[<origin>, <room message>]`, the tracked message's version                               | 2: guarded batch, work update                  | only commits of that room message: its dequeue, its `ack-timeout` window, its repairs |
+| terminal dequeue                                                            | `msg-version:[server, al-receipt-ended:…]`, then `version:server`                                     | 4                                              | every receipt commit, on `version:server`                                             |
+
+Every receipt control's enqueue, replay and dequeue, of every message on every instance, is fenced on one row, the
+server's sender version (`version:server`), so the cluster's receipt delivery is one serialized optimistic queue on
+that row. The per-message fence of #869 did not create that queue, but made each turn of it dearer and more
+contended through four changes that each matter little alone: the in-process sender commit queue removed, three
+commit attempts instead of one, the extra fence statement, and the receipt control's own version row. No receipt
+control commit fences on the tracked room message's version; only the settle does. "Measured through the WS
+server" read the growing wait in each instance's one outbound worker: the receipt commits that worker runs each
+wait their turn on this row, and every enqueue that loses it adds a replay claim.
+
+The commit before the per-message fence already backlogged in the same cell: all 200 messages read `complete` by
+the deadline, but `admitted` took 11.4 s over the last ten (p50) against 1.2 s over the first ten, and 108 of 200
+arrived past the browser's 8 s first-hop budget. Undoing the four changes together reads 187 of 200, `admitted`
+13.9 s over the last ten. Restoring the earlier behaviour is not the fix.
+
+Five publishers at 2 Hz, 40 messages each, +5 ms on every statement, BEGIN and COMMIT, three instances, a 30 s
+lifetime. These are prototype figures, not measurements of the built code: medians of two runs each, on a machine
+another session loaded (1-minute load 8 to 33), each run directly after its own run of the unchanged code, whose
+24 runs the first row pools. Times in seconds; 19.5 receipts a second are offered.
+
+| Variant                                           | `complete` by the deadline, of 200     | `admitted` p50 first / last ten | `complete` p50 first / last ten | Receipts read/s | Enqueues retained; replay / dequeue conflicts |
+| ------------------------------------------------- | -------------------------------------- | ------------------------------- | ------------------------------- | --------------- | --------------------------------------------- |
+| the unchanged code                                | 57 to 112 by rotation (range 0 to 162) | 1.2-1.7 / 26-30                 | 4.4-7.8 / 25-29                 | 2.5-3.2         | 61 %; 38-40 % / 19-21 %                       |
+| the commit before the per-message fence           | 200                                    | 1.2 / 11.4                      | 2.0 / 9.4                       | 8.7             | 78 %; 13 % / 3 %                              |
+| the four changes undone                           | 187                                    | 1.2 / 13.9                      | 2.8 / 14.7                      | 6.3             | 76 %; 67 % / 27 %                             |
+| receipt controls fenced on their own version only | 200                                    | 0.8 / 1.2                       | 0.7 / 1.2                       | 18.3            | 0 %; 0 / 0                                    |
+| `admitted` on the admitting socket only           | 184                                    | 0.2 / 0.3                       | 1.4 / 12.1                      | 12.9            | 44 %; 37 % / 19 %                             |
+| both                                              | 200                                    | 0.1 / 0.1                       | 0.5 / 0.5                       | 19.4            | 0 %; 0 / 0                                    |
+
+One publisher at +5 ms shows no regression with the fence alone or with both: 40 of 40 in each run, and every
+receipt commit about 15 to 20 ms shorter. Three other levers were measured or weighed and not taken: four claims at once on the outbound worker
+(126 of 200; it turns queueing on the row into conflicts on it), every receipt written live when the origin's
+socket is local (200 of 200, but a lost live terminal receipt is then redelivered by nothing, since the client
+resends no message it holds `admitted` for), and receipts delivered from the record's own work rows, which needs a
+cluster notice and an at-least-once rule of its own for the ended work row.
+
+**A dispatch that read no shared sender state fences on its own version.** A dispatch bundle fences on its sender's
+version exactly when its decision read a row the sender's other messages share: when its message holds a place on
+an ordering track (an ordering key, and a sequence after its read's mint) or its read holds a supersedence key.
+Otherwise it fences on its own message's version alone. That is the outbound README's own rule applied to every
+dispatch: "A bundle fences on the sender version too, because its decision reads rows other messages of the sender
+share: the track head, the sent positions, the room sent floor and the supersedence latest." Every read of a head,
+a position or a room floor is made for a message with a track key, so the track key covers them, and covers the
+track's index row each tracked dispatch writes; a dispatch that read a shared row and writes none (a re-dequeue of
+a tracked row whose positions are recorded, a tracked message with no deadline, which mints and writes no index
+row) still fences. The flag is derived from the read, not from the message's type, so a message that gains an
+ordering gains the fence with it.
+
+So every dispatch of a message with neither stops moving its sender's version: a receipt control; a handed-off
+control of the server; an unsequenced server publication, such as a RallarAI room result; a client's plain room
+broadcast, on the browser's IndexedDB as on the server (ruling 10). The group-state delta carries an ordering and
+keeps the fence. A receipt control's decision reads none of the shared rows: its message has no ordering and no QoS
+(`newALReceiptControlMessage`), and its plan is durable with no prepared message, no tracking and no supersedence
+(`toWsQueueBoxServerReceiptDispatchPlan`); its dequeue re-plans through the server's planner and the captured
+policy, and a test of each kind of dispatch, a receipt's dequeue among them, pins whether it moves its sender's
+version.
+
+A message end, an ACK window, a first-hop commit and the not-yet-in-sync retry schedule keep the sender fence. They
+are not dispatch decisions, and the schedule commits on the sender version alone: it is decided on a re-read after
+the NACK's commit, so it is fenced against an end only through that row, and only against the ends that move it.
+An end made by a control already moves its message's version alone, and under this rule neither does a dispatch
+that completes its receipt, at admission or by its own tracking. So one `nack-retry` can be scheduled for a message
+that ended in that race; its dispatch answers `message-ended` and writes nothing, and the retry record expires. A
+dispatch that ends its message through the message-end bundle (a spent repair budget, a re-plan refused for good)
+still moves the sender version, a receipt control's included.
+
+Two commits of one message meet on its own version row, which every commit of the message moves and re-checks. An
+ended work claimed twice enqueues one control id from two instances, and a retained enqueue's replay meets the
+control's dequeue: the second conflicts on the control's version and reads the first's rows. A bundle without the
+sender fence that writes a row the sender's messages share is refused, as before.
+
+The dequeue lane groups a batch's dispatches by sender before any decision exists, and the flag is a fact of the
+decision. So the dispatch admission, once it has read the group's decisions, parts them into the bundles that fence
+the sender, which must have read one version of it, and those that do not, and commits each part in its own write,
+both at once. The part that fences no sender commits as one transaction: one BEGIN and one COMMIT for a page of
+receipts, and a conflict on one member's version fails that part, whose members then commit alone. A part that does
+not commit falls back to its own members alone, in follower order; a part that committed is never committed again.
+Followers are tracked rows, so they are all in the fenced part. The store keeps refusing a group that mixes fences,
+which the admission never hands it, and asks a group that fences no sender for no agreed version.
+
+The decision still reads the sender version. The read is issued before the plan that decides the flag exists, in
+the first turn's one batched statement on PostgreSQL, so skipping it saves no round trip and deferring it would
+cost every fenced dispatch one. The bundle keeps it as the version its read saw; the write re-reads and moves it
+only for a bundle that fences it. The two cleanups that took their sender from that row, of an orphaned first-hop
+wait and of an orphaned receipt, take it from the stored message instead, so they run, in the cases they ran in
+before, for a sender whose commits never moved its version.
+
+**`admitted` on the admitting socket.** An `admitted` receipt that expects at least one recipient, so that a head
+stands behind it, is written to the origin's sockets on the instance that writes it; its outbox row is written only
+when no socket there took it. That holds at ingress, on the instance that holds the origin's socket; at a kept
+send's replay, on whichever instance's worker claims it; and for the `admitted` a re-sent copy is answered. An
+`admitted` that expects nobody has no head, is the send's terminal settlement at the origin, and a re-sent copy of
+it is answered nothing: it keeps its row, as a terminal receipt does.
+
+The row promised one socket write: it is durable work until the origin has a session on some instance, and after
+that write nothing delivers it again, since no receipt control is acknowledged. The live send is that one write,
+without the enqueue, the replay and the dequeue. A lost live `admitted` is recovered where the origin resends: a
+send that holds a first-hop wait writes its frame again at each window (2 s and 3 retries by default, about 8 s),
+and a re-sent copy is answered from the record (section 6). Nothing recovers it for a send with no first-hop wait,
+a send with retry `none` or a kept send whose wait the server's `not-yet-in-sync` NACK ended: such a send reads its
+terminal receipt alone, which keeps its durable row. No row is kept for them, since the row never promised more
+than the one write, and the server cannot read the origin's plan, only its own normalization of the message's QoS.
+
+Each connection the live send of an `admitted` called records one `receipt-transport` observation, the existing kind:
+`transport: 'recipient'`, the `nativeCall` the socket's send evidence states, the `connectionId`,
+`publisherCall: 'absent'`, `originIsHere: true`, `outcome` `sent` for a write that returned and `failed` for one
+that threw, `submissionAttempted`, and no `retryAfterMs`, with frozen copies of the receipt's arrays. The live
+delivery answers, for each connection it called, what the native call did. A live `admitted` enqueued nothing, so it
+records no `receipt-outbox`, which stays the enqueue of an issued receipt. No field is added.
+
+Its stated limits:
+
+- _The sender's version still moves._ A dispatch that ends its message through the message-end bundle, each ACK
+  window and each message end still move it, so a server publication's own receipt windows keep competing for
+  `version:server`.
+- _A stray retry._ A not-yet-in-sync retry can be scheduled for a message that just ended; it answers
+  `message-ended` and writes nothing.
+- _The terminal receipt stays on the outbound worker._ It keeps its two commits there, the enqueue and the dequeue,
+  each now fenced on its own control's version.
+- _No first-hop wait._ A send with no first-hop wait whose `admitted` frame is lost reads its terminal receipt
+  alone.
+
 ## Approaches considered
 
 1. **Reuse the durable `receiver` pending row** (ruled first, then replaced). One owner for every receipt
@@ -496,7 +652,12 @@ runtime's inbound and outbound stores are; D770 states it.
    from the server's pending receipt row; the repair plan reads the record's confirmations and opens a head
    the dequeue did not open; `commitOutsideAudience` deleted.
 5. Proofs, recipes, documents: the backlog lines this closes removed, decision rows D770 to D779, the
-   outbound and WS server READMEs, the product description.
+   outbound and WS server READMEs, the product description. Its run through the WS server found that five
+   publishers at +5 ms backlog in the receipts' delivery ("Measured through the WS server").
+6. The receipts' delivery (section 10): a dispatch whose decision read no row its sender's messages share fences
+   on its own message's version only, and the `admitted` receipt is written on the admitting socket, with its
+   outbox row as the fallback. Built in this pull request (ruling 7), and the five-publisher cell at +5 ms run
+   again on it.
 
 ## Calls made here, each the maintainer's to overrule
 
@@ -530,6 +691,22 @@ runtime's inbound and outbound stores are; D770 states it.
   The server's own `not-sent` needs no proof.
 - The ACK relay class left in slice 2, not slice 3: it read the memory aggregate, and none of those reads has a
   meaning on a record every instance shares. Slice 3 deletes what is then unreferenced.
+- The fence rule of section 10 reaches every dispatch whose decision read no row its sender's messages share, not
+  receipt controls alone (ruling 10): receipts, the server's handed-off controls, its unsequenced publications and a
+  client's plain broadcast, on the browser as on the server. The flag is derived from the decision's read, not from
+  the message's type. The investigation measured receipt controls only.
+- A message end, an ACK window, a first-hop commit and the not-yet-in-sync retry schedule keep the sender fence:
+  they are not dispatch decisions, and the schedule is fenced against an end only through that row. The one stray
+  `nack-retry` this leaves, for a message that ended by a commit that no longer moves the row, answers
+  `message-ended` and writes nothing. The lever, not built: the same derivation for those commits, with the
+  schedule fenced on the message's version.
+- Only an `admitted` with a head behind it goes live. One that expects nobody is the send's terminal settlement at
+  the origin and has no head to answer a re-sent copy, so it keeps its outbox row, as every terminal receipt does.
+- A send with no first-hop wait (retry `none`, or a kept send whose wait the `not-yet-in-sync` NACK ended) gets no
+  row kept for its live `admitted`: the row never promised more than one socket write, which the live send is, and
+  the server cannot read the origin's plan.
+- A live `admitted` records one `receipt-transport` observation per connection it was written to, the existing kind
+  with no field added, and no `receipt-outbox`, which stays the enqueue of an issued receipt.
 
 ## Left to the builder
 
@@ -789,16 +966,30 @@ receipt the publisher had not read when the sends stopped.
 - The hosted statement latency itself: the latency at which five publishers stop keeping up lies between +0 and
   +5 ms and is not measured; hosted latency, from one attributed run, is about 5 ms ("Measured through the WS
   server").
-- Where the room messages' fan-out tail comes from (p95 6.2 to 6.9 s at five publishers and +5 ms): they share
-  each instance's one outbound worker with the receipts, not the server's identity, and no run timed their own
-  claims in that worker's queue.
-- How the outbound worker orders a receipt's replay, dequeue and send claims among its other claims: the runs
-  time each receipt's commits, not the worker's claim order.
-- Whether the outbound worker keeps up at five publishers and +5 ms once the fence's replays are gone: receipt
-  replays were 21 to 22 % of its completed claims while the sends ran (9.2 to 10.0 replays committed a second
-  against 43.9 to 44.9 rows completed a second across the three instances), and no run removed them. Nor what
-  the lever's path itself sustains: delivering the receipts from the record's own work rows is neither built
-  nor measured.
+- What the investigation of the receipts' delivery answered, and on what (section 10). The growing wait is the
+  receipts' commits serializing on the server's sender version: with receipt controls fenced on their own version
+  only, the prototype retained no enqueue, so no replay claim existed, nothing conflicted, and the worker kept up at
+  its present throughput (18.3 of 19.5 receipts read a second; 19.4 with `admitted` on the socket too). Four claims
+  at once on the worker made the row's conflicts worse (126 of 200). The worker's claim order and the room messages'
+  fan-out tail were not timed again, and delivering receipts from the record's own work rows is neither built nor
+  measured.
+- Every prototype figure of section 10 rests on two runs on a machine another session loaded (load 8 to 33, three
+  to six times the earlier runs'), which made the unchanged code's figures worse and noisier (57 to 112 of 200,
+  medians by rotation). The fence alone, both fixes together, every receipt live and the commit before the
+  per-message fence lie far outside that spread; the single factors undone one at a time and the four concurrent
+  claims within or near it.
+- The remainder between undoing the four changes of #869 together (187 of 200) and the commit before them (200) is
+  not attributed.
+- Higher latencies (+10 ms or more), longer runs (45 s, where deadline rows come due) and +0 ms were not run with
+  either fix, nor the hosted cell.
+- That a receipt dispatch reads no row its sender's messages share is read from the code; no test pinned it when it
+  was measured. A dequeue batch that mixes receipts and sequenced server publications was not exercised: the cell
+  held only receipts under the server's identity.
+- The recovery of a lost live `admitted` by the first-hop resend is argued from the code, not run.
+- `main` was not run in that cell; its code delivers every receipt the same way, through the outbox on the server's
+  one sender version.
+- The server's own receipted publications (group-state deltas), whose receipt rows also live under the server's
+  sender, were not part of the cell.
 - More than five publishers in a room: not run, so whether the receipts keep up with ten publishers even at
   +0 ms is not shown.
 - The sustained cost of an ACK that finds no head: the measurement through the WS server offers each ACK only
