@@ -718,9 +718,11 @@ the relay and returns the same `held-by-other` status; when the local session
 is the director, the match routes the intent locally and it claims nothing.
 A director heartbeat uses the room WebSocket to reach connected members.
 If that carrier fails before local admission, the sender can try RTC. A server
-refusal ends the send. A queued receipt confirms local admission only. Each
-recipient still checks the appointment and heartbeat freshness. Outputs, heartbeats, snapshots and sync requests
-claim nothing. The director's
+refusal ends the send. While the connection's WebSocket is down, the heartbeat
+goes over RTC alone, since a frame queued on a closed socket reaches no member.
+A queued receipt confirms local admission only. Each recipient still checks the
+appointment and heartbeat freshness. Outputs, heartbeats, snapshots and sync
+requests claim nothing. The director's
 own outputs go to the whole room: with
 `ack: 'all-logical-recipients'` when the output states it, best effort
 otherwise. While the local session is the director, its relay acts on an intent

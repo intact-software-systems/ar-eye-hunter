@@ -20,6 +20,8 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
 
+type DirectorCarrier = 'ws' | 'rtc';
+
 export const RALLAR_DIRECTOR_RELAY_PROTOCOL = 'rallar.director.relay.v1';
 
 const DIRECTOR_COMMAND_UNCONFIRMED_REASON = 'The director did not confirm the command before its deadline.';
@@ -28,6 +30,11 @@ export namespace BrowserDirectorRelayTransport {
     export interface Input {
         readonly messages: RallarMessagesOperations;
         readSession(): AuthSession | undefined;
+        /**
+         * True while a held connection's WebSocket is not open: a WS send is then admitted to its queue and reaches no
+         * member until the socket reopens. Without a connection the send's own connect opens one.
+         */
+        isWebSocketDown(): boolean;
     }
 
     export interface SendCommandInput<T> {
@@ -44,7 +51,7 @@ export namespace BrowserDirectorRelayTransport {
         readonly topicId: string;
         readonly typeId: string;
         readonly payload: T;
-        readonly bestEffortFirst?: 'ws' | 'rtc';
+        readonly bestEffortFirst?: DirectorCarrier;
         /** Undefined sends best effort; a stated ack asks the frozen room audience for a logical receipt. */
         readonly ack: RallarDirectorOutputOptions['ack'] | undefined;
     }
@@ -123,24 +130,31 @@ export class BrowserDirectorRelayTransport {
             ack: 'none' as const,
             ttlMs: 5_000
         };
-        const first = input.bestEffortFirst ?? 'rtc';
-        const firstSend = await this.input.messages[first].send(message);
         const wait = { until: AL_DELIVERY_ADMITTED_STATES, timeoutMs: message.ttlMs };
-        const firstOutcome = (await firstSend.wait(wait)).lifecycle;
-        if (isSuccessfulDirectorDelivery(firstOutcome)) {
-            return { status: 'sent', [first]: firstSend };
+        const sends: Partial<Record<DirectorCarrier, RallarMessageHandle>> = {};
+        let reason: string | undefined;
+        for (const carrier of this.resolveBestEffortCarriers(input.bestEffortFirst)) {
+            const send = await this.input.messages[carrier].send(message);
+            sends[carrier] = send;
+            const outcome = (await send.wait(wait)).lifecycle;
+            if (isSuccessfulDirectorDelivery(outcome)) {
+                return { status: 'sent', ...sends };
+            }
+            reason = outcome.evidence.reason ?? reason;
+            // An explicit room refusal cannot be bypassed on the peer connection.
+            if (carrier === 'ws' && isRoomRefusal(outcome)) {
+                return { status: 'failed', ...sends, reason };
+            }
         }
-        // An explicit room refusal cannot be bypassed on the peer connection.
-        if (first === 'ws' && (firstOutcome.evidence.failure?.kind === 'refused' || firstOutcome.evidence.failure?.kind === 'relay-rejected')) {
-            return { status: 'failed', ws: firstSend, reason: firstOutcome.evidence.reason };
+        return { status: 'failed', ...sends, reason };
+    }
+
+    /** A WS-first send whose socket is down goes over RTC alone: its queued WS frame would reach no member now. */
+    private resolveBestEffortCarriers(first: DirectorCarrier | undefined): readonly DirectorCarrier[] {
+        if (first !== 'ws') {
+            return ['rtc', 'ws'];
         }
-        const fallback = first === 'rtc' ? 'ws' : 'rtc';
-        const secondSend = await this.input.messages[fallback].send(message);
-        const secondOutcome = (await secondSend.wait(wait)).lifecycle;
-        const sends = { [first]: firstSend, [fallback]: secondSend };
-        return isSuccessfulDirectorDelivery(secondOutcome)
-            ? { status: 'sent', ...sends }
-            : { status: 'failed', ...sends, reason: secondOutcome.evidence.reason ?? firstOutcome.evidence.reason };
+        return this.input.isWebSocketDown() ? ['rtc'] : ['ws', 'rtc'];
     }
 
     private async sendReceiptRoomEnvelope<T>(
@@ -269,6 +283,11 @@ function createEnvelope<T>(
         sentAtEpochMs: Date.now(),
         payload: input.payload
     };
+}
+
+function isRoomRefusal(lifecycle: ALDeliveryLifecycle): boolean {
+    const kind = lifecycle.evidence.failure?.kind;
+    return kind === 'refused' || kind === 'relay-rejected';
 }
 
 function isSuccessfulDirectorDelivery(lifecycle: ALDeliveryLifecycle): boolean {

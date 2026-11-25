@@ -122,7 +122,8 @@ function createDirectorAtTheBound(): DirectorAtTheBound {
                 throw new Error('A director heartbeat reads no ledger.');
             }
         },
-        readSession: () => fixture.middleware.session
+        readSession: () => fixture.middleware.session,
+        isWebSocketDown: () => false
     });
     return { rtc, transport };
 }

@@ -703,18 +703,82 @@ describe('Rallar director relay', () => {
     it('publishes host liveness through the room WebSocket without a second RTC heartbeat', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         mockGroupSnapshot(createDirectorGroupSnapshot({
-            sessionId: 'session-1', principalId: 'principal-1', epoch: 3,
-            appointedAtEpochMs: Date.now(), heartbeatTtlMs: 60_000
+            sessionId: 'session-1',
+            principalId: 'principal-1',
+            epoch: 3,
+            appointedAtEpochMs: Date.now(),
+            heartbeatTtlMs: 60_000
         }));
-        const relay = createRallarFacade().director.createRelay<DirectorMove, DirectorAcknowledgement>({
-            roomId: 'room-1', topicId: 'app.game.director', intentTypeId: 'game.intent',
-            outputTypeId: 'game.output', heartbeatIntervalMs: 60_000
+        const facade = createRallarFacade();
+        await facade.connect();
+        const relay = facade.director.createRelay<DirectorMove, DirectorAcknowledgement>({
+            roomId: 'room-1',
+            topicId: 'app.game.director',
+            intentTypeId: 'game.intent',
+            outputTypeId: 'game.output',
+            heartbeatIntervalMs: 60_000
         });
+        mockWebSocketOpen(true);
         const result = await relay.sendHeartbeat();
         expect(result.status).toBe('sent');
         expect(result.ws?.lifecycle().state).toBe('queued');
         expect(result.rtc).toBeUndefined();
         relay.stop();
+    });
+
+    it('keeps host liveness on RTC while the connected room WebSocket is down', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        mockGroupSnapshot(createDirectorGroupSnapshot({
+            sessionId: 'session-1',
+            principalId: 'principal-1',
+            epoch: 3,
+            appointedAtEpochMs: Date.now(),
+            heartbeatTtlMs: 60_000
+        }));
+        const facade = createRallarFacade();
+        await facade.connect();
+        const relay = facade.director.createRelay<DirectorMove, DirectorAcknowledgement>({
+            roomId: 'room-1',
+            topicId: 'app.game.director',
+            intentTypeId: 'game.intent',
+            outputTypeId: 'game.output',
+            heartbeatIntervalMs: 60_000
+        });
+        mockWebSocketOpen(false);
+        const result = await relay.sendHeartbeat();
+        relay.stop();
+
+        expect(result.status).toBe('sent');
+        expect(result.rtc?.lifecycle().state).toBe('queued');
+        expect(result.ws).toBeUndefined();
+    });
+
+    it('reports a heartbeat failed when RTC has no route and the room WebSocket is down', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        mockGroupSnapshot(createDirectorGroupSnapshot({
+            sessionId: 'session-1',
+            principalId: 'principal-1',
+            epoch: 3,
+            appointedAtEpochMs: Date.now(),
+            heartbeatTtlMs: 60_000
+        }));
+        mockRtcNoRoute();
+        const facade = createRallarFacade();
+        await facade.connect();
+        const relay = facade.director.createRelay<DirectorMove, DirectorAcknowledgement>({
+            roomId: 'room-1',
+            topicId: 'app.game.director',
+            intentTypeId: 'game.intent',
+            outputTypeId: 'game.output',
+            heartbeatIntervalMs: 60_000
+        });
+        mockWebSocketOpen(false);
+        const result = await relay.sendHeartbeat();
+        relay.stop();
+
+        expect(result.status).toBe('failed');
+        expect(result.rtc?.lifecycle().state).toBe('failed');
+        expect(result.ws).toBeUndefined();
     });
 
     it('falls back to WS when director room RTC output has no remote route', async () => {
@@ -1073,6 +1137,11 @@ function toDirectorCommandAtEpoch(typeId: string, payload: object, epoch: number
             options: { groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' } }
         }
     );
+}
+
+function mockWebSocketOpen(isOpen: boolean): void {
+    const health = mocks.webSocketQueueBox.readHealth();
+    mocks.webSocketQueueBox.readHealth.mockReturnValue({ ...health, readyState: isOpen ? 'open' : 'connecting', isOpen });
 }
 
 function mockRtcNoRoute(): void {
