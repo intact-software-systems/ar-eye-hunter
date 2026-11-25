@@ -45,12 +45,18 @@ export function useBoundedWaitClock(): void {
     });
 }
 
-/** Runs a harness operation to its end under fake timers, advancing the fake clock through every wait it spends. */
+/**
+ * Runs a harness operation to its end under fake timers, advancing the fake clock through every wait it spends. The
+ * run's rejection is observed as it settles, so a run that fails while the clock advances rejects only the returned
+ * promise and is never reported unhandled.
+ */
 export async function settleUnderFakeTimers<T>(run: () => Promise<T>): Promise<T> {
     let settled = false;
-    const pending = run().finally(() => {
+    const markSettled = (): void => {
         settled = true;
-    });
+    };
+    const pending = run();
+    pending.then(markSettled, markSettled);
     for (let turn = 0; !settled; turn++) {
         if (turn === MEASURED_RUN_TURN_LIMIT) {
             throw new Error('The measured harness run did not settle.');
