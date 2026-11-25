@@ -257,7 +257,7 @@ describe('the committed canonical message handed to dispatch', () => {
     it('sends the stored canonical message when its lane replays a retained pending admission', async () => {
         const { stores } = openHandoffTestPair(`handoff-replay-${crypto.randomUUID()}`);
         const store = stores.admissionStore;
-        // A competing commit wins the sender version inside each of its commit attempts, so the send below is
+        // Another commit of the message wins its version inside each of its commit attempts, so the send below is
         // retained as a pending admission and replayed by the lane's own work.
         loseOutboundCommitAttempts(store);
         const engine = new InboxOutboxEngine();

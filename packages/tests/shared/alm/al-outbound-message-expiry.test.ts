@@ -17,18 +17,23 @@ import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/a
 import type { ALStoredOutboundMessage } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import type { ALOutboundDispatchPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { ALOutboundRepairAdmission } from '@shared/alm/outbound/al-outbound-repair-admission.ts';
+import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
+import { toALOutboundAckTimeoutEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { toALOutboundMessage } from '@shared/alm/outbound/to-al-outbound-message.ts';
 import { validateALOutboundDispatch } from '@shared/alm/outbound/validate-al-outbound-dispatch.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { RetryableConflictError } from '@shared/resilience/try-with-policy.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import {
     claimOutboundTestWork,
+    createDefaultOutboundTestRuntime,
     createDefaultOutboundTestStores,
     createOutboundCanonicalEntry,
     createOutboundMessage,
-    readOutboundTestAdmission
+    readOutboundTestAdmission,
+    runOutboundWorkTask
 } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
@@ -268,6 +273,64 @@ describe('outbound message expiry', () => {
         await repair.retryPendingAck(message.id.msgId);
         expect(await store.readPendingAck({ originPeerId: message.id.senderId, msgId: message.id.msgId })).toBeUndefined();
         commit.mockRestore();
+    });
+
+    it('deletes the receipt of a message whose canonical row is gone, for a sender that never moved its version', async () => {
+        // Pins the orphaned receipt's cleanup taking its sender from a version row that no commit of a sender whose
+        // commits read nothing shared ever writes: the receipt row would stay until it expired.
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(1_000);
+        const stores = createDefaultOutboundTestStores();
+        const store = stores.admissionStore;
+        const message = createOutboundMessage('orphaned-receipt', { ttlMs: 10 });
+        const bundle = await readOutboundTestAdmission({
+            store,
+            message,
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() }
+        });
+        const receipt = {
+            msgId: message.id.msgId,
+            mode: 'hop' as const,
+            expectedPeerIds: ['peer-1'],
+            ackedPeerIds: [],
+            outsideAudiencePeerIds: [],
+            timeoutMs: 50,
+            deadlineAtMs: 1_050,
+            attempts: 0,
+            maxAttempts: 1
+        };
+        const timerId = toALOutboundAckTimeoutEffectId(receipt);
+        expect(
+            await store.commitBundle({
+                ...bundle,
+                mutations: [...bundle.mutations, {
+                    kind: 'set-pending-ack',
+                    originPeerId: message.id.senderId,
+                    snapshot: receipt,
+                    // A receipt that outlives its message's canonical row.
+                    expireAtTimestamp: 1_100
+                }],
+                durableEffects: [...bundle.durableEffects, {
+                    effectId: timerId,
+                    retryAtMs: receipt.deadlineAtMs,
+                    expireAtTimestamp: 1_100,
+                    payload: { kind: 'ack-timeout', msgId: message.id.msgId }
+                }]
+            })
+        ).toBe('committed');
+        const runtime = createDefaultOutboundTestRuntime({
+            stores,
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+        });
+        vi.setSystemTime(1_050);
+        expect(await store.readSentMessage(message.id.msgId)).toBeUndefined();
+
+        await runOutboundWorkTask(runtime);
+
+        expect((await store.readWork(toALOutboundWorkKey(store.namespace, timerId)))?.status).toBe(EntityStatus.COMPLETED);
+        expect(await store.readPendingAck({ originPeerId: message.id.senderId, msgId: message.id.msgId })).toBeUndefined();
     });
 
     it('retains the admission fact after payload expiry until sent-message retention ends', async () => {

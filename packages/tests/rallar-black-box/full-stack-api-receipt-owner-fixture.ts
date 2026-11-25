@@ -13,8 +13,6 @@ import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '../../
 import { normalizeALRuntimeStoreRetention } from '../../shared/alm/ALStoreRetention.ts';
 import { createDefaultALInboundRuntimeResources } from '../../shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { createALOutboundAdmissionStore, type ALOutboundAdmissionStore } from '../../shared/alm/outbound/admission/al-outbound-admission-store.ts';
-import { toALOutboundCanonicalKey } from '../../shared/alm/outbound/al-outbound-canonical-message.ts';
-import { computeALOutboundDispatch } from '../../shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import { AL_OUTBOUND_COMMIT_ATTEMPTS } from '../../shared/alm/outbound/control/al-outbound-control-admission.ts';
 import {
     createDefaultALOutboundDequeueResilience,
@@ -43,6 +41,7 @@ import { SimulatedWebSocket } from '../shared/native-websocket-fixture.ts';
 import { reserveNoResourceEntries } from '../shared/reserve-no-resource-entries.ts';
 
 import { toTestALAckPayload } from '../al-control-test-payloads.ts';
+import { toCompetingOutboundMessageCommit } from '../shared/alm/outbound-competing-message-commit.ts';
 import { attachTestWebSocket } from '../shared/websocket/attach-test-web-socket.ts';
 
 export type ReceiptOwnerScenario = 'native-return' | 'later-throw' | 'closed' | 'native-throw' | 'publish-return' | 'publish-throw' | 'direct-failure';
@@ -417,7 +416,8 @@ function installReceiptConflict(
 ): void {
     const commit = store.commitBundle.bind(store);
     let lostAttempts = 0;
-    // A competing receipt commits before each of the complete receipt's attempts, so it loses every one and is retained.
+    // Another commit of the complete receipt's own control lands before each of its attempts, so it loses every one on
+    // that control's version and is retained.
     const commitWithConflict: ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>['commitBundle'] = async (bundle) => {
         const message = bundle.canonicalEntry === undefined ? undefined : decodePersistedALMessage(bundle.canonicalEntry.resource);
         const control = message && decodeALControlMessage(message).right;
@@ -429,7 +429,7 @@ function installReceiptConflict(
             effects.conflicted = true;
             effects.receiptControlMsgId = message.id.msgId;
             effects.receiptKey = JSON.stringify(bundle.canonicalEntry?.key);
-            assert.equal(await commit(await readCompetingReceiptBundle(store, message, lostAttempts)), 'committed');
+            assert.equal(await commit(toCompetingOutboundMessageCommit(bundle)), 'committed');
             const result = await commit(bundle);
             assert.equal(result, 'conflict');
             return result;
@@ -482,34 +482,6 @@ async function awaitFact(fact: Promise<void>, missing: string): Promise<void> {
     finally {
         clearTimeout(timer);
     }
-}
-
-async function readCompetingReceiptBundle(
-    store: ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>,
-    message: ALMessage,
-    attempt: number
-) {
-    const competitor = { ...message, id: { ...message.id, msgId: `competing-version-${attempt}` } };
-    const read = await store.readOutgoingMessage({
-        msg: competitor,
-        planner: (msg) => ({ msg, lane: 'durable', dropReasonCode: undefined, preparedMessages: [] }),
-        observedCanonicalEntry: undefined,
-        intent: 'enqueue',
-        stampsAppliedSupersedence: false
-    });
-    const computed = computeALOutboundDispatch({
-        read,
-        outboxEntry: {
-            ...QueueBoxUtilities.toResourceEntryFromMsg(competitor, EnqueuedType.WS_OUTBOX, Temporal.Now.instant()),
-            key: toALOutboundCanonicalKey(store.canonicalScope, competitor)
-        },
-        dispatchAtMs: Date.now(),
-        intent: 'enqueue',
-        phase: 'immediate',
-        options: {}
-    });
-    assert.ok(computed.bundle);
-    return computed.bundle;
 }
 
 function createReceiptSubject(): ALMessage {

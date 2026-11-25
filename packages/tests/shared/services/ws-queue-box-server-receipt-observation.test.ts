@@ -44,7 +44,7 @@ import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } fr
 import { WsQueueBoxServerTargetResolution } from '@shared/services/ws-queue-box-server/ws-queue-box-server-target-resolution.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
-import { commitCompetingOutboundSend } from '../alm/outbound-runtime-test-fixture.ts';
+import { commitCompetingOutboundMessageCommit } from '../alm/outbound-runtime-test-fixture.ts';
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
@@ -274,7 +274,7 @@ describe('private upstream receipt observation', () => {
             receipt: expect.objectContaining({ phase: 'admitted', msgId: 'subject', expectedRecipientPeerIds: ['recipient'] }),
             verdict: expect.objectContaining({ kind: 'admitted', durable: true })
         }));
-        // This case asserts uncontended admission; the admitted receipt's dequeue also writes the sender fence.
+        // This case asserts uncontended admission; the admitted receipt's dequeue writes its own control's version alone.
         await waitForReceiptCompletion(service, engine, ['admitted']);
         const accepted = await service.acceptIncomingMessage(createReceiverAcknowledgement(), 'recipient');
         expect(accepted.left).toBeUndefined();
@@ -336,7 +336,7 @@ describe('private upstream receipt observation', () => {
         expect(events.filter((event) => event.kind === 'ack-rejection')).toEqual([]);
     });
 
-    it('retains a complete receipt after a real sender conflict and delivers its committed work exactly once', async () => {
+    it('retains a complete receipt after a real conflict of its control and delivers its committed work exactly once', async () => {
         const events: WsQueueBoxServerReceiptObservation[] = [];
         const engine = new InboxOutboxEngine();
         const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
@@ -359,15 +359,14 @@ describe('private upstream receipt observation', () => {
             if (phase === 'complete' && bundle.pendingAdmission === undefined && bundle.durableEffects.length === 0) {
                 completeAttempts += 1;
                 if (completeAttempts === 1) {
+                    // The admitted receipt's dequeue commits in between, on its own control's version alone.
                     releaseDequeue.resolve();
                     await dequeueFinished.promise;
                 }
-                else if (completeAttempts <= AL_OUTBOUND_COMMIT_ATTEMPTS) {
-                    // Each later attempt of the receipt loses the fence again, so the receipt is retained.
-                    await commitCompetingOutboundSend(outboundStores.admissionStore, commitBundle, {
-                        senderId: bundle.senderId,
-                        resourceId: `competing-send-${completeAttempts}`
-                    });
+                if (completeAttempts <= AL_OUTBOUND_COMMIT_ATTEMPTS) {
+                    // Another commit of the complete receipt's own control lands before each of its attempts, so each
+                    // loses that control's version and the receipt is retained.
+                    await commitCompetingOutboundMessageCommit(commitBundle, bundle);
                 }
             }
             const status = await commitBundle(bundle, observation);
@@ -400,9 +399,10 @@ describe('private upstream receipt observation', () => {
                 return events.some((event) => event.kind === 'receipt-outbox' && event.receipt.phase === 'complete');
             }).toBe(true);
             expect(commits).toEqual(expect.arrayContaining([
+                // No receipt reads a row its sender's other messages share, so none writes the server's version.
                 { phase: 'admitted', expectedVersion: undefined, status: 'committed' },
-                { phase: 'admitted', expectedVersion: 1, status: 'committed' },
-                { phase: 'complete', expectedVersion: 1, status: 'conflict' }
+                { phase: 'admitted', expectedVersion: undefined, status: 'committed' },
+                { phase: 'complete', expectedVersion: undefined, status: 'conflict' }
             ]));
             const pending = events.find((event) => event.kind === 'receipt-outbox' && event.receipt.phase === 'complete');
             expect(pending).toMatchObject({ kind: 'receipt-outbox', verdict: { kind: 'pending' }, entryCount: 1, trackedReceiptAlgo: 'none' });

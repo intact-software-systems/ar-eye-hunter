@@ -347,8 +347,9 @@ describe('Browser AL runtime IndexedDB stores', () => {
         });
 
         // The AL_OUTBOUND work rows' own expiry now goes through cleanupAsync, off this count. Each of the target's
-        // two messages keeps a live version row beside its sent row.
-        expect(result.scanned).toBe(7);
+        // two messages keeps a live version row beside its sent row; a send that reads no row its sender's other
+        // messages share writes no sender version row.
+        expect(result.scanned).toBe(6);
         expect(result.deleted).toBe(2);
         expect(await readBrowserALRuntimeEntryKeys(targetSentPrefix)).toEqual([
             `${targetSentPrefix}:target-fresh`
@@ -455,9 +456,10 @@ describe('Browser AL runtime IndexedDB stores', () => {
             storage: diagnosticsPorts.storage
         });
 
-        // Each of the target's two sent messages adds its version row.
-        expect(result.scanned).toBe(13);
-        expect(result.deleted).toBe(13);
+        // Each of the target's two sent messages adds its version row; neither writes a sender version row, since
+        // neither reads a row its sender's other messages share.
+        expect(result.scanned).toBe(11);
+        expect(result.deleted).toBe(11);
         expect(await readBrowserALRuntimeEntryKeys(targetWsSentPrefix)).toEqual([]);
         expect(await readBrowserALRuntimeEntryKeys(targetInboundPrefix)).toEqual([]);
         expect(await readBrowserALRuntimeEntryKeys(targetOverlaySentPrefix)).toEqual([]);

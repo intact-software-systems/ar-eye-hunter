@@ -82,17 +82,37 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
 
         expect(sent.map((message) => message.id.msgId)).toEqual([decodePersistedALMessage(row.resource).id.msgId]);
         expect(readKeys().filter((key) => key === toKeyAsString(row.key))).toEqual([]);
-        // The dequeue's commit writes its message version, a compare-and-set of its own, before it writes on its sender
-        // version: one statement more.
-        expect(counts()).toEqual({ autocommit: 8, transactions: 5, inTransaction: 8 });
+        // The dequeue of a row that reads nothing its sender's other messages share fences on its message version
+        // alone, and writes it with its rows: no compare-and-set of the sender version before it.
+        expect(counts()).toEqual({ autocommit: 8, transactions: 5, inTransaction: 7 });
     });
 
-    // Committing every dequeued row alone costs ten admission transactions and ten sender versions.
-    it('commits the dequeued rows of one sender in one batch as one admission transaction and one version bump', async () => {
+    // Committing every dequeued row alone costs ten admission transactions; rows that read nothing their sender's other
+    // messages share leave the sender version unwritten.
+    it('commits the dequeued rows of one sender in one batch as one admission transaction and no version bump', async () => {
         const storage = await createPSqlAdmissionTestStorage();
         const { runtime, sent, outbox, admissionStore } = createDequeueLane(storage);
         await runOutboundWorkTask(runtime);
         const rows = await enqueueRows(outbox, 10);
+        const writes = recordAdmissionWrites(admissionStore);
+
+        await runOutboundWorkTask(runtime);
+        await runOutboundWorkTask(runtime);
+
+        expect(sent.map((message) => message.id.msgId).sort()).toEqual(rows.map(toMsgId).sort());
+        expect(writes.dequeueCommits()).toBe(1);
+        expect(await readSenderVersion(storage)).toBeUndefined();
+    });
+
+    // Committing every sequenced row alone costs ten admission transactions and ten sender versions.
+    it('commits the sequenced dequeued rows of one sender in one batch as one admission transaction and one version bump', async () => {
+        const storage = await createPSqlAdmissionTestStorage();
+        const { runtime, sent, outbox, admissionStore } = createDequeueLane(storage);
+        await runOutboundWorkTask(runtime);
+        const rows = await enqueueRows(outbox, 10, (message, index) => ({
+            ...message,
+            ordering: { orderingKey: `track-${index}`, epoch: 1, seq: 1 }
+        }));
         const writes = recordAdmissionWrites(admissionStore);
 
         await runOutboundWorkTask(runtime);
@@ -130,8 +150,9 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
         // Serial decision reads cost 57 after the front reads were already paired, and serial commit
         // observations 47 before the group read them all at once. Commits that wrote one row per statement cost 56
         // statements inside their transactions. The group's commit writes each row's message version as a compare-and-set
-        // of its own, in key order, and takes no lock: one statement per row more.
-        expect(counts()).toEqual({ autocommit: 27, transactions: 6, inTransaction: 18 });
+        // of its own, in key order, and takes no lock: one statement per row more. Its rows read nothing their sender's
+        // other messages share, so no compare-and-set of the sender version precedes the last fence.
+        expect(counts()).toEqual({ autocommit: 27, transactions: 6, inTransaction: 17 });
     });
 
     // Rows that read their admission, identity, proof and supersedence one after another, two rows at a time, cost
@@ -164,10 +185,11 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
         }).toEqual({ autocommit: 3, transactions: 0 });
     });
 
-    // Written one row per statement, the group's transaction costs 97 statements for 16 rows: 49 state rows (an owner,
-    // a sent row and a version per message, and the sender version), 16 holds on the claimed rows and 32 queue rows (an
-    // identity row and an own-work row per message). Each of the 16 message versions is first written alone, a
-    // compare-and-set in key order, so no row is locked explicitly (ruling 24, option 1).
+    // Written one row per statement, the group's transaction costs 96 statements for 16 rows: 48 state rows (an owner,
+    // a sent row and a version per message), 16 holds on the claimed rows and 32 queue rows (an identity row and an
+    // own-work row per message). The rows read nothing their sender's other messages share, so the group fences no
+    // sender version. Every message version but the last is first written alone, a compare-and-set in key order, so no
+    // row is locked explicitly (ruling 24, option 1).
     it('commits a dequeued WS group in one statement per kind of write', async () => {
         const storage = await createPSqlAdmissionTestStorage();
         const recorded = recordPGliteStatements(storage.sql.raw);
@@ -194,7 +216,7 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
         expect({
             transactions: end.transactions - start.transactions,
             inTransaction: end.inTransaction - start.inTransaction
-        }).toEqual({ transactions: 1, inTransaction: 19 });
+        }).toEqual({ transactions: 1, inTransaction: 18 });
     });
 
     it('commits each row alone when two rows of the group write one supersedence track', async () => {
@@ -225,9 +247,10 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
         await runOutboundWorkTask(runtime);
 
         // The group's one write, then each row alone: the moved row makes every attempt, since its claim stays moved.
+        // The three rows that commit read nothing their sender's other messages share, so none writes the sender version.
         expect(writes.dequeueCommits()).toBe(1 + AL_OUTBOUND_COMMIT_ATTEMPTS + others.length);
         expect(sent.map((message) => message.id.msgId).sort()).toEqual(others.map(toMsgId).sort());
-        expect(await readSenderVersion(storage)).toBe(3);
+        expect(await readSenderVersion(storage)).toBeUndefined();
     });
 });
 
@@ -323,10 +346,15 @@ const SUPERSEDING_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
     supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-topic' }
 });
 
-async function enqueueRows(outbox: QueueBoxResourceEntryRepository, count: number): Promise<ResourceEntry[]> {
+async function enqueueRows(
+    outbox: QueueBoxResourceEntryRepository,
+    count: number,
+    toRowMessage: (message: ALMessage, index: number) => ALMessage = (message) => message
+): Promise<ResourceEntry[]> {
     const rows: ResourceEntry[] = [];
     for (let index = 0; index < count; index += 1) {
-        const row = QueueBoxUtilities.toResourceEntryFromMsg(createOutboundMessage(`dequeued-${index}`), 'outbox', Temporal.Now.instant());
+        const message = toRowMessage(createOutboundMessage(`dequeued-${index}`), index);
+        const row = QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox', Temporal.Now.instant());
         await outbox.enqueue(row);
         rows.push(row);
     }

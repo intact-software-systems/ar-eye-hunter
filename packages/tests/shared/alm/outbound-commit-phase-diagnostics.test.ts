@@ -120,7 +120,7 @@ it.each(['memory', 'indexeddb'] as const)(
 
 it('charges the drain its own commit rather than leaving it on the next send', async () => {
     const stores = createStores('memory');
-    // Another commit of the sender wins the version fence inside each of the send's attempts, so the send below
+    // Another commit of the message wins its version fence inside each of the send's attempts, so the send below
     // retains a pending admission the drain must admit on its own.
     loseOutboundCommitAttempts(stores.admissionStore);
     const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];

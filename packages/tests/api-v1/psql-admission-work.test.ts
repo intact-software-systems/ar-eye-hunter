@@ -257,7 +257,8 @@ describe('PostgreSQL outbound admission', () => {
             supersedenceTrackTtlMs: 5 * 60_000,
             retention: normalizeALRuntimeStoreRetention()
         });
-        const msg = createOutboundMessage('msg-outbound-1');
+        // A message that holds a place on its track: its commit fences on the sender version, which it advances.
+        const msg: ALMessage = { ...createOutboundMessage('msg-outbound-1'), ordering: { orderingKey: 'conversation', epoch: 1, seq: 1 } };
         const bundle = await readOutboundTestAdmission({
             store: store,
             message: msg,
@@ -346,7 +347,8 @@ describe('PostgreSQL outbound admission', () => {
             carrier: 'ws',
             recipientAuthentication: { kind: 'carrier' }
         });
-        const msg = createOutboundMessage('msg-outbound-ack');
+        // A message that holds a place on its track, so its admission gives the sender a version an ACK must not move.
+        const msg: ALMessage = { ...createOutboundMessage('msg-outbound-ack'), ordering: { orderingKey: 'conversation', epoch: 1, seq: 1 } };
 
         const bundle = await readOutboundTestAdmission({
             store: store,

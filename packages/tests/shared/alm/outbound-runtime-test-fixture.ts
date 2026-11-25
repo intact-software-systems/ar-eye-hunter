@@ -87,6 +87,7 @@ import {
 import { toWsQueueBoxClientDispatchPlan } from '@shared/services/ws-queue-box-client/to-ws-queue-box-client-dispatch-plan.ts';
 
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+import { toCompetingOutboundMessageCommit } from './outbound-competing-message-commit.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
 /**
@@ -633,14 +634,17 @@ export async function readOutboundTestAdmission<TPrepared>(
 }
 
 /**
- * Lets another commit of the store's sender land right before each of the store's next `AL_OUTBOUND_COMMIT_ATTEMPTS`
- * single commits, so each finds the sender version moved and a commit that makes all its attempts retains its
- * request. `first` is the competing commit before the first of them; a send of no copies competes before the rest.
- * Returns how many commits it has made lose.
+ * Lets another commit of the same message land right before each of the store's next `AL_OUTBOUND_COMMIT_ATTEMPTS`
+ * single commits, so each finds its message's version moved, whatever fence it takes, and a commit that makes all its
+ * attempts retains its request. `first` is the competing commit before the first of them, handed the bundle that
+ * loses; another commit of that bundle's message competes before the rest. Returns how many commits it has made lose.
  */
 export function loseOutboundCommitAttempts<TPrepared>(
     store: ALOutboundAdmissionStore<TPrepared>,
-    first?: (commitBundle: ALOutboundAdmissionStore<TPrepared>['commitBundle']) => Promise<void>
+    first?: (
+        commitBundle: ALOutboundAdmissionStore<TPrepared>['commitBundle'],
+        losing: ALOutboundCommitBundle<TPrepared>
+    ) => Promise<void>
 ): () => number {
     const commitBundle = store.commitBundle.bind(store);
     let lost = 0;
@@ -648,8 +652,8 @@ export function loseOutboundCommitAttempts<TPrepared>(
         if (lost < AL_OUTBOUND_COMMIT_ATTEMPTS) {
             lost += 1;
             await (lost === 1 && first !== undefined
-                ? first(commitBundle)
-                : commitCompetingOutboundSend(store, commitBundle, { senderId: bundle.senderId, resourceId: `competing-send-${lost}` }));
+                ? first(commitBundle, bundle)
+                : commitCompetingOutboundMessageCommit(commitBundle, bundle));
         }
         return await commitBundle(bundle, observation);
     });
@@ -667,20 +671,12 @@ export function conflictOutboundCommitAttempts<TPrepared>(store: ALOutboundAdmis
     }
 }
 
-/** Commits a send of no copies from `senderId` through `commitBundle`, as another commit of that sender would. */
-export async function commitCompetingOutboundSend<TPrepared>(
-    store: ALOutboundAdmissionStore<TPrepared>,
+/** Commits another commit of the same message as `losing` through `commitBundle`, so `losing` finds its version moved. */
+export async function commitCompetingOutboundMessageCommit<TPrepared>(
     commitBundle: ALOutboundAdmissionStore<TPrepared>['commitBundle'],
-    competitor: Readonly<{ senderId: string; resourceId: string; }>
+    losing: Pick<ALOutboundCommitBundle<TPrepared>, 'senderId' | 'expectedVersion' | 'message'>
 ): Promise<void> {
-    const message = createOutboundMessage(competitor.resourceId);
-    const bundle = await readOutboundTestAdmission({
-        store,
-        message: { ...message, id: { ...message.id, senderId: competitor.senderId } },
-        creationNow: () => Temporal.Now.instant(),
-        clock: { nowMs: () => Date.now() }
-    });
-    expect(await commitBundle(bundle)).toBe('committed');
+    expect(await commitBundle(toCompetingOutboundMessageCommit(losing))).toBe('committed');
 }
 
 /** A `hop` receipt expecting these peers, each its own next hop. */

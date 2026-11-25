@@ -78,12 +78,12 @@ interface ALOutboundCommitDecision<TPrepared> {
     readonly bundle: ALOutboundCommitBundle<TPrepared>;
 }
 
-/** One commit attempt's answer: its result, or the decision whose write lost the sender-version fence. */
+/** One commit attempt's answer: its result, or the decision whose write lost a fence it took. */
 type ALOutboundDispatchAttempt<TPrepared> =
     | Readonly<{ kind: 'settled'; result: ALOutboundDispatchAdmission.Result<TPrepared>; }>
     | Readonly<{ kind: 'conflict'; decision: ALOutboundCommitDecision<TPrepared>; }>;
 
-/** The write of `decision` lost the sender-version fence to another commit of its sender. */
+/** The write of `decision` lost a fence it took, its message's version or its sender's, to another commit. */
 class ALOutboundDispatchConflict<TPrepared> extends RetryableConflictError {
     readonly decision: ALOutboundCommitDecision<TPrepared>;
 
@@ -94,8 +94,9 @@ class ALOutboundDispatchConflict<TPrepared> extends RetryableConflictError {
 }
 
 /**
- * Every commit of a sender is fenced on one sender version and nothing serializes them, so a commit whose write lost
- * that fence to another commit reads, decides and writes again, `AL_OUTBOUND_COMMIT_ATTEMPTS` attempts in all.
+ * Every commit is fenced on its message's version, and on its sender's when its read touched a row the sender's
+ * messages share; nothing serializes them, so a commit whose write lost a fence to another commit reads, decides and
+ * writes again, `AL_OUTBOUND_COMMIT_ATTEMPTS` attempts in all.
  * Contention costs a fresh read, never a wait for another commit's read. The first retry runs at once: a lost fence
  * means the winner has committed, so the fresh read sees it. A second loss is sustained contention, and the last attempt
  * first waits 10 ms with half of it jittered, so commits that keep meeting spread apart. Past the bound the request is
@@ -161,7 +162,7 @@ export namespace ALOutboundDispatchAdmission {
     }
 }
 
-/** Owns optimistic read/compute/commit: the sender-version fence alone orders a sender's commits, and a lost fence is a fresh attempt. */
+/** Owns optimistic read/compute/commit: the fences a read took order its commit against others, and a lost fence is a fresh attempt. */
 export class ALOutboundDispatchAdmission<TPrepared> {
     private readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
     private disposed = false;

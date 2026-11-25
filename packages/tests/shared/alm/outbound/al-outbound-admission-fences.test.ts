@@ -17,6 +17,7 @@ import {
     InMemoryAdmissionBackend,
     type ALAdmissionMemoryState
 } from '@shared/alm/al-admission-backend.ts';
+import { decodeALOutboundMessageVersion } from '@shared/alm/al-admission-value-validation.ts';
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
@@ -90,16 +91,17 @@ interface FenceFixture {
 
 describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fences over %s', (storage) => {
     it('aborts a changed sender version without a write or a revision bump', async () => {
+        // Each message holds a place on its own track, so the two commits share the sender version alone.
         const fixture = await createFenceFixture(storage);
         const winner = await readOutboundTestAdmission({
             store: fixture.store,
-            message: createOutboundMessage('version-winner'),
+            message: createTrackedFenceMessage('version-winner', 'track-winner'),
             creationNow: () => Temporal.Now.instant(),
             clock: { nowMs: () => Date.now() }
         });
         const stale = await readOutboundTestAdmission({
             store: fixture.store,
-            message: createOutboundMessage('version-loser'),
+            message: createTrackedFenceMessage('version-loser', 'track-loser'),
             creationNow: () => Temporal.Now.instant(),
             clock: { nowMs: () => Date.now() }
         });
@@ -111,38 +113,36 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
         expect(await fixture.readAdmissionState()).toBe(before);
     });
 
-    it('names the sender version and the version of its message as the fences of each commit', async () => {
+    it('names the sender version and the version of its message as the fences of a commit that read a shared row', async () => {
+        // A message on a track reads rows its sender's other messages share, so its commit fences on both versions.
         const fixture = await createFenceFixture(storage);
         const bundle = await readOutboundTestAdmission({
             store: fixture.store,
-            message: createOutboundMessage('fenced'),
+            message: createTrackedFenceMessage('fenced', 'track-fenced'),
             creationNow: () => Temporal.Now.instant(),
             clock: { nowMs: () => Date.now() }
         });
-        const fences: string[] = [];
-        const write = fixture.backend.write.bind(fixture.backend);
-        vi.spyOn(fixture.backend, 'write').mockImplementation(async (operation, executionExpiresAtMs) =>
-            await write(async (transaction) => {
-                const setFence = transaction.setFence.bind(transaction);
-                vi.spyOn(transaction, 'setFence').mockImplementation(async (key, value, expireAtTimestamp) => {
-                    fences.push(key);
-                    await setFence(key, value, expireAtTimestamp);
-                });
-                return await operation(transaction);
-            }, executionExpiresAtMs)
-        );
+        const fences = recordWrittenFences(fixture);
 
         expect(await fixture.store.commitBundle(bundle)).toBe('committed');
 
-        expect(fences).toEqual([
-            toALOutboundVersionKey(FENCE_NAMESPACE, bundle.senderId),
-            toALOutboundOriginMessageKey({
-                row: 'msg-version',
-                namespace: FENCE_NAMESPACE,
-                originPeerId: bundle.message.originPeerId,
-                msgId: bundle.message.msgId
-            })
-        ]);
+        expect(fences).toEqual([toALOutboundVersionKey(FENCE_NAMESPACE, bundle.senderId), toFenceMessageVersionKey(bundle)]);
+    });
+
+    it('names the version of its message alone as the fence of a commit that read no shared row', async () => {
+        // Pins a message on no track and under no supersedence key fencing on its sender's version too.
+        const fixture = await createFenceFixture(storage);
+        const bundle = await readOutboundTestAdmission({
+            store: fixture.store,
+            message: createOutboundMessage('fenced-alone'),
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() }
+        });
+        const fences = recordWrittenFences(fixture);
+
+        expect(await fixture.store.commitBundle(bundle)).toBe('committed');
+
+        expect(fences).toEqual([toFenceMessageVersionKey(bundle)]);
     });
 
     it('writes every fence one commit names, and a fence named again once', async () => {
@@ -411,9 +411,9 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
     it('aborts a retry schedule whose sender version moved without a write or a revision bump', async () => {
         const fixture = await createFenceFixture(storage);
         const control = createFenceControlAdmission(fixture);
-        // The obligation's commit gives the sender its first version, so the schedule below carries
-        // the expectation a repair admission computed before that commit landed.
-        const message = await seedControlObligation(fixture.store);
+        // The obligation's commit, of a message on a track, gives the sender its first version, so the schedule
+        // below carries the expectation a repair admission computed before that commit landed.
+        const message = await seedControlObligation(fixture.store, { orderingKey: 'stream', epoch: 1, seq: 1 });
 
         const before = await fixture.readAdmissionState();
         expect(await control.scheduleNotYetInSyncRetry(toRetrySchedule(message.id.senderId, message.id.msgId, Date.now())))
@@ -546,15 +546,49 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
         expect(again.bundle).toBeUndefined();
     });
 
+    it('commits two receipt controls of one sender decided on one read of its version, each on its own version', async () => {
+        // Pins every receipt control of every message conflicting on its sender's one version row.
+        const fixture = await createFenceFixture(storage);
+        const controls = [createFenceReceiptControl('receipt-first'), createFenceReceiptControl('receipt-second')];
+        const bundles: ALOutboundCommitBundle<OutboundTestPayload>[] = [];
+        for (const control of controls) {
+            bundles.push(await readReceiptControlBundle(fixture.store, control));
+        }
+
+        for (const bundle of bundles) {
+            expect(await fixture.store.commitBundle(bundle)).toBe('committed');
+        }
+
+        expect(await fixture.backend.read(toALOutboundVersionKey(FENCE_NAMESPACE, 'server'), (value) => value)).toBeUndefined();
+        for (const control of controls) {
+            expect(await readFenceMessageVersion(fixture, control)).toBe(1);
+        }
+    });
+
+    it('aborts the second commit of one receipt control decided on the same read, on that control\'s own version', async () => {
+        // Pins a second writer of one control (an ended work claimed twice; a replay beside its dequeue) writing over the
+        // first, now that only the control's own version stands between them.
+        const fixture = await createFenceFixture(storage);
+        const control = createFenceReceiptControl('receipt-twice');
+        const first = await readReceiptControlBundle(fixture.store, control);
+        const second = await readReceiptControlBundle(fixture.store, control);
+
+        expect(await fixture.store.commitBundle(first)).toBe('committed');
+        const before = await fixture.readAdmissionState();
+        expect(await fixture.store.commitBundle(second)).toBe('conflict');
+
+        expect(await fixture.readAdmissionState()).toBe(before);
+    });
+
     it('commits each message alone when the sender version moves between a group\'s reads and its write', async () => {
         const fixture = await createFenceFixture(storage);
         const admission = createFenceDispatchAdmission(fixture);
         const commitBundles = fixture.store.commitBundles.bind(fixture.store);
         const groupCommit = vi.spyOn(fixture.store, 'commitBundles').mockImplementationOnce(async (bundles) => {
-            // Another send of the same sender commits after the group read its version.
+            // Another send of the same sender, on a track of its own, commits after the group read its version.
             const interleaved = await readOutboundTestAdmission({
                 store: fixture.store,
-                message: createOutboundMessage('interleaved'),
+                message: createTrackedFenceMessage('interleaved', 'track-interleaved'),
                 creationNow: () => Temporal.Now.instant(),
                 clock: { nowMs: () => Date.now() }
             });
@@ -562,8 +596,9 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
             return await commitBundles(bundles);
         });
 
+        // Each member holds a place on its own track, so the group fences on the sender version the send moves.
         const results = await admission.commitAll(
-            ['group-first', 'group-second'].map((resourceId) => toFenceSendDispatch(createOutboundMessage(resourceId)))
+            ['group-first', 'group-second'].map((resourceId) => toFenceSendDispatch(createTrackedFenceMessage(resourceId, `track-${resourceId}`)))
         );
 
         expect(await groupCommit.mock.results[0]?.value).toBe('conflict');
@@ -866,6 +901,70 @@ function toRetryEffectEntry(msgId: string, nowMs: number): ResourceEntry {
         retryAtMs: nowMs,
         expireAtTimestamp: nowMs + 60_000
     });
+}
+
+/** A message that states the first sequence of a track of its own: its commit reads rows its sender's messages share. */
+function createTrackedFenceMessage(resourceId: string, orderingKey: string): ALMessage {
+    return { ...createOutboundMessage(resourceId), ordering: { orderingKey, epoch: 1, seq: 1 } };
+}
+
+/** Every fence key the backend's next writes set, in the order they set them. */
+function recordWrittenFences(fixture: FenceFixture): readonly string[] {
+    const fences: string[] = [];
+    const write = fixture.backend.write.bind(fixture.backend);
+    vi.spyOn(fixture.backend, 'write').mockImplementation(async (operation, executionExpiresAtMs) =>
+        await write(async (transaction) => {
+            const setFence = transaction.setFence.bind(transaction);
+            vi.spyOn(transaction, 'setFence').mockImplementation(async (key, value, expireAtTimestamp) => {
+                fences.push(key);
+                await setFence(key, value, expireAtTimestamp);
+            });
+            return await operation(transaction);
+        }, executionExpiresAtMs)
+    );
+    return fences;
+}
+
+function toFenceMessageVersionKey(bundle: ALOutboundCommitBundle<OutboundTestPayload>): string {
+    return toALOutboundOriginMessageKey({
+        row: 'msg-version',
+        namespace: FENCE_NAMESPACE,
+        originPeerId: bundle.message.originPeerId,
+        msgId: bundle.message.msgId
+    });
+}
+
+/** The WS server's receipt control `controlMsgId` to the origin of one message, as its aggregation builds it. */
+function createFenceReceiptControl(controlMsgId: string): ALMessage {
+    const receipt = createServerReceipt(createOutboundMessage('receipt-subject'), 'admitted', ['peer-1'], {
+        controlMsgId,
+        confirmedRecipientPeerIds: []
+    });
+    return { ...receipt, constraints: { expiresAtMs: Date.now() + 30_000 } };
+}
+
+/** A receipt control admitted with the receipt's plan: a durable row whose immediate phase sends nothing. */
+async function readReceiptControlBundle(
+    store: ALOutboundAdmissionStore<OutboundTestPayload>,
+    control: ALMessage
+): Promise<ALOutboundCommitBundle<OutboundTestPayload>> {
+    return await readOutboundTestAdmission({
+        store,
+        message: control,
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: () => Date.now() },
+        planner: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })
+    });
+}
+
+async function readFenceMessageVersion(fixture: FenceFixture, message: ALMessage): Promise<number | undefined> {
+    const key = toALOutboundOriginMessageKey({
+        row: 'msg-version',
+        namespace: FENCE_NAMESPACE,
+        originPeerId: message.id.senderId,
+        msgId: message.id.msgId
+    });
+    return await fixture.backend.read(key, (value) => decodeALOutboundMessageVersion(value, message.id.msgId).version);
 }
 
 function createSupersedingMessage(senderId: string, sequence: number): ALMessage {

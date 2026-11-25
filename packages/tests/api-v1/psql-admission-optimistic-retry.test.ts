@@ -25,6 +25,7 @@ import {
 import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { decodeALInboundWorkEntry, toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
+import { toALOutboundOriginMessageKey } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
 import type { ALOutboundMessageRuntime, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -274,16 +275,22 @@ describe('PSql admission optimistic retry', () => {
         await runtime.ready();
         const commit = store.commitBundle.bind(store);
         let attempts = 0;
-        // Another commit of the sender moves its version after each attempt's read, so every attempt loses the fence.
+        // Another commit of the message moves its version after each attempt's read, so every attempt loses the fence
+        // its message's version takes; the send reads no row its sender's other messages share.
         vi.spyOn(store, 'commitBundle').mockImplementation(async (candidate) => {
             if (attempts < AL_OUTBOUND_COMMIT_ATTEMPTS) {
-                expect(candidate.expectedVersion).toBe(attempts === 0 ? undefined : attempts);
+                expect(candidate.message.expectedVersion).toBe(attempts === 0 ? undefined : attempts);
                 attempts += 1;
                 await repository.upsert(
                     {
                         namespace: store.namespace,
-                        key: `${store.namespace}:version:self`,
-                        value: JSON.stringify({ senderId: 'self', version: attempts }),
+                        key: toALOutboundOriginMessageKey({
+                            row: 'msg-version',
+                            namespace: store.namespace,
+                            originPeerId: candidate.message.originPeerId,
+                            msgId: candidate.message.msgId
+                        }),
+                        value: JSON.stringify({ msgId: candidate.message.msgId, version: attempts }),
                         expireAtTimestamp: Date.now() + 60_000
                     }
                 );

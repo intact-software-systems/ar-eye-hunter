@@ -307,12 +307,11 @@ export class ALOutboundRepairAdmission<TPrepared> {
 
     /** A receipt whose message is gone has nothing left to retry. */
     private async commitOrphanedReceiptCleanup(msgId: string, read: ALOutboundMessageEndRead): Promise<void> {
-        if (!read.clientRecord) {
+        const senderId = read.storedMessage?.reference.senderId;
+        if (senderId === undefined) {
             return;
         }
-        const status = await this.admissionStore.commitBundle(
-            toALOutboundEndReceiptBundle(read.clientRecord.senderId, msgId, read)
-        );
+        const status = await this.admissionStore.commitBundle(toALOutboundEndReceiptBundle(senderId, msgId, read));
         if (status === 'conflict') {
             throw new RetryableConflictError('Expired outbound acknowledgement cleanup commit conflict');
         }

@@ -387,8 +387,9 @@ export type ALOutboundRuntimeDiagnosticsEvent =
             commitDurationMs: number;
             commitOutcome: ALOutboundCommitBundleOutcome;
             /**
-             * The write transactions this commit opened: one per attempt, and one more when every attempt lost the
-             * sender-version fence and it retained its request. Above one, its sender's other commits won the fence.
+             * The write transactions this commit opened: one per attempt, and one more when every attempt lost a
+             * fence it took and it retained its request. Above one, another commit won a fence this commit took, its
+             * message's or its sender's.
              */
             commitAttemptCount: number;
         }>
