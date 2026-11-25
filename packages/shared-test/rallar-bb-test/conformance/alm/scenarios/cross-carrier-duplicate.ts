@@ -90,9 +90,11 @@ function toCrossCarrierDuplicateSenderCommands(sender: AlmConformanceStepInput):
 }
 
 /**
- * The receiver refused the pair's second copy, pinned to WS: RTC `transport-accepted` is the receiver's own hop ACK,
- * so the RTC copy committed first. The wait runs after the absence window, when the outcome is already in the event
- * buffer, so a short budget suffices.
+ * The receiver refused the pair's second copy, on either carrier: neither carrier's `transport-accepted` is the
+ * receiver's admission (over RTC it is the frame leaving the sender's data channel, over WS the server's), so the
+ * replay may reach the receiver before the first copy commits. The receiver reads the pair's latest
+ * `admission-outcome`, the second arrival's verdict. It runs after the absence window, when the outcome is already in
+ * the event buffer, so a short budget suffices.
  */
 function toCrossCarrierDuplicateReceiverCommands(
     receiver: AlmConformanceStepInput
@@ -100,9 +102,18 @@ function toCrossCarrierDuplicateReceiverCommands(
     return [
         ...toSingleArrivalReceiverCommands(receiver),
         toAdmissionOutcomeWait(receiver, {
-            name: 'duplicate-outcome-ws',
-            contains: '"carrier":"ws","outcome":"not-handled","reason":"duplicate"',
+            name: 'duplicate-outcome-latest',
             timeoutMs: toBudgetMs(ASSERT_TIMEOUT_MS, receiver.input.deadlineMs)
-        })
+        }),
+        ...([['outcome', 'not-handled'], ['reason', 'duplicate']] as const).map(([field, expected]) =>
+            toResultAssertion({
+                step: receiver,
+                name: `assert-duplicate-outcome-${field}`,
+                resultName: 'duplicate-outcome-latest',
+                field: `event.payload.data.${field}`,
+                operator: 'equals',
+                expected
+            })
+        )
     ];
 }

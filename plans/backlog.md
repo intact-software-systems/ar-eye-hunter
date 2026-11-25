@@ -371,16 +371,6 @@ and it has no status list.
 - `receipted-relay-path`'s tree poll passed on its first iteration in every
   recorded run and no run recorded a pre-request health read, so the poll is
   not shown to ever wait (S9-ii, D634).
-- `cross-carrier-duplicate-rtc-then-ws` failed once on `main` over
-  `rtc-with-ws-fallback` (receiver `duplicate-outcome-ws`, a wait timeout) and
-  did not reproduce in the branch's fallback runs (S9-ii). In that run the
-  receiver's `admission-outcome` reads the WS copy `committed` / `admitted` and,
-  3 ms later, the RTC copy `not-handled` / `duplicate`: an arrival-order race
-  between the two carriers' copies, against the cell's premise that the RTC
-  copy commits first
-  (`packages/shared-test/rallar-bb-test/conformance/alm/scenarios/cross-carrier-duplicate.ts`).
-  Why the WS copy overtook the RTC one is unexplained; waits on a reproduction
-  that records both copies' arrival times.
 - `CLAUDE.md`'s lane table lists for `postgres-integration` neither the
   view-push and ordering proofs nor the group-delta and auth-logout cluster
   proofs (S9-ii, D636); the file is project instructions, the maintainer's to

@@ -136,10 +136,11 @@ async function runDuplicateOutcomeCommands(arrivals: readonly ALInboundMessageRu
 const WAIT_BUDGET_TEST_TIMEOUT_MS = 15_000;
 
 describe('the cross-carrier duplicate outcome wait', () => {
-    it('matches the emitter\'s admission-outcome for the pair\'s refused WS copy in rtc-then-ws, and nothing else', async () => {
+    it('accepts the refused copy on either carrier, and fails when neither arrived twice', async () => {
+        expect(await runDuplicateOutcomeCommands([WS_ARRIVAL, RTC_ARRIVAL])).toBe(true);
         expect(await runDuplicateOutcomeCommands([RTC_ARRIVAL, WS_ARRIVAL])).toBe(true);
-        expect(await runDuplicateOutcomeCommands([WS_ARRIVAL, RTC_ARRIVAL])).toBe(false);
         expect(await runDuplicateOutcomeCommands([RTC_ARRIVAL])).toBe(false);
+        expect(await runDuplicateOutcomeCommands([WS_ARRIVAL])).toBe(false);
     }, WAIT_BUDGET_TEST_TIMEOUT_MS);
 
     // The lane runs rtc-then-ws alone (D56); the receiver still refuses the second copy in either arrival order.
