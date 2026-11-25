@@ -14,7 +14,6 @@ import { toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.t
 import { toALOutboundWorkType } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import {
     ALWAYS_OWNED_AL_DURABLE_WORK,
-    type ALDurableWorkCommit,
     type ALDurableWorkOwnership
 } from '@shared/alm/work/al-durable-work-ownership.ts';
 import {
@@ -24,7 +23,6 @@ import {
     type ALWorkReadinessProbeDiagnostics
 } from '@shared/alm/work/al-work-handler.ts';
 import type { ALWorkCommittedRows } from '@shared/alm/work/al-work-readiness-memory.ts';
-import { ObservableLatestValue } from '@shared/cache/observable/observable-latest-value.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import {
@@ -34,7 +32,12 @@ import {
 } from '../inbound-runtime-test-fixture.ts';
 import type { InboundTestRuntime } from '../inbound-runtime-test-fixture.ts';
 import { createOutboundMessage } from '../outbound-runtime-test-fixture.ts';
-import { createOutboundTestSession, createSessionOutboundTestRuntime } from '../session-outbound-test-runtime.ts';
+import {
+    createOutboundTestSession,
+    createSessionOutboundTestRuntime,
+    createTestDurableWorkOwnership,
+    type TestDurableWorkOwnership
+} from '../session-outbound-test-runtime.ts';
 import {
     collectProbe,
     fakePort,
@@ -181,37 +184,6 @@ describe('two inbound runtimes of one session store', () => {
         expect(other.fixture.delivered).toEqual([]);
     });
 });
-
-interface TestDurableWorkOwnership extends ALDurableWorkOwnership {
-    readonly owned: ObservableLatestValue<boolean>;
-    readonly announced: readonly ALDurableWorkCommit[];
-    take(): void;
-    /** Hands an announced commit to the lanes listening for its work type, as the session channel does for an owner. */
-    deliver(commit: ALDurableWorkCommit): void;
-}
-
-function createTestDurableWorkOwnership(owned: boolean): TestDurableWorkOwnership {
-    const value = new ObservableLatestValue<boolean>().set(owned);
-    const announced: ALDurableWorkCommit[] = [];
-    const listeners = new Map<string, Set<(rows: ALWorkCommittedRows) => void>>();
-    return {
-        owned: value,
-        announced,
-        isOwned: () => value.peek() === true,
-        take: () => value.accept(true),
-        announceCommit: (commit) => announced.push(commit),
-        onForeignCommit: (workType, listener) => {
-            const forType = listeners.get(workType) ?? new Set();
-            listeners.set(workType, forType.add(listener));
-            return () => forType.delete(listener);
-        },
-        deliver: (commit) => {
-            if (value.peek() === true) {
-                listeners.get(commit.workType)?.forEach((listener) => listener(commit.rows));
-            }
-        }
-    };
-}
 
 interface OwnedHandlerFixture<TOwnership extends ALDurableWorkOwnership> {
     readonly handler: ALWorkHandler;

@@ -22,47 +22,43 @@ import {
 } from '../alm-conformance-scenario-definition.ts';
 import { toCommandId, toSendHandleId } from '../alm-conformance-step-identities.ts';
 
-const CROSS_CARRIER_ORDERS = ['rtc-then-ws', 'ws-then-rtc'] as const;
-
-export const crossCarrierDuplicate: readonly AlmConformanceScenarioDefinition[] = CROSS_CARRIER_ORDERS.map((order) => ({
-    scenarioId: 'cross-carrier-duplicate' as const,
-    scenarioKey: `cross-carrier-duplicate-${order}`,
+/**
+ * Only rtc-then-ws runs: the product admits one message on WS after RTC by hand-over (D56), and never on RTC while its
+ * WS admission lives, since a ws-then-rtc send falls back only when WS refuses it. Its scenario key keeps the order.
+ */
+export const crossCarrierDuplicate: readonly AlmConformanceScenarioDefinition[] = [{
+    scenarioId: 'cross-carrier-duplicate',
+    scenarioKey: 'cross-carrier-duplicate-rtc-then-ws',
     tags: FULL_TAGS,
     carriers: ALM_CONFORMANCE_FALLBACK_CARRIERS,
     roles: ['sender', 'receiver'],
     laneFamily: 'two-agent',
-    toSenderCommands: (sender: AlmConformanceStepInput) => toCrossCarrierDuplicateSenderCommands(sender, order),
-    toRecipientCommands: (receiver: AlmConformanceStepInput) => toCrossCarrierDuplicateReceiverCommands(receiver, order)
-}));
+    toSenderCommands: toCrossCarrierDuplicateSenderCommands,
+    toRecipientCommands: toCrossCarrierDuplicateReceiverCommands
+}];
 
 /**
  * One envelope over both carriers, which the product carries only by hand-over (D56); this replay forces it without a
- * trigger: it reuses the first handle's captured envelope on the other carrier.
- * The first send lists the receiver so RTC can freeze and sign the same audience in either order.
+ * trigger: it reuses the first RTC handle's captured envelope on WS.
  * The replay reads that envelope back from IndexedDB, so the first send opts into `local-outbox`.
  * The sender proves its first copy was submitted and the replay admitted, never the replayed handle's
  * acknowledgement (D28). The receiver's count proves the second copy was not delivered twice, and its
- * duplicate-outcome wait proves the second copy arrived and was refused, in both orders.
+ * duplicate-outcome wait proves the second copy arrived and was refused.
  */
-function toCrossCarrierDuplicateSenderCommands(
-    sender: AlmConformanceStepInput,
-    order: (typeof CROSS_CARRIER_ORDERS)[number]
-): readonly RallarBlackBoxTestCommand[] {
-    const [first, replay] = order === 'rtc-then-ws' ? (['rtc', 'ws'] as const) : (['ws', 'rtc'] as const);
+function toCrossCarrierDuplicateSenderCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const firstSend = toSendCommand({
         ...sender,
         index: 1,
-        payload: { marker: sender.scenarioId, order },
+        payload: { marker: sender.scenarioId, order: 'rtc-then-ws' },
         delivery: {
             ack: 'receiver',
-            recipientPeers: ['receiver'],
             durability: 'local-outbox',
             ttlMs: NON_EXPIRING_TTL_MS,
             commandTimeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS
         }
     });
     return [
-        { ...firstSend, carrier: first },
+        { ...firstSend, carrier: 'rtc' },
         toObserveCommand({ ...sender, index: 1, state: 'transport-accepted' }),
         ...(['state', 'submitted'] as const).map((field) =>
             toResultAssertion({
@@ -78,7 +74,7 @@ function toCrossCarrierDuplicateSenderCommands(
             kind: 'messages.send',
             commandId: toCommandId(sender, 'send-2'),
             connection: sender.input.senderConnection,
-            replayOnCarrier: { handleId: toSendHandleId({ ...sender, index: 1 }), carrier: replay },
+            replayOnCarrier: { handleId: toSendHandleId({ ...sender, index: 1 }), carrier: 'ws' },
             timeoutMs: toBudgetMs(MESSAGE_CONTROL_TIMEOUT_MS, sender.input.deadlineMs)
         },
         toResultAssertion({
@@ -94,44 +90,21 @@ function toCrossCarrierDuplicateSenderCommands(
 }
 
 /**
- * The receiver refused the pair's second copy. rtc-then-ws pins that copy to WS: RTC `transport-accepted` is the
- * receiver's own hop ACK, so the RTC copy committed first. ws-then-rtc accepts either carrier, since WS
- * `transport-accepted` is only the server's: it reads the pair's latest `admission-outcome`, the second arrival's or,
- * when a copy's commit conflicted, its replay's verdict. Both run after the absence window, when the outcome is
- * already in the event buffer, so a short budget suffices. A receiver stays one linear transcript for the reload
- * identity join, so the either-carrier case is a wait and two assertions rather than a composite.
+ * The receiver refused the pair's second copy, on either carrier: neither carrier's `transport-accepted` is the
+ * receiver's admission (over RTC it is the frame leaving the sender's data channel, over WS the server's), so the WS
+ * replay may commit before the RTC copy. The wait matches the refusal by its fields, so it holds whichever copy came
+ * second, and keeps its budget for a copy whose commit conflicted and is refused only on replay. It runs after the
+ * absence window, when the outcome is already in the event buffer, so a short budget suffices.
  */
 function toCrossCarrierDuplicateReceiverCommands(
-    receiver: AlmConformanceStepInput,
-    order: (typeof CROSS_CARRIER_ORDERS)[number]
+    receiver: AlmConformanceStepInput
 ): readonly RallarBlackBoxTestCommand[] {
-    const arrivals = toSingleArrivalReceiverCommands(receiver);
-    if (order === 'rtc-then-ws') {
-        return [
-            ...arrivals,
-            toAdmissionOutcomeWait(receiver, {
-                name: 'duplicate-outcome-ws',
-                contains: '"carrier":"ws","outcome":"not-handled","reason":"duplicate"',
-                timeoutMs: toBudgetMs(ASSERT_TIMEOUT_MS, receiver.input.deadlineMs)
-            })
-        ];
-    }
-    const latest = toAdmissionOutcomeWait(receiver, {
-        name: 'duplicate-outcome-latest',
-        timeoutMs: toBudgetMs(ASSERT_TIMEOUT_MS, receiver.input.deadlineMs)
-    });
     return [
-        ...arrivals,
-        latest,
-        ...([['outcome', 'not-handled'], ['reason', 'duplicate']] as const).map(([field, expected]) =>
-            toResultAssertion({
-                step: receiver,
-                name: `assert-duplicate-outcome-${field}`,
-                resultName: 'duplicate-outcome-latest',
-                field: `event.payload.data.${field}`,
-                operator: 'equals',
-                expected
-            })
-        )
+        ...toSingleArrivalReceiverCommands(receiver),
+        toAdmissionOutcomeWait(receiver, {
+            name: 'duplicate-outcome',
+            fields: { outcome: 'not-handled', reason: 'duplicate' },
+            timeoutMs: toBudgetMs(ASSERT_TIMEOUT_MS, receiver.input.deadlineMs)
+        })
     ];
 }

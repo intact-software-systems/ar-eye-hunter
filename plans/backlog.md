@@ -371,16 +371,6 @@ and it has no status list.
 - `receipted-relay-path`'s tree poll passed on its first iteration in every
   recorded run and no run recorded a pre-request health read, so the poll is
   not shown to ever wait (S9-ii, D634).
-- `cross-carrier-duplicate-rtc-then-ws` failed once on `main` over
-  `rtc-with-ws-fallback` (receiver `duplicate-outcome-ws`, a wait timeout) and
-  did not reproduce in the branch's fallback runs (S9-ii). In that run the
-  receiver's `admission-outcome` reads the WS copy `committed` / `admitted` and,
-  3 ms later, the RTC copy `not-handled` / `duplicate`: an arrival-order race
-  between the two carriers' copies, against the cell's premise that the RTC
-  copy commits first
-  (`packages/shared-test/rallar-bb-test/conformance/alm/scenarios/cross-carrier-duplicate.ts`).
-  Why the WS copy overtook the RTC one is unexplained; waits on a reproduction
-  that records both copies' arrival times.
 - `CLAUDE.md`'s lane table lists for `postgres-integration` neither the
   view-push and ordering proofs nor the group-delta and auth-logout cluster
   proofs (S9-ii, D636); the file is project instructions, the maintainer's to
@@ -858,16 +848,13 @@ and it has no status list.
   recipient without the recipient asking, which spends the recipient's own
   budget (D692). Open decisions: an attempt identity keyed by the receiver
   alone, and whether a relay may spend a recipient's budget.
-- A cancel and a hand-over end later work from memory only
-  (`lane/al-outbound-send-controls.ts`), so a reload forgets them and a durable
-  message resumes; the completion an empty frozen audience states at admission
-  writes no `ended` marker. Both predate the slice (D685). Next step: the
-  durable cancel fact left as a seam (D13), which could write the marker.
 - One frame can follow a message's end: `readSendGuards` is an unfenced read
   before the carrier runs, so an end that lands between the guard and the
-  write does not stop it (the window supersession has; D686). Next step, as
-  the review named it: fence the guard read on the sender version; no step
-  ruled.
+  write does not stop it (the window supersession has; D686). A cancel adds
+  one interleaving of it: its end names a retained admission that another
+  tab's replay is committing, and the replay's send row is reserved before the
+  end row runs (D754). Next step, as the review named it: fence the guard read
+  on the sender version; no step ruled.
 - A superseded `ack-timeout` row is left pending when a dispatch moves its
   receipt's deadline; it fires later, finds no receipt or a moved one, and
   completes, one no-op work item per moved deadline. Predates the slice; the

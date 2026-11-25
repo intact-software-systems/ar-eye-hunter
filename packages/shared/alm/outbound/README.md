@@ -246,7 +246,9 @@ every server message keeps its one backend.
   is no cross-store atomicity. No caller mixes today; an ACK batch is all volatile.
 - **Controls, receipts and retransmission** go to the memory lane, volatile or checkpoint, that owns
   the target message (a memory read each), else to the durable lane.
-- **One cancel.** `cancel(msgId, traceId)` is runtime-wide: one set of send controls serves both lanes.
+- **One cancel.** `cancel(msgId, traceId)` is runtime-wide: one set of send controls serves both lanes, and the
+  lane that holds the message stores its end
+  ([A cancel and a hand-over end the message](#a-cancel-and-a-hand-over-end-the-message)).
 - **Only the durable lane admits foreign dequeue rows.** The volatile lane names no dequeue type and
   shares no store with another tab, since memory is per tab. A
   planner that returns zero prepared messages for a volatile message must settle it (drop code or an
@@ -533,12 +535,13 @@ transport action and does not confirm the logical audience; a server receipt doe
 | `enqueueIfAbsent`            | Dispatch admission reads validated state and computes a bundle. Its commit compares sender versions and original supersedence observations, then writes admission state and QueueBox work atomically.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | The runtime wakes the existing worker after commit.                                                                                                                                                                                                                                                                                                |
 | `enqueueAllIfAbsent`         | One sender's messages read, compute, and validate as `enqueueIfAbsent` does. The group attempts one `commitBundles` write under one version fence and falls back to members alone (see Grouped sends below).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | The runtime wakes the existing worker for committed work; each message still reports its own `commit-phases` event.                                                                                                                                                                                                                                |
 | `acceptControlMessage`       | Repair admission checks that this scope owns the control, then `ALOutboundControlAdmission` validates identity, control history, and pending receipts and commits control state and repair work together.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The runtime wakes the existing worker; repair admission schedules a not-yet-in-sync retry when the committed control is a not-yet-in-sync NACK, unless its message has ended or is a room send without a repair planner, whose own hop retains it.                                                                                                 |
-| `admit-message` work         | `ALOutboundMessageEffects` reads pending admission authority, rechecks the retained deadline, and commits the retained policy through dispatch admission.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The claim completes. Rejected or expired authority completes without admitting; a not-ready authority reschedules with its own delay.                                                                                                                                                                                                              |
+| `admit-message` work         | The lane first reads the message's `end-message` row and completes without admitting while one exists. `ALOutboundMessageEffects` then reads pending admission authority, rechecks the retained deadline, and commits the retained policy through dispatch admission.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | The claim completes. Rejected or expired authority completes without admitting; a not-ready authority reschedules with its own delay.                                                                                                                                                                                                              |
 | `dequeue-message` work       | A foreign queue row this owner admits: `ALOutboundMessageEffects` first reads the carrier's dequeued admission authority with the batch's sequences, then rereads the message, drops it when superseded, and commits a dispatch plan.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Circuit-open resilience reschedules; a `not-ready` authority holds the claim (one `not-ready` attempt, re-checks in memory); `no-route` retries; expired, superseded and skipped complete; an admitted plan completes and hands the configured `afterDequeueAdmission` port the policy its commit wrote and the dequeue authority it planned from. |
 | `send-prepared` work         | `ALOutboundMessageEffects` rechecks the message's end, supersedence and receipt completion from one read session (`readSendGuards`), then the deadline and abort, before calling the transport; a copy of an ended message completes without a frame.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | An immediate outcome completes or reschedules; a queued native send is retained until the transport settles it.                                                                                                                                                                                                                                    |
 | `ack-timeout` work           | Repair admission rereads the receipt snapshot. For an ended message whose kept receipt row is incomplete it writes nothing. Before the deadline it recommits the next timeout. At it, while the receipt has charged nothing and every copy of the dispatch that opened it (`firstAttempt`) is still queued for its carrier, it commits the next timeout alone: nothing is charged and nothing hinted. Otherwise it charges one attempt and commits the next timeout plus a `repair-hint` when it can re-plan the message (a relay's forwarded copy it cannot, so its row gets no hint: the origin retries that copy; an origin whose own re-plan drops at the deadline, as in a transient carrier gap, is charged the attempt and retries nothing in that window), clears a complete receipt (a receipt a control ended has its timeout row completed in that commit, so only a row a batch already leased gets here), and out of budget ends the message and states its terminal exhaustion.                                                                                                                     | New work is available to the existing engine; the schedule never sends directly.                                                                                                                                                                                                                                                                   |
 | `repair-hint` / `nack-retry` | Repair retransmission reresolves the cached messages (by ordering track and sequence when the hint names missing ranges: one page of `repairPageMessages` per execution, the remaining ranges re-committed as one follow-up hint), applies repair policy, and commits a fresh dispatch through dispatch admission, which charges the repair budget (per requester, and per gap and request number for a ranged hint, so a later report of the same gap charges nothing and a renewal is a new attempt) and answers `skipped`/`repair-exhausted` once a requester's budget is spent, in a commit that ends the message; for an ended message it answers `skipped`/`message-ended` and writes nothing. Without a repair planner, a room-scoped hint is served only as the sender's own-hop retry (every failed peer, or the hint's requester, is the sender's own hop: a tracked next hop or a composition-declared one); a `receiver` room send with no client-tracked hop schedules no `ack-timeout` and is not retried here: until the server answers, its first-hop wait writes it again (`first-hop-timeout`). | New work is available to the existing engine; retransmission does not recursively invoke the work handler.                                                                                                                                                                                                                                         |
 | `first-hop-timeout` work     | [`ALOutboundFirstHopWait`](./first-hop/al-outbound-first-hop-wait.ts) rereads the wait and its message. A wait a receipt or a refusal ended has nothing to do, and the wait of a message gone, ended or past its deadline is deleted. Before the deadline it recommits the timer; at it, a re-plan refused for good ends the message with that refusal, an attempt whose every copy is still queued commits the next deadline and charges nothing, a spent wait ends the message and states `receipt-exhausted`, and otherwise it commits the next attempt and its timer, then a fresh dispatch of the message on the hop under a new attempt identity, each commit fenced on the sender version.                                                                                                                                                                                                                                                                                                                                                                                                                 | New work is available to the existing engine; the resend dispatches only after the wait's own commit committed.                                                                                                                                                                                                                                    |
+| `end-message` work           | [`ALOutboundLaneMessageEnd`](./message-end/al-outbound-lane-message-end.ts) completes the retained admission the row names, waiting `not-ready` while that row is held, then rereads the message and commits its end; a row already ended or gone writes nothing, and a conflict is redelivered.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | The claim completes. Every later path meets the stored end.                                                                                                                                                                                                                                                                                        |
 | Startup / scheduled wakeup   | `ALWorkQueuePort.claim` reserves; `ALOutboundAdmissionEffectStore` then decodes and validates the claimed row with the canonical message it references, handed over by the lane's own commit or else read (`readWorkSnapshot`, `validateObservedWork`). Malformed work becomes `NON_RETRYABLE`; valid claims remain independently available.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | One batch runs at a time and its claims run in order; a commit landing behind a batch earns one follow-up batch. QueueBox compares the exact reservation on release, so an old worker cannot alter a newer claim.                                                                                                                                  |
 
 The message's original deadline bounds retention of its pending receipt and `ack-timeout` work.
@@ -1441,8 +1444,8 @@ commit fails for its storage settles `storage-unavailable` with that cause, wher
 `NonRetryableException` settles `failed`; it wrote nothing. A control or a receipt its store cannot
 persist answers `storage-unavailable` with that cause, never a raw throw: the inbound `admit-control`
 claim that replays it retries, and a control arriving inline from its carrier is answered not handled,
-its inbound `admission-outcome` naming the storage failure. A hand-over whose receipt row cannot end
-leaves the row to expire. A
+its inbound `admission-outcome` naming the storage failure. A cancel or a hand-over whose lane cannot store
+the end records the failure on that store's health and stays in the page's memory. A
 commit inside a work claim (a dequeued row, a repair) still throws into its claim, which retries, and
 a batch that fails for its storage records the failure on the pair's health instead of logging it.
 A committed send and a flushed batch are recovery points, which end a `failing` health; a committed
@@ -1515,12 +1518,11 @@ states none of its own. Either way, an attempt that already stated `attempt-star
 still terminates with its own `attempt-settled` (`outcome: 'cancelled'`, `willRetry:
 false`) -- stated directly when the abort lands before the carrier runs (inside the
 admission-store reads `writeAttemptedSend` makes first), or by the carrier's own
-settlement when it lands during or after the send. Cancellation is held in memory, never
-persisted, for `DEFAULT_AL_REPOSITORY_TTL_MS` (60 minutes, D181): a row still pending when the owner is
-disposed may be drained by the next owner as an ordinary send. A durable cancel fact
--- one that survives disposal or reload -- is a named sink seam left to S3 or I2
-(D13), not part of this settlement path. `handOver(msgId)` aborts the same signal and
-states nothing at all; see [Receipt ends and the hand-over](#receipt-ends-and-the-hand-over).
+settlement when it lands during or after the send. The page remembers the cancel for
+`DEFAULT_AL_REPOSITORY_TTL_MS` (60 minutes, D181), which is its own immediate guard, and the lane that holds
+the message ends it where it is stored, in a commit the cancel starts and `dispose` joins, so the next owner
+drains nothing for it (D752). `handOver(msgId)` aborts the same signal, ends the message the same way and
+states nothing at all; see [A cancel and a hand-over end the message](#a-cancel-and-a-hand-over-end-the-message).
 
 Every settlement in this section is a per-message `ALOutboundSettlementFact` stated
 through this owner's [`ALOutboundSettlementEmitter`](./al-outbound-message-runtime.ts):
@@ -1571,7 +1573,10 @@ Every receipt this owner tracks ends in a settlement (S3b, D63, D64):
   `hop`/`subtree` receipt that expects nobody -- reports `trackedReceiptAlgo: 'none'`, so the handle ends
   at `transport-accepted` with the downgrade in evidence (R-S3a-4). A `receiver` receipt with an empty
   expected set keeps `receiver`: the WS server's `admitted` receipt creates its row, and an empty frozen
-  audience completes it at admission.
+  audience completes it at admission. That admission ends its message in its own commit: it writes the stored
+  row `ended` and the canonical row `COMPLETED`, so no row is left for a later dequeue, the acknowledgement is
+  stated once, and a queued copy of it leaves no frame (D753;
+  [`isALOutboundEmptyAudienceReceipt`](./message-end/to-al-outbound-empty-audience-receipt.ts)).
 - **Ends the deadline settles.** A receipt whose message is gone (the orphaned cleanup) and the WS
   server's `timed-out` receipt both arrive at the message deadline, which the handle already reads as
   `expired`.
@@ -1582,7 +1587,9 @@ Every receipt this owner tracks ends in a settlement (S3b, D63, D64):
 **A terminal settlement ends its message.** The commit that states a terminal settlement also ends everything the sender
 holds for the message, and from then on the sender writes no frame and starts no timer for it. Terminal are the receipt
 completed, `receipt-exhausted` (its budget spent or a hop's refusal), a server's `timed-out` receipt, a first-hop wait
-spent, `repair-exhausted`, a re-plan refused for good and a relay's rejection. The commit is
+spent, `repair-exhausted`, a re-plan refused for good and a relay's rejection. An empty frozen audience's completion at
+admission is a receipt completed, and a cancel and a hand-over end their message with the same commit (below), to
+which a hand-over adds the receipt row's delete. The commit is
 [`toALOutboundMessageEndBundle`](./message-end/to-al-outbound-message-end-bundle.ts): the repair-attempt row's delete,
 the first-hop wait's delete, the completion of both timers, and the marker: the field `ended` of the stored message row
 every message already has (`<namespace>:sent:<msgId>`), so the marker costs no read and one more row write per message
@@ -1605,9 +1612,8 @@ gap, is admitted and served for every sequence it names that has not ended, the 
 nothing; and a timer that meets an ended message's kept incomplete row writes nothing. A control commit decides its own
 end in [`toALOutboundControlMessageEnd`](./message-end/to-al-outbound-control-message-end.ts). Not terminal: a written
 `ack: 'none'` send, whose obligation to repair runs to its deadline; an `admitted` receipt; `not-yet-in-sync-exhausted`;
-a hand-over (below); the completion an empty frozen audience states at admission; a NACK from one peer on a send that
-holds no receipt. The deadline writes no marker: time is the marker. Cancel and supersede keep their own paths, and a
-cancel and a hand-over end later work from memory only. One frame can still follow an end that lands between
+a NACK from one peer on a send that holds no receipt. The deadline writes no marker: time is the marker. Supersede keeps
+its own path. One frame can still follow an end that lands between
 `readSendGuards` and the carrier's write.
 
 **A deadline whose attempt has not left.** One rule decides a deadline of both timers that retry a send, the receipt's
@@ -1674,11 +1680,58 @@ reader treats a complete receipt as ended.
 
 **The hand-over (D66).** `ALOutboundMessageRuntime.handOver(msgId)` gives a message to another carrier's
 owner: it remembers the id for `DEFAULT_AL_REPOSITORY_TTL_MS` (60 minutes, D181), aborts the live attempt (which still settles its own
-`attempt-settled`), completes every later effect of the message silently and deletes the receipt rows in
-one commit, and states no settlement -- the message is not cancelled. A conflict on that delete leaves an
-inert row that nothing retries before it expires. RTC reaches it through
-`WebRtcRxStreamerService.handOverOutbox` -> `WebRtcOverlayMulticastManager.handOver`. The hand-over is held
-in memory like a cancellation: a durable RTC message resumed after a reload is not handed over (D64).
+`attempt-settled`), completes every later effect of the message silently, ends the message on the carrier it
+leaves and deletes its receipt row there (below), and states no settlement -- the message is not cancelled.
+RTC reaches it through `WebRtcRxStreamerService.handOverOutbox` -> `WebRtcOverlayMulticastManager.handOver`. Only the page's live
+handles hand over: a durable RTC message resumed after a reload is not handed over (D64), and one that handed
+over before the reload stays ended on RTC, so the reloaded page sends nothing for it there.
+
+### A cancel and a hand-over end the message
+
+A cancel and a hand-over are stated where every other end is: on the stored message row (D752). The runtime
+keeps its memory step (the send controls abort the live attempt and complete each effect of the message this
+page claims), and [`ALOutboundPageMessageEnds`](./message-end/al-outbound-page-message-ends.ts) asks the lane
+that holds the message to end it: a memory lane that stores it or remembers its retained admission, else the
+durable lane. `handOver` awaits that end; `cancel` stays synchronous, starts it, and `dispose` joins it before
+the lanes are disposed. An admission that commits a message the page already cancelled ends it before it
+returns, with its verdict unchanged.
+
+The lane's end is [`ALOutboundLaneMessageEnd`](./message-end/al-outbound-lane-message-end.ts), one per lane,
+which orders the page's own ends of one message:
+
+- **The stored row.** [`writeALOutboundMessageEnd`](./message-end/write-al-outbound-message-end.ts) reads the
+  stored row, the sender's and the message's versions, the open receipt and the first-hop wait without planning
+  the message
+  ([`readALOutboundMessageEnd`](./message-end/read-al-outbound-message-end.ts)) and commits
+  `toALOutboundMessageEndBundle`. It states nothing. A cancel keeps the receipt row, as every end does; a
+  hand-over also deletes it in the same commit, since the carrier the message moves to owns its receipt now,
+  and deletes it alone from a row an earlier end marked (an RTC receipt exhausted before its fallback hands the
+  message to WS). A lane that stores no row for the message, or a cancel whose row is already ended, writes
+  nothing, so a carrier that never admitted the message pays one read and a memory lane pays no IndexedDB
+  operation.
+- **A conflict is retained as work.** The commit is fenced on the sender's and the message's versions. When it conflicts the lane
+  writes one `end-message` work row, unfenced and write-if-absent (one id per message), naming whether the end
+  was a cancel or a hand-over (`endedReason`), due before every other
+  row and expiring with the message, and announces it as a commit's rows are. The runtime that owns the
+  session's work runs it: the same end, and a conflict there is redelivered by the queue. A tab that does not
+  own the work therefore needs no claim of its own. The page's memory guard never completes an `end-message`
+  row.
+- **A retained admission.** A message whose first commit conflicted exists only as an `admit-message` row. The
+  lane remembers the admissions this page retained; an end first completes that row, then ends the stored row
+  regardless, since a replay that won wrote the stored row in the commit that completed its admission. A row
+  a replay or its retry schedule still holds cannot be completed yet: the lane retains an `end-message` row
+  that names it (`admissionEffectId`), whose run, in any tab, waits `not-ready` until the row can be claimed
+  and completes it. A retained admission's replay reads its message's `end-message` row first and admits
+  nothing while one exists, one read on that replay only. The canonical row and the identity fact retained
+  with the admission expire on their own, as when the memory guard completes the row.
+
+After the end a reloaded page and the session's other tabs find the message ended: a queued copy meets the
+marker at `readSendGuards` (it states `attempt-started` first and nothing after), a dispatch answers
+`message-ended`, and no timer retries or exhausts the receipt. A checkpointed message is saved with its marker
+at the next checkpoint. What stays: a cancel is stored once its commit or its `end-message` row lands, so a
+page that dies in the milliseconds before that loses it; and when the cancelling tab's end names an admission
+another tab's replay is committing, one frame can leave before the end row is claimed, the same frame that can
+follow any end.
 
 **The declared retryable outcomes (D65)** live in
 [`resolve-al-delivery-fallback-trigger.ts`](../delivery/resolve-al-delivery-fallback-trigger.ts). At

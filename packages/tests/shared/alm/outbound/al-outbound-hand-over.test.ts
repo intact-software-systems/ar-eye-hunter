@@ -1,7 +1,11 @@
 import { DEFAULT_AL_REPOSITORY_TTL_MS } from '@shared/alm/ALStoreRetention.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundMessageRuntime, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { ALOutboundSendControls } from '@shared/alm/outbound/lane/al-outbound-send-controls.ts';
+import { writeALOutboundMessageEnd } from '@shared/alm/outbound/message-end/write-al-outbound-message-end.ts';
+import { toALOutboundEndMessageEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import {
     beforeEach,
@@ -30,7 +34,7 @@ interface HandOverFixture {
     readonly runtime: ALOutboundMessageRuntime<OutboundTestPayload>;
 }
 
-/** `persist` routes the message to the durable pair or to the volatile memory pair, whose `endReceipt` is its own. */
+/** `persist` routes the message to the durable pair or to the volatile memory pair, which ends the message in its own store. */
 function createHandOverFixture(persist: boolean, receiptTimeoutMs = 60_000): HandOverFixture {
     const durableStores = createDefaultOutboundTestStores();
     const volatileStores = createVolatileOutboundTestStores();
@@ -66,47 +70,92 @@ describe('the settlement-free hand-over (D56, Q3)', () => {
         })
     );
 
-    it.each([true, false])('ends the receipt row and every later effect of the message, and states no cancellation (persist: %s)', async (persist) => {
-        const fixture = createHandOverFixture(persist);
-        const claims = holdOutboundClaims(fixture.stores);
-        const message = createOutboundMessage('hand-over');
-        const receipt = { originPeerId: message.id.senderId, msgId: message.id.msgId };
-        expect((await fixture.runtime.enqueueIfAbsent(message)).verdict.kind).toBe('admitted');
-        expect(await fixture.stores.admissionStore.readPendingAck(receipt)).toBeDefined();
+    it.each([true, false])(
+        'marks the stored message ended, deletes its receipt row, ends every later effect of it, and states no cancellation (persist: %s)',
+        async (persist) => {
+            const fixture = createHandOverFixture(persist);
+            const claims = holdOutboundClaims(fixture.stores);
+            const message = createOutboundMessage('hand-over');
+            const receipt = { originPeerId: message.id.senderId, msgId: message.id.msgId };
+            expect((await fixture.runtime.enqueueIfAbsent(message)).verdict.kind).toBe('admitted');
+            expect(await fixture.stores.admissionStore.readPendingAck(receipt)).toBeDefined();
 
-        await fixture.runtime.handOver(message.id.msgId);
-        await claims.release(fixture.runtime);
-        await runOutboundWorkTask(fixture.runtime);
+            await fixture.runtime.handOver(message.id.msgId);
+            expect(await fixture.stores.admissionStore.readSendGuards(message)).toEqual({ kind: 'ended' });
+            expect(await fixture.stores.admissionStore.readPendingAck(receipt)).toBeUndefined();
+            await claims.release(fixture.runtime);
+            await runOutboundWorkTask(fixture.runtime);
 
-        expect(await fixture.stores.admissionStore.readPendingAck(receipt)).toBeUndefined();
-        expect(fixture.sent).toEqual([]);
-        const kinds = fixture.settlements.map((settlement) => settlement.kind);
-        expect(kinds).not.toContain('cancelled');
-        expect(kinds).not.toContain('attempt-started');
-    });
+            expect(fixture.sent).toEqual([]);
+            const kinds = fixture.settlements.map((settlement) => settlement.kind);
+            expect(kinds).not.toContain('cancelled');
+            expect(kinds).not.toContain('attempt-started');
+        }
+    );
 
-    it('leaves an inert receipt row when its delete conflicts, and its ack-timeout completes silently (C6)', async () => {
+    it('retains its end as work when the commit conflicts, and the run of that row stores it and deletes the receipt row (C6)', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         const fixture = createHandOverFixture(true, 1_000);
         const claims = holdOutboundClaims(fixture.stores);
         const message = createOutboundMessage('hand-over-conflict');
         const receipt = { originPeerId: message.id.senderId, msgId: message.id.msgId };
         await fixture.runtime.enqueueIfAbsent(message);
-        const admitted = await fixture.stores.admissionStore.readPendingAck(receipt);
         vi.spyOn(fixture.stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
 
         await fixture.runtime.handOver(message.id.msgId);
+        expect((await fixture.stores.admissionStore.readSendGuards(message)).kind).toBe('current');
+        const endKey = toALOutboundWorkKey(
+            fixture.stores.admissionStore.namespace,
+            toALOutboundEndMessageEffectId(message.id.msgId)
+        );
+        expect((await fixture.stores.workQueue.getItem(endKey))?.status).toBe(EntityStatus.NEW);
+        expect(await fixture.stores.admissionStore.readPendingAck(receipt)).toBeDefined();
         await claims.release(fixture.runtime);
         await runOutboundWorkTask(fixture.runtime);
         // Past the receipt's first window and inside the message deadline: a live receipt would charge an attempt.
         vi.setSystemTime(Date.now() + 2_000);
         await runOutboundWorkTask(fixture.runtime);
 
-        expect(await fixture.stores.admissionStore.readPendingAck(receipt)).toEqual(admitted);
+        expect(await fixture.stores.admissionStore.readSendGuards(message)).toEqual({ kind: 'ended' });
+        expect((await fixture.stores.workQueue.getItem(endKey))?.status).toBe(EntityStatus.COMPLETED);
+        expect(await fixture.stores.admissionStore.readPendingAck(receipt)).toBeUndefined();
         expect(await peekOutboundWorkReadyAt(fixture.stores.workQueue, fixture.stores.admissionStore.namespace))
             .toBeUndefined();
         expect(fixture.sent).toEqual([]);
         expect(fixture.settlements).toEqual([]);
+    });
+
+    it('deletes the receipt row of a message an earlier end already marked, as the fallback after receipt-exhausted does', async () => {
+        const fixture = createHandOverFixture(true);
+        const message = createOutboundMessage('hand-over-after-end');
+        const receipt = { originPeerId: message.id.senderId, msgId: message.id.msgId };
+        await fixture.runtime.enqueueIfAbsent(message);
+        // Every terminal end commits this bundle and keeps the receipt row as its final snapshot.
+        expect(await writeALOutboundMessageEnd(fixture.stores.admissionStore, message.id.msgId, 'cancelled'))
+            .toEqual({ kind: 'ended' });
+        expect(await fixture.stores.admissionStore.readPendingAck(receipt)).toBeDefined();
+
+        await fixture.runtime.handOver(message.id.msgId);
+
+        expect(await fixture.stores.admissionStore.readPendingAck(receipt)).toBeUndefined();
+        expect(await fixture.stores.admissionStore.readSendGuards(message)).toEqual({ kind: 'ended' });
+        expect(fixture.settlements.map((settlement) => settlement.kind)).not.toContain('cancelled');
+    });
+
+    it.each([true, false])('marks the stored message ended on a cancel and keeps its receipt row as the final snapshot (persist: %s)', async (persist) => {
+        const fixture = createHandOverFixture(persist);
+        const claims = holdOutboundClaims(fixture.stores);
+        const message = createOutboundMessage('cancel-keeps-receipt');
+        const receipt = { originPeerId: message.id.senderId, msgId: message.id.msgId };
+        await fixture.runtime.enqueueIfAbsent(message);
+        const admitted = await fixture.stores.admissionStore.readPendingAck(receipt);
+        expect(admitted).toBeDefined();
+
+        fixture.runtime.cancel(message.id.msgId, message.id.traceId);
+        await vi.waitFor(async () => expect(await fixture.stores.admissionStore.readSendGuards(message)).toEqual({ kind: 'ended' }));
+        await claims.release(fixture.runtime);
+
+        expect(await fixture.stores.admissionStore.readPendingAck(receipt)).toEqual(admitted);
     });
 
     it('is idempotent, and a later cancel still states its own settlement', async () => {
