@@ -1,5 +1,5 @@
 {
-  "description": "Group governance authority over the wire (coverage plan slice 1): ban, unban, remove and role promotion had owner-happy-path coverage only, so every denial they raise was unobserved. A plain member is denied forbidden-role on all three governing routes; an admin may govern a regular member but not the owner, which is the distinction the role tier actually draws; and a removed member is denied by member-removed rather than the member-banned the ban recipe already pins. Guest invitation issuance and rotation are reserved for the owner.",
+  "description": "Group governance authority over the wire (coverage plan slice 1): ban, unban, remove and role promotion had owner-happy-path coverage only, so every denial they raise was unobserved. A plain member is denied forbidden-role on all three governing routes; an admin may govern a regular member but not the owner, which is the distinction the role tier actually draws; and a removed member is denied by member-removed rather than the member-banned the ban recipe already pins. Guest invitation issuance and rotation are reserved for the owner; an admitted guest may leave only its own seat, which keeps the link redeemable for a fresh guest and never readmits the departed identity.",
   "variables": {
     "rallarApiBaseUrl": {
       "env": "RALLAR_API_BASE_URL",
@@ -848,6 +848,191 @@
           "code": "member-removed",
           "status": 403,
           "message": "Group member has been removed."
+        }
+      }
+    },
+    {
+      "name": "ownerIssuesARedeemableGuestLink",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/govauth-issue-redeemable-guest-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "guestInvitationVerifier": "7ead0c19c7909b27c1b19c44b07278bcf62dc674f89428b84dd833f0b89debc3"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}",
+            "guestInvitation": {
+              "verifier": "7ead0c19c7909b27c1b19c44b07278bcf62dc674f89428b84dd833f0b89debc3",
+              "expiresAtEpochMs": "integer"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "aGuestRedeemsTheLink",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/guests/requests/govauth-guest-redeem-{runId}",
+        "body": {
+          "invitationSecret": "6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a",
+          "guestSecret": "6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b"
+        },
+        "outputs": {
+          "guestClientId": "body.clientId",
+          "guestAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveGuestAuthHeader",
+      "type": "set",
+      "output": "guestAuthHeader",
+      "secret": true,
+      "redactAs": "guestAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.guestAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "aGuestCannotLeaveForAnotherMember",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{deputyClientId}/requests/govauth-guest-leave-deputy-{runId}",
+        "headers": {
+          "Authorization": "{guestAuthHeader}",
+          "x-client-id": "{guestClientId}"
+        },
+        "body": {
+          "status": "left"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403
+        }
+      }
+    },
+    {
+      "name": "theGuestLeavesItsOwnSeatAndTheLinkSurvives",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{guestClientId}/requests/govauth-guest-leave-{runId}",
+        "headers": {
+          "Authorization": "{guestAuthHeader}",
+          "x-client-id": "{guestClientId}"
+        },
+        "body": {
+          "status": "left"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}",
+            "guestInvitation": {
+              "verifier": "7ead0c19c7909b27c1b19c44b07278bcf62dc674f89428b84dd833f0b89debc3",
+              "expiresAtEpochMs": "integer"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "aReplayedLeaveCannotRestoreTheDepartedGuest",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{guestClientId}/requests/govauth-guest-leave-{runId}",
+        "headers": {
+          "Authorization": "{guestAuthHeader}",
+          "x-client-id": "{guestClientId}"
+        },
+        "body": {
+          "status": "left"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403
+        }
+      }
+    },
+    {
+      "name": "theDepartedGuestCannotRedeemAgain",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/guests/requests/govauth-guest-return-{runId}",
+        "body": {
+          "invitationSecret": "6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a",
+          "guestSecret": "6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-mutation-rejected",
+          "status": 400,
+          "message": "This guest identity is unavailable. Use a fresh invitation and guest identity."
+        }
+      }
+    },
+    {
+      "name": "aFreshGuestRedeemsTheSurvivingLink",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/guests/requests/govauth-fresh-guest-redeem-{runId}",
+        "body": {
+          "invitationSecret": "6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a",
+          "guestSecret": "6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string"
         }
       }
     }

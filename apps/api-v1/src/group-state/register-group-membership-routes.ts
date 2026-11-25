@@ -11,7 +11,7 @@ import type {
     UpsertGroupMemberRequest
 } from '@shared/api/state-types.ts';
 import { readApiRequestTraceId } from '../services/read-api-request-trace-id.ts';
-import { type GroupStateRouteAuthorization } from './group-state-route-authorization.ts';
+import { requireRoomParticipantSession, type GroupStateRouteAuthorization } from './group-state-route-authorization.ts';
 import { toGroupStateRouteScope, type GroupStateRouteDependencies } from './group-state-route-contracts.ts';
 import { toGroupMutationErrorResponse } from './group-state-route-errors.ts';
 import { readGroupStateRouteRequest } from './read-group-state-route-request.ts';
@@ -226,10 +226,12 @@ function registerUpsertSelfGroupMemberRoute(
         `${GROUP_MEMBER_PATH}/requests/:requestId`,
         async (context) => {
             try {
-                const authSession = await dependencies.requireApiAuthSession(context.req);
                 const scope = toGroupStateRouteScope(context);
                 const { groupId, principalId } = context.req.param();
-                requireJoinAdmissionQuota(dependencies, { ...scope, groupId }, authSession.clientId);
+                const roomRef = { ...scope, groupId };
+                // A seated guest may leave its own room here; the AppInbox refuses every other guest change.
+                const authSession = await requireRoomParticipantSession(context.req, roomRef, dependencies);
+                requireJoinAdmissionQuota(dependencies, roomRef, authSession.clientId);
                 authorization.assertSelfPrincipal(authSession.clientId, principalId);
                 const request = await readGroupStateRouteRequest<UpsertGroupMemberRequest>(context);
                 const command = toGroupStateCommand({

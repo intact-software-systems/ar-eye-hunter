@@ -1250,7 +1250,9 @@ paths:
         when retrying a lost response. Redeeming an active guest identity again with a valid invitation preserves
         its current role and seat. Access lasts four hours from admission. Players already in a round at expiry
         may finish that occurrence until its frozen deadline, for at most one additional hour and three seconds.
-        Closing the occurrence or room earlier ends that access.
+        Closing the occurrence or room earlier ends that access. A guest may give up its seat earlier by setting
+        its own membership to `left` through the self-service member route; the room's invitation stays valid for
+        other guests, and the departed identity cannot be readmitted.
       security: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
@@ -2704,6 +2706,10 @@ paths:
         Self-service membership transitions only allow `active` and `left`.
         Role changes are ignored by the route layer, so an existing `owner` or
         `admin` role is preserved across leave/rejoin.
+        A room guest's bearer token is accepted here for one transition only:
+        setting its own membership to `left` in its admitted room. Its guest
+        credential ends with that departure, so a retry after the leave
+        committed is refused rather than restoring access.
       security:
         - bearerAuth: []
           clientIdHeader: []

@@ -1,5 +1,5 @@
-import { observeRoomDirectorMembership } from '@shared/api/room-directors/room-director-succession-presence.ts';
 import type { Group, GroupEventType, GroupMember } from '@shared/api/group-types.ts';
+import { observeRoomDirectorMembership } from '@shared/api/room-directors/room-director-succession-presence.ts';
 
 import type {
     GroupMutationCommand,
@@ -37,8 +37,10 @@ export function computeGroupMembershipWrite({
     const activeMemberCount = computeActiveMemberCount(stored.value.activeMemberCount, read, members);
     const ownerPrincipalId = resolveOwnerPrincipalId(stored.value, members, eventType);
     assertOwnerTransition(members, ownerPrincipalId);
-    const metadata = members.reduce((current, member) =>
-        observeRoomDirectorMembership(current, member, facts.attemptAtEpochMs), stored.value.metadata);
+    const metadata = members.reduce(
+        (current, member) => observeRoomDirectorMembership(current, member, facts.attemptAtEpochMs),
+        stored.value.metadata
+    );
     let group: Group = {
         ...stored.value,
         metadata,
@@ -51,14 +53,25 @@ export function computeGroupMembershipWrite({
     };
     for (const member of members) {
         const previous = findKnownMember(read, member.principalId);
-        if (!previous?.guestLease) continue;
+        if (!previous?.guestLease) {
+            continue;
+        }
         if (member.role === 'admin' || member.role === 'owner') {
             throw new GroupMutationRejectedError('Guest members cannot govern the room.');
         }
         if ((member.status === 'active' && previous.status !== 'active') || !member.guestLease) {
             throw new GroupMutationRejectedError('A guest identity may be admitted only by redeeming an invitation.');
         }
-        if (previous.status === member.status || facts.internalAuthority === 'guest-expiry') continue;
+        if (previous.status === member.status || facts.internalAuthority === 'guest-expiry') {
+            continue;
+        }
+        // A guest giving up its own seat leaves the room's invitation link to the owner.
+        if (
+            command.input.actorPrincipalId === member.principalId && previous.status === 'active' &&
+            member.status === 'left'
+        ) {
+            continue;
+        }
         if (command.input.actorPrincipalId !== stored.value.ownerPrincipalId) {
             throw new GroupMutationRejectedError('Only the room owner may change a guest membership.');
         }
