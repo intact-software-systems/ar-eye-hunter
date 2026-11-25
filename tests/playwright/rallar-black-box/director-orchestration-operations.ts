@@ -6,6 +6,7 @@ import { RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS } from '@shared-t
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
 import {
     DIRECTOR_APPOINT_TIMEOUT_MS,
@@ -78,7 +79,7 @@ interface DirectorStatusReading {
     readonly role: string | undefined;
     readonly state: string | undefined;
     readonly isDirector: boolean | undefined;
-    readonly appointment: Readonly<{ sessionId: string | undefined; epoch: number | undefined; }>;
+    readonly appointment: Readonly<{ sessionId: string | undefined; epoch: number; }>;
 }
 
 interface ScenarioState extends DirectorOrchestration.Input {
@@ -291,7 +292,7 @@ async function waitForDirectorPeerReadiness(
 }
 
 /** A appoints itself under its budget, then every agent reads its status; returns the appointment's epoch. */
-async function appointDirector(scenario: ScenarioState): Promise<number | undefined> {
+async function appointDirector(scenario: ScenarioState): Promise<number> {
     const appoint = await executeOk(scenario.control, {
         agentId: scenario.agents[0].agentId,
         commandId: 'director-appoint-a',
@@ -327,22 +328,30 @@ async function readDirectorStatus(
         commandId,
         command: { kind: 'director.status', ...directorRoomFields(scenario.room), refresh: true }
     });
-    return decodeDirectorStatusReading(resultValue(result).directorStatus);
+    return decodeDirectorStatusReading(resultValue(result).directorStatus).fold((issue) => {
+        throw new Error(`Director status ${commandId}: ${issue}`);
+    }, (reading) => reading);
 }
 
-/** A director status read, its fields as the scenario checks them; a read without an appointment is refused. */
-function decodeDirectorStatusReading(value: unknown): DirectorStatusReading {
+/**
+ * A director status read, its fields as the scenario checks them; a read without an appointment is refused, and so is
+ * an appointment whose epoch is not a number, since two readings without one would otherwise match.
+ */
+function decodeDirectorStatusReading(value: unknown): Either<string, DirectorStatusReading> {
     const status = requireRecord(value);
     const appointment = requireRecord(status.appointment);
-    return {
+    if (typeof appointment.epoch !== 'number') {
+        return Either.ofLeft('the appointment\'s epoch must be a number');
+    }
+    return Either.ofRight({
         role: typeof status.role === 'string' ? status.role : undefined,
         state: typeof status.state === 'string' ? status.state : undefined,
         isDirector: typeof status.isDirector === 'boolean' ? status.isDirector : undefined,
         appointment: {
             sessionId: typeof appointment.sessionId === 'string' ? appointment.sessionId : undefined,
-            epoch: typeof appointment.epoch === 'number' ? appointment.epoch : undefined
+            epoch: appointment.epoch
         }
-    };
+    });
 }
 
 /** Each agent starts its relay under its budget, in turn. */
@@ -421,7 +430,7 @@ async function syncDirectorClients(scenario: ScenarioState): Promise<void> {
 }
 
 /** A's relay stops; after the stale hold B and C read their status in turn, see A stale, then stop their relays. */
-async function expectDirectorStale(scenario: ScenarioState, epoch: number | undefined): Promise<void> {
+async function expectDirectorStale(scenario: ScenarioState, epoch: number): Promise<void> {
     const [agentA, ...clients] = scenario.agents;
     await stopDirectorRelay(scenario, agentA);
     await agentA.page.waitForTimeout(DIRECTOR_STALE_HOLD_MS);

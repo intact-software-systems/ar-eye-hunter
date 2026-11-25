@@ -11,7 +11,8 @@ import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 
 import {
     createDirectorControl,
-    runDirectorOrchestration
+    runDirectorOrchestration,
+    type DirectorOrchestration
 } from '../../../tests/playwright/rallar-black-box/director-orchestration-operations.ts';
 import { DIRECTOR_SCENARIO_BOUNDED_WAITS_MS } from '../../../tests/playwright/rallar-black-box/director-orchestration-test-timeouts.ts';
 import { DIRECTOR_AGENT_PREFIXES } from '../../../tests/playwright/rallar-black-box/director-orchestration-waits.ts';
@@ -19,6 +20,7 @@ import {
     createCountedControlRequest,
     createCountedPage,
     measureBoundedWaitsMs,
+    settleUnderFakeTimers,
     useBoundedWaitClock,
     type PostedControlCommand
 } from './bounded-wait-clock-fixture.ts';
@@ -37,9 +39,11 @@ function toSessionId(agentId: string): string {
     return `session-${agentId}`;
 }
 
+/** A's appointment as every agent's status reports it, unless a case gives the status another. */
+const APPOINTMENT: ApiJsonObject = { sessionId: toSessionId('A'), epoch: 1 };
+
 /** A's appointment, as every agent's status reports it; a client's turns stale once A's relay stops. */
-function toDirectorStatus(input: PostedControlCommand): ApiJsonObject {
-    const appointment = { sessionId: toSessionId('A'), epoch: 1 };
+function toDirectorStatus(input: PostedControlCommand, appointment: ApiJsonObject): ApiJsonObject {
     if (input.command.kind === 'director.appoint' || input.agentId === 'A') {
         return { role: 'director', state: 'fresh', isDirector: true, appointment };
     }
@@ -52,7 +56,7 @@ function toDirectorStatus(input: PostedControlCommand): ApiJsonObject {
 }
 
 /** The value each command's result carries, enough for the scenario's own checks of it. */
-function toResultValue(input: PostedControlCommand): ApiJsonObject {
+function toResultValue(input: PostedControlCommand, appointment: ApiJsonObject): ApiJsonObject {
     switch (input.command.kind) {
         case 'rtc.connect':
             return { sessionId: toSessionId(input.agentId) };
@@ -60,7 +64,7 @@ function toResultValue(input: PostedControlCommand): ApiJsonObject {
             return { rallar: { rtcStatus: { readyPeerIds: DIRECTOR_AGENT_PREFIXES.map(toSessionId) } } };
         case 'director.appoint':
         case 'director.status':
-            return { directorStatus: toDirectorStatus(input) };
+            return { directorStatus: toDirectorStatus(input, appointment) };
         case 'director.intent':
         case 'director.sync.request':
             return { sendResult: { status: 'sent', receipt: { msgId: input.commandId } } };
@@ -84,8 +88,11 @@ function toDirectorEvents(): readonly ApiJsonObject[] {
     );
 }
 
-/** The control run once every posted command has answered, with every director event the scenario awaits. */
-function toDirectorRun(posted: readonly PostedControlCommand[]): ApiJsonObject {
+/**
+ * The control run once every posted command has answered, each status reporting `appointment`, with every director
+ * event the scenario awaits.
+ */
+function toDirectorRun(posted: readonly PostedControlCommand[], appointment = APPOINTMENT): ApiJsonObject {
     return {
         runId: RUN_ID,
         createdAtEpochMs: 1,
@@ -107,7 +114,7 @@ function toDirectorRun(posted: readonly PostedControlCommand[]): ApiJsonObject {
                 startedAtEpochMs: 1,
                 endedAtEpochMs: 1,
                 durationMs: 0,
-                value: toResultValue(command)
+                value: toResultValue(command, appointment)
             }
         })),
         events: toDirectorEvents(),
@@ -121,24 +128,41 @@ describe('the director scenario waits what its derivation counts', () => {
     // The counted control spent the waits itself, so the real control's enqueue and result and event polls ran
     // nowhere: a changed bound there failed nothing.
     it('runs the membership, connects, appointment, relays, intents, syncs and staleness within their bounded waits', async () => {
-        const [a, b, c] = DIRECTOR_AGENT_PREFIXES.map((prefix) => ({
-            page: createCountedPage(),
-            prefix,
-            agentId: prefix,
-            actor: `actor-${prefix}`,
-            connection: `connection-${prefix}`
-        }));
-
-        expect(
-            await measureBoundedWaitsMs(() =>
-                runDirectorOrchestration({
-                    control: createDirectorControl(createCountedControlRequest(toDirectorRun), RUN_ID),
-                    room: { apiBaseUrl: 'http://localhost:18080', applicationId: 'app', workspaceId: 'work', groupId: 'room' },
-                    agents: [a, b, c],
-                    topicId: 'topic',
-                    intentIds: { B: 'intent-b', C: 'intent-c' }
-                })
-            )
-        ).toBe(DIRECTOR_SCENARIO_BOUNDED_WAITS_MS);
+        expect(await measureBoundedWaitsMs(() => runDirectorOrchestration(toScenarioInput(APPOINTMENT))))
+            .toBe(DIRECTOR_SCENARIO_BOUNDED_WAITS_MS);
     });
 });
+
+describe('the director scenario\'s status reading', () => {
+    // A reading without a numeric epoch decoded to an undefined epoch, so two such readings matched where comparing the
+    // raw field had failed.
+    it.each([
+        { case: 'no epoch', appointment: { sessionId: toSessionId('A') } },
+        { case: 'a text epoch', appointment: { sessionId: toSessionId('A'), epoch: '1' } }
+    ])('refuses an appointment with $case', async ({ appointment }) => {
+        const outcome = settleUnderFakeTimers(() => runDirectorOrchestration(toScenarioInput(appointment)));
+
+        await expect(outcome).rejects.toThrow('epoch must be a number');
+    });
+});
+
+/** The scenario's three agents on counted pages, driven through the real control whose statuses report `appointment`. */
+function toScenarioInput(appointment: ApiJsonObject): DirectorOrchestration.Input {
+    const [a, b, c] = DIRECTOR_AGENT_PREFIXES.map((prefix) => ({
+        page: createCountedPage(),
+        prefix,
+        agentId: prefix,
+        actor: `actor-${prefix}`,
+        connection: `connection-${prefix}`
+    }));
+    return {
+        control: createDirectorControl(
+            createCountedControlRequest((posted) => toDirectorRun(posted, appointment)),
+            RUN_ID
+        ),
+        room: { apiBaseUrl: 'http://localhost:18080', applicationId: 'app', workspaceId: 'work', groupId: 'room' },
+        agents: [a, b, c],
+        topicId: 'topic',
+        intentIds: { B: 'intent-b', C: 'intent-c' }
+    };
+}
