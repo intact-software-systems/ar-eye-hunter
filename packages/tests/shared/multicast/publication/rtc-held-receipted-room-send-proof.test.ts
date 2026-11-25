@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toALPublicationProofSigningInput } from '@shared/al-contracts/publication-proof/al-publication-proof.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { toALOutboundReadMessageEndBundle } from '@shared/alm/outbound/message-end/to-al-outbound-message-end-bundle.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { createCountingIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
@@ -165,6 +166,30 @@ describe('a receipted RTC room send held without its room snapshot (D585, D756)'
         expect(answers.map((answer) => [answer.verdict.kind, answer.message.proof])).toEqual([['duplicate', undefined]]);
         expect(canonical.proof).toMatchObject({ alg: 'ES256', keyId: chain.keys.a!.keyPair.keyId });
         expect(origin.channels.c!.sent.map((copy) => copy.proof)).toEqual([canonical.proof]);
+    });
+
+    it('leaves a held send whose terminal settlement was committed ended when a replay then reads its room snapshot', async () => {
+        const chain = await createRelayChain(['a', 'c'], {});
+        const origin = createHeldOrigin(chain.snapshot, chain.keys.a!);
+        const message = createHeldSend('held-ended', 'receiver');
+        const held = await origin.manager.enqueueLegIfAbsent(message, 'hold');
+        const store = origin.resources.admissionStore;
+        const read = await store.readRepairMessage(message.id.msgId, (msg) => ({
+            msg,
+            dropReasonCode: undefined,
+            lane: 'durable',
+            preparedMessages: []
+        }));
+        expect(await store.commitBundle(toALOutboundReadMessageEndBundle(message, read))).toBe('committed');
+        origin.groups.accept('room', chain.snapshot);
+
+        const replayed = await origin.manager.enqueueLegIfAbsent(message, 'hold');
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        expect(replayed.verdict.kind).toBe('duplicate');
+        expect((await store.readStoredMessage(message.id.msgId))?.ended).toBe(true);
+        expect((await readCanonical(origin, held)).proof).toBeUndefined();
+        expect(origin.channels.c!.sent).toEqual([]);
     });
 
     it('freezes a held send that asks no receipt at its dequeue and sends it unsigned, signing nothing', async () => {

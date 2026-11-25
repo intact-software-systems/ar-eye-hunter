@@ -1,7 +1,7 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { toChangedALMessageRow } from '../../al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs, type ALAckAlgo } from '../../al-contracts/al-policy.ts';
-import { EntityStatus, NOT_COMPLETED_RETRYABLE_STATUSES, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import { EntityStatus, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import type { ALOutboundPendingAckSnapshot, ALOutboundSentMessageSnapshot } from '../al-runtime-state-stores.ts';
 import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
 import {
@@ -15,6 +15,7 @@ import {
     type ALOutboundMessageReadDto
 } from './admission/al-outbound-admission-store.ts';
 import { toALOutboundSentPolicy } from './admission/al-outbound-admission-validation.ts';
+import { isALOutboundReadSignedHeldRow } from './admission/is-al-outbound-read-signed-held-row.ts';
 import { toALOutboundRecordedSentPositions } from './admission/to-al-outbound-recorded-sent-positions.ts';
 import { toALOutboundMessageReference } from './al-outbound-canonical-message.ts';
 import type {
@@ -369,7 +370,7 @@ function toDuplicateDispatchResult<TPrepared>(
         ),
         trackedReceiptAlgo: toALOutboundTrackedReceiptAlgo(read.storedMessage?.policy.ackTracking)
     };
-    if (entry === undefined || !isALOutboundReadSignedHeldRow(read, sentSnapshot)) {
+    if (entry === undefined || !isALOutboundReadSignedHeldRow(read)) {
         return duplicate;
     }
     const canonicalEntry = toChangedALMessageRow(entry, { status: EntityStatus.NEW });
@@ -381,19 +382,6 @@ function toDuplicateDispatchResult<TPrepared>(
             durableEffects: []
         })
     };
-}
-
-/**
- * Whether this read's signer signed an unsigned request whose stored row is unsigned too and still awaits its first
- * dispatch. A row a dispatch already completed keeps what that dispatch stored.
- */
-function isALOutboundReadSignedHeldRow<TPrepared>(
-    read: ALOutboundMessageReadDto<TPrepared>,
-    sentSnapshot: ALOutboundSentMessageSnapshot
-): boolean {
-    return read.originalMsg.proof === undefined && read.msg.proof !== undefined &&
-        sentSnapshot.msg.proof === undefined && read.canonicalEntry !== undefined &&
-        NOT_COMPLETED_RETRYABLE_STATUSES.has(read.canonicalEntry.status);
 }
 
 /** Keyed on the planner's drop code, never the human-readable `dropReason` string. */
