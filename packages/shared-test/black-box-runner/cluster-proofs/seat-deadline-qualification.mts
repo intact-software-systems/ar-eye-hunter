@@ -86,7 +86,7 @@ class SeatDeadlineTrial {
                 await this.recoverOverdueOffer(deadline, offer, observer);
                 await this.claimSeat(deadline, await this.readClaimantGeneration());
             } else {
-                await this.claimAroundDeadline(deadline, observer);
+                await this.claimBeforeOrAfterDeadline(deadline, observer);
             }
             const allocation = await this.readFinalAllocation(claim.origin);
             assert.deepEqual(await this.readFinalAllocation(expiry.origin), allocation);
@@ -177,10 +177,11 @@ class SeatDeadlineTrial {
         await delay(Math.max(0, target - await this.claimTime()));
     }
 
-    private async claimAroundDeadline(deadline: number, observer: ViewPushProofSocket) {
-        // The read comes before the wait, so its latency never shortens the claim's lead on the deadline.
+    private async claimBeforeOrAfterDeadline(deadline: number, observer: ViewPushProofSocket) {
         const connectionGenerationId = await this.readClaimantGeneration();
-        await this.waitForClaimTime(deadline + (this.timing === 'before' ? -1_500 : 100));
+        // The early claim leaves at once. The expiry node may take its whole idle ceiling to notice a command the claim
+        // node enqueued, so a claim held back until shortly before the deadline can be answered after it.
+        if (this.timing === 'after') await this.waitForClaimTime(deadline + 100);
         const after = await this.claimSeat(deadline, connectionGenerationId);
         await delay(Math.max(0, deadline + 100 - after));
         if (this.timing === 'after') await this.waitForPromotion(observer);
