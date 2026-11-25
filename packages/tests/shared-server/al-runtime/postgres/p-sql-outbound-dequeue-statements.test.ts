@@ -164,17 +164,15 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
     // sender version with every other row in the guarded batch, the hold and the queue insert.
     it('commits a dequeued batch that mixes receipt controls with sequenced rows as two transactions', async () => {
         const storage = await createPSqlAdmissionTestStorage();
-        const { runtime, sent, outbox, admissionStore } = createDequeueLane(storage);
+        const { runtime, sent, outbox } = createDequeueLane(storage);
         await runOutboundWorkTask(runtime);
         const rows = await enqueueMixedServerRows(outbox);
-        const writes = recordAdmissionWrites(admissionStore);
         const recorded = recordPGliteStatements(storage.sql.raw);
         onTestFinished(() => recorded.restore());
 
         await runOutboundWorkTask(runtime);
 
         expect(sent.map((message) => message.id.msgId).sort()).toEqual(rows.map(toMsgId).sort());
-        expect(writes.dequeueCommits()).toBe(2);
         expect(await readSenderVersion(storage, 'server')).toBe(1);
         const commits = recorded.eachTransaction().filter((statements) => statements.some(({ params }) => JSON.stringify(params).includes(':msg-version:')));
         expect(commits.map((statements) => statements.length)).toEqual([5, 5]);

@@ -376,7 +376,7 @@ const DISPATCH_FACTS: Partial<
     Record<DispatchName, (read: ALOutboundMessageReadDto<OutboundTestPayload>, stored: ALStoredOutboundMessage | undefined) => void>
 > = {
     'a sequenced message on a shared head that records no recipient': (read) => {
-        expect(read.orderingHead?.roomSentFloor, 'the read moves the room sent floor').toBeDefined();
+        expect(read.orderingHead?.roomSentFloor, 'the read reads its room sent floor').toBeDefined();
     },
     'a tracked row dequeued again, its positions recorded': (read) => {
         expect(read.orderingHead, 'the read moves no head').toBeUndefined();
