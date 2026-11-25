@@ -939,7 +939,11 @@
       "expect": {
         "status": 403,
         "body": {
-          "status": 403
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "authorization-denied",
+          "status": 403,
+          "message": "Forbidden: principal id does not match authenticated client"
         }
       }
     },
@@ -989,7 +993,11 @@
       "expect": {
         "status": 403,
         "body": {
-          "status": 403
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "authorization-denied",
+          "status": 403,
+          "message": "Guest access to this room has ended."
         }
       }
     },
