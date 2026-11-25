@@ -8,7 +8,7 @@ import {
     LIVE_RTC_TRIO_SIZE,
     LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS
 } from './live-rtc-control-waits.ts';
-import { FORMATION_CYCLE_UNBUDGETED_COMMANDS } from './live-rtc-formation-command-counts.ts';
+import { FORMATION_CYCLE_COMMAND_POLLS } from './live-rtc-formation-command-counts.ts';
 
 /** How long a formation readiness refreshes the room and waits for the formation's exact peers. */
 export const FORMATION_READINESS_TIMEOUT_MS = 60_000;
@@ -48,15 +48,20 @@ export const FORMATION_CONNECT_RESULT_WAIT_MS = computeCommandResultWaitMs(
 export const FORMATION_RUN_CONNECT_BOUNDED_WAITS_MS = LIVE_RTC_TRIO_SIZE * FORMATION_CONNECT_RESULT_WAIT_MS;
 
 /**
- * One formation cycle's owner commands: the mesh configuration under its budget, the group read under its result
- * poll, the plan or reconfigure, the planned layout poll, the layout's connect and the activation. Every command is
- * enqueued, then polled for its result.
+ * How long each of a formation cycle's owner commands is polled for its result: the mesh configuration its budget and
+ * then the result poll, the group read its own result poll, and a command that names no budget the result poll alone.
  */
-const FORMATION_CYCLE_COMMANDS_BOUNDED_WAITS_MS = computeEnqueuedCommandWaitMs(
-    FORMATION_TOPOLOGY_CONFIG_TIMEOUT_MS + LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS
-) + computeEnqueuedCommandWaitMs(FORMATION_GROUP_READ_RESULT_POLL_TIMEOUT_MS) +
-    FORMATION_PLANNED_LAYOUT_POLL_TIMEOUT_MS +
-    FORMATION_CYCLE_UNBUDGETED_COMMANDS * LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS;
+const FORMATION_CYCLE_COMMAND_RESULT_POLL_TIMEOUTS_MS = {
+    'mesh-configuration': FORMATION_TOPOLOGY_CONFIG_TIMEOUT_MS + LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS,
+    'group-read': FORMATION_GROUP_READ_RESULT_POLL_TIMEOUT_MS,
+    unbudgeted: LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS
+} as const;
+
+/** One formation cycle's owner commands, each enqueued and then polled for its result, and the planned layout poll. */
+const FORMATION_CYCLE_COMMANDS_BOUNDED_WAITS_MS = FORMATION_CYCLE_COMMAND_POLLS.reduce(
+    (sum, poll) => sum + computeEnqueuedCommandWaitMs(FORMATION_CYCLE_COMMAND_RESULT_POLL_TIMEOUTS_MS[poll]),
+    FORMATION_PLANNED_LAYOUT_POLL_TIMEOUT_MS
+);
 
 /**
  * A formation run connects A, B and C one after another and polls presence after each; the pair and then the trio

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    FORMATION_CYCLE_COMMAND_POLLS,
+    FORMATION_RUN_COMMANDS
+} from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-formation-command-counts.ts';
+import {
     FORMATION_CONNECT_RESULT_WAIT_MS,
     FORMATION_RUN_BOUNDED_WAITS_MS,
     FORMATION_RUN_CONNECT_BOUNDED_WAITS_MS
@@ -73,6 +77,15 @@ describe('live RTC three-browser matrix test timeouts', () => {
     // uncounted, and the mesh configuration waited its poll after its budget.
     it('counts every wait of a formation run', () => {
         expect(FORMATION_RUN_BOUNDED_WAITS_MS).toBe(FORMATION);
+    });
+
+    // The commands a formation run waits on restated by hand the cycle's two budgeted commands its waits sum.
+    it('counts a formation run\'s commands from the cycle\'s commands its waits sum', () => {
+        expect({ cycle: FORMATION_CYCLE_COMMAND_POLLS, run: FORMATION_RUN_COMMANDS }).toEqual({
+            cycle: ['mesh-configuration', 'group-read', 'unbudgeted', 'unbudgeted', 'unbudgeted'],
+            // The trio's connects, then per cycle its five commands and the last of its readiness reads.
+            run: 3 + 2 * (5 + 1)
+        });
     });
 
     // No command's enqueue request and no control run read outside a poll were counted; earlier, the proof counted
