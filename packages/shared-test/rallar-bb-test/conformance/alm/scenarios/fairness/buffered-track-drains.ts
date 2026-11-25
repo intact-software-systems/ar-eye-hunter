@@ -4,10 +4,12 @@ import type {
 } from '../../../../rallar-black-box-test-contracts.ts';
 
 import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS } from '../../alm-conformance-budgets.ts';
+import { computeSenderBodyMs } from '../../alm-conformance-cell-parts.ts';
 import { ALM_INBOUND_DIAGNOSTICS_TOPIC, toVerdictTimeoutMs } from '../../alm-conformance-diagnostic-waits.ts';
 import { toHeldMessageFaultCommands, toHeldSendCommands } from '../../alm-conformance-fault-commands.ts';
 import { toAdmissionCommands, toSendCommand } from '../../alm-conformance-message-commands.ts';
 import { toOrderingKey, toSentCommands } from '../../alm-conformance-ordering-commands.ts';
+import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
@@ -16,13 +18,12 @@ import {
 import { toCommandId } from '../../alm-conformance-step-identities.ts';
 import { computeCommandsTimeoutMs } from '../../cell/compute-commands-timeout-ms.ts';
 import { toPauseCommand } from '../../to-pause-command.ts';
+import { toCueStep } from '../receipted-audience.ts';
 import {
-    computeCuedArrivalsWaitMs,
-    toCuedArrivalsCueCommands,
-    toCuedArrivalsReceiverCommands,
-    toCuedArrivalsSenderCommands,
-    type AlmCuedArrivals
-} from './alm-cued-arrivals.ts';
+    toCueListenCommands,
+    toCueSendCommands,
+    toCueWait
+} from '../topic-subscription/topic-subscription-publications.ts';
 import { FAIRNESS_SEND_INTERVAL_MS } from './to-send-loop-command.ts';
 
 /**
@@ -45,11 +46,7 @@ const BUFFERED_TRACK_LIFETIME = 'the buffered track\'s lifetime';
 const HELD_SEQ = 2;
 const TRACK_LENGTH = BUFFERED_SEQS.length + 2;
 /** The receiver counts the 66 once the sender cued that seq 2 is released and admitted. */
-const BUFFERED_ARRIVALS: AlmCuedArrivals = {
-    cue: `released-${HELD_SEQ}`,
-    count: TRACK_LENGTH,
-    toSends: toBufferedSends
-};
+const RELEASED_CUE = `released-${HELD_SEQ}`;
 /** A count above zero starts with a digit from 1 to 9, and `promoted` is the last key `effect-drain` emits. */
 const NONZERO_LEADING_DIGITS = 9;
 
@@ -73,13 +70,35 @@ export const bufferedTrackDrains: AlmConformanceScenarioDefinition = {
     carriers: ['ws', 'rtc'],
     roles: ['sender', 'receiver'],
     laneFamily: 'two-agent',
-    toRecipeRunExtensionMs: (step) => computeCuedArrivalsWaitMs(step, BUFFERED_ARRIVALS),
-    toSenderCommands: (sender) => toCuedArrivalsSenderCommands(sender, BUFFERED_ARRIVALS),
+    toRecipeRunExtensionMs: computeReleasedCueWaitMs,
+    toSenderCommands: toBufferedSenderCommands,
     toRecipientCommands: (receiver) => [
-        ...toCuedArrivalsReceiverCommands(receiver, BUFFERED_ARRIVALS),
+        ...toCueListenCommands(toCueStep(receiver)),
+        { ...toCueWait(toCueStep(receiver), RELEASED_CUE), timeoutMs: computeReleasedCueWaitMs(receiver) },
+        toReceivedCommand({ ...receiver, index: 1, count: TRACK_LENGTH, absent: false }),
         ...(receiver.input.carrier === 'rtc' ? [toPromotionWait(receiver)] : [])
     ]
 };
+
+/** The sender's sends, then its cue that seq 2 is released and admitted. */
+function toBufferedSenderCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    return [...toBufferedSends(sender), ...toReleasedCueCommands(sender)];
+}
+
+/** The cue has left the page once its handle reads `transport-accepted`. */
+function toReleasedCueCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    return toCueSendCommands(toCueStep(sender), RELEASED_CUE);
+}
+
+/**
+ * The receiver listens in its arming run and waits for the cue, which opens with the sender's body, so the wait covers
+ * that body up to and including the cue; the sender does not lead with a cue subscription. It is the cell's longest
+ * step: each role's recipe runs that much longer than an ordinary one. The count then opens at the cue, with a positive
+ * window, and reads every arrival its page logged, those before the count started too.
+ */
+function computeReleasedCueWaitMs(step: AlmConformanceStepInput): number {
+    return computeSenderBodyMs(step, toBufferedSenderCommands, `the receiver's wait for the ${RELEASED_CUE} cue`);
+}
 
 function toBufferedSends(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const ttlMs = computeBufferedTrackTtlMs(sender);
@@ -122,7 +141,7 @@ function computeBufferedTrackTtlMs(sender: AlmConformanceStepInput): number {
     );
     const afterLoopMs = computeCommandsTimeoutMs([
         ...toReleaseCommands(sender),
-        ...toCuedArrivalsCueCommands(sender, BUFFERED_ARRIVALS)
+        ...toReleasedCueCommands(sender)
     ], BUFFERED_TRACK_LIFETIME);
     return heldBlockMs + BUFFERED_SENDS_BUDGET_MS + afterLoopMs + toVerdictTimeoutMs(sender.input.deadlineMs);
 }

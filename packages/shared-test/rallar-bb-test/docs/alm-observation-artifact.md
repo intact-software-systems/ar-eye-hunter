@@ -344,8 +344,9 @@ a publish loop's attempt observes for 15 s, and a publication published once giv
 15 s to reach durable admission; a poll starts its attempts for one phase and its deadline
 runs one attempt's budget past it; a `connected` barrier counts a connect's readiness wait; the
 `own-share-under-inbound` flood has the 30 s an arrival counts, the buffered sends a budget of 2,000 ms
-a send, while the churn's 280 sends have only a 600 s ceiling, each send's own timeout bounding its iteration; and the
-buffered track's sends live for a lifetime derived from that loop's budget, not a flat 90 s.
+a send, while the churn's 280 sends have only a 600 s ceiling, each send's own timeout bounding its
+iteration; and the buffered track's sends live for a lifetime derived from the buffered sends' budget,
+not a flat 90 s.
 
 ## The regime file
 

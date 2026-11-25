@@ -41,9 +41,10 @@ const OWN_SHARE_ADMISSIONS = Math.floor(OWN_SHARE_LIMITS.maxAdmissions * AL_VOLA
  * receipted send waits for its ACK, so twenty of them in a row would stretch the flood by twenty round trips. Each
  * send is awaited until its admission commits and then followed by the 75 ms pause, so the loop runs at the sender's
  * admission pace, not the pause's (`toSendLoopCommand`). Its budget is therefore no figure per send but the claim's
- * own bound: the 30 s the first arrival can count, which starts about when the loop does; the last copy leaves only once its send is admitted, at the loop's
- * end, so a flood that outlasts its budget could not hold all 20 counted at once and fails its loop instead. The
- * receiver reads its stats once it has seen all of them and its own send is acknowledged.
+ * own bound: the 30 s the first arrival can count, which starts about when the loop does; the last copy leaves only
+ * once its send is admitted, at the loop's end, so a flood that outlasts its budget could not hold all 20 counted at
+ * once and fails its loop instead. The receiver reads its stats once it has seen all of them and its own send is
+ * acknowledged.
  */
 const FLOOD_COUNT = OWN_SHARE_LIMITS.maxAdmissions;
 const READY_INDEX = 1;
