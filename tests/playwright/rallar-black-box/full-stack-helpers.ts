@@ -8,6 +8,7 @@ import {
     type TestInfo
 } from '@playwright/test';
 
+import { CONTROL_AGENT_OPENING_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-agent-opening-timeout-ms.ts';
 import { isRallarBlackBoxTestError } from '@shared-test/rallar-bb-test/composite-results.ts';
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import { computeAlmRecipeRunTimeoutMs } from '@shared-test/rallar-bb-test/conformance/alm/alm-recipe-run-extension.ts';
@@ -29,7 +30,6 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import { readUntil, type ReadUntilOutcome } from '@shared/resilience/timing/read-until.ts';
 
-import { CONTROL_AGENT_OPENING_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-agent-opening-timeout-ms.ts';
 import {
     readFullStackControlBaseUrl,
     toFullStackControlWebSocketUrl
@@ -383,6 +383,30 @@ export const CONTROL_RUN_AGENT_POLL_TIMEOUT_MS = 30_000;
 
 /** Opening a browser control agent waits for the login gate or workbench, the Advanced tab, then registration. */
 export const BROWSER_CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS = 3 * CONTROL_AGENT_OPENING_TIMEOUT_MS;
+
+/** How long the control run is polled until a command reports an ok result. */
+const CONTROL_COMMAND_OK_POLL_TIMEOUT_MS = 30_000;
+
+/** How long a refreshed run manager or distributed panel may take to list a run. */
+const CONTROL_RUN_LISTING_TIMEOUT_MS = 30_000;
+
+/** The buttons a page's cleanup clicks, each only when it shows. */
+const RALLAR_PAGE_CLEANUP_BUTTON_LABELS = [
+    'Close connections',
+    'Close',
+    'Cleanup',
+    'Unsubscribe WS',
+    'Clear subscriptions',
+    'Stop all',
+    'Logout'
+] as const;
+
+/** How long a page's cleanup waits for each button it clicks. */
+const RALLAR_PAGE_CLEANUP_CLICK_TIMEOUT_MS = 2_000;
+
+/** A page's cleanup may click each of its buttons in turn. */
+export const RALLAR_PAGE_CLEANUP_BOUNDED_WAITS_MS = RALLAR_PAGE_CLEANUP_BUTTON_LABELS.length *
+    RALLAR_PAGE_CLEANUP_CLICK_TIMEOUT_MS;
 const CONTROL_POLL_TIMERS = createDefaultTimers();
 
 export function readFullStackConfig(): FullStackConfig {
@@ -610,7 +634,7 @@ export async function waitForControlCommandOk(
         const run = await readControlRun(request, runId);
         return run.results.some((result) => result.commandId === commandId && result.ok === true);
     }, {
-        timeout: 30_000
+        timeout: CONTROL_COMMAND_OK_POLL_TIMEOUT_MS
     }).toBe(true);
 }
 
@@ -811,7 +835,7 @@ export async function selectControlRunInManager(
     await openTab(page, 'run-manager', 'black-box-runner');
     const panel = page.locator('#panel-run-manager');
     await panel.getByRole('button', { name: 'Refresh' }).click();
-    await expect(panel).toContainText(runId, { timeout: 30_000 });
+    await expect(panel).toContainText(runId, { timeout: CONTROL_RUN_LISTING_TIMEOUT_MS });
     const runSelect = panel.locator('.run-manager-toolbar select').first();
     await runSelect.selectOption(runId);
     await expect(panel.locator('.run-manager-agent-list')).toBeVisible();
@@ -825,7 +849,7 @@ export async function refreshDistributedTargets(
     await openTab(page, 'distributed-recipes', 'black-box-runner');
     const panel = page.locator('#panel-distributed-recipes');
     await panel.getByRole('button', { name: 'Refresh' }).click();
-    await expect(panel).toContainText(runId, { timeout: 30_000 });
+    await expect(panel).toContainText(runId, { timeout: CONTROL_RUN_LISTING_TIMEOUT_MS });
     const runSelect = panel.locator('.distributed-toolbar select').first();
     if (await runSelect.count()) {
         await runSelect.selectOption(runId);
@@ -854,17 +878,7 @@ export async function cleanupRallarPage(page: Page): Promise<void> {
         return;
     }
 
-    for (
-        const label of [
-            'Close connections',
-            'Close',
-            'Cleanup',
-            'Unsubscribe WS',
-            'Clear subscriptions',
-            'Stop all',
-            'Logout'
-        ]
-    ) {
+    for (const label of RALLAR_PAGE_CLEANUP_BUTTON_LABELS) {
         await clickVisibleButton(page, label);
     }
 
@@ -1384,7 +1398,7 @@ async function clickVisibleButton(page: Page, name: string): Promise<void> {
     const button = page.getByRole('button', { name }).first();
     try {
         if ((await button.count()) > 0 && await button.isVisible() && await button.isEnabled()) {
-            await button.click({ timeout: 2_000 });
+            await button.click({ timeout: RALLAR_PAGE_CLEANUP_CLICK_TIMEOUT_MS });
         }
     }
     catch {

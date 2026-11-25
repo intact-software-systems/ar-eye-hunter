@@ -7,6 +7,7 @@ import {
 } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 
+import { FORMATION_RUN_CONNECT_RESULT_WAIT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-formation-waits.ts';
 import { RALLAR_BLACK_BOX_RTC_STREAM_DEFAULT_DRAIN_TIMEOUT_MS } from '@shared-test/rallar-bb-test/rtc-stream.ts';
 import { AL_CHANNEL_SEND_DEFAULTS } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import {
@@ -15,7 +16,6 @@ import {
 } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
-import { FORMATION_RUN_CONNECT_RESULT_WAIT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-formation-waits.ts';
 import {
     computeLiveRtcLayoutSwitchEvidence,
     countLiveRtcMissingFrames,

@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
+import { RALLAR_BLACK_BOX_EXPECT_TIMEOUT_MS } from '../../packages/shared-test/rallar-bb-test/browser-test-budgets/playwright-expect-timeouts.ts';
+
 const reuseExistingServer = !process.env.CI;
 
 export default defineConfig({
@@ -7,7 +9,7 @@ export default defineConfig({
     testIgnore: /recipe-console-.*\.spec\.ts/,
     timeout: 30_000,
     expect: {
-        timeout: 10_000
+        timeout: RALLAR_BLACK_BOX_EXPECT_TIMEOUT_MS
     },
     reporter: [['list']],
     use: {

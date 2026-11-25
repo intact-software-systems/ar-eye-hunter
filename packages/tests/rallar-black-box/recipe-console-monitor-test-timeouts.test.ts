@@ -10,12 +10,19 @@ import {
 const group = { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'console-native-room' };
 
 describe('Console Native test timeout', () => {
-    // The 150 s besides the started run held less than the setup's 185 s of waits, the stage wait and the Monitor's.
+    // The setup counted none of its assertions under the default 15 s limit: the login gate, the tab and its panel, the
+    // agent setup and its run ID, the selected recipe, its provider and prerequisite, each launched target and their
+    // match, and each agent page's address.
     it('gives the setup its probes, sign-in, launched pages, their readiness, connection and targets', () => {
-        expect(CONSOLE_NATIVE_SETUP_TIMEOUT_MS).toBe(60_000 + 5_000 + 30_000 + 30_000 + 60_000 + 30_000 + 30_000);
+        const assertions = (1 + 2 + 2 + 3 + 2 + 1 + 1) * 15_000;
+
+        expect(CONSOLE_NATIVE_SETUP_TIMEOUT_MS)
+            .toBe(60_000 + 5_000 + 30_000 + 30_000 + 60_000 + 30_000 + 30_000 + assertions);
     });
 
-    it('adds the 60 s stage wait, the started run to passed and the 30 s Monitor verdict', () => {
+    // The capture control's three states, the draft state, the Monitor's address twice, each agent's 30 s recorder read
+    // and the pages' bounded cleanup clicks went uncounted.
+    it('adds the 60 s stage wait, the started run to passed, the 30 s Monitor verdict and the cleanup', () => {
         const recipe = rtcConnectRecipe('console-native-connect', group);
         const manifest = createDistributedManifest({
             distributedRunId: 'dist-console-native',
@@ -25,7 +32,11 @@ describe('Console Native test timeout', () => {
             targetPolicy: { mode: 'all-online-group-members', expectedParticipantCount: 2 }
         });
 
-        expect(computeConsoleNativeTestTimeoutMs(manifest))
-            .toBe(245_000 + 60_000 + computeDistributedRunPassedWaitMs(manifest) + 30_000);
+        const assertions = (1 + 1 + 2 + 1 + 2) * 15_000;
+        const cleanup = 7 * 2_000;
+
+        expect(computeConsoleNativeTestTimeoutMs(manifest)).toBe(
+            425_000 + assertions + 60_000 + computeDistributedRunPassedWaitMs(manifest) + 2 * 30_000 + 30_000 + cleanup
+        );
     });
 });

@@ -3,8 +3,8 @@ import { expect, test } from '@playwright/test';
 import { readBrowserRallarSmokeConfig, type SmokeTransport } from './browser-rallar-smoke-config.ts';
 import { BrowserRallarTwoAgentSmoke } from './browser-rallar-two-agent-smoke.ts';
 import {
-    TWO_AGENT_CONNECT_STAGE_WAIT_MS,
     TWO_AGENT_DELIVERY_SMOKE_TEST_TIMEOUT_MS,
+    TWO_AGENT_DISCONNECT_SMOKE_TEST_TIMEOUT_MS,
     TWO_AGENT_PEER_READINESS,
     TWO_AGENT_RELOAD_SMOKE_TEST_TIMEOUT_MS,
     TWO_AGENT_SEND_AFTER_RELOAD_TIMEOUT_MS,
@@ -207,8 +207,7 @@ test('browser-rallar provider suppresses WS reconnect after intentional disconne
     browser,
     request
 }, testInfo) => {
-    // The pair connects, then agent B reconnects after its close; the configured timeout covers the other steps.
-    test.setTimeout(testInfo.timeout + 2 * TWO_AGENT_CONNECT_STAGE_WAIT_MS);
+    test.setTimeout(TWO_AGENT_DISCONNECT_SMOKE_TEST_TIMEOUT_MS);
     test.skip(
         !hasTwoAgentConfig,
         'Set VITE_RALLAR_API_BASE_URL, VITE_RALLAR_ROOM_ID, and two-agent Rallar login or restore config to run the live disconnect/reconnect smoke.'
@@ -244,7 +243,7 @@ test('browser-rallar provider suppresses WS reconnect after intentional disconne
             smokeId: `before-close-${suffix}`,
             direction: 'a-to-b-before-close',
             topic: 'rallar.black-box.disconnect',
-            timeoutMs: 30_000,
+            timeoutMs: TWO_AGENT_SEND_TIMEOUT_MS,
             visibleInbox: false
         });
         await smoke.expectHealth(connectedB, {
@@ -278,7 +277,7 @@ test('browser-rallar provider suppresses WS reconnect after intentional disconne
             smokeId: `after-reconnect-${suffix}`,
             direction: 'a-to-b-after-reconnect',
             topic: 'rallar.black-box.disconnect',
-            timeoutMs: 30_000,
+            timeoutMs: TWO_AGENT_SEND_TIMEOUT_MS,
             visibleInbox: false
         });
         await smoke.expectHealth(connectedB, {

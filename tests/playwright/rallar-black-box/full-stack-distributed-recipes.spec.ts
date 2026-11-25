@@ -32,6 +32,9 @@ import {
     createSimulatedAckManifest,
     LIVE_DISTRIBUTED_CLEANUP_CLOSE_TIMEOUT_MS,
     SIMULATED_ACK_PANEL_TIMEOUT_MS,
+    SIMULATED_ACK_TIMEOUT_MS,
+    SIMULATED_DISCONNECT_POLL_TIMEOUT_MS,
+    SIMULATED_FAILURE_STATE_TIMEOUT_MS,
     SIMULATED_FAILURES_TEST_TIMEOUT_MS
 } from './distributed-recipes/distributed-recipe-test-runs.ts';
 import { createDistributedManifest, healthRecipe } from './distributed-recipes/recipe-manifests.ts';
@@ -200,7 +203,7 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
                     agentIds: [ackTimeoutAgentId],
                     expectedParticipantCount: 1
                 },
-                ackTimeoutMs: 100
+                ackTimeoutMs: SIMULATED_ACK_TIMEOUT_MS
             });
             await createDistributedRun(request, ackTimeoutManifest);
             await mutateDistributedRun(request, ackTimeoutManifest.distributedRunId, 'stage');
@@ -208,7 +211,7 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
                 request,
                 distributedRunId: ackTimeoutManifest.distributedRunId,
                 state: 'timed-out',
-                timeout: 15_000
+                timeout: SIMULATED_FAILURE_STATE_TIMEOUT_MS
             });
             expect(JSON.stringify(timedOut.rollup.failures)).toContain('RALLAR_BB_DISTRIBUTED_ACK_TIMEOUT');
             ackTimeoutSocket.close();
@@ -312,13 +315,13 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
             await expect.poll(async () => {
                 const run = await readControlRun(request, runId);
                 return run.agents.find((agent) => agent.agentId === handles[1].agentId)?.connected;
-            }, { timeout: 10_000 }).toBe(false);
+            }, { timeout: SIMULATED_DISCONNECT_POLL_TIMEOUT_MS }).toBe(false);
             await mutateDistributedRun(request, disconnectManifest.distributedRunId, 'start');
             const running = await waitForDistributedState({
                 request,
                 distributedRunId: disconnectManifest.distributedRunId,
                 state: 'running',
-                timeout: 15_000
+                timeout: SIMULATED_FAILURE_STATE_TIMEOUT_MS
             });
             const disconnectedStart = running.commandLinks.find((link) =>
                 link.phase === 'start' && link.agentId === handles[1].agentId

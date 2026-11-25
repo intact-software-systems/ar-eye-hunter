@@ -5,7 +5,7 @@ import { runWorldFleetDistributedRecipe } from '../../../apps/rallar-black-box/s
 import { decodeControlDistributedRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-distributed-run-snapshot.ts';
 import { decodeDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run-validation.ts';
 
-import { computeViewPushTestDeadlines } from './compute-view-push-test-deadlines.ts';
+import { computeViewPushTestDeadlines, VIEW_PUSH_STATE_POLL_INTERVAL_MS } from './compute-view-push-test-deadlines.ts';
 import {
     FULL_STACK_CONTROL_BASE_URL,
     openBrowserControlAgent,
@@ -55,7 +55,7 @@ test(
                 manifestPath,
                 controlRunId: runId,
                 artifactDir,
-                pollMs: 250,
+                pollMs: VIEW_PUSH_STATE_POLL_INTERVAL_MS,
                 readinessTimeoutMs: deadlines.readinessTimeoutMs,
                 terminalTimeoutMs: deadlines.terminalTimeoutMs
             }, {

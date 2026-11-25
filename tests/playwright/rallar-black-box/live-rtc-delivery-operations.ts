@@ -5,14 +5,6 @@ import type {
     RtcNativeAcquisitionProof,
     RtcNativeCapturedConnection
 } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
-import { toError } from '@shared/resilience/to-error.ts';
-import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
-import type { BlackBoxRallarSendInput } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
-import type {
-    RallarBlackBoxTestRtcSendCommand,
-    RallarBlackBoxTestWsSendCommand
-} from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-
 import {
     LIVE_RTC_CLOSE_RESULT_WAIT_MS,
     LIVE_RTC_RESET_RESULT_WAIT_MS
@@ -25,6 +17,14 @@ import {
     STALE_SEND_TIMEOUT_MS,
     WS_OPEN_TIMEOUT_MS
 } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-delivery-waits.ts';
+import { toError } from '@shared/resilience/to-error.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+import type { BlackBoxRallarSendInput } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
+import type {
+    RallarBlackBoxTestRtcSendCommand,
+    RallarBlackBoxTestWsSendCommand
+} from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+
 import {
     createGroupFormationLifecycleDriver,
     retainLiveRtcFormationFailure,
@@ -56,6 +56,9 @@ export interface CreateLiveRtcDeliveryOperationsConfig {
     readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
     readonly formation: Pick<LiveRtcFormationOperations, 'readiness'>;
 }
+
+/** How long a realtime send may take to open its data channel; the send's own budget bounds it. */
+const REALTIME_SEND_OPEN_TIMEOUT_MS = 20_000;
 
 interface LiveRtcDeliveryRuntime extends CreateLiveRtcDeliveryOperationsConfig {
     readonly groupFormationLifecycleDriver: GroupFormationLifecycleDriver;
@@ -317,7 +320,7 @@ function toRtcSendInput(
     return {
         roomId: input.groupId,
         ...(input.targetSessionIds ? { peerIds: input.targetSessionIds } : {}),
-        openTimeoutMs: 20_000,
+        openTimeoutMs: REALTIME_SEND_OPEN_TIMEOUT_MS,
         data: input.payload
     };
 }
@@ -383,8 +386,7 @@ async function runWebSocketOpenSendCloseMatrix(
                 connection,
                 url: toApiWebSocketUrl(readLiveRtcAgentApiUrls(runtime.apiBaseUrl)[agent.prefix]),
                 timeoutMs: WS_OPEN_TIMEOUT_MS
-            },
-            timeoutMs: 30_000
+            }
         });
         await input.control.executeOk({
             runId: input.runId,
@@ -441,8 +443,7 @@ async function sendMatrixPayload(
                     groupId: input.groupId
                 }
             })
-        },
-        timeoutMs: 70_000
+        }
     });
     return commandId;
 }
@@ -556,8 +557,7 @@ async function runNackProbe(
             runId: input.runId,
             agentId: input.agent.agentId,
             commandId,
-            command: toNackProbeCommand(runtime, input),
-            timeoutMs: 60_000
+            command: toNackProbeCommand(runtime, input)
         });
         stage = 'message-identity';
         messageId = input.control.requireSentMessageId(result);
@@ -704,8 +704,7 @@ async function expectClosedTransportFailure(
                     runId: input.runId
                 }
             })
-        },
-        timeoutMs: 30_000
+        }
     });
     expect(staleResult.ok).toBe(false);
     expect(JSON.stringify(staleResult).toLowerCase()).toMatch(

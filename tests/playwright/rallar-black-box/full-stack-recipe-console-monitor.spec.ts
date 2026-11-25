@@ -69,6 +69,7 @@ import {
     CONSOLE_AGENTS_READY_STATUS_TIMEOUT_MS,
     CONSOLE_LIFECYCLE_TEST_TIMEOUT_MS,
     CONSOLE_MONITOR_VERDICT_TIMEOUT_MS,
+    CONSOLE_NATIVE_AGENT_COUNT,
     CONSOLE_NATIVE_SETUP_TIMEOUT_MS,
     CONSOLE_SERVICE_PROBE_TIMEOUT_MS,
     CONSOLE_STAGE_READY_TIMEOUT_MS,
@@ -115,6 +116,13 @@ interface ConsoleNativeAttachment {
 
 /** The composite recipe's commands read local state and name no budget; its run passes well inside this wait. */
 const COMPOSITE_PASSED_WAIT_MS = 90_000;
+
+/** How long the lifecycle test's Monitor may take to show its run cancelled, then to complete the cancel proof. */
+const CANCELLED_VERDICT_TIMEOUT_MS = 30_000;
+const CANCEL_PROOF_POLL_TIMEOUT_MS = 30_000;
+
+/** The readiness limit the Stability recipe authors for its connect. */
+const STABILITY_CONNECT_READINESS_TIMEOUT_MS = 10_000;
 
 const COMPOSITE_RECIPE: ExecuteRecipeExpectation = {
     recipeId: 'composite-evidence-recipe',
@@ -234,7 +242,7 @@ test('completes the configured live distributed run lifecycle and exports its ar
         await expect(cancelDialog).toHaveCount(0);
         await expect(
             page.locator('[data-monitor-section="verdict"]')
-        ).toHaveAttribute('data-run-state', 'cancelled', { timeout: 30_000 });
+        ).toHaveAttribute('data-run-state', 'cancelled', { timeout: CANCELLED_VERDICT_TIMEOUT_MS });
         await expectCompletedCancelProof(
             request,
             controlRunId,
@@ -283,7 +291,7 @@ test('applies Console Full native run intent through real browser agents', async
             controlRunId,
             groupId,
             prefix: 'console-native-agent',
-            count: 2
+            count: CONSOLE_NATIVE_AGENT_COUNT
         });
         agentPages.push(...launched.pages);
         const agentIds = launched.agentIds;
@@ -462,7 +470,7 @@ function assertAuthoredStabilityRecipe(
         commandId: 'rtc-realtime-connect',
         transport: 'realtime',
         roomRef: manifest.group,
-        readiness: { minReadyPeers: 1, timeoutMs: 10_000 }
+        readiness: { minReadyPeers: 1, timeoutMs: STABILITY_CONNECT_READINESS_TIMEOUT_MS }
     });
     expect(connect[0].rallar?.rtcCaptureMode).toBeUndefined();
     expect(authored.commands.find((command) => command.kind === 'rtc.stream')).toMatchObject({
@@ -1059,7 +1067,7 @@ async function expectCompletedCancelProof(
             readControlRun(request, controlRunId)
         ]);
         return hasCompletedCancelProof(distributedRun, controlRun);
-    }, { timeout: 30_000 }).toBe(true);
+    }, { timeout: CANCEL_PROOF_POLL_TIMEOUT_MS }).toBe(true);
 
     const [distributedRun, controlRun] = await Promise.all([
         readDistributedRun(request, distributedRunId),

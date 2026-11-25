@@ -11,6 +11,7 @@ import { toError } from '@shared/resilience/to-error.ts';
 
 import {
     computeLiveRtcLifecycleScenarioTimeoutMs,
+    LIFECYCLE_CONNECT_RETRY_INTERVAL_MS,
     LIFECYCLE_CONNECT_WHEN_PLANNED_TIMEOUT_MS,
     LIFECYCLE_DIAL_POLL_TIMEOUT_MS,
     LIFECYCLE_HOLD_MS,
@@ -546,7 +547,7 @@ async function connectWhenPlanned(
         if (!lastError.includes('no planned layout')) {
             break;
         }
-        await agent.page.waitForTimeout(500);
+        await agent.page.waitForTimeout(LIFECYCLE_CONNECT_RETRY_INTERVAL_MS);
     }
     throw new Error(`The connect never found a published layout: ${lastError}`);
 }

@@ -7,6 +7,8 @@ import {
     type TestInfo
 } from '@playwright/test';
 
+import { computeCommandResultWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
+import { CONTROL_AGENT_OPENING_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-agent-opening-timeout-ms.ts';
 import {
     RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS,
     RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
@@ -19,7 +21,6 @@ import type {
 } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { ApiJsonObject, ApiJsonValue } from '../../../packages/shared/api/api-json-value.ts';
 
-import { computeCommandResultWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 import type {
     BrowserRallarSmokeConfig,
     SmokeAgentAuth,
@@ -30,14 +31,20 @@ const SPA_BASE_URL = 'http://127.0.0.1:5176';
 const CONTROL_BASE_URL = 'http://127.0.0.1:5180';
 const CONTROL_WS_URL = 'ws://127.0.0.1:5180/control';
 
-/** How long the smoke polls the run for a command's result once the command may have ended. */
-const RESULT_POLL_TIMEOUT_MS = 45_000;
+/** How long the smoke polls the run for a command's result once the command's own budget, if it names one, is spent. */
+export const TWO_AGENT_RESULT_POLL_TIMEOUT_MS = 45_000;
 
 /** How long the smoke polls the run for a delivered message once its send returned. */
 export const TWO_AGENT_MESSAGE_POLL_TIMEOUT_MS = 45_000;
 
-/** How long a reloaded agent may take to show its workbench, then to register again. */
-export const TWO_AGENT_RELOAD_SCREEN_TIMEOUT_MS = 30_000;
+/** Each group creation or membership request's own budget. */
+export const TWO_AGENT_GROUP_REQUEST_TIMEOUT_MS = 5_000;
+
+/** How long a disconnected agent settles before its health is read. */
+export const TWO_AGENT_DISCONNECT_SETTLE_MS = 1_000;
+
+/** How long a realtime send may take to open its data channel; the send's own budget bounds it. */
+const REALTIME_SEND_OPEN_TIMEOUT_MS = 20_000;
 
 /** How long the run is polled for the smoke's complete evidence. */
 export const TWO_AGENT_EVIDENCE_POLL_TIMEOUT_MS = 20_000;
@@ -53,7 +60,7 @@ function toConnectTiming(
 export function computeTwoAgentConnectResultWaitMs(
     readiness: RallarBlackBoxTestRtcConnectReadiness | undefined
 ): number {
-    return computeCommandResultWaitMs(toConnectTiming(readiness), RESULT_POLL_TIMEOUT_MS);
+    return computeCommandResultWaitMs(toConnectTiming(readiness), TWO_AGENT_RESULT_POLL_TIMEOUT_MS);
 }
 
 interface ControlResult {
@@ -176,12 +183,18 @@ export class BrowserRallarTwoAgentSmoke {
         }
         await page.goto(this.toAgentUrl(agent, auth));
         if (auth.kind === 'login') {
-            await expect(page.getByRole('heading', { name: 'Rallar Server Login' })).toBeVisible();
+            await expect(page.getByRole('heading', { name: 'Rallar Server Login' })).toBeVisible({
+                timeout: CONTROL_AGENT_OPENING_TIMEOUT_MS
+            });
             await page.getByRole('button', { name: 'Sign in' }).click();
         }
-        await expect(page.getByRole('button', { name: 'Local Workbench', exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Local Workbench', exact: true })).toBeVisible({
+            timeout: CONTROL_AGENT_OPENING_TIMEOUT_MS
+        });
         await page.getByRole('button', { name: 'Local Workbench', exact: true }).click();
-        await expect(page.locator('#panel-local-workbench .control-panel')).toContainText('registered');
+        await expect(page.locator('#panel-local-workbench .control-panel')).toContainText('registered', {
+            timeout: CONTROL_AGENT_OPENING_TIMEOUT_MS
+        });
         return agent;
     }
 
@@ -209,7 +222,7 @@ export class BrowserRallarTwoAgentSmoke {
                     }
                 },
                 response: { body: 'json' },
-                timeoutMs: 5_000
+                timeoutMs: TWO_AGENT_GROUP_REQUEST_TIMEOUT_MS
             }
         });
         for (const agent of this.agents) {
@@ -228,7 +241,7 @@ export class BrowserRallarTwoAgentSmoke {
                         body: { status: 'active' }
                     },
                     response: { body: 'json' },
-                    timeoutMs: 5_000
+                    timeoutMs: TWO_AGENT_GROUP_REQUEST_TIMEOUT_MS
                 }
             });
         }
@@ -332,11 +345,11 @@ export class BrowserRallarTwoAgentSmoke {
     async reloadAgent(agent: BrowserRallarTwoAgentSmoke.Agent): Promise<void> {
         await agent.page.reload({ waitUntil: 'domcontentloaded' });
         await expect(agent.page.getByRole('button', { name: 'Local Workbench', exact: true })).toBeVisible({
-            timeout: TWO_AGENT_RELOAD_SCREEN_TIMEOUT_MS
+            timeout: CONTROL_AGENT_OPENING_TIMEOUT_MS
         });
         await agent.page.getByRole('button', { name: 'Local Workbench', exact: true }).click();
         await expect(agent.page.locator('#panel-local-workbench .control-panel'))
-            .toContainText('registered', { timeout: TWO_AGENT_RELOAD_SCREEN_TIMEOUT_MS });
+            .toContainText('registered', { timeout: CONTROL_AGENT_OPENING_TIMEOUT_MS });
     }
 
     async disconnectAgent(agent: BrowserRallarTwoAgentSmoke.Agent): Promise<void> {
@@ -346,7 +359,7 @@ export class BrowserRallarTwoAgentSmoke {
             command: { kind: 'close' }
         });
         expect(toRecord(toRecord(result.value).rallar)).toMatchObject({ status: 'closed', disconnected: true });
-        await agent.page.waitForTimeout(1_000);
+        await agent.page.waitForTimeout(TWO_AGENT_DISCONNECT_SETTLE_MS);
     }
 
     async finalizeAgent(agent: BrowserRallarTwoAgentSmoke.Agent): Promise<void> {
@@ -481,7 +494,12 @@ export class BrowserRallarTwoAgentSmoke {
                 topicId: config.messagesRtcTopicId,
                 payload
             }
-            : { roomId: config.roomId, peerIds: [targetSessionId], openTimeoutMs: 20_000, data: payload };
+            : {
+                roomId: config.roomId,
+                peerIds: [targetSessionId],
+                openTimeoutMs: REALTIME_SEND_OPEN_TIMEOUT_MS,
+                data: payload
+            };
     }
 
     private async writeCommand(controlCommand: BrowserRallarTwoAgentSmoke.ControlCommand): Promise<ControlResult> {
@@ -500,7 +518,7 @@ export class BrowserRallarTwoAgentSmoke {
             const run = await this.readRun();
             latest = run.results.find((result) => result.commandId === commandId);
             return latest?.ok === true;
-        }, { timeout: computeCommandResultWaitMs(command, RESULT_POLL_TIMEOUT_MS) }).toBe(true);
+        }, { timeout: computeCommandResultWaitMs(command, TWO_AGENT_RESULT_POLL_TIMEOUT_MS) }).toBe(true);
         if (!latest) {
             throw new Error(`Command ${commandId} did not return a result.`);
         }

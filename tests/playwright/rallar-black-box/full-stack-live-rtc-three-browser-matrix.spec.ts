@@ -8,8 +8,7 @@ import type {
     RtcNativeAcquisitionProof,
     RtcNativeCapturedConnection
 } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
-import { toError } from '@shared/resilience/to-error.ts';
-
+import { LIVE_RTC_CLOSE_RESULT_WAIT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-control-waits.ts';
 import {
     CLUSTER_DIRECT_EXCHANGE_BOUNDED_WAITS_MS,
     GROUP_STATE_READBACK_REQUEST_TIMEOUT_MS,
@@ -18,8 +17,15 @@ import {
     LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS,
     LIVE_RTC_RETENTION_SOAK_TEST_TIMEOUT_MS,
     MATRIX_RUN_RESULTS_POLL_TIMEOUT_MS,
+    RETENTION_CHECKPOINT_INTERVAL_CYCLES,
     RETENTION_RECONNECT_CYCLES
 } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-matrix-test-timeouts.ts';
+import {
+    LIVE_RTC_ALL_SCENARIOS_NATIVE_ACQUISITION_BOUNDED_WAITS_MS,
+    LIVE_RTC_PROOF_NATIVE_ACQUISITION_BOUNDED_WAITS_MS
+} from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-recorder-read-waits.ts';
+import { toError } from '@shared/resilience/to-error.ts';
+
 import { LiveRtcFormationFailure } from './create-group-formation-lifecycle-driver.ts';
 import type { LiveRtcLifecycleFailureInterval } from './live-rtc-agent-diagnostics.ts';
 import {
@@ -430,6 +436,9 @@ test.describe('full-stack live three-browser RTC matrix', () => {
         const timings: LiveRtcPerformanceTiming[] = [];
         const diagnostics: LiveRtcDiagnosticsCheckpoint[] = [];
         const nativeAcquisition = rtcCaptureMode === 'native' && evidenceContext === null ? control : undefined;
+        if (nativeAcquisition) {
+            test.setTimeout(testInfo.timeout + LIVE_RTC_PROOF_NATIVE_ACQUISITION_BOUNDED_WAITS_MS);
+        }
         const failureDiagnostics: LiveRtcNackFailureDiagnostic[] = [];
         const rtcConnectCaptures: RtcNativeCapturedConnection[] = [];
         const nativeAcquisitions: RtcNativeAcquisitionProof[] = [];
@@ -725,6 +734,9 @@ test.describe('full-stack live three-browser RTC matrix', () => {
         const timings: LiveRtcPerformanceTiming[] = [];
         const diagnostics: LiveRtcDiagnosticsCheckpoint[] = [];
         const nativeAcquisition = rtcCaptureMode === 'native' && evidenceContext === null ? control : undefined;
+        if (nativeAcquisition) {
+            test.setTimeout(testInfo.timeout + LIVE_RTC_ALL_SCENARIOS_NATIVE_ACQUISITION_BOUNDED_WAITS_MS);
+        }
         const failureDiagnostics: LiveRtcNackFailureDiagnostic[] = [];
         const rtcConnectCaptures: RtcNativeCapturedConnection[] = [];
         const nativeAcquisitions: RtcNativeAcquisitionProof[] = [];
@@ -1201,7 +1213,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                             agentId: agents[2].agentId,
                             commandId: closeCommandId,
                             command: { kind: 'close' },
-                            timeoutMs: 45_000
+                            timeoutMs: LIVE_RTC_CLOSE_RESULT_WAIT_MS
                         });
                         commandIds.push(closeCommandId);
                     }
@@ -1254,7 +1266,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                         currentSessionId = reconnected.sessionId;
                     }
                 );
-                if (cycle % 10 === 0) {
+                if (cycle % RETENTION_CHECKPOINT_INTERVAL_CYCLES === 0) {
                     await runRetentionPhase(
                         `retention-100 cycle ${cycle}: capture every-tenth checkpoint`,
                         async () => captureCheckpoint(agents, cycle)

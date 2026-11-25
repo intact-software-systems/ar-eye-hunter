@@ -5,10 +5,11 @@ import {
 } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 
+import { FULL_STACK_SPA_START_TIMEOUT_MS } from '../../packages/shared-test/rallar-bb-test/browser-test-budgets/full-stack-web-server-start-timeouts.ts';
+import { FULL_STACK_EXPECT_TIMEOUT_MS } from '../../packages/shared-test/rallar-bb-test/browser-test-budgets/playwright-expect-timeouts.ts';
 import { loadLiveRtcPerformanceAttempt } from '../../tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts';
 import { readGovernedLiveRtcControlServer } from '../../tests/playwright/rallar-black-box/read-governed-live-rtc-control-server.ts';
 
-import { FULL_STACK_SPA_START_TIMEOUT_MS } from '../../packages/shared-test/rallar-bb-test/browser-test-budgets/full-stack-web-server-start-timeouts.ts';
 import {
     createDefaultFullStackApiV1WebServer,
     portFromBaseUrl,
@@ -150,7 +151,7 @@ export default defineConfig({
     testMatch: /full-stack-.*\.spec\.ts/,
     timeout: 90_000,
     expect: {
-        timeout: 15_000
+        timeout: FULL_STACK_EXPECT_TIMEOUT_MS
     },
     reporter: [['list', { printSteps: true }]],
     use: {

@@ -1,5 +1,6 @@
 import { expect } from '@playwright/test';
 
+import { FORMATION_READINESS_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-formation-waits.ts';
 import { arrayEquals } from '@shared/repository/state-utils.ts';
 import { settleAll } from '@shared/resilience/settle-all.ts';
 import { toError } from '@shared/resilience/to-error.ts';
@@ -14,7 +15,6 @@ import type { RallarBlackBoxTestFormationCommandCommand } from '../../../package
 import type { GroupLifecycleState } from '../../../packages/shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupRef } from '../../../packages/shared/api/group-types.ts';
 
-import { FORMATION_READINESS_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-formation-waits.ts';
 import {
     openLiveRtcBrowserAgent,
     type LiveRtcBrowserAgentConfig,
@@ -242,8 +242,7 @@ export class LiveRtcFormationOperations {
                     equals: input.stage,
                     sinceEpochMs: input.sinceEpochMs
                 }
-            },
-            timeoutMs: input.timeoutMs + 15_000
+            }
         });
     }
 
@@ -315,8 +314,7 @@ async function readFormationReadiness(
         runId: input.runId,
         agentId: input.agent.agentId,
         commandId,
-        command: { kind: 'formation.readiness', commandId, ...toWireRoom(input), timeoutMs },
-        timeoutMs: timeoutMs + 30_000
+        command: { kind: 'formation.readiness', commandId, ...toWireRoom(input), timeoutMs }
     });
     const value = record(input.control.resultValue(result));
     return {

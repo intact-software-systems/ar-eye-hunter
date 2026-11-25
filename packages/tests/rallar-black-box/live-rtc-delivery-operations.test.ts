@@ -6,13 +6,22 @@ import {
 } from 'vitest';
 
 import type { RtcNativeAcquisitionProof, RtcNativeCapturedConnection } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
+import { GROUP_MEMBERSHIP_REQUEST_RESULT_WAIT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/group-membership-waits.ts';
+import { MATRIX_SEND_RESULT_WAIT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-delivery-waits.ts';
+import {
+    FORMATION_CONNECT_RESULT_WAIT_MS,
+    FORMATION_READINESS_BOUNDED_WAITS_MS
+} from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-formation-waits.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 import type { LiveRtcControlPort } from '../../../tests/playwright/rallar-black-box/create-group-formation-lifecycle-driver.ts';
-import type { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
+import {
+    resolveLiveRtcResultWaitMs,
+    type LiveRtcControlClient
+} from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
 import { createLiveRtcDeliveryOperations, LiveRtcNackProbeFailure } from '../../../tests/playwright/rallar-black-box/live-rtc-delivery-operations.ts';
 import { normalizeJson } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
 import { createLiveRtcFormationOperations } from '../../../tests/playwright/rallar-black-box/live-rtc-formation-operations.ts';
@@ -523,6 +532,58 @@ describe('live RTC delivery owner', () => {
                 })
             }))
         ]);
+    });
+
+    // The membership requests and the mesh configuration waited the bare 45 s result poll past their own budgets, and
+    // the matrix send a 70 s literal; every budgeted command now waits its budget, then the result poll.
+    it('lets the control client wait each budgeted command its budget, then the result poll, as the timeouts count', async () => {
+        const recording = new RecordingLiveRtcControl();
+        const operations = createLiveRtcDeliveryOperations(config);
+        await operations.setupGroupMembership({
+            control: recording,
+            runId: 'run',
+            owner: recording.agents[0],
+            members: recording.agents,
+            groupId: 'room/c',
+            suffix: 'try/d'
+        });
+        await operations.runGroupFormation({
+            control: recording,
+            runId: 'run',
+            agents: recording.agents,
+            transport: 'messages.rtc',
+            groupId: 'room/c',
+            suffix: 'try/d',
+            readinessScope: 'all'
+        });
+        await operations.sendMatrixPayload({
+            control: recording,
+            runId: 'run',
+            sender: recording.agents[0],
+            transport: 'messages.rtc',
+            groupId: 'room/c',
+            suffix: 'try/d',
+            deliveryMode: 'broadcast',
+            matrixId: 'counted-send'
+        });
+        const budgeted = recording.commands.filter(({ command }) => command.timeoutMs !== undefined);
+        const waitsByCommand = new Map(budgeted.map((execution) => [
+            execution.commandId.replace(/-(?:try\/d|messages-rtc).*$/, ''),
+            resolveLiveRtcResultWaitMs(execution)
+        ]));
+
+        expect(budgeted.filter((execution) => execution.timeoutMs !== undefined)).toEqual([]);
+        expect(Object.fromEntries(waitsByCommand)).toMatchObject({
+            'group-create': GROUP_MEMBERSHIP_REQUEST_RESULT_WAIT_MS,
+            'group-join-B': GROUP_MEMBERSHIP_REQUEST_RESULT_WAIT_MS,
+            'group-join-C': GROUP_MEMBERSHIP_REQUEST_RESULT_WAIT_MS,
+            'connect-a': FORMATION_CONNECT_RESULT_WAIT_MS,
+            'topology-mesh': 10_000 + 45_000,
+            'send-counted-send': MATRIX_SEND_RESULT_WAIT_MS
+        });
+        for (const execution of budgeted.filter(({ command }) => command.kind === 'formation.readiness')) {
+            expect(resolveLiveRtcResultWaitMs(execution)).toBeLessThanOrEqual(FORMATION_READINESS_BOUNDED_WAITS_MS);
+        }
     });
 
     it('runs the retention formation and reconnect paths before sending to the returned session', async () => {

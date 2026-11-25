@@ -9,6 +9,10 @@ import {
     LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS,
     LIVE_RTC_RETENTION_SOAK_TEST_TIMEOUT_MS
 } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-matrix-test-timeouts.ts';
+import {
+    LIVE_RTC_ALL_SCENARIOS_NATIVE_ACQUISITION_BOUNDED_WAITS_MS,
+    LIVE_RTC_PROOF_NATIVE_ACQUISITION_BOUNDED_WAITS_MS
+} from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-recorder-read-waits.ts';
 import { projectDistributedRecipeCatalog } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
 import type {
     RallarBlackBoxDistributedGroupRef,
@@ -68,12 +72,18 @@ const group: RallarBlackBoxDistributedGroupRef = {
 const GITHUB_HOSTED_JOB_MAXIMUM_MS = 360 * 60_000;
 
 /**
- * The app browser job's work before its lifecycle test: the lane setup, the app browser tests and the in-memory
- * full-stack tests, whose limits are not derived, then Playwright starting the lifecycle test's web servers. Release
- * Gate runs 45224498021 and 45207491208 reached the lifecycle step after 10 min 23 s and 10 min 26 s, and the step's
- * servers and test took 42 s and 85 s.
+ * The app browser job's work before its lifecycle step: the lane setup, the app browser tests and the in-memory
+ * full-stack tests, whose limits are not derived. Release Gate runs 45224498021 and 45207491208 reached the lifecycle
+ * step after 10 min 23 s and 10 min 26 s; this allows one and a half times the slower, rounded up to the minute.
  */
-const E2E_APP_JOB_SETUP_MS = 15 * 60_000;
+const E2E_APP_JOB_BEFORE_LIFECYCLE_MS = 16 * 60_000;
+
+/**
+ * The app browser job's setup: its work before the lifecycle step, then Playwright starting that step's API, SPA and
+ * control web servers one after another, each under its own limit. The two runs' whole step, servers and test, took
+ * 42 s and 85 s.
+ */
+const E2E_APP_JOB_SETUP_MS = E2E_APP_JOB_BEFORE_LIFECYCLE_MS + FULL_STACK_WEB_SERVERS_START_BOUNDED_WAITS_MS;
 
 /**
  * The live recipes job's work besides its tests: containers, checkout, the lane setup, migrations and listing the
@@ -153,12 +163,16 @@ function readDiagnosticLegTimeoutMs(caseId: string): number {
 
 /**
  * Without a predeclared attempt the matrix spec runs its proof in every invocation, and beside it the one test a case's
- * environment enables; the default case enables none.
+ * environment enables; the default case enables none. A leg may run under Native capture, whose acquisitions the proof
+ * and the every-scenario test add to their timeouts; the soak's cap already bounds its own.
  */
 function computeDiagnosticLegTestsMs(caseId: string): number {
-    return caseId === 'default'
-        ? LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS
-        : LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS + toRtcB06AttemptTestTimeoutMs(caseId);
+    const proofMs = LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS + LIVE_RTC_PROOF_NATIVE_ACQUISITION_BOUNDED_WAITS_MS;
+    if (caseId === 'default') {
+        return proofMs;
+    }
+    return proofMs + toRtcB06AttemptTestTimeoutMs(caseId) +
+        (caseId === 'all-scenarios' ? LIVE_RTC_ALL_SCENARIOS_NATIVE_ACQUISITION_BOUNDED_WAITS_MS : 0);
 }
 
 /** The catalog declares each B06 case once per environment. */

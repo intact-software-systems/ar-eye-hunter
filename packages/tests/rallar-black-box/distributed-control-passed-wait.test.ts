@@ -87,8 +87,16 @@ describe('distributed recipe test timeouts', () => {
      * poll for all of them in the group.
      */
     const threeAgents = 3 * (2 * 30_000 + 20_000) + 20_000;
-    /** The owner creates the group and each of the three agents joins it, each request under its own 15 s. */
-    const membership = 4 * 15_000;
+    /** A live agent that signs in first waits 30 s for its login gate. */
+    const threeSignedInAgents = threeAgents + 3 * 30_000;
+    /** The owner creates the group and each of the three agents joins it, each request its 15 s, then a 30 s poll. */
+    const membership = 4 * (15_000 + 30_000);
+    /**
+     * The panel's assertions that name no limit wait 15 s each: the listed run, each warning diagnostic's group and two
+     * pills, the composite count, each agent's card summary twice, its loop and its rows, the event stream, and the
+     * received message's pill, topic, connection and transport.
+     */
+    const panelAssertions = (1 + 2 * 3 + 1 + 3 * 4 + 1 + 4) * 15_000;
     /** The test's cleanup closes its agents side by side, each for up to 15 s. */
     const cleanup = 15_000;
 
@@ -110,19 +118,23 @@ describe('distributed recipe test timeouts', () => {
         expect(manifests.map(computeDistributedRunPassedWaitMs)).toEqual([55_000, 100_000, 100_000, 220_000, 115_000, 256_000]);
     });
 
-    // The live test counted neither its agents' configuration polls, its membership requests nor its cleanup close.
+    // The live test counted neither its agents' login gates, its membership requests' result polls nor its panel's
+    // assertions under the default assertion limit.
     it('gives the live test its agents, six ready and passed waits, the message polls and the warning diagnostics', () => {
         const readyAndPassed = 6 * 45_000 + 55_000 + 100_000 + 100_000 + 220_000 + 115_000 + 256_000;
 
-        expect(computeLiveDistributedRecipesTestTimeoutMs(runs))
-            .toBe(margin + threeAgents + membership + readyAndPassed + 2 * 75_000 + 75_000 + 30_000 + cleanup);
+        expect(computeLiveDistributedRecipesTestTimeoutMs(runs)).toBe(
+            margin + threeSignedInAgents + membership + readyAndPassed + 2 * 75_000 + 75_000 + 30_000 + panelAssertions +
+                cleanup
+        );
     });
 
-    // The simulated ACK test configures its three agents as the live test does.
-    it('gives the simulated ACK test its agents, its run and the 15 s panel wait', () => {
+    // The simulated ACK test configures its three agents as the live test does; its panel's 'passed' went uncounted.
+    it('gives the simulated ACK test its agents, its run, the 15 s panel wait and the panel\'s passed state', () => {
         const manifest = createSimulatedAckManifest({ suffix: 'timeouts', controlRunId: 'passed-wait-run', group });
 
         expect(computeDistributedRunPassedWaitMs(manifest)).toBe(57_000);
-        expect(computeSimulatedAckTestTimeoutMs(manifest)).toBe(margin + threeAgents + 45_000 + 57_000 + 15_000);
+        expect(computeSimulatedAckTestTimeoutMs(manifest))
+            .toBe(margin + threeAgents + 45_000 + 57_000 + 15_000 + 15_000);
     });
 });

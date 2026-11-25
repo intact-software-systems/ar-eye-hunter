@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { TryWithExhaustedError } from '@shared/resilience/try-with-policy.ts';
 
-import type { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
+import {
+    resolveLiveRtcResultWaitMs,
+    type LiveRtcControlClient
+} from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
 import { jsonRecord } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
 import { createLiveRtcFormationOperations } from '../../../tests/playwright/rallar-black-box/live-rtc-formation-operations.ts';
 
@@ -70,12 +73,13 @@ describe('exact formation peer readiness', () => {
         await vi.runAllTimersAsync();
         await outcome;
 
-        expect(fixture.commands.map(({ command, timeoutMs }) => ({
-            browser: 'timeoutMs' in command ? command.timeoutMs : undefined,
-            control: timeoutMs
+        // The control client waits each read its remaining budget, then its 45 s result poll.
+        expect(fixture.commands.map((execution) => ({
+            browser: 'timeoutMs' in execution.command ? execution.command.timeoutMs : undefined,
+            control: resolveLiveRtcResultWaitMs(execution)
         }))).toEqual([
-            { browser: 800, control: 30_800 },
-            { browser: 600, control: 30_600 }
+            { browser: 800, control: 45_800 },
+            { browser: 600, control: 45_600 }
         ]);
         expect(performance.now()).toBe(500);
     });

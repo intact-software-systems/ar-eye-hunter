@@ -6,6 +6,14 @@ import type {
     RtcNativeAcquisitionProof,
     RtcNativeCapturedConnection
 } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
+import { GROUP_MEMBERSHIP_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/group-membership-waits.ts';
+import {
+    FORMATION_CONNECT_TIMING,
+    FORMATION_GROUP_READ_TIMEOUT_MS,
+    FORMATION_PLANNED_LAYOUT_POLL_TIMEOUT_MS,
+    FORMATION_PRESENCE_POLL_TIMEOUT_MS,
+    FORMATION_TOPOLOGY_CONFIG_TIMEOUT_MS
+} from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-formation-waits.ts';
 import { RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS } from '@shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
 import type {
     RallarBlackBoxTestCommand,
@@ -25,22 +33,15 @@ import { toError } from '@shared/resilience/to-error.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 
-import { computeCommandResultWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
-import { GROUP_MEMBERSHIP_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/group-membership-waits.ts';
-import { LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-control-waits.ts';
-import {
-    FORMATION_CONNECT_TIMING,
-    FORMATION_GROUP_READ_TIMEOUT_MS,
-    FORMATION_PLANNED_LAYOUT_POLL_TIMEOUT_MS,
-    FORMATION_PRESENCE_POLL_TIMEOUT_MS,
-    FORMATION_TOPOLOGY_CONFIG_TIMEOUT_MS
-} from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-formation-waits.ts';
 import { readLiveRtcAgentApiUrls } from './live-rtc-agent-environment.ts';
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import { jsonRecord, stringArrayValue } from './live-rtc-evidence-json.ts';
 import type { LiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
 
 type TransportUnderTest = 'realtime' | 'messages.rtc';
+
+/** How long each topology read of the planned layout poll waits for its result; the poll's own limit bounds it. */
+const FORMATION_TOPOLOGY_READ_TIMEOUT_MS = 15_000;
 
 type AgentPrefix = 'A' | 'B' | 'C';
 
@@ -647,8 +648,7 @@ async function connectFormationAgent(
         runId: input.runId,
         agentId: input.agent.agentId,
         commandId,
-        command,
-        timeoutMs: computeCommandResultWaitMs(command, LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS)
+        command
     };
     const result = await input.control.executeOk(execution);
     const appliedAlmDiagnostics = input.control.resultValue(result).almDiagnostics;
@@ -941,7 +941,7 @@ async function waitForPlannedLayout(
                         agentId: input.owner.agentId,
                         commandId,
                         command: topologyReadCommand(config, input.groupId),
-                        timeoutMs: 15_000
+                        timeoutMs: FORMATION_TOPOLOGY_READ_TIMEOUT_MS
                     })
                     .catch(() => undefined);
                 if (!result?.ok) {

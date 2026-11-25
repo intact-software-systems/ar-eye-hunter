@@ -14,6 +14,8 @@ import type {
     RtcNativeCapturedConnection,
     RtcNativeRecipeAttribution
 } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
+import { computeCommandResultWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
+import { LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-control-waits.ts';
 import { toRtcCaptureReadout } from '@shared-web/browser/connection/to-rtc-capture-readout.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { toError } from '@shared/resilience/to-error.ts';
@@ -29,8 +31,6 @@ import type {
     RallarBlackBoxTestRtcSendCommand
 } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
-import { computeCommandResultWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
-import { LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-control-waits.ts';
 import { waitForHeadlessWorkerAgentRegistration } from '../../../apps/rallar-black-box/src/headless-worker/headless-worker-runtime.ts';
 import { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import {

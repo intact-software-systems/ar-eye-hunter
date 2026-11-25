@@ -13,15 +13,18 @@ import { RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS } from '@shared-t
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
-import { computeCommandResultWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 import {
-    DIRECTOR_COMMAND_RESULT_POLL_TIMEOUT_MS,
+    DIRECTOR_APPOINT_TIMEOUT_MS,
     DIRECTOR_CONNECT_TIMING,
     DIRECTOR_EVENT_POLL_TIMEOUT_MS,
+    DIRECTOR_GROUP_REQUEST_TIMEOUT_MS,
+    DIRECTOR_HEALTH_READ_TIMEOUT_MS,
     DIRECTOR_INTENT_RESULT_TIMEOUT_MS,
     DIRECTOR_ORCHESTRATION_TEST_TIMEOUT_MS,
     DIRECTOR_PEER_READINESS_POLL_TIMEOUT_MS,
-    DIRECTOR_STALE_HOLD_MS
+    DIRECTOR_RELAY_START_TIMEOUT_MS,
+    DIRECTOR_STALE_HOLD_MS,
+    resolveDirectorCommandResultWaitMs
 } from './director-orchestration-test-timeouts.ts';
 import {
     cleanupRallarPage,
@@ -50,12 +53,14 @@ interface WaitForCommandResultInput {
     readonly request: APIRequestContext;
     readonly runId: string;
     readonly commandId: string;
-    readonly timeout?: number;
+    readonly timeout: number;
 }
 
-interface ExecuteCommandInput extends WaitForCommandResultInput {
+interface ExecuteCommandInput extends Omit<WaitForCommandResultInput, 'timeout'> {
     readonly agentId: string;
     readonly command: RallarBlackBoxTestCommand;
+    /** The caller's own wait for the result, when it names one. */
+    readonly timeout?: number;
 }
 
 interface OpenAgentsInput {
@@ -162,9 +167,8 @@ test.describe('full-stack SPA-appointed director orchestration', () => {
                     kind: 'director.appoint',
                     ...directorRoomFields(groupId),
                     heartbeatTtlMs: 1_200,
-                    timeoutMs: 20_000
-                },
-                timeout: 30_000
+                    timeoutMs: DIRECTOR_APPOINT_TIMEOUT_MS
+                }
             });
             expect(directorStatusValue(appoint)).toMatchObject({
                 role: 'director',
@@ -233,7 +237,7 @@ test.describe('full-stack SPA-appointed director orchestration', () => {
                         outputTypeId,
                         heartbeatIntervalMs: 300,
                         snapshotIntervalMs: 500,
-                        timeoutMs: 20_000
+                        timeoutMs: DIRECTOR_RELAY_START_TIMEOUT_MS
                     }
                 });
             }
@@ -523,12 +527,12 @@ function toDirectorGroupCreateCommand(
             body: 'json',
             acceptedStatusCodes: [200, 201]
         },
-        timeoutMs: 10_000
+        timeoutMs: DIRECTOR_GROUP_REQUEST_TIMEOUT_MS
     };
 }
 
 async function waitForCommandResult(input: WaitForCommandResultInput): Promise<ControlResultEnvelope> {
-    const { request, runId, commandId, timeout = DIRECTOR_COMMAND_RESULT_POLL_TIMEOUT_MS } = input;
+    const { request, runId, commandId, timeout } = input;
     let latest: ControlResultEnvelope | undefined;
     await expect.poll(async () => {
         const run = await readControlRun(request, runId);
@@ -545,9 +549,14 @@ async function waitForCommandResult(input: WaitForCommandResultInput): Promise<C
 }
 
 async function executeResult(input: ExecuteCommandInput): Promise<ControlResultEnvelope> {
-    const { request, runId, agentId, commandId, command, timeout } = input;
+    const { request, runId, agentId, commandId, command } = input;
     await enqueueControlCommand({ request, runId, agentId, commandId, command });
-    return await waitForCommandResult({ request, runId, commandId, timeout });
+    return await waitForCommandResult({
+        request,
+        runId,
+        commandId,
+        timeout: resolveDirectorCommandResultWaitMs(input)
+    });
 }
 
 async function executeOk(input: ExecuteCommandInput): Promise<ControlResultEnvelope> {
@@ -672,7 +681,7 @@ async function setupGroupMembership(
                     body: 'json',
                     acceptedStatusCodes: [200, 201]
                 },
-                timeoutMs: 10_000
+                timeoutMs: DIRECTOR_GROUP_REQUEST_TIMEOUT_MS
             }
         });
     }
@@ -710,8 +719,7 @@ async function connectAgent(input: ConnectAgentInput): Promise<DirectorConnectio
         runId,
         agentId: agent.agentId,
         commandId,
-        command,
-        timeout: computeCommandResultWaitMs(command, DIRECTOR_COMMAND_RESULT_POLL_TIMEOUT_MS)
+        command
     });
     const sessionId = stringValue(resultValue(result).sessionId);
     if (!sessionId) {
@@ -730,7 +738,7 @@ async function waitForPeerReadiness(input: WaitForPeerReadinessInput): Promise<v
             agentId: agent.agentId,
             commandId: `director-health-${agent.prefix.toLowerCase()}-${attempt++}`,
             command: { kind: 'health' },
-            timeout: 15_000
+            timeout: DIRECTOR_HEALTH_READ_TIMEOUT_MS
         }).catch(() => undefined);
         if (!result?.ok) {
             return [];

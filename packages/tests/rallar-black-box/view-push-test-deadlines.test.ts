@@ -9,12 +9,12 @@ describe('view push test deadlines', () => {
         expect(computeViewPushTestDeadlines(createViewPushManifestEntry().manifest)).toEqual({
             readinessTimeoutMs: 90_000,
             terminalTimeoutMs: 175_000,
-            testTimeoutMs: 60_000 + 2 * (3 * 30_000 + 30_000) + 90_000 + 175_000
+            testTimeoutMs: 60_000 + 2 * (3 * 30_000 + 30_000) + 90_000 + 175_000 + 2 * 250
         });
     });
 
-    // The 180 s besides the run's waits was a former total; the agents' own waits run to 240 s.
+    // Each state wait may overrun its limit by one 250 ms poll interval, which went uncounted.
     it('gives each agent its login gate, tab and registration waits and its connection poll', () => {
-        expect(computeViewPushTestDeadlines(createViewPushManifestEntry().manifest).testTimeoutMs).toBe(565_000);
+        expect(computeViewPushTestDeadlines(createViewPushManifestEntry().manifest).testTimeoutMs).toBe(565_500);
     });
 });
