@@ -12,15 +12,20 @@ export interface WsQueueBoxServerHeadAbsentAck {
     readonly ownOpeningOpens: boolean;
 }
 
-export type WsQueueBoxServerHeadAbsentAckRoute = 'count-ahead' | 'rejected' | 'outbound-owner';
+export type WsQueueBoxServerHeadAbsentAckRoute =
+    | 'count-ahead'
+    | 'rejected'
+    | 'outbound-owner'
+    | 'own-not-sent-unproven';
 
 /**
  * Where an ACK that finds no head goes. The ingress hook proved a receiver's ACK for another origin against that
  * origin's admission, and the server's own `not-sent` of another origin's send needs no proof: both are counted
  * ahead. Every ACK of the server's own publication is proven by the server's pending row, when that row would open a
- * head: counted ahead when the row expects its recipient, refused when not. A session's ACK whose row would not open,
- * or that finds no row, goes to the server's outbound owner, which counts it as it counts a `hop` ACK; the server's
- * own `not-sent` writes nothing then, since no head could ever read it.
+ * head: counted ahead when the row expects its recipient, a session's refused when not. A session's ACK whose row
+ * would not open, or that finds no row, goes to the server's outbound owner, which counts it as it counts a `hop`
+ * ACK. The server's own `not-sent` that the row does not prove is its own word, unproven: nothing records it, since
+ * no head could ever read it and nobody sent an ACK to refuse.
  */
 export function resolveWsQueueBoxServerHeadAbsentAck(
     input: WsQueueBoxServerHeadAbsentAck
@@ -29,9 +34,13 @@ export function resolveWsQueueBoxServerHeadAbsentAck(
     if (ack.originPeerId !== serverPeerId) {
         return 'count-ahead';
     }
-    const opens = own !== undefined && ownOpeningOpens;
-    if (!opens && !isWsQueueBoxServerNotSentAck(ack, serverPeerId)) {
+    const proven = own !== undefined && ownOpeningOpens &&
+        own.pending.expectedPeerIds.includes(ack.logicalRecipientPeerId);
+    if (isWsQueueBoxServerNotSentAck(ack, serverPeerId)) {
+        return proven ? 'count-ahead' : 'own-not-sent-unproven';
+    }
+    if (own === undefined || !ownOpeningOpens) {
         return 'outbound-owner';
     }
-    return opens && own.pending.expectedPeerIds.includes(ack.logicalRecipientPeerId) ? 'count-ahead' : 'rejected';
+    return proven ? 'count-ahead' : 'rejected';
 }

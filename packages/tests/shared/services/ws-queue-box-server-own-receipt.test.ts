@@ -234,7 +234,8 @@ describe('the receipt of a server publication is counted in the receipt record',
 
     it('records a session a retry drops as outside; one dropped at the first dequeue writes nothing', async () => {
         // Pins a retry's drop being written where the record never reads it, and a first dequeue's drop, which
-        // precedes the pending row that would prove it, being counted ahead as a row no head ever reads.
+        // precedes the pending row that would prove it, being counted ahead as a row no head ever reads, or observed
+        // as an unauthorized ACK with the server as its sender.
         const clock = installClock();
         const left = new Set(['c']);
         const server = await createOwnReceiptServer(clock, { ...defaultOptions(['a', 'b', 'c']), left });
@@ -245,6 +246,7 @@ describe('the receipt of a server publication is counted in the receipt record',
             return copiesOf(server.sockets, delta);
         }).toEqual([1, 1, 0]);
         expect(await readConfirmations(server, delta)).toEqual([]);
+        expect(readAckCountRecipients(server.observations, delta)).toEqual([]);
         expect((await server.record.read(toOwnReceiptRef(delta))).right?.head.opening.expectedRecipientPeerIds).toEqual(['a', 'b']);
         await server.service.acceptIncomingMessage(sessionAck(delta, 'a', 'delivered'), 'a');
 
@@ -455,6 +457,29 @@ describe('the receipt of a server publication is counted in the receipt record',
         expect((await server.record.read(toOwnReceiptRef(notification))).left).toEqual({ kind: 'head-absent' });
     });
 
+    it('writes nothing for a late outside-audience NACK of an ended publication whose head never opened', async () => {
+        // Pins an ended message's kept incomplete row, which names the recipient outside, proving the late NACK: it was
+        // counted ahead as a stray row no head ever reads.
+        const clock = installClock();
+        const failing = { armed: false };
+        const server = await createOwnReceiptServer(clock, { ...defaultOptions(['a', 'b']), recordBackend: toFailingWhileArmed(failing) });
+        const notification = createNoRetryNotification(clock);
+        await server.service.enqueueOutboxIfAbsent(notification, audience(['a', 'b']));
+        failing.armed = true;
+        await settleDueWork(server, clock);
+        await expect(server.service.acceptIncomingMessage(sessionNack(notification, 'b', 'before-entry'), 'b'))
+            .rejects.toThrow('Receipt record store unavailable');
+        failing.armed = false;
+        await runRowWindow(server, clock, notification);
+        expect((await server.store.readStoredMessage(notification.id.msgId))?.ended).toBe(true);
+        expect((await server.store.readReceiptState(toOwnReceiptRef(notification)))?.outsideAudiencePeerIds).toEqual(['b']);
+
+        await server.service.acceptIncomingMessage(sessionNack(notification, 'b', 'not-subscribed'), 'b');
+
+        expect(await readConfirmations(server, notification)).toEqual([]);
+        expect((await server.record.read(toOwnReceiptRef(notification))).left).toEqual({ kind: 'head-absent' });
+    });
+
     it('keeps the per-ACK count for a publication whose opening the record refuses', async () => {
         // Pins the ACKs of a publication with no head, and none possible, being dropped: the row would resend to every
         // recipient and keep a stray confirmation row per ACK.
@@ -587,6 +612,16 @@ async function readConfirmations(server: OwnReceiptServer, message: ALMessage): 
     const keys = server.recordBackend.peekKeys().filter((key) => key.startsWith(prefix));
     const rows = await Promise.all(keys.map((key) => server.recordBackend.read(key, decodeALReceiptRecordConfirmation)));
     return rows.filter((row) => row !== undefined);
+}
+
+/** The recipients of the message's ACKs the aggregation observed counting, in the order it counted them. */
+function readAckCountRecipients(
+    observations: readonly WsQueueBoxServerReceiptObservation[],
+    message: ALMessage
+): readonly string[] {
+    return observations.flatMap((observation) =>
+        observation.kind === 'ack-count' && observation.ack.ackedMsgId === message.id.msgId ? [observation.ack.logicalRecipientPeerId] : []
+    );
 }
 
 /** The record holds its first write, which is the dequeue's `open` when nothing else writes it first. */

@@ -197,12 +197,15 @@ Follow these production paths directly when reviewing a change:
    counts it in the row per ACK, fenced; with no logical row, a `hop` row counts
    it; with no row at all, or an ended message, the owner refuses it and writes
    nothing, as before. The server's own `not-sent` is proven by the same row: it
-   is counted ahead when the row would open and expects its recipient, and writes
-   nothing otherwise (a first dequeue's drop precedes the row). A complete view →
+   is counted ahead when the row would open and expects its recipient; otherwise
+   it is the server's word, unproven (`own-not-sent-unproven`: a first dequeue's
+   drop precedes the row), and `acceptAck` counts, writes and observes nothing.
+   A complete view →
    `endReceipt` → `end` → worker `committed` → ended work → `writeEndedReceipt` →
    `admitServerReceipt` → `acceptServerReceipt`, which settles the pending row.
    An outside-audience NACK reaches the outbound owner first; `writeOutsideAudienceNack`
-   then counts it `outside` when the row names that recipient outside.
+   then counts it `outside` when the row of a message not ended names that
+   recipient outside (`readOwnPendingReceipt`, as for an ACK).
    Its retry: the row's `ack-timeout` window → service `planRepairMessage` →
    `writeRepairView` → aggregation `writeRepairView`. A missing head opens from the
    pending row (`openOwnRepairView` → `readOwnPendingReceipt` → `openOwnReceipt`,

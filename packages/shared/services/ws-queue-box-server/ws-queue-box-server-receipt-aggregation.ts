@@ -189,12 +189,13 @@ export namespace WsQueueBoxServerReceiptAggregation {
         /**
          * The server's pending receipt row of a logically receipted message it sent, with the sent message; undefined
          * for any other message, for a row already complete, and for a message that has ended, whose kept incomplete
-         * row it does not return. It proves an ACK that finds no head and opens a head its dequeue did not.
+         * row it does not return. It proves an ACK that finds no head and an outside-audience NACK, and opens a head
+         * its dequeue did not.
          */
         readonly readOwnPendingReceipt: (msgId: string) => Promise<WsQueueBoxServerOwnPendingReceipt | undefined>;
         /**
          * The server's pending receipt row alone, of a logically receipted message it sent; undefined for any other
-         * message and for a row already complete. Its outside recipients prove an outside-audience NACK it admitted.
+         * message and for a row already complete. Its outside recipients are the ones a window counts outside.
          */
         readonly readOwnPendingAck: (msgId: string) => Promise<ALOutboundPendingAckSnapshot | undefined>;
     }
@@ -381,6 +382,9 @@ export class WsQueueBoxServerReceiptAggregation {
     private async acceptAck(message: ALMessage, ack: ALAckPayload): Promise<void> {
         const countAtEpochMs = this.nowMs();
         const counted = await this.writeConfirmation(ack);
+        if (counted === 'own-not-sent-unproven') {
+            return;
+        }
         if (counted === 'outbound-owner') {
             await this.#dependencies.acceptServerControl(message);
             return;
@@ -445,7 +449,9 @@ export class WsQueueBoxServerReceiptAggregation {
     }
 
     /** `count` runs first, so an ACK that finds its head reads nothing else; one that finds none is routed. */
-    private async writeConfirmation(ack: ALAckPayload): Promise<WsQueueBoxServerCountedAck | 'outbound-owner'> {
+    private async writeConfirmation(
+        ack: ALAckPayload
+    ): Promise<WsQueueBoxServerCountedAck | 'outbound-owner' | 'own-not-sent-unproven'> {
         const { serverPeerId } = this.#dependencies;
         if (!isWsQueueBoxServerCountableAck(ack, serverPeerId)) {
             return WS_QUEUE_BOX_SERVER_REJECTED_COUNT;
@@ -479,11 +485,11 @@ export class WsQueueBoxServerReceiptAggregation {
     /**
      * A recipient that answers a server publication with an outside-audience NACK alone is outside its receipt: the
      * server's pending row naming it outside proves it, whatever this admission answered, and the record, which ends
-     * the receipt, counts it outside.
+     * the receipt, counts it outside. An ended message's kept row proves nothing, as for a session's ACK.
      */
     private async writeOutsideAudienceNack(nack: ALNackPayload): Promise<void> {
-        const pending = await this.#dependencies.readOwnPendingAck(nack.msgId);
-        if (pending?.outsideAudiencePeerIds.includes(nack.logicalRecipientPeerId) !== true) {
+        const own = await this.#dependencies.readOwnPendingReceipt(nack.msgId);
+        if (own?.pending.outsideAudiencePeerIds.includes(nack.logicalRecipientPeerId) !== true) {
             return;
         }
         const confirmation = toWsQueueBoxServerOutsideAudienceConfirmation(nack);

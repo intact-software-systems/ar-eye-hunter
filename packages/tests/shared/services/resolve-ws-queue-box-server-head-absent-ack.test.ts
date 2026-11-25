@@ -81,16 +81,17 @@ describe('an ACK that finds no head', () => {
         expect(resolveWsQueueBoxServerHeadAbsentAck(input({ ack: notSent }))).toBe('count-ahead');
     });
 
-    it('writes nothing for the server\'s not-sent word of its own publication that its pending row does not prove', () => {
+    it('is the server\'s unproven word for its own publication\'s not-sent that its pending row does not prove', () => {
         // Pins a first dequeue's drop, read before the dequeue commit writes the row, being counted ahead as a row
-        // no head reads; and the same for a recipient the row does not expect, or a row that would open no head.
+        // no head reads, or refused as if a session had sent an unauthorized ACK; and the same for a recipient the row
+        // does not expect, or a row that would open no head.
         const notSent = (recipient: string) => ack({ fromPeerId: SERVER, logicalRecipientPeerId: recipient, status: 'subtree-complete-not-subscribed' });
 
         expect([
             resolveWsQueueBoxServerHeadAbsentAck(input({ ack: notSent('a'), own: undefined, ownOpeningOpens: false })),
             resolveWsQueueBoxServerHeadAbsentAck(input({ ack: notSent('c') })),
             resolveWsQueueBoxServerHeadAbsentAck(input({ ack: notSent('a'), ownOpeningOpens: false }))
-        ]).toEqual(['rejected', 'rejected', 'rejected']);
+        ]).toEqual(['own-not-sent-unproven', 'own-not-sent-unproven', 'own-not-sent-unproven']);
     });
 
     it('is counted ahead for a session the server\'s pending row expects, when that row would open', () => {
