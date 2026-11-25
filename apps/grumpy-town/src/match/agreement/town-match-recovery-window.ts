@@ -1,6 +1,9 @@
-import { TOWN_MATCH_CHECKPOINT_LEAD_MS, type TownMatchState } from '../town-match.ts';
+import { TOWN_MATCH_RATE, type TownMatchState } from '../town-match.ts';
 import type { TownCheckpoint } from './match-checkpoints.ts';
 
+// A peer may render this much host progress while a checkpoint completes its WAN round trips.
+const TOWN_MATCH_CHECKPOINT_LEAD_MS = 4500;
+export const TOWN_MATCH_CHECKPOINT_LEAD_TICKS = TOWN_MATCH_RATE * TOWN_MATCH_CHECKPOINT_LEAD_MS / 1000;
 const MAX_COMMIT_SILENCE_MS = 14_500;
 // Allow the silent director’s room lease and reconnect reservation to expire, then give survivors time to agree.
 const INTERRUPT_AFTER_MS = 13_000;

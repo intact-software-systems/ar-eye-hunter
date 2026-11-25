@@ -1,5 +1,6 @@
 import type { TownMatchFrame, TownMatchPose } from '../match-protocol.ts';
-import { TOWN_MATCH_CHECKPOINT_LEAD_TICKS, type TownMatchState } from '../town-match.ts';
+import { TOWN_MATCH_CHECKPOINT_LEAD_TICKS } from '../agreement/town-match-recovery-window.ts';
+import type { TownMatchState } from '../town-match.ts';
 
 export namespace TownMatchLivePoses {
     export interface Sample {

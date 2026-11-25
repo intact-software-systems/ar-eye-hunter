@@ -1,4 +1,5 @@
 import { TownRoutes } from '../town/town-routes.ts';
+import { TOWN_MATCH_CHECKPOINT_LEAD_TICKS } from './agreement/town-match-recovery-window.ts';
 import { computeTownMatchExtension } from './match-extension.ts';
 import { computeTownMatchInput, type TownMatchInput } from './match-input.ts';
 import type { TownMatchFrame } from './match-protocol.ts';
@@ -7,7 +8,6 @@ import {
     computeTownMatchRematch,
     computeTownMatchStart,
     computeTownMatchTick,
-    TOWN_MATCH_CHECKPOINT_LEAD_TICKS,
     TOWN_MATCH_RATE,
     type TownMatchState,
     type TownMatchTick
