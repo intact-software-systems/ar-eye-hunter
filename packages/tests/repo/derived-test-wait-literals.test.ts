@@ -72,6 +72,7 @@ const DERIVED_TEST_PATH_FILES = [
     `${playwrightRoot}/two-agent-smoke-test-timeouts.ts`,
     `${playwrightRoot}/worker-host-capture-test-timeouts.ts`,
     `${playwrightRoot}/compute-view-push-test-deadlines.ts`,
+    `${playwrightRoot}/to-control-timed-fetch.ts`,
     'apps/rallar-black-box/scripts/run-world-fleet-distributed-recipe.ts',
     'apps/rallar-black-box/playwright.config.ts',
     'apps/rallar-black-box/playwright.full-stack.config.ts',

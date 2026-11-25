@@ -5,16 +5,18 @@ import { computeViewPushTestDeadlines } from '../../../tests/playwright/rallar-b
 
 describe('view push test deadlines', () => {
     // The spec waited 90 s for manifest 24 to reach a terminal state while the manifest recommends 175 s.
-    it('waits for the view push run its manifest\'s recommended terminal timeout and covers both waits', () => {
-        expect(computeViewPushTestDeadlines(createViewPushManifestEntry().manifest)).toEqual({
+    it('waits for the view push run its manifest\'s recommended terminal timeout', () => {
+        expect(computeViewPushTestDeadlines(createViewPushManifestEntry().manifest)).toMatchObject({
             readinessTimeoutMs: 90_000,
-            terminalTimeoutMs: 175_000,
-            testTimeoutMs: 60_000 + 2 * (3 * 30_000 + 30_000) + 90_000 + 175_000 + 2 * 250
+            terminalTimeoutMs: 175_000
         });
     });
 
-    // Each state wait may overrun its limit by one 250 ms poll interval, which went uncounted.
-    it('gives each agent its login gate, tab and registration waits and its connection poll', () => {
-        expect(computeViewPushTestDeadlines(createViewPushManifestEntry().manifest).testTimeoutMs).toBe(565_500);
+    // The operator's control requests went untimed and uncounted: the target resolution, create, stage and start, the
+    // artifact bundle and the four native artifacts outside its state waits, and each state wait's last read.
+    it('gives each agent its waits, then counts the operator\'s every control request and each state wait\'s overrun', () => {
+        expect(computeViewPushTestDeadlines(createViewPushManifestEntry().manifest).testTimeoutMs).toBe(
+            60_000 + 2 * (3 * 30_000 + 30_000) + 9 * 10_000 + (90_000 + 10_000 + 250) + (175_000 + 10_000 + 250)
+        );
     });
 });

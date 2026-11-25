@@ -14,6 +14,7 @@ import {
     waitForControlRunAgent,
     type OpenedBrowserControlAgent
 } from './full-stack-helpers.ts';
+import { toControlTimedFetch } from './to-control-timed-fetch.ts';
 
 const config = readFullStackConfig();
 const manifestPath = 'apps/rallar-black-box/manifests/hetzner/24-view-push-2-agent.json';
@@ -59,7 +60,7 @@ test(
                 readinessTimeoutMs: deadlines.readinessTimeoutMs,
                 terminalTimeoutMs: deadlines.terminalTimeoutMs
             }, {
-                fetch,
+                fetch: toControlTimedFetch(fetch),
                 readManifestText: async () => JSON.stringify(manifest),
                 artifacts: {
                     mkdir: async (directory) => {

@@ -7,10 +7,10 @@
  * run side by side count by the longest of them. A request inside a poll or another racing bound is bounded by it and
  * counts no more.
  *
- * The margin covers only the work that has no bound of its own: page loads, navigations, reloads and address waits;
- * clicks, fills and selections, which run without an action limit; response, download and event waits; page
- * evaluations; attachments and evidence files written; browser contexts closed; the world-fleet operator's control
- * requests, which Node's own `fetch` sends without a limit; and a killed worker's exit. Diagnostics captured only once
- * a wait has failed are bounded but not counted, since the test has failed by then.
+ * The margin covers only the work that has no bound of its own: browser contexts and pages created; page loads,
+ * navigations, reloads and address waits; clicks, fills and selections, which run without an action limit; response,
+ * download and event waits; page evaluations; attachments and evidence files written; browser contexts closed; and a
+ * killed worker's exit. Diagnostics captured only once a wait has failed are bounded but not counted, since the test
+ * has failed by then.
  */
 export const BROWSER_TEST_HARNESS_MARGIN_MS = 60_000;
