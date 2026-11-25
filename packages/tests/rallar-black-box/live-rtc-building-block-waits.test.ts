@@ -24,8 +24,8 @@ import {
     FORMATION_RECONNECT_BOUNDED_WAITS_MS,
     FORMATION_RUN_BOUNDED_WAITS_MS
 } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-formation-waits.ts';
-import { SETTLED_TRIO_RETIREMENT_BOUNDED_WAITS_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/settled-trio-retirement-bounded-waits-ms.ts';
 import { FULL_STACK_EXPECT_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/playwright-expect-timeouts.ts';
+import { SETTLED_TRIO_RETIREMENT_BOUNDED_WAITS_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/settled-trio-retirement-bounded-waits-ms.ts';
 import type { RtcBaselineJson } from '../../shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 
 import { LiveRtcBrowserRecording } from '../../../tests/playwright/rallar-black-box/live-rtc-browser-recording.ts';
