@@ -815,13 +815,16 @@ describe('QRtcPeerConnection', () => {
 
     it('refuses an answer below the applied remote generation and reports the connection closed to its owner', async () => {
         const events: RtcSignalingDiagnostics.Event[] = [];
-        const onClosed = vi.fn(async () => {});
+        const closes: Array<[string, QRtcPeerConnection.CloseIssuer]> = [];
+        const onClosed = async (peerId: string, issuer: QRtcPeerConnection.CloseIssuer) => {
+            closes.push([peerId, issuer]);
+        };
         const { peer, native } = createPeerFixture(true, { onClosed }, createRecordingDependencies(events));
         await peer.handleSignal(createRemoteOffer('current-offer', 5, 'current-offer-sdp'));
         await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
         await peer.handleSignal(createRemoteAnswer('offer-1', 4, 'superseded-answer-sdp'));
 
-        expect(onClosed).toHaveBeenCalledExactlyOnceWith('peer-1', 'superseded-answer');
+        expect(closes).toEqual([['peer-1', 'superseded-answer']]);
         expect(native.receivedDescriptions.map((description) => description.sdp)).toEqual(['current-offer-sdp']);
         expect(native.signalingState).toBe('have-local-offer');
         expect(events.filter((event) => event.kind === 'native-signal-decision' && event.signalType === 'Answer'))
