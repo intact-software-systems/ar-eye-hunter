@@ -784,6 +784,7 @@ describe('QRtcPeerConnection', () => {
         await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
         await peer.handleSignal(createRemoteOffer('third-offer', 3, 'third-offer-sdp'));
         await peer.handleSignal(createRemoteCandidate('early-third-candidate', 3));
+        await peer.handleSignal(createRemoteCandidate('older-candidate', 0));
         await peer.handleSignal(createRemoteAnswer('offer-1', 3, 'third-answer-sdp'));
         await peer.handleSignal(createRemoteOffer('second-offer', 2, 'second-offer-sdp'));
         await peer.handleSignal(createRemoteCandidate('third-candidate', 3));
@@ -797,6 +798,13 @@ describe('QRtcPeerConnection', () => {
             { candidate: 'early-third-candidate', remoteSdp: 'third-answer-sdp' },
             { candidate: 'third-candidate', remoteSdp: 'third-answer-sdp' }
         ]);
+        expect(events.filter((event) => event.kind === 'native-signal-decision' && event.signalType === 'IceCandidate'))
+            .toContainEqual(expect.objectContaining({
+                disposition: 'ice-superseded',
+                signalingState: 'have-local-offer',
+                connectionGeneration: 0,
+                appliedRemoteGeneration: 1
+            }));
         expect(events.filter((event) => event.kind === 'native-signal-decision' && event.offerId === 'second-offer'))
             .toContainEqual(expect.objectContaining({
                 disposition: 'offer-superseded',
@@ -805,14 +813,14 @@ describe('QRtcPeerConnection', () => {
             }));
     });
 
-    it('refuses an answer below the applied remote generation, keeping its own offer outstanding for the right one', async () => {
+    it('refuses an answer below the applied remote generation and rolls back its offer, so it can renegotiate', async () => {
         const events: RtcSignalingDiagnostics.Event[] = [];
-        const { peer, native } = createPeerFixture(true, {}, createRecordingDependencies(events));
+        const { peer, native, sentSignals } = createPeerFixture(true, {}, createRecordingDependencies(events));
         await peer.handleSignal(createRemoteOffer('current-offer', 5, 'current-offer-sdp'));
         await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
         await peer.handleSignal(createRemoteAnswer('offer-1', 4, 'superseded-answer-sdp'));
 
-        expect(native.signalingState).toBe('have-local-offer');
+        expect(native.signalingState).toBe('stable');
         expect(native.receivedDescriptions.map((description) => description.sdp)).toEqual(['current-offer-sdp']);
         expect(events.filter((event) => event.kind === 'native-signal-decision' && event.signalType === 'Answer'))
             .toContainEqual(expect.objectContaining({
@@ -823,7 +831,11 @@ describe('QRtcPeerConnection', () => {
                 appliedRemoteGeneration: 5
             }));
 
-        await peer.handleSignal(createRemoteAnswer('offer-1', 5, 'current-answer-sdp'));
+        await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+        await peer.handleSignal(createRemoteAnswer('offer-1', 5, 'late-answer-sdp'));
+        await peer.handleSignal(createRemoteAnswer('offer-2', 5, 'current-answer-sdp'));
+        expect(sentSignals.map((signal) => [signal.signalType, 'offerId' in signal ? signal.offerId : undefined]))
+            .toEqual([['Answer', 'current-offer'], ['Offer', 'offer-1'], ['Offer', 'offer-2']]);
         expect(native.signalingState).toBe('stable');
         expect(native.receivedDescriptions.map((description) => description.sdp))
             .toEqual(['current-offer-sdp', 'current-answer-sdp']);
@@ -950,10 +962,11 @@ describe('QRtcPeerConnection', () => {
             }
         });
         expect(native.receivedDescriptions).toEqual([{ type: 'answer', sdp: 'matching-answer' }]);
+        expect(native.receivedCandidates).toEqual([{ candidate: 'ignored-collision-ice' }]);
         expect(peer.readDiagnostics()).toMatchObject({
             staleAnswerIgnoredCount: 1,
             ignoredOfferCollisionCount: 1,
-            ignoredIceCandidateForIgnoredOfferCount: 1
+            ignoredIceCandidateForIgnoredOfferCount: 0
         });
     });
 

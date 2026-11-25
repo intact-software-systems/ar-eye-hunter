@@ -1308,6 +1308,7 @@ export class QRtcPeerConnection {
             return;
         }
         if (this.refuseSupersededDescription(capture, signal)) {
+            await this.rollBackRefusedOffer(capture);
             return;
         }
         await this.applyRemoteDescription(pc, signal.payload.description, capture.nativeBatch);
@@ -1320,6 +1321,20 @@ export class QRtcPeerConnection {
             this.observeNativeSignal('retired-after-ice-flush', capture, signal);
             return;
         }
+        this.endLocalOffer();
+    }
+
+    /**
+     * A refused answer leaves this side's offer without an answer it may apply. Rolling the offer back returns the
+     * native connection to the description it holds, so an established connection can renegotiate; one still
+     * establishing stays under the establishment timeout.
+     */
+    private async rollBackRefusedOffer(capture: QRtcPeerConnection.NativeSignalCapture): Promise<void> {
+        this.endLocalOffer();
+        await this.applyLocalDescription(capture.pc, capture.nativeBatch, { type: 'rollback' });
+    }
+
+    private endLocalOffer(): void {
         this.outstandingOfferId = undefined;
         this.status.makingOffer = false;
         this.status.ignoreOffer = false;
@@ -1450,11 +1465,6 @@ export class QRtcPeerConnection {
         }
     }
 
-    private ignoreIceCandidate(capture: QRtcPeerConnection.NativeSignalCapture, signal: QRtcIceCandidateSignal): void {
-        this.diagnostics.ignoredIceCandidateForIgnoredOfferCount++;
-        this.observeNativeSignal('ice-ignored', capture, signal);
-    }
-
     private observeGenerationRefusal(
         capture: QRtcPeerConnection.NativeSignalCapture,
         signal: QRtcSignal,
@@ -1513,27 +1523,23 @@ export class QRtcPeerConnection {
         const pc = capture.pc;
         this.diagnostics.inboundIceCandidateCount++;
         const appliedRemoteGeneration = pc.remoteDescription ? this.highestAppliedRemoteGeneration : undefined;
+        // Held even while a colliding offer is ignored: the remote connection may yet answer this side's offer.
         if (appliedRemoteGeneration === undefined) {
-            if (this.status.ignoreOffer) {
-                this.ignoreIceCandidate(capture, signal);
-            }
-            else {
-                this.holdIceCandidate(capture, signal);
-            }
+            this.holdIceCandidate(capture, signal);
             return;
         }
         const admission = resolveRtcIceCandidateAdmission(signal.connectionGeneration, appliedRemoteGeneration);
-        // Held even while a colliding offer is ignored: a newer remote connection may yet answer this side's offer.
         if (admission === 'hold') {
             this.holdIceCandidate(capture, signal);
             return;
         }
-        if (this.status.ignoreOffer) {
-            this.ignoreIceCandidate(capture, signal);
-            return;
-        }
         if (admission === 'supersede') {
             this.observeGenerationRefusal(capture, signal, appliedRemoteGeneration);
+            return;
+        }
+        if (this.status.ignoreOffer) {
+            this.diagnostics.ignoredIceCandidateForIgnoredOfferCount++;
+            this.observeNativeSignal('ice-ignored', capture, signal);
             return;
         }
         try {
