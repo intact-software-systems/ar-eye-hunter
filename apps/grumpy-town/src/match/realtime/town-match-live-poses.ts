@@ -13,6 +13,7 @@ export namespace TownMatchLivePoses {
     export interface Reception {
         readonly frame: TownMatchFrame;
         readonly match: TownMatchState;
+        readonly pending?: TownMatchState;
         readonly now: number;
         readonly transport: Sample['transport'];
     }
@@ -25,9 +26,14 @@ export class TownMatchLivePoses {
     accept(reception: TownMatchLivePoses.Reception): boolean {
         const { frame, match, now, transport } = reception;
         const action = frame.action;
+        // The director can commit our validated proposal before its commit reaches this peer.
+        const pending = reception.pending;
+        const baseTick = pending?.matchId === match.matchId && pending.phase === 'playing'
+            ? Math.max(match.tick, pending.tick)
+            : match.tick;
         if (
             action.kind !== 'poses' || match.phase !== 'playing' || frame.matchId !== match.matchId ||
-            action.tick < match.tick || action.tick > match.tick + TOWN_MATCH_RATE * 2 + 3 ||
+            action.tick < match.tick || action.tick > baseTick + TOWN_MATCH_RATE * 2 + 3 ||
             (this.latest && (frame.sequence <= this.latest.sequence || action.tick <= this.latest.tick))
         ) {
             return false;

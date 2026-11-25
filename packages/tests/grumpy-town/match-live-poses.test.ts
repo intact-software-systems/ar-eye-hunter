@@ -53,6 +53,22 @@ describe('fresh host poses independent of checkpoint agreement', () => {
         expect(match.players[0].score).toBe(0);
     });
 
+    it('renders bounded motion when the director has committed our pending proposal but its commit has not arrived', () => {
+        if (frame.action.kind !== 'poses') throw new Error('Pose fixture required');
+        const poses = new TownMatchLivePoses();
+        const committed = { ...match, tick: 75 };
+        const pending = { ...match, tick: 108 };
+        const moving = { ...frame, action: { ...frame.action, tick: 150 } };
+        const reception = { frame: moving, match: committed, pending, now: 1000, transport: 'ws' as const };
+        expect(poses.accept({ ...reception, pending: { ...pending, matchId: 'another-round' } })).toBe(false);
+        expect(poses.accept(reception)).toBe(true);
+        expect(poses.resolve(committed, 1000)?.tick).toBe(150);
+        expect(committed.tick).toBe(75);
+        expect(poses.accept({
+            ...reception, frame: { ...moving, sequence: moving.sequence + 1, action: { ...moving.action, tick: 180 } }
+        })).toBe(false);
+    });
+
     it('rejects duplicates and backwards poses across RTC and WS', () => {
         const poses = new TownMatchLivePoses();
         poses.accept({ frame, match, now: 1000, transport: 'rtc' });

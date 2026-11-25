@@ -117,6 +117,7 @@ export class TownMatchFrames {
                 this.round.livePoses.accept({
                     frame,
                     match: view.match,
+                    pending: this.round.checkpoints.getState().pending?.checkpoint.state,
                     now: this.dependencies.timers.nowMs(),
                     transport
                 });

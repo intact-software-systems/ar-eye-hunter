@@ -15,13 +15,16 @@ for (const initialTransport of ['rtc', 'ws'] as const) {
         }
         const [host, guest] = await Promise.all(contexts.map((context) => context.newPage()));
         let holdCheckpoints = false;
+        let checkpointWithheld = false;
         await contexts[1].routeWebSocket(/\/api\/ws\//, (socket) => {
             const server = socket.connectToServer();
             server.onMessage((message) => {
                 const frame = decodeMatchWire(message);
-                if (!holdCheckpoints || !frame || !['proposal', 'commit'].includes(frame.action.kind)) {
-                    socket.send(message);
+                if (holdCheckpoints && frame && ['proposal', 'commit'].includes(frame.action.kind)) {
+                    checkpointWithheld = true;
+                    return;
                 }
+                socket.send(message);
             });
         });
         try {
@@ -42,22 +45,27 @@ for (const initialTransport of ['rtc', 'ws'] as const) {
             await expect.poll(async () => Number(await host.locator('#online-game').getAttribute('data-peer-x')))
                 .toBeGreaterThan(initialGuestX + 0.3);
             await guest.keyboard.up('KeyD');
+            // Start the partition immediately after a fresh agreement. This gives the guest its full recovery window.
+            const previous = Number(await guest.locator('#online-game').getAttribute('data-tick'));
+            await expect.poll(async () => Number(await guest.locator('#online-game').getAttribute('data-tick')), {
+                intervals: [20]
+            }).toBeGreaterThan(previous);
             holdCheckpoints = true;
-            await expect.poll(
-                async () =>
-                    guest.locator('#online-game').evaluate((root) =>
-                        Number(root.getAttribute('data-pose-tick')) - Number(root.getAttribute('data-tick'))
-                    ),
-                { timeout: 1000, intervals: [20] }
-            ).toBeGreaterThan(9);
+            // Measure the live channel from the injected delivery fault, once the route has actually withheld agreement.
+            await expect.poll(() => checkpointWithheld, { timeout: 1000, intervals: [20] }).toBe(true);
             const tick = Number(await guest.locator('#online-game').getAttribute('data-tick'));
             const before = Number(await guest.locator('#online-game').getAttribute('data-render-peer-x'));
             await host.keyboard.down('KeyD');
-            await expect.poll(
-                async () => Number(await guest.locator('#online-game').getAttribute('data-render-peer-x')),
-                { timeout: 1000, intervals: [20] }
-            )
-                .toBeGreaterThan(before + 0.1);
+            await Promise.all([
+                expect.poll(
+                    async () => Number(await guest.locator('#online-game').getAttribute('data-pose-tick')) - tick,
+                    { timeout: 1000, intervals: [20] }
+                ).toBeGreaterThan(9),
+                expect.poll(
+                    async () => Number(await guest.locator('#online-game').getAttribute('data-render-peer-x')),
+                    { timeout: 1000, intervals: [20] }
+                ).toBeGreaterThan(before + 0.1)
+            ]);
             await host.keyboard.up('KeyD');
             expect(Number(await guest.locator('#online-game').getAttribute('data-tick'))).toBe(tick);
             expect(Number(await guest.locator('#online-game').getAttribute('data-pose-tick'))).toBeGreaterThan(
