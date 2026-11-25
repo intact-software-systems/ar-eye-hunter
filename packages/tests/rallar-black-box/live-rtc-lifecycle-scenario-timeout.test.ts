@@ -6,10 +6,12 @@ import {
     PRESENCE_CONNECT_RESULT_WAIT_MS
 } from '../../../tests/playwright/rallar-black-box/compute-live-rtc-lifecycle-scenario-timeout-ms.ts';
 
-const CONNECT = 180_000;
+/** Every command's enqueue request, and every control run read outside a poll, waits at most 10 s. */
+const REQUEST = 10_000;
+const CONNECT = REQUEST + 180_000;
 const MARGIN = 60_000;
-/** A command that names no budget of its own is polled for its result for 45 s. */
-const POLL = 45_000;
+/** A command that names no budget of its own is enqueued, then polled for its result for 45 s. */
+const POLL = REQUEST + 45_000;
 /** Each agent signs in under 30 s, selects its workbench tab (15 s for the tab, 15 s for its panel), then registers. */
 const AGENT_OPEN = 30_000 + 2 * 15_000 + 30_000;
 /** The trio's agents open one after another. */
@@ -32,12 +34,13 @@ const READINESS = 60_000 + POLL;
 const STAGE = 45_000 + POLL;
 
 describe('live RTC lifecycle scenario timeouts', () => {
-    it('waits for each presence connect its 135 s command timeout and the 45 s result poll', () => {
-        expect(PRESENCE_CONNECT_RESULT_WAIT_MS).toBe(135_000 + 45_000);
+    it('waits for each presence connect its enqueue, its 135 s command timeout and the 45 s result poll', () => {
+        expect(PRESENCE_CONNECT_RESULT_WAIT_MS).toBe(10_000 + 135_000 + 45_000);
         expect(BROWSER_TEST_HARNESS_MARGIN_MS).toBe(MARGIN);
     });
 
-    // The scenarios counted neither the commands polled under the default result poll, the opening screens waited
+    // No command's enqueue request and no control run read outside a poll was counted; earlier, the scenarios counted
+    // neither the commands polled under the default result poll, the opening screens waited
     // under the default assertion limit, the membership requests' result polls, the readiness's and the stage wait's
     // result polls, nor the reopened member's health reads.
     it('gives each scenario every bounded wait it runs and the harness margin', () => {
@@ -48,14 +51,17 @@ describe('live RTC lifecycle scenario timeouts', () => {
             reset: computeLiveRtcLifecycleScenarioTimeoutMs('reset'),
             hydration: computeLiveRtcLifecycleScenarioTimeoutMs('hydration')
         }).toEqual({
-            // Membership and the trio's connects, a 5 s hold undialed, each member's health, the plan, then the dials.
-            discovery: MARGIN + TRIO_OPEN + MEMBERSHIP + 3 * CONNECT + 5_000 + 3 * POLL + POLL + DIALS,
+            // Membership and the trio's connects, a 5 s hold undialed, each member's recorded dials read and its health,
+            // the plan, then the dials.
+            discovery: MARGIN + TRIO_OPEN + MEMBERSHIP + 3 * CONNECT + 5_000 + 3 * (REQUEST + POLL) + POLL + DIALS,
             // The reopened member's recording health, its readiness, then its 15 s diagnostics poll.
             monotonicReadiness: MARGIN + TRIO_OPEN + ACTIVATION + REOPENING + POLL + READINESS + 15_000,
             // The reopened member reads its health up to 15 times 2 s apart, then waits for readiness.
             acceptedLayoutBarrier: MARGIN + TRIO_OPEN + ACTIVATION + REOPENING + 15 * (POLL + 2_000) + READINESS,
-            // The reset, each member's dormant stage, 60 s lane teardown and health, a 5 s hold, start, plan, the dials.
-            reset: MARGIN + TRIO_OPEN + ACTIVATION + POLL + 3 * (STAGE + 60_000 + POLL) + 5_000 + 2 * POLL + DIALS,
+            // The members' recorded dials read side by side, the reset, each member's dormant stage, 60 s lane teardown
+            // and health, a 5 s hold, each member's recorded dials read again, start, plan, the dials.
+            reset: MARGIN + TRIO_OPEN + ACTIVATION + REQUEST + POLL + 3 * (STAGE + 60_000 + POLL) + 5_000 + 3 * REQUEST +
+                2 * POLL + DIALS,
             // The reset, the owner's dormant stage, the reopened member's presence, its health, its 15 s room refresh
             // and its health again.
             hydration: MARGIN + TRIO_OPEN + ACTIVATION + POLL + STAGE + REOPENED_PRESENCE + POLL + 15_000 + POLL

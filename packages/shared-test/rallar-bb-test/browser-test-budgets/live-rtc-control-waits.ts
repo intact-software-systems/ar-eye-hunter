@@ -1,11 +1,16 @@
 // The live RTC harness's wait budgets live in this package rather than beside the Playwright modules that run them, so
 // the RTC-B06 capture orchestrator can derive an attempt's test timeout without loading Playwright or the test tree.
 
+import { computeCommandWaitMs } from './compute-command-result-wait-ms.ts';
+
 /**
  * How long the control client polls for a command's result once the command's own budget, if it names one, is spent.
  * A command that names no budget is therefore polled this long in all.
  */
 export const LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS = 45_000;
+
+/** A command that names no budget of its own waits its enqueue request, then the whole result poll. */
+export const LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS = computeCommandWaitMs(LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS);
 
 /** The live RTC tests open their agents as trios of A, B and C. */
 export const LIVE_RTC_TRIO_SIZE = 3;
@@ -31,11 +36,13 @@ export const LIVE_RTC_CLOSE_RESULT_WAIT_MS = 45_000;
 /** How long the control client waits for an agent's reset to return. */
 export const LIVE_RTC_RESET_RESULT_WAIT_MS = 30_000;
 
-/** Retiring an agent closes it, then resets it. */
-export const LIVE_RTC_CLOSE_AND_RESET_BOUNDED_WAITS_MS = LIVE_RTC_CLOSE_RESULT_WAIT_MS + LIVE_RTC_RESET_RESULT_WAIT_MS;
+/** Retiring an agent closes it, then resets it, each command its enqueue request and then its result wait. */
+export const LIVE_RTC_CLOSE_AND_RESET_BOUNDED_WAITS_MS = computeCommandWaitMs(LIVE_RTC_CLOSE_RESULT_WAIT_MS) +
+    computeCommandWaitMs(LIVE_RTC_RESET_RESULT_WAIT_MS);
 
 /** How long the control client waits for one agent's diagnostics read. */
 export const LIVE_RTC_DIAGNOSTICS_READ_TIMEOUT_MS = 30_000;
 
-/** A diagnostics capture reads each of the trio's agents in turn. */
-export const LIVE_RTC_DIAGNOSTICS_CAPTURE_BOUNDED_WAITS_MS = LIVE_RTC_TRIO_SIZE * LIVE_RTC_DIAGNOSTICS_READ_TIMEOUT_MS;
+/** A diagnostics capture reads each of the trio's agents in turn, each read a command with its own result wait. */
+export const LIVE_RTC_DIAGNOSTICS_CAPTURE_BOUNDED_WAITS_MS = LIVE_RTC_TRIO_SIZE *
+    computeCommandWaitMs(LIVE_RTC_DIAGNOSTICS_READ_TIMEOUT_MS);

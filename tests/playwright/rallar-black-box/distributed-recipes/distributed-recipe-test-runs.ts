@@ -1,5 +1,7 @@
 import { BROWSER_TEST_HARNESS_MARGIN_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/browser-test-harness-margin-ms.ts';
+import { computeCommandWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 import { CONTROL_AGENT_OPENING_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-agent-opening-timeout-ms.ts';
+import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
 import { FULL_STACK_EXPECT_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/playwright-expect-timeouts.ts';
 import {
     type RallarBlackBoxDistributedGroupRef,
@@ -7,7 +9,7 @@ import {
 } from '../../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 import { type RallarBlackBoxTestRecipe } from '../../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
-import { CONTROL_GET_RETRY_BOUNDED_WAITS_MS } from '../read-control-get-response.ts';
+import { CONTROL_GET_BOUNDED_WAITS_MS } from '../read-control-get-response.ts';
 import {
     CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS,
     DISTRIBUTED_AGENT_CONFIGURE_RESULT_WAIT_MS,
@@ -52,16 +54,20 @@ export const SIMULATED_ACK_TIMEOUT_MS = 100;
 /** The live test's three agents, the first of which sends. */
 const LIVE_AGENT_COUNT = 3;
 
-/** The test's agents: each is opened, then each is configured for the group, then all are seen in the group. */
+/**
+ * The test's agents: each is opened, then each is configured for the group, a command enqueued and then polled for
+ * its result, then all are seen in the group.
+ */
 const THREE_AGENTS_BOUNDED_WAITS_MS = 3 * CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS +
-    3 * DISTRIBUTED_AGENT_CONFIGURE_RESULT_WAIT_MS + AGENTS_IN_GROUP_POLL_TIMEOUT_MS;
+    3 * computeCommandWaitMs(DISTRIBUTED_AGENT_CONFIGURE_RESULT_WAIT_MS) + AGENTS_IN_GROUP_POLL_TIMEOUT_MS;
 
 /** The live test's agents sign in as they open, each first waiting for its login gate. */
 const THREE_SIGNED_IN_AGENTS_BOUNDED_WAITS_MS = THREE_AGENTS_BOUNDED_WAITS_MS +
     LIVE_AGENT_COUNT * CONTROL_AGENT_OPENING_TIMEOUT_MS;
 
 /** The owner creates the live test's group, then each of the three agents joins it, one request after another. */
-const LIVE_GROUP_MEMBERSHIP_BOUNDED_WAITS_MS = (1 + LIVE_AGENT_COUNT) * DISTRIBUTED_GROUP_REQUEST_RESULT_WAIT_MS;
+const LIVE_GROUP_MEMBERSHIP_BOUNDED_WAITS_MS = (1 + LIVE_AGENT_COUNT) *
+    computeCommandWaitMs(DISTRIBUTED_GROUP_REQUEST_RESULT_WAIT_MS);
 
 /** Each warning diagnostic row shows its group, its severity pill and its transport pill. */
 const LIVE_DIAGNOSTIC_ROW_ASSERTIONS = 3;
@@ -83,31 +89,48 @@ const LIVE_PANEL_BOUNDED_WAITS_MS = FULL_STACK_EXPECT_TIMEOUT_MS *
 /** How long the live test's cleanup waits for each agent's best-effort close; the closes run side by side. */
 export const LIVE_DISTRIBUTED_CLEANUP_CLOSE_TIMEOUT_MS = 15_000;
 
-/** The live test reads the control run for the WS and RTC warning reports and the realtime monitor, then its summary. */
-const LIVE_CONTROL_RUN_READS = 4;
+/**
+ * The live test reads the control run and a distributed run's artifact for the WS and RTC warning reports and the
+ * realtime monitor, then the control run and the distributed runs for its summary.
+ */
+const LIVE_EVIDENCE_READS = 4;
+
+/** A run's evidence reads the control run, then one distributed run resource. */
+const DISTRIBUTED_EVIDENCE_READ_BOUNDED_WAITS_MS = CONTROL_GET_BOUNDED_WAITS_MS + CONTROL_REQUEST_TIMEOUT_MS;
+
+/** The simulated failure test's requests outside any poll: the refused manifest, then its runs' create and stage. */
+const SIMULATED_FAILURE_RUN_REQUESTS = 1 + 2 * 4;
+
+/** The simulated failure test starts the failing and the disconnect runs, then cancels the disconnect run. */
+const SIMULATED_FAILURE_RUN_MUTATIONS = 3;
 
 /**
- * Three simulated agents; each scripted agent's socket and its in-group poll; the ACK run's timed-out wait, the
- * failing run's ready and failed waits and the disconnect run's ready wait; the closed agent's disconnect poll and the
- * disconnect run's running wait; then the control run read after it.
+ * Three simulated agents; each scripted agent's socket and its in-group poll; the refused manifest and each of the
+ * four runs' create and stage; the ACK run's timed-out wait, the failing run's ready and failed waits and the
+ * disconnect run's ready wait; the closed agent's disconnect poll and the disconnect run's running wait; the two starts
+ * and the cancel; then the control run read after the disconnect.
  */
 export const SIMULATED_FAILURES_TEST_TIMEOUT_MS = BROWSER_TEST_HARNESS_MARGIN_MS + THREE_AGENTS_BOUNDED_WAITS_MS +
     SIMULATED_FAILURE_SCRIPTED_AGENT_COUNT *
         (SCRIPTED_CONTROL_AGENT_OPEN_TIMEOUT_MS + AGENTS_IN_GROUP_POLL_TIMEOUT_MS) +
+    (SIMULATED_FAILURE_RUN_REQUESTS + SIMULATED_FAILURE_RUN_MUTATIONS) * CONTROL_REQUEST_TIMEOUT_MS +
     SIMULATED_FAILURE_STATE_TIMEOUT_MS + 3 * DISTRIBUTED_STATE_POLL_TIMEOUT_MS + SIMULATED_DISCONNECT_POLL_TIMEOUT_MS +
-    SIMULATED_FAILURE_STATE_TIMEOUT_MS + CONTROL_GET_RETRY_BOUNDED_WAITS_MS;
+    SIMULATED_FAILURE_STATE_TIMEOUT_MS + CONTROL_GET_BOUNDED_WAITS_MS;
 
-/** Three simulated agents, the run to passed, the panel listing it and showing it passed, then the run's summary read. */
+/**
+ * Three simulated agents, the run to passed, its artifact read, the panel listing it and showing it passed, then the
+ * run's summary reads.
+ */
 export function computeSimulatedAckTestTimeoutMs(manifest: RallarBlackBoxDistributedRunManifest): number {
     return BROWSER_TEST_HARNESS_MARGIN_MS + THREE_AGENTS_BOUNDED_WAITS_MS +
-        computeDistributedRunToPassedWaitMs(manifest) +
-        SIMULATED_ACK_PANEL_TIMEOUT_MS + FULL_STACK_EXPECT_TIMEOUT_MS + CONTROL_GET_RETRY_BOUNDED_WAITS_MS;
+        computeDistributedRunToPassedWaitMs(manifest) + CONTROL_REQUEST_TIMEOUT_MS +
+        SIMULATED_ACK_PANEL_TIMEOUT_MS + FULL_STACK_EXPECT_TIMEOUT_MS + DISTRIBUTED_EVIDENCE_READ_BOUNDED_WAITS_MS;
 }
 
 /**
  * Three browser agents and the group's membership, each run to passed in turn, the WS and RTC receivers' messages (each
- * pair side by side), the realtime position payload and the two warning diagnostics side by side, the control run
- * reads, the panel's assertions, then the cleanup.
+ * pair side by side), the realtime position payload and the two warning diagnostics side by side, the evidence reads,
+ * the panel's assertions, then each agent's best-effort close side by side.
  */
 export function computeLiveDistributedRecipesTestTimeoutMs(runs: LiveDistributedRecipeRuns): number {
     const toPassedMs = toLiveDistributedRecipeManifests(runs).reduce(
@@ -117,8 +140,8 @@ export function computeLiveDistributedRecipesTestTimeoutMs(runs: LiveDistributed
     return BROWSER_TEST_HARNESS_MARGIN_MS + THREE_SIGNED_IN_AGENTS_BOUNDED_WAITS_MS +
         LIVE_GROUP_MEMBERSHIP_BOUNDED_WAITS_MS + toPassedMs + 2 * BROWSER_MESSAGE_POLL_TIMEOUT_MS +
         REALTIME_POSITION_POLL_TIMEOUT_MS + RUNTIME_DIAGNOSTIC_POLL_TIMEOUT_MS +
-        LIVE_CONTROL_RUN_READS * CONTROL_GET_RETRY_BOUNDED_WAITS_MS + LIVE_PANEL_BOUNDED_WAITS_MS +
-        LIVE_DISTRIBUTED_CLEANUP_CLOSE_TIMEOUT_MS;
+        LIVE_EVIDENCE_READS * DISTRIBUTED_EVIDENCE_READ_BOUNDED_WAITS_MS + LIVE_PANEL_BOUNDED_WAITS_MS +
+        computeCommandWaitMs(LIVE_DISTRIBUTED_CLEANUP_CLOSE_TIMEOUT_MS);
 }
 
 interface DistributedRecipeTestRunInput {

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TryWithExhaustedError } from '@shared/resilience/try-with-policy.ts';
 
 import {
-    resolveLiveRtcResultWaitMs,
+    resolveLiveRtcResultPollTimeoutMs,
     type LiveRtcControlClient
 } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
 import { jsonRecord } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
@@ -76,7 +76,7 @@ describe('exact formation peer readiness', () => {
         // The control client waits each read its remaining budget, then its 45 s result poll.
         expect(fixture.commands.map((execution) => ({
             browser: 'timeoutMs' in execution.command ? execution.command.timeoutMs : undefined,
-            control: resolveLiveRtcResultWaitMs(execution)
+            control: resolveLiveRtcResultPollTimeoutMs(execution)
         }))).toEqual([
             { browser: 800, control: 45_800 },
             { browser: 600, control: 45_600 }

@@ -1,7 +1,7 @@
 import { CONTROL_AGENT_OPENING_TIMEOUT_MS } from './control-agent-opening-timeout-ms.ts';
 import {
-    LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS,
-    LIVE_RTC_TRIO_SIZE
+    LIVE_RTC_TRIO_SIZE,
+    LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS
 } from './live-rtc-control-waits.ts';
 import { FULL_STACK_TAB_OPEN_BOUNDED_WAITS_MS } from './playwright-expect-timeouts.ts';
 
@@ -18,4 +18,4 @@ export const LIVE_RTC_AGENT_TRIO_OPEN_BOUNDED_WAITS_MS = LIVE_RTC_TRIO_SIZE * LI
 
 /** Browser recording admission reads each of the trio's agents' health in turn, a command that names no budget. */
 export const LIVE_RTC_RECORDING_ADMISSION_BOUNDED_WAITS_MS = LIVE_RTC_TRIO_SIZE *
-    LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS;
+    LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS;

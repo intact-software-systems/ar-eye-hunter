@@ -1,3 +1,4 @@
+import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
 import {
     FULL_STACK_EXPECT_TIMEOUT_MS,
     FULL_STACK_TAB_OPEN_BOUNDED_WAITS_MS
@@ -5,8 +6,8 @@ import {
 
 import { LOGIN_RUN_HEADER_TIMEOUT_MS } from './full-stack-helpers.ts';
 
-/** How long each configured-service probe may take; the API and control probes run side by side. */
-export const CONSOLE_SERVICE_PROBE_TIMEOUT_MS = 5_000;
+/** The API and control service probes run side by side, then the API's readiness is read. */
+export const CONSOLE_SERVICE_READINESS_BOUNDED_WAITS_MS = 2 * CONTROL_REQUEST_TIMEOUT_MS;
 
 /** How long the Console's launch control may take to open the agents' pages. */
 export const CONSOLE_AGENT_PAGES_POLL_TIMEOUT_MS = 30_000;

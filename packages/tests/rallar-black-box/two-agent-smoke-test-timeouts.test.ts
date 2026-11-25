@@ -8,8 +8,10 @@ import {
 } from '../../../tests/playwright/rallar-black-box/two-agent-smoke-test-timeouts.ts';
 
 const MARGIN = 60_000;
-/** A command that names no budget of its own is polled for its result for 45 s. */
-const POLL = 45_000;
+/** Every command's enqueue request, and every control run read outside a poll, waits at most 10 s. */
+const REQUEST = 10_000;
+/** A command that names no budget of its own is enqueued, then polled for its result for 45 s. */
+const POLL = REQUEST + 45_000;
 const CONNECT_STAGE = 135_000 + 30_000 + POLL;
 /** Each agent opens through its login gate, its workbench and its registration, each under the 30 s opening limit. */
 const AGENTS = 2 * 3 * 30_000;
@@ -23,11 +25,11 @@ function delivery(sendTimeoutMs: number, visibleInbox: boolean): number {
 const FINALIZE = 5 * POLL + 20_000;
 
 describe('two-agent smoke test timeouts', () => {
-    it('waits for a connect stage its 135 s connect, its 30 s readiness and the 45 s result poll', () => {
+    it('waits for a connect stage its enqueue, its 135 s connect, its 30 s readiness and the 45 s result poll', () => {
         expect(TWO_AGENT_CONNECT_STAGE_WAIT_MS).toBe(CONNECT_STAGE);
     });
 
-    // The smokes counted neither their agents' opening screens, their membership requests, their sends' result
+    // No command's enqueue request was counted; earlier, the smokes counted neither their agents' opening screens, their membership requests, their sends' result
     // polls, their visible inboxes, their health reads nor their agents' finalization.
     it('gives the delivery smoke its agents, membership, connects, two deliveries and the finalization', () => {
         expect(TWO_AGENT_DELIVERY_SMOKE_TEST_TIMEOUT_MS).toBe(

@@ -6,7 +6,7 @@ import {
     type Page
 } from '@playwright/test';
 
-import { computeCommandResultWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
+import { computeCommandResultPollTimeoutMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 import { CONTROL_AGENT_OPENING_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-agent-opening-timeout-ms.ts';
 import {
     parseControlServerMessage,
@@ -475,7 +475,7 @@ export async function setupGroupMembership(
             agentId: member.agentId,
             commandId: `group-join-${member.agentId}-${input.suffix}`,
             command,
-            timeout: computeCommandResultWaitMs(command, DISTRIBUTED_COMMAND_RESULT_POLL_MARGIN_MS)
+            timeout: computeCommandResultPollTimeoutMs(command, DISTRIBUTED_COMMAND_RESULT_POLL_MARGIN_MS)
         });
         expect(Number(decodeRecord(joinResult.result?.value).status)).toBeLessThan(400);
     }
@@ -549,7 +549,7 @@ async function createDistributedGroup(
         agentId: input.owner.agentId,
         commandId: `group-create-${input.suffix}`,
         command,
-        timeout: computeCommandResultWaitMs(command, DISTRIBUTED_COMMAND_RESULT_POLL_MARGIN_MS)
+        timeout: computeCommandResultPollTimeoutMs(command, DISTRIBUTED_COMMAND_RESULT_POLL_MARGIN_MS)
     });
     expect(Number(decodeRecord(createResult.result?.value).status)).toBe(201);
 }

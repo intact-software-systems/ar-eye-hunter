@@ -77,7 +77,6 @@ import {
     CONSOLE_AGENT_PAGES_POLL_TIMEOUT_MS,
     CONSOLE_AGENTS_READY_STATUS_TIMEOUT_MS,
     CONSOLE_MONITOR_VERDICT_TIMEOUT_MS,
-    CONSOLE_SERVICE_PROBE_TIMEOUT_MS,
     CONSOLE_STAGE_READY_TIMEOUT_MS,
     CONSOLE_TARGETS_TIMEOUT_MS
 } from './recipe-console-operator-waits.ts';
@@ -761,11 +760,11 @@ async function configuredPostgresStackAvailability(
         request.get(`${CONFIGURED_POSTGRES.apiBaseUrl}/api/config`, {
             failOnStatusCode: false,
             headers: { origin: FULL_STACK_SPA_ORIGIN },
-            timeout: CONSOLE_SERVICE_PROBE_TIMEOUT_MS
+            timeout: CONTROL_REQUEST_TIMEOUT_MS
         }),
         request.get(`${CONFIGURED_POSTGRES.controlBaseUrl}/health`, {
             failOnStatusCode: false,
-            timeout: CONSOLE_SERVICE_PROBE_TIMEOUT_MS
+            timeout: CONTROL_REQUEST_TIMEOUT_MS
         })
     ]);
     return await evaluateFullStackConfiguredServiceEvidence({

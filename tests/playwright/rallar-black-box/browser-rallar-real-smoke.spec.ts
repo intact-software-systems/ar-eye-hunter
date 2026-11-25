@@ -14,7 +14,10 @@ import {
 } from '../../../packages/shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 
 import { BROWSER_TEST_HARNESS_MARGIN_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/browser-test-harness-margin-ms.ts';
-import { computeCommandResultWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
+import {
+    computeCommandResultPollTimeoutMs,
+    computeCommandResultWaitMs
+} from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
 import { RALLAR_BLACK_BOX_EXPECT_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/playwright-expect-timeouts.ts';
 
@@ -173,11 +176,10 @@ test('browser-rallar provider performs live RTC connect and realtime send when c
             }
         }
     };
-    const connectWaitMs = computeCommandResultWaitMs(connectCommand, RESULT_POLL_TIMEOUT_MS);
-    const sendWaitMs = computeCommandResultWaitMs(sendCommand, RESULT_POLL_TIMEOUT_MS);
     test.setTimeout(
-        BROWSER_TEST_HARNESS_MARGIN_MS + DEFAULT_LIMIT_ASSERTIONS * RALLAR_BLACK_BOX_EXPECT_TIMEOUT_MS + connectWaitMs +
-            sendWaitMs + EVENT_POLL_TIMEOUT_MS
+        BROWSER_TEST_HARNESS_MARGIN_MS + DEFAULT_LIMIT_ASSERTIONS * RALLAR_BLACK_BOX_EXPECT_TIMEOUT_MS +
+            computeCommandResultWaitMs(connectCommand, RESULT_POLL_TIMEOUT_MS) +
+            computeCommandResultWaitMs(sendCommand, RESULT_POLL_TIMEOUT_MS) + EVENT_POLL_TIMEOUT_MS
     );
 
     await enqueueCommand(request, runId, agentId, connectCommandId, connectCommand);
@@ -185,7 +187,7 @@ test('browser-rallar provider performs live RTC connect and realtime send when c
         const run = await fetchRun(request, runId);
         return run.results.some((result) => result.commandId === connectCommandId && result.ok === true);
     }, {
-        timeout: connectWaitMs
+        timeout: computeCommandResultPollTimeoutMs(connectCommand, RESULT_POLL_TIMEOUT_MS)
     }).toBe(true);
 
     await enqueueCommand(request, runId, agentId, sendCommandId, sendCommand);
@@ -193,7 +195,7 @@ test('browser-rallar provider performs live RTC connect and realtime send when c
         const run = await fetchRun(request, runId);
         return run.results.some((result) => result.commandId === sendCommandId && result.ok === true);
     }, {
-        timeout: sendWaitMs
+        timeout: computeCommandResultPollTimeoutMs(sendCommand, RESULT_POLL_TIMEOUT_MS)
     }).toBe(true);
 
     await expect.poll(async () => {

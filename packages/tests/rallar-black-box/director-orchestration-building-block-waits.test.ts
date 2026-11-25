@@ -7,12 +7,13 @@ import {
     vi
 } from 'vitest';
 
+import { computeCommandWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 import { FULL_STACK_EXPECT_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/playwright-expect-timeouts.ts';
 import type { ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 
 import {
-    resolveDirectorCommandResultWaitMs,
+    resolveDirectorCommandResultPollTimeoutMs,
     runDirectorOrchestration,
     type DirectorOrchestration
 } from '../../../tests/playwright/rallar-black-box/director-orchestration-operations.ts';
@@ -76,7 +77,7 @@ function toResultValue(input: DirectorOrchestration.CommandInput): ApiJsonObject
 /** A control run that answers every command after its result wait and reports every awaited event. */
 const recordingControl: DirectorOrchestration.Control = {
     executeResult: async (input) => {
-        await spendBoundedWait(resolveDirectorCommandResultWaitMs(input));
+        await spendBoundedWait(computeCommandWaitMs(resolveDirectorCommandResultPollTimeoutMs(input)));
         return {
             agentId: input.agentId,
             commandId: input.commandId,

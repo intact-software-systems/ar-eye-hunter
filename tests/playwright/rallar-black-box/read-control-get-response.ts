@@ -1,5 +1,6 @@
 import type { APIResponse } from '@playwright/test';
 
+import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { TryWithExhaustedError, TryWithPolicy } from '@shared/resilience/try-with-policy.ts';
 
@@ -13,8 +14,12 @@ const CONTROL_GET_ATTEMPTS = 3;
 /** How long a control read pauses before it re-sends a request that produced no response. */
 const CONTROL_GET_RETRY_PAUSE_MS = 250;
 
-/** A control read that keeps failing in transport pauses between each of its attempts. */
-export const CONTROL_GET_RETRY_BOUNDED_WAITS_MS = (CONTROL_GET_ATTEMPTS - 1) * CONTROL_GET_RETRY_PAUSE_MS;
+/**
+ * A control read that keeps failing in transport sends each attempt under the control request timeout and pauses
+ * between them.
+ */
+export const CONTROL_GET_BOUNDED_WAITS_MS = CONTROL_GET_ATTEMPTS * CONTROL_REQUEST_TIMEOUT_MS +
+    (CONTROL_GET_ATTEMPTS - 1) * CONTROL_GET_RETRY_PAUSE_MS;
 
 const CONTROL_TRANSPORT_FAILURE_CODES: ReadonlySet<string> = new Set(['ECONNRESET', 'ECONNREFUSED']);
 const CONTROL_TRANSPORT_FAILURE_MESSAGE = /\bECONN(?:RESET|REFUSED)\b/;

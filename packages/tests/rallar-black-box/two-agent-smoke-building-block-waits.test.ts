@@ -8,6 +8,7 @@ import {
     vi
 } from 'vitest';
 
+import { computeCommandWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 import { RALLAR_BLACK_BOX_EXPECT_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/playwright-expect-timeouts.ts';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
@@ -27,7 +28,12 @@ import {
     TWO_AGENT_PEER_READINESS,
     TWO_AGENT_SEND_TIMEOUT_MS
 } from '../../../tests/playwright/rallar-black-box/two-agent-smoke-test-timeouts.ts';
-import { createCountedPage, measureBoundedWaitsMs, settleUnderFakeTimers } from './bounded-wait-clock-fixture.ts';
+import {
+    createCountedPage,
+    measureBoundedWaitsMs,
+    settleUnderFakeTimers,
+    spendBoundedWait
+} from './bounded-wait-clock-fixture.ts';
 
 vi.mock('@playwright/test', async (importOriginal) => {
     const { toCountedPlaywrightModule } = await import('./bounded-wait-clock-fixture.ts');
@@ -111,11 +117,18 @@ function toRunSnapshot(posted: readonly PostedCommand[]): ApiJsonObject {
 function createCountedSmoke(): BrowserRallarTwoAgentSmoke {
     const posted: PostedCommand[] = [];
     const request = Object.assign({} as Playwright.APIRequestContext, {
-        post: async (url: string, options: { data: { commandId: string; command: RallarBlackBoxTestCommand; }; }) => {
+        post: async (
+            url: string,
+            options: { data: { commandId: string; command: RallarBlackBoxTestCommand; }; timeout: number; }
+        ) => {
+            await spendBoundedWait(options.timeout);
             posted.push({ agentId: decodeURIComponent(url.split('/').at(-2)!), ...options.data });
             return { status: () => 202 };
         },
-        get: async () => ({ ok: () => true, json: async () => toRunSnapshot(posted) })
+        get: async (_url: string, options: { timeout: number; }) => {
+            await spendBoundedWait(options.timeout);
+            return { ok: () => true, json: async () => toRunSnapshot(posted) };
+        }
     });
     const browser = Object.assign({} as Playwright.Browser, {
         newContext: async () => ({ newPage: async () => createCountedPage(), close: async () => {} })
@@ -212,13 +225,13 @@ describe('the two-agent smoke\'s operations wait what their derivations count', 
         const health = { phase: 'counted', connected: true, readyPeerId: undefined, reconnectSuppressed: false };
 
         expect(await measureBoundedWaitsMs(() => smoke.expectHealth(connectedB, health))).toBe(
-            TWO_AGENT_RESULT_POLL_TIMEOUT_MS
+            computeCommandWaitMs(TWO_AGENT_RESULT_POLL_TIMEOUT_MS)
         );
         expect(await measureBoundedWaitsMs(() => smoke.reloadAgent(agentB))).toBe(
             TWO_AGENT_OPERATION_BOUNDED_WAITS_MS.reload
         );
         expect(await measureBoundedWaitsMs(() => smoke.disconnectAgent(agentB))).toBe(
-            TWO_AGENT_RESULT_POLL_TIMEOUT_MS + TWO_AGENT_DISCONNECT_SETTLE_MS
+            computeCommandWaitMs(TWO_AGENT_RESULT_POLL_TIMEOUT_MS) + TWO_AGENT_DISCONNECT_SETTLE_MS
         );
         expect(
             await measureBoundedWaitsMs(async () => {

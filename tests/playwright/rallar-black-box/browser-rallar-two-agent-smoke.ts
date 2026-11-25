@@ -7,7 +7,10 @@ import {
     type TestInfo
 } from '@playwright/test';
 
-import { computeCommandResultWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
+import {
+    computeCommandResultPollTimeoutMs,
+    computeCommandResultWaitMs
+} from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 import { CONTROL_AGENT_OPENING_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-agent-opening-timeout-ms.ts';
 import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
 import { REALTIME_SEND_OPEN_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/realtime-send-open-timeout-ms.ts';
@@ -530,7 +533,7 @@ export class BrowserRallarTwoAgentSmoke {
             const run = await this.readRun();
             latest = run.results.find((result) => result.commandId === commandId);
             return latest?.ok === true;
-        }, { timeout: computeCommandResultWaitMs(command, TWO_AGENT_RESULT_POLL_TIMEOUT_MS) }).toBe(true);
+        }, { timeout: computeCommandResultPollTimeoutMs(command, TWO_AGENT_RESULT_POLL_TIMEOUT_MS) }).toBe(true);
         if (!latest) {
             throw new Error(`Command ${commandId} did not return a result.`);
         }

@@ -14,7 +14,7 @@ import {
     type RtcNativeAcquisitionProof,
     type RtcNativeCapturedConnection
 } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
-import { computeCommandResultWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
+import { computeCommandResultPollTimeoutMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
 import {
     LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS,
@@ -302,7 +302,7 @@ export class LiveRtcControlClient {
                     });
                 },
                 {
-                    timeout: resolveLiveRtcResultWaitMs(input)
+                    timeout: resolveLiveRtcResultPollTimeoutMs(input)
                 }
             )
             .toBe(true);
@@ -989,13 +989,14 @@ export class LiveRtcControlClient {
 }
 
 /**
- * How long the control client waits for a command's result: the wait its caller names, or else the command's own
- * budget and then the result poll, so a command that names no budget is polled for the result poll alone.
+ * How long the control client polls for a command's result once it is enqueued: the wait its caller names, or else the
+ * command's own budget and then the result poll, so a command that names no budget is polled for the result poll
+ * alone. The command's enqueue request runs before it under the control request timeout.
  */
-export function resolveLiveRtcResultWaitMs(
+export function resolveLiveRtcResultPollTimeoutMs(
     input: Pick<LiveRtcControlClient.ExecuteInput, 'command' | 'timeoutMs'>
 ): number {
-    return input.timeoutMs ?? computeCommandResultWaitMs(input.command, LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS);
+    return input.timeoutMs ?? computeCommandResultPollTimeoutMs(input.command, LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS);
 }
 
 export function countUnexpectedLiveRtcDeliveries(

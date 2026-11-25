@@ -1,4 +1,6 @@
 import { BROWSER_TEST_HARNESS_MARGIN_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/browser-test-harness-margin-ms.ts';
+import { computeCommandWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
+import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
 import { GROUP_MEMBERSHIP_BOUNDED_WAITS_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/group-membership-waits.ts';
 import {
     LIVE_RTC_AGENT_TRIO_OPEN_BOUNDED_WAITS_MS,
@@ -7,12 +9,13 @@ import {
 import {
     LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS,
     LIVE_RTC_DIAGNOSTICS_CAPTURE_BOUNDED_WAITS_MS,
-    LIVE_RTC_TRIO_SIZE
+    LIVE_RTC_TRIO_SIZE,
+    LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS
 } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-control-waits.ts';
 import { FORMATION_RUN_BOUNDED_WAITS_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-formation-waits.ts';
 
 import {
-    computeLayoutSwitchStreamResultWaitMs,
+    computeLayoutSwitchStreamResultPollTimeoutMs,
     LAYOUT_SWITCH_CONFIG_READ_TIMEOUT_MS,
     LAYOUT_SWITCH_TOPOLOGY_WRITE_TIMEOUT_MS
 } from './live-rtc-layout-switch-operations.ts';
@@ -42,19 +45,21 @@ export const LAYOUT_SWITCH_RECEIVER_DRAIN_TIMEOUT_MS = LAYOUT_SWITCH_STREAM_DURA
 /** How long the drain waits between its reads of the run. */
 export const LAYOUT_SWITCH_RECEIVER_DRAIN_POLL_INTERVAL_MS = 1_000;
 
-/** A browser's health read names no budget of its own. */
-const HEALTH_READ_BOUNDED_WAITS_MS = LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS;
-
-/** Each of the layout-switch operations, as `LiveRtcLayoutSwitchOperations` runs it. */
+/**
+ * Each of the layout-switch operations, as `LiveRtcLayoutSwitchOperations` runs it: every one a command, enqueued and
+ * then polled for its result; a browser's health read names no budget of its own.
+ */
 export const LIVE_RTC_LAYOUT_SWITCH_OPERATION_BOUNDED_WAITS_MS = {
-    configRead: LAYOUT_SWITCH_CONFIG_READ_TIMEOUT_MS + LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS,
-    topologyWrite: LAYOUT_SWITCH_TOPOLOGY_WRITE_TIMEOUT_MS + LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS,
-    health: HEALTH_READ_BOUNDED_WAITS_MS,
-    stream: computeLayoutSwitchStreamResultWaitMs(LAYOUT_SWITCH_STREAM_DURATION_MS)
+    configRead: computeCommandWaitMs(LAYOUT_SWITCH_CONFIG_READ_TIMEOUT_MS + LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS),
+    topologyWrite: computeCommandWaitMs(
+        LAYOUT_SWITCH_TOPOLOGY_WRITE_TIMEOUT_MS + LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS
+    ),
+    health: LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS,
+    stream: computeCommandWaitMs(computeLayoutSwitchStreamResultPollTimeoutMs(LAYOUT_SWITCH_STREAM_DURATION_MS))
 };
 
 /** Every browser's accepted layout, read one browser after another. */
-const COMMON_LAYOUT_READ_BOUNDED_WAITS_MS = LIVE_RTC_TRIO_SIZE * HEALTH_READ_BOUNDED_WAITS_MS;
+const COMMON_LAYOUT_READ_BOUNDED_WAITS_MS = LIVE_RTC_TRIO_SIZE * LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS;
 
 /**
  * The lead, switch 1's write and promotion poll, its hold, the tree's layout read, each leaf's health (every browser
@@ -63,16 +68,23 @@ const COMMON_LAYOUT_READ_BOUNDED_WAITS_MS = LIVE_RTC_TRIO_SIZE * HEALTH_READ_BOU
 const SWITCHES_BOUNDED_WAITS_MS = LAYOUT_SWITCH_STREAM_LEAD_MS +
     LIVE_RTC_LAYOUT_SWITCH_OPERATION_BOUNDED_WAITS_MS.topologyWrite + LAYOUT_SWITCH_PROMOTION_POLL_TIMEOUT_MS +
     LAYOUT_SWITCH_HOLD_MS + COMMON_LAYOUT_READ_BOUNDED_WAITS_MS +
-    (LIVE_RTC_TRIO_SIZE - 1) * HEALTH_READ_BOUNDED_WAITS_MS +
+    (LIVE_RTC_TRIO_SIZE - 1) * LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS +
     LIVE_RTC_LAYOUT_SWITCH_OPERATION_BOUNDED_WAITS_MS.topologyWrite + LAYOUT_SWITCH_PROMOTION_POLL_TIMEOUT_MS;
 
 /**
+ * The receivers' drain reads the run until its limit, its hold never passing it, so its last read may start just
+ * before the limit and wait its request.
+ */
+const RECEIVER_DRAIN_BOUNDED_WAITS_MS = LAYOUT_SWITCH_RECEIVER_DRAIN_TIMEOUT_MS + CONTROL_REQUEST_TIMEOUT_MS;
+
+/**
  * The trio, its recording admission, membership and formation; the served overlap and the formed layout; the streams
- * side by side with the switches; the receivers' drain; and the diagnostics every outcome captures.
+ * side by side with the switches; the receivers' drain; the diagnostics every outcome captures, then the run summary's
+ * read.
  */
 export const LIVE_RTC_LAYOUT_SWITCH_TEST_TIMEOUT_MS = BROWSER_TEST_HARNESS_MARGIN_MS +
     LIVE_RTC_AGENT_TRIO_OPEN_BOUNDED_WAITS_MS + LIVE_RTC_RECORDING_ADMISSION_BOUNDED_WAITS_MS +
     GROUP_MEMBERSHIP_BOUNDED_WAITS_MS + FORMATION_RUN_BOUNDED_WAITS_MS +
     LIVE_RTC_LAYOUT_SWITCH_OPERATION_BOUNDED_WAITS_MS.configRead + COMMON_LAYOUT_READ_BOUNDED_WAITS_MS +
     Math.max(LIVE_RTC_LAYOUT_SWITCH_OPERATION_BOUNDED_WAITS_MS.stream, SWITCHES_BOUNDED_WAITS_MS) +
-    LAYOUT_SWITCH_RECEIVER_DRAIN_TIMEOUT_MS + LIVE_RTC_DIAGNOSTICS_CAPTURE_BOUNDED_WAITS_MS;
+    RECEIVER_DRAIN_BOUNDED_WAITS_MS + LIVE_RTC_DIAGNOSTICS_CAPTURE_BOUNDED_WAITS_MS + CONTROL_REQUEST_TIMEOUT_MS;

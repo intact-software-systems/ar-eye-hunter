@@ -170,9 +170,13 @@ export function computeDistributedRunPassedWaitMs(manifest: RallarBlackBoxDistri
     return terminalTimeoutSeconds * 1_000 + DISTRIBUTED_STATE_POLL_TIMEOUT_MS;
 }
 
-/** What `runToPassed` waits: the staged run becoming ready, then the started run passing. */
+/**
+ * What `runToPassed` waits: the run's create and stage requests, the staged run becoming ready, the start request, then
+ * the started run passing.
+ */
 export function computeDistributedRunToPassedWaitMs(manifest: RallarBlackBoxDistributedRunManifest): number {
-    return DISTRIBUTED_STATE_POLL_TIMEOUT_MS + computeDistributedRunPassedWaitMs(manifest);
+    return 2 * CONTROL_REQUEST_TIMEOUT_MS + DISTRIBUTED_STATE_POLL_TIMEOUT_MS + CONTROL_REQUEST_TIMEOUT_MS +
+        computeDistributedRunPassedWaitMs(manifest);
 }
 
 /** Runs the manifest to passed, waiting for passed as long as the run may take. */

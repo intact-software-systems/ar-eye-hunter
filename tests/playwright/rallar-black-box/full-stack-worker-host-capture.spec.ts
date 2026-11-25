@@ -37,7 +37,7 @@ import {
 } from './live-rtc-evidence-json.ts';
 import {
     computeWorkerHostCaptureTestTimeoutMs,
-    computeWorkerRecipeResultWaitMs,
+    computeWorkerRecipeResultPollTimeoutMs,
     toWorkerRecipeRoot,
     WORKER_CAPTURE_AGENT_ORDINALS,
     WORKER_CONNECT_TIMING,
@@ -503,7 +503,7 @@ async function executeWorkerRecipe(
         agentId: agent.agentId,
         commandId: rootCommandId,
         command: root,
-        timeoutMs: computeWorkerRecipeResultWaitMs(command)
+        timeoutMs: computeWorkerRecipeResultPollTimeoutMs(command)
     });
     expect(result.commandId).toBe(rootCommandId);
     expect(result.agentId).toBe(agent.agentId);

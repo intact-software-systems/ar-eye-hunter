@@ -1,6 +1,6 @@
 import { expect, type APIRequestContext, type Page } from '@playwright/test';
 
-import { computeCommandResultWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
+import { computeCommandResultPollTimeoutMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 import type { ControlEventEnvelope, ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import { RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS } from '@shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
@@ -50,7 +50,7 @@ export namespace DirectorOrchestration {
 
     /** The control run the scenario drives its agents through. */
     export interface Control {
-        /** Enqueues a command, then waits for its result as long as `resolveDirectorCommandResultWaitMs` says. */
+        /** Enqueues a command, then polls for its result as long as `resolveDirectorCommandResultPollTimeoutMs` says. */
         executeResult(input: CommandInput): Promise<ControlResultEnvelope>;
         /** Polls the run until the agent reports the event, for up to the director event poll's limit. */
         waitForEvent(expectation: EventExpectation): Promise<void>;
@@ -96,11 +96,14 @@ const DIRECTOR_HEARTBEAT_INTERVAL_MS = 300;
 /** How often the director's relay sends its snapshot. */
 const DIRECTOR_SNAPSHOT_INTERVAL_MS = 500;
 
-/** The wait a caller names for a command's result, or else the command's own budget and then the result poll. */
-export function resolveDirectorCommandResultWaitMs(
+/**
+ * How long a command's result is polled for once it is enqueued: the wait its caller names, or else the command's own
+ * budget and then the result poll.
+ */
+export function resolveDirectorCommandResultPollTimeoutMs(
     input: Readonly<{ command: RallarBlackBoxTestCommand; timeout?: number; }>
 ): number {
-    return input.timeout ?? computeCommandResultWaitMs(input.command, DIRECTOR_COMMAND_RESULT_POLL_TIMEOUT_MS);
+    return input.timeout ?? computeCommandResultPollTimeoutMs(input.command, DIRECTOR_COMMAND_RESULT_POLL_TIMEOUT_MS);
 }
 
 /** The control run as the scenario reads it over HTTP. */
@@ -138,7 +141,7 @@ async function waitForCommandResult(
         const run = await readControlRun(request, runId);
         latest = run.results.find((result) => result.commandId === input.commandId);
         return Boolean(latest);
-    }, { timeout: resolveDirectorCommandResultWaitMs(input) }).toBe(true);
+    }, { timeout: resolveDirectorCommandResultPollTimeoutMs(input) }).toBe(true);
     if (!latest) {
         throw new Error(`Command ${input.commandId} did not return a result.`);
     }

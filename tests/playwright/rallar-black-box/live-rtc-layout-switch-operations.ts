@@ -17,8 +17,8 @@ export const LAYOUT_SWITCH_CONFIG_READ_TIMEOUT_MS = 10_000;
 /** Each durable topology write's own budget. */
 export const LAYOUT_SWITCH_TOPOLOGY_WRITE_TIMEOUT_MS = 10_000;
 
-/** A stream reports once its last frame settled, so its result wait covers its duration and its own drain. */
-export function computeLayoutSwitchStreamResultWaitMs(durationMs: number): number {
+/** A stream reports once its last frame settled, so its result poll covers its duration and its own drain. */
+export function computeLayoutSwitchStreamResultPollTimeoutMs(durationMs: number): number {
     return durationMs + 2 * RALLAR_BLACK_BOX_RTC_STREAM_DEFAULT_DRAIN_TIMEOUT_MS;
 }
 
@@ -137,7 +137,7 @@ export class LiveRtcLayoutSwitchOperations {
                     }
                 }
             },
-            timeoutMs: computeLayoutSwitchStreamResultWaitMs(input.durationMs)
+            timeoutMs: computeLayoutSwitchStreamResultPollTimeoutMs(input.durationMs)
         });
     }
 

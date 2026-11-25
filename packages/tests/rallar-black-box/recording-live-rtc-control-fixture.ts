@@ -1,3 +1,4 @@
+import { computeCommandWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 import {
     LIVE_RTC_MESSAGE_WAIT_TIMEOUT_MS,
     LIVE_RTC_PEER_ABSENCE_TIMEOUT_MS,
@@ -7,7 +8,7 @@ import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 import type { LiveRtcControlPort } from '../../../tests/playwright/rallar-black-box/create-group-formation-lifecycle-driver.ts';
 import {
-    resolveLiveRtcResultWaitMs,
+    resolveLiveRtcResultPollTimeoutMs,
     type LiveRtcControlClient
 } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
 import { normalizeJson } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
@@ -101,7 +102,7 @@ export class RecordingLiveRtcControl implements LiveRtcControlPort {
         input: LiveRtcControlClient.ExecuteInput
     ): Promise<LiveRtcControlClient.Result> => {
         this.commands.push(input);
-        await this.spendWait(resolveLiveRtcResultWaitMs(input));
+        await this.spendWait(computeCommandWaitMs(resolveLiveRtcResultPollTimeoutMs(input)));
         const command = input.command;
         if (command.kind === 'formation.readiness') {
             return await this.recordFormationReadiness(input);
