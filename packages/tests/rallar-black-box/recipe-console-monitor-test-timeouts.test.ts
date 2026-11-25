@@ -34,9 +34,12 @@ describe('Console Native test timeout', () => {
 
         const assertions = (1 + 1 + 2 + 1 + 2) * 15_000;
         const cleanup = 7 * 2_000;
+        /** Three control run reads, each retrying a transport failure twice, 250 ms apart. */
+        const controlReads = 3 * 2 * 250;
 
         expect(computeConsoleNativeTestTimeoutMs(manifest)).toBe(
-            425_000 + assertions + 60_000 + computeDistributedRunPassedWaitMs(manifest) + 2 * 30_000 + 30_000 + cleanup
+            425_000 + assertions + 60_000 + computeDistributedRunPassedWaitMs(manifest) + controlReads + 2 * 30_000 +
+                30_000 + cleanup
         );
     });
 });

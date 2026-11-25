@@ -97,6 +97,8 @@ describe('distributed recipe test timeouts', () => {
      * received message's pill, topic, connection and transport.
      */
     const panelAssertions = (1 + 2 * 3 + 1 + 3 * 4 + 1 + 4) * 15_000;
+    /** A control run read outside a poll retries a transport failure twice, 250 ms apart. */
+    const controlRead = 2 * 250;
     /** The test's cleanup closes its agents side by side, each for up to 15 s. */
     const cleanup = 15_000;
 
@@ -124,8 +126,8 @@ describe('distributed recipe test timeouts', () => {
         const readyAndPassed = 6 * 45_000 + 55_000 + 100_000 + 100_000 + 220_000 + 115_000 + 256_000;
 
         expect(computeLiveDistributedRecipesTestTimeoutMs(runs)).toBe(
-            margin + threeSignedInAgents + membership + readyAndPassed + 2 * 75_000 + 75_000 + 30_000 + panelAssertions +
-                cleanup
+            margin + threeSignedInAgents + membership + readyAndPassed + 2 * 75_000 + 75_000 + 30_000 + 4 * controlRead +
+                panelAssertions + cleanup
         );
     });
 
@@ -135,6 +137,6 @@ describe('distributed recipe test timeouts', () => {
 
         expect(computeDistributedRunPassedWaitMs(manifest)).toBe(57_000);
         expect(computeSimulatedAckTestTimeoutMs(manifest))
-            .toBe(margin + threeAgents + 45_000 + 57_000 + 15_000 + 15_000);
+            .toBe(margin + threeAgents + 45_000 + 57_000 + 15_000 + 15_000 + controlRead);
     });
 });

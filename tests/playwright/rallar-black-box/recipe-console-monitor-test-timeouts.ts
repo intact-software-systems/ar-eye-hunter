@@ -12,6 +12,7 @@ import {
     LOGIN_RUN_HEADER_TIMEOUT_MS,
     RALLAR_PAGE_CLEANUP_BOUNDED_WAITS_MS
 } from './full-stack-helpers.ts';
+import { CONTROL_GET_RETRY_BOUNDED_WAITS_MS } from './read-control-get-response.ts';
 
 /** The Console lifecycle test's limit; its composite run's passed wait is part of it. */
 export const CONSOLE_LIFECYCLE_TEST_TIMEOUT_MS = 240_000;
@@ -66,13 +67,17 @@ export const CONSOLE_NATIVE_SETUP_TIMEOUT_MS = BROWSER_TEST_HARNESS_MARGIN_MS + 
  */
 const CONSOLE_NATIVE_RUN_ASSERTIONS = 7;
 
+/** The Native test reads the control run before its draft, once staged and once passed. */
+const CONSOLE_NATIVE_CONTROL_RUN_READS = 3;
+
 /**
- * The Native test's setup, the run's assertions, staging, the started run to passed, each agent's Native attachment
- * read from the recorder in turn, the Monitor's verdict and the pages' cleanup side by side.
+ * The Native test's setup, the run's assertions, staging, the started run to passed, the control run reads, each agent's
+ * Native attachment read from the recorder in turn, the Monitor's verdict and the pages' cleanup side by side.
  */
 export function computeConsoleNativeTestTimeoutMs(manifest: RallarBlackBoxDistributedRunManifest): number {
     return CONSOLE_NATIVE_SETUP_TIMEOUT_MS + CONSOLE_NATIVE_RUN_ASSERTIONS * FULL_STACK_EXPECT_TIMEOUT_MS +
         CONSOLE_STAGE_READY_TIMEOUT_MS + computeDistributedRunPassedWaitMs(manifest) +
+        CONSOLE_NATIVE_CONTROL_RUN_READS * CONTROL_GET_RETRY_BOUNDED_WAITS_MS +
         CONSOLE_NATIVE_AGENT_COUNT * LIVE_RTC_RECORDER_READ_TIMEOUT_MS + CONSOLE_MONITOR_VERDICT_TIMEOUT_MS +
         RALLAR_PAGE_CLEANUP_BOUNDED_WAITS_MS;
 }

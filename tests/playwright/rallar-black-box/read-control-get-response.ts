@@ -10,6 +10,10 @@ import { TryWithExhaustedError, TryWithPolicy } from '@shared/resilience/try-wit
  */
 const CONTROL_GET_ATTEMPTS = 3;
 const CONTROL_GET_RETRY_PAUSE_MS = 250;
+
+/** A control read that keeps failing in transport pauses between each of its attempts. */
+export const CONTROL_GET_RETRY_BOUNDED_WAITS_MS = (CONTROL_GET_ATTEMPTS - 1) * CONTROL_GET_RETRY_PAUSE_MS;
+
 const CONTROL_TRANSPORT_FAILURE_CODES: ReadonlySet<string> = new Set(['ECONNRESET', 'ECONNREFUSED']);
 const CONTROL_TRANSPORT_FAILURE_MESSAGE = /\bECONN(?:RESET|REFUSED)\b/;
 

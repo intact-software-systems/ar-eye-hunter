@@ -24,12 +24,14 @@ describe('director orchestration test timeout', () => {
         const syncs = 2 * POLL + 60_000;
         /** A's relay stops, the 1.9 s stale hold, B's and C's status reads, then their relays stop. */
         const stale = POLL + 1_900 + 2 * POLL + 2 * POLL;
+        /** The run and its artifacts are read, each read retrying a transport failure twice, 250 ms apart. */
+        const reads = 2 * 2 * 250;
         /** Each page's cleanup clicks up to seven buttons, each for up to 2 s; the pages clean up side by side. */
         const cleanup = 7 * 2_000;
 
         expect(DIRECTOR_ORCHESTRATION_TEST_TIMEOUT_MS).toBe(
             60_000 + openings + membership + connects + readiness + appointment + relays + intents + events + syncs +
-                stale + cleanup
+                stale + reads + cleanup
         );
     });
 });

@@ -25,6 +25,7 @@ import {
     FORMATION_RECONNECT_BOUNDED_WAITS_MS,
     FORMATION_RUN_BOUNDED_WAITS_MS
 } from './live-rtc-formation-waits.ts';
+import { LIVE_RTC_ARTIFACT_EVIDENCE_BOUNDED_WAITS_MS } from './live-rtc-recorder-read-waits.ts';
 
 /** How long a matrix test polls the control run for every key command's result once its scenarios end. */
 export const MATRIX_RUN_RESULTS_POLL_TIMEOUT_MS = 20_000;
@@ -82,7 +83,8 @@ export const CLUSTER_DIRECT_EXCHANGE_BOUNDED_WAITS_MS = LIVE_RTC_TRIO_SIZE * LIV
 
 /**
  * A trio and a delivery matrix per transport, the realtime trio's membership, each trio's diagnostics, the realtime
- * trio's retirement, the messages probes, A's and B's closes and resets, the results poll and the cleanup.
+ * trio's retirement, the messages probes, A's and B's closes and resets, the artifact evidence, the results poll and
+ * the cleanup.
  */
 export const LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS = BROWSER_TEST_HARNESS_MARGIN_MS +
     2 * TRIO_OPENING_BOUNDED_WAITS_MS +
@@ -93,13 +95,15 @@ export const LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS = BROWSER_TEST_HARNESS_MARGIN
     SETTLED_TRIO_RETIREMENT_BOUNDED_WAITS_MS +
     MESSAGES_PROBES_BOUNDED_WAITS_MS +
     2 * LIVE_RTC_CLOSE_AND_RESET_BOUNDED_WAITS_MS +
+    LIVE_RTC_ARTIFACT_EVIDENCE_BOUNDED_WAITS_MS +
     MATRIX_RUN_RESULTS_POLL_TIMEOUT_MS +
     LIVE_RTC_CLEANUP_CLOSE_TIMEOUT_MS;
 
 /**
  * Three trios, the realtime trio's membership and group state readback, every permutation per transport and each
  * transport's diagnostics, the realtime trio's retirement, the WebSocket trio, the messages probes, C's departure and
- * reconnect with the direct message to it, the messages trio's closes and resets, the results poll and the cleanup.
+ * reconnect with the direct message to it, the messages trio's closes and resets, the artifact evidence, the results
+ * poll and the cleanup.
  */
 export const LIVE_RTC_ALL_SCENARIOS_TEST_TIMEOUT_MS = BROWSER_TEST_HARNESS_MARGIN_MS +
     3 * TRIO_OPENING_BOUNDED_WAITS_MS +
@@ -112,6 +116,7 @@ export const LIVE_RTC_ALL_SCENARIOS_TEST_TIMEOUT_MS = BROWSER_TEST_HARNESS_MARGI
     MESSAGES_PROBES_BOUNDED_WAITS_MS +
     RECONNECT_AND_DIRECT_MESSAGE_BOUNDED_WAITS_MS +
     LIVE_RTC_TRIO_SIZE * LIVE_RTC_CLOSE_AND_RESET_BOUNDED_WAITS_MS +
+    LIVE_RTC_ARTIFACT_EVIDENCE_BOUNDED_WAITS_MS +
     MATRIX_RUN_RESULTS_POLL_TIMEOUT_MS +
     LIVE_RTC_CLEANUP_CLOSE_TIMEOUT_MS;
 
@@ -122,7 +127,10 @@ const RETENTION_CYCLE_BOUNDED_WAITS_MS = LIVE_RTC_CLOSE_RESULT_WAIT_MS + LIVE_RT
 /** The checkpoint before the first cycle, then one after every interval of cycles. */
 const RETENTION_CHECKPOINTS = 1 + RETENTION_RECONNECT_CYCLES / RETENTION_CHECKPOINT_INTERVAL_CYCLES;
 
-/** A trio, its membership and formation, each checkpoint's diagnostics, every cycle, the closes and resets, the cleanup. */
+/**
+ * A trio, its membership and formation, each checkpoint's diagnostics, every cycle, the closes and resets, the artifact
+ * evidence and the cleanup.
+ */
 export const LIVE_RTC_RETENTION_SOAK_BOUNDED_WAITS_MS = BROWSER_TEST_HARNESS_MARGIN_MS +
     TRIO_OPENING_BOUNDED_WAITS_MS +
     GROUP_MEMBERSHIP_BOUNDED_WAITS_MS +
@@ -130,6 +138,7 @@ export const LIVE_RTC_RETENTION_SOAK_BOUNDED_WAITS_MS = BROWSER_TEST_HARNESS_MAR
     RETENTION_CHECKPOINTS * LIVE_RTC_DIAGNOSTICS_CAPTURE_BOUNDED_WAITS_MS +
     RETENTION_RECONNECT_CYCLES * RETENTION_CYCLE_BOUNDED_WAITS_MS +
     LIVE_RTC_TRIO_SIZE * LIVE_RTC_CLOSE_AND_RESET_BOUNDED_WAITS_MS +
+    LIVE_RTC_ARTIFACT_EVIDENCE_BOUNDED_WAITS_MS +
     LIVE_RTC_CLEANUP_CLOSE_TIMEOUT_MS;
 
 /**

@@ -48,6 +48,8 @@ const RETIREMENT = 3 * CLOSE_AND_RESET + 2 * 60_000;
  * budget and the poll).
  */
 const PROBES = 45_000 + POLL + 15_000 + 45_000 + 10_000 + POLL;
+/** The artifact evidence reads the run's results, then its events, from the recorder, each for up to 30 s. */
+const ARTIFACT_EVIDENCE = 2 * 30_000;
 /** The 20 s poll for every key command's result. */
 const RESULTS_POLL = 20_000;
 /** The attempt's cleanup closes its open agents side by side, each for up to 15 s. */
@@ -66,14 +68,14 @@ describe('live RTC three-browser matrix test timeouts', () => {
     });
 
     // The proof counted neither its agents' opening screens under the default assertion limit, its recording
-    // admission, its membership's result polls, the sends' and probes' result polls, the inboxes' tab opening nor the
-    // realtime sender's health.
+    // admission, its membership's result polls, the sends' and probes' result polls, the inboxes' tab opening, the
+    // realtime sender's health nor the artifact evidence's recorder reads.
     it('gives the proof two trios, two delivery matrices, the diagnostics, the retirement, the probes and the cleanup', () => {
         const matrix = FORMATION + 3 * DELIVERY + 2 * INBOX;
 
         expect(LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS).toBe(
             MARGIN + 2 * TRIO + MEMBERSHIP + (matrix + POLL) + matrix + 2 * DIAGNOSTICS + RETIREMENT + PROBES +
-                2 * CLOSE_AND_RESET + RESULTS_POLL + CLEANUP
+                2 * CLOSE_AND_RESET + ARTIFACT_EVIDENCE + RESULTS_POLL + CLEANUP
         );
     });
 
@@ -91,19 +93,21 @@ describe('live RTC three-browser matrix test timeouts', () => {
 
         expect(LIVE_RTC_ALL_SCENARIOS_TEST_TIMEOUT_MS).toBe(
             MARGIN + 3 * TRIO + MEMBERSHIP + readback + 2 * permutations + 2 * DIAGNOSTICS + RETIREMENT +
-                webSocketTrio + PROBES + reconnect + reconnectMessage + 3 * CLOSE_AND_RESET + RESULTS_POLL + CLEANUP
+                webSocketTrio + PROBES + reconnect + reconnectMessage + 3 * CLOSE_AND_RESET + ARTIFACT_EVIDENCE +
+                RESULTS_POLL + CLEANUP
         );
     });
 
     // Each reconnect is already bounded by its own wait, so the soak is capped at three hours below its derived sum: a
-    // trio, the formation, eleven checkpoints, and per cycle C's 45 s close, the 60 s absence and the reconnect.
+    // trio, the formation, eleven checkpoints, per cycle C's 45 s close, the 60 s absence and the reconnect, the closes
+    // and resets, and the artifact evidence.
     it('caps the retention soak at its three-hour operational bound below its derived sum', () => {
         const cycle = 45_000 + 60_000 + CONNECT + READINESS;
         const derived = MARGIN + TRIO + MEMBERSHIP + FORMATION + 11 * DIAGNOSTICS +
-            RETENTION_RECONNECT_CYCLES * cycle + 3 * CLOSE_AND_RESET + CLEANUP;
+            RETENTION_RECONNECT_CYCLES * cycle + 3 * CLOSE_AND_RESET + ARTIFACT_EVIDENCE + CLEANUP;
 
         expect(LIVE_RTC_RETENTION_SOAK_BOUNDED_WAITS_MS).toBe(derived);
-        expect(derived).toBe(42_230_000);
+        expect(derived).toBe(42_290_000);
         expect(LIVE_RTC_RETENTION_SOAK_TEST_TIMEOUT_MS).toBe(3 * 60 * 60_000);
     });
 });

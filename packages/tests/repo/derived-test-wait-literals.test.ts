@@ -32,6 +32,7 @@ const DERIVED_TEST_PATH_FILES = [
     `${playwrightRoot}/live-rtc-recorder-reader.ts`,
     `${playwrightRoot}/live-rtc-recorder-rows.ts`,
     `${playwrightRoot}/full-stack-helpers.ts`,
+    `${playwrightRoot}/read-control-get-response.ts`,
     `${playwrightRoot}/distributed-run-requests.ts`,
     `${playwrightRoot}/distributed-recipes/browser-agents.ts`,
     `${playwrightRoot}/distributed-recipes/distributed-control.ts`,

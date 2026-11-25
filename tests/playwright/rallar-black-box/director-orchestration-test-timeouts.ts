@@ -10,6 +10,7 @@ import {
     BROWSER_CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS,
     RALLAR_PAGE_CLEANUP_BOUNDED_WAITS_MS
 } from './full-stack-helpers.ts';
+import { CONTROL_GET_RETRY_BOUNDED_WAITS_MS } from './read-control-get-response.ts';
 
 /** How long a command's result is polled for once its own budget, if it names one, is spent. */
 const DIRECTOR_COMMAND_RESULT_POLL_TIMEOUT_MS = 45_000;
@@ -70,7 +71,8 @@ const STALE_BOUNDED_WAITS_MS = UNBUDGETED_COMMAND_RESULT_WAIT_MS + DIRECTOR_STAL
 /**
  * Three agents opened in turn; the membership; their connects and then their peer readiness side by side; the
  * appointment and the status reads; the relays; B's and C's intents in turn; the intent and output events side by
- * side; the syncs and their snapshots; the stale checks; and the pages' cleanup side by side.
+ * side; the syncs and their snapshots; the stale checks; the run and its artifacts read; and the pages' cleanup side
+ * by side.
  */
 export const DIRECTOR_ORCHESTRATION_TEST_TIMEOUT_MS = BROWSER_TEST_HARNESS_MARGIN_MS +
     DIRECTOR_AGENT_COUNT * BROWSER_CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS +
@@ -83,6 +85,7 @@ export const DIRECTOR_ORCHESTRATION_TEST_TIMEOUT_MS = BROWSER_TEST_HARNESS_MARGI
     DIRECTOR_EVENT_POLL_TIMEOUT_MS +
     SYNCS_BOUNDED_WAITS_MS +
     STALE_BOUNDED_WAITS_MS +
+    2 * CONTROL_GET_RETRY_BOUNDED_WAITS_MS +
     RALLAR_PAGE_CLEANUP_BOUNDED_WAITS_MS;
 
 /** The wait a caller names for a command's result, or else the command's own budget and then the result poll. */

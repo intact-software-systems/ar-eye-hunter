@@ -6,6 +6,7 @@ import {
 } from '../../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 import { type RallarBlackBoxTestRecipe } from '../../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
+import { CONTROL_GET_RETRY_BOUNDED_WAITS_MS } from '../read-control-get-response.ts';
 import {
     CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS,
     CONTROL_AGENT_SIGN_IN_BOUNDED_WAITS_MS,
@@ -77,17 +78,20 @@ const LIVE_PANEL_BOUNDED_WAITS_MS = FULL_STACK_EXPECT_TIMEOUT_MS *
 /** How long the live test's cleanup waits for each agent's best-effort close; the closes run side by side. */
 export const LIVE_DISTRIBUTED_CLEANUP_CLOSE_TIMEOUT_MS = 15_000;
 
-/** Three simulated agents, the run to passed, then the panel listing it and showing it passed. */
+/** The live test reads the control run for the WS and RTC warning reports and the realtime monitor, then its summary. */
+const LIVE_CONTROL_RUN_READS = 4;
+
+/** Three simulated agents, the run to passed, the panel listing it and showing it passed, then the run's summary read. */
 export function computeSimulatedAckTestTimeoutMs(manifest: RallarBlackBoxDistributedRunManifest): number {
     return BROWSER_TEST_HARNESS_MARGIN_MS + THREE_AGENTS_BOUNDED_WAITS_MS +
         computeDistributedRunToPassedWaitMs(manifest) +
-        SIMULATED_ACK_PANEL_TIMEOUT_MS + FULL_STACK_EXPECT_TIMEOUT_MS;
+        SIMULATED_ACK_PANEL_TIMEOUT_MS + FULL_STACK_EXPECT_TIMEOUT_MS + CONTROL_GET_RETRY_BOUNDED_WAITS_MS;
 }
 
 /**
  * Three browser agents and the group's membership, each run to passed in turn, the WS and RTC receivers' messages (each
- * pair side by side), the realtime position payload and the two warning diagnostics side by side, the panel's
- * assertions, then the cleanup.
+ * pair side by side), the realtime position payload and the two warning diagnostics side by side, the control run
+ * reads, the panel's assertions, then the cleanup.
  */
 export function computeLiveDistributedRecipesTestTimeoutMs(runs: LiveDistributedRecipeRuns): number {
     const toPassedMs = toLiveDistributedRecipeManifests(runs).reduce(
@@ -96,7 +100,8 @@ export function computeLiveDistributedRecipesTestTimeoutMs(runs: LiveDistributed
     );
     return BROWSER_TEST_HARNESS_MARGIN_MS + THREE_SIGNED_IN_AGENTS_BOUNDED_WAITS_MS +
         LIVE_GROUP_MEMBERSHIP_BOUNDED_WAITS_MS + toPassedMs + 2 * BROWSER_MESSAGE_POLL_TIMEOUT_MS +
-        REALTIME_POSITION_POLL_TIMEOUT_MS + RUNTIME_DIAGNOSTIC_POLL_TIMEOUT_MS + LIVE_PANEL_BOUNDED_WAITS_MS +
+        REALTIME_POSITION_POLL_TIMEOUT_MS + RUNTIME_DIAGNOSTIC_POLL_TIMEOUT_MS +
+        LIVE_CONTROL_RUN_READS * CONTROL_GET_RETRY_BOUNDED_WAITS_MS + LIVE_PANEL_BOUNDED_WAITS_MS +
         LIVE_DISTRIBUTED_CLEANUP_CLOSE_TIMEOUT_MS;
 }
 
