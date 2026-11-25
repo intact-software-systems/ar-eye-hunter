@@ -53,7 +53,11 @@ export namespace RallarServerAppInbox {
         readonly resourceInboxRepository: EntryRepository;
         readonly resourceInboxResultsRepository: AppInboxResultRepository;
         readonly database: PSqlSql;
-        /** Synchronous scheduling signal. A failure propagates without rolling back the durable admission. */
+        /**
+         * Announces queue rows this inbox made durable: the command row at admission, and the outbox rows of each
+         * commit, whose owners otherwise answer from a remembered empty queue until their idle ceiling. Synchronous;
+         * a failure propagates without rolling back what is already durable.
+         */
         readonly wakeOwningQueue: () => void;
     }
 
@@ -189,7 +193,10 @@ export class RallarServerAppInbox {
         this.state = 'stopped';
     }
 
-    /** Encodes the exact result before entry; resolves only after domain writes and durable completion commit together. */
+    /**
+     * Encodes the exact result before entry; resolves only after domain writes and durable completion commit together,
+     * and after the owning queue has been told of the rows that commit wrote.
+     */
     async commit<Result>(
         context: AppInboxMessageContext<Result>,
         result: Result,
@@ -209,6 +216,7 @@ export class RallarServerAppInbox {
             throw issues[0].cause;
         }
         await this.handlers.transactionWriter.writeComputedMutation(context, completion, write);
+        this.wakeOwningQueue();
         return result;
     }
 
