@@ -786,14 +786,18 @@ originate an ordered track of three on an ordering key of its own (`ack: 'receiv
 in the first cell, `ack: 'none'` in the second), wait until both receivers entered the
 track at the first, hold the second send by its message id and send the third. Each
 origin releases its hold only once its outbound `control-admission` diagnostics
-committed the gap request numbered 3 (2 in the unreceipted cell) from each receiver,
-matched by the request number and the receiver's peer id. Every receiver enters each
+committed a gap request numbered 3 or later (2 or later in the unreceipted cell) from
+each receiver, matched by the receiver's peer id and the request number as a floor: a
+later request can commit first. Each track's sends live 50 s, longer than the browser
+default, and an origin's two request waits share half of it, 25 s counted from its
+second send (`timeoutFrom`), so the release, the repair and its receipt keep the other
+half. Every receiver enters each
 origin's track at the first, releases the third from its buffer and omits nothing;
 each origin reads its three handles `acknowledged` (`transport-accepted` unreceipted).
 After the run the identity assessment fails the cell unless one origin's recorded
 request wait names a `nackFromPeerId` other than its `nackLogicalRecipientPeerId`,
 a request a relay carried: the sender recipe's metadata `almRelayedGapRenewalOrigins`
-names each origin by its role, the request number and its waits. No hosted manifest
+names each origin by its role, the lowest request number and its waits. No hosted manifest
 carries either.
 
 A scenario definition's optional `connect.minReadyPeers` sets the readiness its roles' connects wait for;
