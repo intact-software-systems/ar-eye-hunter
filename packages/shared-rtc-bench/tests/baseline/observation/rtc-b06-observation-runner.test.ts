@@ -14,6 +14,10 @@ import {
 } from '../../../baseline/acceptance/rtc-baseline-job-budget-not-started.ts';
 import { deriveRtcBaselineCaptureManifest, deriveRtcBaselineExternalAttempts } from '../../../baseline/catalog/rtc-baseline-workload-manifest.ts';
 import { decodeRtcBaselineCaptureRequest } from '../../../baseline/contracts/rtc-baseline-decoding.ts';
+import {
+    computeRtcB06AttemptTimeoutMs,
+    toRtcB06AttemptTestTimeoutMs
+} from '../../../baseline/observation/compute-rtc-b06-attempt-timeout-ms.ts';
 import { createRtcB06ObservationRunner, type RtcB06ObservationRunnerDependencies } from '../../../baseline/observation/rtc-b06-observation-runner.ts';
 import type { RtcB06PerformanceObservation } from '../../../baseline/observation/rtc-b06-performance-observation.ts';
 import {
@@ -25,10 +29,6 @@ import {
     writeRtcPerformanceObservationOutput
 } from '../../../baseline/observation/rtc-performance-observation-bun-support.ts';
 import { runRtcPerformanceObservationCli } from '../../../baseline/observation/rtc-performance-observation-cli.ts';
-import {
-    computeRtcB06AttemptTimeoutMs,
-    toRtcB06AttemptTestTimeoutMs
-} from '../../../baseline/observation/compute-rtc-b06-attempt-timeout-ms.ts';
 import { createRtcB06FinalizedArtifacts, createRtcB06JobBudgetIncompleteArtifacts } from './rtc-performance-observation-fixture.ts';
 
 const artifactFixture = await createRtcB06FinalizedArtifacts('20260830T100000Z-c0cadb8216cf-e3-memory-gh987654321-a3');

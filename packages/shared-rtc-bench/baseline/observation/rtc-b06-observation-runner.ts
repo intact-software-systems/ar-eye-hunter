@@ -9,12 +9,12 @@ import type {
 import { createRtcBaselineObservationId } from '../contracts/rtc-baseline-id.ts';
 import type { RtcBaselineFinalizedSummary } from '../evidence/rtc-baseline-finalized-evidence.ts';
 import type { RtcBaselineEnvelope } from '../runtime/rtc-baseline-envelope.ts';
+import { computeRtcB06AttemptTimeoutMs } from './compute-rtc-b06-attempt-timeout-ms.ts';
 import { computeRtcPerformanceObservationOutcome } from './compute-rtc-performance-observation-outcome.ts';
 import { readRtcB06EvidenceReport, type RtcB06EvidenceReport } from './read-rtc-b06-evidence-report.ts';
 import type { RtcB06PerformanceObservation } from './rtc-b06-performance-observation.ts';
 import type { RtcPerformanceObservationArchiveWritten } from './rtc-performance-observation-archive.ts';
 import type { RtcPerformanceObservationOutcome } from './rtc-performance-observation.ts';
-import { computeRtcB06AttemptTimeoutMs } from './compute-rtc-b06-attempt-timeout-ms.ts';
 
 export interface RtcB06ObservationRunInput {
     readonly sourceRef: 'main';
