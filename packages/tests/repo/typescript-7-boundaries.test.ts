@@ -75,9 +75,48 @@ describe('native TypeScript 7 repository boundaries', () => {
             )
         ).toEqual([]);
 
-        const compilers = declarations.filter(({ dependency }) => dependency === 'typescript');
-        expect(compilers.length).toBeGreaterThan(0);
-        expect(compilers.filter(({ version }) => version !== expectedTypeScriptVersion)).toEqual([]);
+        expect(
+            declarations.filter(
+                ({ dependency }) => dependency === 'typescript'
+            )
+        ).toEqual([
+            {
+                dependency: 'typescript',
+                manifest: 'apps/ar-eye-hunter-v1/package.json',
+                section: 'devDependencies',
+                version: expectedTypeScriptVersion
+            },
+            {
+                dependency: 'typescript',
+                manifest: 'apps/grumpy-town/package.json',
+                section: 'devDependencies',
+                version: expectedTypeScriptVersion
+            },
+            {
+                dependency: 'typescript',
+                manifest: 'apps/rallar-black-box/package.json',
+                section: 'devDependencies',
+                version: expectedTypeScriptVersion
+            },
+            {
+                dependency: 'typescript',
+                manifest: 'apps/rallar-black-box-headless/package.json',
+                section: 'devDependencies',
+                version: expectedTypeScriptVersion
+            },
+            {
+                dependency: 'typescript',
+                manifest: 'apps/relic-hunters-v1/package.json',
+                section: 'devDependencies',
+                version: expectedTypeScriptVersion
+            },
+            {
+                dependency: 'typescript',
+                manifest: 'package.json',
+                section: 'devDependencies',
+                version: expectedTypeScriptVersion
+            }
+        ]);
     });
 
     it('uses only TS7-compatible npm TypeScript configurations', () => {
