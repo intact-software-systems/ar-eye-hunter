@@ -99,11 +99,17 @@ const LIVE_EVIDENCE_READS = 4;
 /** A run's evidence reads the control run, then one distributed run resource. */
 const DISTRIBUTED_EVIDENCE_READ_BOUNDED_WAITS_MS = CONTROL_GET_BOUNDED_WAITS_MS + CONTROL_REQUEST_TIMEOUT_MS;
 
-/** The simulated failure test's requests outside any poll: the refused manifest, then its runs' create and stage. */
-const SIMULATED_FAILURE_RUN_REQUESTS = 1 + 2 * 4;
+/**
+ * The simulated failure test's runs, each created by `createDistributedRun` and staged by `mutateDistributedRun`: the
+ * missing-target run, the ACK timeout run, the failing run and the disconnect run.
+ */
+const SIMULATED_FAILURE_RUNS = 4;
 
-/** The simulated failure test starts the failing and the disconnect runs, then cancels the disconnect run. */
-const SIMULATED_FAILURE_RUN_MUTATIONS = 3;
+/** The simulated failure test's requests outside any poll: the refused schema-failure manifest, then each run's two. */
+const SIMULATED_FAILURE_RUN_REQUESTS = 1 + 2 * SIMULATED_FAILURE_RUNS;
+
+/** The failing and the disconnect runs' starts, then the disconnect run's cancel, each by `mutateDistributedRun`. */
+const SIMULATED_FAILURE_RUN_MUTATIONS = 2 + 1;
 
 /**
  * Three simulated agents; each scripted agent's socket and its in-group poll; the refused manifest and each of the
