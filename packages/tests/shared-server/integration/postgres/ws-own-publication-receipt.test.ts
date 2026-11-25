@@ -85,9 +85,9 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL rec
         expect(await readHeadCount(cluster, sent.id.msgId)).toBe(1);
     }, CASE_TIMEOUT_MS);
 
-    // Pins a fenced commit on the server's one version row per confirmation of its publication. The one move is the
+    // Pins a fenced commit on the publication's version row per confirmation of it. The one move is the
     // terminal receipt's admission into the server's row.
-    it('moves the server\'s version row as often for fifty confirmations as for ten', async () => {
+    it('moves the publication\'s version row as often for fifty confirmations as for ten', async () => {
         const cluster = await createReceiptCluster();
         const sessionIds = toSessionIds(50);
         const trio = await startTrio(cluster, sessionIds);
@@ -230,8 +230,8 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL rec
         await pollRowEnded(readOwnReceiptStore(cluster), sent);
     }, CASE_TIMEOUT_MS);
 
-    // Pins a losing `end` that settles the server's row twice (its version row moving twice) or surfaces as a
-    // failure. Both counts commit before either reads its tally, so both read a complete set and both call `end`.
+    // Pins a losing `end` that settles the server's row twice (the publication's version row moving twice) or surfaces
+    // as a failure. Both counts commit before either reads its tally, so both read a complete set and both call `end`.
     it('ends once when the last two confirmations are counted at once on two instances', async () => {
         const cluster = await createReceiptCluster();
         const sessionIds = toSessionIds(3);
@@ -252,7 +252,7 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL rec
         await publish(a, { sent, sessions });
         await confirmTogether(sessions.slice(0, 1), sent);
         const store = readOwnReceiptStore(cluster);
-        const before = await readServerVersion(store, sent);
+        const before = await readPublicationVersion(store, sent);
 
         const results = await countTogether([
             { hold: holds.b, count: () => b.service.acceptIncomingMessage(sessionAck(sent, 's1', 'delivered'), 's1') },
@@ -262,7 +262,7 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL rec
         expect(results.map((result) => result.left)).toEqual([undefined, undefined]);
         await expectStoredEnd(cluster, ownRef(sent), { phase: 'complete', confirmedRecipientPeerIds: sessionIds, outsideAudienceRecipientPeerIds: [] });
         await pollRowEnded(store, sent);
-        expect(await readServerVersion(store, sent) - before).toBe(1);
+        expect(await readPublicationVersion(store, sent) - before).toBe(1);
         expect(readCountOutcomes(cluster, sent.id.msgId)).toEqual<ReturnType<typeof readCountOutcomes>>(['partial', 'complete', 'complete']);
     }, CASE_TIMEOUT_MS);
 
@@ -400,23 +400,23 @@ async function confirmTogether(sessions: readonly ConnectedSession[], sent: ALMe
 }
 
 /**
- * How often the server's version row moved from the settled dequeue until the head ended and its terminal receipt
+ * How often the publication's version row moved from the settled dequeue until the head ended and its terminal receipt
  * settled the server's row.
  */
 async function measureVersionMoves(store: OwnReceiptStore, instance: ReceiptInstance, publication: Publication): Promise<number> {
     const { sent, sessions } = publication;
     await publish(instance, publication);
-    const before = await readServerVersion(store, sent);
+    const before = await readPublicationVersion(store, sent);
     await confirmTogether(sessions, sent);
     await pollRowEnded(store, sent);
-    return await readServerVersion(store, sent) - before;
+    return await readPublicationVersion(store, sent) - before;
 }
 
-async function readServerVersion(store: OwnReceiptStore, sent: ALMessage): Promise<number> {
+async function readPublicationVersion(store: OwnReceiptStore, sent: ALMessage): Promise<number> {
     const read = { msgId: sent.id.msgId, originPeerId: RECEIPT_SERVER_PEER_ID, phase: 'admitted', expectedRecipientPeerIds: [] } as const;
-    const version = (await store.readReceiptAdmission(read)).clientRecord?.version;
+    const version = (await store.readReceiptAdmission(read)).messageVersion?.version;
     if (version === undefined) {
-        throw new Error('The server has no version row');
+        throw new Error('The publication has no version row');
     }
     return version;
 }
