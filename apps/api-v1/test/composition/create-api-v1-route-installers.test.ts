@@ -16,6 +16,9 @@ import {
     type ApiV1RouteInstallerTopology,
     type CreateApiV1RouteInstallersInput
 } from '../../src/composition/create-api-v1-route-installers.ts';
+import { toRoomGuestCredential } from '@shared-server/rallar-system/auth/credentials/room-guest-credential.ts';
+import { createGroupStateRouteSnapshotWithMember, TEST_GROUP_SCOPE } from '../group-state/group-state-route-test-runtime.ts';
+import { createClientSnapshot } from '../client-state/client-state-route-test-runtime.ts';
 import { authenticationRequired } from '../../src/services/request-auth-service.ts';
 
 test('route installers mount representative API and websocket behavior in order', async () => {
@@ -73,6 +76,38 @@ test('route installers mount representative API and websocket behavior in order'
     assert.equal((await app.request('/api/tournaments/apps/app/workspaces/workspace/tournaments/cup')).status, 401);
     assert.equal((await app.request('/api/tournaments/apps/app/workspaces/workspace/catalog')).status, 401);
     assert.equal((await app.request('/api/docs')).status, 200);
+});
+
+test('a guest self-read follows the current seat when another replica remembers the prior membership', async () => {
+    const room = { ...TEST_GROUP_SCOPE, groupId: 'market' };
+    const guest = await toRoomGuestCredential(room, 'a1'.repeat(32));
+    const snapshot = createGroupStateRouteSnapshotWithMember('market', guest.clientId, 'active');
+    const admitted = { ...snapshot, members: snapshot.members.map(member => ({
+        ...member, guestLease: { admittedAtEpochMs: 1, expiresAtEpochMs: 60_000 }
+    })) };
+    const absent = { ...snapshot, members: [] };
+    let current: typeof snapshot = admitted;
+    let previous: typeof snapshot = absent;
+    const input = createInput();
+    const runtime = {
+        ...input.runtime,
+        groupStateService: {
+            ...input.runtime.groupStateService,
+            readSnapshot: async () => previous,
+            readCurrentSnapshot: async () => current
+        },
+        clientRestSnapshotReadSelector: {
+            read: async () => ({ status: 'found' as const, source: 'durable' as const, snapshot: createClientSnapshot(guest.clientId) })
+        }
+    };
+    const app = new Hono();
+    for (const install of constructApiV1RouteInstallers({ ...input, runtime }, TEST_OPERATIONS).rest) install(app);
+    const path = '/api/state/apps/' + room.applicationId + '/workspaces/' + room.workspaceId + '/clients/' + guest.clientId;
+    const headers = { authorization: 'Bearer ' + guest.accessToken, 'x-client-id': guest.clientId };
+    assert.equal((await app.request(path, { headers })).status, 200);
+    previous = current;
+    current = absent;
+    assert.equal((await app.request(path, { headers })).status, 403);
 });
 
 const TEST_OPERATIONS: ApiV1RouteInstallerOperations<ApiV1RouteInstallerRuntime> = {

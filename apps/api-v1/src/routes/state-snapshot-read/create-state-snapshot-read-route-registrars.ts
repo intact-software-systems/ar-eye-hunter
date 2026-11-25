@@ -98,7 +98,8 @@ export function createStateSnapshotReadRouteRegistrars<Runtime extends ApiV1Stat
         client: (app: Hono) =>
             clientStateRoutes.registerClientStateRoutes(app, {
                 clientStateService: runtime.clientStateService,
-                readGuestRoom: ref => runtime.groupStateService.readSnapshot(ref), nowEpochMs: policy.nowEpochMs,
+                readGuestRoom: ref => runtime.groupStateService.readCurrentSnapshot(ref),
+                nowEpochMs: policy.nowEpochMs,
                 strictReadAuthorization: policy.strictReadAuthorization,
                 requireApiAuthSession: (request) =>
                     operations.requireApiAuthSession(request, runtime.authSessionRepository),
