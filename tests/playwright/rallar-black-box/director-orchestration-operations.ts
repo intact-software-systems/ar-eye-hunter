@@ -51,7 +51,9 @@ export namespace DirectorOrchestration {
 
     /** The control run the scenario drives its agents through. */
     export interface Control {
-        /** Enqueues a command, then polls for its result as long as `resolveDirectorCommandResultPollTimeoutMs` says. */
+        /**
+         * Enqueues a command, then polls for its result as long as `resolveDirectorCommandResultPollTimeoutMs` says.
+         */
         executeResult(input: CommandInput): Promise<ControlResultEnvelope>;
         /** Polls the run until the agent reports the event, for up to the director event poll's limit. */
         waitForEvent(expectation: EventExpectation): Promise<void>;

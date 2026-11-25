@@ -83,7 +83,9 @@ export class LiveRtcLifecycleOperations {
         };
     }
 
-    /** The group every scenario runs on: managed, with the driver commanding each boundary itself, then every presence. */
+    /**
+     * The group every scenario runs on: managed, with the driver commanding each boundary itself, then every presence.
+     */
     async connectTrioPresence(run: LiveRtcLifecycleOperations.Run): Promise<void> {
         await this.#config.delivery.setupGroupMembership({
             control: run.control,

@@ -18,7 +18,9 @@ const AGENT_OPEN = 30_000 + 2 * 15_000 + 30_000;
 const TRIO_OPEN = 3 * AGENT_OPEN;
 /** The owner creates the group and the two other members join it, each request its 10 s budget and then the poll. */
 const MEMBERSHIP = 3 * (10_000 + POLL);
-/** The connect after planning retries for 60 s; its last attempt may then wait the poll and its 500 ms retry interval. */
+/**
+ * The connect after planning retries for 60 s; its last attempt may then wait the poll and its 500 ms retry interval.
+ */
 const CONNECT_WHEN_PLANNED = 60_000 + POLL + 500;
 /** The connect after planning, then each of the trio's dials polled 90 s. */
 const DIALS = CONNECT_WHEN_PLANNED + 3 * 90_000;
@@ -42,7 +44,8 @@ describe('live RTC lifecycle scenario timeouts', () => {
     // The barrier scenario's read of its formation changes was not counted; before that, no command's enqueue request
     // and no control run read outside a poll were, and earlier still, the scenarios counted neither the commands polled
     // under the default result poll, the opening screens waited under the default assertion limit, the membership
-    // requests' result polls, the readiness's and the stage wait's result polls, nor the reopened member's health reads.
+    // requests' result polls, the readiness's and the stage wait's result polls, nor the reopened member's health
+    // reads.
     it('gives each scenario every bounded wait it runs and the harness margin', () => {
         expect({
             discovery: computeLiveRtcLifecycleScenarioTimeoutMs('discovery'),

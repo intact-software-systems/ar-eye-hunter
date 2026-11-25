@@ -40,7 +40,9 @@ import type { LiveRtcFormationOperations } from './live-rtc-formation-operations
 
 type TransportUnderTest = 'realtime' | 'messages.rtc';
 
-/** How long each topology read of the planned layout poll is polled for its result; the outer poll's limit bounds it. */
+/**
+ * How long each topology read of the planned layout poll is polled for its result; the outer poll's limit bounds it.
+ */
 const FORMATION_TOPOLOGY_READ_RESULT_POLL_TIMEOUT_MS = 15_000;
 
 type AgentPrefix = 'A' | 'B' | 'C';

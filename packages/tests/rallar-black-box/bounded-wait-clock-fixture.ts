@@ -208,7 +208,9 @@ function toCountedResponse(status: number, body: object): Playwright.APIResponse
     return response as Playwright.APIResponse;
 }
 
-/** Spends a request's named timeout as a request outside any poll counts it; inside a counted poll it spends nothing. */
+/**
+ * Spends a request's named timeout as a request outside any poll counts it; inside a counted poll it spends nothing.
+ */
 async function spendRequestTimeout(options: CountedRequestOptions | undefined): Promise<void> {
     if (options?.timeout === undefined) {
         throw new Error('A counted control request names no timeout of its own.');

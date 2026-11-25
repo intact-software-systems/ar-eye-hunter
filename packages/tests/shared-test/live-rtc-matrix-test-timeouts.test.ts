@@ -24,7 +24,9 @@ const MARGIN = 60_000;
 const REQUEST = 10_000;
 /** A command that names no budget of its own is enqueued, then polled for its result for 45 s. */
 const POLL = REQUEST + 45_000;
-/** A trio's agents each sign in (30 s), select the workbench tab (15 s, then 15 s for its panel) and register (30 s). */
+/**
+ * A trio's agents each sign in (30 s), select the workbench tab (15 s, then 15 s for its panel) and register (30 s).
+ */
 const TRIO_OPEN = 3 * (30_000 + 2 * 15_000 + 30_000);
 /** Browser recording admission then reads each agent's health in turn. */
 const TRIO = TRIO_OPEN + 3 * POLL;
@@ -38,7 +40,10 @@ const READINESS = 60_000 + POLL;
  * plan, the 30 s planned layout poll, the layout's connect and the activation, the last three polled.
  */
 const CYCLE = 10_000 + POLL + REQUEST + 15_000 + 30_000 + 3 * POLL;
-/** Three connects each followed by a 30 s presence poll, the pair's and the trio's cycles and readiness, the pair's 60 s. */
+/**
+ * Three connects each followed by a 30 s presence poll, the pair's and the trio's cycles and readiness, the pair's 60
+ * s.
+ */
 const FORMATION = 3 * (CONNECT + 30_000) + 2 * (CYCLE + READINESS) + 60_000;
 /** A delivery's send, enqueued, its 60 s budget then the poll, runs beside its receivers' 60 s message waits. */
 const DELIVERY = Math.max(60_000 + POLL, 60_000);
@@ -64,7 +69,9 @@ const ARTIFACT_EVIDENCE = REQUEST + 2 * 30_000;
 const UNEXPECTED_DELIVERIES = REQUEST;
 /** The 20 s poll for every key command's result. */
 const RESULTS_POLL = 20_000;
-/** The attempt's cleanup closes its open agents side by side, each enqueued then waited 15 s, then reads its summary. */
+/**
+ * The attempt's cleanup closes its open agents side by side, each enqueued then waited 15 s, then reads its summary.
+ */
 const CLEANUP = REQUEST + 15_000 + REQUEST;
 
 describe('live RTC three-browser matrix test timeouts', () => {
@@ -113,7 +120,9 @@ describe('live RTC three-browser matrix test timeouts', () => {
     it('gives every-scenario run its trios, permutations, opens, closes, probes, reconnect, direct message and cleanup', () => {
         const readback = 2 * (10_000 + POLL);
         const permutations = FORMATION + 3 * 4 * DELIVERY;
-        /** Each WebSocket agent configures, opens (15 s budget and the poll), sends and closes, then closes and resets. */
+        /**
+         * Each WebSocket agent configures, opens (15 s budget and the poll), sends and closes, then closes and resets.
+         */
         const webSocketTrio = 3 * (POLL + 15_000 + POLL + POLL + POLL) + 3 * CLOSE_AND_RESET;
         const reconnect = 60_000 + CONNECT + READINESS;
         const reconnectMessage = 60_000 + POLL + 60_000;

@@ -60,7 +60,9 @@ const SYNCS_BOUNDED_WAITS_MS = DIRECTOR_CLIENT_COUNT * DIRECTOR_UNBUDGETED_COMMA
 const STALE_BOUNDED_WAITS_MS = DIRECTOR_UNBUDGETED_COMMAND_WAIT_MS + DIRECTOR_STALE_HOLD_MS +
     2 * DIRECTOR_CLIENT_COUNT * DIRECTOR_UNBUDGETED_COMMAND_WAIT_MS;
 
-/** What `runDirectorOrchestration` waits: the membership, connects, appointment, relays, intents, syncs and staleness. */
+/**
+ * What `runDirectorOrchestration` waits: the membership, connects, appointment, relays, intents, syncs and staleness.
+ */
 export const DIRECTOR_SCENARIO_BOUNDED_WAITS_MS = MEMBERSHIP_BOUNDED_WAITS_MS + CONNECTS_BOUNDED_WAITS_MS +
     APPOINTMENT_BOUNDED_WAITS_MS + RELAYS_BOUNDED_WAITS_MS + INTENTS_BOUNDED_WAITS_MS + SYNCS_BOUNDED_WAITS_MS +
     STALE_BOUNDED_WAITS_MS;
