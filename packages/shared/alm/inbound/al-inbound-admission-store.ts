@@ -182,6 +182,11 @@ export interface ALInboundMessageReadDto {
     readonly nacks: readonly ALNackPayload[];
     readonly controlOwners: ALInboundControlOwnerIndex | undefined;
     readonly plan: ALMessageHandlingPlan;
+    /**
+     * The next hops a parent's repeat of this message is passed down to when it keeps no relay row: where it would go
+     * were it new, on a lane that forwards a retried copy; none on any other lane.
+     */
+    readonly retriedCopyNextHopPeerIds: readonly string[];
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
     readonly durability: ALStoreDurability;
 }
@@ -379,8 +384,9 @@ export type ALInboundDurableEffect =
     | ALInboundGapRenewalEffect;
 
 /**
- * The timer of one range an arrival revealed missing: due when its request is to be renewed, it asks `toPeerId`
- * again, under `requestNumber`, for what of `range` is still missing. `message` is that arrival, which the renewal
+ * The timer of one range an arrival revealed missing: due when its request is to be renewed, it asks the track's
+ * upstream peer again, under `requestNumber`, for what of `range` is still missing. `toPeerId` is the peer the gap was
+ * first reported to, which the renewal asks when no upstream peer resolves. `message` is that arrival, which the renewal
  * names; the row holds no time, so the same arrival planned again computes the same row.
  */
 export type ALInboundGapRenewalEffect = Readonly<{
@@ -467,6 +473,9 @@ export interface ALInboundAdmissionStore extends ALReadyable {
 
     /** The audience a WS client's message was frozen to at ingress; absent for any other message or a missing row. */
     readIngressAudience(msgId: string, originPeerId: string): Promise<readonly string[] | undefined>;
+
+    /** The provenance the message's admission recorded; absent when the store holds none. */
+    readMessageProvenance(reference: ALInboundMessageReference): Promise<ALInboundMessageOwner | undefined>;
 
     commitMutations(
         request: ALInboundWriteRequest
@@ -1082,12 +1091,16 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
     }
 
     async readIngressAudience(msgId: string, originPeerId: string): Promise<readonly string[] | undefined> {
-        const owner = await this.backend.readWithin((session) =>
-            readALInboundMessageOwner({ database: session, namespace: this.namespace, msgId, senderId: originPeerId })
-        );
+        const owner = await this.readMessageProvenance({ msgId, senderId: originPeerId });
         return owner?.source.kind === 'ws-client' && owner.source.peerId === originPeerId
             ? owner.source.groupRecipientPeerIds
             : undefined;
+    }
+
+    async readMessageProvenance(reference: ALInboundMessageReference): Promise<ALInboundMessageOwner | undefined> {
+        return await this.backend.readWithin((session) =>
+            readALInboundMessageOwner({ database: session, namespace: this.namespace, ...reference })
+        );
     }
 
     private toDedupKey(dedupKey: string): string {

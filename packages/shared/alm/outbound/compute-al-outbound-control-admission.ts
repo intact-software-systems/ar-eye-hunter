@@ -1,23 +1,27 @@
 import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
-import type {
-    ALAckPayload,
-    ALNackPayload,
-    ALParsedControlMessage,
-    ALPeerControlMessage,
-    ALRepairPayload
+import {
+    isALHopCompletionAck,
+    type ALAckPayload,
+    type ALNackPayload,
+    type ALParsedControlMessage,
+    type ALPeerControlMessage,
+    type ALRepairPayload
 } from '../../al-contracts/al-control.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
 import { toALSeqRangesText } from '../../al-contracts/al-seq-range.ts';
 import type { ALReceiptProofRefusal } from '../../al-contracts/receipt-proof/al-receipt-proof.ts';
+import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import type {
     ALOutboundPendingAckSnapshot
 } from '../al-runtime-state-stores.ts';
 import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
 import { isALOutsideAudienceNackReason } from '../delivery/is-al-outside-audience-nack-reason.ts';
 import type { ALOutboundAdmissionMutation } from './admission/al-outbound-admission-mutations.ts';
-import type {
-    ALOutboundRepairHint,
-    ALOutboundVersionedClientRecord
+import {
+    toALOutboundMessageFence,
+    type ALOutboundMessageFence,
+    type ALOutboundMessageVersion,
+    type ALOutboundRepairHint
 } from './admission/al-outbound-admission-store.ts';
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
 import type { ALOutboundSettlementFact } from './al-outbound-message-runtime.ts';
@@ -28,7 +32,10 @@ import {
     toALOutboundRelayRejectedFact
 } from './control/resolve-al-outbound-relay-rejection.ts';
 import { toALOutboundControlRepairHint } from './control/to-al-outbound-control-repair-hint.ts';
-import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
+import {
+    isSameALOutboundReceiptClasses,
+    toALOutboundReceiptClasses
+} from './control/to-al-outbound-receipt-classes.ts';
 import { toALOutboundReceiptExhaustedFact } from './control/to-al-outbound-receipt-exhausted-fact.ts';
 import { toALOutboundEndedTimeoutEffectIds } from './control/write-al-outbound-timeout-completions.ts';
 import type { ALOutboundFirstHopWaitSnapshot } from './first-hop/compute-al-outbound-first-hop-wait.ts';
@@ -53,6 +60,14 @@ export type ALControlHistory =
  */
 export type ALOutboundControlSource = 'trusted-server' | 'peer';
 
+/**
+ * Who may ask for the repair of a send that tracks no receipt: a recipient its frozen audience names, or, for a room send
+ * to no one addressee that froze none, any requester the repair authority planned a repair to.
+ */
+export type ALOutboundUnreceiptedRepairAudience =
+    | Readonly<{ kind: 'frozen'; recipientPeerIds: readonly string[]; }>
+    | Readonly<{ kind: 'planned'; }>;
+
 export interface ALControlAdmissionRead {
     readonly parsed: ALPeerControlMessage;
     readonly source: ALOutboundControlSource;
@@ -63,9 +78,20 @@ export interface ALControlAdmissionRead {
     readonly targetMsgId: string;
     readonly nowMs: number;
     readonly owner?: string;
-    readonly ownerVersion?: ALOutboundVersionedClientRecord;
+    /** The version of the message's rows, which every commit that writes one of them moves; read with its owner. */
+    readonly messageVersion: ALOutboundMessageVersion | undefined;
     readonly sent?: ALStoredOutboundMessage;
     readonly pending?: ALOutboundPendingAckSnapshot;
+    /**
+     * Read only for a send that tracks no receipt and holds no receipt row; `undefined` for any other, for one outside a
+     * room, or one gone.
+     */
+    readonly unreceiptedRepairAudience: ALOutboundUnreceiptedRepairAudience | undefined;
+    /**
+     * Read only for a gap NACK a relay re-sends: the send is a room send, whose repair authority admits that NACK only
+     * after it planned a repair to its sender, a ready room neighbour (6d); `false` for any other control.
+     */
+    readonly isRoomRepairedRelayedGapNack: boolean;
     /** The sender's wait for its own hop to first answer for the message; absent when it waits on none. */
     readonly firstHopWait?: ALOutboundFirstHopWaitSnapshot;
     readonly history: ALControlHistory;
@@ -105,8 +131,11 @@ export interface ALControlAdmissionCandidate {
     readonly receiptExpireAtTimestamp: number;
     readonly repairEffect?: ALRepairHintEffectWrite;
     readonly controlExpireAtTimestamp: number;
-    readonly versionExpireAtTimestamp: number;
-    readonly nextVersion: ALOutboundVersionedClientRecord | undefined;
+    /**
+     * The control's commit is fenced on its message alone: a commit of another message of the owner never moves it.
+     * Undefined without an owner, whose control validation refuses.
+     */
+    readonly messageFence: ALOutboundMessageFence | undefined;
 }
 
 export function computeALOutboundControlAdmission(
@@ -138,8 +167,11 @@ export function computeALOutboundControlAdmission(
             ),
         repairEffect: toRepairHintEffect(read),
         controlExpireAtTimestamp: toExpireAtTimestampFromNow(retention.controlHistoryTtlMs, read.nowMs),
-        versionExpireAtTimestamp: toExpireAtTimestampFromNow(retention.versionTtlMs, read.nowMs),
-        nextVersion: read.owner ? { senderId: read.owner, version: (read.ownerVersion?.version ?? 0) + 1 } : undefined
+        messageFence: read.owner === undefined ? undefined : toALOutboundMessageFence(
+            { originPeerId: read.owner, msgId: read.targetMsgId },
+            read.messageVersion,
+            read.sent?.reference.expiresAtMs
+        )
     };
 }
 
@@ -276,18 +308,7 @@ function computePendingAckWrite(
     history: ALControlHistory
 ): ALPendingAckWrite {
     if (read.parsed.type === 'ack' && history.kind === 'acks') {
-        const ack = read.parsed.payload;
-        const next = acceptALOutboundPendingAckSnapshot({ current: read.pending, acks: [], ack });
-        if (next === undefined) {
-            return { kind: 'remove' };
-        }
-        const owedPeerIds = toALOutboundReceiptClasses(next).unconfirmedPeerIds;
-        return {
-            kind: 'set',
-            value: isALOutboundImpliedNotSubscribedAck(next.mode, ack, owedPeerIds)
-                ? acceptALOutboundOutsideAudienceNack(next, ack.logicalRecipientPeerId)
-                : next
-        };
+        return computeAcknowledgedPendingAckWrite(read, read.parsed.payload);
     }
     if (read.parsed.type === 'nack' && isALOutsideAudienceNackReason(read.parsed.payload.reason) && read.pending) {
         return {
@@ -298,6 +319,32 @@ function computePendingAckWrite(
     return read.parsed.type === 'nack' && isTerminalNack(read.parsed.payload) && read.pending
         ? { kind: 'remove' }
         : { kind: 'unchanged' };
+}
+
+/**
+ * The receipt row an ACK leaves. One whose fact would repeat the last one stated leaves the row as it was, so its commit
+ * states nothing: it moves no peer between the receipt's classes and changes no hop list the fact carries. Under
+ * `receiver` and `leader` those lists are the hop view, so an ACK that completes a hop states them as they now stand;
+ * under `hop` and `subtree` they are the classes, so a hop's completion alone states nothing.
+ */
+function computeAcknowledgedPendingAckWrite(read: ALControlAdmissionRead, ack: ALAckPayload): ALPendingAckWrite {
+    const current = read.pending;
+    const accepted = acceptALOutboundPendingAckSnapshot({ current, acks: [], ack });
+    if (current === undefined || accepted === undefined) {
+        return { kind: 'remove' };
+    }
+    const owedPeerIds = toALOutboundReceiptClasses(accepted).unconfirmedPeerIds;
+    const next = isALOutboundImpliedNotSubscribedAck(accepted.mode, ack, owedPeerIds)
+        ? acceptALOutboundOutsideAudienceNack(accepted, ack.logicalRecipientPeerId)
+        : accepted;
+    const movesHopLists = isALLogicalReceiptMode(current.mode) && completesHop(read.acknowledgements, ack);
+    return isSameALOutboundReceiptClasses(current, next) && !movesHopLists
+        ? { kind: 'unchanged' }
+        : { kind: 'set', value: next };
+}
+
+function completesHop(acknowledgements: readonly ALAckPayload[], ack: ALAckPayload): boolean {
+    return isALHopCompletionAck(ack) && !toALOutboundCompletedHopPeerIds(acknowledgements).includes(ack.fromPeerId);
 }
 
 function toRepairHintEffect(

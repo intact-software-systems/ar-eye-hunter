@@ -8,6 +8,7 @@ import {
 } from '../../al-contracts/al-control.ts';
 import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
+import { isALOwnWord } from '../../al-contracts/receipt-proof/al-receipt-proof.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 
@@ -103,7 +104,7 @@ async function readALInboundControlRejection(
     }
     if (
         (control.type === 'ack' || control.type === 'nack') && source.kind === 'ws-client' &&
-        control.payload.fromPeerId !== control.payload.logicalRecipientPeerId
+        !isALOwnWord(control.payload)
     ) {
         const controlName = control.type === 'ack' ? 'acknowledgement' : 'NACK';
         return {

@@ -3,8 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 
 import { newALMulticastMessage, type ALAckMode, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { decodeALPeerControlMessage } from '@shared/al-contracts/al-control.ts';
+import { decodeALPeerControlMessage, type ALNackPayload } from '@shared/al-contracts/al-control.ts';
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { toALOrderingTrackKey, type ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
 import { toALMessageTrace } from '@shared/al-contracts/trace/to-al-message-trace.ts';
 import { InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
@@ -28,7 +29,10 @@ import { NOT_COMPLETED_RETRYABLE_STATUSES } from '@shared/queuebox/ResourceEntry
 
 import '../../../../setup-browser-indexeddb.ts';
 import { verifyTestALReceiptControl } from '../../../../al-control-test-payloads.ts';
-import { createAvailablePublicationCryptoFixture } from '../../../signature/publication-crypto-fixtures.ts';
+import {
+    createAvailablePublicationCryptoFixture,
+    UNAVAILABLE_PUBLICATION_CRYPTO
+} from '../../../signature/publication-crypto-fixtures.ts';
 import { readInboundTestWorkDueAtMs } from '../../../wait-for-al-inbound-work.ts';
 import {
     createInboundTestBackendStores,
@@ -66,6 +70,11 @@ const ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', gro
 const RTC_SOURCE: ALInboundMessageRuntime.Source = { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID };
 const CRYPTO = await createAvailablePublicationCryptoFixture();
 const SIGNED: ALInboundReceiptProofs = { kind: 'signed', signer: new RtcReceiptProofSigner({ crypto: CRYPTO }) };
+/** A page whose WebCrypto holds no key: every signature it tries fails. */
+const UNSIGNABLE: ALInboundReceiptProofs = {
+    kind: 'signed',
+    signer: new RtcReceiptProofSigner({ crypto: UNAVAILABLE_PUBLICATION_CRYPTO })
+};
 
 /** What a gap request this receiver sent states: which control, which number, which sequences, about which arrival. */
 interface GapControl {
@@ -82,6 +91,12 @@ interface RenewalFixtureInput {
     readonly carrier?: 'ws' | 'rtc';
     readonly receiptProofs?: ALInboundReceiptProofs;
     readonly retention?: ALRuntimeStoreRetentionConfig;
+    /** Absent, no upstream peer resolves, as on a runtime with no overlay. */
+    readonly readUpstreamPeerId?: ALInboundMessageRuntime.Dependencies['readUpstreamPeerId'];
+    /** Absent, the lane routes over no layout. */
+    readonly isRoutedPeerReady?: ALInboundMessageRuntime.Dependencies['isRoutedPeerReady'];
+    /** Absent, every gap NACK is granted the wire limit, as on a runtime with no overlay. */
+    readonly readGapNackRelayHops?: ALInboundMessageRuntime.Dependencies['readGapNackRelayHops'];
     /** Absent, the fixture opens its own stores over `storage`. */
     readonly stores?: ALInboundRuntimeStores;
     /** Absent, every message is dispatched as soon as it is released. */
@@ -299,6 +314,77 @@ describe('a receiver whose ordered track has a gap', () => {
         expect(await verifyTestALReceiptControl(CRYPTO, renewal!)).toBe(true);
     });
 
+    it('an unreceipted track\'s gap NACK and its renewal are signed over rtc (ruling 19)', async () => {
+        const fixture = createRenewalFixture('memory', { carrier: 'rtc', receiptProofs: SIGNED });
+        await fixture.runtime.admitIncomingMessage(orderedMessage(2), RTC_SOURCE);
+        await advanceTo(fixture, 1_000);
+        const nacks = readGapNacks(fixture);
+
+        expect(nacks.map((nack) => nack.gapRequestNumber)).toEqual([1, 2]);
+        expect(await Promise.all(nacks.map(async (nack) => await verifyTestALReceiptControl(CRYPTO, nack.msg)))).toEqual([true, true]);
+    });
+
+    it.each(['none', 'receiver'] as const)(
+        'a %s track\'s gap NACK and its renewal each grant the relay hops its room\'s live sessions allow then (ruling 20)',
+        async (ack) => {
+            // An 8-session room grants 7; a session leaves before the renewal, which grants 6.
+            const relayHopsBySession = [7, 6];
+            const fixture = createRenewalFixture('memory', {
+                carrier: 'rtc',
+                receiptProofs: SIGNED,
+                readGapNackRelayHops: () => relayHopsBySession[0]!
+            });
+            await fixture.runtime.admitIncomingMessage(orderedMessage(2, { ack }), RTC_SOURCE);
+            relayHopsBySession.shift();
+            await advanceTo(fixture, 1_000);
+            const relayHops = readSentControls(fixture).flatMap((msg) => {
+                const control = decodeALPeerControlMessage(msg).right;
+                return control?.type === 'nack' ? [[control.payload.gapRequestNumber, control.payload.relayHopsLeft]] : [];
+            });
+
+            expect(relayHops).toEqual([[1, 7], [2, 6]]);
+        }
+    );
+
+    it('reads the room\'s sessions only to build a gap NACK: never for an admission or an ordered release with no gap (ruling 20)', async () => {
+        let sessionReads = 0;
+        const fixture = createRenewalFixture('memory', {
+            readGapNackRelayHops: () => {
+                sessionReads += 1;
+                return 7;
+            }
+        });
+        await fixture.runtime.admitIncomingMessage(orderedMessage(1), INBOUND_TEST_SOURCE);
+        await advanceTo(fixture, 100);
+        const afterInOrderAdmission = sessionReads;
+        await fixture.runtime.admitIncomingMessage(orderedMessage(3), INBOUND_TEST_SOURCE);
+        await advanceTo(fixture, 200);
+        const afterGap = sessionReads;
+        // Seq 2 closes the gap before the first renewal is due, and releases the buffered seq 3 in order.
+        await fixture.runtime.admitIncomingMessage(orderedMessage(2), INBOUND_TEST_SOURCE);
+        await advanceTo(fixture, 300);
+
+        expect(fixture.deliveredMessages.map((message) => message.id.msgId)).toEqual(['1', '2', '3']);
+        expect([afterInOrderAdmission, afterGap, sessionReads]).toEqual([0, 1, 1]);
+    });
+
+    it('a page that cannot sign sends an unreceipted track\'s gap NACK and its renewal unsigned (ruling 19)', async () => {
+        const fixture = createRenewalFixture('memory', { carrier: 'rtc', receiptProofs: UNSIGNABLE });
+        await fixture.runtime.admitIncomingMessage(orderedMessage(2), RTC_SOURCE);
+        await advanceTo(fixture, 1_000);
+
+        expect(readGapNacks(fixture).map((nack) => [nack.gapRequestNumber, nack.proof])).toEqual([[1, null], [2, null]]);
+    });
+
+    it('a page that cannot sign leaves out a counted recipient\'s gap NACK and its renewal, as before', async () => {
+        const fixture = createRenewalFixture('memory', { carrier: 'rtc', receiptProofs: UNSIGNABLE });
+        await fixture.runtime.admitIncomingMessage(orderedMessage(2, { ack: 'receiver' }), RTC_SOURCE);
+        await advanceTo(fixture, 1_000);
+
+        expect(readGapNacks(fixture)).toEqual([]);
+        expect(gapControls(fixture).map((control) => [control.type, control.gapRequestNumber])).toEqual([['repair', 1], ['repair', 2]]);
+    });
+
     it('a timer run a lease recovery repeats writes nothing twice', async () => {
         const fixture = createRenewalFixture('memory');
         await fixture.runtime.admitIncomingMessage(orderedMessage(2), INBOUND_TEST_SOURCE);
@@ -346,6 +432,59 @@ describe('a receiver whose ordered track has a gap', () => {
         await fixture.runtime.admitIncomingMessage(orderedMessage(2, { ttlMs: 500 }), INBOUND_TEST_SOURCE);
         await advanceTo(fixture, 29_000);
         expect(renewedRanges(fixture, 2)).toEqual([]);
+    });
+});
+
+describe('a renewal of a gap whose upstream peer has changed since it was first reported (6d)', () => {
+    /** The peer the gap was first reported to: the sender the revealing arrival came from. */
+    const RECORDED_PEER_ID = INBOUND_TEST_SENDER_PEER_ID;
+
+    it('asks the upstream peer that resolves when it fires, and arms the next number toward the recorded peer as before', async () => {
+        const fixture = createRenewalFixture('memory', { readUpstreamPeerId: () => 'p2' });
+        await fixture.runtime.admitIncomingMessage(orderedMessage(2), INBOUND_TEST_SOURCE);
+        await advanceTo(fixture, 1_000);
+
+        expect(readGapTargets(readSentControls(fixture))).toEqual([
+            ['nack', 1, RECORDED_PEER_ID],
+            ['repair', 1, RECORDED_PEER_ID],
+            ['nack', 2, 'p2'],
+            ['repair', 2, 'p2']
+        ]);
+        expect(await readRenewalTimer(fixture, 3)).toEqual({ toPeerId: RECORDED_PEER_ID, dueAtMs: START_MS + 3_000 });
+    });
+
+    it('keeps asking the recorded peer while the lane still routes over it, though another upstream peer resolves', async () => {
+        const fixture = createRenewalFixture('memory', {
+            readUpstreamPeerId: () => 'p2',
+            isRoutedPeerReady: (_msg, peerId) => peerId === RECORDED_PEER_ID
+        });
+        await fixture.runtime.admitIncomingMessage(orderedMessage(2), INBOUND_TEST_SOURCE);
+        await advanceTo(fixture, 1_000);
+
+        expect(readGapTargets(readSentControls(fixture)).filter(([, number]) => number === 2)).toEqual([
+            ['nack', 2, RECORDED_PEER_ID],
+            ['repair', 2, RECORDED_PEER_ID]
+        ]);
+    });
+
+    it.each<[string, DirectRenewalStore, DirectRenewalPlanning]>([
+        ['no upstream peer resolves', {}, { readUpstreamPeerId: () => undefined }],
+        ['the revealing message is no longer kept', { readDeliverySurface: async () => undefined }, { readUpstreamPeerId: () => 'p2' }]
+    ])('asks the recorded peer and still arms the next number when %s', async (_case, store, planning) => {
+        const fixture = createRenewalFixture('memory');
+        await fixture.runtime.admitIncomingMessage(orderedMessage(2), INBOUND_TEST_SOURCE);
+        await advanceTo(fixture, 500);
+        const timer = await readFirstRenewalTimer(fixture);
+        vi.setSystemTime(START_MS + 1_000);
+
+        const result = await createDirectRenewal(fixture, store, planning).renewal.renew(timer, timer.payload);
+
+        expect(result).toEqual({ outcome: { status: 'completed' }, wroteWork: true });
+        expect(readGapTargets(await readRetainedRenewalControls(fixture))).toEqual([
+            ['nack', 2, RECORDED_PEER_ID],
+            ['repair', 2, RECORDED_PEER_ID]
+        ]);
+        expect(await readRenewalTimer(fixture, 3)).toEqual({ toPeerId: RECORDED_PEER_ID, dueAtMs: START_MS + 3_000 });
     });
 });
 
@@ -774,7 +913,10 @@ function createRenewalFixture(storage: InboundTestStorage, input: RenewalFixture
         canDispatchMessage: input.canDispatchMessage,
         plan: input.plan,
         verifyPublicationProof: input.verifyPublicationProof,
-        random: input.random ?? (() => 0)
+        random: input.random ?? (() => 0),
+        readUpstreamPeerId: input.readUpstreamPeerId,
+        isRoutedPeerReady: input.isRoutedPeerReady,
+        readGapNackRelayHops: input.readGapNackRelayHops
     });
 }
 
@@ -836,6 +978,18 @@ function readSentControls(fixture: InboundTestRuntime): readonly ALMessage[] {
     return fixture.controlSends.flat();
 }
 
+/** Each gap NACK this receiver sent, as sent: its number, its proof and the message that carried it. */
+function readGapNacks(
+    fixture: InboundTestRuntime
+): readonly Readonly<{ gapRequestNumber: number | undefined; proof: ALNackPayload['proof']; msg: ALMessage; }>[] {
+    return readSentControls(fixture).flatMap((msg) => {
+        const control = decodeALPeerControlMessage(msg).right;
+        return control?.type === 'nack' && control.payload.reason === 'gap'
+            ? [{ gapRequestNumber: control.payload.gapRequestNumber, proof: control.payload.proof, msg }]
+            : [];
+    });
+}
+
 function gapControls(fixture: InboundTestRuntime): readonly GapControl[] {
     return readSentControls(fixture).flatMap((msg): GapControl[] => {
         const control = decodeALPeerControlMessage(msg).right;
@@ -879,10 +1033,16 @@ interface DirectRenewal {
     readonly diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[];
 }
 
+/** The admission-store reads and commits a direct renewal replaces. */
+type DirectRenewalStore = Partial<Pick<ALInboundAdmissionStore, 'commitBundle' | 'readIncomingMessage' | 'readDeliverySurface'>>;
+
+/** The dependencies a direct renewal replaces; absent, no upstream peer resolves and the lane routes over no layout. */
+type DirectRenewalPlanning = Partial<Pick<ALInboundGapRenewal.Dependencies, 'planIncomingMessage' | 'verifyPublicationProof' | 'readUpstreamPeerId'>>;
+
 function createDirectRenewal(
     fixture: InboundTestRuntime,
-    store: Partial<Pick<ALInboundAdmissionStore, 'commitBundle' | 'readIncomingMessage'>>,
-    planning: Partial<Pick<ALInboundGapRenewal.Dependencies, 'planIncomingMessage' | 'verifyPublicationProof'>> = {}
+    store: DirectRenewalStore,
+    planning: DirectRenewalPlanning = {}
 ): DirectRenewal {
     const admissionStore = fixture.stores.admissionStore;
     const diagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
@@ -899,6 +1059,9 @@ function createDirectRenewal(
             diagnostics.push(event);
         },
         effectWorkerId: 'al-inbound:gap-renewal-direct',
+        readUpstreamPeerId: () => undefined,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+        isRoutedPeerReady: () => false,
         ...planning
     });
     return { renewal, diagnostics };
@@ -942,4 +1105,39 @@ async function readRenewalExpiries(fixture: InboundTestRuntime): Promise<readonl
     return (await readInboundTestWorkRows(fixture.stores))
         .filter((effect) => effect.payload.kind === 'renew-gap')
         .map((effect) => effect.expireAtTimestamp);
+}
+
+/** Each gap control as its type, its request number and the peer it is addressed to, in send order. */
+function readGapTargets(controls: readonly ALMessage[]): readonly (readonly [string, number | undefined, string])[] {
+    return controls.flatMap((msg): (readonly [string, number | undefined, string])[] => {
+        const control = decodeALPeerControlMessage(msg).right;
+        return control?.type === 'nack' || control?.type === 'repair'
+            ? [[control.type, control.payload.gapRequestNumber, control.payload.toPeerId]]
+            : [];
+    });
+}
+
+/** The renewal controls a timer run retained, which its lane has not sent: the run here is outside the lane. */
+async function readRetainedRenewalControls(fixture: InboundTestRuntime): Promise<readonly ALMessage[]> {
+    return (await readInboundTestWorkRows(fixture.stores)).flatMap((effect) =>
+        effect.payload.kind === 'send-control' && effect.effectId.includes('renewal') ? [effect.payload.msg] : []
+    );
+}
+
+/** The timer numbered `requestNumber`, as the peer it records and when it is due; undefined when none is armed. */
+async function readRenewalTimer(fixture: InboundTestRuntime, requestNumber: number) {
+    const timer = (await readInboundTestWorkRows(fixture.stores)).find((effect) =>
+        effect.payload.kind === 'renew-gap' && effect.payload.requestNumber === requestNumber
+    );
+    return timer?.payload.kind === 'renew-gap'
+        ? { toPeerId: timer.payload.toPeerId, dueAtMs: resolveALInboundWorkDueAtMs(timer.entry) }
+        : undefined;
+}
+
+async function readFirstRenewalTimer(fixture: InboundTestRuntime) {
+    const timer = (await readInboundTestWorkRows(fixture.stores)).find((effect) => effect.payload.kind === 'renew-gap');
+    if (timer?.payload.kind !== 'renew-gap') {
+        throw new Error('The gap admission armed no timer');
+    }
+    return { ...timer, payload: timer.payload };
 }

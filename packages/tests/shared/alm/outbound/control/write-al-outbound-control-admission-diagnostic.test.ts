@@ -7,7 +7,7 @@ import {
     parseALControlMessage
 } from '@shared/al-contracts/al-control.ts';
 import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
+import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/read-al-outbound-recipient-proof.ts';
 import { writeALOutboundControlAdmissionDiagnostic } from '@shared/alm/outbound/control/write-al-outbound-control-admission-diagnostic.ts';
 
 import { toTestALAckPayload, toTestALNackPayload } from '../../../../al-control-test-payloads.ts';
@@ -51,29 +51,31 @@ const FORGED_NACK = newALNackControlMessage(
 );
 
 describe('the control-admission event of a NACK', () => {
-    it('names the NACK\'s reason and the track it asks about, after the verdict and before the trace', () => {
+    it('names the NACK\'s reason, its track, its request number, its recipient and its sender, after the verdict and before the trace', () => {
         const nack = newALNackControlMessage(
             CONTROL_ID,
             toTestALNackPayload({
                 msgId: 'sent-3',
                 fromPeerId: 'b',
                 toPeerId: 'a',
-                logicalRecipientPeerId: 'b',
+                logicalRecipientPeerId: 'c',
                 reason: 'gap',
                 observedAtEpochMs: 1,
                 orderingKey: 'chat:a:0',
                 expectedSeq: 2,
-                missingRanges: [{ from: 2, to: 2 }]
+                missingRanges: [{ from: 2, to: 2 }],
+                gapRequestNumber: 3
             })
         );
 
         expect(JSON.stringify(writeAdmitted(nack))).toContain(
-            '"typeId":"al.control.nack.v4","targetMsgId":"sent-3","outcome":"committed","reason":"none",' +
-                '"nackReason":"gap","nackOrderingKey":"chat:a:0","traceId":'
+            '"typeId":"al.control.nack.v5","targetMsgId":"sent-3","outcome":"committed","reason":"none",' +
+                '"nackReason":"gap","nackOrderingKey":"chat:a:0","nackGapRequestNumber":3,' +
+                '"nackLogicalRecipientPeerId":"c","nackFromPeerId":"b","traceId":'
         );
     });
 
-    it('names the reason alone for a NACK about no track', () => {
+    it('names the reason and the peers, and no track or request number, for a NACK about no track', () => {
         const nack = newALNackControlMessage(
             CONTROL_ID,
             toTestALNackPayload({
@@ -86,11 +88,16 @@ describe('the control-admission event of a NACK', () => {
             })
         );
 
-        expect(writeAdmitted(nack)).toMatchObject({ nackReason: 'not-subscribed' });
+        expect(writeAdmitted(nack)).toMatchObject({
+            nackReason: 'not-subscribed',
+            nackLogicalRecipientPeerId: 'b',
+            nackFromPeerId: 'b'
+        });
         expect(writeAdmitted(nack)).not.toHaveProperty('nackOrderingKey');
+        expect(writeAdmitted(nack)).not.toHaveProperty('nackGapRequestNumber');
     });
 
-    it('states neither field for a control that is no NACK', () => {
+    it('states none of the NACK\'s fields for a control that is no NACK', () => {
         const ack = newALAckControlMessage(
             CONTROL_ID,
             toTestALAckPayload({
@@ -105,12 +112,14 @@ describe('the control-admission event of a NACK', () => {
             })
         );
 
-        expect(Object.keys(writeAdmitted(ack))).not.toContain('nackReason');
+        for (const field of ['nackReason', 'nackGapRequestNumber', 'nackLogicalRecipientPeerId', 'nackFromPeerId']) {
+            expect(Object.keys(writeAdmitted(ack))).not.toContain(field);
+        }
     });
 });
 
 describe('the control-admission event of a refused proof', () => {
-    it('names the refusal, the recipient it claimed and its channel peer exactly on a proof refusal, after the NACK\'s track and before the trace', () => {
+    it('names the refusal, the recipient it claimed and its channel peer exactly on a proof refusal, after the NACK\'s sender and before the trace', () => {
         const refused = writeAdmitted(FORGED_NACK, {
             kind: 'rejected',
             reason: 'AL control proof is refused: key-mismatch',
@@ -120,7 +129,8 @@ describe('the control-admission event of a refused proof', () => {
 
         expect(JSON.stringify(refused)).toContain(
             '"outcome":"rejected","reason":"AL control proof is refused: key-mismatch","nackReason":"gap",' +
-                '"nackOrderingKey":"chat:a:0","proofRefusal":"key-mismatch","claimedRecipientPeerId":"c","channelPeerId":"b",' +
+                '"nackOrderingKey":"chat:a:0","nackGapRequestNumber":1,"nackLogicalRecipientPeerId":"c",' +
+                '"nackFromPeerId":"b","proofRefusal":"key-mismatch","claimedRecipientPeerId":"c","channelPeerId":"b",' +
                 '"traceId":'
         );
         for (const event of [rejected, writeAdmitted(FORGED_NACK)]) {
@@ -128,5 +138,16 @@ describe('the control-admission event of a refused proof', () => {
             expect(Object.keys(event)).not.toContain('claimedRecipientPeerId');
             expect(Object.keys(event)).not.toContain('channelPeerId');
         }
+    });
+});
+
+describe('the control-admission event of a duplicate', () => {
+    it('reads `duplicate` with every issue it repeats, where a committed control reads no reason', () => {
+        const repeat = 'AL control was already admitted; AL acknowledgement confirms a peer the receipt already counted';
+
+        expect(JSON.stringify(writeAdmitted(FORGED_NACK, { kind: 'duplicate', reason: repeat }))).toContain(
+            `"outcome":"duplicate","reason":"${repeat}","nackReason":"gap"`
+        );
+        expect(writeAdmitted(FORGED_NACK)).toMatchObject({ outcome: 'committed', reason: 'none' });
     });
 });

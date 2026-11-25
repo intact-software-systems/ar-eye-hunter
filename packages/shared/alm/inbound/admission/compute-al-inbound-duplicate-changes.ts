@@ -5,7 +5,7 @@ import {
 } from '../../../al-contracts/al-control.ts';
 import { resolveALFrozenMulticastAudience } from '../../../al-contracts/al-frozen-multicast-audience.ts';
 import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
-import type { ALReceiptControl } from '../../../al-contracts/receipt-proof/al-receipt-proof.ts';
+import { isALOwnWord, type ALReceiptControl } from '../../../al-contracts/receipt-proof/al-receipt-proof.ts';
 import { resolveExpireAtTimestampWithFallback } from '../../ALStoreRetention.ts';
 import { isALRecipientConfirmationAck } from '../../delivery/is-al-recipient-confirmation-ack.ts';
 import { isALCountedRecipient } from '../../delivery/resolve-al-counted-recipient-peer-ids.ts';
@@ -14,8 +14,9 @@ import { toALInboundMessageReference } from '../al-inbound-canonical-message.ts'
 import { toALInboundAckEffect, type ALInboundEffectIntent } from '../al-inbound-effect-intent.ts';
 import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
 import { toALInboundEffectId } from '../al-inbound-work-entry.ts';
-import { isALOwnWord, isALSameReceiptStatement } from '../control/is-al-same-receipt-statement.ts';
+import { toFirstOfEachALReceiptStatement } from '../control/is-al-same-receipt-statement.ts';
 import { isALPendingAckComplete, isALPendingAckUpwardRecipient } from '../transition-al-pending-ack.ts';
+import { toALInboundCopyCarrierMutations } from './al-inbound-buffered-copy-carriers.ts';
 import { isALInboundNotSubscribedPlan } from './al-inbound-not-subscribed-plan.ts';
 
 export interface ALInboundDuplicateChanges {
@@ -49,6 +50,9 @@ const NO_DUPLICATE_CHANGES: ALInboundDuplicateChanges = { mutations: [], effects
  * in on, whatever its next hops and whether or not it holds a relay row: the first ACK went out on the
  * carrier the sender left (R-S3b-1), and a relay's forwarded ACKs stay on that first carrier (R-S3b-21). A peer
  * that answered `not-subscribed` ends its hop with an ACK that confirms nobody, and answers with that NACK again.
+ * No own ACK goes out again while the track holds the copy's sequence buffered behind a gap, on either carrier: the
+ * peer delivered nothing yet, and an early one would complete its statement upstream, which then refuses every renewal
+ * of the gap. The copy adds its carrier to the slot instead, and the release sends `delivered` on each carrier there.
  */
 export function computeALInboundDuplicateChanges(
     read: ALInboundMessageReadDto,
@@ -56,8 +60,14 @@ export function computeALInboundDuplicateChanges(
 ): ALInboundDuplicateChanges {
     const { plan, pendingAck } = read;
     const toPeerId = plan.ack.toPeerId;
+    if (plan.dropReasonCode === 'duplicate' && plan.ack.algo === 'none') {
+        return computeUnreceiptedParentCopyChanges(read, input.selfPeerId);
+    }
     if (plan.dropReasonCode !== 'duplicate' || plan.ack.algo === 'none' || toPeerId === undefined) {
         return NO_DUPLICATE_CHANGES;
+    }
+    if (isHeldBuffered(read) && (!isAddressedToSelf(read.msg, input.selfPeerId) || pendingAck === undefined)) {
+        return { mutations: toALInboundCopyCarrierMutations(read, toPeerId), effects: [] };
     }
     if (!isAddressedToSelf(read.msg, input.selfPeerId)) {
         return isCrossCarrierCopy(read)
@@ -83,6 +93,26 @@ export function computeALInboundDuplicateChanges(
             ...(input.recordedParentPresent ? [toFormerParentRelease(read, pendingAck)] : [])
         ]
     };
+}
+
+/**
+ * A copy of a message that asked for no receipt, which keeps no relay row, so nothing tells a repair from another copy
+ * (6c). On a lane that forwards a retried copy, a copy from the peer the message first arrived from, naming this peer a
+ * next hop, is passed down again as a retried forward to the next hops it would go to were it new, so the origin's
+ * repair reaches a child that lost the first forward; a child that holds the message reads it a duplicate and answers nothing. A parent that replays its
+ * copies is passed down each time: the exposure the receipted parent-retry path already accepts. A copy from any other
+ * neighbour goes nowhere.
+ */
+function computeUnreceiptedParentCopyChanges(
+    read: ALInboundMessageReadDto,
+    selfPeerId: string
+): ALInboundDuplicateChanges {
+    const parent = read.observations.messageOwner?.source;
+    const fromParent = parent !== undefined && parent.kind !== 'trusted-server' && parent.peerId === read.fromPeerId;
+    const nextHopPeerIds = read.retriedCopyNextHopPeerIds.filter((peerId) => peerId !== read.fromPeerId);
+    return fromParent && read.msg.forwarding?.nextHopPeerIds?.includes(selfPeerId) === true && nextHopPeerIds.length > 0
+        ? { mutations: [], effects: [toRetriedForward(read, nextHopPeerIds)] }
+        : NO_DUPLICATE_CHANGES;
 }
 
 /**
@@ -116,6 +146,12 @@ function isStoredReforward(effect: ALInboundEffectIntent): boolean {
  */
 function isOwnWordReforward(effect: ALInboundEffectIntent): boolean {
     return effect.payload.kind === 'forward-control' && isALOwnWord(effect.payload.control.payload);
+}
+
+/** The track still holds this sequence buffered behind a gap: this peer has delivered nothing of it yet. */
+function isHeldBuffered(read: ALInboundMessageReadDto): boolean {
+    const seq = read.msg.ordering?.seq;
+    return seq !== undefined && read.orderingSnapshot?.bufferedSeqs.includes(seq) === true;
 }
 
 /** A retried hop copy names this peer as its one next hop (D25). */
@@ -204,7 +240,7 @@ function toStoredUpwardControls(
         )
         .map((ack): ALReceiptControl => ({ type: 'ack', payload: ack }));
     const outside = pendingAck.outsideAudiencePeerIds.flatMap((peerId) => toStoredOutsideControls(read, peerId));
-    return [...toFirstOfEachStatement(confirmations), ...outside];
+    return [...toFirstOfEachALReceiptStatement(confirmations), ...outside];
 }
 
 /**
@@ -220,13 +256,7 @@ function toStoredOutsideControls(read: ALInboundMessageReadDto, peerId: string):
             stored.logicalRecipientPeerId === peerId && stored.status === 'subtree-complete-not-subscribed'
         )
         .map((hopEnd): ALReceiptControl => ({ type: 'ack', payload: hopEnd }));
-    return toFirstOfEachStatement([...nacks, ...hopEnds]);
-}
-
-function toFirstOfEachStatement(controls: readonly ALReceiptControl[]): readonly ALReceiptControl[] {
-    return controls.filter((control, index) =>
-        controls.findIndex((prior) => isALSameReceiptStatement(prior.payload, control.payload)) === index
-    );
+    return toFirstOfEachALReceiptStatement([...nacks, ...hopEnds]);
 }
 
 /**

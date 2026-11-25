@@ -25,9 +25,11 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
+import { conflictOutboundCommitAttempts } from '../alm/outbound-runtime-test-fixture.ts';
 import { ALWorkBatchTestObserver } from '../alm/work/al-work-batch-test-observer.ts';
 import { RtcEndpointFixture } from '../rtc-endpoint-fixture.ts';
 
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
 
 const CONTROL_RECOVERY_STARTED_AT_MS = 1791883286866;
@@ -40,10 +42,8 @@ afterEach(() => {
 it('retries the inbound ACK owner when RTC control handoff conflicts', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     const { receiver, sender } = createConnectedEndpoints();
-    // The handoff and its one retry both conflict; a single send commits through `commitBundle` alone.
-    vi.spyOn(receiver.outbound.admissionStore, 'commitBundle')
-        .mockResolvedValueOnce('conflict')
-        .mockResolvedValueOnce('conflict');
+    // Every attempt of the handoff and of its one retry conflicts; a single send commits through `commitBundle` alone.
+    conflictOutboundCommitAttempts(receiver.outbound.admissionStore, 2);
     vi.spyOn(receiver.outbound.admissionStore, 'retainPendingAdmission')
         .mockResolvedValue('conflict');
     const message = newALUnicastMessage(
@@ -227,6 +227,10 @@ function createControlRecoveryRuntime(
         acknowledgementCapture: { evidence: ALInboundAcknowledgementEvidence, batchObservations: batches.batchObservations }
     });
     const runtime = new ALInboundMessageRuntime({
+        readUpstreamPeerId: () => undefined,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+        isRoutedPeerReady: () => false,
+        isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         ...resources,

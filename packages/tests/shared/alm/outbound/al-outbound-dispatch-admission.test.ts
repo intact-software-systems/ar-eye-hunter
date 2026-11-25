@@ -41,8 +41,7 @@ interface RecordedReadSession {
 
 afterEach(() => vi.restoreAllMocks());
 
-function createDispatchFixture(): DispatchFixture {
-    const stores = createDefaultOutboundTestStores();
+function createDispatchFixture(stores = createDefaultOutboundTestStores()): DispatchFixture {
     const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
     const admission = new ALOutboundDispatchAdmission({
         lane: 'durable',
@@ -50,7 +49,6 @@ function createDispatchFixture(): DispatchFixture {
         toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
         decodePreparedMessage: decodeOutboundTestPayload,
         clock: { nowMs: Date.now },
-        browserLocks: undefined,
         signAdmittedMessage: undefined,
         diagnostics: (event) => diagnostics.push(event),
         settlements: () => {}
@@ -142,7 +140,12 @@ function toDispatch(msg: ALMessage): ALOutboundDispatchAdmission.Input<OutboundT
     return { msg, batchPredecessorSeqs: [], planner: OUTBOUND_TEST_SEND_PLANNER, intent: 'enqueue', phase: 'immediate', origin: 'send', options: {} };
 }
 
-it('reads every member of a burst at once before committing in input order and admitting a late send', async () => {
+/** A send that asks its outbound for the next sequence of its track. */
+function toMintingDispatch(msg: ALMessage): ALOutboundDispatchAdmission.Input<OutboundTestPayload> {
+    return { ...toDispatch(msg), planner: (planned) => ({ ...OUTBOUND_TEST_SEND_PLANNER(planned, undefined), mintsSequence: true }) };
+}
+
+it('reads every member of a burst at once before committing in input order, while a late send commits without waiting for it', async () => {
     const { admission, store } = createDispatchFixture();
     const messages = Array.from({ length: 5 }, (_, index) => ({
         ...createOutboundMessage(`burst-${index}`),
@@ -174,25 +177,22 @@ it('reads every member of a burst at once before committing in input order and a
     });
     const group = admission.commitAllSettled(messages.map(toDispatch));
     const late = admission.commit(toDispatch(createOutboundMessage('late-promotion')));
-    const lateRead = vi.spyOn(store, 'readOutgoingDecision');
 
     try {
         await expect.poll(() => started).toEqual([0, 1, 2, 3, 4]);
+        expect((await late).committed).toBe(true);
         expect(writes).toEqual([]);
-        expect(lateRead).not.toHaveBeenCalled();
         for (let index = 1; index < messages.length; index += 1) {
             gates[index]!.resolve();
         }
         await expect.poll(() => active).toBe(1);
         expect(writes).toEqual([]);
-        expect(lateRead).not.toHaveBeenCalled();
         gates[0]!.resolve();
         const results = await group;
         expect(peak).toBe(messages.length);
         expect(writes).toEqual([0]);
         expect(results.map((result) => result.status === 'fulfilled' && result.value.committed)).toEqual([true, true, true, true, true]);
         expect(results.map((result) => result.status === 'fulfilled' && result.value.computed.msg)).toEqual(messages);
-        expect((await late).committed).toBe(true);
         for (const message of messages) {
             const read = await readOutgoingMessage({
                 msg: message,
@@ -335,55 +335,77 @@ it.each(['rejected', 'settled'] as const)(
     }
 );
 
-it('serializes each sender in arrival order, releases failure, and forgets idle queues while other senders progress', async () => {
-    const { admission, store, diagnostics } = createDispatchFixture();
-    const first = createOutboundMessage('failing-first');
+it('commits a send of a sender while an earlier send of that sender still reads, and the earlier one then commits too', async () => {
+    const { admission, store } = createDispatchFixture();
+    const first = createOutboundMessage('slow-first');
     const second = createOutboundMessage('second');
-    const third = createOutboundMessage('third');
-    const other = createOutboundMessage('other');
-    const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
     const readOutgoingDecision = store.readOutgoingDecision.bind(store);
-    const reads: string[] = [];
     vi.spyOn(store, 'readOutgoingDecision').mockImplementation(async (input, decide) => {
-        reads.push(input.msg.id.msgId);
         if (input.msg.id.msgId === first.id.msgId) {
-            entered.resolve();
             await release.promise;
-            throw new Error('first failed');
         }
         return await readOutgoingDecision(input, decide);
     });
-    const firstResult = Promise.allSettled([admission.commit({ ...toDispatch(first), origin: 'drain' })]);
-    await entered.promise;
-    const next = [second, third].map((msg) => admission.commit(toDispatch(msg)));
+    const firstResult = admission.commit(toDispatch(first));
+    let secondCommitted = false;
+    const secondResult = admission.commit(toDispatch(second)).then((result) => {
+        secondCommitted = result.committed;
+        return result;
+    });
+
     try {
-        const independent = await admission.commit(toDispatch({ ...other, id: { ...other.id, senderId: 'other-sender' } }));
-        expect(independent.committed).toBe(true);
-        expect(reads).toEqual([first.id.msgId, other.id.msgId]);
-        release.resolve();
-        expect((await firstResult)[0]).toMatchObject({ status: 'rejected', reason: new Error('first failed') });
-        expect((await Promise.all(next)).map((result) => result.committed)).toEqual([true, true]);
-        expect(reads).toEqual([first.id.msgId, other.id.msgId, second.id.msgId, third.id.msgId]);
-        expect((await admission.commit(toDispatch(createOutboundMessage('reuse')))).committed).toBe(true);
-        expect(
-            diagnostics.filter((event) => event.kind === 'sender-queue-wait').filter((event) => event.senderId === 'self').map((event) => ({
-                origin: event.origin,
-                queued: event.queued,
-                queuedBehindOrigin: event.queuedBehindOrigin
-            }))
-        ).toEqual([
-            { origin: 'drain', queued: false, queuedBehindOrigin: 'none' },
-            { origin: 'send', queued: true, queuedBehindOrigin: 'drain' },
-            { origin: 'send', queued: true, queuedBehindOrigin: 'send' },
-            { origin: 'send', queued: false, queuedBehindOrigin: 'none' }
-        ]);
+        await expect.poll(() => secondCommitted, { timeout: 1_000 }).toBe(true);
     }
     finally {
         release.resolve();
-        await Promise.allSettled([firstResult, ...next]);
-        admission.dispose();
     }
+
+    expect((await firstResult).computed.verdict.kind).toBe('admitted');
+    expect((await secondResult).computed.verdict.kind).toBe('admitted');
+    admission.dispose();
+});
+
+it('reads, decides and writes again at once when another commit of its sender moved the fence after its read', async () => {
+    const { admission, store, diagnostics } = createDispatchFixture();
+    const stale = createOutboundMessage('stale-read');
+    const competitor = await readOutboundTestAdmission({
+        store,
+        message: createOutboundMessage('competitor'),
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: Date.now }
+    });
+    const commitBundle = store.commitBundle.bind(store);
+    vi.spyOn(store, 'commitBundle').mockImplementationOnce(async (bundle, observation) => {
+        expect(await commitBundle(competitor)).toBe('committed');
+        return await commitBundle(bundle, observation);
+    });
+
+    const result = await admission.commit(toDispatch(stale));
+
+    expect(result.computed.verdict.kind).toBe('admitted');
+    expect(diagnostics.filter((event) => event.kind === 'commit-phases' && event.msgId === stale.id.msgId)).toEqual([
+        expect.objectContaining({ commitOutcome: 'committed', commitAttemptCount: 2 })
+    ]);
+    admission.dispose();
+});
+
+it('keeps each ordered track\'s sequences unique and gap-free while two tabs of one sender commit on it at once', async () => {
+    const stores = createDefaultOutboundTestStores();
+    const tabs = [createDispatchFixture(stores), createDispatchFixture(stores)];
+    const sends = tabs.flatMap(({ admission }, tab) =>
+        Array.from(
+            { length: 4 },
+            (_, index) => admission.commit(toMintingDispatch({ ...createOutboundMessage(`tab-${tab}-${index}`), ordering: { orderingKey: 'track' } }))
+        )
+    );
+
+    const results = await Promise.all(sends);
+
+    const minted = results.flatMap((result) => result.committed ? [result.computed.msg?.ordering?.seq] : []);
+    expect(results.every((result) => result.committed || result.computed.verdict.kind === 'pending')).toBe(true);
+    expect([...minted].sort((left, right) => left! - right!)).toEqual(Array.from({ length: minted.length }, (_, index) => index + 1));
+    tabs.forEach(({ admission }) => admission.dispose());
 });
 
 it('reads the commit observations of a sixteen-member group in at most two store rounds', async () => {
@@ -573,20 +595,22 @@ function toFailingReadSession(
     };
 }
 
-/** A competing send of the same sender wins the version fence inside the message's first commit, so it retains. */
+/** A competing send of the same sender wins the version fence inside each of the message's commit attempts, so it retains. */
 async function retainPendingAdmission(
     admission: ALOutboundDispatchAdmission<OutboundTestPayload>,
     store: ALOutboundAdmissionStore<OutboundTestPayload>,
     message: ALMessage
 ): Promise<void> {
-    const competitor = await readOutboundTestAdmission({
-        store,
-        message: createOutboundMessage(`${message.id.msgId}-competitor`),
-        creationNow: () => Temporal.Now.instant(),
-        clock: { nowMs: Date.now }
-    });
     const commitBundle = store.commitBundle.bind(store);
-    const spy = vi.spyOn(store, 'commitBundle').mockImplementationOnce(async (bundle, observation) => {
+    let competitors = 0;
+    const spy = vi.spyOn(store, 'commitBundle').mockImplementation(async (bundle, observation) => {
+        competitors += 1;
+        const competitor = await readOutboundTestAdmission({
+            store,
+            message: createOutboundMessage(`${message.id.msgId}-competitor-${competitors}`),
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: Date.now }
+        });
         expect(await commitBundle(competitor)).toBe('committed');
         return await commitBundle(bundle, observation);
     });

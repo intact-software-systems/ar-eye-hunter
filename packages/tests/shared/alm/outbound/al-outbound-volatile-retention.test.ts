@@ -19,7 +19,7 @@ import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-life
 import {
     toALOutboundControlHistoryKey,
     toALOutboundMessageOwnerKey,
-    toALOutboundPendingAckKey,
+    toALOutboundOriginMessageKey,
     toALOutboundSentMessageKey,
     toALOutboundVersionKey
 } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
@@ -299,7 +299,7 @@ function readControlRowExpiries(
     const { msgId, senderId } = message.id;
     return {
         receipt: state.data.get(
-            toALOutboundPendingAckKey({ namespace: NAMESPACE, originPeerId: senderId, msgId })
+            toALOutboundOriginMessageKey({ row: 'pending-ack', namespace: NAMESPACE, originPeerId: senderId, msgId })
         )
             ?.expireAtTimestamp,
         acks: state.data.get(toALOutboundControlHistoryKey(NAMESPACE, 'acks', msgId))

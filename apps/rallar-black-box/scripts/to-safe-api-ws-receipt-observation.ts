@@ -49,7 +49,8 @@ const AGGREGATE_ACK_GUARDS = [
     'outside-frozen-audience',
     'already-confirmed',
     'already-outside',
-    'deadline-expired'
+    'deadline-expired',
+    'never-sent'
 ];
 
 const BUSINESS_SOCKET_FIELDS: readonly ReceiptReturnField[] = [
@@ -338,7 +339,7 @@ function decodeSafeApiAggregateAckRejection(record: unknown): ApiJsonObject | un
 }
 
 function isSafeAckRejectionGuards(value: unknown, allowed: readonly string[]): value is readonly string[] {
-    return Array.isArray(value) && value.length > 0 && value.length <= 6 &&
+    return Array.isArray(value) && value.length > 0 && value.length <= 7 &&
         new Set(value).size === value.length && value.every((guard) => isAllowedApiTimingString(guard, allowed));
 }
 

@@ -41,6 +41,7 @@ import {
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
 import { waitForALInboundWorkDueNowSettled, waitForSettledALInboundWork } from './wait-for-al-inbound-work.ts';
 
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { toTestALNackPayload } from '../al-control-test-payloads.ts';
 
 interface RetainedAdmissionState {
@@ -142,7 +143,7 @@ describe('AL state retained across runtime recreation', () => {
 
         await expect.poll(() => dispatchedMsgIds).toEqual([seq1.id.msgId, seq2.id.msgId]);
         expect(controlMessages.map((msg) => msg.payload.typeId)).toContain(
-            'al.control.nack.v4'
+            'al.control.nack.v5'
         );
     });
 
@@ -304,6 +305,10 @@ function createDefaultInboundRuntime(
     controlMessages: ALMessage[] = []
 ): ALInboundMessageRuntime {
     const runtime = createDefaultALInboundMessageRuntime({
+        readUpstreamPeerId: () => undefined,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+        isRoutedPeerReady: () => false,
+        isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         carrier: 'ws',

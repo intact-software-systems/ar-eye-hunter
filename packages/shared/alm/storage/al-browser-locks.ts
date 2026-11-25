@@ -19,11 +19,6 @@ export function readALBrowserLocks(): ALBrowserLocks | undefined {
     return typeof globalThis.navigator?.locks?.request === 'function' ? globalThis.navigator.locks : undefined;
 }
 
-/** Serializes one sender's IndexedDB commits across the tabs of a browser. */
-export function toALOutboundCommitLockName(senderId: string): string {
-    return `rallar:al-outbound-commit:${senderId}`;
-}
-
 /**
  * Held by the one connect that drains its session's durable work in one scope. Each part of the scope
  * is URI-encoded, as the scope's database name is, so an id with a colon cannot alias another scope.

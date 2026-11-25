@@ -144,8 +144,19 @@ const GRANTED_RTC_RELAY_KEYS = ['granted-rtc-relay-only', 'granted-rtc-ordered-r
 
 const GRANTED_RTC_THREE_AGENT_KEYS = [...GRANTED_RTC_ROOM_KEYS, ...GRANTED_RTC_RELAY_KEYS] as const;
 
-/** The rtc-only three-agent cells at the catalog's end: the relay path runs before the two granted relay cells. */
-const RTC_THREE_AGENT_KEYS_IN_ORDER = [...GRANTED_RTC_ROOM_KEYS, 'receipted-relay-path', ...GRANTED_RTC_RELAY_KEYS] as const;
+/** The relay-path cells that hold a gap open until a renewal crossed the relay, in catalog order. */
+const RELAYED_GAP_RENEWAL_KEYS = ['relayed-gap-renewal', 'relayed-unreceipted-gap-renewal'] as const;
+
+/**
+ * The rtc-only three-agent cells at the catalog's end: the relay path runs before the two granted relay cells, and the
+ * two gap renewal cells after them.
+ */
+const RTC_THREE_AGENT_KEYS_IN_ORDER = [
+    ...GRANTED_RTC_ROOM_KEYS,
+    'receipted-relay-path',
+    ...GRANTED_RTC_RELAY_KEYS,
+    ...RELAYED_GAP_RENEWAL_KEYS
+] as const;
 
 /** The granted principal broadcast runs on the same-principal family, beside the audience cells. */
 const GRANTED_RTC_PRINCIPAL_KEY = 'granted-rtc-principal-delivered';
@@ -528,7 +539,8 @@ describe('alm-conformance recipe family', () => {
             'paced-isolation-lists',
             'repair-exhausted',
             ...GRANTED_RTC_THREE_AGENT_KEYS,
-            'receipted-relay-path'
+            'receipted-relay-path',
+            ...RELAYED_GAP_RENEWAL_KEYS
         ];
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
@@ -942,7 +954,9 @@ describe('alm-conformance recipe family', () => {
             // The topic subscription cells, now that a receipted granted send rides rtc.
             ...FOUR_ROLE_KEYS.map(() => ['full']),
             // The receipted relay-path cell, after the granted relay cells.
-            ['full']
+            ['full'],
+            // The gap renewal cells, after the granted relay cells.
+            ...RELAYED_GAP_RENEWAL_KEYS.map(() => ['full'])
         ]);
     });
 
@@ -1018,7 +1032,7 @@ describe('alm-conformance recipe family', () => {
                 kind: 'diagnostic',
                 topic: 'rallar.browser.alm.outbound_diagnostics',
                 payloadPath: 'data',
-                contains: '"typeId":"al.control.nack.v4","targetMsgId":"{resultCache.alm-ws-ordering-resync-sender-send-2.value.msgId}",' +
+                contains: '"typeId":"al.control.nack.v5","targetMsgId":"{resultCache.alm-ws-ordering-resync-sender-send-2.value.msgId}",' +
                     '"outcome":"committed"',
                 sinceCommandIdPrefix: 'alm-ws-ordering-resync-sender-'
             },
@@ -1747,7 +1761,12 @@ describe('alm-conformance recipe family', () => {
                 }
             }
         }
-        expect(reshaped).toEqual(['rtc receipted-relay-path', 'rtc granted-rtc-relay-only', 'rtc granted-rtc-ordered-relay']);
+        expect(reshaped).toEqual([
+            'rtc receipted-relay-path',
+            'rtc granted-rtc-relay-only',
+            'rtc granted-rtc-ordered-relay',
+            ...RELAYED_GAP_RENEWAL_KEYS.map((key) => `rtc ${key}`)
+        ]);
         expect(unsettled).toEqual([]);
     });
 
@@ -1782,6 +1801,8 @@ describe('alm-conformance recipe family', () => {
             'rtc seeded-loss-stream sender alm-rtc-seeded-loss-stream-sender-loss-arm',
             'rtc buffered-track-drains sender alm-rtc-buffered-track-drains-sender-hold-rtc',
             'rtc granted-rtc-ordered-relay sender alm-rtc-granted-rtc-ordered-relay-sender-hold-rtc',
+            // Both origins of each gap renewal cell hold their own second send.
+            ...RELAYED_GAP_RENEWAL_KEYS.flatMap((key) => ['sender', 'receiver'].map((role) => `rtc ${key} ${role} alm-rtc-${key}-${role}-hold-rtc`)),
             'rtc-with-ws-fallback ordering-resync sender alm-rtc-with-ws-fallback-ordering-resync-sender-hold-rtc',
             'rtc-with-ws-fallback ordering-resync sender alm-rtc-with-ws-fallback-ordering-resync-sender-hold-ws'
         ]);

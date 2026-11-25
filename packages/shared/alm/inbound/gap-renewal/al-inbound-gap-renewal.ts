@@ -1,4 +1,5 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '../../../al-contracts/al-message-resource-limits.ts';
 import type { ALOrderingObservation, ALOrderingTrackSnapshot, ALSeqRange } from '../../../al-contracts/al-runtime.ts';
 import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
 import { recordALInboundOrderingPosition } from '../admission/record-al-inbound-ordering-position.ts';
@@ -27,6 +28,7 @@ import {
     type ALInboundEffectFacts,
     type ALInboundEffectPreparationDependencies
 } from '../prepare-al-inbound-commit-bundle.ts';
+import { resolveALInboundSignFailurePolicy } from '../receipt-proof/is-al-inbound-recipient-receipt.ts';
 import {
     signALInboundReceiptEffects,
     type ALInboundReceiptProofs
@@ -64,6 +66,9 @@ export namespace ALInboundGapRenewal {
         readonly stretch: number;
         readonly receiptProofs: ALInboundReceiptProofs;
         readonly diagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
+        readonly readUpstreamPeerId: ALInboundMessageRuntime.Dependencies['readUpstreamPeerId'];
+        readonly readGapNackRelayHops: ALInboundMessageRuntime.Dependencies['readGapNackRelayHops'];
+        readonly isRoutedPeerReady: ALInboundMessageRuntime.Dependencies['isRoutedPeerReady'];
         /** The lane's worker id, named on the position event a hold's end states. */
         readonly effectWorkerId: string;
     }
@@ -82,6 +87,8 @@ interface ALInboundGapRenewalRun {
     readonly position: ALOrderingTrackSnapshot;
     readonly missingRanges: readonly ALSeqRange[];
     readonly facts: ALInboundEffectFacts;
+    /** The peer this run asks: the origin over a direct link, the recorded peer while still routed over, or upstream. */
+    readonly toPeerId: string;
 }
 
 const NOTHING_RENEWED: ALInboundGapRenewal.Result = { outcome: { status: 'completed' }, wroteWork: false };
@@ -114,7 +121,8 @@ export class ALInboundGapRenewal {
         if (position === undefined || missingRanges.length === 0 || effect.expireAtTimestamp <= nowMs) {
             return NOTHING_RENEWED;
         }
-        const facts = readALInboundEffectFacts(nowMs, effectPreparation);
+        const revealing = (await admissionStore.readDeliverySurface(payload.message, nowMs))?.msg;
+        const facts = readALInboundEffectFacts(nowMs, effectPreparation, () => this.readRelayHops(revealing));
         const lastTimer =
             computeALGapRenewalDelayMs(payload.requestNumber + 1, this.dependencies.stretch) === undefined;
         if (lastTimer && payload.heldStart && position.lastContiguousSeq === 0) {
@@ -123,14 +131,44 @@ export class ALInboundGapRenewal {
                 return ended;
             }
         }
+        const toPeerId = this.resolveRenewalPeerId(payload, revealing);
         const rows = await signALInboundReceiptEffects(
-            this.computeRenewalWrites({ effect, payload, position, missingRanges, facts }),
-            { namespace: admissionStore.namespace, receiptProofs, diagnostics }
+            this.computeRenewalWrites({ effect, payload, position, missingRanges, facts, toPeerId }),
+            {
+                namespace: admissionStore.namespace,
+                receiptProofs,
+                signFailure: resolveALInboundSignFailurePolicy(revealing),
+                diagnostics
+            }
         );
         for (const row of rows) {
             await workPort.retainIfAbsent(row.entry);
         }
         return { outcome: { status: 'completed' }, wroteWork: rows.length > 0 };
+    }
+
+    /**
+     * The origin itself once the accepted layout links this peer to it, since a direct link is always served; else the
+     * recorded peer while this lane still routes over it, so a reshape's overlap asks the relay that still forwards;
+     * once it is gone the track's upstream peer, and with none resolvable the recorded peer again.
+     */
+    private resolveRenewalPeerId(payload: ALInboundGapRenewalEffect, revealing: ALMessage | undefined): string {
+        const { isRoutedPeerReady, readUpstreamPeerId } = this.dependencies;
+        if (revealing === undefined) {
+            return payload.toPeerId;
+        }
+        const upstreamPeerId = readUpstreamPeerId(revealing);
+        if (upstreamPeerId !== revealing.id.senderId && isRoutedPeerReady(revealing, payload.toPeerId)) {
+            return payload.toPeerId;
+        }
+        return upstreamPeerId ?? payload.toPeerId;
+    }
+
+    /** Read again at every renewal, since the room's sessions change; with the revealing message gone, the wire limit. */
+    private readRelayHops(revealing: ALMessage | undefined): number {
+        return revealing === undefined
+            ? AL_GAP_NACK_RELAY_HOP_LIMIT
+            : this.dependencies.readGapNackRelayHops(revealing, []);
     }
 
     /**
@@ -255,8 +293,8 @@ export class ALInboundGapRenewal {
         type: 'nack' | 'repair',
         index: number
     ): ALInboundDurableEffectWrite {
-        const { effect, payload, facts } = run;
-        const { message, toPeerId, range, requestNumber } = payload;
+        const { effect, payload, facts, toPeerId } = run;
+        const { message, range, requestNumber } = payload;
         const control = prepareALInboundDurableEffect({
             payload: toRenewalIntent(run, type),
             facts,
@@ -298,7 +336,7 @@ export class ALInboundGapRenewal {
 
 /** A renewal names the arrival the timer records, the track's next expected sequence and only what is missing. */
 function toRenewalIntent(run: ALInboundGapRenewalRun, type: 'nack' | 'repair'): ALInboundEffectIntent['payload'] {
-    const { payload, position, missingRanges } = run;
+    const { payload, position, missingRanges, toPeerId } = run;
     const ordering: ALOrderingObservation = {
         status: 'gap',
         trackKey: payload.trackKey,
@@ -308,7 +346,7 @@ function toRenewalIntent(run: ALInboundGapRenewalRun, type: 'nack' | 'repair'): 
         releasableSeqs: []
     };
     const request = {
-        toPeerId: payload.toPeerId,
+        toPeerId,
         msgId: payload.message.msgId,
         ordering,
         gapRequestNumber: payload.requestNumber

@@ -22,6 +22,7 @@ import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-run
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import { AL_OUTBOUND_COMMIT_ATTEMPTS } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
@@ -43,6 +44,7 @@ import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } fr
 import { WsQueueBoxServerTargetResolution } from '@shared/services/ws-queue-box-server/ws-queue-box-server-target-resolution.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { commitCompetingOutboundSend } from '../alm/outbound-runtime-test-fixture.ts';
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
@@ -339,6 +341,7 @@ describe('private upstream receipt observation', () => {
         const dequeueFinished = Promise.withResolvers<void>();
         const commits: ReceiptCommitOutcome[] = [];
         const commitBundle = outboundStores.admissionStore.commitBundle.bind(outboundStores.admissionStore);
+        let completeAttempts = 0;
         const commitSpy = vi.spyOn(outboundStores.admissionStore, 'commitBundle').mockImplementation(async (bundle, observation) => {
             const control = bundle.canonicalEntry && decodeALControlMessage(decodePersistedALMessage(bundle.canonicalEntry.resource)).right;
             const phase = control?.type === 'receipt' ? control.payload.phase : undefined;
@@ -348,8 +351,18 @@ describe('private upstream receipt observation', () => {
                 await releaseDequeue.promise;
             }
             if (phase === 'complete' && bundle.pendingAdmission === undefined && bundle.durableEffects.length === 0) {
-                releaseDequeue.resolve();
-                await dequeueFinished.promise;
+                completeAttempts += 1;
+                if (completeAttempts === 1) {
+                    releaseDequeue.resolve();
+                    await dequeueFinished.promise;
+                }
+                else if (completeAttempts <= AL_OUTBOUND_COMMIT_ATTEMPTS) {
+                    // Each later attempt of the receipt loses the fence again, so the receipt is retained.
+                    await commitCompetingOutboundSend(outboundStores.admissionStore, commitBundle, {
+                        senderId: bundle.senderId,
+                        resourceId: `competing-send-${completeAttempts}`
+                    });
+                }
             }
             const status = await commitBundle(bundle, observation);
             if (phase !== undefined) {
@@ -756,7 +769,8 @@ function createObservedAggregation(
         traceId: 'trace-ws-queue-box-server-receipt-observation',
         expectedRecipientPeerIds: ['recipient', 'other'],
         snapshotVersion: 7,
-        deadlineAtMs: 30000
+        deadlineAtMs: 30000,
+        neverSentRecipientPeerIds: []
     });
     onTestFinished(() => aggregation.dispose());
     return { aggregation, clock };
@@ -1004,7 +1018,8 @@ describe('owned receipt count observation', () => {
             traceId: 'trace-ws-queue-box-server-receipt-observation',
             expectedRecipientPeerIds: ['recipient'],
             snapshotVersion: 7,
-            deadlineAtMs: 30000
+            deadlineAtMs: 30000,
+            neverSentRecipientPeerIds: []
         });
         fail = true;
         const before = events.length;
@@ -1327,7 +1342,8 @@ it('publishes count evidence after the existing control receipt effects so sink 
         traceId: 'trace-ws-queue-box-server-receipt-observation',
         expectedRecipientPeerIds: ['recipient'],
         snapshotVersion: 7,
-        deadlineAtMs: 30000
+        deadlineAtMs: 30000,
+        neverSentRecipientPeerIds: []
     });
     await fixture.aggregation.acceptControlMessage(createReceiverAcknowledgement());
     expect(effects).toEqual([

@@ -105,10 +105,9 @@ export function toALInboundControlCommitBundle(
 }
 
 /** The rows a child's control decided on, which the conditional commit observes unchanged. */
-export type ALInboundControlObservationSurface = Pick<
-    ALInboundControlAdmissionRead,
-    'owner' | 'pending' | 'acks' | 'nacks' | 'controlOwners'
->;
+export type ALInboundControlObservationSurface =
+    & Pick<ALInboundControlAdmissionRead, 'owner' | 'pending' | 'acks' | 'nacks'>
+    & Readonly<{ controlOwners: ALInboundControlOwnerIndex | undefined; }>;
 
 export function toALInboundControlObservations(
     msgId: string,

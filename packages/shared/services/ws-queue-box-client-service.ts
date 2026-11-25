@@ -8,7 +8,7 @@ import {
     decodePersistedALMessage,
     type ALMessageRejection
 } from '../al-contracts/al-message-persistence-validation.ts';
-import { AL_MESSAGE_RESOURCE_LIMITS } from '../al-contracts/al-message-resource-limits.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT, AL_MESSAGE_RESOURCE_LIMITS } from '../al-contracts/al-message-resource-limits.ts';
 import {
     planALMessageHandling,
     resolveALQosNormalizationInput,
@@ -291,6 +291,10 @@ export class WsQueueBoxClientService {
                     return admitted.kind === 'storage-unavailable' ? admitted : undefined;
                 },
                 onResyncRequired: this.dependencies.onResyncRequired,
+                readUpstreamPeerId: () => undefined,
+                readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+                isRoutedPeerReady: () => false,
+                isLayoutChildPeer: () => false,
                 diagnostics: this.dependencies.inboundDiagnostics
             }
         );

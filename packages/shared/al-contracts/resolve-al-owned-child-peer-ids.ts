@@ -172,6 +172,23 @@ export function toALOverlayAdjacency(
     return nextHopsBySessionId === undefined ? undefined : { selfPeerId, nextHopsBySessionId };
 }
 
+/** The one ready neighbour on this peer's route toward `originPeerId` in the layout; none when the layout does not place one. */
+export function resolveALUpstreamPeerId(
+    adjacency: ALOverlayAdjacency | undefined,
+    originPeerId: string,
+    readyPeerIds: readonly string[]
+): string | undefined {
+    if (adjacency === undefined || !Object.hasOwn(adjacency.nextHopsBySessionId, originPeerId)) {
+        return undefined;
+    }
+    const upstreamPeerIds = resolveALChildPeerIdsTowardRecipients(
+        adjacency.nextHopsBySessionId[adjacency.selfPeerId] ?? [],
+        adjacency,
+        [originPeerId]
+    ).filter((peerId) => readyPeerIds.includes(peerId));
+    return upstreamPeerIds.length === 1 ? upstreamPeerIds[0] : undefined;
+}
+
 /**
  * The children whose subtree, rooted away from this peer over the adjacency the caller passes, holds one of the
  * recipients; none when this peer is every recipient. Without an adjacency, or with a recipient the adjacency does not

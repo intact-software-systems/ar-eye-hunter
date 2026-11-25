@@ -28,7 +28,7 @@ import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import '../../setup-browser-indexeddb.ts';
 import {
     claimOutboundTestWork,
-    createOutboundMessage,
+    conflictOutboundCommitAttempts,
     createOutboundTestRuntimeFor,
     holdOutboundClaims,
     releaseOutboundTestWork,
@@ -48,9 +48,8 @@ afterEach(() => {
     vi.unstubAllGlobals();
 });
 
-it('commits initial control ownership without waiting for outbound serialization', async () => {
+it('commits initial control ownership in one write', async () => {
     const message = createControlMessage('control-handoff');
-    const browserLocks = stubImmediateBrowserLock();
     const observer = createCountingIndexedDbOperationObserver();
     const stores = createDefaultControlStores({ label: 'control-handoff', observer });
     await stores.admissionStore.ready();
@@ -68,7 +67,6 @@ it('commits initial control ownership without waiting for outbound serialization
 
     expect(result.verdict.kind).toBe('admitted');
     expect(admissionMetadataCommitCount).toBe(1);
-    expect(browserLocks.requestCount()).toBe(0);
     const entries = await Promise.all(
         (await stores.workQueue.getAllKeys()).map((key) => stores.workQueue.getItem(key))
     );
@@ -80,19 +78,17 @@ it('commits initial control ownership without waiting for outbound serialization
         origin: 'send',
         commitOutcome: 'committed'
     }));
-    expect(diagnostics.some((event) => (event.kind === 'sender-queue-wait' || event.kind === 'browser-lock-wait') && event.origin === 'send')).toBe(false);
     expect(observer.getCounts().byKind.write).toBe(1);
 });
 
 it('converges two runtime handoffs on one pending owner and one eventual transport', async () => {
     const message = createControlMessage('concurrent-handoff');
-    const browserLocks = stubImmediateBrowserLock();
     const dbName = `outbound-control-concurrent-handoff-${crypto.randomUUID()}`;
     const firstStores = createDefaultControlStores({ label: 'concurrent-handoff', dbName });
     const secondStores = createDefaultControlStores({ label: 'concurrent-handoff', dbName });
     await Promise.all([firstStores.admissionStore.ready(), secondStores.admissionStore.ready()]);
-    vi.spyOn(firstStores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
-    vi.spyOn(secondStores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
+    conflictOutboundCommitAttempts(firstStores.admissionStore);
+    conflictOutboundCommitAttempts(secondStores.admissionStore);
     expect(firstStores.admissionStore).not.toBe(secondStores.admissionStore);
     expect(firstStores.workQueue).not.toBe(secondStores.workQueue);
     let transportCount = 0;
@@ -112,7 +108,6 @@ it('converges two runtime handoffs on one pending owner and one eventual transpo
     expect(retained.filter((entry) => entry.typeId.startsWith('AL_OUTBOUND:'))).toHaveLength(1);
     expect(retained.filter((entry) => entry.typeId === 'AL_OUTBOUND_IDENTITY')).toHaveLength(1);
     expect(retained.filter((entry) => entry.key.topicId === 'AL_OUTBOUND_MESSAGE')).toHaveLength(1);
-    expect(browserLocks.requestCount()).toBe(0);
     await Promise.all([firstHeldClaims.release(first), secondHeldClaims.release(second)]);
 
     for (let pass = 0; pass < 3; pass += 1) {
@@ -121,7 +116,6 @@ it('converges two runtime handoffs on one pending owner and one eventual transpo
     }
 
     expect(transportCount).toBe(1);
-    expect(browserLocks.requestCount()).toBe(1);
     expect((await second.enqueueIfAbsent(message)).verdict.kind).toBe('duplicate');
     expect(transportCount).toBe(1);
 });
@@ -135,10 +129,9 @@ it.each(
     ] as const
 )('does not duplicate a $state control handoff owner', async ({ state, expectedStatus }) => {
     const message = createControlMessage(`repeated-${state.toLowerCase()}`);
-    const browserLocks = stubImmediateBrowserLock();
     const stores = createDefaultControlStores({ label: `repeated-${state.toLowerCase()}` });
     await stores.admissionStore.ready();
-    vi.spyOn(stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
+    conflictOutboundCommitAttempts(stores.admissionStore);
     const retainPendingAdmission = stores.admissionStore.retainPendingAdmission.bind(stores.admissionStore);
     let retentionCount = 0;
     vi.spyOn(stores.admissionStore, 'retainPendingAdmission').mockImplementation(async (input) => {
@@ -164,48 +157,17 @@ it.each(
 
     expect((await runtime.enqueueIfAbsent(message)).verdict.kind).toBe(expectedStatus);
     expect(retentionCount).toBe(1);
-    expect(browserLocks.requestCount()).toBe(0);
     const retained = await readAllRows(stores.workQueue);
     expect(retained.filter((entry) => entry.typeId.startsWith('AL_OUTBOUND:'))).toHaveLength(1);
     expect(retained.filter((entry) => entry.typeId === 'AL_OUTBOUND_IDENTITY')).toHaveLength(1);
     expect(retained.filter((entry) => entry.key.topicId === 'AL_OUTBOUND_MESSAGE')).toHaveLength(1);
 });
 
-it.each([
-    {
-        case: 'ordinary ordered data',
-        message: {
-            ...createOutboundMessage('ordered-data'),
-            ordering: { orderingKey: 'chat', seq: 1 }
-        }
-    },
-    {
-        case: 'a control type with reliable QoS',
-        message: createReliableControlMessage('spoofed-control')
-    }
-])('keeps $case on the serialized admission path', async ({ message }) => {
-    const browserLocks = stubImmediateBrowserLock();
-    const stores = createDefaultControlStores({ label: `serialized-${message.id.msgId}` });
-    await stores.admissionStore.ready();
-    const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
-    const runtime = createDefaultControlRuntime({ stores: stores, diagnostics: (event) => diagnostics.push(event) });
-
-    const result = await runtime.enqueueIfAbsent(message);
-
-    expect(result.verdict.kind).not.toBe('pending');
-    expect(browserLocks.requestCount()).toBe(1);
-    expect(diagnostics).toContainEqual(expect.objectContaining({
-        kind: 'sender-queue-wait',
-        origin: 'send'
-    }));
-});
-
 it('surfaces a real terminal retention race as a retryable control handoff conflict', async () => {
     const message = createControlMessage('retention-race');
-    const browserLocks = stubImmediateBrowserLock();
     const stores = createDefaultControlStores({ label: 'retention-race' });
     await stores.admissionStore.ready();
-    vi.spyOn(stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
+    conflictOutboundCommitAttempts(stores.admissionStore);
     const retainPendingAdmission = stores.admissionStore.retainPendingAdmission.bind(stores.admissionStore);
     vi.spyOn(stores.admissionStore, 'retainPendingAdmission').mockImplementationOnce(async (input) => {
         expect(await retainPendingAdmission(input)).toBe('pending');
@@ -218,7 +180,6 @@ it('surfaces a real terminal retention race as a retryable control handoff confl
 
     await expect(runtime.enqueueIfAbsent(message)).rejects.toBeInstanceOf(RetryableConflictError);
 
-    expect(browserLocks.requestCount()).toBe(0);
     const [owner] = (await readAllRows(stores.workQueue)).filter((entry) => entry.typeId.startsWith('AL_OUTBOUND:'));
     expect(owner?.status).toBe('COMPLETED');
 });
@@ -227,8 +188,7 @@ it('settles every control handoff before rejecting a batch and wakes its late re
     const stores = createDefaultControlStores({ label: 'batch-settlement' });
     await stores.admissionStore.ready();
     vi.spyOn(stores.admissionStore, 'commitBundles').mockResolvedValueOnce('conflict');
-    vi.spyOn(stores.admissionStore, 'commitBundle')
-        .mockResolvedValueOnce('conflict').mockResolvedValueOnce('conflict');
+    conflictOutboundCommitAttempts(stores.admissionStore, 2);
     const laterEntered = Promise.withResolvers<void>();
     const releaseLater = Promise.withResolvers<void>();
     const retain = stores.admissionStore.retainPendingAdmission.bind(stores.admissionStore);
@@ -285,17 +245,6 @@ function createControlMessage(msgId: string): ALMessage {
     };
 }
 
-function createReliableControlMessage(msgId: string): ALMessage {
-    const message = createControlMessage(msgId);
-    return {
-        ...message,
-        qos: {
-            ...message.qos,
-            delivery: { algo: 'at-least-once' }
-        }
-    };
-}
-
 interface CreateDefaultControlStoresInput {
     readonly label: string;
     readonly dbName?: string;
@@ -342,24 +291,6 @@ function createDefaultControlRuntime(
             return { status: 'sent', submissionAttempted: true };
         }
     });
-}
-
-interface BrowserLockTrace {
-    readonly requestCount: () => number;
-}
-
-function stubImmediateBrowserLock(): BrowserLockTrace {
-    let requestCount = 0;
-    const request = async <T>(
-        _name: string,
-        _options: Readonly<{ mode: 'exclusive'; }>,
-        callback: () => Promise<T>
-    ): Promise<T> => {
-        requestCount += 1;
-        return await callback();
-    };
-    vi.stubGlobal('navigator', { locks: { request } });
-    return { requestCount: () => requestCount };
 }
 
 async function readAllRows(

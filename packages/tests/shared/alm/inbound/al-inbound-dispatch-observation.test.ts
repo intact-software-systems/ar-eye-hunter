@@ -7,6 +7,7 @@ import {
     type Mock
 } from 'vitest';
 
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { planALMessageHandling, type ALMessageHandlingPlan } from '@shared/al-contracts/al-policy.ts';
 import { createVolatileALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALInboundOrderedDeliveryRead } from '@shared/alm/inbound/al-inbound-admission-store.ts';
@@ -77,6 +78,7 @@ function createDispatchFixture(input: DispatchFixtureInput): DispatchFixture {
     const delivery = new ALInboundAdmittedDelivery({
         receiptProofs: { kind: 'carrier-authenticated' },
         ...resources,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
         lane: 'durable',
         effectWorkerId: 'worker',
         planIncomingMessage: (msg) => planALMessageHandling(msg, { selfPeerId: 'receiver', nowMs: 100 }),

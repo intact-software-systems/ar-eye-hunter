@@ -1,4 +1,3 @@
-import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -11,8 +10,8 @@ import {
     createDefaultOutboundTestStores,
     createOutboundMessage,
     drainOutboundWorkDueNow,
+    loseOutboundCommitAttempts,
     OUTBOUND_TEST_SEND_PLANNER,
-    readOutboundTestAdmission,
     type OutboundTestStores
 } from '../../outbound-runtime-test-fixture.ts';
 import type { OutboundTestPayload } from '../../outbound-test-payload.ts';
@@ -75,8 +74,8 @@ describe('a send whose latest-wins supersedence came from its provider\'s defaul
         expect(second.verdict.kind, second.reason).not.toBe('refused');
         expect(second.verdict.kind, second.reason).not.toBe('failed');
         expect(second.message).toEqual(first.message);
-        // The second dispatch reads the stored canonical, already signed, so the signer passes it and signs nothing.
-        expect(asked.map((msg) => msg.proof)).toEqual([undefined, PROOF]);
+        // The second dispatch reads the stored canonical, already signed, so it asks the signer nothing.
+        expect(asked.map((msg) => msg.proof)).toEqual([undefined]);
         expect(signed).toHaveLength(1);
     });
 
@@ -192,24 +191,14 @@ function createSigningRuntime(planOutgoingMessage: ALOutboundPlanner<OutboundTes
     return { runtime, stores, asked, signed, sent };
 }
 
-/** A competing send of the same sender wins the version fence inside the message's first commit, so it retains. */
+/** Competing sends of the same sender win the version fence before every attempt of the message's first commit, so it retains. */
 async function enqueueBehindCompetitor<T>(stores: OutboundTestStores, enqueue: () => Promise<T>): Promise<T> {
     const store = stores.admissionStore;
-    const competitor = await readOutboundTestAdmission({
-        store,
-        message: createOutboundMessage('competitor'),
-        creationNow: () => Temporal.Now.instant(),
-        clock: { nowMs: Date.now }
-    });
-    const commitBundle = store.commitBundle.bind(store);
-    const spy = vi.spyOn(store, 'commitBundle').mockImplementationOnce(async (bundle, observation) => {
-        expect(await commitBundle(competitor)).toBe('committed');
-        return await commitBundle(bundle, observation);
-    });
+    loseOutboundCommitAttempts(store);
     try {
         return await enqueue();
     }
     finally {
-        spy.mockRestore();
+        vi.mocked(store.commitBundle).mockRestore();
     }
 }

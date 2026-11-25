@@ -3,6 +3,7 @@ import { expect } from 'vitest';
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALPeerControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALVolatileInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { OverlayInfo } from '@shared/api/api-config.ts';
 import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
 import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
@@ -43,6 +44,10 @@ export interface ChainHopInput {
     readonly inboundVolatileStores?: ALVolatileInboundRuntimeStores;
     /** Absent, the chain's key for the hop. */
     readonly publicationCrypto?: PublicationCrypto;
+    /** The layout the hop holds accepted from the start; absent, every neighbour as a next hop and no adjacency. */
+    readonly initialOverlay?: OverlayInfo;
+    /** How long the hop still admits copies over a layout it replaced; absent, the served default. */
+    readonly replacedLayoutOverlapMs?: number;
 }
 
 export interface OrderedReceiptedPublicationInput {
@@ -68,6 +73,8 @@ export interface OrderedOriginPublicationInput {
     readonly seq: number;
     /** The receipt the send asks for, `at-least-once` under `receiver`; absent, none, so the send is best-effort. */
     readonly ack?: 'none' | 'receiver';
+    /** Absent, the reliability the receipt implies; `at-least-once` repairs a send that asks for no receipt. */
+    readonly reliability?: 'best-effort' | 'at-least-once';
 }
 
 export const GRANTED_TYPE_ID = 'room.granted-feed.v1';
@@ -91,13 +98,20 @@ export async function createRelayChain(
     return { keys, snapshot };
 }
 
+/**
+ * `sessionIds` absent, the chain `a`, `r`, `c`; a test that reshapes the chain names its further sessions. `originLayout`
+ * absent, the origin's one next hop is `r` and its layout carries no adjacency.
+ */
 export async function createOriginRelayChain(
-    grants: Readonly<Record<string, GroupPublicationTopicPermissions>>
+    grants: Readonly<Record<string, GroupPublicationTopicPermissions>>,
+    sessionIds: readonly string[] = ['a', 'r', 'c'],
+    originLayout?: Readonly<Record<string, readonly string[]>>
 ): Promise<OriginRelayChain> {
-    const chain = await createRelayChain(['a', 'r', 'c'], grants);
+    const chain = await createRelayChain(sessionIds, grants);
     const origin = createRtcOriginOverlayFixture({
         snapshot: chain.snapshot,
-        nextHopPeerIds: ['r'],
+        nextHopPeerIds: originLayout?.a ?? ['r'],
+        nextHopsBySessionId: originLayout,
         grantedTopics: createRtcGrantedTopicsFixture([PUBLICATION_TOPIC_ID]),
         publicationCrypto: chain.keys.a
     });
@@ -112,7 +126,9 @@ export function createChainHop(chain: RelayChain, input: ChainHopInput): RtcRela
         grantedTopics: createRtcGrantedTopicsFixture([PUBLICATION_TOPIC_ID]),
         publicationCrypto: input.publicationCrypto ?? chain.keys[input.selfPeerId],
         topicSubscriptions: input.topicSubscriptions ?? NO_RTC_TOPIC_SUBSCRIPTIONS,
-        inboundVolatileStores: input.inboundVolatileStores
+        inboundVolatileStores: input.inboundVolatileStores,
+        initialOverlay: input.initialOverlay,
+        replacedLayoutOverlapMs: input.replacedLayoutOverlapMs
     });
 }
 
@@ -173,7 +189,7 @@ export async function publishOrderedFromOrigin(input: OrderedOriginPublicationIn
                 resource: { text: `feed ${seq}` },
                 options: {
                     ack,
-                    reliability: ack === 'none' ? 'best-effort' : 'at-least-once',
+                    reliability: input.reliability ?? (ack === 'none' ? 'best-effort' : 'at-least-once'),
                     ttlMs: 30_000,
                     traceId: `trace-feed-${seq}`,
                     orderingKey: ORDERED_TRACK_KEY,

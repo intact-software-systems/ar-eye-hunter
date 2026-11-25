@@ -29,6 +29,7 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import '../../setup-browser-indexeddb.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { createPSqlAdmissionTestStorage } from '../../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 import type { InboundTestDecision } from './inbound-runtime-test-fixture.ts';
 
@@ -267,7 +268,8 @@ async function readDecision(store: ALInboundAdmissionStore, message: ALMessage):
             plan,
             facts: readEffectFacts(nowMs),
             canForward: false,
-            recordedParentPresent: true
+            recordedParentPresent: true,
+            retriedCopyNextHopPeerIds: []
         })
     };
 }
@@ -277,7 +279,7 @@ function readEffectFacts(nowMs: number): ALInboundEffectFacts {
         newControlId: crypto.randomUUID.bind(crypto),
         selfPeerId: 'receiver',
         createInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
-    });
+    }, () => AL_GAP_NACK_RELAY_HOP_LIMIT);
 }
 
 async function completeEffects(stores: ALInboundRuntimeStores): Promise<string[]> {

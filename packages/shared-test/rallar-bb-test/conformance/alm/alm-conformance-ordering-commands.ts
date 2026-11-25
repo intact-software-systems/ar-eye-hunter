@@ -19,6 +19,8 @@ export interface AlmConformanceOrderedSendOptions {
     readonly ack?: 'receiver' | 'none';
     /** Absent, the product's repair budget. */
     readonly maxRepairs?: number;
+    /** Absent, the scenario's track (`toOrderingKey`); a cell whose pages each originate a track names each its own. */
+    readonly orderingKey?: string;
 }
 
 /** One at-least-once send on the scenario's ordering key, admitted; the sequence names the send and its payload. */

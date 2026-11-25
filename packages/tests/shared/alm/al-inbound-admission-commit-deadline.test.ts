@@ -8,6 +8,7 @@ import {
 
 import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
@@ -47,6 +48,7 @@ it.each(['entry', 'observation', 'mutation'] as const)('uses original D after aw
                 });
             const admission = new ALInboundMessageAdmission({
                 gapRenewalStretch: 1,
+                readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
                 receiptProofs: { kind: 'carrier-authenticated' },
                 orderingObserver: 'addressed',
                 diagnostics: undefined,

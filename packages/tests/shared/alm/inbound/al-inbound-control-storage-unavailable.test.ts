@@ -18,6 +18,7 @@ import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-en
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { toTestALAckPayload } from '../../../al-control-test-payloads.ts';
 
 const SCOPE = { applicationId: 'app-1', workspaceId: 'workspace-1' };
@@ -107,6 +108,10 @@ function createRuntime(
 ): InboundControlRuntime {
     const diagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
     const runtime = createDefaultALInboundMessageRuntime({
+        readUpstreamPeerId: () => undefined,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+        isRoutedPeerReady: () => false,
+        isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         carrier: 'ws',

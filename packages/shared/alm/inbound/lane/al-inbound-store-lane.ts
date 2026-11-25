@@ -52,6 +52,7 @@ import {
 import type { ALInboundAcknowledgementEvidence } from '../control/al-inbound-acknowledgement-evidence.ts';
 import {
     ALInboundControlAdmission,
+    resolveALInboundRetriedCopyNextHops,
     type ALInboundControlAdmissionResult,
     type ALInboundPendingControl
 } from '../control/al-inbound-control-admission.ts';
@@ -683,7 +684,12 @@ function createALInboundLaneControlAdmission(
         newControlId: dependencies.effectPreparation.newControlId,
         retention: dependencies.admissionStore.retention,
         receiptProofs: dependencies.receiptProofs,
-        diagnostics: dependencies.diagnostics
+        diagnostics: dependencies.diagnostics,
+        planRetriedCopyNextHops: resolveALInboundRetriedCopyNextHops(dependencies),
+        readGapNackParent: dependencies.readGapNackParent,
+        readUpstreamPeerId: dependencies.readUpstreamPeerId,
+        readGapNackRelayHops: dependencies.readGapNackRelayHops,
+        isLayoutChildPeer: dependencies.isLayoutChildPeer
     });
 }
 

@@ -136,7 +136,8 @@ describe('a relay\'s copy to a child that answers not yet in sync, or never', ()
     );
 
     // The receipt's ack timeout charges its three attempts, but each re-plan of the stored copy finds no route
-    // (the stored copy is the one addressed to the relay itself), so no repair is planned and nothing is re-sent.
+    // (the stored copy is the one addressed to the relay itself), so no repair is planned and nothing is re-sent. The
+    // exhaustion keeps the spent row as its final snapshot.
     it('a child that never answers spends the relay\'s receipt attempts with no copy re-sent', async () => {
         const chain = await forwardThroughRelay('never');
         const receipt = { originPeerId: 'a', msgId: chain.frame.id.msgId };
@@ -148,8 +149,7 @@ describe('a relay\'s copy to a child that answers not yet in sync, or never', ()
             attempts.push((await chain.relay.readOutboundReceipt(receipt))?.attempts);
         }
 
-        expect(attempts.filter((attempt) => attempt !== undefined)).toEqual([1, 2, 3]);
-        expect(attempts.at(-1)).toBeUndefined();
+        expect(attempts).toEqual([1, 2, 3, 3]);
         expect(await readCopiesToChild(chain)).toBe(1);
     });
 });

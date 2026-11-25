@@ -114,7 +114,6 @@ describe('outbound dispatch value ownership', () => {
             toOutboxEntry: () => wrongEntry,
             decodePreparedMessage: decodeOutboundTestPayload,
             clock: { nowMs: Date.now },
-            browserLocks: undefined,
             signAdmittedMessage: undefined,
             diagnostics: undefined,
             settlements: () => {}
@@ -208,7 +207,6 @@ describe('outbound dispatch value ownership', () => {
             },
             decodePreparedMessage: decodeOutboundTestPayload,
             clock: { nowMs: Date.now },
-            browserLocks: undefined,
             signAdmittedMessage: undefined,
             diagnostics: undefined,
             settlements: () => {}
@@ -256,7 +254,6 @@ describe('outbound dispatch value ownership', () => {
 
         expect(computed.verdict.kind).toBe('skipped');
         expect(computed.bundle?.mutations).toEqual([
-            { kind: 'delete-pending-ack', originPeerId: message.id.senderId, msgId: message.id.msgId },
             { kind: 'delete-repair-attempt', msgId: message.id.msgId },
             { kind: 'end-sent-message', stored: read.storedMessage }
         ]);
@@ -435,7 +432,6 @@ describe('a dispatch and the end of its message', () => {
 
         expect(computed.verdict).toMatchObject({ kind: 'skipped', reason: 'repair-exhausted' });
         expect(computed.bundle?.mutations).toEqual([
-            { kind: 'delete-pending-ack', originPeerId: message.id.senderId, msgId },
             { kind: 'delete-repair-attempt', msgId },
             { kind: 'end-sent-message', stored: read.storedMessage }
         ]);

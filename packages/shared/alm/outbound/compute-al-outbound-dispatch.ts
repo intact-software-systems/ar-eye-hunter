@@ -8,10 +8,11 @@ import {
     toALOutboundOrderingTrackMutations,
     type ALOutboundAdmissionMutation
 } from './admission/al-outbound-admission-mutations.ts';
-import type {
-    ALOutboundCommitBundle,
-    ALOutboundDurableEffectWrite,
-    ALOutboundMessageReadDto
+import {
+    toALOutboundMessageFence,
+    type ALOutboundCommitBundle,
+    type ALOutboundDurableEffectWrite,
+    type ALOutboundMessageReadDto
 } from './admission/al-outbound-admission-store.ts';
 import { toALOutboundSentPolicy } from './admission/al-outbound-admission-validation.ts';
 import { toALOutboundRecordedSentPositions } from './admission/to-al-outbound-recorded-sent-positions.ts';
@@ -125,6 +126,12 @@ export function computeALOutboundDispatch<TPrepared>(
             claimedCanonical: options.claimedOutboxEntry,
             senderId: read.msg.id.senderId,
             expectedVersion: read.clientRecord?.version,
+            fencesSender: true,
+            message: toALOutboundMessageFence(
+                { originPeerId: read.msg.id.senderId, msgId: read.msg.id.msgId },
+                read.messageVersion,
+                toALOutboundMessageReference(read.canonicalScope, canonicalEntry, read.msg).expiresAtMs
+            ),
             canonicalEntry,
             mutations: writes.mutations,
             durableEffects: writes.durableEffects.map((effect) => ({

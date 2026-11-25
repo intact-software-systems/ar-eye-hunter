@@ -21,6 +21,7 @@ import {
     prepareALInboundCommitBundle,
     readALInboundEffectFacts
 } from './prepare-al-inbound-commit-bundle.ts';
+import { resolveALInboundSignFailurePolicy } from './receipt-proof/is-al-inbound-recipient-receipt.ts';
 import { signALInboundReceiptControls } from './receipt-proof/sign-al-inbound-receipt-controls.ts';
 
 export namespace ALInboundOrderedDelivery {
@@ -36,6 +37,7 @@ export namespace ALInboundOrderedDelivery {
             | 'verifyPublicationProof'
             | 'clock'
             | 'effectPreparation'
+            | 'readGapNackRelayHops'
             | 'onResyncRequired'
             | 'receiptProofs'
             | 'diagnostics'
@@ -99,13 +101,17 @@ export class ALInboundOrderedDelivery {
         if (plan.dropReason || !plan.localDelivery.enabled) {
             return await this.complete(read.snapshot.msg);
         }
-        const facts = readALInboundEffectFacts(read.nowMs, this.dependencies.effectPreparation);
+        const facts = readALInboundEffectFacts(
+            read.nowMs,
+            this.dependencies.effectPreparation,
+            () => this.dependencies.readGapNackRelayHops(read.snapshot.msg, [])
+        );
         const computed = computeALInboundBufferedRelease({ read, plan, facts });
         const validated = validateALInboundCommitBundle(computed, read.namespace);
         if (validated.left) {
             throw new NonRetryableException(validated.left.message);
         }
-        const signed = await this.signReceiptControls(validated.right!, read.namespace);
+        const signed = await this.signReceiptControls(validated.right!, read.namespace, read.snapshot.msg);
         if (this.dependencies.signal.aborted) {
             return 'retry';
         }
@@ -159,7 +165,11 @@ export class ALInboundOrderedDelivery {
         };
         const computed = prepareALInboundCommitBundle({
             read,
-            facts: readALInboundEffectFacts(read.nowMs, this.dependencies.effectPreparation),
+            facts: readALInboundEffectFacts(
+                read.nowMs,
+                this.dependencies.effectPreparation,
+                () => this.dependencies.readGapNackRelayHops(msg, [])
+            ),
             mutations: [],
             effects: [toResyncRequiredNackEffect(msg, read, ordering)]
         });
@@ -167,7 +177,7 @@ export class ALInboundOrderedDelivery {
         if (validated.left) {
             throw new NonRetryableException(validated.left.message);
         }
-        const signed = await this.signReceiptControls(validated.right!, read.namespace);
+        const signed = await this.signReceiptControls(validated.right!, read.namespace, msg);
         if (
             this.dependencies.signal.aborted ||
             await this.dependencies.admissionStore.commitBundle(signed) === 'conflict'
@@ -184,12 +194,14 @@ export class ALInboundOrderedDelivery {
 
     private async signReceiptControls(
         bundle: ALInboundCommitBundle,
-        namespace: string
+        namespace: string,
+        msg: ALMessage
     ): Promise<ALInboundCommitBundle> {
         return await signALInboundReceiptControls({
             bundle,
             namespace,
             receiptProofs: this.dependencies.receiptProofs,
+            signFailure: resolveALInboundSignFailurePolicy(msg),
             diagnostics: this.dependencies.diagnostics
         });
     }

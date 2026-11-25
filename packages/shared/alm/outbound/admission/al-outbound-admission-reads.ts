@@ -19,7 +19,8 @@ import {
     decodeALAdmissionClientRecord,
     decodeALAdmissionControlValue,
     decodeALAdmissionString,
-    decodeALAdmissionSupersedenceValue
+    decodeALAdmissionSupersedenceValue,
+    decodeALOutboundMessageVersion
 } from '../../al-admission-value-validation.ts';
 import type { ALAdmissionReadSession, ALAdmissionWorkBackend } from '../../al-admission-work-backend.ts';
 import type {
@@ -53,7 +54,7 @@ import { isALOutboundReceiptComplete } from '../transition-al-outbound-pending-a
 import {
     toALOutboundControlHistoryKey,
     toALOutboundFirstHopWaitKey,
-    toALOutboundPendingAckKey,
+    toALOutboundOriginMessageKey,
     toALOutboundRepairAttemptKey,
     toALOutboundSentMessageKey,
     toALOutboundSupersedenceLatestKey,
@@ -64,6 +65,7 @@ import {
 import type {
     ALOutboundDequeueAdmissionFacts,
     ALOutboundMessageReadDto,
+    ALOutboundMessageVersion,
     ALOutboundOutgoingReadInput,
     ALOutboundPlanner,
     ALOutboundReceiptAdmissionReadInput,
@@ -205,8 +207,9 @@ export class ALOutboundAdmissionReads<TPrepared> {
     ): Promise<ALOutboundMessageReadDto<TPrepared>> {
         const { msg, observedCanonicalEntry } = input;
         const nowMs = this.nowMs();
-        const [clientRecord, stored, control, repairAttempt, repairs] = await Promise.all([
+        const [clientRecord, messageVersion, stored, control, repairAttempt, repairs] = await Promise.all([
             this.readClientRecord(session, msg.id.senderId),
+            this.readMessageVersion(session, { originPeerId: msg.id.senderId, msgId: msg.id.msgId }),
             this.readStoredMessage(session, msg.id.msgId),
             this.readControlTracking(session, msg.id.msgId, msg.id.senderId),
             this.readRepairAttempt(session, msg.id.msgId),
@@ -243,6 +246,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
             msg: plan.msg,
             nowMs,
             clientRecord,
+            messageVersion,
             plan,
             orderingHead: minted.orderingHead,
             sentPositions,
@@ -262,7 +266,10 @@ export class ALOutboundAdmissionReads<TPrepared> {
     ): Promise<ALOutboundRepairReadDto<TPrepared>> {
         const owner = await this.readStoredMessage(session, msgId);
         const senderId = owner?.reference.senderId;
-        const clientRecord = senderId ? await this.readClientRecord(session, senderId) : undefined;
+        const [clientRecord, messageVersion] = await Promise.all([
+            senderId ? this.readClientRecord(session, senderId) : undefined,
+            senderId ? this.readMessageVersion(session, { originPeerId: senderId, msgId }) : undefined
+        ]);
         // The fenced row is read after the version that fences it, so the two always agree: one
         // session snapshot answers both, and a chain whose snapshot ended re-reads the row rather
         // than pairing a stale one with a version that already counted its delete.
@@ -295,6 +302,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
             msgId,
             nowMs: this.nowMs(),
             clientRecord,
+            messageVersion,
             storedMessage: stored,
             sentSnapshot,
             ...control,
@@ -494,7 +502,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
     ): Promise<ALOutboundPendingAckSnapshot | undefined> {
         return await this.readValue(
             session,
-            toALOutboundPendingAckKey({ namespace: this.namespace, ...receipt }),
+            toALOutboundOriginMessageKey({ row: 'pending-ack', namespace: this.namespace, ...receipt }),
             (value) => decodeALOutboundPendingAck(value, receipt.msgId)
         );
     }
@@ -510,20 +518,21 @@ export class ALOutboundAdmissionReads<TPrepared> {
         );
     }
 
-    /** What only a control's known owner has: its version fence, its receipt of the message, the wait it asks for. */
+    /** What only a control's known owner has: the message's version, its receipt of it, the wait it asks for. */
     async readControlOwnerSurface(
         session: ALAdmissionReadSession,
         input: ALOutboundControlOwnerReadInput
-    ): Promise<Pick<ALControlAdmissionRead, 'ownerVersion' | 'pending' | 'firstHopWait'>> {
+    ): Promise<Pick<ALControlAdmissionRead, 'messageVersion' | 'pending' | 'firstHopWait'>> {
         const { owner, msgId } = input;
         if (owner === undefined) {
-            return {};
+            return { messageVersion: undefined };
         }
-        return {
-            ownerVersion: await this.readClientRecord(session, owner),
-            pending: await this.readReceiptState(session, { originPeerId: owner, msgId }),
-            firstHopWait: input.readsFirstHopWait ? await this.readFirstHopWait(session, msgId) : undefined
-        };
+        const [messageVersion, pending, firstHopWait] = await Promise.all([
+            this.readMessageVersion(session, { originPeerId: owner, msgId }),
+            this.readReceiptState(session, { originPeerId: owner, msgId }),
+            input.readsFirstHopWait ? this.readFirstHopWait(session, msgId) : undefined
+        ]);
+        return { messageVersion, pending, firstHopWait };
     }
 
     async readAcks(session: ALAdmissionReadSession, msgId: string): Promise<readonly ALAckPayload[]> {
@@ -558,6 +567,23 @@ export class ALOutboundAdmissionReads<TPrepared> {
             session,
             toALOutboundSentMessageKey(this.namespace, msgId),
             (value) => decodeALOutboundSentMessage(value, msgId)
+        );
+    }
+
+    /** The message fence, read from a session snapshot or from inside an open admission write. */
+    async readMessageVersion(
+        session: ALAdmissionReadSession,
+        message: ALOutboundPendingAckRef
+    ): Promise<ALOutboundMessageVersion | undefined> {
+        return await this.readValue(
+            session,
+            toALOutboundOriginMessageKey({
+                row: 'msg-version',
+                namespace: this.namespace,
+                originPeerId: message.originPeerId,
+                msgId: message.msgId
+            }),
+            (value) => decodeALOutboundMessageVersion(value, message.msgId)
         );
     }
 

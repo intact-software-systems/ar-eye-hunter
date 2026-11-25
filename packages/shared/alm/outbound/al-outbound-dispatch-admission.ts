@@ -13,12 +13,10 @@ import { toALMessageTrace } from '../../al-contracts/trace/to-al-message-trace.t
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { NotReadyException } from '../../queuebox/resource-inbox/not-ready-exception.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
-import { BoundedConcurrencyAdmission } from '../../resilience/bounded-concurrency-admission.ts';
 import { toError } from '../../resilience/to-error.ts';
-import { RetryableConflictError } from '../../resilience/try-with-policy.ts';
+import { RetryableConflictError, TryWithExhaustedError, TryWithPolicy } from '../../resilience/try-with-policy.ts';
 import { decodeALAdmissionValue } from '../al-admission-decoder.ts';
 import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
-import { toALOutboundCommitLockName, type ALBrowserLocks } from '../storage/al-browser-locks.ts';
 import { toALStorageUnavailable } from '../storage/al-storage-unavailable.ts';
 import type {
     ALOutboundAdmissionStore,
@@ -55,6 +53,7 @@ import {
     type ALOutboundComputeIntent,
     type ComputeALOutboundDispatchInput
 } from './compute-al-outbound-dispatch.ts';
+import { AL_OUTBOUND_COMMIT_ATTEMPTS } from './control/al-outbound-control-admission.ts';
 import type { ALOutboundDequeuedAdmission } from './lane/al-outbound-dequeued-admission.ts';
 import {
     computeALOutboundGroupChainedReads,
@@ -78,6 +77,41 @@ interface ALOutboundCommitDecision<TPrepared> {
     readonly computed: ALOutboundComputedDto<TPrepared>;
     readonly bundle: ALOutboundCommitBundle<TPrepared>;
 }
+
+/** One commit attempt's answer: its result, or the decision whose write lost the sender-version fence. */
+type ALOutboundDispatchAttempt<TPrepared> =
+    | Readonly<{ kind: 'settled'; result: ALOutboundDispatchAdmission.Result<TPrepared>; }>
+    | Readonly<{ kind: 'conflict'; decision: ALOutboundCommitDecision<TPrepared>; }>;
+
+/** The write of `decision` lost the sender-version fence to another commit of its sender. */
+class ALOutboundDispatchConflict<TPrepared> extends RetryableConflictError {
+    readonly decision: ALOutboundCommitDecision<TPrepared>;
+
+    constructor(decision: ALOutboundCommitDecision<TPrepared>) {
+        super('Outbound commit conflict');
+        this.decision = decision;
+    }
+}
+
+/**
+ * Every commit of a sender is fenced on one sender version and nothing serializes them, so a commit whose write lost
+ * that fence to another commit reads, decides and writes again, `AL_OUTBOUND_COMMIT_ATTEMPTS` attempts in all.
+ * Contention costs a fresh read, never a wait for another commit's read. The first retry runs at once: a lost fence
+ * means the winner has committed, so the fresh read sees it. A second loss is sustained contention, and the last attempt
+ * first waits 10 ms with half of it jittered, so commits that keep meeting spread apart. Past the bound the request is
+ * retained as a pending admission the durable worker replays, or the claim is left to its work retry, so contention
+ * never live-locks a sender: a commit makes at most three reads and three writes and waits at most 15 ms.
+ */
+const AL_OUTBOUND_COMMIT_CONFLICT_RETRY = TryWithPolicy.defaults()
+    .label('outbound commit conflict')
+    .maxAttempts(AL_OUTBOUND_COMMIT_ATTEMPTS)
+    .retryIntervalMsecs(5)
+    .backoffFactor(2)
+    .jitterRatio(0.5)
+    .retryIf((error) => error instanceof ALOutboundDispatchConflict)
+    .waitBeforeRetry(({ attempt, delayMsecs }) =>
+        attempt === 1 ? Promise.resolve() : new Promise((resolve) => setTimeout(resolve, delayMsecs))
+    );
 
 /** A row left behind its batch predecessor is due again at the next pass, where it joins or waits for it. */
 const AL_OUTBOUND_LEFT_BEHIND_RETRY_MS = 1;
@@ -106,19 +140,6 @@ export namespace ALOutboundDispatchAdmission {
         readonly options: ALOutboundCommitDispatchOptions;
     }
 
-    /** One sender's admission and the origin of its most recently queued commit. */
-    export interface SenderCommitQueue {
-        readonly admission: BoundedConcurrencyAdmission;
-        readonly origin: ALOutboundCommitOrigin;
-    }
-
-    export interface HeldCommitLock {
-        readonly senderId: string;
-        readonly origin: ALOutboundCommitOrigin;
-        readonly lockName: string;
-        readonly available: boolean;
-    }
-
     export interface CommitResultInput<TPrepared> {
         readonly computed: ALOutboundComputedDto<TPrepared>;
         readonly msg: ALMessage;
@@ -132,7 +153,6 @@ export namespace ALOutboundDispatchAdmission {
         readonly toOutboxEntry: (msg: ALMessage) => ResourceEntry;
         readonly decodePreparedMessage: ALOutboundPreparedMessageDecoder<TPrepared>;
         readonly clock: ALOutboundMessageRuntime.Clock;
-        readonly browserLocks: ALBrowserLocks | undefined;
         readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
         readonly dequeueTiming?: ALOutboundDequeuedAdmission.TimingSink;
         /** The carrier's signer of a first admission's frame; `undefined` commits the frame as read. */
@@ -141,10 +161,9 @@ export namespace ALOutboundDispatchAdmission {
     }
 }
 
-/** Owns optimistic read/compute/commit; ordinary data serializes by sender, while initial controls bypass that wait. */
+/** Owns optimistic read/compute/commit: the sender-version fence alone orders a sender's commits, and a lost fence is a fresh attempt. */
 export class ALOutboundDispatchAdmission<TPrepared> {
     private readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
-    private readonly commitQueuesBySenderId = new Map<string, ALOutboundDispatchAdmission.SenderCommitQueue>();
     private disposed = false;
     private readonly dependencies: ALOutboundDispatchAdmission.Dependencies<TPrepared>;
 
@@ -170,8 +189,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
     }
 
     /**
-     * The dispatches of one sender under one version fence. Ordinary data also holds one queue slot
-     * and browser lock; canonical initial controls use the same optimistic fence without those waits. When a member
+     * The dispatches of one sender under one version fence. When a member
      * settles before its write (it fails validation, finds its pending admission, has nothing to
      * commit), the store answers the group with anything but `committed`, or the group attempt throws,
      * every member commits again alone, one after another: a fresh read, compute and conflict
@@ -217,14 +235,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         }
         const members = dispatches.map((dispatch) => ({ dispatch, phases: this.createCommitPhases(dispatch) }));
         try {
-            const controls = dispatches.filter((dispatch) => this.isInitialControlHandoff(dispatch));
-            if (controls.length > 0 && controls.length !== dispatches.length) {
-                return await this.commitEachAlone(members);
-            }
-            const attempt = controls.length === dispatches.length
-                ? this.commitGroupOnce(members)
-                : this.withSenderCommitQueue(dispatches[0]!, () => this.commitGroupOnce(members));
-            const grouped = await attempt
+            const grouped = await this.commitGroupOnce(members)
                 .catch((error) => {
                     console.warn('AL outbound group commit threw; its members commit alone', error);
                     return undefined;
@@ -256,13 +267,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         phases: ALOutboundCommitPhases
     ): Promise<ALOutboundDispatchAdmission.Result<TPrepared>> {
         try {
-            if (this.isInitialControlHandoff(dispatch)) {
-                return await this.commitDispatchOnce(dispatch, phases);
-            }
-            return await this.withSenderCommitQueue(
-                dispatch,
-                () => this.commitDispatchOnce(dispatch, phases)
-            );
+            return await this.commitDispatch(dispatch, phases);
         }
         catch (error) {
             const verdict = dispatch.intent === 'enqueue' ? toALOutboundThrownVerdict(toError(error)) : undefined;
@@ -413,30 +418,90 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         );
     }
 
-    private async commitDispatchOnce(
+    /** Attempts until a write lands or the bound is spent; a conflict past the bound settles as one always has. */
+    private async commitDispatch(
         dispatch: ALOutboundDispatchAdmission.Input<TPrepared>,
         phases: ALOutboundCommitPhases
     ): Promise<ALOutboundDispatchAdmission.Result<TPrepared>> {
+        try {
+            return await AL_OUTBOUND_COMMIT_CONFLICT_RETRY.run(async () => {
+                const attempt = await this.commitDispatchOnce(dispatch, phases);
+                if (attempt.kind === 'conflict') {
+                    throw new ALOutboundDispatchConflict(attempt.decision);
+                }
+                return attempt.result;
+            });
+        }
+        catch (error) {
+            const cause = error instanceof TryWithExhaustedError ? error.cause : error;
+            if (!(cause instanceof ALOutboundDispatchConflict)) {
+                throw cause;
+            }
+            return await this.settleCommitConflict(
+                dispatch,
+                cause.decision as ALOutboundCommitDecision<TPrepared>,
+                phases
+            );
+        }
+    }
+
+    private async commitDispatchOnce(
+        dispatch: ALOutboundDispatchAdmission.Input<TPrepared>,
+        phases: ALOutboundCommitPhases
+    ): Promise<ALOutboundDispatchAttempt<TPrepared>> {
         const { decision, observation } = await this.readObservedDispatchDecision(dispatch, phases);
         if (decision.kind === 'settled') {
-            return decision.result;
+            return { kind: 'settled', result: await this.toStoredDuplicateResult(decision.result) };
         }
 
         const { input, computed, bundle } = decision;
         const status = await phases.withCommitPhase(() => this.admissionStore.commitBundle(bundle, observation));
-        if (status === 'conflict' && dispatch.intent === 'enqueue' && !dispatch.options.pendingAdmission) {
+        if (status === 'conflict') {
+            return { kind: 'conflict', decision };
+        }
+        const result = this.toCommitResult(status, { computed, msg: input.read.msg, intent: dispatch.intent });
+        this.emitCommitSettlements(result, input);
+        return { kind: 'settled', result };
+    }
+
+    /**
+     * A send whose every attempt lost the fence retains its request for the durable worker to replay; a replay, a
+     * control hand-off whose retention failed, and every other intent leave the retry to their caller.
+     */
+    private async settleCommitConflict(
+        dispatch: ALOutboundDispatchAdmission.Input<TPrepared>,
+        { input, computed }: ALOutboundCommitDecision<TPrepared>,
+        phases: ALOutboundCommitPhases
+    ): Promise<ALOutboundDispatchAdmission.Result<TPrepared>> {
+        if (dispatch.intent === 'enqueue' && !dispatch.options.pendingAdmission) {
             const retained = await this.retainPendingDispatch(input, computed, phases);
             if (this.isInitialControlHandoff(dispatch) && retained.computed.verdict.kind === 'failed') {
                 throw new RetryableConflictError('Outbound control handoff conflict');
             }
             return retained;
         }
-        if (status === 'conflict' && dispatch.options.pendingAdmission) {
+        if (dispatch.options.pendingAdmission) {
             throw new RetryableConflictError('Outbound pending admission commit conflict');
         }
-        const result = this.toCommitResult(status, { computed, msg: input.read.msg, intent: dispatch.intent });
-        this.emitCommitSettlements(result, input);
-        return result;
+        return this.toCommitResult('conflict', { computed, msg: input.read.msg, intent: dispatch.intent });
+    }
+
+    /**
+     * A duplicate answers with its canonical row as stored now, never with the message its read planned and signed.
+     * Nothing orders a replay behind another commit of its sender (ruling 22): it may have read the row before a
+     * freezing dequeue stored the row's proof, and its own sign then lost to that one.
+     */
+    private async toStoredDuplicateResult(
+        result: ALOutboundDispatchAdmission.Result<TPrepared>
+    ): Promise<ALOutboundDispatchAdmission.Result<TPrepared>> {
+        const [entry] = result.computed.entries;
+        if (result.computed.verdict.kind !== 'duplicate' || entry === undefined) {
+            return result;
+        }
+        const stored = await this.admissionStore.readWork(entry.key);
+        return stored === undefined
+            ? result
+            : { ...result, computed: { ...result.computed, msg: decodePersistedALMessageRow(stored) } };
     }
 
     /** A single send decides inside its decision read, so that read also holds what its commit fences. */
@@ -468,7 +533,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
      * Every dispatch that plans to send asks the carrier's signer, which decides alone and returns a frame that needs
      * no new proof as it is: a first admission signs its frame after the read stamped it, and a held row is signed at
      * the dispatch that first freezes its audience, so the canonical row every later stage resends already carries the
-     * proof (D519, D756). A dropping plan signs nothing. A signer's refusal is the plan's `unsupported` drop of the
+     * proof (D519, D756). A dropping plan, and a read whose row already carries its stored proof, sign nothing. A signer's refusal is the plan's `unsupported` drop of the
      * request: the sequence and record this read added belong to positions it never committed, so a carrier that takes
      * the refusal over gets the request alone, and a held row's dequeue ends it as any `unsupported` plan there does.
      */
@@ -476,7 +541,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         read: ALOutboundMessageReadDto<TPrepared>
     ): Promise<ALOutboundMessageReadDto<TPrepared>> {
         const sign = this.dependencies.signAdmittedMessage;
-        if (sign === undefined || read.plan.dropReasonCode !== undefined) {
+        if (sign === undefined || read.plan.dropReasonCode !== undefined || read.msg.proof !== undefined) {
             return read;
         }
         return (await sign(read.msg)).fold(
@@ -718,99 +783,8 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         };
     }
 
-    private async withSenderCommitQueue<T>(
-        dispatch: ALOutboundDispatchAdmission.Input<TPrepared>,
-        task: () => Promise<T>
-    ): Promise<T> {
-        const senderId = dispatch.msg.id.senderId;
-        const origin = dispatch.origin;
-        const existing = this.commitQueuesBySenderId.get(senderId);
-        const queue = {
-            admission: existing?.admission ?? new BoundedConcurrencyAdmission({ maxConcurrent: 1 }),
-            origin
-        };
-        this.commitQueuesBySenderId.set(senderId, queue);
-        const waitStartedAtMs = this.readNowMs();
-        try {
-            return await queue.admission.admit(() => {
-                writeALOutboundRuntimeDiagnostic(this.dependencies.diagnostics, {
-                    kind: 'sender-queue-wait',
-                    senderId,
-                    origin,
-                    queued: existing !== undefined,
-                    queuedBehindOrigin: existing?.origin ?? 'none',
-                    durationMs: this.elapsedSince(waitStartedAtMs)
-                });
-                return this.withCrossContextCommitLock(senderId, origin, task);
-            });
-        }
-        finally {
-            if (this.commitQueuesBySenderId.get(senderId) === queue) {
-                this.commitQueuesBySenderId.delete(senderId);
-            }
-        }
-    }
-
-    private async withCrossContextCommitLock<T>(
-        senderId: string,
-        origin: ALOutboundCommitOrigin,
-        task: () => Promise<T>
-    ): Promise<T> {
-        const lockName = toALOutboundCommitLockName(senderId);
-        const locks = this.dependencies.browserLocks;
-        if (!locks) {
-            writeALOutboundRuntimeDiagnostic(this.dependencies.diagnostics, {
-                kind: 'browser-lock-wait',
-                senderId,
-                origin,
-                lockName,
-                available: false,
-                durationMs: 0
-            });
-            return await this.withHeldCommitLock({ senderId, origin, lockName, available: false }, task);
-        }
-
-        const waitStartedAtMs = this.readNowMs();
-        return await locks.request(
-            lockName,
-            { mode: 'exclusive' },
-            async () => {
-                writeALOutboundRuntimeDiagnostic(this.dependencies.diagnostics, {
-                    kind: 'browser-lock-wait',
-                    senderId,
-                    origin,
-                    lockName,
-                    available: true,
-                    durationMs: this.elapsedSince(waitStartedAtMs)
-                });
-                return await this.withHeldCommitLock({ senderId, origin, lockName, available: true }, task);
-            }
-        );
-    }
-
-    private async withHeldCommitLock<T>(
-        held: ALOutboundDispatchAdmission.HeldCommitLock,
-        task: () => Promise<T>
-    ): Promise<T> {
-        const holdStartedAtMs = this.readNowMs();
-        try {
-            return await task();
-        }
-        finally {
-            writeALOutboundRuntimeDiagnostic(this.dependencies.diagnostics, {
-                kind: 'browser-lock-hold',
-                ...held,
-                durationMs: this.elapsedSince(holdStartedAtMs)
-            });
-        }
-    }
-
     private readNowMs(): number {
         return this.dependencies.clock.nowMs();
-    }
-
-    private elapsedSince(startedAtMs: number): number {
-        return Math.max(0, this.readNowMs() - startedAtMs);
     }
 }
 

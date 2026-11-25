@@ -25,6 +25,7 @@ import { computeALInboundWorkEntry, decodeALInboundWorkEntry, toALInboundWorkKey
 import { toALInboundGapRenewalsDueAt } from './gap-renewal/compute-al-inbound-gap-renewal.ts';
 import { readALInboundEffectFacts } from './prepare-al-inbound-commit-bundle.ts';
 import { readALInboundMessageAuthorization, toALInboundReceiver } from './read-al-inbound-message-authorization.ts';
+import { resolveALInboundSignFailurePolicy } from './receipt-proof/is-al-inbound-recipient-receipt.ts';
 import { signALInboundReceiptControls } from './receipt-proof/sign-al-inbound-receipt-controls.ts';
 
 /** A replay past its deadline wrote nothing, so it has no work to announce. */
@@ -64,8 +65,10 @@ export namespace ALInboundMessageAdmission {
             | 'planIncomingMessage'
             | 'verifyPublicationProof'
             | 'forwardMessage'
+            | 'forwardRetriedCopy'
             | 'canForwardMessage'
             | 'isRoomPeerPresent'
+            | 'readGapNackRelayHops'
             | 'readPendingAdmissionAuthority'
             | 'readRelayedAckRejection'
             | 'readRelayedRepairRequestRejection'
@@ -135,7 +138,11 @@ export class ALInboundMessageAdmission {
         }
         const proofVerified = await this.dependencies.verifyPublicationProof?.(admitted) === true;
         const originAuthenticated = isALInboundOriginAuthenticated({ source, proofVerified });
-        const facts = readALInboundEffectFacts(nowMs, effectPreparation);
+        const facts = readALInboundEffectFacts(
+            nowMs,
+            effectPreparation,
+            () => this.dependencies.readGapNackRelayHops(admitted, [])
+        );
         const read = await admissionStore.readIncomingMessage({
             msg: admitted,
             source,
@@ -171,6 +178,9 @@ export class ALInboundMessageAdmission {
             plan,
             canForward,
             recordedParentPresent,
+            retriedCopyNextHopPeerIds: this.dependencies.forwardRetriedCopy === undefined
+                ? []
+                : prePlan.forwarding.nextHopPeerIds,
             originAuthenticated,
             readmission,
             facts
@@ -184,6 +194,7 @@ export class ALInboundMessageAdmission {
                 bundle: validated.right!,
                 namespace: read.namespace,
                 receiptProofs: this.dependencies.receiptProofs,
+                signFailure: resolveALInboundSignFailurePolicy(admitted),
                 diagnostics: this.dependencies.diagnostics
             }),
             nowMs,

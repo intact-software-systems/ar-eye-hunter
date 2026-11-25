@@ -552,17 +552,11 @@ describe('WS client receipt admission edges', () => {
             return await commitBundle(bundle);
         });
         await fixture.service.acceptIncomingMessage(receiptMessage('admitted', []));
+        // A send of another message of the sender writes none of this message's rows, so it costs the receipt nothing.
         expect(fixture.diagnostics.filter((event) => event.kind === 'receipt-confirmation')).toEqual([
             expect.objectContaining({
                 attempt: 1,
                 senderVersion: before.clientRecord!.version,
-                commitOutcome: 'conflict',
-                pendingBefore: null,
-                settlement: null
-            }),
-            expect.objectContaining({
-                attempt: 2,
-                senderVersion: before.clientRecord!.version + 1,
                 commitOutcome: 'committed',
                 pendingBefore: null,
                 settlement: expect.objectContaining({ complete: false })

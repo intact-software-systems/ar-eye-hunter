@@ -227,7 +227,7 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
         })]);
     });
 
-    it('characterization: in a send kept after a lost race whose captured audience has left, an ACK from peer-b, which was never sent the frame, is counted inside the audience and draws receipt:complete', async () => {
+    it('in a send kept after a lost race whose captured audience has left, an ACK from peer-b, which was never sent the frame, is refused and the handle reads expired', async () => {
         const link = await createWsReceiptedSendLink('in-sync');
         const [, second] = await sendTwoOrderedSideBySide(link);
         link.setRoomView('peer-b-left');
@@ -235,20 +235,43 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
         await link.advance(200);
         await link.advance(200);
 
-        expect((await link.acknowledge(second)).right).toEqual({ kind: 'control', handled: false });
+        expect((await link.acknowledge(second)).left?.message).toContain('never sent the message');
         await link.advance(1_000);
+        expect(toControlsOf(link, second)).toEqual([{ control: 'receipt:admitted', admission: 'committed' }]);
 
+        await advanceInSecondsTo(link, LINK_MESSAGE_TTL_MS + 31_000);
+        expect(toControlsOf(link, second)).toEqual([
+            { control: 'receipt:admitted', admission: 'committed' },
+            { control: 'receipt:timed-out', admission: 'committed' }
+        ]);
+        expect(readHandleState(link, second)).toBe('expired');
+        expect(link.deliveredToPeer(second)).toBe(0);
+    });
+
+    it('in a send kept after a lost race whose captured audience has left, peer-b, who rejoins right after the replay admitted the send, is never sent its frame, and its ACK is refused', async () => {
+        const link = await createWsReceiptedSendLink('in-sync');
+        const [, second] = await sendTwoOrderedSideBySide(link);
+        link.setRoomView('peer-b-left');
+        // Read 1 was ingress, read 2 the replay's: every read after it, the dispatch's and any retry's, finds peer-b back.
+        link.setRoomViewAfterReadsOf(second, 2, 'in-sync');
+        await link.advance(0);
+        await link.advance(200);
+        await link.advance(200);
+
+        expect(link.readReceiptsToOrigin(second)).toEqual([expect.objectContaining({
+            phase: 'admitted',
+            expectedRecipientPeerIds: ['peer-b'],
+            snapshotVersion: 3
+        })]);
+        expect((await link.acknowledge(second)).left?.message).toContain('never sent the message');
+
+        await advanceInSecondsTo(link, LINK_MESSAGE_TTL_MS + 31_000);
         expect(link.deliveredToPeer(second)).toBe(0);
         expect(toControlsOf(link, second)).toEqual([
             { control: 'receipt:admitted', admission: 'committed' },
-            { control: 'receipt:complete', admission: 'committed' }
+            { control: 'receipt:timed-out', admission: 'committed' }
         ]);
-        expect(link.readReceiptsToOrigin(second).at(-1)).toMatchObject({
-            phase: 'complete',
-            expectedRecipientPeerIds: ['peer-b'],
-            confirmedRecipientPeerIds: ['peer-b']
-        });
-        expect(readHandleState(link, second)).toBe('acknowledged');
+        expect(readHandleState(link, second)).toBe('expired');
     });
 
     it('a copy written while the original is kept behind the view: one admitted, delivered once', async () => {
@@ -265,7 +288,7 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
 
         expect(toControlsOf(link, sent)).toEqual([
             { control: 'nack:not-yet-in-sync', admission: 'committed' },
-            { control: 'nack:not-yet-in-sync', admission: 'rejected' },
+            { control: 'nack:not-yet-in-sync', admission: 'duplicate' },
             { control: 'receipt:admitted', admission: 'committed' },
             { control: 'receipt:complete', admission: 'committed' }
         ]);

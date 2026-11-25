@@ -1091,6 +1091,7 @@ export class AlmReloadPorts {
             readOperationCount: 0,
             commitDurationMs: 0,
             commitOutcome: 'committed',
+            commitAttemptCount: 1,
             ...toPortMessageTrace(held)
         });
     }

@@ -8,6 +8,7 @@ import {
 
 import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
@@ -62,6 +63,7 @@ it.each(['get', 'put'] as const)('rolls back admission when native %s completion
                 });
             const admission = new ALInboundMessageAdmission({
                 gapRenewalStretch: 1,
+                readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
                 receiptProofs: { kind: 'carrier-authenticated' },
                 orderingObserver: 'addressed',
                 diagnostics: undefined,

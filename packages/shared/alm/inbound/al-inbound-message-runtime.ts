@@ -1,7 +1,7 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { isALControlTypeId } from '../../al-contracts/al-control-type-ids.ts';
 import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
-import { type ALControlAcceptance } from '../../al-contracts/al-control.ts';
+import { type ALControlAcceptance, type ALNackPayload } from '../../al-contracts/al-control.ts';
 import { decodeALMessageValue, type ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import { type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import type { StateScope } from '../../api/state-types.ts';
@@ -72,6 +72,16 @@ export namespace ALInboundMessageRuntime {
             readonly groupRecipientPeerIds?: readonly string[];
         }
         | { readonly kind: 'trusted-server'; };
+
+    /** A source a peer sent from: a peer's control is forwarded back over the carrier it names. */
+    export type PeerSource = Exclude<Source, { readonly kind: 'trusted-server'; }>;
+
+    /** The parent a relay holding nothing of a message forwards a child's gap NACK to, and the relays it grants it. */
+    export interface GapNackParent {
+        readonly source: PeerSource;
+        /** One fewer than the live sessions of the room whose layout names the parent, as a leaf grants. */
+        readonly relayHops: number;
+    }
 
     export type Acceptance =
         | { readonly kind: 'admitted' | 'duplicate' | 'resync-required' | 'disposed' | 'pending-admission'; }
@@ -185,6 +195,36 @@ export namespace ALInboundMessageRuntime {
         readonly canForwardMessage?: (msg: ALMessage) => boolean;
         /** Absence means no relay here ever loses its recorded parent, so only the origin re-parents a row. */
         readonly isRoomPeerPresent?: (msg: ALMessage, peerId: string) => boolean;
+        /**
+         * `undefined`: no upstream peer resolves now, so the renewal goes to the peer its gap was first reported to.
+         * A runtime with no overlay (WS) passes `() => undefined` at its composition root.
+         */
+        readonly readUpstreamPeerId: (msg: ALMessage) => string | undefined;
+        /**
+         * The relays a gap NACK about `msg` may pass from this peer, read from the live sessions of its room
+         * (`computeALGapNackRelayHops`) once its presence names this peer, the origin and every one of `pathPeerIds`, and
+         * the wire ceiling otherwise. A leaf reads it with none when it reports the gap and at every renewal; a relay
+         * with the child the NACK came from and the peer it forwards it to. A runtime with no overlay (WS) passes
+         * `() => AL_GAP_NACK_RELAY_HOP_LIMIT` at its composition root.
+         */
+        readonly readGapNackRelayHops: (msg: ALMessage, pathPeerIds: readonly string[]) => number;
+        /**
+         * Whether `peerId`, the peer a gap was first reported to, is a connected neighbour of the layout this lane
+         * replaced while it still forwards over that one, so a renewal keeps asking it unless the accepted layout links
+         * this peer to the origin. A runtime with no overlay (WS) passes `() => false` at its composition root.
+         */
+        readonly isRoutedPeerReady: (msg: ALMessage, peerId: string) => boolean;
+        /**
+         * Whether `peerId` is this lane's child in the accepted layout of the message's room: a neighbour there on no
+         * route toward its origin. A runtime with no overlay (WS) passes `() => false` at its composition root.
+         */
+        readonly isLayoutChildPeer: (msg: ALMessage, peerId: string) => boolean;
+        /**
+         * The parent this relay forwards a child's gap NACK to when it holds neither a row nor a copy of the message, as
+         * a new parent after a reshape does: its upstream peer toward the NACK's origin, while the NACK's sender is its
+         * child in the accepted layout; `undefined` when no layout routes it. Absence means this lane relays no such NACK.
+         */
+        readonly readGapNackParent?: (nack: ALNackPayload) => ALInboundMessageRuntime.GapNackParent | undefined;
         /** Absence means this runtime relays origin-addressed controls for no peer. */
         readonly readRelayedAckRejection?: ALInboundReceiver['readRelayedAckRejection'];
         /** Absence means this runtime relays no session's NACK or repair to the origin it names. */

@@ -1,5 +1,10 @@
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 
+/** Why a connection ended: the session's own disconnect, or its server clock's lifetime, with the reason that ended it. */
+export type RallarConnectionEnd =
+    | Readonly<{ kind: 'disconnect'; }>
+    | Readonly<{ kind: 'server-clock-ended'; reason: string; }>;
+
 /** One ordered participant in the browser session connect/disconnect lifecycle. */
 export interface RallarLifecycleParticipant {
     readonly id: string;
@@ -7,7 +12,7 @@ export interface RallarLifecycleParticipant {
     attach?(ctx: ApiMiddleware): void;
     connected?(): void;
     detach?(ctx?: ApiMiddleware): void;
-    disconnected?(): void;
+    disconnected?(end: RallarConnectionEnd): void;
 }
 
 export interface RallarLifecycleCoordinator {
@@ -15,7 +20,7 @@ export interface RallarLifecycleCoordinator {
     attach(ctx: ApiMiddleware): void;
     connected(): void;
     detach(ctx?: ApiMiddleware): void;
-    disconnected(): void;
+    disconnected(end: RallarConnectionEnd): void;
 }
 
 export function createRallarLifecycleCoordinator(): RallarLifecycleCoordinator {
@@ -44,28 +49,22 @@ export function createRallarLifecycleCoordinator(): RallarLifecycleCoordinator {
             }
         },
         detach: (ctx): void => {
-            runLifecycleParticipantPhase(ordered(), 'detach', ctx);
+            runLifecycleParticipantPhase(ordered(), (participant) => participant.detach?.(ctx));
         },
-        disconnected: (): void => {
-            runLifecycleParticipantPhase(ordered(), 'disconnected');
+        disconnected: (end): void => {
+            runLifecycleParticipantPhase(ordered(), (participant) => participant.disconnected?.(end));
         }
     };
 }
 
 function runLifecycleParticipantPhase(
     participants: readonly RallarLifecycleParticipant[],
-    phase: 'detach' | 'disconnected',
-    ctx?: ApiMiddleware
+    phase: (participant: RallarLifecycleParticipant) => void
 ): void {
     let firstError: Error | undefined;
     for (const participant of participants) {
         try {
-            if (phase === 'detach') {
-                participant.detach?.(ctx);
-            }
-            else {
-                participant.disconnected?.();
-            }
+            phase(participant);
         }
         catch (error) {
             firstError ??= error instanceof Error

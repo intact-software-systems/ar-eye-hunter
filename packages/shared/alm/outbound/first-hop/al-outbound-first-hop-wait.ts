@@ -18,7 +18,10 @@ import { readALOutboundSendAttemptHeld } from '../attempt-deadline/read-al-outbo
 import { toALOutboundAdmissionVerdict } from '../compute-al-outbound-dispatch.ts';
 import { resolveALOutboundReplanRefusalSettlement } from '../control/resolve-al-outbound-replan-refusal-settlement.ts';
 import { toALOutboundReceiptExhaustedFact } from '../control/to-al-outbound-receipt-exhausted-fact.ts';
-import { toALOutboundReadMessageEndBundle } from '../message-end/to-al-outbound-message-end-bundle.ts';
+import {
+    toALOutboundReadCommitFences,
+    toALOutboundReadMessageEndBundle
+} from '../message-end/to-al-outbound-message-end-bundle.ts';
 import {
     computeALOutboundFirstHopTimeout,
     toALOutboundFirstHopTimeoutEffect,
@@ -151,7 +154,7 @@ export class ALOutboundFirstHopWait<TPrepared> {
         }
         await this.commitBundle({
             senderId: read.clientRecord.senderId,
-            expectedVersion: read.clientRecord.version,
+            ...toALOutboundReadCommitFences({ originPeerId: read.clientRecord.senderId, msgId }, read),
             mutations: [{ kind: 'delete-first-hop-wait', msgId }],
             durableEffects: [],
             endedTimeoutEffectIds: []
@@ -174,7 +177,7 @@ export class ALOutboundFirstHopWait<TPrepared> {
         });
     }
 
-    /** A commit fenced on the sender version the read saw; a conflict retries the deadline from a fresh read. */
+    /** A commit fenced on the versions the read saw; a conflict retries the deadline from a fresh read. */
     private async commitWait(
         read: ALOutboundRepairReadDto<TPrepared>,
         live: ALOutboundFirstHopWait.LiveMessage<TPrepared>,
@@ -183,7 +186,7 @@ export class ALOutboundFirstHopWait<TPrepared> {
     ): Promise<'committed' | 'expired'> {
         return await this.commitBundle({
             senderId: live.msg.id.senderId,
-            expectedVersion: read.clientRecord?.version,
+            ...toALOutboundReadCommitFences({ originPeerId: live.msg.id.senderId, msgId: live.msg.id.msgId }, read),
             mutations,
             durableEffects,
             endedTimeoutEffectIds: []

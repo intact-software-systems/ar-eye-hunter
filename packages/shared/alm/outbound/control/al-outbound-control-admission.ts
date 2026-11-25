@@ -4,9 +4,7 @@ import {
     decodeALPeerControlMessage,
     type ALPeerControlMessage
 } from '../../../al-contracts/al-control.ts';
-import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import type { ALStoreDurability } from '../../../al-contracts/al-policy.ts';
-import type { ALReceiptProofRefusal } from '../../../al-contracts/receipt-proof/al-receipt-proof.ts';
 import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
 import { decodeALAdmissionString } from '../../al-admission-value-validation.ts';
 import type {
@@ -17,7 +15,6 @@ import type {
 import { ALAdmissionBackendConflictError } from '../../ALAdmissionBackendConflictError.ts';
 import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import { computeALVolatileControlRowExpiryMs } from '../../delivery/compute-al-volatile-control-row-expiry-ms.ts';
-import type { ALStorageUnavailable } from '../../storage/al-storage-unavailable.ts';
 import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
 import type {
     ALOutboundAdmissionEffectStore,
@@ -28,7 +25,7 @@ import {
     toALOutboundFirstHopWaitKey,
     toALOutboundMessageOwnerKey,
     toALOutboundNotYetInSyncRetryKey,
-    toALOutboundPendingAckKey,
+    toALOutboundOriginMessageKey,
     toALOutboundRepairAttemptKey,
     toALOutboundVersionKey
 } from '../admission/al-outbound-admission-keys.ts';
@@ -62,24 +59,16 @@ import {
 import { toALOutboundEffectId } from '../to-al-outbound-effect-id.ts';
 import { validateALOutboundControlAdmission } from '../validate-al-outbound-control-admission.ts';
 import {
+    readsALOutboundCanonicalRepairFacts,
+    toALOutboundCanonicalRepairFacts
+} from './is-al-outbound-expected-repair-peer.ts';
+import {
     readALOutboundRecipientProof,
-    toALOutboundProofRefusal,
+    toALOutboundRefusedControlAdmission,
+    type ALOutboundControlAdmissionResult,
     type ALOutboundRecipientAuthentication
 } from './read-al-outbound-recipient-proof.ts';
 import { writeALOutboundTimeoutCompletions } from './write-al-outbound-timeout-completions.ts';
-
-export type ALOutboundControlAdmissionResult =
-    | Readonly<{ kind: 'not-handled'; }>
-    | Readonly<{ kind: 'committed'; }>
-    | Readonly<{ kind: 'pending-control'; }>
-    | Readonly<{
-        kind: 'rejected';
-        reason: string;
-        /** Present exactly when a proof was refused. */
-        proofRefusal?: ALReceiptProofRefusal;
-    }>
-    /** The store could not persist the control: a claim that carried it retries, an inline caller answers it not handled. */
-    | (Readonly<{ kind: 'storage-unavailable'; }> & ALStorageUnavailable);
 
 export interface ALOutboundPendingControl {
     readonly kind: 'admit-control';
@@ -117,6 +106,14 @@ export interface CreateALOutboundControlAdmissionInput<TPrepared> {
     /** How this owner knows who spoke a recipient's control; a refused proof rejects the control. */
     readonly recipientAuthentication: ALOutboundRecipientAuthentication;
 }
+
+/**
+ * Three bounds of one count: the commit attempts a dispatch makes before it retains its request, the commit attempts a
+ * receipt's admission makes in one run, and the runs a batch gives a parked control it claims ahead of its next claim.
+ * A receipt's every run makes its own attempts, so a batch bounds a parked receipt at nine commits, three runs of three;
+ * a peer control's run makes one, so three.
+ */
+export const AL_OUTBOUND_COMMIT_ATTEMPTS = 3;
 
 /** One conditional control admission per call; a conflict becomes retained work the outbound worker replays. */
 export class ALOutboundControlAdmission<TPrepared> {
@@ -162,6 +159,7 @@ export class ALOutboundControlAdmission<TPrepared> {
             recipientProof: await readALOutboundRecipientProof({
                 parsed: surface.parsed,
                 sent: surface.sent,
+                unreceiptedRepairAudience: surface.unreceiptedRepairAudience,
                 recipientAuthentication: this.recipientAuthentication,
                 readSentMessage: async () =>
                     (await this.backend.readWithin((session) =>
@@ -172,7 +170,7 @@ export class ALOutboundControlAdmission<TPrepared> {
         const computed = computeALOutboundControlAdmission(read, this.retention);
         const issues = validateALOutboundControlAdmission(computed);
         if (issues.length > 0) {
-            return toRejectedControlAdmission(issues, read.recipientProof);
+            return toALOutboundRefusedControlAdmission(issues, read.recipientProof);
         }
         const effects = this.effectStore.computeEffects(
             await this.backend.readWithin((session) =>
@@ -201,8 +199,8 @@ export class ALOutboundControlAdmission<TPrepared> {
     ): Promise<boolean> {
         try {
             return await this.backend.write(async (tx) => {
-                if (!await this.hasCurrentControlFence(tx, computed.read)) {
-                    throw new ALAdmissionBackendConflictError('AL control ownership moved before its commit');
+                if (!await this.hasCurrentControlFence(tx, computed)) {
+                    throw new ALAdmissionBackendConflictError('AL control message moved before its commit');
                 }
                 if ((await this.effectStore.validateObservedWork(tx, effects)).length > 0) {
                     throw new ALAdmissionBackendConflictError('AL control work moved before its commit');
@@ -344,6 +342,12 @@ export class ALOutboundControlAdmission<TPrepared> {
                 toALOutboundMessageOwnerKey(this.namespace, targetMsgId),
                 decodeALAdmissionString
             );
+            // A first-hop wait waits on the composition's own hop: a composition that declares none holds no wait.
+            const ownerSurface = await this.reads.readControlOwnerSurface(session, {
+                owner,
+                msgId: targetMsgId,
+                readsFirstHopWait: this.hopPeerIds !== undefined && mayALOutboundControlEndSend(parsed)
+            });
             return {
                 parsed,
                 source,
@@ -352,16 +356,28 @@ export class ALOutboundControlAdmission<TPrepared> {
                 targetMsgId,
                 nowMs,
                 owner,
-                // A first-hop wait waits on the composition's own hop: a composition that declares none holds no wait.
-                ...await this.reads.readControlOwnerSurface(session, {
-                    owner,
-                    msgId: targetMsgId,
-                    readsFirstHopWait: this.hopPeerIds !== undefined && mayALOutboundControlEndSend(parsed)
-                }),
-                sent: await this.reads.readStoredMessage(session, targetMsgId),
+                ...ownerSurface,
+                ...await this.readSentSurface(session, parsed, ownerSurface.pending),
                 ...await this.readControlHistories(session, parsed, targetMsgId)
             };
         });
+    }
+
+    /**
+     * The retained send, and, read from its canonical copy: for one that tracks no receipt and holds no receipt row, who
+     * may ask for its repair; for a gap NACK a relay re-sends, whether the send is a room send.
+     */
+    private async readSentSurface(
+        session: ALAdmissionReadSession,
+        parsed: ALPeerControlMessage,
+        pending: ALControlAdmissionRead['pending']
+    ): Promise<Pick<ALControlAdmissionRead, 'sent' | 'unreceiptedRepairAudience' | 'isRoomRepairedRelayedGapNack'>> {
+        const msgId = controlTargetMsgId(parsed);
+        const sent = await this.reads.readStoredMessage(session, msgId);
+        const msg = readsALOutboundCanonicalRepairFacts({ sent, pending }, parsed)
+            ? (await this.reads.readSentMessage(session, msgId))?.msg
+            : undefined;
+        return { sent, ...toALOutboundCanonicalRepairFacts({ sent, pending }, parsed, msg) };
     }
 
     /** The control's own history, and the ACK history the hop view reads whatever kind of control this is. */
@@ -389,21 +405,18 @@ export class ALOutboundControlAdmission<TPrepared> {
         }
     }
 
+    /** The message's owner and version are still the ones its decision read: no commit wrote one of its rows since. */
     private async hasCurrentControlFence(
         tx: ALAdmissionWorkWriteContext,
-        read: ALControlAdmissionRead
+        computed: ALControlAdmissionCandidate
     ): Promise<boolean> {
-        const currentOwner = await tx.read(
-            toALOutboundMessageOwnerKey(this.namespace, read.targetMsgId),
-            decodeALAdmissionString
-        );
-        if (currentOwner !== read.owner) {
-            return false;
-        }
-        const currentVersion = currentOwner
-            ? await this.reads.readClientRecord(tx, currentOwner)
-            : undefined;
-        return currentVersion?.version === read.ownerVersion?.version;
+        const { read } = computed;
+        const fence = computed.messageFence!;
+        const [currentOwner, currentVersion] = await Promise.all([
+            tx.read(toALOutboundMessageOwnerKey(this.namespace, read.targetMsgId), decodeALAdmissionString),
+            this.reads.readMessageVersion(tx, fence)
+        ]);
+        return currentOwner === read.owner && currentVersion?.version === fence.expectedVersion;
     }
 
     private async applyControlAdmission(
@@ -429,11 +442,7 @@ export class ALOutboundControlAdmission<TPrepared> {
             await tx.remove(toALOutboundFirstHopWaitKey(this.namespace, read.targetMsgId));
         }
         await writeALOutboundTimeoutCompletions(tx, this.namespace, candidate.endedTimeoutEffectIds);
-        await tx.setFence(
-            toALOutboundVersionKey(this.namespace, read.owner!),
-            candidate.nextVersion!,
-            candidate.versionExpireAtTimestamp
-        );
+        await this.mutations.writeMessageVersion(tx, candidate.messageFence!, read.nowMs);
     }
 
     private async writePendingAckChange(
@@ -441,7 +450,8 @@ export class ALOutboundControlAdmission<TPrepared> {
         candidate: ALControlAdmissionCandidate
     ): Promise<void> {
         const { read } = candidate;
-        const pendingAckKey = toALOutboundPendingAckKey({
+        const pendingAckKey = toALOutboundOriginMessageKey({
+            row: 'pending-ack',
             namespace: this.namespace,
             originPeerId: read.owner!,
             msgId: read.targetMsgId
@@ -474,13 +484,4 @@ export class ALOutboundControlAdmission<TPrepared> {
             expireAtTimestamp: expiresAtMs
         }));
     }
-}
-
-function toRejectedControlAdmission(
-    issues: readonly ALMessageRejection[],
-    recipientProof: ALControlAdmissionRead['recipientProof']
-): ALOutboundControlAdmissionResult {
-    const reason = issues.map((issue) => issue.message).join('; ');
-    const proofRefusal = toALOutboundProofRefusal(recipientProof);
-    return proofRefusal === undefined ? { kind: 'rejected', reason } : { kind: 'rejected', reason, proofRefusal };
 }

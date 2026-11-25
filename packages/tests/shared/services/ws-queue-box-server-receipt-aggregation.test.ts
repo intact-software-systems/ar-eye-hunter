@@ -37,6 +37,10 @@ import {
     WS_QUEUE_BOX_SERVER_RECEIPT_WINDOW_MS,
     WsQueueBoxServerReceiptAggregation
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts';
+import type {
+    WsQueueBoxServerReceiptObservation,
+    WsQueueBoxServerReceiptObserver
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
@@ -79,6 +83,8 @@ interface ReceiptFixtureOptions {
     readonly authorizedPeerIds?: readonly string[];
     /** The audience the router admits an outbox-fanned message to, which its dequeue records; none when absent. */
     readonly admittedAudience?: readonly string[];
+    /** The messages the router fans out to the outbox; every admitted message when absent. */
+    readonly fannedOutMsgIds?: readonly string[];
 }
 
 describe('WS server receipt aggregation for receiver acknowledgements', () => {
@@ -370,19 +376,26 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         }
     );
 
-    // Filling the cap takes about four seconds of admissions; the case states the eviction, not their pace.
+    // Filling the cap takes about six seconds of admissions; the case states the eviction, not their pace. Only the
+    // subject fans out: the fillers' own outbox rows are not under test, and dequeuing 4096 of them costs the case its
+    // timeout.
     it(
         'characterization: a cap-evicted timed-out that confirmed nobody ends the server\'s own row of an outbox-fanned room message, which sends its recipients nothing more',
         async () => {
-            const fixture = await createReceiptFixture({ fanout: 'outbox', origin: 'local' });
+            const fixture = await createReceiptFixture({ fanout: 'outbox', origin: 'local', fannedOutMsgIds: ['room-message-1'] });
             await admitRoomMessage(fixture);
             await expect.poll(() => readRoomMessageCopies(fixture.sockets.c)).toBe(1);
 
-            // One admission past the cap evicts the oldest aggregate, the subject's, long before its deadline.
-            const fillers = await Promise.all(Array.from({ length: WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES }, async (_, offset) => {
+            // One admission past the cap evicts the oldest aggregate, the subject's, long before its deadline. The fillers
+            // arrive one after another: a burst of one sender's commits at once contends on its version fence instead.
+            const fillers: (string | undefined)[] = [];
+            for (let offset = 0; offset < WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES; offset += 1) {
                 const filler = roomMessage(fixture.clock.nowMs);
-                return (await fixture.service.acceptIncomingMessage({ ...filler, id: { ...filler.id, msgId: `room-message-${offset + 2}` } }, 'a')).right?.kind;
-            }));
+                fillers.push(
+                    (await fixture.service.acceptIncomingMessage({ ...filler, id: { ...filler.id, msgId: `room-message-${offset + 2}` } }, 'a')).right?.kind
+                );
+                await yieldToTimers();
+            }
             await settleQueueEngine(fixture.engine);
 
             expect(new Set(fillers)).toEqual(new Set(['admitted']));
@@ -533,6 +546,58 @@ describe('WS server receipt aggregate', () => {
                 aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'c', status: 'subtree-complete-not-subscribed' })
             )?.message
         ).toBe('AL acknowledgement speaks for another recipient than its sender');
+    });
+
+    it('refuses the ACK of a recipient this server never sent the message, at ingress and at the count, as a typed rejection', async () => {
+        const observed: WsQueueBoxServerReceiptObservation[] = [];
+        const enqueued: ALMessage[] = [];
+        const aggregation = createAggregation(enqueued, () => 1_000, (observation) => observed.push(observation));
+        aggregation.recordAdmission({ ...admission(), expectedRecipientPeerIds: ['b'], neverSentRecipientPeerIds: ['b'] });
+        const ack = aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' });
+        const control = aggregateAckControl(ack);
+
+        expect(aggregation.readRelayedAckRejection(ack, { stage: 'ingress-protocol', controlIdentity: control.id })).toEqual({
+            code: 'unauthorized',
+            message: 'AL acknowledgement comes from a recipient this server never sent the message'
+        });
+        await aggregation.acceptControlMessage(control);
+
+        expect(observed).toMatchObject([
+            { kind: 'ack-rejection', owner: 'receipt-aggregation', failedGuards: ['never-sent'] },
+            { kind: 'ack-count', outcome: 'rejected', rejectionCode: 'unauthorized' }
+        ]);
+        expect(enqueued).toEqual([]);
+    });
+
+    it('counts the ACK of a recipient this server sent the message', async () => {
+        const observed: WsQueueBoxServerReceiptObservation[] = [];
+        const enqueued: ALMessage[] = [];
+        const aggregation = createAggregation(enqueued, () => 1_000, (observation) => observed.push(observation));
+        aggregation.recordAdmission({ ...admission(), expectedRecipientPeerIds: ['b'], neverSentRecipientPeerIds: [] });
+        const ack = aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' });
+
+        expect(aggregation.readRelayedAckRejection(ack)).toBeUndefined();
+        await aggregation.acceptControlMessage(aggregateAckControl(ack));
+
+        expect(observed.filter(({ kind }) => kind === 'ack-count'))
+            .toMatchObject([{ kind: 'ack-count', outcome: 'complete', rejectionCode: undefined }]);
+        expect(enqueued.map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource))))
+            .toMatchObject([{ phase: 'complete', confirmedRecipientPeerIds: ['b'] }]);
+    });
+
+    it('records the server own not-subscribed ACK for a recipient it never sent the message outside the audience', async () => {
+        const aggregation = createAggregation();
+        aggregation.recordAdmission({ ...admission(), neverSentRecipientPeerIds: ['b'] });
+
+        await aggregation.acceptControlMessage(
+            aggregateAckControl(aggregateAck({ fromPeerId: 'server', logicalRecipientPeerId: 'b', status: 'subtree-complete-not-subscribed' }))
+        );
+
+        expect(aggregation.sweep(Number.MAX_SAFE_INTEGER).map(({ receipt }) => receipt)).toMatchObject([{
+            phase: 'timed-out',
+            confirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: ['b']
+        }]);
     });
 
     it('keeps a receipt whose every recipient answered outside open until its deadline, as it confirmed nobody', async () => {
@@ -721,10 +786,12 @@ function admitAggregates(
 
 function createAggregation(
     enqueued: ALMessage[] = [],
-    nowMs: () => number = () => 1_000
+    nowMs: () => number = () => 1_000,
+    receiptObserver?: WsQueueBoxServerReceiptObserver
 ): WsQueueBoxServerReceiptAggregation {
     const aggregation = new WsQueueBoxServerReceiptAggregation({
         serverPeerId: 'server',
+        receiptObserver,
         clock: { nowMs },
         newControlId: () => 'receipt',
         qosProvider: undefined,
@@ -748,7 +815,8 @@ function admittedRoomMessage(
         message: roomMessage(1_000),
         originPeerId: 'a',
         roomAudience: { recipientPeerIds: ['a', 'b', 'c'], snapshotVersion: SNAPSHOT_VERSION },
-        acceptance
+        acceptance,
+        neverSentRecipientPeerIds: []
     };
 }
 
@@ -759,7 +827,8 @@ function admission(): WsQueueBoxServerReceiptAggregation.Admission {
         traceId: 'trace-room-message-1',
         expectedRecipientPeerIds: ['b', 'c'],
         snapshotVersion: SNAPSHOT_VERSION,
-        deadlineAtMs: 30_000
+        deadlineAtMs: 30_000,
+        neverSentRecipientPeerIds: []
     };
 }
 
@@ -852,7 +921,7 @@ function registerReceiptFixtureRouting(service: WsQueueBoxServerService, options
     });
     service.onAnyInboxMessageDo('router', {
         onMessage: async (message) => {
-            if (options.fanout === 'outbox') {
+            if (options.fanout === 'outbox' && (options.fannedOutMsgIds?.includes(message.id.msgId) ?? true)) {
                 await service.enqueueOutboxIfAbsent(message, toRouterAuthority(options.admittedAudience));
             }
         }
@@ -928,6 +997,14 @@ function createTestInboundStore(admission: ALAdmissionMemoryState, clock: { nowM
         maxOrderingTracks: undefined,
         maxDeliveredMarkers: undefined
     });
+}
+
+/**
+ * The in-memory stores never leave the microtask queue, so a loop of admissions would starve every timer: a commit
+ * retry's backoff and the engine's next pass would wait until the loop ended, and the case's pace would depend on that.
+ */
+async function yieldToTimers(): Promise<void> {
+    await new Promise((resolve) => setImmediate(resolve));
 }
 
 async function admitRoomMessage(fixture: ReceiptFixture): Promise<void> {

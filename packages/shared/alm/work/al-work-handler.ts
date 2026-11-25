@@ -1,5 +1,5 @@
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
-import { toKeyAsString } from '../../queuebox/ResourceEntry.ts';
+import { toKeyAsString, type Key } from '../../queuebox/ResourceEntry.ts';
 import { toError } from '../../resilience/to-error.ts';
 import { INBOX_OUTBOX_ENGINE_MAX_IDLE_MS, type InboxOutboxEngine } from '../../services/inbox-outbox-engine.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
@@ -188,6 +188,18 @@ interface ALWorkCounts {
     rejectedCount: number;
 }
 
+/** How a claim's run came to run: whether `expedite()` claimed it, and which of its runs in the batch it is (from 1). */
+export interface ALWorkClaimRun {
+    readonly expedited: boolean;
+    readonly run: number;
+}
+
+/** A row `expedite()` named, and how many runs the batch that claims it gives it. */
+interface ALWorkExpeditedRow {
+    readonly key: Key;
+    readonly maxRuns: number;
+}
+
 /** The selection a batch claimed from, and the instant its run loop started over those claims. */
 interface ALWorkClaimedRun {
     readonly selection: ALWorkReadySelection;
@@ -235,6 +247,12 @@ export class ALWorkHandler {
     private readonly readiness: ALWorkReadinessMemory;
     /** Set when committed() lands while a batch is running; drained by one follow-up batch at that batch's end. */
     private commitPending = false;
+    /** Rows `expedite()` named while a batch runs, by queue key, which that batch claims before its next claim. */
+    private readonly expedited = new Map<string, ALWorkExpeditedRow>();
+    /** The running batch's expedited claims, by queue key: the runs each has left when it answers `retry`. */
+    private readonly expeditedRunsLeft = new Map<string, number>();
+    /** The running batch's expedited claims, by queue key: the runs each has started. */
+    private readonly expeditedRunsStarted = new Map<string, number>();
     private readonly shutdown = new AbortController();
     private readonly engine: ALWorkEngineMembership;
 
@@ -305,6 +323,26 @@ export class ALWorkHandler {
         else {
             this.commitPending = true;
         }
+    }
+
+    /**
+     * Called before `committed()` for rows of that commit that must not wait for the running batch's remaining claims:
+     * the batch claims each one still pending before its next claim, so such a row waits for the claim in flight at
+     * most, and runs it again at once while it answers `retry`, `maxRuns` runs in all; past them its retry waits for
+     * the batch's release as any claim's does. With no batch running, the batch `committed()` starts claims them as it
+     * claims any due row. A row named again before the batch read it is read once.
+     */
+    expedite(keys: readonly Key[], maxRuns: number): void {
+        assertALWorkExpeditedRuns(maxRuns);
+        if (this.batch !== undefined) {
+            keys.forEach((key) => this.expedited.set(toKeyAsString(key), { key, maxRuns }));
+        }
+    }
+
+    /** The run a claim is in while it runs: one the batch claimed runs once, an expedited one up to its runs. */
+    getClaimRun(claim: ALWorkClaim): ALWorkClaimRun {
+        const started = this.expeditedRunsStarted.get(toKeyAsString(claim.entry.key));
+        return started === undefined ? { expedited: false, run: 1 } : { expedited: true, run: started };
     }
 
     /**
@@ -398,6 +436,10 @@ export class ALWorkHandler {
         primaryFailure: Error | undefined
     ): Promise<void> {
         this.batch = undefined;
+        // A row named after the batch's last claim is claimed by the batch its commit owes.
+        this.expedited.clear();
+        this.expeditedRunsLeft.clear();
+        this.expeditedRunsStarted.clear();
         let following: Promise<void> | undefined;
         try {
             following = this.runPendingCommit();
@@ -516,7 +558,11 @@ export class ALWorkHandler {
             : this.dependencies.runClaimGroup?.(queued, runStartedAtMs, deferObservation);
         // Groups start together; a later rejection must be observed while an earlier attempt settles.
         grouped?.forEach((attempt) => void attempt.catch(() => undefined));
-        for (let claim = queued.shift(); claim !== undefined; claim = queued.shift()) {
+        for (
+            let claim = await this.shiftClaim(queued, progress);
+            claim !== undefined;
+            claim = await this.shiftClaim(queued, progress)
+        ) {
             const attempt = grouped?.get(claim);
             if (this.shutdown.signal.aborted && attempt === undefined) {
                 // Selection or successor reservation may finish after disposal. Release unstarted
@@ -526,7 +572,7 @@ export class ALWorkHandler {
                 continue;
             }
             const release = await this.runOne(claim, progress, { ...run, attempt });
-            if (release === undefined) {
+            if (release === undefined || this.rerunsExpedited(release, queued, progress)) {
                 continue;
             }
             releases.push(release);
@@ -538,6 +584,56 @@ export class ALWorkHandler {
             progress.claimedCount += successors.length;
         }
         return this.shutdown.signal.aborted ? undefined : run;
+    }
+
+    /** The batch's next claim: an expedited row still pending goes before every claim the batch already holds. */
+    private async shiftClaim(queued: ALWorkClaim[], progress: ALWorkBatchProgress): Promise<ALWorkClaim | undefined> {
+        const expedited = await this.claimExpedited();
+        progress.claimedCount += expedited.length;
+        queued.unshift(...expedited);
+        return queued.shift();
+    }
+
+    /** An expedited claim that answered `retry` with runs left goes first again instead of to the release. */
+    private rerunsExpedited(release: ALWorkRelease, queued: ALWorkClaim[], progress: ALWorkBatchProgress): boolean {
+        const key = toKeyAsString(release.claim.entry.key);
+        const runsLeft = this.expeditedRunsLeft.get(key) ?? 0;
+        if (release.outcome.status !== 'retry' || runsLeft === 0 || this.shutdown.signal.aborted) {
+            return false;
+        }
+        this.expeditedRunsLeft.set(key, runsLeft - 1);
+        progress.rescheduledCount -= 1;
+        queued.unshift(release.claim);
+        return true;
+    }
+
+    /**
+     * At most a page of the expedited rows, each still new or retrying as read; the rest wait for the claim after.
+     * One that cannot be claimed is left to the batch its commit owes, and the failure is stated as a batch failure
+     * is, as a successor's is.
+     */
+    private async claimExpedited(): Promise<readonly ALWorkClaim[]> {
+        if (this.expedited.size === 0 || this.shutdown.signal.aborted) {
+            return [];
+        }
+        const { port, pageSize } = this.dependencies;
+        const rows = [...this.expedited.values()].slice(0, pageSize);
+        rows.forEach((row) => this.expedited.delete(toKeyAsString(row.key)));
+        try {
+            const entries = await Promise.all(rows.map((row) => port.readEntry(row.key)));
+            const observed = entries.filter((entry) => entry !== undefined);
+            const claims = observed.length === 0 ? [] : await port.claimObserved(observed);
+            const maxRuns = new Map(rows.map((row) => [toKeyAsString(row.key), row.maxRuns]));
+            for (const claim of claims) {
+                const key = toKeyAsString(claim.entry.key);
+                this.expeditedRunsLeft.set(key, (maxRuns.get(key) ?? 1) - 1);
+            }
+            return claims;
+        }
+        catch (error) {
+            this.reportBatchFailure(toError(error));
+            return [];
+        }
     }
 
     /**
@@ -601,6 +697,7 @@ export class ALWorkHandler {
     ): Promise<ALWorkRelease | undefined> {
         const { clock, runClaim } = this.dependencies;
         const runStartedAtMs = clock.nowMs();
+        this.countExpeditedRun(claim);
         let result: ALWorkAttemptResult;
         try {
             result = await (turn.attempt ?? runClaim(claim, turn.runStartedAtMs, turn.deferObservation));
@@ -625,6 +722,13 @@ export class ALWorkHandler {
                 break;
         }
         return { claim, outcome: result };
+    }
+
+    private countExpeditedRun(claim: ALWorkClaim): void {
+        const key = toKeyAsString(claim.entry.key);
+        if (this.expeditedRunsLeft.has(key)) {
+            this.expeditedRunsStarted.set(key, (this.expeditedRunsStarted.get(key) ?? 0) + 1);
+        }
     }
 
     private async flushReleases(
@@ -671,6 +775,13 @@ export class ALWorkHandler {
             return;
         }
         storageHealth.recordFailure(unavailable);
+    }
+}
+
+/** A row given no run would never meet the bound that sends its retry to the batch's release. */
+function assertALWorkExpeditedRuns(maxRuns: number): void {
+    if (!Number.isSafeInteger(maxRuns) || maxRuns < 1) {
+        throw new RangeError('An expedited row is given at least one run');
     }
 }
 

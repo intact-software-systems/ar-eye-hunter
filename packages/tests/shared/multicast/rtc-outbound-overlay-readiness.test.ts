@@ -36,7 +36,7 @@ import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-ser
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
 import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
-import { readOutboundTestAdmission } from '../alm/outbound-runtime-test-fixture.ts';
+import { loseOutboundCommitAttempts, readOutboundTestAdmission } from '../alm/outbound-runtime-test-fixture.ts';
 import { installNativeRtcRuntime, type NativeRtcRuntime } from '../native-rtc-connection-fixture.ts';
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
 import { DeterministicRtcOfferIds } from '../webrtc/deterministic-rtc-offer-ids.ts';
@@ -514,15 +514,14 @@ describe('RTC durable accepted-overlay readiness', () => {
             creationNow: () => Temporal.Now.instant(),
             clock: { nowMs: () => Date.now() }
         });
-        const commit = fixture.resources.admissionStore.commitBundle.bind(fixture.resources.admissionStore);
-        vi.spyOn(fixture.resources.admissionStore, 'commitBundle').mockImplementationOnce(async (bundle) => {
+        loseOutboundCommitAttempts(fixture.resources.admissionStore, async (commit) => {
             expect(await commit(competitor)).toBe('committed');
             fixture.groups.accept('room', { ...createSnapshot(), group: { ...createSnapshot().group, transportState: 'halted' } });
-            return await commit(bundle);
         });
         const message = createMessage('multicast');
-        expect((await fixture.manager.enqueueIfAbsent(message)).verdict.kind).toBe('pending');
+        const enqueued = fixture.manager.enqueueIfAbsent(message);
         await vi.advanceTimersByTimeAsync(100);
+        expect((await enqueued).verdict.kind).toBe('pending');
         expect(await fixture.resources.admissionStore.readSentMessage(message.id.msgId)).toBeUndefined();
         fixture.groups.accept('room', createSnapshot());
         fixture.overlays.accept(overlayId, createOverlay(['peer-1']));

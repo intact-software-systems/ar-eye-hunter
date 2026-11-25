@@ -18,7 +18,10 @@ import { AL_MESSAGE_RESOURCE_LIMITS } from '../al-contracts/al-message-resource-
 import type { ALSeqRange, ALSupersedencePersistenceValue } from '../al-contracts/al-runtime.ts';
 import { decodeALSeqRanges } from '../al-contracts/al-seq-range.ts';
 
-import type { ALOutboundVersionedClientRecord } from './outbound/admission/al-outbound-admission-store.ts';
+import type {
+    ALOutboundMessageVersion,
+    ALOutboundVersionedClientRecord
+} from './outbound/admission/al-outbound-admission-store.ts';
 
 export function decodeALAdmissionString(value: unknown): string {
     if (typeof value !== 'string' || value.length === 0) {
@@ -73,6 +76,15 @@ export function decodeALAdmissionClientRecord(
         throw new TypeError('Stored admission version belongs to another sender');
     }
     return { senderId, version: decodeALAdmissionNumber(record.version) };
+}
+
+export function decodeALOutboundMessageVersion(value: unknown, expectedMsgId: string): ALOutboundMessageVersion {
+    const record = decodeALAdmissionRecord(value, ['msgId', 'version']);
+    const msgId = decodeALAdmissionString(record.msgId);
+    if (msgId !== expectedMsgId) {
+        throw new TypeError('Stored message version belongs to another message');
+    }
+    return { msgId, version: decodeALAdmissionNumber(record.version) };
 }
 
 export function decodeALAdmissionControlValue<K extends ALControlPersistenceValue['kind']>(

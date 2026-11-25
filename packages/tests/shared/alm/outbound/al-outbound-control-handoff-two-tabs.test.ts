@@ -52,7 +52,7 @@ it('sends each control two tabs hand off for one admission once, in hand-off ord
     const verdictsByControl = new Map<string, string[]>();
 
     // Both tabs hand off each control at once, as two owners whose leases overlap do: one optimistic
-    // commit wins and the other hits a real version conflict and retains a pending admission.
+    // commit wins, and the other's write loses the version fence and its next attempt reads the winner's admission.
     for (const msgId of CONTROL_SEQUENCE) {
         const results = await Promise.all(session.tabs.map(async (tab) => {
             const [result] = await tab.runtime.enqueueAllIfAbsent([
@@ -65,7 +65,7 @@ it('sends each control two tabs hand off for one admission once, in hand-off ord
     await drainTabs(session, session.tabs);
 
     expect([...verdictsByControl.keys()]).toEqual([...CONTROL_SEQUENCE]);
-    expect([...verdictsByControl.values()]).toEqual(CONTROL_SEQUENCE.map(() => ['admitted', 'pending']));
+    expect([...verdictsByControl.values()]).toEqual(CONTROL_SEQUENCE.map(() => ['admitted', 'duplicate']));
     expect(session.sent.map((send) => send.msgId)).toEqual([...CONTROL_SEQUENCE]);
     expect(await readOwnerRows(session.tabs[0]!.stores)).toEqual({ canonical: 4, identity: 4 });
 });
@@ -181,11 +181,10 @@ interface TwoTabSessionInput {
     readonly abandonedSend: Promise<ALOutboundSettledSendResult> | undefined;
 }
 
-/** Two tabs of one session: one IndexedDB database, one namespace and one sender, and the browser's one Web Lock. */
+/** Two tabs of one session: one IndexedDB database, one namespace and one sender. */
 function createTwoTabSession(
     input: TwoTabSessionInput = { abandonedSend: undefined }
 ): TwoTabSession {
-    stubSharedWebLocks();
     let nowMs = Date.now();
     const sent: TransportSend[] = [];
     const attempts: TransportSend[] = [];
@@ -231,28 +230,6 @@ function createTwoTabSession(
         session.tabs.push({ stores, runtime });
     }
     return session;
-}
-
-/** One exclusive lock per name, shared by both tabs, as the browser's Web Locks API is. */
-function stubSharedWebLocks(): void {
-    const tails = new Map<string, Promise<void>>();
-    const request = async <T>(
-        name: string,
-        _options: Readonly<{ mode: 'exclusive'; }>,
-        callback: () => Promise<T>
-    ): Promise<T> => {
-        const previous = tails.get(name) ?? Promise.resolve();
-        const released = Promise.withResolvers<void>();
-        tails.set(name, previous.then(() => released.promise));
-        await previous;
-        try {
-            return await callback();
-        }
-        finally {
-            released.resolve();
-        }
-    };
-    vi.stubGlobal('navigator', { locks: { request } });
 }
 
 /** Runs the tabs' outbound batches until several passes in a row start no transport attempt, and fails if they never settle. */

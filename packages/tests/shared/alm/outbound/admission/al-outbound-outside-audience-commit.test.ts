@@ -20,7 +20,7 @@ interface OutsideFixture {
     readonly store: ALOutboundAdmissionStore<string>;
 }
 
-async function createOutsideFixture(): Promise<OutsideFixture> {
+async function createOutsideFixture(stored: { readonly ended: boolean; } = { ended: false }): Promise<OutsideFixture> {
     const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), () => NOW_MS);
     const store = createALOutboundAdmissionStore<string>({
         nowMs: () => NOW_MS,
@@ -31,10 +31,12 @@ async function createOutsideFixture(): Promise<OutsideFixture> {
         retention: normalizeALRuntimeStoreRetention(),
         decodePrepared: (value) => String(value)
     });
-    await writeStoredRow(backend);
+    await writeStoredRow(backend, stored.ended);
     expect(
         await store.commitBundle({
             senderId: ORIGIN,
+            fencesSender: true,
+            message: { originPeerId: ORIGIN, msgId: MSG_ID, expectedVersion: undefined, expiresAtMs: undefined },
             mutations: [{ kind: 'set-pending-ack', originPeerId: ORIGIN, snapshot: toPending(MSG_ID), expireAtTimestamp: LIVE_UNTIL_MS }],
             durableEffects: [],
             endedTimeoutEffectIds: []
@@ -57,7 +59,7 @@ function toPending(msgId: string): ALOutboundPendingAckSnapshot {
     };
 }
 
-async function writeStoredRow(backend: InMemoryAdmissionBackend): Promise<void> {
+async function writeStoredRow(backend: InMemoryAdmissionBackend, ended: boolean): Promise<void> {
     await backend.write((tx) =>
         tx.set(toALOutboundSentMessageKey(NAMESPACE, MSG_ID), {
             msgId: MSG_ID,
@@ -75,7 +77,8 @@ async function writeStoredRow(backend: InMemoryAdmissionBackend): Promise<void> 
             orderingSeq: null,
             sentPositions: null,
             policy: { persist: true, ackTracking: null, retryTracking: null, repairTracking: null, supersedenceTracking: null, admittedAudience: ['b', 'c'] },
-            creationExpiry: 'creation-expiry'
+            creationExpiry: 'creation-expiry',
+            ...(ended ? { ended: true } : {})
         }, LIVE_UNTIL_MS)
     );
 }
@@ -109,6 +112,15 @@ describe('the server records its own skipped recipients outside its receipt', ()
         expect(await readRows(fixture)).toBe(before);
     });
 
+    it('answers absent for an ended message\'s kept receipt row and writes nothing: that row is its final snapshot', async () => {
+        const fixture = await createOutsideFixture({ ended: true });
+        const before = await readRows(fixture);
+
+        expect(await fixture.store.commitOutsideAudience(RECEIPT, ['c'])).toBe('absent');
+
+        expect(await readRows(fixture)).toBe(before);
+    });
+
     it('answers absent for a receipt that does not exist and writes nothing', async () => {
         const fixture = await createOutsideFixture();
         const write = vi.spyOn(fixture.backend, 'write');
@@ -127,6 +139,8 @@ describe('the server records its own skipped recipients outside its receipt', ()
                 await fixture.store.commitBundle({
                     senderId: ORIGIN,
                     expectedVersion: 1,
+                    fencesSender: true,
+                    message: { originPeerId: ORIGIN, msgId: 's-event-2', expectedVersion: undefined, expiresAtMs: undefined },
                     mutations: [{ kind: 'set-pending-ack', originPeerId: ORIGIN, snapshot: toPending('s-event-2'), expireAtTimestamp: LIVE_UNTIL_MS }],
                     durableEffects: [],
                     endedTimeoutEffectIds: []
@@ -158,6 +172,8 @@ describe('the server records its own skipped recipients outside its receipt', ()
             await fixture.store.commitBundle({
                 senderId: ORIGIN,
                 expectedVersion: 1,
+                fencesSender: true,
+                message: { originPeerId: ORIGIN, msgId: MSG_ID, expectedVersion: 1, expiresAtMs: undefined },
                 mutations: [{
                     kind: 'set-pending-ack',
                     originPeerId: ORIGIN,

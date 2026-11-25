@@ -9,7 +9,7 @@ import type {
     ALOutboundFirstHopTrackingPlan,
     ALOutboundMessageRuntime
 } from '../../alm/outbound/al-outbound-message-runtime.ts';
-import type { ALOutboundControlAdmissionResult } from '../../alm/outbound/control/al-outbound-control-admission.ts';
+import type { ALOutboundControlAdmissionResult } from '../../alm/outbound/control/read-al-outbound-recipient-proof.ts';
 
 /**
  * The receipt a WS send tracks. The server is the one hop a WS origin has (R-S3a-4): a unicast addressed to the server

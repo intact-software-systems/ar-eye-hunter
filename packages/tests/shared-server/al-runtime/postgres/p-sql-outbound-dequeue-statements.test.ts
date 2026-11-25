@@ -25,6 +25,7 @@ import type {
     ALOutboundPlanner
 } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type { ALOutboundMessageRuntime, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { AL_OUTBOUND_COMMIT_ATTEMPTS } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
 import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundMessageRuntime
@@ -81,7 +82,9 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
 
         expect(sent.map((message) => message.id.msgId)).toEqual([decodePersistedALMessage(row.resource).id.msgId]);
         expect(readKeys().filter((key) => key === toKeyAsString(row.key))).toEqual([]);
-        expect(counts()).toEqual({ autocommit: 8, transactions: 5, inTransaction: 7 });
+        // The dequeue's commit writes its message version, a compare-and-set of its own, before it writes on its sender
+        // version: one statement more.
+        expect(counts()).toEqual({ autocommit: 8, transactions: 5, inTransaction: 8 });
     });
 
     // Committing every dequeued row alone costs ten admission transactions and ten sender versions.
@@ -126,8 +129,9 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
         // Rows read two at a time cost 39 autocommit statements: five supersedence reads instead of one.
         // Serial decision reads cost 57 after the front reads were already paired, and serial commit
         // observations 47 before the group read them all at once. Commits that wrote one row per statement cost 56
-        // statements inside their transactions.
-        expect(counts()).toEqual({ autocommit: 27, transactions: 6, inTransaction: 8 });
+        // statements inside their transactions. The group's commit writes each row's message version as a compare-and-set
+        // of its own, in key order, and takes no lock: one statement per row more.
+        expect(counts()).toEqual({ autocommit: 27, transactions: 6, inTransaction: 18 });
     });
 
     // Rows that read their admission, identity, proof and supersedence one after another, two rows at a time, cost
@@ -160,9 +164,10 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
         }).toEqual({ autocommit: 3, transactions: 0 });
     });
 
-    // Written one row per statement, the group's transaction costs 81 statements for 16 rows: 33 state rows (an owner
-    // and a sent row per message, and the version), 16 holds on the claimed rows and 32 queue rows (an identity row and
-    // an own-work row per message).
+    // Written one row per statement, the group's transaction costs 97 statements for 16 rows: 49 state rows (an owner,
+    // a sent row and a version per message, and the sender version), 16 holds on the claimed rows and 32 queue rows (an
+    // identity row and an own-work row per message). Each of the 16 message versions is first written alone, a
+    // compare-and-set in key order, so no row is locked explicitly (ruling 24, option 1).
     it('commits a dequeued WS group in one statement per kind of write', async () => {
         const storage = await createPSqlAdmissionTestStorage();
         const recorded = recordPGliteStatements(storage.sql.raw);
@@ -189,7 +194,7 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
         expect({
             transactions: end.transactions - start.transactions,
             inTransaction: end.inTransaction - start.inTransaction
-        }).toEqual({ transactions: 1, inTransaction: 3 });
+        }).toEqual({ transactions: 1, inTransaction: 19 });
     });
 
     it('commits each row alone when two rows of the group write one supersedence track', async () => {
@@ -219,7 +224,8 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
         await runOutboundWorkTask(runtime);
         await runOutboundWorkTask(runtime);
 
-        expect(writes.dequeueCommits()).toBe(1 + 4);
+        // The group's one write, then each row alone: the moved row makes every attempt, since its claim stays moved.
+        expect(writes.dequeueCommits()).toBe(1 + AL_OUTBOUND_COMMIT_ATTEMPTS + others.length);
         expect(sent.map((message) => message.id.msgId).sort()).toEqual(others.map(toMsgId).sort());
         expect(await readSenderVersion(storage)).toBe(3);
     });

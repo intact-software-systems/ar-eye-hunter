@@ -284,9 +284,10 @@ describe('a frame carried by both layouts during the replaced-layout overlap', (
         }
 
         expect(d.delivered.map((message) => message.ordering?.seq)).toEqual([1, 2, 3]);
-        // A relay forwards in arrival order; the receiver below it restores the order on its own.
+        // A relay forwards in arrival order; the receiver below it restores the order on its own. The second half is
+        // the parent's replays, re-forwarded under the unreceipted repair rule (ruling 17).
         const forwardedToE = await d.readSent('e');
-        expect(forwardedToE.map((message) => message.ordering?.seq)).toEqual([1, 3, 2]);
+        expect(forwardedToE.map((message) => message.ordering?.seq)).toEqual([1, 3, 2, 1, 2, 3]);
         const e = mesh.peers.get('e')!;
         for (const copy of forwardedToE) {
             await e.receive(copy, 'd');
@@ -742,7 +743,8 @@ describe('a multicast frozen to few recipients during the forwarding half', () =
         const retry = await exchangeUntilQuiet(mesh);
 
         expect(readDataEdges(first, message).toSorted()).toEqual(['a>b']);
-        expect(readDataEdges(retry, message).toSorted()).toEqual(['a>b', 'a>c']);
+        // `b`'s own hop-end completed its hop, so the retry resends into its subtree no more.
+        expect(readDataEdges(retry, message).toSorted()).toEqual(['a>c']);
         expect(readCopies(mesh.peers.get('c')!.delivered, message)).toBe(1);
     });
 

@@ -20,6 +20,7 @@ import {
     toALOutboundControlSettlements,
     type ALControlAdmissionRead
 } from '@shared/alm/outbound/compute-al-outbound-control-admission.ts';
+import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/read-al-outbound-recipient-proof.ts';
 import { toALOutboundControlRepairHint } from '@shared/alm/outbound/control/to-al-outbound-control-repair-hint.ts';
 import type { ALOutboundFirstHopWaitSnapshot } from '@shared/alm/outbound/first-hop/compute-al-outbound-first-hop-wait.ts';
 import { toALOutboundFirstHopTimeoutEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
@@ -46,6 +47,7 @@ interface OriginFixture {
     readonly msg: ALMessage;
     readonly facts: readonly ALOutboundSettlementFact[];
     accept(control: ALMessage): Promise<string>;
+    admit(control: ALMessage): Promise<ALOutboundControlAdmissionResult>;
 }
 
 async function createOriginFixture(
@@ -74,7 +76,8 @@ async function createOriginFixture(
         accept: async (control) => {
             const result = await runtime.acceptControlMessage(control, 'peer');
             return result.kind === 'rejected' ? result.reason : result.kind;
-        }
+        },
+        admit: async (control) => await runtime.acceptControlMessage(control, 'peer')
     };
 }
 
@@ -185,6 +188,17 @@ describe('a not-subscribed NACK at the origin (PL10, PL16)', () => {
         ]);
     });
 
+    it('a `not-subscribed` NACK naming a recipient no longer owed stays `rejected`, though it repeats one admitted', async () => {
+        const origin = await createOriginFixture('outside-repeated-kind');
+        await origin.accept(toRelayedNack(origin.msg, 'r2'));
+        await origin.accept(toRelayedAck(origin.msg, 'r1'));
+
+        expect(await origin.admit(toRelayedNack(origin.msg, 'r2'))).toEqual({
+            kind: 'rejected',
+            reason: 'AL control was already admitted; AL not-subscribed NACK names no recipient the receipt still owes'
+        });
+    });
+
     it('refuses a NACK naming a recipient the receipt never expected', async () => {
         const origin = await createOriginFixture('outside-unknown');
 
@@ -277,6 +291,74 @@ describe('a not-subscribed NACK at the origin (PL10, PL16)', () => {
                 complete: true
             });
         });
+    });
+});
+
+// The granted-rtc-ordered-relay shape: the relay is the origin's one next hop and no recipient of the receipt.
+describe('a relay\'s own hop-end at the origin, from a relay outside the audience', () => {
+    const RELAY_HOP_END: OwnAck = { fromPeerId: 'relay', status: 'subtree-complete' };
+
+    it('admits it, and the one fact it causes names the hop confirmed with the receipt class unchanged', async () => {
+        const origin = await createOriginFixture('relay-hop-end');
+        await origin.accept(toRelayedAck(origin.msg, 'r1'));
+
+        expect(await origin.accept(toRelayedAck(origin.msg, 'relay', RELAY_HOP_END))).toBe('committed');
+
+        expect(toAcknowledgements(origin.facts)).toEqual([
+            { confirmed: ['r1'], unconfirmed: ['r2'], outside: [], confirmedHops: [], complete: false },
+            { confirmed: ['r1'], unconfirmed: ['r2'], outside: [], confirmedHops: ['relay'], complete: false }
+        ]);
+    });
+
+    it('admits it after the receipt completed, and the one fact it causes names the hop confirmed', async () => {
+        const origin = await createOriginFixture('relay-hop-end-late');
+        await origin.accept(toRelayedAck(origin.msg, 'r1'));
+        await origin.accept(toRelayedAck(origin.msg, 'r2'));
+
+        expect(await origin.accept(toRelayedAck(origin.msg, 'relay', RELAY_HOP_END))).toBe('committed');
+
+        expect(toAcknowledgements(origin.facts).slice(-2)).toEqual([
+            { confirmed: ['r1', 'r2'], unconfirmed: [], outside: [], confirmedHops: [], complete: true },
+            { confirmed: ['r1', 'r2'], unconfirmed: [], outside: [], confirmedHops: ['relay'], complete: true }
+        ]);
+    });
+
+    it('states no fact for an exact repeat of a counted ACK, which moves neither a class nor the hop view', async () => {
+        const origin = await createOriginFixture('counted-ack-repeat');
+        await origin.accept(toRelayedAck(origin.msg, 'r1'));
+        const stated = origin.facts.length;
+
+        expect((await origin.admit(toRelayedAck(origin.msg, 'r1'))).kind).toBe('duplicate');
+
+        expect(origin.facts).toHaveLength(stated);
+    });
+
+    it('refuses a hop-end from a peer that is no next hop of the message', async () => {
+        const origin = await createOriginFixture('forged-hop-end');
+
+        expect(await origin.accept(toRelayedAck(origin.msg, 'x', { fromPeerId: 'x', status: 'subtree-complete' })))
+            .toBe('AL acknowledgement confirms no peer of the pending outbound receipt');
+        expect(origin.facts).toEqual([]);
+    });
+});
+
+describe('a next hop\'s own hop-end at the origin under `hop`, after its counted ACK', () => {
+    const HOP_TRACKING: ALOutboundAckTrackingPlan = {
+        ...RECEIVER_TRACKING,
+        expectedPeerIds: ['n1', 'n2'],
+        nextHopPeerIds: ['n1', 'n2'],
+        mode: 'hop'
+    };
+
+    it('admits it for the hop view and states no fact, since the hop lists it would state are the classes, which did not move', async () => {
+        const origin = await createOriginFixture('hop-end-after-counted-ack', HOP_TRACKING);
+        expect(await origin.accept(toRelayedAck(origin.msg, 'n1', { fromPeerId: 'n1', status: 'accepted' }))).toBe('committed');
+        const stated = origin.facts.length;
+
+        expect(await origin.accept(toRelayedAck(origin.msg, 'n1', { fromPeerId: 'n1', status: 'subtree-complete' }))).toBe('committed');
+
+        expect(stated).toBe(1);
+        expect(origin.facts).toHaveLength(stated);
     });
 });
 
@@ -459,8 +541,10 @@ describe('the end of the message a control admission writes', () => {
             targetMsgId: 'ending',
             nowMs: 1_000,
             owner: 'self',
-            ownerVersion: { senderId: 'self', version: 4 },
+            messageVersion: { msgId: 'ending', version: 4 },
             sent: SENT,
+            unreceiptedRepairAudience: undefined,
+            isRoomRepairedRelayedGapNack: false,
             pending: OPEN,
             history: { kind: 'nacks', values: [] },
             acknowledgements: [],
@@ -591,8 +675,10 @@ describe('a not-yet-in-sync NACK while the sender waits on its first hop', () =>
             targetMsgId: 'held',
             nowMs: 1_000,
             owner: 'self',
-            ownerVersion: { senderId: 'self', version: 4 },
+            messageVersion: { msgId: 'held', version: 4 },
             sent: SENT,
+            unreceiptedRepairAudience: undefined,
+            isRoomRepairedRelayedGapNack: false,
             firstHopWait: WAIT,
             history: { kind: 'nacks', values: [] },
             acknowledgements: [],

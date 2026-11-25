@@ -16,6 +16,7 @@ import { readALInboundEffectFacts } from '@shared/alm/inbound/prepare-al-inbound
 import { toRtcPublicationHandlingPlan } from '@shared/multicast/room-authority/rtc-room-snapshot-admission.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import {
     INBOUND_TEST_EFFECT_PREPARATION,
     INBOUND_TEST_SELF_PEER_ID,
@@ -111,9 +112,10 @@ async function computeArrival(
         readmission: false,
         read,
         plan: peer.planner(msg, RTC_SOURCE, computeALInboundPlanningObservations(read, false)),
-        facts: readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION),
+        facts: readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION, () => AL_GAP_NACK_RELAY_HOP_LIMIT),
         canForward: peer.canForward,
-        recordedParentPresent: true
+        recordedParentPresent: true,
+        retriedCopyNextHopPeerIds: []
     });
 }
 

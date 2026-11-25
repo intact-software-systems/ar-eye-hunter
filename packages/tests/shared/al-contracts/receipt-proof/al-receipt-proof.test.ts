@@ -1,11 +1,11 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import type { ALAckPayload, ALNackPayload } from '@shared/al-contracts/al-control.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import {
     AL_ACK_PROOF_DOMAIN_TAG,
     AL_NACK_PROOF_DOMAIN_TAG,
     AL_RECEIPT_PROOF_FIELD_CLASSES,
-    isALSameReceiptProofContent,
     signALReceiptProof,
     toALReceiptProofSigningInput,
     verifyALReceiptProof,
@@ -14,74 +14,11 @@ import {
 import { importEcdsaP256PublicKey, signDetached, type SigningKeyPair } from '@shared/signature/ecdsa-p256-signature.ts';
 import { toClassifiedSigningInput, type SignedFieldClass } from '@shared/signature/to-classified-signing-input.ts';
 
-import { signTestALReceiptControl, toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
+import { signTestALReceiptControl } from '../../../al-control-test-payloads.ts';
 import { createAvailablePublicationCryptoFixture } from '../../signature/publication-crypto-fixtures.ts';
+import { ACK, ACK_ALTERATIONS, GAP_NACK, NACK, NACK_ALTERATIONS, RELAY_REWRITES, withPayload } from './al-receipt-proof-fixtures.ts';
 
 const subtle = globalThis.crypto.subtle;
-
-const ACK: ALReceiptControl = {
-    type: 'ack',
-    payload: toTestALAckPayload({
-        ackedMsgId: 'm1',
-        fromPeerId: 'r',
-        toPeerId: 'a',
-        originPeerId: 'a',
-        logicalRecipientPeerId: 'c',
-        status: 'delivered',
-        observedAtEpochMs: 1_700_000_000_000
-    })
-};
-
-const NACK: ALReceiptControl = {
-    type: 'nack',
-    payload: toTestALNackPayload({
-        msgId: 'm1',
-        fromPeerId: 'r',
-        toPeerId: 'a',
-        originPeerId: 'a',
-        logicalRecipientPeerId: 'c',
-        reason: 'not-subscribed',
-        observedAtEpochMs: 1_700_000_000_000
-    })
-};
-
-const GAP_NACK: ALReceiptControl = {
-    type: 'nack',
-    payload: {
-        ...NACK.payload,
-        reason: 'gap',
-        orderingKey: 'room-1',
-        expectedSeq: 3,
-        missingRanges: [{ from: 3, to: 4 }],
-        gapRequestNumber: 1
-    } as ALNackPayload
-};
-
-const ACK_ALTERATIONS: readonly (readonly [string, Partial<ALAckPayload>])[] = [
-    ['ackedMsgId', { ackedMsgId: 'm2' }],
-    ['originPeerId', { originPeerId: 'b' }],
-    ['logicalRecipientPeerId', { logicalRecipientPeerId: 'd' }],
-    ['status', { status: 'failed' as ALAckPayload['status'] }],
-    ['observedAtEpochMs', { observedAtEpochMs: 1_700_000_000_001 }]
-];
-
-const NACK_ALTERATIONS: readonly (readonly [string, Partial<ALNackPayload>])[] = [
-    ['msgId', { msgId: 'm2' }],
-    ['originPeerId', { originPeerId: 'b' }],
-    ['logicalRecipientPeerId', { logicalRecipientPeerId: 'd' }],
-    ['reason', { reason: 'gap' }],
-    ['observedAtEpochMs', { observedAtEpochMs: 1_700_000_000_001 }],
-    ['orderingKey', { orderingKey: 'room-2' }],
-    ['expectedSeq', { expectedSeq: 9 }],
-    ['missingRanges', { missingRanges: [{ from: 1, to: 2 }] }],
-    ['serverSnapshotVersion', { serverSnapshotVersion: 7 }]
-];
-
-const RELAY_REWRITES: readonly (readonly [string, Partial<ALAckPayload>])[] = [
-    ['fromPeerId', { fromPeerId: 'relay' }],
-    ['toPeerId', { toPeerId: 'upstream' }],
-    ['carrier', { carrier: 'ws' }]
-];
 
 async function toPublicKey(keyPair: SigningKeyPair): Promise<CryptoKey> {
     return (await importEcdsaP256PublicKey(subtle, keyPair.publicJwk)).fold(
@@ -100,12 +37,6 @@ async function createCryptoAndSigned(control: ALReceiptControl): Promise<{
     const crypto = await createAvailablePublicationCryptoFixture();
     const publicKey = await toPublicKey(crypto.keyPair);
     return { keyPair: crypto.keyPair, publicKey, signed: await signTestALReceiptControl(crypto, control) };
-}
-
-function withPayload(control: ALReceiptControl, change: Partial<ALAckPayload> | Partial<ALNackPayload>): ALReceiptControl {
-    return control.type === 'ack'
-        ? { type: 'ack', payload: { ...control.payload, ...change } as ALAckPayload }
-        : { type: 'nack', payload: { ...control.payload, ...change } as ALNackPayload };
 }
 
 describe('ALM receipt proof signing input', () => {
@@ -133,33 +64,6 @@ describe('ALM receipt proof signing input', () => {
         expect(classes.ack satisfies Record<keyof ALAckPayload | 'added', SignedFieldClass>).toBeDefined();
         expect(classes.ack).toMatchObject({ carrier: 'excluded', proof: 'excluded', fromPeerId: 'excluded' });
         expect(classes.nack).toMatchObject({ proof: 'excluded', toPeerId: 'excluded' });
-    });
-});
-
-describe('isALSameReceiptProofContent', () => {
-    it.each(RELAY_REWRITES)('is the same content for an ACK whose %s a relay rewrote', (_field, change) => {
-        expect(isALSameReceiptProofContent(ACK, withPayload(ACK, change))).toBe(true);
-    });
-
-    it.each(['fromPeerId', 'toPeerId'] as const)('is the same content for a NACK whose %s a relay rewrote', (field) => {
-        expect(isALSameReceiptProofContent(NACK, withPayload(NACK, { [field]: 'rewritten' }))).toBe(true);
-    });
-
-    it.each(ACK_ALTERATIONS)('is other content for an ACK whose %s was altered', (_field, change) => {
-        expect(isALSameReceiptProofContent(ACK, withPayload(ACK, change))).toBe(false);
-    });
-
-    it.each(NACK_ALTERATIONS)('is other content for a NACK whose %s was altered', (_field, change) => {
-        expect(isALSameReceiptProofContent(NACK, withPayload(NACK, change))).toBe(false);
-    });
-
-    it('is other content for two gap NACKs that differ only in their gap request number', () => {
-        expect(isALSameReceiptProofContent(GAP_NACK, withPayload(GAP_NACK, { gapRequestNumber: 2 }))).toBe(false);
-    });
-
-    it('is other content for an ACK and a NACK about one recipient', () => {
-        expect(isALSameReceiptProofContent(ACK, NACK)).toBe(false);
-        expect(isALSameReceiptProofContent(NACK, ACK)).toBe(false);
     });
 });
 
@@ -250,6 +154,15 @@ describe('ALM receipt proof signing and verification', () => {
 
         expect((await verifyALReceiptProof({ subtle, publicKey, control: withPayload(signed, { gapRequestNumber: 2 }) })).left?.kind)
             .toBe('invalid-signature');
+    });
+
+    it('still verifies a gap NACK whose relay hop count each relay lowered on its way', async () => {
+        const { publicKey, signed } = await createCryptoAndSigned(GAP_NACK);
+        const relayed = withPayload(signed, { fromPeerId: 'relay', toPeerId: 'upstream', relayHopsLeft: 0 });
+
+        expect(GAP_NACK.payload.relayHopsLeft).toBe(AL_GAP_NACK_RELAY_HOP_LIMIT);
+        expect(AL_RECEIPT_PROOF_FIELD_CLASSES.nack.relayHopsLeft).toBe('excluded');
+        expect((await verifyALReceiptProof({ subtle, publicKey, control: relayed })).right).toBe(true);
     });
 
     it('still verifies a gap NACK whose fromPeerId and toPeerId a relay rewrote', async () => {

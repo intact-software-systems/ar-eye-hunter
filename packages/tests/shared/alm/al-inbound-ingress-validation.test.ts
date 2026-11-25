@@ -23,6 +23,7 @@ import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/crea
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
 
 interface InboundIngressFixture {
@@ -219,6 +220,10 @@ function createFixture(carrier: ALDeliveryCarrier): InboundIngressFixture {
         maxDeliveredMarkers: undefined
     });
     const runtime = new ALInboundMessageRuntime({
+        readUpstreamPeerId: () => undefined,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+        isRoutedPeerReady: () => false,
+        isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         carrier,

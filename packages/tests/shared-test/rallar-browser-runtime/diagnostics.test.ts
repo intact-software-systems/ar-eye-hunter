@@ -48,6 +48,7 @@ import {
     topics
 } from './browser-rallar-runtime-test-harness.ts';
 
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
 
 beforeEach(() => {
@@ -445,11 +446,11 @@ it('records an AL outbound admission diagnostics event into the agent event log'
     });
 
     facade.records.defaultWrites.at(-1)?.diagnosticsPorts?.outboundDiagnostics?.({
-        kind: 'sender-queue-wait',
-        senderId: 'sender-1',
-        origin: 'send',
-        queued: true,
-        queuedBehindOrigin: 'drain',
+        kind: 'readiness-probe',
+        lane: 'durable',
+        workerId: 'worker-1',
+        cause: 'own-commit',
+        readyAtMs: 'none',
         durationMs: 42
     });
 
@@ -458,11 +459,11 @@ it('records an AL outbound admission diagnostics event into the agent event log'
             kind: 'diagnostic',
             topic: 'rallar.browser.alm.outbound_diagnostics',
             data: {
-                kind: 'sender-queue-wait',
-                senderId: 'sender-1',
-                origin: 'send',
-                queued: true,
-                queuedBehindOrigin: 'drain',
+                kind: 'readiness-probe',
+                lane: 'durable',
+                workerId: 'worker-1',
+                cause: 'own-commit',
+                readyAtMs: 'none',
                 durationMs: 42
             }
         })
@@ -817,11 +818,11 @@ it('records synchronous connection producer diagnostics once across reconnect', 
     facade.behavior.connect.mockImplementation(async () => {
         const ports = facade.records.defaultWrites.at(-1)?.diagnosticsPorts;
         ports?.outboundDiagnostics?.({
-            kind: 'sender-queue-wait',
-            senderId: 'early',
-            origin: 'send',
-            queued: false,
-            queuedBehindOrigin: 'none',
+            kind: 'readiness-probe',
+            lane: 'durable',
+            workerId: 'early',
+            cause: 'no-memory',
+            readyAtMs: 'none',
             durationMs: 0
         });
         ports?.storage?.({
@@ -850,6 +851,10 @@ it.each([undefined, true, false])('preserves real terminal ACK acceptance with A
     expect(diagnostics?.acknowledgementCapture !== undefined).toBe(almDiagnostics !== false);
     const accepted: string[] = [];
     const inbound = createDefaultALInboundMessageRuntime({
+        readUpstreamPeerId: () => undefined,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+        isRoutedPeerReady: () => false,
+        isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         selfPeerId: 'origin',
