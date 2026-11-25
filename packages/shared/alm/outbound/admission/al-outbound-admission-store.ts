@@ -56,10 +56,13 @@ import type { ALOutboundReceiptAdmissionSurface } from '../control/compute-al-ou
 import { toALOutboundOutsideAudienceCommit } from '../control/to-al-outbound-outside-audience-commit.ts';
 import { writeALOutboundTimeoutCompletions } from '../control/write-al-outbound-timeout-completions.ts';
 import type { ALOutboundFirstHopWaitSnapshot } from '../first-hop/compute-al-outbound-first-hop-wait.ts';
+import type { ALOutboundEndedReason } from '../lane/al-outbound-send-controls.ts';
 import type {
     ALOrderingIndexedSequence,
     ALOrderingStoredPredecessors
 } from '../lane/compute-al-outbound-group-sent-positions.ts';
+import { readALOutboundMessageEnd } from '../message-end/read-al-outbound-message-end.ts';
+import type { ALOutboundMessageEndRead } from '../message-end/to-al-outbound-message-end-bundle.ts';
 import {
     ALOutboundAdmissionEffectStore,
     type ALOutboundEffectCandidate,
@@ -363,6 +366,18 @@ export type ALOutboundDurableEffect<TPrepared> =
         msgId: string;
         reason: 'not-yet-in-sync';
     }>
+    /** The end of a message whose own commit conflicted: its run commits that end again (D750). */
+    | Readonly<{
+        kind: 'end-message';
+        msgId: string;
+        /** A hand-over's run deletes the receipt row too, as its first commit would have. */
+        endedReason: ALOutboundEndedReason;
+        /**
+         * The retained `admit-message` row the end could not complete, which its run completes first (D751); `null`
+         * when the end held none.
+         */
+        admissionEffectId: string | null;
+    }>
     | Readonly<{
         kind: 'admit-control';
         msg: ALMessage;
@@ -459,6 +474,9 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
         msgId: string,
         planner: ALOutboundPlanner<TPrepared>
     ) => Promise<ALOutboundRepairReadDto<TPrepared>>;
+
+    /** What the end of one message marks and deletes, read in one session without planning the message. */
+    readonly readMessageEnd: (msgId: string) => Promise<ALOutboundMessageEndRead>;
 
     /**
      * The supersedence of every message, read in one session: a backend that batches one turn's reads answers the
@@ -706,6 +724,10 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         planner: ALOutboundPlanner<TPrepared>
     ): Promise<ALOutboundRepairReadDto<TPrepared>> {
         return await this.backend.readWithin((session) => this.reads.readRepairMessage(session, msgId, planner));
+    }
+
+    async readMessageEnd(msgId: string): Promise<ALOutboundMessageEndRead> {
+        return await this.backend.readWithin((session) => readALOutboundMessageEnd(this.reads, session, msgId));
     }
 
     async readMessageSupersedence(messages: readonly ALMessage[]): Promise<readonly PromiseSettledResult<boolean>[]> {

@@ -217,7 +217,8 @@ function isPairScopedMessageWait(match: RallarBlackBoxTestWaitMatch, carrier: Al
     const fields = Object.entries(match.payloadFields ?? {});
     const authoredIds = ALM_CONFORMANCE_ROLES.map((role) => `alm-${carrier}-${key}-${role}-`);
     const authoredSuffixes = ALM_CONFORMANCE_ROLES.map((role) => `-${carrier}-${key}-${role}-`);
-    return (isJsonRecordValue(equals) && (equals.marker === key || equals.marker === `${key}-cues`) && equals.carrier === carrier) ||
+    const markers = [key, `${key}-cues`, `${key}-cancelled`];
+    return (isJsonRecordValue(equals) && markers.includes(String(equals.marker)) && equals.carrier === carrier) ||
         fields.some(([, value]) => value === typeId) ||
         match.contains?.includes(`"typeId":"${typeId}"`) === true ||
         fields.some(([field, value]) => /\.(traceId|requestId)$/u.test(field) && typeof value === 'string' && authoredIds.some((id) => value.startsWith(id))) ||

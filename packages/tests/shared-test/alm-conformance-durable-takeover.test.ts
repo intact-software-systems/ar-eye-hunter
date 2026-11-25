@@ -82,7 +82,8 @@ describe('durable-takeover conformance scenario', () => {
         expect(scenario.successor.recipeId).toBe(`alm-${carrier}-durable-takeover-successor`);
     });
 
-    it.each(ALM_CONFORMANCE_CARRIERS)('has the %s owner admit and retain one durable send under a held carrier', (carrier) => {
+    // The cancel is the owner's last command: its page closes before the cancelled message's 2 s receipt timer is due.
+    it.each(ALM_CONFORMANCE_CARRIERS)('has the %s owner admit and retain one durable send, then send and cancel a second, under a held carrier', (carrier) => {
         const holds = carrier === 'rtc-with-ws-fallback'
             ? ['fault.inject:rtc:until-cleared', 'fault.inject:ws:until-cleared']
             : [`fault.inject:${carrier}:until-cleared`];
@@ -95,14 +96,26 @@ describe('durable-takeover conformance scenario', () => {
             'assert',
             'assert',
             'assert',
-            ...(carrier === 'rtc-with-ws-fallback' ? ['loop'] : [])
+            ...(carrier === 'rtc-with-ws-fallback' ? ['loop'] : []),
+            'send:local-outbox:receiver',
+            'observe:admitted',
+            'assert',
+            'assert',
+            'assert',
+            'assert',
+            'messages.cancel',
+            'assert'
         ]);
+        const payloads = findTakeover(carrier).sender.commands.flatMap((command) =>
+            command.kind === 'messages.send' && !('replayOnCarrier' in command) ? [command.payload] : []
+        );
+        expect(payloads).toEqual([{ marker: 'durable-takeover', carrier }, { marker: 'durable-takeover-cancelled', carrier }]);
     });
 
     // The owner's page closes as its recipe ends; over the fallback carrier the row must be in the WS store by then.
     it('has the fallback owner poll its receipt until a WS attempt follows the hand-over', () => {
         const scenario = findTakeover('rtc-with-ws-fallback');
-        const poll = scenario.sender.commands.at(-2);
+        const poll = scenario.sender.commands.find((command) => command.kind === 'loop');
         const [receipts, handedOver, wsAttempt, ...rest] = poll?.kind === 'loop' ? poll.commands : [];
 
         expect(poll).toMatchObject({ kind: 'loop', until: 'first-success', intervalMs: 200 });
@@ -121,7 +134,7 @@ describe('durable-takeover conformance scenario', () => {
             [['none', 'none', 'none'], false, 3]
         ] as const
     )('ends the fallback owner\'s poll on the first receipt with a WS attempt (receipts %j, passes %s)', async (stages, passes, expectedReads) => {
-        const poll = findTakeover('rtc-with-ws-fallback').sender.commands.at(-2);
+        const poll = findTakeover('rtc-with-ws-fallback').sender.commands.find((command) => command.kind === 'loop');
         let reads = 0;
         const runtime = createDefaultRallarBlackBoxTestRuntime({
             sleep: async () => {},
@@ -147,7 +160,7 @@ describe('durable-takeover conformance scenario', () => {
         expect(reads).toBe(expectedReads);
     });
 
-    it.each(['ws', 'rtc'] as const)('ends the %s owner\'s commands at its retained evidence', (carrier) => {
+    it.each(['ws', 'rtc'] as const)('polls no hand-over among the %s owner\'s commands', (carrier) => {
         expect(findTakeover(carrier).sender.commands.some((command) => command.kind === 'loop')).toBe(false);
     });
 
@@ -218,12 +231,13 @@ describe('durable-takeover conformance scenario', () => {
             .toEqual({ exists: true, value: 1 });
     });
 
-    it.each(ALM_CONFORMANCE_CARRIERS)('has the %s receiver get the carrier\'s original once', (carrier) => {
+    it.each(ALM_CONFORMANCE_CARRIERS)('has the %s receiver get the carrier\'s original once and never the cancelled message', (carrier) => {
         const scenario = findTakeover(carrier);
         const receiverCommands = toScenarioCommands(scenario.receiver.commands);
-        const arrival = receiverCommands[0];
+        const [arrival, cancelled] = receiverCommands;
 
-        expect(receiverCommands.map(toShape)).toEqual(['wait:message', 'received:2:absent']);
+        expect(receiverCommands.map(toShape)).toEqual(['wait:message', 'wait:message:absent', 'received:2:absent']);
+        expect(cancelled?.kind === 'wait' ? cancelled.match.equals : undefined).toEqual({ marker: 'durable-takeover-cancelled', carrier });
         expect(arrival?.kind === 'wait' ? arrival.match.equals : undefined).toEqual(findSend(scenario).payload);
         expect(arrival?.timeoutMs).toBe(CONNECT_TIMEOUT_MS + (findSend(scenario).ttlMs ?? 0));
     });
