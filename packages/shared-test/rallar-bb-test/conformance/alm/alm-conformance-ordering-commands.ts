@@ -21,10 +21,6 @@ export interface AlmConformanceOrderedSendOptions {
     readonly maxRepairs?: number;
     /** Absent, the scenario's track (`toOrderingKey`); a cell whose pages each originate a track names each its own. */
     readonly orderingKey?: string;
-    /** Absent, the browser's default lifetime. */
-    readonly ttlMs?: number;
-    /** Absent, the lifetime or, without one, the non-expiring send's budget; stated when it must not follow `ttlMs`. */
-    readonly commandTimeoutMs?: number;
 }
 
 /** One at-least-once send on the scenario's ordering key, admitted; the sequence names the send and its payload. */
@@ -52,14 +48,11 @@ export function toOrderedSendCommands(
 /**
  * The receipted send of `step.index` reached every expected recipient: its handle ended `acknowledged`. A room may give
  * the sender more than one next hop, and a carrier's acceptance settles at the first, so only the receipt says every
- * expected recipient holds the send. Absent `budgetMs`, the state's own budget.
+ * expected recipient holds the send.
  */
-export function toReachedCommands(
-    step: AlmConformanceMessageStepInput,
-    budgetMs?: number
-): readonly RallarBlackBoxTestCommand[] {
+export function toReachedCommands(step: AlmConformanceMessageStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
-        toObserveCommand({ ...step, state: 'acknowledged', budgetMs }),
+        toObserveCommand({ ...step, state: 'acknowledged' }),
         toResultAssertion({
             step,
             name: `assert-reached-${step.index}`,
@@ -74,15 +67,11 @@ export function toReachedCommands(
 /**
  * The send of `step.index` left the page: its carrier took it, or its recipients already answered it. The carrier's
  * acceptance settles at its first next hop, so it orders a later step only where the sender has one next hop: a room of
- * two pages, where the sender's one peer, or over ws the server, is its only next hop. Absent `budgetMs`, the state's
- * own budget.
+ * two pages, where the sender's one peer, or over ws the server, is its only next hop.
  */
-export function toSentCommands(
-    step: AlmConformanceMessageStepInput,
-    budgetMs?: number
-): readonly RallarBlackBoxTestCommand[] {
+export function toSentCommands(step: AlmConformanceMessageStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
-        toObserveCommand({ ...step, state: 'transport-accepted', budgetMs }),
+        toObserveCommand({ ...step, state: 'transport-accepted' }),
         toResultAssertion({
             step,
             name: `assert-sent-${step.index}`,

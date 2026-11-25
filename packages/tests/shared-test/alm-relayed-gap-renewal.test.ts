@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
-import {
-    NON_EXPIRING_SEND_TIMEOUT_MS,
-    NON_EXPIRING_TTL_MS
-} from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-budgets.ts';
+import { NON_EXPIRING_TTL_MS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import { createAlmConformanceRecipes, type AlmConformanceScenario } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
@@ -25,8 +22,6 @@ import { resolveLatestWaitEvent } from '@shared-test/rallar-bb-test/wait/wait-ev
 import { toConformanceInput } from './alm-conformance-test-input.ts';
 
 const RUN_ID = 'run-relayed-gap-renewal';
-/** `toConformanceInput`'s deadline, which caps every observe budget. */
-const DEADLINE_MS = 18_000;
 const ROLES: readonly AlmConformanceRole[] = ['sender', 'receiver', 'recipient-b'];
 const CELLS = [
     { key: 'relayed-gap-renewal', requestNumber: 3, ack: 'receiver', handleState: 'acknowledged' },
@@ -59,14 +54,6 @@ function toCommandIds(recipe: RallarBlackBoxTestRecipe): readonly string[] {
 
 function toCommand(recipe: RallarBlackBoxTestRecipe, commandId: string): RallarBlackBoxTestCommand | undefined {
     return recipe.commands.find((command) => command.commandId === commandId);
-}
-
-function toSendTtlMs(recipe: RallarBlackBoxTestRecipe, commandId: string): number {
-    const send = toCommand(recipe, commandId);
-    if (send === undefined || !isRallarBlackBoxTestMessagesSendCommand(send) || send.ttlMs === undefined) {
-        throw new Error(`${commandId} must be a send that states its lifetime.`);
-    }
-    return send.ttlMs;
 }
 
 /** The admitted NACK a gap request wait recorded: relayed, the middle sent it for the far receiver. */
@@ -209,57 +196,18 @@ describe.each(CELLS)('the $key cell', ({ key, requestNumber, ack, handleState })
         }
     });
 
-    it('gives each origin\'s track one lifetime longer than the browser default, and keeps each send\'s admission budget', () => {
-        const scenario = toScenario(key);
-        for (const [role, recipe] of [['sender', scenario.sender], ['receiver', scenario.receiver]] as const) {
-            const sends = recipe.commands.filter((command) =>
-                isRallarBlackBoxTestMessagesSendCommand(command) && command.commandId?.startsWith(`${prefix}-${role}-send-`)
-            );
-            const ttls = sends.map((send) => 'ttlMs' in send ? send.ttlMs : undefined);
-
-            expect(sends, role).toHaveLength(3);
-            expect(new Set(ttls).size, role).toBe(1);
-            expect(ttls[0], role).toBeGreaterThan(NON_EXPIRING_TTL_MS);
-            expect(sends.map((send) => send.timeoutMs), role).toEqual(sends.map(() => NON_EXPIRING_SEND_TIMEOUT_MS));
-        }
-    });
-
-    it('ends each origin\'s hold within half its second send\'s lifetime, counted from that send, leaving the other half for the release and the repair', () => {
+    it('ends each origin\'s hold within half its second send\'s lifetime, leaving the other half for the release and the repair', () => {
         const scenario = toScenario(key);
         for (const [role, recipe] of [['sender', scenario.sender], ['receiver', scenario.receiver]] as const) {
             const page = `${prefix}-${role}`;
-            const ttlMs = toSendTtlMs(recipe, `${page}-send-2`);
+            const send = recipe.commands.find((command) => command.commandId === `${page}-send-2`);
             const waits = ROLES.filter((recipient) => recipient !== role)
                 .map((recipient) => toCommand(recipe, `${page}-gap-request-${requestNumber}-for-${recipient}`));
 
-            expect(waits.map((wait) => wait?.timeoutMs), role).toEqual(waits.map(() => ttlMs / 2));
-            expect(waits.map((wait) => wait?.kind === 'wait' ? wait.timeoutFrom : undefined), role)
-                .toEqual(waits.map(() => `{resultCache.${page}-send-2.startedAtEpochMs}`));
+            // The send states no lifetime of its own, so it lives the browser's default.
+            expect(send && 'ttlMs' in send ? send.ttlMs : undefined, role).toBeUndefined();
+            expect(waits.map((wait) => wait?.timeoutMs), role).toEqual(waits.map(() => NON_EXPIRING_TTL_MS / 2));
         }
-    });
-
-    it('reads each handle within what the hold leaves of the lifetime, capped by the deadline', () => {
-        const scenario = toScenario(key);
-        for (const [role, recipe] of [['sender', scenario.sender], ['receiver', scenario.receiver]] as const) {
-            const page = `${prefix}-${role}`;
-            const ttlMs = toSendTtlMs(recipe, `${page}-send-2`);
-            const holdMs = toCommand(recipe, `${page}-gap-request-${requestNumber}-for-recipient-b`)?.timeoutMs ?? 0;
-            const observes = [1, 2, 3].map((index) => toCommand(recipe, `${page}-observe-${handleState}-${index}`));
-
-            expect(observes.map((observe) => observe?.timeoutMs), role)
-                .toEqual(observes.map(() => Math.min(ttlMs - holdMs, DEADLINE_MS)));
-        }
-    });
-
-    it('waits for each buffered third send\'s release for the track\'s whole lifetime', () => {
-        const scenario = toScenario(key);
-        const ttlMs = toSendTtlMs(scenario.sender, `${prefix}-sender-send-2`);
-        const releases = [scenario.sender, scenario.receiver, scenario.recipientB].flatMap((recipe) =>
-            recipe.commands.filter((command) => command.commandId?.includes('-release-buffered-3-'))
-        );
-
-        expect(releases).toHaveLength(4);
-        expect(releases.map((release) => release.timeoutMs)).toEqual(releases.map(() => ttlMs));
     });
 
     it(`matches a committed gap NACK numbered ${requestNumber} or later that speaks for the receiver the cue named`, () => {

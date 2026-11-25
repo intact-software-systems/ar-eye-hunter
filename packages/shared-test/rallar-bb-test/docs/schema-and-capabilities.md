@@ -788,10 +788,7 @@ track at the first, hold the second send by its message id and send the third. E
 origin releases its hold only once its outbound `control-admission` diagnostics
 committed a gap request numbered 3 or later (2 or later in the unreceipted cell) from
 each receiver, matched by the receiver's peer id and the request number as a floor: a
-later request can commit first. Each track's sends live 50 s, longer than the browser
-default, and an origin's two request waits share half of it, 25 s counted from its
-second send (`timeoutFrom`), so the release, the repair and its receipt keep the other
-half. Every receiver enters each
+later request can commit first. Every receiver enters each
 origin's track at the first, releases the third from its buffer and omits nothing;
 each origin reads its three handles `acknowledged` (`transport-accepted` unreceipted).
 After the run the identity assessment fails the cell unless one origin's recorded

@@ -3,7 +3,7 @@ import type {
     RallarBlackBoxTestWaitCommand
 } from '../../../../rallar-black-box-test-contracts.ts';
 
-import { NON_EXPIRING_SEND_TIMEOUT_MS, toBudgetMs } from '../../alm-conformance-budgets.ts';
+import { NON_EXPIRING_TTL_MS, toBudgetMs } from '../../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_RTC_ALONE_CARRIERS } from '../../alm-conformance-carriers.ts';
 import {
     ALM_INBOUND_DIAGNOSTICS_TOPIC,
@@ -29,7 +29,6 @@ import {
     type AlmConformanceScenarioId,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
-import { toCommandId } from '../../alm-conformance-step-identities.ts';
 import { toPathTopologyConfigCommand } from '../../cell/to-path-topology-config-command.ts';
 import { toCueStep } from '../receipted-audience.ts';
 import {
@@ -44,11 +43,8 @@ interface RelayedGapRenewalStatement {
     readonly ack: NonNullable<AlmConformanceOrderedSendOptions['ack']>;
     /** The lowest gap request each origin waits for from each of its receivers before it releases its hold. */
     readonly requestNumber: number;
-    /** How an origin reads one of its handles once its hold is released, within `budgetMs`. */
-    readonly toHandleCommands: (
-        step: AlmConformanceMessageStepInput,
-        budgetMs: number
-    ) => readonly RallarBlackBoxTestCommand[];
+    /** How an origin reads one of its handles once its hold is released. */
+    readonly toHandleCommands: (step: AlmConformanceMessageStepInput) => readonly RallarBlackBoxTestCommand[];
 }
 
 interface AlmConformanceGapRequestAdmissionWaitInput {
@@ -61,25 +57,11 @@ interface AlmConformanceGapRequestAdmissionWaitInput {
 }
 
 /**
- * The lifetime of every send of an origin's track. The third waits in each receiver's buffer behind the held second, so
- * the whole track outlives the hold, not the second send alone. Twice the held-send budget below: the hold may spend
- * half, and the other half is left for the release, the repair it lets out and, for a receipted send, that repair's
- * receipt.
+ * The longest an origin holds its second send before the request that releases it must have committed: half the
+ * send's lifetime, the browser default it states none of its own against. The hold starts with the second send, and the
+ * other half is left for the release, the repair it lets out and, for a receipted send, that repair's receipt.
  */
-const RELAYED_GAP_RENEWAL_TTL_MS = 50_000;
-
-/**
- * The longest an origin holds its second send, counted from that send, before the request that releases it must have
- * committed from both receivers. Sized from the slowest observed runner, 47.5 ms per store operation: the third send's
- * dispatch about 5.5 s, the renewals to request 3 up to (1 + 2) s x 1.5 stretch = 4.5 s, the relay hop and the
- * admission 6 to 8 s with replays; about 18 s, of which 13.5 s scales with the store. A runner 1.5 times slower, about
- * 71 ms per operation, needs 4.5 + 1.5 x 13.5 = 24.75 s, so 25 s; a slower one can still exceed it. The other 25 s
- * covers the repair's dispatch and its receipt's relay and admission at that speed, about 1.5 x (5.5 + 8) = 20 s.
- */
-const HELD_SEND_BUDGET_MS = RELAYED_GAP_RENEWAL_TTL_MS / 2;
-
-/** What the hold leaves of the track's lifetime for reading each handle once it is released. */
-const HANDLE_BUDGET_MS = RELAYED_GAP_RENEWAL_TTL_MS - HELD_SEND_BUDGET_MS;
+const HELD_SEND_BUDGET_MS = NON_EXPIRING_TTL_MS / 2;
 
 /** The pages that originate a track; recipient-b only receives. */
 const ORIGINS: readonly AlmConformanceRole[] = ['sender', 'receiver'];
@@ -147,8 +129,7 @@ function toGapRequestAdmissionWait(
     return {
         ...wait,
         match: { ...wait.match, payloadMinimums: { 'data.nackGapRequestNumber': requestNumber } },
-        timeoutMs: toBudgetMs(HELD_SEND_BUDGET_MS, toVerdictTimeoutMs(step.input.deadlineMs)),
-        timeoutFrom: `{resultCache.${toCommandId(step, 'send-2')}.startedAtEpochMs}`
+        timeoutMs: toBudgetMs(HELD_SEND_BUDGET_MS, toVerdictTimeoutMs(step.input.deadlineMs))
     };
 }
 
@@ -235,19 +216,14 @@ function toMemberCommands(member: AlmConformanceStepInput): readonly RallarBlack
  * An origin sends its first, receives the other origin's first and enters that track as its receiver: the other origin
  * sends nothing more before this page's cue. It opens its own gap only once both of its receivers entered its track at
  * the first: a receiver whose first frame is the third would enter there and never report the gap (D630). It releases
- * its hold once each receiver's request at or past the number committed, reads its handles, and then proves the other origin's
- * track arrived in order.
+ * its hold once each receiver's request at or past the number committed, reads its handles, and then proves the other
+ * origin's track arrived in order.
  */
 function toOriginCommands(
     origin: AlmConformanceStepInput,
     statement: RelayedGapRenewalStatement
 ): readonly RallarBlackBoxTestCommand[] {
-    const options: AlmConformanceOrderedSendOptions = {
-        ack: statement.ack,
-        orderingKey: toOriginOrderingKey(origin, origin.role),
-        ttlMs: RELAYED_GAP_RENEWAL_TTL_MS,
-        commandTimeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS
-    };
+    const options = { ack: statement.ack, orderingKey: toOriginOrderingKey(origin, origin.role) };
     const receivers = toOtherRoles(origin);
     const other = toOtherOrigin(origin.role);
     return [
@@ -266,7 +242,7 @@ function toOriginCommands(
             })
         ),
         ...toHeldMessageFaultCommands({ ...origin, index: 2 }, 'release-message-2', 0),
-        ...SEQS.flatMap((index) => statement.toHandleCommands({ ...origin, index }, HANDLE_BUDGET_MS)),
+        ...SEQS.flatMap((index) => statement.toHandleCommands({ ...origin, index })),
         ...toCueSendCommands(toCueStep(origin), toReadCue(origin.role)),
         ...toTrackOrderWaits(origin, other),
         toReceivedCommand({ ...origin, index: 3, count: 3, absent: false })
@@ -292,8 +268,7 @@ function toEnteredCommands(
 /**
  * The page released `origin`'s third send from its buffer once the second arrived, and omitted nothing on the track.
  * The release's `claim-settled` effect id is `release:<track key>:<seq>` with the track key URI-encoded; a session id
- * is URL-safe base64, so the sender's peer id reads the same encoded. The release must land while the origin's second
- * send lives, and recipient-b starts the wait before either origin sends its second, so it lasts the track's lifetime.
+ * is URL-safe base64, so the sender's peer id reads the same encoded.
  */
 function toTrackOrderWaits(
     step: AlmConformanceStepInput,
@@ -302,17 +277,14 @@ function toTrackOrderWaits(
     const track = toTrack(step, origin);
     const key = encodeURIComponent(`${toOriginOrderingKey(step, origin)}:`);
     return [
-        {
-            ...toDiagnosticWait({
-                step,
-                name: `release-buffered-3-${origin}`,
-                topic: ALM_INBOUND_DIAGNOSTICS_TOPIC,
-                historyFrom: 'cell',
-                contains: `"effectId":"release:${key}${toPeerIdReference(step, origin)}%3A0:3","msgId":null,` +
-                    '"typeId":null,"subjectMsgId":null,"payloadKind":"release-buffered"'
-            }),
-            timeoutMs: RELAYED_GAP_RENEWAL_TTL_MS
-        },
+        toDiagnosticWait({
+            step,
+            name: `release-buffered-3-${origin}`,
+            topic: ALM_INBOUND_DIAGNOSTICS_TOPIC,
+            historyFrom: 'cell',
+            contains: `"effectId":"release:${key}${toPeerIdReference(step, origin)}%3A0:3","msgId":null,` +
+                '"typeId":null,"subjectMsgId":null,"payloadKind":"release-buffered"'
+        }),
         toOrderingPositionWait(step, { name: `no-omitted-${origin}`, status: 'omitted', track, absent: true })
     ];
 }
