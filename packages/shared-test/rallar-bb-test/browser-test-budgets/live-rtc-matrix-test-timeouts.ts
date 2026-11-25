@@ -15,8 +15,12 @@ import {
     LIVE_RTC_TRIO_SIZE
 } from './live-rtc-control-waits.ts';
 import {
+    ALL_DELIVERY_PERMUTATIONS_BOUNDED_WAITS_MS,
+    DELIVERY_MATRIX_BOUNDED_WAITS_MS,
+    REALTIME_DELIVERY_MATRIX_BOUNDED_WAITS_MS
+} from './live-rtc-delivery-matrix-waits.ts';
+import {
     DELIVERY_CASE_BOUNDED_WAITS_MS,
-    MATRIX_INBOX_OBSERVATION_BOUNDED_WAITS_MS,
     MATRIX_SEND_RESULT_WAIT_MS,
     MESSAGES_PROBES_BOUNDED_WAITS_MS,
     WS_AGENT_OPEN_SEND_CLOSE_BOUNDED_WAITS_MS
@@ -26,6 +30,7 @@ import {
     FORMATION_RUN_BOUNDED_WAITS_MS
 } from './live-rtc-formation-waits.ts';
 import { LIVE_RTC_ARTIFACT_EVIDENCE_BOUNDED_WAITS_MS } from './live-rtc-recorder-read-waits.ts';
+import { SETTLED_TRIO_RETIREMENT_BOUNDED_WAITS_MS } from './live-rtc-retirement-waits.ts';
 
 /** How long a matrix test polls the control run for every key command's result once its scenarios end. */
 export const MATRIX_RUN_RESULTS_POLL_TIMEOUT_MS = 20_000;
@@ -45,25 +50,6 @@ export const RETENTION_CHECKPOINT_INTERVAL_CYCLES = 10;
 /** A trio opens its agents, then admits each one's browser recording. */
 const TRIO_OPENING_BOUNDED_WAITS_MS = LIVE_RTC_AGENT_TRIO_OPEN_BOUNDED_WAITS_MS +
     LIVE_RTC_RECORDING_ADMISSION_BOUNDED_WAITS_MS;
-
-/** The owner's matrix: the formation, three deliveries, and the direct and broadcast receivers' visible inboxes. */
-const DELIVERY_MATRIX_BOUNDED_WAITS_MS = FORMATION_RUN_BOUNDED_WAITS_MS + 3 * DELIVERY_CASE_BOUNDED_WAITS_MS +
-    2 * MATRIX_INBOX_OBSERVATION_BOUNDED_WAITS_MS;
-
-/** The realtime matrix then reads the sender's health, a command that names no budget, for its ready peers. */
-const REALTIME_DELIVERY_MATRIX_BOUNDED_WAITS_MS = DELIVERY_MATRIX_BOUNDED_WAITS_MS +
-    LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS;
-
-/** Each of the three senders' two direct deliveries, its multicast and its broadcast, after the formation. */
-const ALL_DELIVERY_PERMUTATIONS_BOUNDED_WAITS_MS = FORMATION_RUN_BOUNDED_WAITS_MS +
-    LIVE_RTC_TRIO_SIZE * 4 * DELIVERY_CASE_BOUNDED_WAITS_MS;
-
-/**
- * Retiring a settled trio: C closes and resets, A and B see it leave side by side, B closes and resets, A sees it leave,
- * then A closes and resets.
- */
-const SETTLED_TRIO_RETIREMENT_BOUNDED_WAITS_MS = LIVE_RTC_TRIO_SIZE * LIVE_RTC_CLOSE_AND_RESET_BOUNDED_WAITS_MS +
-    2 * LIVE_RTC_PEER_ABSENCE_TIMEOUT_MS;
 
 /** The group read and the group's events read, each its budget and then the result poll. */
 const GROUP_STATE_READBACK_BOUNDED_WAITS_MS = 2 *
