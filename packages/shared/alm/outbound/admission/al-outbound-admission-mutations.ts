@@ -98,7 +98,10 @@ export type ALOutboundAdmissionMutation =
         sentPositions: Readonly<Record<string, number>> | null;
         creationExpiry: string;
         snapshot: ALOutboundSentMessageSnapshot;
-        /** True exactly on the dispatch whose own tracking completes, and so deletes, its receipt. */
+        /**
+         * True exactly on the dispatch that completes its receipt: the one whose own tracking completes, and so deletes,
+         * the open row, and the admission whose frozen audience leaves nobody to confirm it.
+         */
         ended: boolean;
     }>
     | Readonly<{

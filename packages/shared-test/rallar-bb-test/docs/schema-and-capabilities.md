@@ -799,13 +799,13 @@ carries either.
 A scenario definition's optional `connect.minReadyPeers` sets the readiness its roles' connects wait for;
 absent, each connect waits for every other agent of the cell.
 
-The `cross-carrier-duplicate` conformance scenario replays in both orders over
-`rtc-with-ws-fallback`, and its receiver waits for the `admission-outcome` that
-refuses the second copy as `not-handled`/`duplicate`. Both orders prove that
-refusal: in `rtc-then-ws` the second copy is the WS-carried multicast room
-envelope, which the api-v1 WS server routes to the room's other members, so the
-receiver refuses it on carrier `ws`. The Hetzner two-agent manifest runs both
-orders.
+The `cross-carrier-duplicate` conformance scenario (`cross-carrier-duplicate-rtc-then-ws`) replays the first RTC
+send's envelope on WS over `rtc-with-ws-fallback`, and its receiver waits for the `admission-outcome` that refuses the
+second copy as `not-handled`/`duplicate`, on either carrier. Neither carrier's
+`transport-accepted` is the receiver's admission (over RTC it is the frame leaving the sender's data channel), so the
+WS copy may commit first. The reverse order does not run: the product never admits a message on RTC while its WS
+admission lives (D56), and the receiver's refusal in both arrival orders is a unit test
+(`alm-cross-carrier-duplicate-outcome.test.ts`). The Hetzner two-agent manifest runs the scenario.
 
 The `ordering-resync` conformance scenario runs over every carrier. The sender sends seq 1, then
 seq 300 on the same ordering key, a gap wider than the repair window, and the receiver receives the
@@ -1386,14 +1386,19 @@ leftover rows can read it healthy, so the third send's own commit is proven by `
 same native hold as `delivery-reload`, sends one durable original with `ack: 'receiver'` and a `ttlMs` of the
 absence window plus 60 s (above one 10 s lease, the 16.6 s recovery bound and a whole successor connect), and proves
 it admitted, enqueued, retained and unsubmitted. Over `rtc-with-ws-fallback` it then polls its receipt until a WS
-attempt follows the hand-over to WS, so the WS row is committed before the page ends. The lane then closes that
-page. Under the hold the row stays reserved until its lease ends, so a successor's prologue first waits out one
+attempt follows the hand-over to WS, so the WS row is committed before the page ends. Its last commands send a
+second durable message under the same hold, with the marker `durable-takeover-cancelled`, prove it retained and cancel
+it, asserting `cancelled`. The lane then closes that page, a few hundred milliseconds after the cancel and before the
+cancelled message's 2 s receipt timer (`first-hop-timeout` over WS, `ack-timeout` over RTC) is due, so the timer row
+outlives the page unless the cancel stored the message's end. Under the hold the row stays reserved until its lease ends, so a successor's prologue first waits out one
 lease and a margin (an absent wait on a topic nothing emits) before it connects: its takeover's first batch then
 claims the row rather than finding it leased. The successor connects with the restored session, waits for the one
 `recovery` of the store that held the original (`browser-rtc-overlay` over `rtc`, `browser-ws-client` otherwise)
 reading `restored`, the store id embedding the session its own connect restored, and asserts that outcome's
 `claimed` above 0. The receiver waits for the carrier-tagged original over the sender's connect plus the original's
-lifetime, then proves for an absence window that no second copy arrives. A takeover while the owner's lease still
+lifetime. An absence wait on the cancelled marker follows; it also reads arrivals retained before it, and fails
+when the successor's restored timer, finding the cancelled send's row gone, charges the attempt and sends the
+message again. A last absence window proves no second copy of the scenario's type arrives. A takeover while the owner's lease still
 stands, recovered by a later batch at the lease end plus at most 16.6 s, is not run by the lane: that path claims in a
 batch that reports nothing, and the server keeps one socket per auth session, so the successor cannot connect before
 the owner's page is gone.

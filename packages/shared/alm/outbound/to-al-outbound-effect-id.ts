@@ -82,6 +82,11 @@ export function toALOutboundAckTimeoutEffectId(
     return toALOutboundEffectId(['ack-timeout', pending.msgId, pending.attempts + 1, pending.deadlineAtMs]);
 }
 
+/** The one end of a message retained as work: a second retain of it is absorbed by the row the first wrote. */
+export function toALOutboundEndMessageEffectId(msgId: string): string {
+    return toALOutboundEffectId(['end-message', msgId]);
+}
+
 /** The timeout check a first-hop wait schedules for its next attempt; the wait's attempt and deadline name it. */
 export function toALOutboundFirstHopTimeoutEffectId(
     wait: Pick<ALOutboundFirstHopWaitSnapshot, 'msgId' | 'attempts' | 'deadlineAtMs'>

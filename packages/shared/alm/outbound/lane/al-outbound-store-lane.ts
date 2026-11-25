@@ -65,10 +65,11 @@ import {
 import { ALOutboundReceiptAdmission } from '../control/al-outbound-receipt-admission.ts';
 import type { ALOutboundControlAdmissionResult } from '../control/read-al-outbound-recipient-proof.ts';
 import { ALOutboundFirstHopWait } from '../first-hop/al-outbound-first-hop-wait.ts';
+import { ALOutboundLaneMessageEnd } from '../message-end/al-outbound-lane-message-end.ts';
 import type { ALOutboundCanonicalHandoff } from './al-outbound-canonical-handoff.ts';
 import { ALOutboundDequeuedAdmission } from './al-outbound-dequeued-admission.ts';
 import type { ALOutboundReceiptWorkEvidence } from './al-outbound-receipt-observation.ts';
-import type { ALOutboundSendControls } from './al-outbound-send-controls.ts';
+import type { ALOutboundEndedReason, ALOutboundSendControls } from './al-outbound-send-controls.ts';
 import { computeALOutboundSettledCommittedRows } from './compute-al-outbound-settled-committed-rows.ts';
 import { recordALOutboundDequeueTiming } from './record-al-outbound-dequeue-timing.ts';
 import { runALOutboundDequeueClaimGroup } from './run-al-outbound-dequeue-claim-group.ts';
@@ -126,6 +127,7 @@ export class ALOutboundStoreLane<TPrepared> {
     private readonly removeStorageResetListener: (() => void) | undefined;
     private readonly removeForeignCommitListener: (() => void) | undefined;
     private readonly takeOverSubscription: Unsubscribe | undefined;
+    private readonly messageEnd: ALOutboundLaneMessageEnd<TPrepared>;
     private nextEvictionAtMs = Number.NEGATIVE_INFINITY;
     private disposed = false;
     /** The running batch's settled claims; its selection empties it, so a batch that never ended leaves nothing here. */
@@ -145,6 +147,12 @@ export class ALOutboundStoreLane<TPrepared> {
         this.repairRetransmission = admissions.repairRetransmission;
         const workType = toALOutboundWorkType(stores.admissionStore.namespace);
         this.work = this.createWorkHandler(workPort, workType);
+        this.messageEnd = new ALOutboundLaneMessageEnd({
+            admissionStore: stores.admissionStore,
+            workPort,
+            nowMs: () => runtime.workClock.nowMs(),
+            announce: (rows) => this.work.committed(rows)
+        });
         this.removeForeignCommitListener = input.durableWorkOwnership?.onForeignCommit(
             workType,
             (rows) => this.applyForeignCommit(rows)
@@ -213,6 +221,11 @@ export class ALOutboundStoreLane<TPrepared> {
         this.work.committed(rows);
     }
 
+    /** Whether this lane holds the message an end must reach: stored, or retained by this page as an admission. */
+    async holdsMessageForEnd(msgId: string): Promise<boolean> {
+        return await this.messageEnd.holdsMessage(msgId);
+    }
+
     /** A memory read on the volatile lane: whether this lane admitted the message. */
     async ownsMessage(msgId: string): Promise<boolean> {
         return await this.input.stores.admissionStore.hasSentMessageAdmission(msgId);
@@ -251,6 +264,7 @@ export class ALOutboundStoreLane<TPrepared> {
             if (outcome.status === 'fulfilled') {
                 this.setCanonicalHandoff(outcome.value);
                 this.recordStorageHealth(outcome.value);
+                this.messageEnd.rememberRetainedAdmission(outcome.value.computed);
             }
         }
         const committedRows = computeALOutboundSettledCommittedRows(
@@ -333,11 +347,11 @@ export class ALOutboundStoreLane<TPrepared> {
     }
 
     /**
-     * A hand-over ends this lane's receipt of the message and states nothing. A receipt its store
-     * cannot end stays until it expires.
+     * Ends a cancelled or handed-over message in this lane's store and states nothing. An end whose commit conflicts
+     * is retained as work, announced as a commit's rows are; a store that cannot end it records that failure.
      */
-    async endReceipt(msgId: string): Promise<void> {
-        await this.readiness.runStoreOperation(() => this.repairAdmission.endReceipt(msgId), () => undefined);
+    async endMessage(msgId: string, endedReason: ALOutboundEndedReason): Promise<void> {
+        await this.readiness.runStoreOperation(() => this.messageEnd.end(msgId, endedReason), () => undefined);
     }
 
     /** What the admission states, as this lane's store holds it: nothing on the memory pair survives the document. */
@@ -532,7 +546,10 @@ export class ALOutboundStoreLane<TPrepared> {
         }
         switch (effect.payload.kind) {
             case 'admit-message':
-                return await this.effects.admitPendingMessage(effect, evidence);
+                return await this.messageEnd.runAdmissionUnlessEnding(
+                    effect.payload.message.msgId,
+                    () => this.effects.admitPendingMessage(effect, evidence)
+                );
             case 'dequeue-message':
                 return await this.dequeuedAdmission.admitDequeuedMessage(effect, evidence, observed);
             case 'admit-control':
@@ -560,6 +577,8 @@ export class ALOutboundStoreLane<TPrepared> {
                     attemptIdentity: effect.effectId
                 });
                 return { status: 'completed' };
+            case 'end-message':
+                return await this.messageEnd.runEnd(effect.payload);
         }
     }
 
@@ -851,7 +870,7 @@ function statesMessageDeadline<TPrepared>(kind: ALOutboundDurableEffect<TPrepare
     return kind === 'send-prepared' || kind === 'admit-message' || kind === 'dequeue-message';
 }
 
-/** The message a durable effect names, read from whichever field its own kind carries the id in. */
+/** The message a durable effect names to the page's ended-message guard, read from the field its kind carries it in. */
 function resolveALOutboundEffectMsgId<TPrepared>(
     effect: ALOutboundEffectSnapshot<TPrepared>
 ): string | undefined {
@@ -865,6 +884,9 @@ function resolveALOutboundEffectMsgId<TPrepared>(
         case 'repair-hint':
         case 'nack-retry':
             return payload.msgId;
+        // The end of a message the page ended is the one effect of it that still runs: the page's guard skips it.
+        case 'end-message':
+            return undefined;
         case 'admit-control':
             return payload.msg.id.msgId;
         case 'dequeue-message':

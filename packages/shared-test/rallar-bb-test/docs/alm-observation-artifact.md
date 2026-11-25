@@ -426,9 +426,9 @@ records what the runner was doing while the cell ran:
   when the cell carried no inbound event at all; otherwise every direction is reported, `no-events`
   for one that carried none of the three kinds. The decoded snapshot keeps each `admission-outcome`'s
   `msgId`, `carrier` and `reason` beside its `outcome`, so one message arriving over both carriers
-  reads as two outcomes for one `msgId`. In the `cross-carrier-duplicate` scenario, both orders show
-  one `committed`/`admitted` and one `not-handled`/`duplicate` for the pair's `msgId`; in
-  `rtc-then-ws` the refused copy is the one on carrier `ws`. In `not-yet-in-sync`, and in
+  reads as two outcomes for one `msgId`. In the `cross-carrier-duplicate` scenario, the receiver shows
+  one `committed`/`admitted` and one `not-handled`/`duplicate` for the pair's `msgId`, the refused copy the one on
+  carrier `ws`. In `not-yet-in-sync`, and in
   `fenced-catch-up` over `rtc` before the roster moves, the receiver's refusal reads `rejected` over
   `rtc` with a reason starting `not-yet-in-sync`. A measured direction carries:
   - `pendingShare` — `{ outcome: 'measured', pendingSharePercent, outcomeCount }`, the share of
