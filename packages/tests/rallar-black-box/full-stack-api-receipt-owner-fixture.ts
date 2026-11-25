@@ -459,8 +459,15 @@ async function generateCompleteReceipt(service: WsQueueBoxServerService): Promis
 
 /** A work row names its effect, a send's beginning with the message it sends; a canonical message row names none. */
 function isSendWorkOf(entry: ResourceEntry, msgId: string): boolean {
-    const effectId: unknown = Reflect.get(JSON.parse(entry.resource), 'effectId');
-    return typeof effectId === 'string' && effectId.startsWith(`${toALOutboundEffectId(['send', msgId])}:`);
+    return decodeWorkEffectId(JSON.parse(entry.resource))?.startsWith(`${toALOutboundEffectId(['send', msgId])}:`) === true;
+}
+
+function decodeWorkEffectId(stored: unknown): string | undefined {
+    if (typeof stored !== 'object' || stored === null) {
+        return undefined;
+    }
+    const effectId = Reflect.get(stored, 'effectId');
+    return typeof effectId === 'string' ? effectId : undefined;
 }
 
 /** A bounded wait: a fact that never happens fails the run loudly, naming it, instead of hanging it. */

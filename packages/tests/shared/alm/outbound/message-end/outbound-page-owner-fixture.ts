@@ -89,8 +89,14 @@ export async function readEndMessageAdmissionRow(
     stores: ALOutboundRuntimeStores<OutboundTestPayload>,
     end: ResourceEntry | undefined
 ): Promise<ResourceEntry | undefined> {
-    const effectId: unknown = end === undefined ? undefined : Reflect.get(Reflect.get(JSON.parse(end.resource), 'payload'), 'admissionEffectId');
-    return typeof effectId === 'string' ? await stores.workQueue.getItem(toALOutboundWorkKey(stores.admissionStore.namespace, effectId)) : undefined;
+    const effectId = end === undefined ? undefined : decodeEndMessageAdmissionEffectId(JSON.parse(end.resource));
+    return effectId === undefined ? undefined : await stores.workQueue.getItem(toALOutboundWorkKey(stores.admissionStore.namespace, effectId));
+}
+
+function decodeEndMessageAdmissionEffectId(stored: unknown): string | undefined {
+    const payload = typeof stored === 'object' && stored !== null ? Reflect.get(stored, 'payload') : undefined;
+    const effectId = typeof payload === 'object' && payload !== null ? Reflect.get(payload, 'admissionEffectId') : undefined;
+    return typeof effectId === 'string' ? effectId : undefined;
 }
 
 /** Hands every commit the tab announced to the owning tab, as the session channel does. */
