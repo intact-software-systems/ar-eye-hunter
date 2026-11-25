@@ -1,4 +1,4 @@
-import { assertRoomGuestSeat, type RoomGuestRequest } from '@shared-server/http/room-guest-request.ts';
+import { resolveRoomGuestSeat, type RoomGuestRequest } from '@shared-server/http/room-guest-request.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { isALControlTypeId } from '@shared/al-contracts/al-control-type-ids.ts';
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -7,16 +7,24 @@ import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { validateJsonMessageSize } from '@shared/api/json-message-validation.ts';
 import { onGroupStateSnapshotChange } from '@shared/repository/group-state-snapshots-repository.ts';
+import { SingleFlight } from '@shared/resilience/single-flight.ts';
 import type { ConnectionContext } from '@shared/websocket/json-web-socket-server.ts';
 import { RoomGuestDeliveryControls } from './room-guest-delivery-controls.ts';
 import { allowsGuestRoomFrame } from './room-guest-frame-policy.ts';
 
 const RECONCILE_MS = 2_000;
+const ROOM_SNAPSHOT_READ = 'room-snapshot';
 
 function readFrame(value: string): ALMessage | undefined {
-    if (validateJsonMessageSize(value, AL_MESSAGE_RESOURCE_LIMITS.envelopeBytes).left) return undefined;
-    try { return decodeALMessageValue(JSON.parse(value)).right; }
-    catch { return undefined; }
+    if (validateJsonMessageSize(value, AL_MESSAGE_RESOURCE_LIMITS.envelopeBytes).left) {
+        return undefined;
+    }
+    try {
+        return decodeALMessageValue(JSON.parse(value)).right;
+    }
+    catch {
+        return undefined;
+    }
 }
 
 export namespace RoomGuestSocket {
@@ -33,11 +41,13 @@ export class RoomGuestSocket {
     private snapshot: GroupSnapshot | undefined;
     private checkedAt = 0;
     private revision = 0;
-    private refreshing: Promise<void> | undefined;
+    private closed = false;
     private stopWatching: (() => void) | undefined;
     private timer: ReturnType<typeof setInterval> | undefined;
     private socket: ConnectionContext.Socket | undefined;
 
+    /** One durable read per socket; each flight answers the room revision it began at. */
+    private readonly reads = new SingleFlight<typeof ROOM_SNAPSHOT_READ, number>();
     private readonly controls: RoomGuestDeliveryControls;
     private readonly guest: RoomGuestRequest;
     private readonly readSnapshot: RoomGuestSocket.Input['readSnapshot'];
@@ -57,36 +67,39 @@ export class RoomGuestSocket {
 
     wrap(socket: ConnectionContext.Socket): ConnectionContext.Socket {
         this.socket = socket;
-        this.stopWatching = onGroupStateSnapshotChange(change => {
-            if (!isSameGroupRef(change.groupRef, this.guest.roomRef)) return;
-            if (change.snapshot) {
-                try {
-                    assertRoomGuestSeat(this.guest, change.snapshot, this.now());
-                    this.snapshot = change.snapshot;
-                }
-                catch {
-                    this.snapshot = undefined;
-                    this.socket?.close(1008, 'Guest membership ended');
-                }
-            } else {
-                this.snapshot = undefined;
+        this.stopWatching = onGroupStateSnapshotChange((change) => {
+            if (!isSameGroupRef(change.groupRef, this.guest.roomRef)) {
+                return;
             }
             this.revision++;
+            if (change.snapshot && !this.seats(change.snapshot)) {
+                this.snapshot = undefined;
+                this.socket?.close(1008, 'Guest membership ended');
+            }
+            else {
+                this.snapshot = change.snapshot;
+            }
             void this.refresh();
         });
         this.timer = setInterval(() => void this.refresh(), RECONCILE_MS / 2);
         return {
-            get readyState() { return socket.readyState; },
+            get readyState() {
+                return socket.readyState;
+            },
             close: (code, reason) => socket.close(code, reason),
-            acceptsOutbound: text => {
+            acceptsOutbound: (text) => {
                 const frame = readFrame(text);
                 return frame !== undefined && this.permits(frame, 'outbound');
             },
-            send: text => {
+            send: (text) => {
                 const frame = readFrame(text);
-                if (!frame || !this.permits(frame, 'outbound')) return 0;
+                if (!frame || !this.permits(frame, 'outbound')) {
+                    return 0;
+                }
                 const written = socket.send(text);
-                if (written !== 0) this.controls.remember('outbound', frame);
+                if (written !== 0) {
+                    this.controls.remember('outbound', frame);
+                }
                 return written;
             }
         };
@@ -94,52 +107,86 @@ export class RoomGuestSocket {
 
     async allowsInbound(data: string): Promise<boolean> {
         const frame = readFrame(data);
-        if (!frame) return false;
-        if (!this.isLive()) await this.refresh();
-        if (!this.permits(frame, 'inbound')) return false;
+        if (!frame) {
+            return false;
+        }
+        if (!this.isLive()) {
+            await this.refresh();
+        }
+        if (!this.permits(frame, 'inbound')) {
+            return false;
+        }
         this.controls.remember('inbound', frame);
         return true;
     }
 
     close(): void {
+        this.closed = true;
         this.revision++;
         this.snapshot = undefined;
-        if (this.timer !== undefined) clearInterval(this.timer);
+        if (this.timer !== undefined) {
+            clearInterval(this.timer);
+        }
         this.stopWatching?.();
         this.socket = undefined;
     }
 
     private permits(frame: ALMessage, direction: 'inbound' | 'outbound'): boolean {
-        if (!this.isLive() || !this.snapshot) return false;
+        if (!this.isLive() || !this.snapshot) {
+            return false;
+        }
         if (!isALControlTypeId(frame.payload.typeId)) {
-            return allowsGuestRoomFrame(frame, { direction, guest: this.guest, snapshot: this.snapshot, now: this.now() });
+            return allowsGuestRoomFrame(frame, {
+                direction,
+                guest: this.guest,
+                snapshot: this.snapshot,
+                now: this.now()
+            });
         }
         return this.controls.permits(frame, direction);
     }
 
     private isLive(): boolean {
-        if (!this.snapshot || this.now() - this.checkedAt >= RECONCILE_MS) return false;
-        try {
-            assertRoomGuestSeat(this.guest, this.snapshot, this.now());
-            return true;
-        } catch { return false; }
+        return this.snapshot !== undefined && this.now() - this.checkedAt < RECONCILE_MS && this.seats(this.snapshot);
     }
 
-    private refresh(): Promise<void> {
-        if (this.refreshing) return this.refreshing;
+    private seats(snapshot: GroupSnapshot): boolean {
+        return resolveRoomGuestSeat(this.guest, snapshot, this.now()) !== 'expired';
+    }
+
+    /**
+     * Settles once a read that began after the latest room change has settled. Callers that wake from the same stale
+     * read join one follow-up read, because the settled flight is forgotten before any caller resumes.
+     */
+    private async refresh(): Promise<void> {
+        let readRevision = await this.reads.run(ROOM_SNAPSHOT_READ, () => this.readAuthorization());
+        while (!this.closed && readRevision !== this.revision) {
+            readRevision = await this.reads.run(ROOM_SNAPSHOT_READ, () => this.readAuthorization());
+        }
+    }
+
+    /** Answers the room revision the read began at; a read from an older revision changes nothing. */
+    private async readAuthorization(): Promise<number> {
         const revision = this.revision;
-        const started = this.now();
-        this.refreshing = this.readSnapshot(this.guest.roomRef).then(snapshot => {
-            if (revision !== this.revision) return;
-            if (snapshot) assertRoomGuestSeat(this.guest, snapshot, this.now());
-            this.snapshot = snapshot;
-            this.checkedAt = started;
-            if (!snapshot) this.socket?.close(1008, 'Guest room access ended');
-        }).catch(() => {
-            if (revision !== this.revision) return;
+        const startedAt = this.now();
+        let snapshot: GroupSnapshot | undefined;
+        try {
+            snapshot = await this.readSnapshot(this.guest.roomRef);
+        }
+        catch {
+            // A failed read says nothing about the seat: the cached authorization ages out and the next refresh retries.
+            return revision;
+        }
+        if (revision !== this.revision) {
+            return revision;
+        }
+        if (!snapshot || !this.seats(snapshot)) {
             this.snapshot = undefined;
-            this.socket?.close(1008, 'Guest room access unavailable');
-        }).finally(() => { this.refreshing = undefined; });
-        return this.refreshing;
+            this.socket?.close(1008, 'Guest room access ended');
+            return revision;
+        }
+        this.snapshot = snapshot;
+        this.checkedAt = startedAt;
+        return revision;
     }
 }

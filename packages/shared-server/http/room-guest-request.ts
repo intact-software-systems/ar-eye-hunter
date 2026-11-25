@@ -1,8 +1,11 @@
-import type { IssuedAuthSession } from '../rallar-system/auth/persistence/auth-session-types.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { roomGuestCredentialExpiresAt, roomGuestAccessMode } from '@shared/api/room-guests/access.ts';
-import { readRoomGuestCredential, ROOM_GUEST_TOKEN_PREFIX } from '../rallar-system/auth/credentials/room-guest-credential.ts';
+import { roomGuestAccessMode, roomGuestCredentialExpiresAt } from '@shared/api/room-guests/access.ts';
+import {
+    readRoomGuestCredential,
+    ROOM_GUEST_TOKEN_PREFIX
+} from '../rallar-system/auth/credentials/room-guest-credential.ts';
+import type { IssuedAuthSession } from '../rallar-system/auth/persistence/auth-session-types.ts';
 import { authenticationRequired, authorizationDenied } from './request-auth-service.ts';
 
 export interface RoomGuestRequest {
@@ -30,11 +33,24 @@ export async function readRoomGuestRequest(
     return guest;
 }
 
-export function assertRoomGuestSeat(guest: RoomGuestRequest, snapshot: GroupSnapshot, nowEpochMs: number): 'room' | 'finish-round' {
-    const member = snapshot.members.find(candidate => candidate.principalId === guest.clientId);
-    const mode = member && isSameGroupRef(snapshot.group, guest.roomRef) && isSameGroupRef(member, guest.roomRef)
+/** The guest's seat in this room snapshot; `expired` when the snapshot no longer seats the guest. */
+export function resolveRoomGuestSeat(
+    guest: RoomGuestRequest,
+    snapshot: GroupSnapshot,
+    nowEpochMs: number
+): 'room' | 'finish-round' | 'expired' {
+    const member = snapshot.members.find((candidate) => candidate.principalId === guest.clientId);
+    return member && isSameGroupRef(snapshot.group, guest.roomRef) && isSameGroupRef(member, guest.roomRef)
         ? roomGuestAccessMode(snapshot.group, member, nowEpochMs)
         : 'expired';
+}
+
+export function assertRoomGuestSeat(
+    guest: RoomGuestRequest,
+    snapshot: GroupSnapshot,
+    nowEpochMs: number
+): 'room' | 'finish-round' {
+    const mode = resolveRoomGuestSeat(guest, snapshot, nowEpochMs);
     if (mode === 'expired') {
         throw authorizationDenied('Guest access to this room has ended.');
     }
@@ -48,15 +64,24 @@ export async function readRoomGuestSession(
     roomRef?: GroupRef
 ): Promise<IssuedAuthSession | undefined> {
     const guest = await readRoomGuestRequest(request, roomRef);
-    if (!guest) return undefined;
+    if (!guest) {
+        return undefined;
+    }
     const snapshot = await readSnapshot(guest.roomRef);
-    if (!snapshot) throw authorizationDenied('Guest room is unavailable.');
+    if (!snapshot) {
+        throw authorizationDenied('Guest room is unavailable.');
+    }
     assertRoomGuestSeat(guest, snapshot, nowEpochMs());
-    const member = snapshot.members.find(member => member.principalId === guest.clientId);
-    if (!member?.guestLease) throw authorizationDenied('Guest membership is unavailable.');
+    const member = snapshot.members.find((member) => member.principalId === guest.clientId);
+    if (!member?.guestLease) {
+        throw authorizationDenied('Guest membership is unavailable.');
+    }
     return {
-        clientId: guest.clientId, sessionId: guest.sessionId, username: guest.clientId,
+        clientId: guest.clientId,
+        sessionId: guest.sessionId,
+        username: guest.clientId,
         accessToken: request.header('authorization')!.slice('Bearer '.length),
-        issuedAtEpochMs: member.guestLease.admittedAtEpochMs, expiresAtEpochMs: roomGuestCredentialExpiresAt(snapshot.group, member)
+        issuedAtEpochMs: member.guestLease.admittedAtEpochMs,
+        expiresAtEpochMs: roomGuestCredentialExpiresAt(snapshot.group, member)
     };
 }
