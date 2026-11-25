@@ -126,6 +126,7 @@ function createBrowserRtcOperations(
         diagnostics: async (options) => await runtimes.diagnostics.read(options),
         refreshIceConfig: input.refreshIceConfig,
         restartIce: async (peerId) => await runtimes.recovery.restartIce(peerId),
+        disconnectPeer: peerId => { input.readMiddleware()?.middleware.webRtcConnectionService.disconnectPeer(peerId); },
         reconnectPeer: async (peerId, options) => await runtimes.recovery.reconnectPeer(peerId, options)
     };
 }

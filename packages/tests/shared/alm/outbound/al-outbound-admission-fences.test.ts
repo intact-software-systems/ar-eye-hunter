@@ -26,7 +26,9 @@ import {
 } from '@shared/alm/open-indexed-db-admission-database.ts';
 import {
     toALOutboundMessageOwnerKey,
-    toALOutboundVersionKey
+    toALOutboundOriginMessageKey,
+    toALOutboundVersionKey,
+    type ALOutboundPendingAckRef
 } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
 import {
     createALOutboundAdmissionStore,
@@ -44,7 +46,11 @@ import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-di
 import { computeALOutboundWorkEntry, toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import type { ALOutboundControlAdmission } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
-import { toALOutboundReadMessageEndBundle } from '@shared/alm/outbound/message-end/to-al-outbound-message-end-bundle.ts';
+import { ALOutboundReceiptAdmission } from '@shared/alm/outbound/control/al-outbound-receipt-admission.ts';
+import {
+    toALOutboundReadCommitFences,
+    toALOutboundReadMessageEndBundle
+} from '@shared/alm/outbound/message-end/to-al-outbound-message-end-bundle.ts';
 import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { readIndexedDbRequest } from '@shared/persistence/indexed-db-request.ts';
@@ -56,6 +62,7 @@ import { createPSqlAdmissionTestStorage } from '../../../shared-server/al-runtim
 import {
     createOutboundCanonicalEntry,
     createOutboundMessage,
+    createServerReceipt,
     readOutboundTestAdmission,
     trackOutboundTestAcks
 } from '../outbound-runtime-test-fixture.ts';
@@ -103,7 +110,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
         expect(await fixture.readAdmissionState()).toBe(before);
     });
 
-    it('names the sender version as the fence of each commit', async () => {
+    it('names the sender version and the version of its message as the fences of each commit', async () => {
         const fixture = await createFenceFixture(storage);
         const bundle = await readOutboundTestAdmission({
             store: fixture.store,
@@ -126,20 +133,28 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
 
         expect(await fixture.store.commitBundle(bundle)).toBe('committed');
 
-        expect(fences).toEqual([toALOutboundVersionKey(FENCE_NAMESPACE, bundle.senderId)]);
+        expect(fences).toEqual([
+            toALOutboundVersionKey(FENCE_NAMESPACE, bundle.senderId),
+            toALOutboundOriginMessageKey({
+                row: 'msg-version',
+                namespace: FENCE_NAMESPACE,
+                originPeerId: bundle.message.originPeerId,
+                msgId: bundle.message.msgId
+            })
+        ]);
     });
 
-    it('rejects a second fence in one commit and writes nothing', async () => {
+    it('writes every fence one commit names, and a fence named again once', async () => {
         const fixture = await createFenceFixture(storage);
-        const before = await fixture.readAdmissionState();
 
-        await expect(fixture.backend.write(async (transaction) => {
+        await fixture.backend.write(async (transaction) => {
             await transaction.setFence(`${FENCE_NAMESPACE}:version:first`, 1);
             await transaction.setFence(`${FENCE_NAMESPACE}:version:first`, 2);
             await transaction.setFence(`${FENCE_NAMESPACE}:version:second`, 1);
-        })).rejects.toThrow('An admission commit is fenced on one row');
+        });
 
-        expect(await fixture.readAdmissionState()).toBe(before);
+        expect(await fixture.backend.read(`${FENCE_NAMESPACE}:version:first`, (value) => value)).toBe(2);
+        expect(await fixture.backend.read(`${FENCE_NAMESPACE}:version:second`, (value) => value)).toBe(1);
     });
 
     it('aborts a moved supersedence observation without a write or a revision bump', async () => {
@@ -207,6 +222,165 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
         });
 
         expect(await control.admit(toDeliveredAck(message, Date.now()), 'peer')).toEqual({ kind: 'pending-control' });
+
+        expect(await fixture.readAdmissionState()).toBe(before);
+    });
+
+    it.each(['control', 'send'] as const)(
+        'commits a control of one message while a %s of another message of its sender lands between its read and its write',
+        async (sibling) => {
+            const fixture = await createFenceFixture(storage);
+            const control = createFenceControlAdmission(fixture);
+            const message = await seedControlObligation(fixture.store);
+            const other = await seedControlObligation(fixture.store);
+            const write = fixture.backend.write.bind(fixture.backend);
+            vi.spyOn(fixture.backend, 'write').mockImplementationOnce(async (operation) => {
+                expect(await commitSiblingOf(fixture, control, { sibling, other })).toBe('committed');
+                return await write(operation);
+            });
+
+            expect(await control.admit(toDeliveredAck(message, Date.now()), 'peer')).toEqual({ kind: 'committed' });
+
+            expect((await fixture.store.readReceiptState(toFenceReceipt(message)))?.ackedPeerIds).toEqual(['peer-1']);
+        }
+    );
+
+    it('commits a server receipt of one message at once while a send of another message of its sender lands before each of its writes', async () => {
+        const fixture = await createFenceFixture(storage);
+        const control = createFenceControlAdmission(fixture);
+        const message = await seedControlObligation(fixture.store, undefined, 'receiver');
+        const receipts = new ALOutboundReceiptAdmission<OutboundTestPayload>({
+            admissionStore: fixture.store,
+            clock: { nowMs: Date.now },
+            settlements: () => {},
+            diagnostics: undefined,
+            pendingControls: control
+        });
+        const write = fixture.backend.write.bind(fixture.backend);
+        let siblingCommitting = false;
+        let siblingsLanded = 0;
+        vi.spyOn(fixture.backend, 'write').mockImplementation(async (operation, executionExpiresAtMs) => {
+            if (!siblingCommitting) {
+                siblingCommitting = true;
+                expect(await commitSiblingOf(fixture, control, { sibling: 'send', other: message })).toBe('committed');
+                siblingCommitting = false;
+                siblingsLanded += 1;
+            }
+            return await write(operation, executionExpiresAtMs);
+        });
+
+        const receipt = createServerReceipt(message, 'admitted', ['peer-1'], {
+            controlMsgId: `receipt-admitted-${message.id.msgId}`,
+            confirmedRecipientPeerIds: ['peer-1']
+        });
+        expect(await receipts.admit(receipt)).toEqual({ kind: 'committed' });
+
+        expect(siblingsLanded).toBe(1);
+        expect((await fixture.store.readReceiptState(toFenceReceipt(message)))?.ackedPeerIds).toEqual(['peer-1']);
+    });
+
+    it('commits a send of one message decided before a control of another message of its sender committed', async () => {
+        const fixture = await createFenceFixture(storage);
+        const control = createFenceControlAdmission(fixture);
+        const message = await seedControlObligation(fixture.store);
+        const send = await readOutboundTestAdmission({
+            store: fixture.store,
+            message: createOutboundMessage('decided-before-the-control'),
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() }
+        });
+
+        expect(await control.admit(toDeliveredAck(message, Date.now()), 'peer')).toEqual({ kind: 'committed' });
+
+        expect(await fixture.store.commitBundle(send)).toBe('committed');
+    });
+
+    it('aborts a control whose message a commit of its sender wrote between its read and its write', async () => {
+        const fixture = await createFenceFixture(storage);
+        const control = createFenceControlAdmission(fixture);
+        const message = await seedControlObligation(fixture.store);
+        const write = fixture.backend.write.bind(fixture.backend);
+        let before = '';
+        vi.spyOn(fixture.backend, 'write').mockImplementationOnce(async (operation) => {
+            expect(await fixture.store.commitOutsideAudience(toFenceReceipt(message), ['peer-1'])).toBe('committed');
+            before = await fixture.readAdmissionState();
+            return await write(operation);
+        });
+
+        expect(await control.admit(toDeliveredAck(message, Date.now()), 'peer')).toEqual({ kind: 'pending-control' });
+
+        expect(await fixture.readAdmissionState()).toBe(before);
+    });
+
+    it('aborts a commit of a message decided before a control of that message committed', async () => {
+        const fixture = await createFenceFixture(storage);
+        const control = createFenceControlAdmission(fixture);
+        const message = await seedControlObligation(fixture.store);
+        const decided = toALOutboundReadMessageEndBundle<OutboundTestPayload>(
+            message,
+            await fixture.store.readRepairMessage(message.id.msgId, (planned) => ({
+                msg: planned,
+                dropReasonCode: undefined,
+                lane: 'durable',
+                preparedMessages: []
+            }))
+        );
+        expect(await control.admit(toDeliveredAck(message, Date.now()), 'peer')).toEqual({ kind: 'committed' });
+        const before = await fixture.readAdmissionState();
+
+        expect(await fixture.store.commitBundle(decided)).toBe('conflict');
+
+        expect(await fixture.readAdmissionState()).toBe(before);
+    });
+
+    it('refuses a bundle that writes a row of another message, and writes nothing', async () => {
+        const fixture = await createFenceFixture(storage);
+        const message = await seedControlObligation(fixture.store);
+        const other = createOutboundMessage('another-message');
+        const bundle = await readOutboundTestAdmission({
+            store: fixture.store,
+            message: other,
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() }
+        });
+        const before = await fixture.readAdmissionState();
+
+        await expect(fixture.store.commitBundle({
+            ...bundle,
+            mutations: [...bundle.mutations, { kind: 'delete-pending-ack', ...toFenceReceipt(message) }]
+        })).rejects.toThrow(`An outbound bundle of ${other.id.msgId} writes a delete-pending-ack row outside its fences`);
+
+        expect(await fixture.readAdmissionState()).toBe(before);
+    });
+
+    it('refuses a bundle without its sender fence that writes a row its sender\'s messages share, and writes nothing', async () => {
+        const fixture = await createFenceFixture(storage);
+        const message = await seedControlObligation(fixture.store);
+        const read = await fixture.store.readRepairMessage(message.id.msgId, (planned) => ({
+            msg: planned,
+            dropReasonCode: undefined,
+            lane: 'durable',
+            preparedMessages: []
+        }));
+        const before = await fixture.readAdmissionState();
+
+        await expect(fixture.store.commitBundle({
+            senderId: message.id.senderId,
+            ...toALOutboundReadCommitFences(toFenceReceipt(message), read),
+            fencesSender: false,
+            mutations: [{
+                kind: 'set-sent-position',
+                namespace: 'ordering-head',
+                trackKey: 'track',
+                recipientPeerId: 'peer-1',
+                seq: 1,
+                expireAtTimestamp: Date.now() + 30_000
+            }],
+            durableEffects: [],
+            endedTimeoutEffectIds: []
+        })).rejects.toThrow(
+            `An outbound bundle of ${message.id.msgId} writes a set-sent-position row outside its fences`
+        );
 
         expect(await fixture.readAdmissionState()).toBe(before);
     });
@@ -315,7 +489,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
         expect((await decideRepair()).verdict).toMatchObject({ kind: 'skipped', reason: 'message-ended' });
     });
 
-    it('a receipt retry decided before the message ended conflicts, and decided again writes no frame and no receipt row', async () => {
+    it('a receipt retry decided before the message ended conflicts, and decided again writes no frame and leaves the kept receipt row as it was', async () => {
         const fixture = await createFenceFixture(storage);
         const message = createOutboundMessage('ended-before-receipt-retry');
         const planner: ALOutboundPlanner<OutboundTestPayload> = (planned) => ({
@@ -363,7 +537,9 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
         for (const effect of decided.bundle!.durableEffects.filter((written) => written.payload.kind === 'send-prepared')) {
             expect(await fixture.backend.workQueue.getItem(toALOutboundWorkKey(FENCE_NAMESPACE, effect.effectId))).toBeUndefined();
         }
-        expect(await fixture.store.readReceiptState({ originPeerId: message.id.senderId, msgId: message.id.msgId })).toBeUndefined();
+        expect(repairRead.pendingAck).toBeDefined();
+        expect(await fixture.store.readReceiptState({ originPeerId: message.id.senderId, msgId: message.id.msgId }))
+            .toEqual(repairRead.pendingAck);
         const again = await decideRetry();
         expect(again.verdict).toMatchObject({ kind: 'skipped', reason: 'message-ended' });
         expect(again.bundle).toBeUndefined();
@@ -484,7 +660,8 @@ function toAdmissionStateFingerprint(rows: readonly AdmissionStateRow[]): string
 /** A committed message the receiver still owes an acknowledgement for: what a control admission needs. */
 async function seedControlObligation(
     store: ALOutboundAdmissionStore<OutboundTestPayload>,
-    ordering?: ALMessage['ordering']
+    ordering?: ALMessage['ordering'],
+    mode: 'hop' | 'receiver' = 'hop'
 ): Promise<ALMessage> {
     const created = createOutboundMessage('control-fence');
     const message = ordering === undefined ? created : { ...created, ordering };
@@ -501,7 +678,7 @@ async function seedControlObligation(
             originPeerId: message.id.senderId,
             snapshot: {
                 msgId: message.id.msgId,
-                mode: 'hop',
+                mode,
                 expectedPeerIds: ['peer-1'],
                 ackedPeerIds: [],
                 outsideAudiencePeerIds: [],
@@ -539,6 +716,36 @@ function toDeliveredAck(message: ALMessage, observedAtMs: number): ALMessage {
     );
 }
 
+function toFenceReceipt(message: ALMessage): ALOutboundPendingAckRef {
+    return { originPeerId: message.id.senderId, msgId: message.id.msgId };
+}
+
+interface FenceSiblingCommit {
+    readonly sibling: 'control' | 'send';
+    /** A committed message of the same sender, whose receipt a sibling control acknowledges. */
+    readonly other: ALMessage;
+}
+
+/** A commit of the sender that writes none of the rows of the message under test: an ACK of another one, or a send. */
+async function commitSiblingOf(
+    fixture: FenceFixture,
+    control: ALOutboundControlAdmission<OutboundTestPayload>,
+    commit: FenceSiblingCommit
+): Promise<'committed' | 'conflict' | 'expired'> {
+    if (commit.sibling === 'control') {
+        const admitted = await control.admit(toDeliveredAck(commit.other, Date.now()), 'peer');
+        return admitted.kind === 'committed' ? 'committed' : 'conflict';
+    }
+    return await fixture.store.commitBundle(
+        await readOutboundTestAdmission({
+            store: fixture.store,
+            message: createOutboundMessage('sibling-send'),
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() }
+        })
+    );
+}
+
 /** The dispatch admission alone: the reads, fences and fallback of a group, without the work engine of an owner. */
 function createFenceDispatchAdmission(fixture: FenceFixture): ALOutboundDispatchAdmission<OutboundTestPayload> {
     const admission = new ALOutboundDispatchAdmission<OutboundTestPayload>({
@@ -547,7 +754,6 @@ function createFenceDispatchAdmission(fixture: FenceFixture): ALOutboundDispatch
         toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
         decodePreparedMessage: decodeOutboundTestPayload,
         clock: { nowMs: Date.now },
-        browserLocks: undefined,
         signAdmittedMessage: undefined,
         diagnostics: undefined,
         settlements: () => {}

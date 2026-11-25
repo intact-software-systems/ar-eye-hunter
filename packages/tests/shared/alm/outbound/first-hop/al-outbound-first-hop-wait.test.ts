@@ -472,6 +472,7 @@ describe('a WS client\'s first-hop wait once its message has ended', () => {
                 msgId: only.id.msgId,
                 stored: read.storedMessage,
                 expectedVersion: read.clientRecord?.version,
+                messageVersion: read.messageVersion,
                 openReceipt: read.pendingAck,
                 firstHopWait: undefined
             }))

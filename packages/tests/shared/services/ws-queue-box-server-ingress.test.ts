@@ -6,12 +6,13 @@ import {
     vi
 } from 'vitest';
 
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALBroadcastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_NACK_TYPE_ID, AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import { decodeALNackPayload, decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
-import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
+import { newALAckControlMessage, newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
+import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import type { ALAdmissionMemoryState } from '@shared/alm/al-admission-backend.ts';
 import { readALInboundMessageOwner } from '@shared/alm/inbound/al-inbound-source-validation.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -21,7 +22,7 @@ import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 import { createIncomingMessage, createRoomMessage, createServerIngressFixture } from './ws-queue-box-server-ingress-fixture.ts';
 import { settleQueueEngine } from './ws-queue-box-server-receipt-fixture.ts';
 
-import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+import { toTestALAckPayload, toTestALNackPayload } from '../../al-control-test-payloads.ts';
 import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
 
 const PENDING_ADMISSION_DENIALS = ['unauthorized', 'membership-fenced', 'not-yet-in-sync'] as const;
@@ -315,7 +316,7 @@ describe('WS server bounded and authorized admission', () => {
                 id: { senderId: 'server' },
                 targets: { mode: 'unicast', toPeerId: 'session-1' },
                 qos: { delivery: { algo: 'best-effort' }, durability: { algo: 'volatile' }, ack: { algo: 'none' } },
-                payload: { typeId: 'al.control.nack.v4' }
+                payload: { typeId: 'al.control.nack.v5' }
             }]);
             expect(decodeALNackPayload(JSON.parse(controls[0].payload.resource))).toMatchObject({
                 fromPeerId: 'server',
@@ -763,3 +764,61 @@ function readReceiptPhases(socket: SimulatedWebSocket, msgId: string): readonly 
         .filter((receipt) => receipt.msgId === msgId)
         .map((receipt) => receipt.phase);
 }
+
+// 6c: only a lane that passes a parent's repair copy down relays a gap NACK for a message that asked for no receipt.
+// The server's inbound lane passes no copy down, so it admits nothing for such a NACK and the server never relays a
+// peer NACK to the client that sent the track.
+describe('a session\'s gap NACK about a client\'s unreceipted ordered room track', () => {
+    const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
+
+    function createUnreceiptedFeedFrame(seq: number): ALMessage {
+        const message = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'session-1',
+            scope: 'room',
+            route: { topicId: 'room.feed', resourceId: `feed-${seq}`, contextId: ROOM.groupId },
+            typeId: 'room.feed.v1',
+            resource: { seq },
+            options: { groupRef: ROOM, reliability: 'at-least-once', ack: 'none', ttlMs: 30_000, ordering: { orderingKey: 'feed', epoch: 1, seq } }
+        });
+        return { ...message, id: { ...message.id, msgId: `feed-${seq}` } };
+    }
+
+    it('is not handled at the server, which relays nothing to the client that sent the track', async () => {
+        const fixture = await createServerIngressFixture();
+        const peer = new SimulatedWebSocket('ws://peer');
+        await peer.open();
+        attachTestWebSocket(fixture.server, new ConnectionContext({ id: 'session-2', socket: peer }));
+        fixture.service.authorizeInboundMessagesWith({
+            sendNacks: false,
+            authorize: async () => ({ authorized: true, roomAudience: { recipientPeerIds: ['session-1', 'session-2'], snapshotVersion: 1 } })
+        });
+        const frame = createUnreceiptedFeedFrame(3);
+        expect((await fixture.service.acceptIncomingMessage(frame, 'session-1')).right?.kind).toBe('admitted');
+        await settleQueueEngine(fixture.engine);
+        const sentBefore = fixture.socket.sent.length;
+        const nack = newALNackControlMessage(
+            { v: 4, msgId: 'session-2-gap', senderId: 'session-2', ts: Date.now(), traceId: frame.id.traceId },
+            toTestALNackPayload({
+                msgId: frame.id.msgId,
+                fromPeerId: 'session-2',
+                toPeerId: 'server',
+                originPeerId: 'session-1',
+                reason: 'gap',
+                orderingKey: toALOrderingTrackKey(frame),
+                expectedSeq: 2,
+                missingRanges: [{ from: 2, to: 2 }],
+                observedAtEpochMs: Date.now()
+            })
+        );
+
+        const accepted = await fixture.service.acceptIncomingMessage(nack, 'session-2');
+        await settleQueueEngine(fixture.engine);
+
+        expect(accepted.right).toEqual({ kind: 'control', handled: false });
+        expect(
+            fixture.socket.sent.slice(sentBefore).map((frameText) => decodePersistedALMessage(frameText).payload.typeId)
+                .filter((typeId) => typeId === AL_CONTROL_NACK_TYPE_ID)
+        ).toEqual([]);
+    });
+});

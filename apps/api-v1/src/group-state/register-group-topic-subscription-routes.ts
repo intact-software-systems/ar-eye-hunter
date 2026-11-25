@@ -1,3 +1,4 @@
+import { requireRoomParticipantSession } from './group-state-route-authorization.ts';
 import type { Hono } from 'hono';
 
 import type { SubscribeGroupTopicRequest, UnsubscribeGroupTopicRequest } from '@shared/api/state-types.ts';
@@ -30,7 +31,7 @@ function registerSubscribeGroupTopicRoute(
         `${GROUP_SESSION_PATH}/subscribe/requests/:requestId`,
         async (context) => {
             try {
-                const authSession = await dependencies.requireApiAuthSession(context.req);
+                const authSession = await requireRoomParticipantSession(context.req, { ...toGroupStateRouteScope(context), groupId: context.req.param('groupId') }, dependencies);
                 const sessionId = context.req.param('sessionId');
                 authorization.assertSelfSession(authSession, sessionId);
                 const receipt = await dependencies.processGroupAppInbox(
@@ -63,7 +64,7 @@ function registerUnsubscribeGroupTopicRoute(
         `${GROUP_SESSION_PATH}/unsubscribe/requests/:requestId`,
         async (context) => {
             try {
-                const authSession = await dependencies.requireApiAuthSession(context.req);
+                const authSession = await requireRoomParticipantSession(context.req, { ...toGroupStateRouteScope(context), groupId: context.req.param('groupId') }, dependencies);
                 const sessionId = context.req.param('sessionId');
                 authorization.assertSelfSession(authSession, sessionId);
                 const receipt = await dependencies.processGroupAppInbox(

@@ -1,3 +1,4 @@
+import type { RoomGuestSocket } from './room-guest-socket.ts';
 import { ConnectionContext, type JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import { replyToSocketClockRequest } from '@shared/websocket/socket-clock.ts';
 import type { WSContext, WSEvents } from 'hono/ws';
@@ -16,11 +17,12 @@ export interface JsonWebSocketConnectionIdentity {
 export function createJsonWebSocketEvents(
     socketServer: JsonWebSocketServer,
     identity: JsonWebSocketConnectionIdentity,
-    clock: { readonly serverPeerId: string; readonly nowEpochMs: () => number; }
+    clock: { readonly serverPeerId: string; readonly nowEpochMs: () => number; readonly guestSocket?: RoomGuestSocket; }
 ): WSEvents<ConnectionContext.Socket> {
+    const guest = clock.guestSocket;
     let connection: ConnectionContext | undefined;
     const toConnection = (ws: WSContext<ConnectionContext.Socket>): ConnectionContext =>
-        new ConnectionContext({ ...identity, socket: toServerSocket(ws) });
+        new ConnectionContext({ ...identity, socket: guest?.wrap(toServerSocket(ws)) ?? toServerSocket(ws) });
     return {
         onOpen: (_event, ws) => {
             connection = toConnection(ws);
@@ -28,7 +30,7 @@ export function createJsonWebSocketEvents(
                 socketServer.dispatchConnectionOpen(connection);
             }
         },
-        onMessage: (event) => {
+        onMessage: async (event, ws) => {
             if (!connection || socketServer.connections.get(connection.id) !== connection) {
                 return;
             }
@@ -36,13 +38,17 @@ export function createJsonWebSocketEvents(
                 ? replyToSocketClockRequest(event.data, clock.serverPeerId, clock.nowEpochMs)
                 : undefined;
             if (reply !== undefined) {
-                connection.socket.send(reply);
+                toServerSocket(ws).send(reply);
                 return;
             }
-            void socketServer.dispatchConnectionMessage(connection, event.data);
+            if (guest && (typeof event.data !== 'string' || !await guest.allowsInbound(event.data))) return;
+            if (socketServer.connections.get(connection.id) === connection) {
+                await socketServer.dispatchConnectionMessage(connection, event.data);
+            }
         },
         onClose: (event, ws) => {
-            socketServer.dispatchConnectionClose(connection ?? toConnection(ws), event.code, event.reason);
+            guest?.close();
+            socketServer.dispatchConnectionClose(connection ?? new ConnectionContext({ ...identity, socket: toServerSocket(ws) }), event.code, event.reason);
         }
     };
 }

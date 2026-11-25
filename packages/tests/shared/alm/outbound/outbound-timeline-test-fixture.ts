@@ -1,4 +1,4 @@
-import { vi } from 'vitest';
+import { onTestFinished, vi } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
@@ -17,7 +17,8 @@ import {
     createDefaultOutboundTestRuntime,
     createDefaultOutboundTestStores,
     createIndexedDbOutboundTestStores,
-    drainOutboundWorkDueNow
+    drainOutboundWorkDueNow,
+    peekOutboundWorkReadyAt
 } from '../outbound-runtime-test-fixture.ts';
 import type { OutboundTestPayload } from '../outbound-test-payload.ts';
 
@@ -136,13 +137,57 @@ export function createReopenableOutboundTestStores(
     return { stores: open(), reopen: open };
 }
 
-/** Moves the fake clock to `atMs` in 25 ms steps, draining the work due at each. */
+/**
+ * Moves the fake clock to `atMs`, stopping at each instant work falls due and draining it there, then at `atMs`.
+ * While a fake timer is pending the queue cannot show when it fires, so the clock steps 25 ms as a timer-driven
+ * timeline would. The loop ends with its test: a timed-out case never moves the next case's clock.
+ */
 export async function advanceOutboundClockTo(page: OutboundTimelinePage, atMs: number): Promise<void> {
-    while (Date.now() < atMs) {
-        vi.setSystemTime(Math.min(Date.now() + OUTBOUND_TIMELINE_STEP_MS, atMs));
+    const lifecycle = readTimelineLifecycle(page);
+    await drainOutboundWorkDueNow(page.runtime, page.stores);
+    while (Date.now() < atMs && !lifecycle.ended) {
+        vi.setSystemTime(await readNextClockStop(page, atMs));
         await drainOutboundWorkDueNow(page.runtime, page.stores);
     }
+}
+
+/** Moves the fake clock to the next instant work falls due, at most to `atMs`, and drains the work due there. */
+export async function advanceOutboundClockToNextDue(page: OutboundTimelinePage, atMs: number): Promise<void> {
+    if (Date.now() < atMs && !readTimelineLifecycle(page).ended) {
+        vi.setSystemTime(await readNextClockStop(page, atMs));
+    }
     await drainOutboundWorkDueNow(page.runtime, page.stores);
+}
+
+/** Whether the test that drives `page` has finished. */
+interface TimelineLifecycle {
+    ended: boolean;
+}
+
+const TIMELINE_LIFECYCLES = new WeakMap<OutboundTimelinePage, TimelineLifecycle>();
+
+/** The lifecycle of `page`'s test, registered once per page, which lives only as long as its test. */
+function readTimelineLifecycle(page: OutboundTimelinePage): TimelineLifecycle {
+    const known = TIMELINE_LIFECYCLES.get(page);
+    if (known !== undefined) {
+        return known;
+    }
+    const lifecycle: TimelineLifecycle = { ended: false };
+    TIMELINE_LIFECYCLES.set(page, lifecycle);
+    onTestFinished(() => {
+        lifecycle.ended = true;
+    });
+    return lifecycle;
+}
+
+/** The next instant the clock stops at: the earliest due work, never now, never past `atMs`. */
+async function readNextClockStop(page: OutboundTimelinePage, atMs: number): Promise<number> {
+    const nowMs = Date.now();
+    if (vi.getTimerCount() > 0) {
+        return Math.min(nowMs + OUTBOUND_TIMELINE_STEP_MS, atMs);
+    }
+    const readyAtMs = await peekOutboundWorkReadyAt(page.stores.workQueue, page.stores.admissionStore.namespace);
+    return Math.min(Math.max(readyAtMs ?? atMs, nowMs + 1), atMs);
 }
 
 /** The payloads of the store's pending work rows that name `msgId`, in key order. */

@@ -15,6 +15,7 @@ import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { readInboundTestDispatchEffect } from '../create-inbound-test-dispatch.ts';
 import {
     createInboundTestAdmission,
@@ -277,6 +278,10 @@ it.each(['page-read', 'reservation'] as const)(
             toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox', Temporal.Now.instant())
         });
         const runtime = new ALInboundMessageRuntime({
+            readUpstreamPeerId: () => undefined,
+            readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+            isRoutedPeerReady: () => false,
+            isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             ...resources,

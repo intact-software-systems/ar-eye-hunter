@@ -144,8 +144,19 @@ const GRANTED_RTC_RELAY_KEYS = ['granted-rtc-relay-only', 'granted-rtc-ordered-r
 
 const GRANTED_RTC_THREE_AGENT_KEYS = [...GRANTED_RTC_ROOM_KEYS, ...GRANTED_RTC_RELAY_KEYS] as const;
 
-/** The rtc-only three-agent cells at the catalog's end: the relay path runs before the two granted relay cells. */
-const RTC_THREE_AGENT_KEYS_IN_ORDER = [...GRANTED_RTC_ROOM_KEYS, 'receipted-relay-path', ...GRANTED_RTC_RELAY_KEYS] as const;
+/** The relay-path cells that hold a gap open until a renewal crossed the relay, in catalog order. */
+const RELAYED_GAP_RENEWAL_KEYS = ['relayed-gap-renewal', 'relayed-unreceipted-gap-renewal'] as const;
+
+/**
+ * The rtc-only three-agent cells at the catalog's end: the relay path runs before the two granted relay cells, and the
+ * two gap renewal cells after them.
+ */
+const RTC_THREE_AGENT_KEYS_IN_ORDER = [
+    ...GRANTED_RTC_ROOM_KEYS,
+    'receipted-relay-path',
+    ...GRANTED_RTC_RELAY_KEYS,
+    ...RELAYED_GAP_RENEWAL_KEYS
+] as const;
 
 /** The granted principal broadcast runs on the same-principal family, beside the audience cells. */
 const GRANTED_RTC_PRINCIPAL_KEY = 'granted-rtc-principal-delivered';
@@ -206,7 +217,8 @@ function isPairScopedMessageWait(match: RallarBlackBoxTestWaitMatch, carrier: Al
     const fields = Object.entries(match.payloadFields ?? {});
     const authoredIds = ALM_CONFORMANCE_ROLES.map((role) => `alm-${carrier}-${key}-${role}-`);
     const authoredSuffixes = ALM_CONFORMANCE_ROLES.map((role) => `-${carrier}-${key}-${role}-`);
-    return (isJsonRecordValue(equals) && (equals.marker === key || equals.marker === `${key}-cues`) && equals.carrier === carrier) ||
+    const markers = [key, `${key}-cues`, `${key}-cancelled`];
+    return (isJsonRecordValue(equals) && markers.includes(String(equals.marker)) && equals.carrier === carrier) ||
         fields.some(([, value]) => value === typeId) ||
         match.contains?.includes(`"typeId":"${typeId}"`) === true ||
         fields.some(([field, value]) => /\.(traceId|requestId)$/u.test(field) && typeof value === 'string' && authoredIds.some((id) => value.startsWith(id))) ||
@@ -354,7 +366,6 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'checkpoint-lag',
         'ordering-resync',
         'cross-carrier-duplicate-rtc-then-ws',
-        'cross-carrier-duplicate-ws-then-rtc',
         'not-yet-in-sync-expires',
         'fallback-within-deadline',
         'receipt-exhausted-fallback',
@@ -528,7 +539,8 @@ describe('alm-conformance recipe family', () => {
             'paced-isolation-lists',
             'repair-exhausted',
             ...GRANTED_RTC_THREE_AGENT_KEYS,
-            'receipted-relay-path'
+            'receipted-relay-path',
+            ...RELAYED_GAP_RENEWAL_KEYS
         ];
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
@@ -861,7 +873,6 @@ describe('alm-conformance recipe family', () => {
             'checkpoint-lag',
             'ordering-resync',
             'cross-carrier-duplicate',
-            'cross-carrier-duplicate',
             'not-yet-in-sync',
             'receipt-exhausted-fallback',
             'no-fallback-after-deadline',
@@ -940,11 +951,14 @@ describe('alm-conformance recipe family', () => {
             // The topic subscription cells, now that a receipted granted send rides rtc.
             ...FOUR_ROLE_KEYS.map(() => ['full']),
             // The receipted relay-path cell, after the granted relay cells.
-            ['full']
+            ['full'],
+            // The gap renewal cells, after the granted relay cells.
+            ...RELAYED_GAP_RENEWAL_KEYS.map(() => ['full'])
         ]);
     });
 
-    it('runs the cross-carrier duplicate in both orders over the fallback carrier only, in the full scope', () => {
+    // ws-then-rtc is unreachable (D56): no carrier admits a message its other carrier still owns, so only rtc-then-ws runs.
+    it('runs the cross-carrier duplicate in rtc-then-ws only, over the fallback carrier only, in the full scope', () => {
         const recipeIds = (carrier: CreateAlmConformanceRecipesInput['carrier']) =>
             toRecipes(
                 createAlmConformanceRecipes(toConformanceInput(carrier))
@@ -954,16 +968,14 @@ describe('alm-conformance recipe family', () => {
 
         expect(recipeIds('rtc-with-ws-fallback')).toEqual([
             'alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-sender',
-            'alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-receiver',
-            'alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-sender',
-            'alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-receiver'
+            'alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-receiver'
         ]);
         expect(recipeIds('rtc')).toEqual([]);
         expect(recipeIds('ws')).toEqual([]);
     });
 
-    it('replays each order\'s first send on the other carrier and never polls the replayed handle', () => {
-        const [rtcThenWs, wsThenRtc] = createAlmConformanceRecipes(toConformanceInput('rtc-with-ws-fallback'))
+    it('replays the first RTC send on WS and never polls the replayed handle', () => {
+        const [rtcThenWs, ...others] = createAlmConformanceRecipes(toConformanceInput('rtc-with-ws-fallback'))
             .filter((scenario) => scenario.scenarioId === 'cross-carrier-duplicate');
         const sendsOf = (scenario: AlmConformanceScenario | undefined) => toSendShapes(scenario?.sender.commands ?? []);
 
@@ -975,16 +987,11 @@ describe('alm-conformance recipe family', () => {
                 handleId: undefined
             }
         ]);
-        expect(sendsOf(wsThenRtc).map((send) => [send.carrier, send.replayOnCarrier?.carrier])).toEqual([
-            ['ws', undefined],
-            [undefined, 'rtc']
-        ]);
-        for (const scenario of [rtcThenWs, wsThenRtc]) {
-            const observed = (scenario?.sender.commands ?? []).flatMap((command) => command.kind === 'messages.observe' ? command.state : []);
-            expect(observed).not.toContain('acknowledged');
-            expect(scenario?.receiver.commands.filter((command) => command.kind === 'messages.received'))
-                .toMatchObject([{ count: 1, absent: false }, { count: 2, absent: true }]);
-        }
+        expect(others).toEqual([]);
+        const observed = (rtcThenWs?.sender.commands ?? []).flatMap((command) => command.kind === 'messages.observe' ? command.state : []);
+        expect(observed).not.toContain('acknowledged');
+        expect(rtcThenWs?.receiver.commands.filter((command) => command.kind === 'messages.received'))
+            .toMatchObject([{ count: 1, absent: false }, { count: 2, absent: true }]);
     });
 
     it('runs ordering-resync over every carrier in the full scope, with its identities distinct per carrier', () => {
@@ -1016,7 +1023,7 @@ describe('alm-conformance recipe family', () => {
                 kind: 'diagnostic',
                 topic: 'rallar.browser.alm.outbound_diagnostics',
                 payloadPath: 'data',
-                contains: '"typeId":"al.control.nack.v4","targetMsgId":"{resultCache.alm-ws-ordering-resync-sender-send-2.value.msgId}",' +
+                contains: '"typeId":"al.control.nack.v5","targetMsgId":"{resultCache.alm-ws-ordering-resync-sender-send-2.value.msgId}",' +
                     '"outcome":"committed"',
                 sinceCommandIdPrefix: 'alm-ws-ordering-resync-sender-'
             },
@@ -1697,15 +1704,13 @@ describe('alm-conformance recipe family', () => {
 
     // S3a (D54): the replay reads the first send's envelope back from IndexedDB, which a volatile send
     // never reaches -- its admission lands in the carrier's memory pair.
-    it('opts the first send of each cross-carrier duplicate into local-outbox, so its replay finds the envelope', () => {
+    it('opts the cross-carrier duplicate\'s first send into local-outbox, so its replay finds the envelope', () => {
         const duplicates = createAlmConformanceRecipes(toConformanceInput('rtc-with-ws-fallback'))
             .filter((scenario) => scenario.scenarioId === 'cross-carrier-duplicate');
 
-        expect(duplicates).toHaveLength(2);
-        for (const scenario of duplicates) {
-            const [first] = scenario.sender.commands.filter((command) => command.kind === 'messages.send');
-            expect(first, scenario.scenarioKey).toMatchObject({ durability: 'local-outbox' });
-        }
+        expect(duplicates).toHaveLength(1);
+        const [first] = duplicates[0]!.sender.commands.filter((command) => command.kind === 'messages.send');
+        expect(first).toMatchObject({ durability: 'local-outbox' });
     });
 
     it('starts every cell that reshapes its room from the reshaped room settled on every page: the owner\'s reshape request leads its formation poll, and every role that sends or waits for a publication applies the head after it and reads its path in force, before its first send or publication wait', () => {
@@ -1745,7 +1750,12 @@ describe('alm-conformance recipe family', () => {
                 }
             }
         }
-        expect(reshaped).toEqual(['rtc receipted-relay-path', 'rtc granted-rtc-relay-only', 'rtc granted-rtc-ordered-relay']);
+        expect(reshaped).toEqual([
+            'rtc receipted-relay-path',
+            'rtc granted-rtc-relay-only',
+            'rtc granted-rtc-ordered-relay',
+            ...RELAYED_GAP_RENEWAL_KEYS.map((key) => `rtc ${key}`)
+        ]);
         expect(unsettled).toEqual([]);
     });
 
@@ -1780,6 +1790,8 @@ describe('alm-conformance recipe family', () => {
             'rtc seeded-loss-stream sender alm-rtc-seeded-loss-stream-sender-loss-arm',
             'rtc buffered-track-drains sender alm-rtc-buffered-track-drains-sender-hold-rtc',
             'rtc granted-rtc-ordered-relay sender alm-rtc-granted-rtc-ordered-relay-sender-hold-rtc',
+            // Both origins of each gap renewal cell hold their own second send.
+            ...RELAYED_GAP_RENEWAL_KEYS.flatMap((key) => ['sender', 'receiver'].map((role) => `rtc ${key} ${role} alm-rtc-${key}-${role}-hold-rtc`)),
             'rtc-with-ws-fallback ordering-resync sender alm-rtc-with-ws-fallback-ordering-resync-sender-hold-rtc',
             'rtc-with-ws-fallback ordering-resync sender alm-rtc-with-ws-fallback-ordering-resync-sender-hold-ws'
         ]);

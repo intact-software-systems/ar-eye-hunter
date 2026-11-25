@@ -5,6 +5,7 @@ import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import {
     planALMessageHandling,
     type ALDurabilityAlgo,
@@ -208,6 +209,12 @@ export interface CreateInboundTestRuntimeInput {
     readonly orderingObserver?: ALOrderingObserver;
     /** Absent leaves the runtime's own default random source. */
     readonly random?: () => number;
+    /** Absent, no upstream peer resolves, as on a runtime with no overlay. */
+    readonly readUpstreamPeerId?: ALInboundMessageRuntime.Dependencies['readUpstreamPeerId'];
+    /** Absent, the lane routes over no layout, as a WS lane does. */
+    readonly isRoutedPeerReady?: ALInboundMessageRuntime.Dependencies['isRoutedPeerReady'];
+    /** Absent, every gap NACK is granted the wire limit, as on a runtime with no overlay. */
+    readonly readGapNackRelayHops?: ALInboundMessageRuntime.Dependencies['readGapNackRelayHops'];
 }
 
 /** The runtime never owns its engine here: a test drives every round it runs beyond a commit's own. */
@@ -242,6 +249,10 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
         canDispatchMessage: input.canDispatchMessage,
         verifyPublicationProof: input.verifyPublicationProof,
         forwardMessage: input.forwardMessage,
+        readUpstreamPeerId: input.readUpstreamPeerId ?? (() => undefined),
+        readGapNackRelayHops: input.readGapNackRelayHops ?? (() => AL_GAP_NACK_RELAY_HOP_LIMIT),
+        isLayoutChildPeer: () => false,
+        isRoutedPeerReady: input.isRoutedPeerReady ?? (() => false),
         readPendingAdmissionAuthority: input.readPendingAdmissionAuthority,
         onReplayAdmitted: input.onReplayAdmitted,
         dispatchInboxEntry: async (entry) => {
@@ -371,14 +382,24 @@ export async function readInboundTestAdmission(
     const nowMs = Date.now();
     const read = await readInboundTestDecisionSurface(admissionStore, msg, nowMs);
     const plan = planInboundTestMessage(msg, INBOUND_TEST_SOURCE, computeALInboundPlanningObservations(read, false));
-    const facts = readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION);
-    return computeALInboundAdmission({ originAuthenticated: false, readmission: false, read, plan, facts, canForward: false, recordedParentPresent: true });
+    const facts = readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION, () => AL_GAP_NACK_RELAY_HOP_LIMIT);
+    return computeALInboundAdmission({
+        originAuthenticated: false,
+        readmission: false,
+        read,
+        plan,
+        facts,
+        canForward: false,
+        recordedParentPresent: true,
+        retriedCopyNextHopPeerIds: []
+    });
 }
 
 /** The admission the runtime composes, over the caller's own stores, so a pin can drive it directly. */
 export function createInboundTestAdmission(stores: ALInboundRuntimeStores): ALInboundMessageAdmission {
     const admission = new ALInboundMessageAdmission({
         gapRenewalStretch: 1,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
         orderingObserver: 'addressed',
         diagnostics: undefined,
         receiptProofs: CARRIER_AUTHENTICATED_RECEIPT_PROOFS,

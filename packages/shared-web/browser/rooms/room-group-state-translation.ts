@@ -559,6 +559,7 @@ function toRoomUpdateFields(request: UpdateStateGroupBody): UpdateStateGroupBody
         status: request.status,
         joinMode: request.joinMode,
         directoryListing: request.directoryListing,
+        guestInvitationVerifier: request.guestInvitationVerifier,
         maxMembers: request.maxMembers,
         maxSpectators: request.maxSpectators,
         maxSessionsPerMember: request.maxSessionsPerMember,

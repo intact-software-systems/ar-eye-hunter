@@ -1,5 +1,6 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALPeerControlMessage, type ALAckPayload, type ALNackPayload } from '@shared/al-contracts/al-control.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import {
     signALReceiptProof,
     verifyALReceiptProof,
@@ -36,7 +37,7 @@ export type TestALNackFields =
 
 /**
  * Defaults: logicalRecipientPeerId = fromPeerId, originPeerId = toPeerId, observedAtEpochMs 1, proof null, and on a
- * `gap` NACK gapRequestNumber 1.
+ * `gap` NACK gapRequestNumber 1 and the relay hops a leaf grants.
  */
 export function toTestALNackPayload(fields: TestALNackFields): ALNackPayload {
     return {
@@ -44,7 +45,7 @@ export function toTestALNackPayload(fields: TestALNackFields): ALNackPayload {
         originPeerId: fields.toPeerId,
         observedAtEpochMs: 1,
         proof: null,
-        ...(fields.reason === 'gap' ? { gapRequestNumber: 1 } : {}),
+        ...(fields.reason === 'gap' ? { gapRequestNumber: 1, relayHopsLeft: AL_GAP_NACK_RELAY_HOP_LIMIT } : {}),
         ...fields
     };
 }

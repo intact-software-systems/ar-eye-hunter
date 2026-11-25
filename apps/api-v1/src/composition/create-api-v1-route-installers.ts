@@ -1,8 +1,9 @@
-import { registerRoomLobbyReadRoute } from '../room-lobbies/register-room-lobby-read-route.ts';
+import { readRoomGuestSession } from '@shared-server/http/room-guest-request.ts';
 import type { ReadAdminRoomTopologyPlans } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-topology-plans.ts';
 import type { ReadAdminRoomTopologyWork } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-topology-work.ts';
 import type { Hono } from 'hono';
 import { upgradeWebSocket } from 'hono/bun';
+import { registerRoomLobbyReadRoute } from '../room-lobbies/register-room-lobby-read-route.ts';
 import {
     registerTournamentRoutes,
     type TournamentRouteDependencies
@@ -86,9 +87,11 @@ export interface ApiV1RouteInstallerTopology {
     readonly topologyQuery: graphTopologyRoutes.GraphTopologyRouteQuery;
     readonly topologyPlanning: graphTopologyRoutes.GraphTopologyRoutePlanning;
     readonly adminClientIds: readonly string[];
-    readonly groupStateRepository: Pick<ApiV1TopologyServices['groupStateRepository'], 'findLobbyCommitmentEntry' | 'readLobbyOccupancy'> & Readonly<{
-        readLifecyclePolicy: graphTopologyRoutes.GraphTopologyRouteDependencies['readLifecyclePolicy'];
-    }>;
+    readonly groupStateRepository:
+        & Pick<ApiV1TopologyServices['groupStateRepository'], 'findLobbyCommitmentEntry' | 'readLobbyOccupancy'>
+        & Readonly<{
+            readLifecyclePolicy: graphTopologyRoutes.GraphTopologyRouteDependencies['readLifecyclePolicy'];
+        }>;
     readonly readPlannedLayoutFingerprint:
         graphTopologyRoutes.GraphTopologyRouteDependencies['readPlannedLayoutFingerprint'];
 }
@@ -247,6 +250,7 @@ function createApiV1WsRouteInstaller<
         wsRoutes.registerWsRoutes(app, {
             serverPeerId: input.publicConfiguration.clockPeerId ?? input.publicConfiguration.serverPeerId,
             socketServer: input.runtime.wsQBoxServerService.socket,
+            readGuestRoom: (ref) => input.runtime.groupsRepository.readSnapshot(ref),
             appClientInboxService: input.runtime.appClientInboxService,
             readWsConnectTicket: (ticketDigest) =>
                 operations.readWsConnectTicket(ticketDigest, input.runtime.authSessionRepository),
@@ -262,7 +266,14 @@ function registerApiV1StateRoutes<
     Topology extends ApiV1RouteInstallerTopology,
 >(app: Hono, construction: ApiV1RouteConstruction<Runtime, Topology>): void {
     const { input, requireSession, snapshots } = construction;
+    const requireTransportSession = async (request: ApiV1RouteAuthRequest) =>
+        await readRoomGuestSession({
+            request,
+            readSnapshot: (ref) => input.runtime.groupsRepository.readSnapshot(ref),
+            nowEpochMs: input.nowEpochMs
+        }) ?? await requireSession(request);
     configRoutes.registerConfigRoutes(app, {
+        requireTransportSession,
         requireApiAuthSession: requireSession,
         now: input.nowEpochMs,
         createTokenId: input.createTokenId,
@@ -274,7 +285,7 @@ function registerApiV1StateRoutes<
         publicConfiguration: input.publicConfiguration
     });
     iceRoutes.registerIceRoutes(app, {
-        requireApiAuthSession: requireSession,
+        requireApiAuthSession: requireTransportSession,
         configuration: input.ice,
         nowEpochMs: input.nowEpochMs
     });

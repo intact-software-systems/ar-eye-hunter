@@ -22,8 +22,8 @@ import { computeALInboundWorkEntry, type ALInboundDurableEffectWrite } from './a
 import { toALForwardedReceiptControlMessage } from './control/to-al-forwarded-receipt-control-message.ts';
 import { isALInboundMessageRetainingWork } from './gap-renewal/compute-al-inbound-gap-renewal.ts';
 import {
-    isALInboundCountedSelf,
-    isALInboundRecipientReceiptIntent
+    isALInboundRecipientReceiptIntent,
+    resolveALInboundReceiptStanding
 } from './receipt-proof/is-al-inbound-recipient-receipt.ts';
 
 export interface ALInboundEffectPreparationDependencies {
@@ -36,6 +36,11 @@ export interface ALInboundEffectFacts {
     readonly selfPeerId: string;
     readonly observedAtEpochMs: number;
     readonly controlIdPrefix: string;
+    /**
+     * Reads the relays a gap NACK about the message may pass from its room's live sessions; called only when a gap NACK
+     * is built, so an admission or release that builds none reads no room.
+     */
+    readonly readGapNackRelayHops: () => number;
 }
 
 export interface PrepareALInboundCommitBundleInput {
@@ -61,15 +66,20 @@ export interface PrepareALInboundDurableEffectInput {
     readonly carrier: ALDeliveryCarrier;
 }
 
-/** Captures shell-owned identity before the pure admission computation. */
+/**
+ * Captures shell-owned identity before the admission computation, and the reader of the room's relay hop grant, which
+ * that computation calls, reading the room's live session count, only when it builds a gap NACK.
+ */
 export function readALInboundEffectFacts(
     nowMs: number,
-    dependencies: ALInboundEffectPreparationDependencies
+    dependencies: ALInboundEffectPreparationDependencies,
+    readGapNackRelayHops: () => number
 ): ALInboundEffectFacts {
     return {
         selfPeerId: dependencies.selfPeerId,
         observedAtEpochMs: nowMs,
-        controlIdPrefix: dependencies.newControlId()
+        controlIdPrefix: dependencies.newControlId(),
+        readGapNackRelayHops
     };
 }
 
@@ -109,7 +119,7 @@ function computeDurableEffects(input: PrepareALInboundCommitBundleInput): readon
     const { read, facts } = input;
     const msg = toPreparedALInboundMessage(read);
     const { traceId, senderId: originPeerId } = msg.id;
-    const countsSelf = isALInboundCountedSelf(msg, toPreparedALInboundPlan(read), facts.selfPeerId);
+    const standing = resolveALInboundReceiptStanding(msg, toPreparedALInboundPlan(read), facts.selfPeerId);
     return input.effects.map((effect, index) => {
         const expireAtTimestamp = effect.expireAtTimestamp ?? read.nowMs + read.retention.durableEffectTtlMs;
         const payload = prepareALInboundDurableEffect({
@@ -131,7 +141,7 @@ function computeDurableEffects(input: PrepareALInboundCommitBundleInput): readon
             expireAtTimestamp,
             payload,
             carrier: effect.carrier,
-            signsForRecipient: isALInboundRecipientReceiptIntent(effect, countsSelf)
+            signsForRecipient: isALInboundRecipientReceiptIntent(effect, standing)
         });
     });
 }
@@ -235,6 +245,7 @@ export function prepareALInboundDurableEffect(input: PrepareALInboundDurableEffe
                     msgId: payload.msgId,
                     reason: payload.reason,
                     ...toALGapRequestNumberField(payload.gapRequestNumber),
+                    ...(payload.reason === 'gap' ? { relayHopsLeft: facts.readGapNackRelayHops() } : {}),
                     observedAtEpochMs: facts.observedAtEpochMs,
                     proof: null
                 })
@@ -326,6 +337,7 @@ function toDeliveryOwnerMutation(
             msg: snapshot.msg,
             plan: snapshot.plan,
             carrier: snapshot.carrier,
+            copyCarriers: snapshot.copyCarriers,
             completesThrough: snapshot.completesThrough,
             delivery: { effectId: effect.effectId }
         },

@@ -229,12 +229,6 @@ and it has no status list.
   nothing of the origin's, so its leaf is confirmed only over WS (D759). Next
   step, if wanted: sign every ordinary RTC room send, a classification
   change on the same wire shape.
-- A hop excludes another hop under `hop` and `subtree` (S8-i, D582;
-  pre-existing): an unsigned outside-audience NACK from a next hop that names
-  another owed hop moves it outside the receipt. Closing it needs
-  `fromPeerId === logicalRecipientPeerId` for outside-audience controls under a
-  non-logical receipt; an honest relay never forwards one there. Pinned by a
-  `Limit:` test (S8-ii).
 - `toSafeAck` in
   `apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts` is a
   hand-written ACK shape rule beside the codec's (S8-i). Since S9-i its status,
@@ -285,39 +279,48 @@ and it has no status list.
   among forwarded words; and a history flood can evict the control that
   recorded a recipient outside (a forged hop-end records it from the ACK
   history, where any 256 later child ACKs, honest ones included, evict it),
-  after which the recipient alone decides and its
-  later true control is refused at that relay at first arrival. The origin
-  counts only what verifies. Relay-side verification, which S8ii-R1 declined,
-  would close it at one verify per forwarded control per level.
-- The statement rule's pairwise encode (S8-ii, D606): a child that reuses one
-  well-formed proof over up to 256 altered contents makes a relay encode the
-  signed content on every pair it compares (about 90 ms per retried copy's
-  grouping against about 1.2 ms). Encode each control's signed content once per
-  scan or grouping (measured about 1.05 ms for the grouping when memoized), in
-  `packages/shared/alm/inbound/control/is-al-same-receipt-statement.ts` and
-  `toFirstOfEachStatement`
-  (`packages/shared/alm/inbound/admission/compute-al-inbound-duplicate-changes.ts`).
-- A permissive fallback at a relay for an outside entry no stored control
-  explains (S8-ii, D601): forward rather than refuse when the history no longer
-  holds any control that recorded the recipient outside. The origin already
-  refuses a confirmation for a recipient it holds outside, in every mode, so
-  this would remove the flood's third face at no cost in truth.
+  after which no recorder is left, so the relay forwards the recipient's later
+  controls and the origin judges them (D705): a stale one costs one more
+  forward the origin refuses. The origin counts only what verifies.
+  Relay-side verification, which S8ii-R1 declined, would close the rest at one
+  verify per forwarded control per level.
 - The dequeue settle's residual risk (S8-ii, D597): a dequeue can re-plan a
   message that was already sent (a reload between the dispatch commit and the
   queue row's completion), and a re-plan refused `unsupported` there now ends
   the handle `rejected`. The keyless freeze and the room limit cannot newly
   refuse one, since the audience and its keys freeze once; no concrete trigger
   was found for the other five `unsupported` producers.
-- A same-statement dedupe at a relay or at the origin reads `unauthorized` in
-  the diagnostics (S8-ii): a recipient's redundant own NACK after its own
-  hop-end, refused as the same statement, shows as a `rejected` row (the 303
-  rejected `not-subscribed` NACK rows of one full-scope RTC run all come from
-  `granted-rtc-ordered-relay`'s probe loop); a `duplicate` label would read
-  truer.
-- `toFirstOfEachStatement`
-  (`packages/shared/alm/inbound/admission/compute-al-inbound-duplicate-changes.ts`)
-  is quadratic over the stored controls of a retried copy, up to about 512
-  (S8-ii).
+- A same-statement dedupe at a relay still reads `unauthorized` (S8-ii): the
+  origin's `control-admission` diagnostic reads `duplicate` for an honest
+  repeat since the relay statement rules (D707, "Origin only"), but a relay's
+  own refusal of a recipient's redundant own NACK after its own hop-end, as the
+  same statement, is still its `rejected` verdict (the 303 rejected
+  `not-subscribed` NACK rows of one full-scope RTC run all came from
+  `granted-rtc-ordered-relay`'s probe loop), and the WS server's receipt
+  aggregation refuses a repeated confirmation as a refusal under its guard
+  `already-confirmed`, with no `duplicate` label.
+- The inbound work engine's idle busy poll (found while building the relay
+  statement rules; on `main` at `d70f2f165`): an idle relay's two inbound
+  rotation lanes report ready from rotation progress, not from a row, so its
+  engine runs about 775 passes and 1 550 empty batches a second under real
+  timers after one commit (`read-al-inbound-work-selection.ts`, `readyNow`
+  with `continueScan`). Handed to its own session ("Fix the inbound work
+  engine's idle busy poll", rows D735 to D739); the smallest fix found breaks
+  16 tests that pin the one-page-per-round rotation.
+- An `ack: 'none'` gap NACK a page cannot sign over `rtc` goes unsigned (D728):
+  its own request to the origin is admitted, but a relay's forward of it is
+  refused `missing-proof`, and a relayed one for a recipient the room no longer
+  keys is refused `unknown-key`, so such a leaf behind a relay recovers only
+  through resync or the track's expiry.
+- `apps/api-v1/test/db/native-receiver-receipts.test.ts` ("automatic
+  fourteen-receiver receipts complete through native API WebSockets after held
+  ACK release") times out at 5 s, alone and under `bun test`, at `d70f2f165`
+  and on every head of the relay statement rules; and
+  `concurrent-session-native-admission.test.ts` runs close to its 5 s limit.
+- `packages/tests/shared/alm/inbound-admission-diagnostics.test.ts` ("names the
+  message an ingress committed and the drain that delivered it over
+  indexeddb") failed once in four doubled-load `test:unit:main` runs and passes
+  alone 3 of 3: a load flake.
 - The sum of a role recipe's authored timeouts exceeds the lane's 180 s role
   deadline for 145 of 451 role recipes at `1021898da` (the four-role cells up
   to about 35 minutes) while they run in seconds; the deadline is a guard, and
@@ -368,16 +371,6 @@ and it has no status list.
 - `receipted-relay-path`'s tree poll passed on its first iteration in every
   recorded run and no run recorded a pre-request health read, so the poll is
   not shown to ever wait (S9-ii, D634).
-- `cross-carrier-duplicate-rtc-then-ws` failed once on `main` over
-  `rtc-with-ws-fallback` (receiver `duplicate-outcome-ws`, a wait timeout) and
-  did not reproduce in the branch's fallback runs (S9-ii). In that run the
-  receiver's `admission-outcome` reads the WS copy `committed` / `admitted` and,
-  3 ms later, the RTC copy `not-handled` / `duplicate`: an arrival-order race
-  between the two carriers' copies, against the cell's premise that the RTC
-  copy commits first
-  (`packages/shared-test/rallar-bb-test/conformance/alm/scenarios/cross-carrier-duplicate.ts`).
-  Why the WS copy overtook the RTC one is unexplained; waits on a reproduction
-  that records both copies' arrival times.
 - `CLAUDE.md`'s lane table lists for `postgres-integration` neither the
   view-push and ordering proofs nor the group-delta and auth-logout cluster
   proofs (S9-ii, D636); the file is project instructions, the maintainer's to
@@ -470,11 +463,6 @@ and it has no status list.
 - Ordered subscription history (the addendum's later outcome after Slice 4):
   a latest-state snapshot with a fenced live cursor, and an authorized replay
   of retained history; Slice 4 delivers live entry and omissions only (D526).
-- Relayed gap repair for `ack: 'none'` ordered tracks (S4-ii, D534): a relay
-  keeps a row only for a receipted send, so it has nothing to forward a child's
-  gap NACK from, and an `ack: 'none'` ordered track behind a relay
-  stalls until resync or expiry; it needs a relay surface that holds the
-  forward without a receipt row.
 - A browser-lane reload witness for the restart proof (S4-ii, D537): the
   minted sequence's continuation across a reload is proven over the reopened
   IndexedDB store (`rtc-durable-owner-recovery.test.ts`), not by an
@@ -747,8 +735,10 @@ and it has no status list.
 - What a sender writes is not observable from a lane snapshot: whether an
   ACK-timeout retry or a given repair commit wrote a frame, which repairs were
   renewals or first-hop resends (a first-hop resend commits with origin
-  `repair`, no diagnostic names the wait, and the `control-admission`
-  diagnostic carries no `gapRequestNumber`; D683), and how many frames left a
+  `repair` and no diagnostic names the wait, D683; since D730 the
+  `control-admission` diagnostic names a gap NACK's request number, sender and
+  recipient, so an admitted renewal is observable, not the frame its repair
+  wrote), and how many frames left a
   page after a hold, since the receiver refuses a duplicate (D691). Part C's
   cell statement reads commits for that reason (D687). The lane needs a
   frame-written signal to say more.
@@ -806,12 +796,6 @@ and it has no status list.
 - A kept row polls the room authorizer every 50 ms while the room view is
   behind, and its replay does not read the sender's connection again (the
   held-send design's non-goals, D696).
-- A room member that never received a message can send an ACK the server
-  counts before the message was delivered. It belongs with the relay statement
-  rules (part C). It shows too in a send kept after a lost race whose captured
-  audience has left: an ACK from a recipient never sent the frame is counted
-  and draws `complete` (a characterization in `ws-kept-send-receipt.test.ts`,
-  D701).
 - A replay hand-over (`onReplayAdmitted`) that rejects skips
   `recordReplayedAdmission` and `commitWork`: the message's diagnostic records
   the retry's `duplicate`, never `admitted`, and the delivery it wrote waits
@@ -843,11 +827,6 @@ and it has no status list.
   (`first-hop/al-outbound-first-hop-wait.ts`), which the effect store would not
   write again; no path to it was found (final review, low confidence). No step
   ruled; for the maintainer.
-- Gap renewal holds on direct links only (D680): a WS client and its server in
-  both directions, and `rtc` peers that send to each other directly. A relay
-  forwards a child's gap NACK only while it holds a pending row that waits on
-  that child, and never forwards a repair request. Next step: with the relay
-  statement rules.
 - A first-hop wait can charge an attempt with no frame: a crash between a
   resend's two commits, or a resend whose re-plan drops silently (for example
   `congested` while backpressured), since that dispatch commits nothing (D677).
@@ -869,21 +848,13 @@ and it has no status list.
   recipient without the recipient asking, which spends the recipient's own
   budget (D692). Open decisions: an attempt identity keyed by the receiver
   alone, and whether a relay may spend a recipient's budget.
-- A cancel and a hand-over end later work from memory only
-  (`lane/al-outbound-send-controls.ts`), so a reload forgets them and a durable
-  message resumes; the completion an empty frozen audience states at admission
-  writes no `ended` marker. Both predate the slice (D685). Next step: the
-  durable cancel fact left as a seam (D13), which could write the marker.
-- Over `rtc` a gap request whose revealing message ended unacknowledged is
-  refused at admission: its receipt row is gone, and the requester is admitted
-  by reading it (`is-al-outbound-expected-repair-peer.ts`). It predates the
-  slice and now also follows `repair-exhausted` (D686). Next step: admit the
-  request against the stored row's frozen audience.
 - One frame can follow a message's end: `readSendGuards` is an unfenced read
   before the carrier runs, so an end that lands between the guard and the
-  write does not stop it (the window supersession has; D686). Next step, as
-  the review named it: fence the guard read on the sender version; no step
-  ruled.
+  write does not stop it (the window supersession has; D686). A cancel adds
+  one interleaving of it: its end names a retained admission that another
+  tab's replay is committing, and the replay's send row is reserved before the
+  end row runs (D754). Next step, as the review named it: fence the guard read
+  on the sender version; no step ruled.
 - A superseded `ack-timeout` row is left pending when a dispatch moves its
   receipt's deadline; it fires later, finds no receipt or a moved one, and
   completes, one no-op work item per moved deadline. Predates the slice; the

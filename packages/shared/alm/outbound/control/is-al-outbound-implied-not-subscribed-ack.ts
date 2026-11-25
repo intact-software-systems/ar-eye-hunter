@@ -1,7 +1,7 @@
-import { isALHopCompletionAck, type ALAckPayload } from '../../../al-contracts/al-control.ts';
+import type { ALAckPayload } from '../../../al-contracts/al-control.ts';
 import type { ALAckAlgo } from '../../../al-contracts/al-policy.ts';
-import { isALLogicalReceiptMode } from '../../../al-contracts/validate-al-ack-support.ts';
 import { isALImpliedNotSubscribedNack } from '../../delivery/is-al-implied-not-subscribed-nack.ts';
+import { isALReceiptModeOwnWord } from '../../delivery/is-al-receipt-mode-own-word.ts';
 
 /**
  * Whether the receipt reads this ACK as its recipient's `not-subscribed` NACK. A relay forwards a recipient's hop-end
@@ -13,6 +13,5 @@ export function isALOutboundImpliedNotSubscribedAck(
     ack: ALAckPayload,
     owedRecipientPeerIds: readonly string[]
 ): boolean {
-    return (isALLogicalReceiptMode(mode) || isALHopCompletionAck(ack)) &&
-        isALImpliedNotSubscribedNack(ack, owedRecipientPeerIds);
+    return isALReceiptModeOwnWord(mode, ack) && isALImpliedNotSubscribedNack(ack, owedRecipientPeerIds);
 }

@@ -80,6 +80,8 @@ export function computeALInboundHeldTrackEntry(input: ComputeALInboundHeldTrackE
         nacks: read.nacks,
         controlOwners: read.controlOwners,
         plan,
+        // The end releases buffered copies and admits no duplicate, so it forwards no retried copy.
+        retriedCopyNextHopPeerIds: [],
         retention: read.retention,
         durability: read.durability
     };

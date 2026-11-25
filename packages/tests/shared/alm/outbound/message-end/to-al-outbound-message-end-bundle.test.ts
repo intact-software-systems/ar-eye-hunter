@@ -59,20 +59,26 @@ const FIRST_HOP_WAIT: ALOutboundFirstHopWaitSnapshot = {
 };
 
 describe('the bundle that ends a message', () => {
-    it('ends the open receipt, the repair count, the wait and both timers, and marks the row, under the given fence', () => {
+    it('keeps the open receipt row, ends the repair count, the wait and both timers, and marks the row, under the given fences', () => {
         const bundle = toALOutboundMessageEndBundle({
             senderId: 'sender',
             msgId: 'ending',
             stored: STORED,
             expectedVersion: 7,
+            messageVersion: { msgId: 'ending', version: 3 },
             openReceipt: OPEN_RECEIPT,
             firstHopWait: FIRST_HOP_WAIT
         });
 
         expect(bundle.senderId).toBe('sender');
         expect(bundle.expectedVersion).toBe(7);
+        expect(bundle.message).toEqual({
+            originPeerId: 'sender',
+            msgId: 'ending',
+            expectedVersion: 3,
+            expiresAtMs: STORED.reference.expiresAtMs
+        });
         expect(bundle.mutations).toEqual([
-            { kind: 'delete-pending-ack', originPeerId: 'sender', msgId: 'ending' },
             { kind: 'delete-repair-attempt', msgId: 'ending' },
             { kind: 'end-sent-message', stored: STORED },
             { kind: 'delete-first-hop-wait', msgId: 'ending' }
@@ -84,36 +90,36 @@ describe('the bundle that ends a message', () => {
         expect(bundle.durableEffects).toEqual([]);
     });
 
-    it('with neither an open receipt nor a wait, ends the receipt rows and marks the row, and ends no timer', () => {
+    it('with neither an open receipt nor a wait, ends the repair count and marks the row, and ends no timer', () => {
         const bundle = toALOutboundMessageEndBundle({
             senderId: 'sender',
             msgId: 'ending',
             stored: STORED,
             expectedVersion: undefined,
+            messageVersion: undefined,
             openReceipt: undefined,
             firstHopWait: undefined
         });
 
         expect(bundle.mutations.map((mutation) => mutation.kind)).toEqual([
-            'delete-pending-ack',
             'delete-repair-attempt',
             'end-sent-message'
         ]);
         expect(bundle.endedTimeoutEffectIds).toEqual([]);
     });
 
-    it('for a message the sender holds no row of, ends the receipt, the wait and both timers and marks nothing', () => {
+    it('for a message the sender holds no row of, keeps the receipt row, ends the repair count, the wait and both timers and marks nothing', () => {
         const bundle = toALOutboundMessageEndBundle({
             senderId: 'sender',
             msgId: 'ending',
             stored: undefined,
             expectedVersion: 7,
+            messageVersion: { msgId: 'ending', version: 3 },
             openReceipt: OPEN_RECEIPT,
             firstHopWait: FIRST_HOP_WAIT
         });
 
         expect(bundle.mutations).toEqual([
-            { kind: 'delete-pending-ack', originPeerId: 'sender', msgId: 'ending' },
             { kind: 'delete-repair-attempt', msgId: 'ending' },
             { kind: 'delete-first-hop-wait', msgId: 'ending' }
         ]);

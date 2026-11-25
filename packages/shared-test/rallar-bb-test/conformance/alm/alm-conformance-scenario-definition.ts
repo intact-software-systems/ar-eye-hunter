@@ -113,6 +113,8 @@ export type AlmConformanceScenarioId =
     | 'repair-exhausted'
     | 'receipted-audience'
     | 'receipted-relay-path'
+    | 'relayed-gap-renewal'
+    | 'relayed-unreceipted-gap-renewal'
     | 'reply-correlated'
     | 'reply-first-wins'
     | 'reply-timeout-late'
@@ -313,6 +315,11 @@ interface AlmConformanceScenarioCore {
      * after the run: at least one of them must have reached both of its recipients through one hop.
      */
     readonly relayedReceiptOrigins?: readonly AlmConformanceRole[];
+    /**
+     * Absent when the cell needs no relayed gap renewal. Otherwise the origins whose gap request waits the identity
+     * assessment reads after the run: at least one of them must have admitted the request through a relay.
+     */
+    readonly relayedGapRenewalOrigins?: AlmConformanceRelayedGapRenewalOrigins;
     /** Absent when the sender keeps its page. Otherwise the sync points both roles carry around its one reload. */
     readonly toReloadCheckpoint?: (step: AlmConformanceStepInput) => AlmReloadCheckpoint;
     /** Absent when the successor starts once the owner page ended; otherwise the owner's step it starts after. */
@@ -339,6 +346,12 @@ interface AlmConformanceScenarioCore {
      * adds on top of the ordinary budget.
      */
     readonly toRecipeRunExtensionMs?: (step: AlmConformanceStepInput) => number;
+}
+
+/** The origins of a relayed gap renewal and the request number each waits for from every other page of the cell. */
+export interface AlmConformanceRelayedGapRenewalOrigins {
+    readonly roles: readonly AlmConformanceRole[];
+    readonly requestNumber: number;
 }
 
 export const SMOKE_TAGS: readonly AlmConformanceTag[] = ['smoke', 'full'];

@@ -15,6 +15,7 @@ import type * as RoomGroupStateWorkflowsModule from '@shared-web/browser/rooms/r
 import type * as StateCacheLifecycleModule from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import type * as RefreshStateSnapshotsModule from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
 import type * as StateEventHttpApiModule from '@shared-web/browser/state-read/state-event-http-api.ts';
+import { BrowserRallarWsController } from '@shared-web/browser/websocket/browser-rallar-ws-controller.ts';
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import type * as AuthModule from '@shared/api/auth.ts';
 import type * as ClientStateSnapshotsRepositoryModule from '@shared/repository/client-state-snapshots-repository.ts';
@@ -663,5 +664,27 @@ describe('Rallar WS lifecycle', () => {
             transport: 'ws',
             status: 'aborted'
         });
+    });
+
+    it.each([
+        { end: { kind: 'disconnect' } as const, reason: 'rallar-disconnect' },
+        {
+            end: { kind: 'server-clock-ended', reason: 'Remote clock observation has expired.' } as const,
+            reason: 'server-clock-ended: Remote clock observation has expired.'
+        }
+    ])('names why the connection ended on its disconnected lifecycle event: $end.kind', ({ end, reason }) => {
+        const controller = new BrowserRallarWsController({
+            readMiddleware: () => undefined,
+            readSession: () => undefined,
+            readConnectState: () => 'idle'
+        });
+        const lifecycles: RallarWsLifecycleEvent[] = [];
+        controller.facade.onLifecycle((event) => {
+            lifecycles.push(event);
+        }, { emitCurrent: false });
+
+        controller.disconnected(end);
+
+        expect(lifecycles).toEqual([expect.objectContaining({ kind: 'disconnected', code: 1000, reason, intentional: true })]);
     });
 });

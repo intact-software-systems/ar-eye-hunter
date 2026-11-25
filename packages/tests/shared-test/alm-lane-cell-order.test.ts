@@ -53,7 +53,14 @@ const NO_VALUES = {
     only: undefined,
     skip: undefined
 };
-const TOPOLOGY_RESHAPING_KEYS = ['receipted-relay-path', 'granted-rtc-relay-only', 'granted-rtc-ordered-relay'];
+const TOPOLOGY_RESHAPING_KEYS = [
+    'receipted-relay-path',
+    'granted-rtc-relay-only',
+    'granted-rtc-ordered-relay',
+    'relayed-gap-renewal',
+    'relayed-unreceipted-gap-renewal'
+];
+const RESHAPING_COUNT = TOPOLOGY_RESHAPING_KEYS.length;
 const CATALOG: readonly AlmLaneCatalogCell[] = ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
     createAlmConformanceRecipes(toConformanceInput(carrier)).map(({ scenarioId, scenarioKey, tags, laneFamily }) => ({
         carrier,
@@ -518,26 +525,26 @@ describe('the ALM lane plan', () => {
             resolveAlmLaneCellOrder({
                 scenarios: toFamilyCatalog('three-agent', 'rtc'),
                 order: 'shuffled',
-                seed: 24,
+                seed: 22,
                 only: [],
                 mintSeed: refuseMint
             }).scenarios
         );
         const plan = resolveAlmLanePlan({
-            ...toPlanInput('three-agent', { order: 'shuffled', seed: 24 }),
+            ...toPlanInput('three-agent', { order: 'shuffled', seed: 22 }),
             scenarios: toFamilyCatalog('three-agent', 'rtc')
         });
         const keys = plan.cells.map((cell) => cell.scenarioKey);
 
         expect(unconstrained[0]).toBe('receipted-relay-path');
-        expect(keys.slice(-3).toSorted()).toEqual(TOPOLOGY_RESHAPING_KEYS.toSorted());
-        expect(keys.slice(0, -3)).toEqual(unconstrained.filter((key) => !TOPOLOGY_RESHAPING_KEYS.includes(key)));
-        expect(keys.slice(-3)).toEqual(unconstrained.filter((key) => TOPOLOGY_RESHAPING_KEYS.includes(key)));
+        expect(keys.slice(-RESHAPING_COUNT).toSorted()).toEqual(TOPOLOGY_RESHAPING_KEYS.toSorted());
+        expect(keys.slice(0, -RESHAPING_COUNT)).toEqual(unconstrained.filter((key) => !TOPOLOGY_RESHAPING_KEYS.includes(key)));
+        expect(keys.slice(-RESHAPING_COUNT)).toEqual(unconstrained.filter((key) => TOPOLOGY_RESHAPING_KEYS.includes(key)));
     });
 
     it('a room per cell ignores the constraint', () => {
         const plan = resolveAlmLanePlan({
-            ...toPlanInput('three-agent', { order: 'shuffled', seed: 24, rooms: 'cell' }),
+            ...toPlanInput('three-agent', { order: 'shuffled', seed: 22, rooms: 'cell' }),
             scenarios: toFamilyCatalog('three-agent', 'rtc')
         });
 
@@ -550,7 +557,7 @@ describe('the ALM lane plan', () => {
             .cells.map((cell) => cell.scenarioKey);
 
         expect(keys).toEqual(toKeys(toFamilyCatalog('three-agent', 'rtc')));
-        expect(keys.slice(-3)).toEqual(TOPOLOGY_RESHAPING_KEYS);
+        expect(keys.slice(-RESHAPING_COUNT)).toEqual(TOPOLOGY_RESHAPING_KEYS);
     });
 
     it('names a room of its own per cell, and the family\'s room otherwise', () => {

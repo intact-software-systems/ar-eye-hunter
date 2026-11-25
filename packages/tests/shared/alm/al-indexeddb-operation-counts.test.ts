@@ -230,7 +230,7 @@ describe('outbound work owner IndexedDB scan volume', () => {
 });
 
 describe('outbound default send IndexedDB volume', () => {
-    it('sends one durable message in 10 al-admission and 9 al-work operations', async () => {
+    it('sends one durable message in 11 al-admission and 9 al-work operations', async () => {
         const observer = createCountingIndexedDbOperationObserver();
         // The lane clock stands still, so the send's batch finds the sweep windows the bootstrap spent still closed.
         const laneNowMs = Date.now();
@@ -252,7 +252,10 @@ describe('outbound default send IndexedDB volume', () => {
 
         const counts = observer.getCounts();
         // These figures protect the default send's admission and work I/O budget.
-        expect(counts.byOwner['al-admission'], 'one default send spends 10 al-admission operations today').toBe(10);
+        expect(
+            counts.byOwner['al-admission'],
+            'one default send spends 11 al-admission operations: its decision read reads its message version too'
+        ).toBe(11);
         expect(
             counts.byOwner['al-work'],
             'one default send spends 9 al-work operations: its decision read holds the effect row ' +

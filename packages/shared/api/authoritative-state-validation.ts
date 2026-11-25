@@ -1,3 +1,4 @@
+import { isRoomGuestInvitation, hasValidRoomGuestLease } from './room-guests/invitation.ts';
 import { decodeRoomLobbyPolicy, ROOM_LOBBY_METADATA_KEY } from './room-lobbies/room-lobby-policy.ts';
 import type { ApiJsonValue } from './api-json-value.ts';
 import { toScopedOverlayId } from './api-type-utils.ts';
@@ -415,7 +416,11 @@ export function validateAuthoritativeGroupSnapshot(
     const causal = causalRevision(snapshot.causalRevision, 'GroupSnapshot.causalRevision');
     positiveInteger(causal.groupRevision, 'GroupSnapshot.causalRevision.groupRevision');
     const group = decodeRecord(snapshot.group, 'GroupSnapshot.group');
-    exact(group, GROUP_KEYS, 'GroupSnapshot.group');
+    const hasGuestInvitation = Object.hasOwn(group, 'guestInvitation');
+    exact(group, hasGuestInvitation ? [...GROUP_KEYS, 'guestInvitation'] : GROUP_KEYS, 'GroupSnapshot.group');
+    if (hasGuestInvitation && !isRoomGuestInvitation(group.guestInvitation)) {
+        fail('Room guest invitation is invalid.');
+    }
     const ref = groupRef(group, 'GroupSnapshot.group', scope);
     enumValue(group.status, ['active', 'archived', 'deleted'], 'GroupSnapshot.group.status');
     enumValue(group.kind, ['party', 'room', 'team', 'custom'], 'GroupSnapshot.group.kind');
@@ -906,7 +911,11 @@ function decodeEventPage(
 
 function validateGroupMember(value: WireValue, ref: GroupRef): void {
     const member = decodeRecord(value, 'GroupSnapshot.member');
-    exact(member, GROUP_MEMBER_KEYS, 'GroupSnapshot.member');
+    const hasGuestLease = Object.hasOwn(member, 'guestLease');
+    exact(member, hasGuestLease ? [...GROUP_MEMBER_KEYS, 'guestLease'] : GROUP_MEMBER_KEYS, 'GroupSnapshot.member');
+    if (hasGuestLease && !hasValidRoomGuestLease(member)) {
+        fail('Room guest lease is invalid.');
+    }
     sameGroupRef(member, ref, 'GroupSnapshot.member');
     nonEmptyString(member.principalId, 'GroupSnapshot.member.principalId');
     enumValue(member.role, ['owner', 'admin', 'member', 'spectator'], 'GroupSnapshot.member.role');

@@ -241,7 +241,7 @@ pending admission retained concurrently over both carriers is a value
 outcome, not a thrown corruption: the retained row keeps the first arrival's
 source and carrier.
 
-An ACK is `al.control.ack.v3` and a NACK `al.control.nack.v4`
+An ACK is `al.control.ack.v3` and a NACK `al.control.nack.v5`
 ([`al-control.ts`](../../al-contracts/al-control.ts)): beside its hop
 sender and receiver each names the message's origin (`originPeerId`, the
 message's `senderId`) and the recipient it speaks for
@@ -255,10 +255,12 @@ recipient and, under `receiver` and `leader`, only for a member of the frozen
 audience, the only recipients the origin counts. Two child controls are one
 statement when they name the same recipient and either are one signed
 statement -- both ACKs or both NACKs, one proof identity (`keyId|signature`)
-and the same signed content, compared as the proof's own signing input
-([`isALSameReceiptProofContent`](../../al-contracts/receipt-proof/al-receipt-proof.ts)) --
+and the same signed content, compared as the proof's own signing input,
+which each control's prepared subject encodes at most once
+([`toALReceiptStatementSubject`](./control/is-al-same-receipt-statement.ts)) --
 or both carry `proof: null`, whatever their content, or are both that
-recipient's own word on its own channel (`fromPeerId === logicalRecipientPeerId`)
+recipient's own word on its own channel (`fromPeerId === logicalRecipientPeerId`,
+[`isALOwnWord`](../../al-contracts/receipt-proof/al-receipt-proof.ts))
 ([`isALSameReceiptStatement`](./control/is-al-same-receipt-statement.ts)). So
 above the first relay, where every forward carries the relay's `fromPeerId`,
 the proof and what it signs still tell two statements apart, a copied proof
@@ -343,23 +345,37 @@ for itself, which places it outside the audience as `not-subscribed` does. A rel
 (`not-subscribed`, `before-entry`, `gap` -- the NACKs inbound control admission handles; every other NACK stays its
 outbound owner's) from a child hop its row waits on and for a recipient of the frozen audience it has neither
 recorded outside nor relayed a confirmation for by the same statement. When the history no longer holds any control
-that recorded the recipient outside, the recipient alone decides, as before the statement rule. A non-gap NACK is
+that recorded the recipient outside, no recorder is left: the relay forwards the control and the origin judges it,
+refusing one for a recipient it holds outside. A non-gap NACK is
 refused as past the persistence limits when the row's outside list is full (256) and does not already name its
 recipient, since the list gains a recipient only when it is absent. A `gap` NACK must carry its `orderingKey`,
-`expectedSeq` and `missingRanges` (else it is refused as malformed); the relay writes no row for it and forwards it
-to its parent as the recipient signed it, so the origin repairs that recipient through the relay (S4ii-R3). Only a
-receipted send leaves a relay row, so a gap NACK on an `ack: 'none'` track is not handled at the relay and that
-track stalls until resync or expiry; the leaf's paired `repair` control is not relayed. An outside-audience NACK the
-relay records in the row's `outsideAudiencePeerIds` and in a `nacks` control history beside `acks`
-(`set-control-nacks`, bounded and expired as `acks` is), and forwards to its parent, once per distinct statement;
-its answer to a retried copy forwards again the first of each distinct statement among the stored NACKs and hop-ends
-that named the recipient, a NACK, with the child's own reason, before a hop-end of the same statement. The NACK
-completes no hop, and no confirming ACK for that recipient that is the same statement is admitted after it (PL9,
-PL16). When a not-subscribed recipient's hop-end reaches the relay before its NACK, the relay forwards the hop-end
-and refuses the later NACK: the origin records the recipient outside in either order, but the child's
-reason reaches it only when the NACK comes first. A row stored before `outsideAudiencePeerIds` existed reads none.
-The row stays until it expires, so a child ACK that arrives after completion is still relayed, and a
-retried copy of the message is answered from it
+`expectedSeq` and `missingRanges` (else it is refused as malformed); the relay writes no row for it and forwards it,
+one relay hop lower and otherwise as the recipient signed it, to its current upstream peer, or to the row's parent when
+none resolves, so the origin repairs that recipient through the relay (S4ii-R3). A send
+that asks for no receipt leaves no relay row: on a lane that passes a copy down again (it supplies
+`forwardRetriedCopy`, as the RTC relay's does; the WS server's lane does not, so the server relays no such NACK), the
+relay forwards a child's gap NACK about such a stored message without one, each time it admits it, and records
+nothing (6c). It sends it one relay hop lower to its current upstream peer, or to the peer the message arrived from
+when none resolves. It admits one from a child (one it forwards the message to, or one the accepted layout of the
+message's room names), never that peer, naming
+a recipient of the message's frozen audience, when one is frozen, and the message's own track; whom a NACK about a
+message that froze no audience speaks for the origin judges, by the recipient's signature. The origin answers a repeat
+of a numbered request `duplicate`. A sequence the relay already forwarded and its child lost is
+repaired too: on the same lane, a duplicate of such a message from the peer it first arrived from,
+naming this relay a next hop, is passed down again as a retried forward to the next hops it would go to were it new,
+and a child that holds it reads a duplicate and answers nothing. Nothing tells a repair copy from another copy of the
+parent's, so a parent that replays copies is passed down each time, the exposure the receipted parent-retry path
+already accepts; a copy from any other neighbour goes nowhere. The leaf's paired `repair` control is not relayed. An
+outside-audience NACK the relay records in the row's `outsideAudiencePeerIds` and in a `nacks` control history beside
+`acks` (`set-control-nacks`, bounded and expired as `acks` is), and forwards to its parent, once per distinct
+statement; its answer to a retried copy forwards again the first of each distinct statement among the stored NACKs
+and hop-ends that named the recipient, a NACK, with the child's own reason, before a hop-end of the same statement.
+The NACK completes no hop, and no confirming ACK for that recipient that is the same statement is admitted after it
+(PL9, PL16). When a not-subscribed recipient's hop-end reaches the relay before its NACK, the relay forwards the
+hop-end and refuses the later NACK: the origin records the recipient outside in either order, but the child's reason
+reaches it only when the NACK comes first. A row stored before `outsideAudiencePeerIds` existed reads none. The row
+stays until it expires, so a child ACK that arrives after completion is still relayed, and a retried copy of the
+message is answered from it
 ([`computeALInboundDuplicateChanges`](./admission/compute-al-inbound-duplicate-changes.ts)):
 
 - from the relay's recorded parent, the relay forwards again each child
@@ -391,7 +407,9 @@ retried copy of the message is answered from it
   parent is still present, the relay answers with its own terminal ACK at
   once, so the sibling's row completes whatever the visited exclusion missed
   (R-S2c-ii-8c). The real terminal still reaches the recorded parent;
-- a peer with no relay row sends its own ACK again.
+- a peer with no relay row sends its own ACK again, unless its track still holds the copy's sequence buffered
+  behind a gap: it has delivered nothing yet, so it answers nothing, and its `delivered` goes out on the release, as
+  for the first copy. A relay row's answer needs its own readiness already.
 
 A copy on the other carrier than the message's first admission is answered as
 well, whatever next hops it names: a sender that hands a message from RTC to
@@ -400,11 +418,20 @@ on the carrier the sender left. A peer whose message-owner row records the
 other carrier sends its own ACK again over the carrier the copy came in on
 (R-S3b-1). A peer that holds a relay row does the same, since its own
 delivery is what the other carrier's receipt counts; the ACKs it relayed stay
-on the first carrier (R-S3b-21).
+on the first carrier (R-S3b-21). One rule holds on both carriers: a copy whose sequence its track still holds buffered
+draws no answer on either, so no `delivered` confirms a message before its release. Answering one would complete the
+recipient's statement at its relay and its origin, which then refuse every renewal of the gap that holds the
+message back. The buffered slot records instead every carrier and peer pair that brought a copy (`copyCarriers`: each
+carrier with the peer its copy acknowledges to, the slot's own pair first, each pair once): a copy from a pair the slot
+does not record yet adds it, and the release sends `delivered` to each recorded pair once. A sender that handed the
+message over (D56) holds its receipt on the carrier it moved to, and a parent a reshape gave this peer while the gap
+held holds its own on the same carrier as the first, so each receipt is confirmed once the message is delivered. A
+slot holding `collectionEntries` (256) pairs, the most its decoder reads, records no further pair, whose copy then
+draws no answer at the release.
 
-No retried copy is delivered locally twice. A hop outside the frozen audience
-never reads complete at the origin, so every retry resends to it, bounded by
-the attempt cap.
+No retried copy is delivered locally twice. A next hop outside the frozen audience reads complete at the origin once
+its own terminal hop-end arrives, which confirms no recipient but completes its hop in the origin's hop view, so a
+retry resends into its subtree no more; until then every retry resends to it, bounded by the attempt cap.
 
 **Who may confirm a recipient over RTC.** Over WS a session speaks only for
 itself (S2c-i). Over RTC, under `receiver` and `leader`, a counted recipient (a
@@ -430,15 +457,19 @@ first one the cut of a retried copy is arbitrary among forwarded words; and a
 history flood can evict the control that recorded a recipient outside (a forged
 hop-end records it from the ACK history, where any 256 later child ACKs, honest
 ones included, evict it),
-after which the recipient alone decides, so its later true control is refused
-here at first arrival. That eviction needs only one forged hop-end and 256
+after which no recorder is left, so the relay forwards the recipient's later
+controls and the origin judges them: its true control goes up and is counted,
+and a stale one costs one more forward that the origin refuses. That eviction needs only one forged hop-end and 256
 later child ACKs, honest ones included, and in a room at the RTC room limit the
 cut falls even without a flood, so a few early forged statements can take the
 place of true forwarded words in a re-forward. A child that reuses one
-well-formed proof over many altered contents also makes the relay encode the
-signed content of each pair it compares: about 90 ms per retried copy's
-grouping against about 1.2 ms, bounded by the histories. The origin counts only
-what verifies. The
+well-formed proof over many altered contents makes the relay encode each
+control's signed content once per scan, not once per pair it compares: a
+validation prepares its history and control once for every scan, and a retried
+copy's grouping
+([`toFirstOfEachALReceiptStatement`](./control/is-al-same-receipt-statement.ts))
+prepares each stored control once and compares only within one recipient. The
+origin counts only what verifies. The
 signing runs in
 [`signALInboundReceiptControls`](./receipt-proof/sign-al-inbound-receipt-controls.ts)
 at the four commit sites (the message admission, both ordered-delivery
@@ -452,11 +483,16 @@ counted is read from the message's own receipt, never from the plan that
 refused it, so its refusal NACKs (`not-yet-in-sync` and its siblings, whose
 plan states no receipt) are signed too; never a repair request, a control a
 relay forwards, a `hop` or `subtree` control or anything on `ws`, which carry
-`proof: null`. A composition states it: the RTC overlay `signed`, with the
+`proof: null`. On `rtc` a receiver also signs its gap NACK, and each renewal of
+it, for a message that asks for no receipt: a relay forwards that NACK with the
+proof intact, and its origin charges the repair to the recipient it names, so it
+admits a relayed one only under that recipient's signature. A composition states it: the RTC overlay `signed`, with the
 signer `WebRtcRxStreamerService` builds from the session's publication crypto,
 the WS client and the WS server `carrier-authenticated`. A control whose sign
 fails is left out of the commit, nothing unsigned goes in its place (its
-hop-end included), and the inbound `receipt-sign` diagnostic names it; the data
+hop-end included), except the gap NACK of a message that asks for no receipt,
+which goes unsigned (its origin admits it unsigned only from the recipient
+itself), and the inbound `receipt-sign` diagnostic names it; the data
 rows commit, the parent's row stays open, and the origin's retry completes the
 recipient. A relay whose own terminal ACK fails to sign leaves its hop
 unconfirmed while the receipt completes on its recipients' own words, and signs
@@ -632,6 +668,30 @@ when the lane claims it (a hint names its number exactly when it names a missing
 requests refused `unsupported` on `rtc` and by the server on `ws` until it reloads, and refuses this build's
 symmetrically.
 
+**The relay-hop window.** A gap NACK carries `relayHopsLeft`, the relays it may still pass toward its origin
+("Ordering gaps and resynchronization" below). The NACK moved to `al.control.nack.v5`, refusing
+`al.control.nack.v4` `unsupported`. The proof tag stays `rallar-alm-nack-proof-v2`: the count lies outside the
+signed content, so the signing input is unchanged. A page still running the previous build has every NACK refused
+`unsupported` on `rtc` and by the server on `ws` until it reloads, and refuses this build's NACKs symmetrically. A
+retained `send-control` or `admit-control` row of the previous build that holds a NACK fails strict decoding and is
+dropped once as corrupt when the lane claims it. A relay writes no `nacks` row for a gap NACK, but an origin keeps
+every NACK it admits in its `nacks` history, so a stored `nacks` history row of the previous build that holds a gap
+NACK fails strict decoding until it expires (`controlHistoryTtlMs`, 30 minutes by default, in a browser's IndexedDB
+pair and in the server's PostgreSQL store; the deadline plus the receipt grace in the volatile lane). Nothing is
+migrated and `AL_ADMISSION_SCHEMA_ID` is not bumped.
+
+**The copy-carriers window.** The buffered slot's `copyCarriers` is required: its own pair first, each carrier and
+peer pair once, so one carrier may appear once per peer. No store resets for it, and
+`AL_ADMISSION_SCHEMA_ID` is not bumped: since #652 a different schema identity refuses a returning browser's durable
+store rather than resetting it, and the slot's `carrier` field (#588) gave no precedent for a bump, since #588 bumped
+the identity for the one-inbound-store-per-session namespace it introduced. A buffered-slot row the previous build wrote
+carries no `copyCarriers` and fails strict decoding until the expiry sweep removes it, not merely until it expires:
+both the server's PostgreSQL store and a browser's IndexedDB pair decode a row before they apply its expiry. Its expiry
+is the message's own TTL, or `bufferedMessageTtlMs` (the repository TTL of 60 minutes by default) when it has none.
+Until the sweep runs, every admission on that ordered track, which reads every buffered slot of the track, stalls on
+`ALAdmissionCorruptionError`; other tracks and every other row are untouched. Memory pairs start empty after a reload or
+a restart, so they hold no such row. Nothing is migrated.
+
 **The envelope-version window.** PostgreSQL rows carry no schema identity, so the roster-fence bump
 (D147) made older browser schemas incompatible, which current opening refuses without resetting them.
 The trace bump (D447) moved the envelope from `v: 3` to `v: 4` with a required `id.traceId`. On the
@@ -665,7 +725,7 @@ obligation short-circuits, because the remaining checks read that obligation.
 arrives early inside a window of `AL_MESSAGE_RESOURCE_LIMITS.repairWindow` (256) sequences and at
 most `bufferedMessages` (256) and `bufferedBytes` (1 MiB) per track. An in-window gap is a `gap`
 observation whose `missingRanges` are the inclusive ranges between the contiguous head and the
-buffered set; the planner's NACK (`al.control.nack.v4`) and repair request
+buffered set; the planner's NACK (`al.control.nack.v5`) and repair request
 (`al.control.repair.v3`) carry them, and the sender retransmits them by range. A receiver asks again while a gap
 stands. The admission that reveals a newly missing range writes one `renew-gap` timer row for it
 ([`ALInboundGapRenewal`](./gap-renewal/al-inbound-gap-renewal.ts)), keyed by the track, the range, the next request
@@ -683,12 +743,54 @@ opened at `0` that has delivered nothing ("Entry, omission and witness"). Every 
 wrote, and a burst of later frames arms one row; reports caused by arrivals keep their one number. The rows expire
 with the message (a held start range's live for the track's ordering TTL without retaining its message, "Entry,
 omission and witness"), and on the server's PostgreSQL store an expired row is never claimed and the queue's expiry sweep
-removes it. A durable lane renews after a reload, a volatile lane does not. The renewal goes where the arrival's gap
-NACK goes, so it holds on direct links: a WS client and its server in both directions, and `rtc` peers that send to
-each other directly. A relay forwards a child's gap NACK only while it holds a pending row that waits on that child
-and never forwards a repair request, so a renewal over a relayed `rtc` path reaches the sender only while the relay
-still holds such a row. A sequence past the
-window, or a track at a buffer ceiling, is `resync-required`: the message is not buffered and the
+removes it. A durable lane renews after a reload, a volatile lane does not. A run asks the peer the gap was first
+reported to, which the row records, while the lane still routes over it: on `rtc`, a connected neighbour of the
+layout it replaced while that one is still forwarded over
+([`isRtcRoutedPeerReady`](../../multicast/resolve-rtc-upstream-peer-id.ts)), so during a reshape's overlap the old
+relay, which still forwards to the leaf, is asked. A direct link wins over that: once the accepted layout links the
+leaf to the origin, the run asks the origin, whose copies no longer pass through the old relay. Once the recorded peer
+is gone the run asks the track's current upstream peer, the one connected neighbour the accepted layout routes toward
+the origin ([`resolveALUpstreamPeerId`](../../al-contracts/resolve-al-owned-child-peer-ids.ts)); when none resolves
+(a WS runtime, a layout without an adjacency, the revealing message no longer kept) it asks the recorded peer again.
+Every run arms the next number. The gap NACK carries the repair; a repair request needs no forward. So a renewal
+reaches the origin behind a relay, on an `ack: 'none'` track and after a reshape alike: every relay path below forwards
+the child's gap NACK, and the lane cells `relayed-gap-renewal` and `relayed-unreceipted-gap-renewal` state it over
+`rtc` by the request number the origin's `control-admission` diagnostic names. The row path and 6c take one child rule
+(`isALInboundRelayChild`): a child is a peer the plan its copy went down named, or one the accepted layout of the
+message's room names below it ([`isRtcLayoutChildPeer`](../../multicast/resolve-rtc-upstream-peer-id.ts)). A relay
+forwards a child's gap NACK toward the origin while it holds a pending row that waits on that child; about a stored
+message that asked for no receipt (6c); and from a layout child its row does not wait on, or about a message it holds
+nothing of (6d), whether the NACK is the child's own word or one it relayed for a recipient below it. Every path sends
+it to the relay's current upstream peer, the one connected neighbour the accepted layout routes toward the origin and
+never the sender; when none resolves, to the parent it knows, the row's or on 6c the peer the message arrived from
+(`resolveALInboundGapNackTarget`). A relay that holds nothing of the message reads no room for it, so it passes the
+NACK to the upstream peer its accepted layouts name ([`resolveRtcRelayParent`](../../multicast/resolve-rtc-upstream-peer-id.ts)).
+Relays whose accepted layouts
+disagree during a reshape can pass one NACK round a cycle, so a gap NACK carries a hop limit (ruling 20):
+`relayHopsLeft`, required on a gap and outside the recipient's signature as `fromPeerId` and `toPeerId` are. The
+decoder refuses a count above `AL_GAP_NACK_RELAY_HOP_LIMIT` (255), the wire ceiling: the overlay planner bounds a
+layout's degree, not its depth, so the longest line in a room at the RTC room limit passes that many relays. The leaf
+grants one fewer than the live sessions of the message's room, at most that ceiling (`computeALGapNackRelayHops`), read
+only when it builds its report or a renewal (`readGapNackRelayHops`, passed to the effect facts as a reader, so an
+admission or release that builds no gap NACK reads no room; a WS runtime grants the ceiling): layouts that
+disagree route a NACK along no one layout, so only the room's size bounds its path. Each relay forwards it one lower,
+and never higher than one fewer than its own grant, read by the same rule from the message's room, or, holding nothing
+of the message, from the room whose layout names the sender its child (`computeALRelayedGapNackHops`). A relay's room
+bounds the grant only once its presence also names the child the NACK came from and the peer it forwards it to; with
+no room to read, as on WS, or presence that lags behind any of them, its grant is the ceiling. Presence that names
+them but lags behind relays further up can still grant too few, which costs a request until the next renewal reads
+again. So the room bound holds at every relay whose presence names the NACK's neighbours, whatever count a child
+claims, and
+a cycle ends within the grant's forwards of each copy; a relay refuses a NACK its grant leaves no hop to forward,
+validation alone deciding it, and a duplicate delivery
+of a forward starts a copy of its own, since 6c and 6d record nothing. A relay also refuses a NACK that speaks
+for itself, its own report come back round a cycle, as its own reports leave from its gap run. Whom a relayed NACK
+speaks for the origin judges, by the recipient's signature or its receipt. The forwards of 6c and 6d record nothing, and
+a row is left as it was. The origin ignores the hop count. The origin admits a
+gap NACK such a relay re-sends for a room send once its repair authority planned a repair to the relay, a ready room
+neighbour, and while the receipt still owes the recipient (or, with no receipt, the
+audience names it); the repair copy reaches the relay as a first arrival, which it forwards down its own layout. A
+sequence past the window, or a track at a buffer ceiling, is `resync-required`: the message is not buffered and the
 sender is NACKed. When the admission accepts a message `resync-required`, or
 [`ALInboundOrderedDelivery`](./al-inbound-ordered-delivery.ts) can no longer order a buffered
 release, the runtime hands `{ msg, cursor }` to the optional `onResyncRequired` sink after the

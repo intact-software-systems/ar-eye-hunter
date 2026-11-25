@@ -11,6 +11,7 @@ import { Command } from '@shared/cache/Command.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
+import { ApiHttpError } from '../api/http-error.ts';
 import type { RallarGroupPresencePolicy } from '../session/group-presence-policy.ts';
 import type { RallarRoomJoinPartialFailureError } from './rallar-room-contracts.ts';
 import { readRoomMembershipRevocation } from './read-room-membership-revocation.ts';
@@ -56,6 +57,7 @@ export interface ConnectStateGroupPresenceInput {
 }
 
 export interface JoinStateGroupInput extends ConnectStateGroupPresenceInput {
+    readonly presenceOnly?: boolean;
     readonly intent?: RoomJoinGroupStateFields;
 }
 
@@ -104,6 +106,15 @@ export async function createAndJoinStateGroup(
 }
 
 export async function joinStateGroup(input: JoinStateGroupInput): Promise<GroupSnapshot> {
+    if (input.presenceOnly) {
+        if (input.intent?.participation || input.intent?.inviteToken || input.intent?.joinCode) {
+            throw new TypeError('Resuming room presence requires an existing seat and cannot change its admission.');
+        }
+        input.assertCurrent?.();
+        const result = requireConnectedPresence(await createStateGroupPresenceCommand(input).run());
+        input.assertCurrent?.();
+        return result;
+    }
     const scope = input.scope ?? defaultStateScope();
     const requestId = toApiMutationWorkflowRequestId();
     const request = toJoinGroupStateRequest({
@@ -235,7 +246,10 @@ function createLeavingMembershipCommand(
             });
         }
         catch (error) {
-            if (readRoomMembershipRevocation(error) !== undefined) {
+            if (
+                readRoomMembershipRevocation(error) !== undefined ||
+                (error instanceof ApiHttpError && isEndedGuestSeat(input.authSession, error))
+            ) {
                 return undefined;
             }
             throw error;
@@ -265,7 +279,14 @@ function createLeavingPresenceCommand(
             });
         }
         catch (error) {
-            return tolerateStateWorkflowNotFound(error, undefined);
+            return (error instanceof ApiHttpError && isEndedGuestSeat(input.authSession, error))
+                ? undefined
+                : tolerateStateWorkflowNotFound(error, undefined);
         }
     }, { ...input.policies?.command, errorOnNull: false });
+}
+
+/** A guest can address only its own seat, so a refusal there means the seat ended: a retried leave is complete. */
+function isEndedGuestSeat(authSession: AuthSession | undefined, refusal: ApiHttpError): boolean {
+    return authSession?.guestRoom !== undefined && refusal.status === 403;
 }

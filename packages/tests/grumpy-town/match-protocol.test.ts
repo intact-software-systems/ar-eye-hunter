@@ -1,0 +1,172 @@
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
+import { decodeTownMatchFrame, validateTownMatchFrame } from '../../../apps/grumpy-town/src/match/match-protocol.ts';
+import type { RallarDirectorStatus } from '../../shared-web/browser/director/rallar-director-facade.ts';
+
+const roomRef = { applicationId: 'grumpy-town', workspaceId: 'default', groupId: 'town' };
+const director: RallarDirectorStatus = {
+    roomRef,
+    roomId: 'town',
+    role: 'client',
+    state: 'fresh',
+    isDirector: false,
+    isFresh: true,
+    active: true,
+    freshness: 'fresh',
+    lastHeartbeatAtEpochMs: 1000,
+    nowEpochMs: 1100,
+    appointment: {
+        version: 1,
+        mode: 'appointed-spa',
+        principalId: 'alice',
+        sessionId: 'alice-session',
+        epoch: 3,
+        appointedAtEpochMs: 1000,
+        heartbeatTtlMs: 4000
+    }
+};
+const members = [
+    { id: 'alice', sessionId: 'alice-session', displayName: 'Alice' },
+    { id: 'bob', sessionId: 'bob-session', displayName: 'Bob' }
+];
+const frame = {
+    protocol: 'grumpy-town.match.v1',
+    build: 'grumpy-town-v6',
+    roomRef,
+    epoch: 3,
+    matchId: 'round',
+    sequence: 12,
+    action: { kind: 'controls', x: 1, z: 0, dash: 2 }
+};
+const reception = { roomRef, targetRoomRef: roomRef, director, members, senderId: 'bob-session', matchId: 'round' };
+
+describe('Rallar match protocol admission', () => {
+    it('decodes bounded controls and rejects malformed, oversized and incompatible messages', () => {
+        expect(decodeTownMatchFrame(JSON.stringify(frame)).right).toEqual(frame);
+        for (
+            const invalid of [
+                { ...frame, protocol: 'old' },
+                { ...frame, build: 'old' },
+                { ...frame, build: 'grumpy-town-v1' },
+                { ...frame, build: 'grumpy-town-v2' },
+                { ...frame, build: 'grumpy-town-v3' },
+                { ...frame, build: 'grumpy-town-v5' },
+                { ...frame, epoch: -1 },
+                { ...frame, sequence: 1.5 },
+                { ...frame, roomRef: { groupId: 'town' } },
+                { ...frame, action: { kind: 'controls', x: 2, z: 0, dash: 0 } },
+                { ...frame, action: { kind: 'controls', x: 0, z: 0, dash: -1 } },
+                { ...frame, action: { kind: 'controls', x: 0, z: 0, dash: 0, playerId: 'alice' } }
+            ]
+        ) {
+            expect(decodeTownMatchFrame(JSON.stringify(invalid)).left).toBeDefined();
+        }
+        expect(decodeTownMatchFrame('x'.repeat(300_000)).left).toBeDefined();
+        expect(decodeTownMatchFrame(frame).left).toBeDefined();
+        const ready = { kind: 'ready', ready: true, displayName: 'Bob' };
+        expect(decodeTownMatchFrame(JSON.stringify({ ...frame, action: ready })).right?.action).toEqual(ready);
+        for (
+            const action of [
+                { kind: 'ready', ready: true },
+                { ...ready, displayName: '' },
+                { ...ready, displayName: 'x'.repeat(129) },
+                { ...ready, playerId: 'alice' }
+            ]
+        ) {
+            expect(decodeTownMatchFrame(JSON.stringify({ ...frame, action })).left).toBeDefined();
+        }
+        const recovery = { kind: 'recover', digest: 'a'.repeat(64), checkpointEpoch: 2, proposalSequence: 10 };
+        expect(decodeTownMatchFrame(JSON.stringify({ ...frame, action: recovery })).left).toBeDefined();
+        for (const committed of [false, true]) {
+            const action = { ...recovery, committed };
+            expect(decodeTownMatchFrame(JSON.stringify({ ...frame, action })).right?.action).toEqual(action);
+        }
+    });
+
+    it('accepts bounded host poses only from the current appointed session', () => {
+        const action = {
+            kind: 'poses',
+            tick: 30,
+            players: [{
+                id: 'alice',
+                x: 1,
+                z: -2,
+                vx: 3.6,
+                vz: 0,
+                elapsed: 1,
+                facingX: 1,
+                facingZ: 0,
+                dashTime: 0,
+                cooldown: 0,
+                consumedDash: 0,
+                pranks: 0,
+                clouds: []
+            }]
+        };
+        const decoded = decodeTownMatchFrame(JSON.stringify({ ...frame, action })).right;
+        expect(decoded).toBeDefined();
+        expect(validateTownMatchFrame(decoded!, reception).length).toBeGreaterThan(0);
+        expect(validateTownMatchFrame(decoded!, { ...reception, senderId: 'alice-session' })).toEqual([]);
+        for (
+            const invalid of [
+                { ...action, tick: -1 },
+                { ...action, players: [{ ...action.players[0], cooldown: -1 }] },
+                { ...action, players: [{ ...action.players[0], clouds: Array(9).fill({ id: 1, x: 0, z: 0, age: 0 }) }] },
+                { ...action, players: [{ ...action.players[0], consumedDash: undefined }] },
+                { ...action, players: [] },
+                { ...action, players: Array(5).fill(action.players[0]) },
+                { ...action, players: [{ ...action.players[0], x: 1000 }] },
+                { ...action, players: [{ ...action.players[0], score: 1000 }] }
+            ]
+        ) {
+            expect(decodeTownMatchFrame(JSON.stringify({ ...frame, action: invalid })).left).toBeDefined();
+        }
+    });
+
+    it('binds messages to authenticated sender, complete room scope and fresh server appointment', () => {
+        const decoded = decodeTownMatchFrame(JSON.stringify(frame)).right!;
+        expect(validateTownMatchFrame(decoded, reception)).toEqual([]);
+        for (
+            const invalid of [
+                { ...reception, senderId: 'outsider' },
+                { ...reception, targetRoomRef: undefined },
+                { ...reception, targetRoomRef: { ...roomRef, workspaceId: 'other' } },
+                { ...reception, roomRef: { ...roomRef, applicationId: 'other' } },
+                { ...reception, director: { ...director, isFresh: false } },
+                { ...reception, director: { ...director, appointment: undefined } },
+                { ...reception, director: { ...director, appointment: { ...director.appointment!, epoch: 4 } } },
+                { ...reception, matchId: 'new-round' }
+            ]
+        ) {
+            expect(validateTownMatchFrame(decoded, invalid).length).toBeGreaterThan(0);
+        }
+    });
+
+    it('only accepts proposals and commits from the appointed session, while allowing peer acknowledgements', () => {
+        for (
+            const action of [
+                { kind: 'proposal', digest: 'a'.repeat(64), snapshot: '{}' },
+                { kind: 'commit', digest: 'a'.repeat(64), proposalSequence: 10 }
+            ]
+        ) {
+            const decoded = decodeTownMatchFrame(JSON.stringify({ ...frame, action })).right!;
+            expect(validateTownMatchFrame(decoded, reception).length).toBeGreaterThan(0);
+            expect(validateTownMatchFrame(decoded, { ...reception, senderId: 'alice-session' })).toEqual([]);
+        }
+        const acknowledgement = decodeTownMatchFrame(JSON.stringify({
+            ...frame,
+            action: { kind: 'ack', digest: 'a'.repeat(64), proposalSequence: 10 }
+        })).right!;
+        expect(validateTownMatchFrame(acknowledgement, reception)).toEqual([]);
+        const firstProposal = decodeTownMatchFrame(JSON.stringify({
+            ...frame,
+            action: { kind: 'proposal', digest: 'a'.repeat(64), snapshot: '{}' }
+        })).right!;
+        expect(validateTownMatchFrame(firstProposal, { ...reception, matchId: undefined, senderId: 'alice-session' })).toEqual([]);
+        expect(validateTownMatchFrame(acknowledgement, { ...reception, matchId: undefined }).length).toBeGreaterThan(0);
+    });
+});

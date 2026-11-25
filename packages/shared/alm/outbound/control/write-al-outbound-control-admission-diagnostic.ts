@@ -6,7 +6,7 @@ import {
     type ALOutboundRuntimeDiagnosticsSink
 } from '../al-outbound-message-runtime.ts';
 import { controlTargetMsgId } from '../compute-al-outbound-control-admission.ts';
-import type { ALOutboundControlAdmissionResult } from './al-outbound-control-admission.ts';
+import type { ALOutboundControlAdmissionResult } from './read-al-outbound-recipient-proof.ts';
 
 export interface ALOutboundControlAdmissionDiagnosticInput {
     /** The control message itself: its id is the join key to the inbound `admission-outcome` that routed it. */
@@ -28,13 +28,23 @@ export function writeALOutboundControlAdmissionDiagnostic(
         typeId: control.payload.typeId,
         targetMsgId: controlTargetMsgId(parsed),
         outcome: admitted.kind,
-        reason: admitted.kind === 'rejected' ? admitted.reason : 'none',
+        reason: admitted.kind === 'rejected' || admitted.kind === 'duplicate' ? admitted.reason : 'none',
         // Straight after the reason, so a match on `typeId`, `targetMsgId`, `outcome`, `reason` and then a receipt's
-        // `phase` or a NACK's reason and track in their emitted order finds it; the trace appends after them all.
+        // `phase` or a NACK's reason, track, request number, recipient and sender in their emitted order finds it; the
+        // trace appends after them all.
         ...(parsed.type === 'receipt' ? { phase: parsed.payload.phase } : {}),
         ...(parsed.type === 'nack' ? { nackReason: parsed.payload.reason } : {}),
         ...(parsed.type === 'nack' && parsed.payload.orderingKey !== undefined
             ? { nackOrderingKey: parsed.payload.orderingKey }
+            : {}),
+        ...(parsed.type === 'nack' && parsed.payload.gapRequestNumber !== undefined
+            ? { nackGapRequestNumber: parsed.payload.gapRequestNumber }
+            : {}),
+        ...(parsed.type === 'nack'
+            ? {
+                nackLogicalRecipientPeerId: parsed.payload.logicalRecipientPeerId,
+                nackFromPeerId: parsed.payload.fromPeerId
+            }
             : {}),
         ...(admitted.kind === 'rejected' && admitted.proofRefusal !== undefined
             ? {

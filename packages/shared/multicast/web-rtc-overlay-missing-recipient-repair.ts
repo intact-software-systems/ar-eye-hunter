@@ -66,10 +66,10 @@ interface RtcMissingRecipientRepairInput {
 /**
  * The next hops a retry still owes (D25): a missing recipient that is a direct hop, and every hop whose
  * subtree has not completed, since a missing recipient may sit behind it. A completed hop never gets a copy.
- * A hop outside the frozen audience never reads complete: its terminal ACK confirms no expected recipient,
- * so the origin refuses it and it never enters the ACK history. Over an accepted layout such a hop gets a copy
- * only while its subtree holds a missing recipient; without one every retry resends to it, and the receipt
- * retry budget alone bounds how often.
+ * A next hop outside the frozen audience reads complete once its own terminal ACK arrives: it confirms no expected
+ * recipient, but the origin admits it into the ACK history for the hop view. Until then, over an accepted layout such
+ * a hop gets a copy only while its subtree holds a missing recipient; without one every retry resends to it, and the
+ * receipt retry budget alone bounds how often.
  */
 export function computeMissingRecipientRepair(input: ComputeMissingRecipientRepairInput): OverlayRepairPlan {
     const confirmed = new Set(input.confirmed);

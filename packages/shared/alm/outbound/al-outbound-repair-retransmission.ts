@@ -17,6 +17,7 @@ import type {
 } from './al-outbound-message-runtime.ts';
 import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 import { isALOutboundOwnHopPeer } from './is-al-outbound-own-hop-peer.ts';
+import { toALOutboundReadCommitFences } from './message-end/to-al-outbound-message-end-bundle.ts';
 import {
     toALOutboundRepairGapAttemptIdentity,
     toALOutboundRepairHintEffectId,
@@ -182,7 +183,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
     }
 
     /**
-     * The rest of a hint as one new hint, fenced on the sender's version like every hint commit. A conflict
+     * The rest of a hint as one new hint, fenced on the sender's and the message's versions like every hint commit. A conflict
      * retries the whole execution: its page dispatches are deduplicated by their effect identities.
      */
     private async commitFollowUpRepairHint(msgId: string, request: ALOutboundRepairHint): Promise<void> {
@@ -198,7 +199,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
 
         const status = await this.dependencies.admissionStore.commitBundle({
             senderId: msg.id.senderId,
-            expectedVersion: read.clientRecord?.version,
+            ...toALOutboundReadCommitFences({ originPeerId: msg.id.senderId, msgId }, read),
             mutations: [],
             durableEffects: [{
                 effectId: toALOutboundRepairHintEffectId(msgId, request),

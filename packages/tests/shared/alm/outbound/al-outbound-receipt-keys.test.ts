@@ -89,9 +89,10 @@ describe.each(BACKENDS)('outbound receipt keys over %s', (_name, createStores) =
             complete: true
         });
 
-        const repeat = await control.admit(createRelayAck('r1', 'ack-r1-repeat'), 'peer');
-        expect(repeat.kind).toBe('rejected');
-        expect(repeat.kind === 'rejected' && repeat.reason).toContain('already admitted');
+        expect(await control.admit(createRelayAck('r1', 'ack-r1-repeat'), 'peer')).toEqual({
+            kind: 'duplicate',
+            reason: 'AL control was already admitted; AL acknowledgement confirms a peer the receipt already counted'
+        });
     });
 
     it('refuses a receiver-mode ACK whose logical recipient is outside the audience, as a typed rejection', async () => {
@@ -123,9 +124,9 @@ describe.each(BACKENDS)('outbound receipt keys over %s', (_name, createStores) =
         });
 
         expect(await control.admit(createRelayAck('r1', 'ack-r1'), 'peer')).toEqual({ kind: 'committed' });
-        // Not a duplicate (another recipient), but the hop is already counted: refused without a write.
+        // Not a duplicate control (another recipient), but it repeats the hop already counted: refused without a write.
         expect(await control.admit(createRelayAck('r2', 'ack-r2'), 'peer')).toEqual({
-            kind: 'rejected',
+            kind: 'duplicate',
             reason: expect.stringContaining(ALREADY_COUNTED)
         });
 
@@ -142,9 +143,9 @@ describe.each(BACKENDS)('outbound receipt keys over %s', (_name, createStores) =
         const control = createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now, carrier: 'ws', recipientAuthentication: { kind: 'carrier' } });
 
         expect(await control.admit(createRelayAck('r1', 'ack-r1'), 'peer')).toEqual({ kind: 'committed' });
-        // Another relay's ACK for `r1` is not a duplicate by key, but `r1` is already counted.
+        // Another relay's ACK for `r1` is not a duplicate by key, but it repeats `r1`, already counted.
         expect(await control.admit(createRelayAck('r1', 'ack-r1-other-relay', 'other-relay'), 'peer')).toEqual({
-            kind: 'rejected',
+            kind: 'duplicate',
             reason: expect.stringContaining(ALREADY_COUNTED)
         });
         expect(await control.admit(createRelayAck('r2', 'ack-r2'), 'peer')).toEqual({ kind: 'committed' });
@@ -156,6 +157,8 @@ describe.each(BACKENDS)('outbound receipt keys over %s', (_name, createStores) =
             expect(
                 await stores.admissionStore.commitBundle({
                     senderId: originPeerId,
+                    fencesSender: true,
+                    message: { originPeerId, msgId: MSG_ID, expectedVersion: undefined, expiresAtMs: undefined },
                     mutations: [{
                         kind: 'set-pending-ack',
                         originPeerId,

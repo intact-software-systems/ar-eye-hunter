@@ -7,7 +7,7 @@ import {
     type ALNackPayload,
     type ALParsedControlMessage
 } from '@shared/al-contracts/al-control.ts';
-import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT, AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
@@ -24,6 +24,7 @@ import type {
     ALInboundPlanner
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundBufferedCopyCarrier } from '@shared/alm/inbound/al-inbound-ordering-validation.ts';
 import {
     computeALInboundBufferedReleasePlanningObservations,
     computeALInboundPlanningObservations
@@ -72,9 +73,11 @@ const DOWNSTREAM_PEER_IDS = ['downstream-1', 'downstream-2'];
 interface ReceivingPeer {
     readonly planner: ALInboundPlanner;
     readonly canForward: boolean;
+    /** The lane supplies `forwardRetriedCopy`, as the RTC relay's does. */
+    readonly forwardsRetriedCopies: boolean;
 }
 
-const LEAF_PEER: ReceivingPeer = { planner: planInboundTestMessage, canForward: false };
+const LEAF_PEER: ReceivingPeer = { planner: planInboundTestMessage, canForward: false, forwardsRetriedCopies: false };
 const RELAY_PEER: ReceivingPeer = {
     planner: (msg, _source, observations) =>
         planALMessageHandling(msg, {
@@ -85,7 +88,8 @@ const RELAY_PEER: ReceivingPeer = {
             groupMemberPeerIds: [INBOUND_TEST_SELF_PEER_ID, INBOUND_TEST_SENDER_PEER_ID, ...DOWNSTREAM_PEER_IDS],
             overlayNeighborPeerIds: DOWNSTREAM_PEER_IDS
         }),
-    canForward: true
+    canForward: true,
+    forwardsRetriedCopies: true
 };
 
 /** A frozen leaf of the sender's room, planning every copy as the room authorizes it. */
@@ -98,7 +102,45 @@ const FROZEN_LEAF_PEER: ReceivingPeer = {
             connectedPeerIds: [INBOUND_TEST_SENDER_PEER_ID],
             groupMemberPeerIds: [INBOUND_TEST_SELF_PEER_ID, INBOUND_TEST_SENDER_PEER_ID]
         }),
-    canForward: false
+    canForward: false,
+    forwardsRetriedCopies: false
+};
+
+/** The relay of the sender's room that carries its RTC copies to the frozen leaf. */
+const RELAY_PEER_ID = 'relay-1';
+
+/** A frozen leaf whose RTC copies come through the relay and whose WS copies come from the sender. */
+const RELAYED_FROZEN_LEAF_PEER: ReceivingPeer = {
+    planner: (msg, source, observations) =>
+        planALMessageHandling(msg, {
+            ...observations,
+            selfPeerId: INBOUND_TEST_SELF_PEER_ID,
+            fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId,
+            connectedPeerIds: [INBOUND_TEST_SENDER_PEER_ID, RELAY_PEER_ID],
+            groupMemberPeerIds: [INBOUND_TEST_SELF_PEER_ID, INBOUND_TEST_SENDER_PEER_ID, RELAY_PEER_ID]
+        }),
+    canForward: false,
+    forwardsRetriedCopies: false
+};
+
+const RTC_FROM_RELAY: ALInboundMessageRuntime.Source = { kind: 'rtc-peer', peerId: RELAY_PEER_ID };
+
+/** The relay a reshape made the frozen leaf's parent, on the same carrier as the first. */
+const NEW_PARENT_PEER_ID = 'relay-2';
+const RTC_FROM_NEW_PARENT: ALInboundMessageRuntime.Source = { kind: 'rtc-peer', peerId: NEW_PARENT_PEER_ID };
+
+/** The relayed frozen leaf after a reshape: its RTC copies come through either relay. */
+const RESHAPED_FROZEN_LEAF_PEER: ReceivingPeer = {
+    planner: (msg, source, observations) =>
+        planALMessageHandling(msg, {
+            ...observations,
+            selfPeerId: INBOUND_TEST_SELF_PEER_ID,
+            fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId,
+            connectedPeerIds: [INBOUND_TEST_SENDER_PEER_ID, RELAY_PEER_ID, NEW_PARENT_PEER_ID],
+            groupMemberPeerIds: [INBOUND_TEST_SELF_PEER_ID, INBOUND_TEST_SENDER_PEER_ID, RELAY_PEER_ID, NEW_PARENT_PEER_ID]
+        }),
+    canForward: false,
+    forwardsRetriedCopies: false
 };
 
 /** The same leaf holding no active token: its RTC carrier plans a granted copy forward-not-subscribed. */
@@ -109,7 +151,8 @@ const NOT_SUBSCRIBED_OVER_RTC_PEER: ReceivingPeer = {
             ? toRtcPublicationHandlingPlan(plan, Either.ofRight({ delivery: 'forward-not-subscribed' }), INBOUND_TEST_SENDER_PEER_ID)
             : plan;
     },
-    canForward: false
+    canForward: false,
+    forwardsRetriedCopies: false
 };
 
 interface RepeatedAck {
@@ -162,10 +205,10 @@ function createRelayedMessage(msgId: string): ALMessage {
 async function computeArrival(
     store: ALInboundAdmissionStore,
     msg: ALMessage,
-    arrival: Readonly<{ peer: ReceivingPeer; carrier: ALDeliveryCarrier; }>
+    arrival: Readonly<{ peer: ReceivingPeer; carrier: ALDeliveryCarrier; source?: ALInboundMessageRuntime.Source; }>
 ): Promise<ALInboundCommitBundle> {
     const { peer } = arrival;
-    const source = SOURCES[arrival.carrier];
+    const source = arrival.source ?? SOURCES[arrival.carrier];
     const nowMs = Date.now();
     const read = await store.readIncomingMessage({
         selfPeerId: INBOUND_TEST_SELF_PEER_ID,
@@ -176,7 +219,7 @@ async function computeArrival(
         prePlan: peer.planner(msg, source, { nowMs })
     });
     const plan = peer.planner(msg, source, computeALInboundPlanningObservations(read, false));
-    const facts = readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION);
+    const facts = readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION, () => AL_GAP_NACK_RELAY_HOP_LIMIT);
     return computeALInboundAdmission({
         originAuthenticated: false,
         readmission: false,
@@ -184,7 +227,8 @@ async function computeArrival(
         plan,
         facts,
         canForward: peer.canForward,
-        recordedParentPresent: true
+        recordedParentPresent: true,
+        retriedCopyNextHopPeerIds: peer.forwardsRetriedCopies ? read.prePlan.forwarding.nextHopPeerIds : []
     });
 }
 
@@ -227,7 +271,7 @@ async function computeBufferedRelease(
         throw new Error('The buffered copy must still be retained for its release');
     }
     const plan = peer.planner(read.snapshot.msg, read.source, computeALInboundBufferedReleasePlanningObservations(read));
-    const facts = readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION);
+    const facts = readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION, () => AL_GAP_NACK_RELAY_HOP_LIMIT);
     return computeALInboundBufferedRelease({ read, plan, facts });
 }
 
@@ -255,6 +299,11 @@ function createRelayedUnicast(msgId: string, toPeerId: string): ALMessage {
         }
     );
     return { ...message, id: { ...message.id, msgId } };
+}
+
+/** The carriers each buffered-slot write of the bundle records. */
+function toBufferedCopyCarriers(bundle: ALInboundCommitBundle): readonly (readonly ALInboundBufferedCopyCarrier[])[] {
+    return bundle.mutations.flatMap((mutation) => mutation.kind === 'set-buffered' ? [mutation.snapshot.copyCarriers] : []);
 }
 
 function toRepeatedAcks(bundle: ALInboundCommitBundle): readonly RepeatedAck[] {
@@ -350,10 +399,11 @@ describe('a duplicate on the other carrier than its first admission (D56, R-S3b-
     });
 });
 
-// C1: a frozen recipient that buffers its first copy on a gap delivers it on release, so its row says it delivers and
-// a cross-carrier copy confirms it, before the release and after it.
+// C1, restated (one rule, both carriers): a frozen recipient that buffers its first copy on a gap has delivered
+// nothing yet, so no copy draws an answer while it waits, whatever carrier it comes in on; its `delivered` goes out on
+// the release, and a copy after the release confirms it again.
 describe('a frozen recipient whose first copy waits on a gap', () => {
-    it('answers a WS copy delivered while its RTC copy is buffered behind the missing seq', async () => {
+    it('answers nothing to a WS copy while its RTC copy is buffered', async () => {
         const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
         const msg = createFrozenReceiverMessage('buffered-then-ws', 2);
 
@@ -362,7 +412,182 @@ describe('a frozen recipient whose first copy waits on a gap', () => {
         expect(await admissionStore.commitBundle(buffered)).toBe('committed');
 
         const copy = await computeArrival(admissionStore, msg, { peer: FROZEN_LEAF_PEER, carrier: 'ws' });
-        expect(toRepeatedAcks(copy).map((ack) => ack.status)).toEqual(['delivered']);
+        expect(copy.durableEffects).toEqual([]);
+    });
+
+    it('records on the buffered slot every carrier that brought a copy, and the release answers delivered on each', async () => {
+        const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
+        const msg = createFrozenReceiverMessage('buffered-on-both', 2);
+        const buffered = await computeArrival(admissionStore, msg, { peer: FROZEN_LEAF_PEER, carrier: 'rtc' });
+        expect(toBufferedCopyCarriers(buffered)).toEqual([[{ carrier: 'rtc', ackToPeerId: INBOUND_TEST_SENDER_PEER_ID }]]);
+        expect(await admissionStore.commitBundle(buffered)).toBe('committed');
+
+        const wsCopy = await computeArrival(admissionStore, msg, { peer: FROZEN_LEAF_PEER, carrier: 'ws' });
+        expect(wsCopy.durableEffects).toEqual([]);
+        expect(toBufferedCopyCarriers(wsCopy)).toEqual([[
+            { carrier: 'rtc', ackToPeerId: INBOUND_TEST_SENDER_PEER_ID },
+            { carrier: 'ws', ackToPeerId: INBOUND_TEST_SENDER_PEER_ID }
+        ]]);
+        expect(await admissionStore.commitBundle(wsCopy)).toBe('committed');
+        const predecessor = await computeArrival(admissionStore, createFrozenReceiverMessage('buffered-on-both-predecessor', 1), {
+            peer: FROZEN_LEAF_PEER,
+            carrier: 'rtc'
+        });
+        expect(await admissionStore.commitBundle(predecessor)).toBe('committed');
+
+        const release = await computeBufferedRelease(admissionStore, msg, FROZEN_LEAF_PEER);
+
+        expect(toRepeatedAcks(release)).toEqual(['rtc', 'ws'].map((carrier) => ({
+            rowCarrier: carrier,
+            carrier,
+            toPeerId: INBOUND_TEST_SENDER_PEER_ID,
+            ackedMsgId: 'buffered-on-both',
+            status: 'delivered'
+        })));
+    });
+
+    it('answers each carrier on release to the peer that carrier\'s copy came from', async () => {
+        const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
+        const msg = createFrozenReceiverMessage('buffered-two-peers', 2);
+        const fromRelay = { peer: RELAYED_FROZEN_LEAF_PEER, carrier: 'rtc', source: RTC_FROM_RELAY } as const;
+        expect(await admissionStore.commitBundle(await computeArrival(admissionStore, msg, fromRelay))).toBe('committed');
+        const wsCopy = await computeArrival(admissionStore, msg, { peer: RELAYED_FROZEN_LEAF_PEER, carrier: 'ws' });
+        expect(toBufferedCopyCarriers(wsCopy)).toEqual([[
+            { carrier: 'rtc', ackToPeerId: RELAY_PEER_ID },
+            { carrier: 'ws', ackToPeerId: INBOUND_TEST_SENDER_PEER_ID }
+        ]]);
+        expect(await admissionStore.commitBundle(wsCopy)).toBe('committed');
+        const secondWsCopy = await computeArrival(admissionStore, msg, { peer: RELAYED_FROZEN_LEAF_PEER, carrier: 'ws' });
+        expect(toBufferedCopyCarriers(secondWsCopy)).toEqual([]);
+        expect(secondWsCopy.durableEffects).toEqual([]);
+        const predecessor = createFrozenReceiverMessage('buffered-two-peers-predecessor', 1);
+        expect(await admissionStore.commitBundle(await computeArrival(admissionStore, predecessor, fromRelay))).toBe('committed');
+
+        const release = await computeBufferedRelease(admissionStore, msg, RELAYED_FROZEN_LEAF_PEER);
+
+        expect(toRepeatedAcks(release).map(({ carrier, toPeerId, status }) => ({ carrier, toPeerId, status }))).toEqual([
+            { carrier: 'rtc', toPeerId: RELAY_PEER_ID, status: 'delivered' },
+            { carrier: 'ws', toPeerId: INBOUND_TEST_SENDER_PEER_ID, status: 'delivered' }
+        ]);
+    });
+
+    it('records a reshape\'s new parent on the same carrier, and the release answers both parents', async () => {
+        const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
+        const msg = createFrozenReceiverMessage('buffered-reshaped', 2);
+        const fromRelay = { peer: RESHAPED_FROZEN_LEAF_PEER, carrier: 'rtc', source: RTC_FROM_RELAY } as const;
+        const fromNewParent = { peer: RESHAPED_FROZEN_LEAF_PEER, carrier: 'rtc', source: RTC_FROM_NEW_PARENT } as const;
+        expect(await admissionStore.commitBundle(await computeArrival(admissionStore, msg, fromRelay))).toBe('committed');
+
+        const reshaped = await computeArrival(admissionStore, toRetriedHopCopy(msg), fromNewParent);
+        expect(reshaped.durableEffects).toEqual([]);
+        expect(toBufferedCopyCarriers(reshaped)).toEqual([[
+            { carrier: 'rtc', ackToPeerId: RELAY_PEER_ID },
+            { carrier: 'rtc', ackToPeerId: NEW_PARENT_PEER_ID }
+        ]]);
+        expect(await admissionStore.commitBundle(reshaped)).toBe('committed');
+        expect(toBufferedCopyCarriers(await computeArrival(admissionStore, toRetriedHopCopy(msg), fromNewParent))).toEqual([]);
+        const predecessor = createFrozenReceiverMessage('buffered-reshaped-predecessor', 1);
+        expect(await admissionStore.commitBundle(await computeArrival(admissionStore, predecessor, fromRelay))).toBe('committed');
+
+        const release = await computeBufferedRelease(admissionStore, msg, RESHAPED_FROZEN_LEAF_PEER);
+
+        expect(toRepeatedAcks(release).map(({ carrier, toPeerId, status }) => ({ carrier, toPeerId, status }))).toEqual([
+            { carrier: 'rtc', toPeerId: RELAY_PEER_ID, status: 'delivered' },
+            { carrier: 'rtc', toPeerId: NEW_PARENT_PEER_ID, status: 'delivered' }
+        ]);
+    });
+
+    it.each([
+        { recorded: AL_MESSAGE_RESOURCE_LIMITS.collectionEntries - 1, written: [AL_MESSAGE_RESOURCE_LIMITS.collectionEntries] },
+        { recorded: AL_MESSAGE_RESOURCE_LIMITS.collectionEntries, written: [] }
+    ])('a slot holding $recorded pairs records a new parent\'s pair up to the bound its decoder reads, and none past it', async ({ recorded, written }) => {
+        const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
+        const msg = createFrozenReceiverMessage(`buffered-at-cap-${recorded}`, 2);
+        const fromRelay = { peer: RESHAPED_FROZEN_LEAF_PEER, carrier: 'rtc', source: RTC_FROM_RELAY } as const;
+        const buffered = await computeArrival(admissionStore, msg, fromRelay);
+        const filled = buffered.mutations.map((mutation) =>
+            mutation.kind === 'set-buffered'
+                ? {
+                    ...mutation,
+                    snapshot: {
+                        ...mutation.snapshot,
+                        copyCarriers: [
+                            ...mutation.snapshot.copyCarriers,
+                            ...Array.from({ length: recorded - 1 }, (_, index) => ({ carrier: 'ws' as const, ackToPeerId: `sender-${index}` }))
+                        ]
+                    }
+                }
+                : mutation
+        );
+        expect(await admissionStore.commitBundle({ ...buffered, mutations: filled })).toBe('committed');
+
+        const reshaped = await computeArrival(admissionStore, toRetriedHopCopy(msg), { ...fromRelay, source: RTC_FROM_NEW_PARENT });
+
+        expect(toBufferedCopyCarriers(reshaped).map((copyCarriers) => copyCarriers.length)).toEqual(written);
+        expect(await admissionStore.commitBundle(reshaped)).toBe('committed');
+    });
+
+    it('records nothing more for a same-carrier copy of a message it holds buffered: its carrier is already on the slot', async () => {
+        const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
+        const msg = createFrozenReceiverMessage('buffered-same-carrier', 2);
+        expect(await admissionStore.commitBundle(await computeArrival(admissionStore, msg, { peer: FROZEN_LEAF_PEER, carrier: 'rtc' })))
+            .toBe('committed');
+
+        const retried = await computeArrival(admissionStore, toRetriedHopCopy(msg), { peer: FROZEN_LEAF_PEER, carrier: 'rtc' });
+
+        expect(toBufferedCopyCarriers(retried)).toEqual([]);
+    });
+
+    it.each(['rtc', 'ws'] as const)(
+        'a leaf answers nothing to a same-carrier retried copy over %s of a message it holds buffered',
+        async (carrier) => {
+            const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
+            const msg = createFrozenReceiverMessage(`buffered-retried-${carrier}`, 2);
+            const buffered = await computeArrival(admissionStore, msg, { peer: FROZEN_LEAF_PEER, carrier });
+            expect(buffered.mutations.map((mutation) => mutation.kind)).toContain('set-buffered');
+            expect(await admissionStore.commitBundle(buffered)).toBe('committed');
+
+            const retried = await computeArrival(admissionStore, toRetriedHopCopy(msg), { peer: FROZEN_LEAF_PEER, carrier });
+
+            expect(retried.durableEffects).toEqual([]);
+        }
+    );
+
+    // Characterization of the ruled rule (one rule, both carriers): a relay row does not exempt the cross-carrier answer.
+    it('a relay holding a relay row answers nothing to a WS copy while its RTC copy is buffered', async () => {
+        const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
+        const msg: ALMessage = {
+            ...createFrozenReceiverMessage('relay-buffered-then-ws', 2),
+            targets: { mode: 'multicast', groupRef: ROOM, recipientPeerIds: [INBOUND_TEST_SELF_PEER_ID, ...DOWNSTREAM_PEER_IDS], snapshotVersion: 1 }
+        };
+        const buffered = await computeArrival(admissionStore, msg, { peer: RELAY_PEER, carrier: 'rtc' });
+        expect(buffered.mutations.map((mutation) => mutation.kind)).toEqual(expect.arrayContaining(['set-buffered', 'set-control-pending']));
+        expect(await admissionStore.commitBundle(buffered)).toBe('committed');
+
+        const copy = await computeArrival(admissionStore, msg, { peer: RELAY_PEER, carrier: 'ws' });
+
+        expect(copy.durableEffects).toEqual([]);
+    });
+
+    it.each(['rtc', 'ws'] as const)('after the release, a retried copy over %s answers delivered', async (carrier) => {
+        const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
+        const msg = createFrozenReceiverMessage(`released-retried-${carrier}`, 2);
+        for (const arrival of [msg, createFrozenReceiverMessage(`released-retried-predecessor-${carrier}`, 1)]) {
+            const bundle = await computeArrival(admissionStore, arrival, { peer: FROZEN_LEAF_PEER, carrier });
+            expect(await admissionStore.commitBundle(bundle)).toBe('committed');
+        }
+        expect(await admissionStore.commitBundle(await computeBufferedRelease(admissionStore, msg, FROZEN_LEAF_PEER)))
+            .toBe('committed');
+
+        const retried = await computeArrival(admissionStore, toRetriedHopCopy(msg), { peer: FROZEN_LEAF_PEER, carrier });
+
+        expect(toRepeatedAcks(retried)).toEqual([{
+            rowCarrier: carrier,
+            carrier,
+            toPeerId: INBOUND_TEST_SENDER_PEER_ID,
+            ackedMsgId: `released-retried-${carrier}`,
+            status: 'delivered'
+        }]);
     });
 
     it('answers a WS copy delivered after its buffered RTC copy was released', async () => {
@@ -418,6 +643,78 @@ describe('a relay answering the retried copy its parent resends', () => {
     });
 });
 
+// 6c: a message that asked for no receipt keeps no relay row, so nothing tells a repair from another copy; the peer the
+// message first arrived from is the one whose copy is passed down again.
+describe('a relay answering a copy of a message that asked for no receipt', () => {
+    const UNRECEIPTED = createRelayedMessage('unreceipted');
+    const UNRECEIPTED_MSG: ALMessage = { ...UNRECEIPTED, delivery: { reliability: 'at-least-once', ack: 'none' } };
+    const FROM_DOWNSTREAM: ALInboundMessageRuntime.Source = { kind: 'rtc-peer', peerId: DOWNSTREAM_PEER_IDS[0] };
+
+    /** A copy that names this relay a next hop beside the children the planner reads as its own next hops. */
+    const PARENT_COPY: ALMessage = {
+        ...UNRECEIPTED_MSG,
+        forwarding: { nextHopPeerIds: [INBOUND_TEST_SELF_PEER_ID, ...DOWNSTREAM_PEER_IDS] }
+    };
+
+    /** Commits the parent's first copy over rtc, then computes what a copy from `source` would commit. */
+    async function computeCopyFrom(source: ALInboundMessageRuntime.Source, copy = PARENT_COPY) {
+        const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
+        expect(await admissionStore.commitBundle(await computeArrival(admissionStore, UNRECEIPTED_MSG, { peer: RELAY_PEER, carrier: 'rtc' })))
+            .toBe('committed');
+        return await computeArrival(admissionStore, copy, { peer: RELAY_PEER, carrier: 'rtc', source });
+    }
+
+    function toRetriedForwards(bundle: ALInboundCommitBundle) {
+        return bundle.durableEffects.flatMap((effect) =>
+            effect.payload.kind === 'forward-message' ? [{ fromPeerId: effect.payload.fromPeerId, retryPeerIds: effect.payload.retryPeerIds }] : []
+        );
+    }
+
+    it('passes the parent\'s copy down to its next hops again, answering nothing', async () => {
+        const bundle = await computeCopyFrom(SOURCES.rtc);
+
+        expect(toRetriedForwards(bundle)).toEqual([{ fromPeerId: INBOUND_TEST_SENDER_PEER_ID, retryPeerIds: DOWNSTREAM_PEER_IDS }]);
+        expect(toRepeatedAcks(bundle)).toEqual([]);
+        expect(bundle.mutations).toEqual([]);
+    });
+
+    it('passes down nothing on a lane that forwards no retried copy', async () => {
+        const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
+        const lane = { ...RELAY_PEER, forwardsRetriedCopies: false };
+        expect(await admissionStore.commitBundle(await computeArrival(admissionStore, UNRECEIPTED_MSG, { peer: lane, carrier: 'rtc' })))
+            .toBe('committed');
+
+        const bundle = await computeArrival(admissionStore, PARENT_COPY, { peer: lane, carrier: 'rtc' });
+
+        expect(toRetriedForwards(bundle)).toEqual([]);
+        expect(bundle.durableEffects).toEqual([]);
+    });
+
+    it('passes down no copy from a neighbour other than the parent', async () => {
+        expect(toRetriedForwards(await computeCopyFrom(FROM_DOWNSTREAM))).toEqual([]);
+    });
+
+    it('passes down no parent copy that names this relay as no next hop', async () => {
+        const elsewhere = { ...UNRECEIPTED_MSG, forwarding: { nextHopPeerIds: ['another-relay', ...DOWNSTREAM_PEER_IDS] } };
+
+        expect(toRetriedForwards(await computeCopyFrom(SOURCES.rtc, elsewhere))).toEqual([]);
+    });
+
+    // Characterization: the origin's re-admission on the other carrier after a hand-over arrives from the same peer,
+    // whether a WS session or the trusted server hands it over (the server's copy names the origin as its sender), so it
+    // is passed down again over the relay's own next hops, as a repair copy is.
+    it.each(
+        [
+            ['a WS session', SOURCES.ws],
+            ['the trusted server', { kind: 'trusted-server' } as const]
+        ] as const
+    )('passes down the parent\'s copy on the other carrier, handed over by %s, as it passes down a repair copy', async (_name, source) => {
+        expect(toRetriedForwards(await computeCopyFrom(source))).toEqual([
+            { fromPeerId: INBOUND_TEST_SENDER_PEER_ID, retryPeerIds: DOWNSTREAM_PEER_IDS }
+        ]);
+    });
+});
+
 /** A frozen-audience room message this relay forwards to both downstream peers, itself a recipient too. */
 function createFrozenRelayedMessage(msgId: string): ALMessage {
     return {
@@ -459,7 +756,10 @@ async function commitChildControl(
     const bundle = control.type === 'ack'
         ? toALInboundControlCommitBundle(computeALInboundControlAdmission({ ...read, ack: control.payload }, retention))
         : toALInboundNackCommitBundle(
-            computeALInboundNackAdmission({ ...read, nack: { ...control.payload, reason: toRelayedNackReason(control.payload.reason) } }, retention)
+            computeALInboundNackAdmission(
+                { ...read, nack: { ...control.payload, reason: toRelayedNackReason(control.payload.reason) }, gapRoute: undefined },
+                retention
+            )
         );
     expect(await store.commitBundle(bundle)).toBe('committed');
     return bundle;

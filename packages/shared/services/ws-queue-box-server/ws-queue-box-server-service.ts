@@ -13,7 +13,10 @@ import {
     decodePersistedALMessageValue,
     type ALMessageRejection
 } from '../../al-contracts/al-message-persistence-validation.ts';
-import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
+import {
+    AL_GAP_NACK_RELAY_HOP_LIMIT,
+    AL_MESSAGE_RESOURCE_LIMITS
+} from '../../al-contracts/al-message-resource-limits.ts';
 import {
     type ALQosInputProvider,
     type ALQosNormalizationResult
@@ -189,6 +192,7 @@ export namespace WsQueueBoxServerService {
         readonly result: Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>;
         readonly socketFacts: WsQueueBoxServerReceiptSocketFacts | undefined;
         readonly currentnessRejection?: WsQueueBoxServerInboundAuthority.CurrentnessRejection;
+        readonly roomNackReason?: WsQueueBoxServerInboundAuthority.FinishedDecision['roomNackReason'];
     }
 
     export interface HeldRowSend {
@@ -541,6 +545,10 @@ export class WsQueueBoxServerService {
             forwardMessage: (input) => this.inboundDelivery.forwardIncomingMessage(input),
             canForwardMessage: (message) =>
                 this.forwardsRoomScopedMessages || (!isRoomScopedALMessage(message) && !isALWorldBroadcast(message)),
+            readUpstreamPeerId: () => undefined,
+            readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+            isRoutedPeerReady: () => false,
+            isLayoutChildPeer: () => false,
             diagnostics: dependencies.inboundDiagnostics
         });
     }
@@ -704,7 +712,8 @@ export class WsQueueBoxServerService {
                 ...subject,
                 result: decision.result,
                 socketFacts: decision.socketFacts,
-                currentnessRejection: decision.currentnessRejection
+                currentnessRejection: decision.currentnessRejection,
+                roomNackReason: decision.roomNackReason
             });
         }
         if (decision.kind === 'retain') {
@@ -760,6 +769,8 @@ export class WsQueueBoxServerService {
             recordWsQueueBoxServerReceiptObservation(this.receiptObserver, {
                 ...observation.businessFacts,
                 kind: 'business-socket-decision',
+                ...(observation.roomNackReason && { roomNackReason: observation.roomNackReason }),
+                ...(observation.currentnessRejection && { currentnessRejection: observation.currentnessRejection }),
                 serverPeerId: this.name,
                 connectionId: observation.connectionId,
                 fromPeerId: observation.socketFacts?.fromPeerId,
@@ -815,7 +826,8 @@ export class WsQueueBoxServerService {
             message,
             originPeerId: fromPeerId,
             roomAudience: authorization.roomAudience,
-            acceptance: admitted.right
+            acceptance: admitted.right,
+            neverSentRecipientPeerIds: []
         });
         return admitted;
     }
@@ -1035,6 +1047,9 @@ export class WsQueueBoxServerService {
                 (prepared.connectionId !== prepared.sessionInvalidation.sessionId ||
                     this.socket.connections.get(prepared.connectionId)?.generationId !== prepared.generationId)
             ) {
+                return { status: 'no-targets', submissionAttempted: false };
+            }
+            if (this.socket.connections.get(prepared.connectionId)?.socket.acceptsOutbound?.(encoded.text) === false) {
                 return { status: 'no-targets', submissionAttempted: false };
             }
             this.socket.sendEncoded(prepared.connectionId, encoded, transport);

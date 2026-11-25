@@ -70,7 +70,7 @@ export function registerBrowserTransportLifecycle(
         attach: (context) => input.wsController.attach(context),
         connected: () => input.wsController.connected(),
         detach: (context) => input.wsController.detach(context),
-        disconnected: () => input.wsController.disconnected()
+        disconnected: (end) => input.wsController.disconnected(end)
     });
     input.lifecycle.register({
         id: 'realtime-peer-lifecycle',

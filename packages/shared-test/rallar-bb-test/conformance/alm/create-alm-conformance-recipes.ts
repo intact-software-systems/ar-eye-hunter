@@ -25,6 +25,7 @@ import type {
     AlmConformanceMessages,
     AlmConformanceOwnerEnd,
     AlmConformanceRecipeGate,
+    AlmConformanceRelayedGapRenewalOrigins,
     AlmConformanceRoomTopology,
     AlmConformanceScenarioDefinition,
     AlmConformanceScenarioId,
@@ -109,6 +110,11 @@ import { repairExhausted } from './scenarios/range-repair/repair-exhausted.ts';
 import { receiptExhaustedFallback } from './scenarios/receipt-exhausted-fallback.ts';
 import { receiptedAudience } from './scenarios/receipted-audience.ts';
 import { receiptedRelayPath } from './scenarios/relay-path/receipted-relay-path.ts';
+import {
+    relayedGapRenewal,
+    relayedUnreceiptedGapRenewal,
+    toGapRequestWaitName
+} from './scenarios/relay-path/relayed-gap-renewal.ts';
 import { replyCorrelated } from './scenarios/reply/reply-correlated.ts';
 import { replyFirstWins } from './scenarios/reply/reply-first-wins.ts';
 import { replyTimeoutLate } from './scenarios/reply/reply-timeout-late.ts';
@@ -193,6 +199,8 @@ interface AlmConformanceRecipeInput extends AlmConformanceCellPartsInput {
     readonly reloadCheckpoint: AlmReloadCheckpoint | undefined;
     /** Set only on the sender of a scenario at least one of whose origins must relay its send. */
     readonly relayedReceiptOrigins: readonly AlmConformanceRole[] | undefined;
+    /** Set only on the sender of a scenario at least one of whose origins must admit a relayed gap request. */
+    readonly relayedGapRenewalOrigins: AlmConformanceRelayedGapRenewalOrigins | undefined;
     /** Set only on the sender of a scenario none of whose receipts may confirm that role. */
     readonly unconfirmedReceiptRole: AlmConformanceRole | undefined;
     /** Set on every role of a scenario whose longest step outlasts the lane's ordinary recipe budget. */
@@ -303,7 +311,9 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     grantedRtcListLaneRoles,
     receiptedRelayPath,
     grantedRtcRelayOnly,
-    grantedRtcOrderedRelay
+    grantedRtcOrderedRelay,
+    relayedGapRenewal,
+    relayedUnreceiptedGapRenewal
 ];
 
 export function createAlmConformanceRecipes(
@@ -503,6 +513,7 @@ function toRoleCells(
             receiptRoles: role === 'sender' ? definition.toReceiptRoles?.(input.carrier) : undefined,
             reloadCheckpoint: definition.toReloadCheckpoint?.(step),
             relayedReceiptOrigins: role === 'sender' ? definition.relayedReceiptOrigins : undefined,
+            relayedGapRenewalOrigins: role === 'sender' ? definition.relayedGapRenewalOrigins : undefined,
             unconfirmedReceiptRole: role === 'sender' ? definition.unconfirmedReceiptRole : undefined,
             recipeRunExtensionMs: definition.toRecipeRunExtensionMs?.(step)
         };
@@ -574,6 +585,14 @@ function toAlmConformanceRecipeMetadata(recipe: AlmConformanceRecipeInput): Rall
         ...(recipe.relayedReceiptOrigins === undefined
             ? {}
             : { almRelayedReceiptOrigins: toRelayedReceiptOriginsMetadata(recipe, recipe.relayedReceiptOrigins) }),
+        ...(recipe.relayedGapRenewalOrigins === undefined
+            ? {}
+            : {
+                almRelayedGapRenewalOrigins: toRelayedGapRenewalOriginsMetadata(
+                    recipe,
+                    recipe.relayedGapRenewalOrigins
+                )
+            }),
         ...(recipe.unconfirmedReceiptRole === undefined
             ? {}
             : { almUnconfirmedReceiptRole: recipe.unconfirmedReceiptRole }),
@@ -600,4 +619,18 @@ function toRelayedReceiptOriginsMetadata(
     origins: readonly AlmConformanceRole[]
 ): readonly RallarBlackBoxTestRecord[] {
     return origins.map((role) => ({ role, handleId: toSendHandleId({ ...step, role, index: 1 }) }));
+}
+
+/** Names each origin's waits for the numbered gap request of every other page, whose results show who sent it. */
+function toRelayedGapRenewalOriginsMetadata(
+    step: AlmConformanceStepInput,
+    origins: AlmConformanceRelayedGapRenewalOrigins
+): readonly RallarBlackBoxTestRecord[] {
+    return origins.roles.map((role) => ({
+        role,
+        requestNumber: origins.requestNumber,
+        waitCommandIds: step.roles.filter((recipient) => recipient !== role).map((recipient) =>
+            toCommandId({ ...step, role }, toGapRequestWaitName(recipient, origins.requestNumber))
+        )
+    }));
 }

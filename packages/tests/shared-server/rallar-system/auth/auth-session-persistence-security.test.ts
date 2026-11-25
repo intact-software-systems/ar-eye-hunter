@@ -55,3 +55,18 @@ describe('auth session persistence security', () => {
         ).rejects.toThrow('Persisted auth session id identity differs');
     });
 });
+
+it('rejects guest transport rows in the account token index on write and on read', async () => {
+    const { hashAuthSecret } = await import('@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts');
+    const { AUTH_SESSIONS_BY_TOKEN_NAMESPACE, authTokenDigestKey } = await import('@shared-server/rallar-system/auth/persistence/auth-storage-keys.ts');
+    const runtime = new FakeRuntimeStateRepository();
+    const repository = new AuthSessionRepository(runtime);
+    const accessTokenDigest = await hashAuthSecret('test-guest-token');
+    const row = { clientId: 'guest-' + 'a'.repeat(64), sessionId: 'guest-session-' + 'b'.repeat(64), username: 'guest', guestRoom: {
+        applicationId: 'app', workspaceId: 'ws', groupId: 'town'
+    }, accessTokenDigest, issuedAtEpochMs: 1000, expiresAtEpochMs: Date.now() + 60000 };
+    await expect(repository.insertSessionByTokenDigest(row)).rejects.toThrow(/guest transport/i);
+    await runtime.upsert({ namespace: AUTH_SESSIONS_BY_TOKEN_NAMESPACE, key: authTokenDigestKey(accessTokenDigest),
+        value: JSON.stringify(row), expireAtTimestamp: row.expiresAtEpochMs });
+    await expect(repository.findByAccessToken('test-guest-token')).rejects.toThrow(/guest transport/i);
+});

@@ -31,7 +31,6 @@ import type {
     ALDeliverySettlementSink
 } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALStorageResetListeners } from '../open-indexed-db-admission-database.ts';
-import type { ALBrowserLocks } from '../storage/al-browser-locks.ts';
 import type { ALStorageHealth } from '../storage/al-storage-health.ts';
 import type { ALStorageReadiness } from '../storage/al-storage-readiness.ts';
 import type { ALStorageRecoveryReporter } from '../storage/al-storage-recovery-reporter.ts';
@@ -50,7 +49,7 @@ import type { ALSessionInvalidationAuthority } from './admission/al-session-inva
 import type { ALOutboundDispatchAdmission } from './al-outbound-dispatch-admission.ts';
 import { controlTargetMsgId, type ALOutboundControlSource } from './compute-al-outbound-control-admission.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
-import type { ALOutboundControlAdmissionResult } from './control/al-outbound-control-admission.ts';
+import type { ALOutboundControlAdmissionResult } from './control/read-al-outbound-recipient-proof.ts';
 import type { ALOutboundRecipientAuthentication } from './control/read-al-outbound-recipient-proof.ts';
 import type { ALOutboundReceiptConfirmationDiagnostic } from './control/to-al-outbound-receipt-confirmation-diagnostic.ts';
 import { admitALOutboundVolatileBudget } from './lane/admit-al-outbound-volatile-budget.ts';
@@ -63,11 +62,11 @@ import type { ALOutboundReceiptWorkEvidence } from './lane/al-outbound-receipt-o
 import { ALOutboundSendControls, type ALOutboundCancelOutcome } from './lane/al-outbound-send-controls.ts';
 import { ALOutboundStoreLane } from './lane/al-outbound-store-lane.ts';
 import type { ALOrderingBatchSequences } from './lane/compute-al-outbound-group-sent-positions.ts';
+import type { ALOutboundClaimRun } from './lane/settle-al-outbound-claim.ts';
+import { ALOutboundPageMessageEnds } from './message-end/al-outbound-page-message-ends.ts';
 
-export type {
-    ALOutboundControlAdmission,
-    ALOutboundControlAdmissionResult
-} from './control/al-outbound-control-admission.ts';
+export type { ALOutboundControlAdmission } from './control/al-outbound-control-admission.ts';
+export type { ALOutboundControlAdmissionResult } from './control/read-al-outbound-recipient-proof.ts';
 export type { ALOutboundCancelOutcome, ALOutboundHandOverOutcome } from './lane/al-outbound-send-controls.ts';
 
 export type ALOutboundDispatchPhase = 'immediate' | 'dequeue';
@@ -371,31 +370,6 @@ export type ALOutboundRuntimeDiagnosticsEvent =
     | ALOutboundRtcAckSubmission
     | ALOutboundRtcHandoffRefusal
     | ALOutboundRtcQueuedBytesHighWater
-    | Readonly<{
-        kind: 'sender-queue-wait';
-        senderId: string;
-        origin: ALOutboundCommitOrigin;
-        queued: boolean;
-        /** `none` when this commit found the sender's queue empty. */
-        queuedBehindOrigin: ALOutboundCommitOrigin | 'none';
-        durationMs: number;
-    }>
-    | Readonly<{
-        kind: 'browser-lock-wait';
-        senderId: string;
-        origin: ALOutboundCommitOrigin;
-        lockName: string;
-        available: boolean;
-        durationMs: number;
-    }>
-    | Readonly<{
-        kind: 'browser-lock-hold';
-        senderId: string;
-        origin: ALOutboundCommitOrigin;
-        lockName: string;
-        available: boolean;
-        durationMs: number;
-    }>
     | (
         & Readonly<{
             kind: 'commit-phases';
@@ -412,6 +386,11 @@ export type ALOutboundRuntimeDiagnosticsEvent =
             readOperationCount: number;
             commitDurationMs: number;
             commitOutcome: ALOutboundCommitBundleOutcome;
+            /**
+             * The write transactions this commit opened: one per attempt, and one more when every attempt lost the
+             * sender-version fence and it retained its request. Above one, its sender's other commits won the fence.
+             */
+            commitAttemptCount: number;
         }>
         & ALMessageTrace
     )
@@ -424,7 +403,7 @@ export type ALOutboundRuntimeDiagnosticsEvent =
             /** The outbound message this control answers. */
             targetMsgId: string;
             outcome: ALOutboundControlAdmissionResult['kind'];
-            /** The rejection's reasons, or `none` for every other outcome. */
+            /** The reasons of a `rejected` or `duplicate` outcome, or `none` for every other outcome. */
             reason: string;
             /**
              * The receipt's phase, present exactly when the control is a WS server receipt: no other control has one,
@@ -435,6 +414,12 @@ export type ALOutboundRuntimeDiagnosticsEvent =
             nackReason?: ALNackPayload['reason'];
             /** The track a NACK asks about, present exactly when the NACK names one (a gap's). */
             nackOrderingKey?: string;
+            /** Which request for its sequences a gap NACK is, present exactly when the NACK carries one (a gap's). */
+            nackGapRequestNumber?: number;
+            /** The recipient the NACK speaks for; this and the next are present exactly when the control is a NACK. */
+            nackLogicalRecipientPeerId?: string;
+            /** The peer that sent the NACK: its recipient, or the relay that forwarded it. */
+            nackFromPeerId?: string;
             /** Why the control's proof was refused; this and the next two are present exactly when one was. */
             proofRefusal?: ALReceiptProofRefusal['kind'];
             /** The recipient the refused control spoke for. */
@@ -455,6 +440,16 @@ export type ALOutboundRuntimeDiagnosticsEvent =
         completedCount: number;
         rescheduledCount: number;
         rejectedCount: number;
+        /** The port's reservation of the batch's rows. */
+        claimDurationMs: number;
+        /** Every claim's own work, summed. */
+        runDurationMs: number;
+        /** The one release flush that ended the batch. */
+        releaseDurationMs: number;
+        /** When the batch's run loop started, after its selection and reservation. */
+        startedAtMs: number;
+        /** Each claim whose work decoded, in the order it settled: a slow drain names the claim that made it slow. */
+        claims: readonly ALOutboundClaimRun[];
     }>
     | Readonly<{
         kind: 'readiness-probe';
@@ -603,7 +598,6 @@ export namespace ALOutboundMessageRuntime {
         readonly random: () => number;
         readonly queueEngine: InboxOutboxEngine;
         readonly ownsQueueEngine: boolean;
-        readonly browserLocks: ALBrowserLocks | undefined;
         /** Which runtime of the session drains the durable pair; only the durable lane's work follows it. */
         readonly durableWorkOwnership: ALDurableWorkOwnership;
     }
@@ -721,6 +715,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
     private readonly durable: ALOutboundStoreLane<TPrepared>;
     private readonly volatile: ALOutboundStoreLane<TPrepared> | undefined;
     private readonly checkpoint: ALOutboundStoreLane<TPrepared> | undefined;
+    private readonly messageEnds: ALOutboundPageMessageEnds;
     private disposed = false;
     private readonly dependencies: ALOutboundMessageRuntime.Dependencies<TPrepared>;
 
@@ -732,7 +727,6 @@ export class ALOutboundMessageRuntime<TPrepared> {
             stores: dependencies,
             workerId: dependencies.effectWorkerId,
             dequeueTypes: dependencies.dequeue.types,
-            browserLocks: dependencies.browserLocks,
             durableWorkOwnership: dependencies.durableWorkOwnership,
             evictExpired: undefined,
             checkpoint: undefined,
@@ -749,7 +743,6 @@ export class ALOutboundMessageRuntime<TPrepared> {
             stores: dependencies.volatileStores,
             workerId: `${dependencies.effectWorkerId}/volatile`,
             dequeueTypes: new Set<string>(),
-            browserLocks: undefined,
             durableWorkOwnership: undefined,
             evictExpired: dependencies.volatileStores.evictExpired,
             checkpoint: undefined,
@@ -761,6 +754,11 @@ export class ALOutboundMessageRuntime<TPrepared> {
         this.checkpoint = dependencies.checkpointStores === undefined
             ? undefined
             : this.createCheckpointLane(dependencies.checkpointStores);
+        this.messageEnds = new ALOutboundPageMessageEnds({
+            sendControls: this.sendControls,
+            ready: () => this.ready(),
+            readLaneForMessageEnd: (msgId) => this.readMemoryLaneOrDurable((lane) => lane.holdsMessageForEnd(msgId))
+        });
     }
 
     /**
@@ -772,16 +770,22 @@ export class ALOutboundMessageRuntime<TPrepared> {
         return durable;
     }
 
-    /** Aborts transports and every lane synchronously, then joins their owned work and releases. */
+    /**
+     * Aborts transports and every lane synchronously, then joins their owned work and releases. A message end a cancel
+     * or hand-over started is joined first, and the lanes are disposed after it.
+     */
     async dispose(): Promise<void> {
         this.disposed = true;
         this.sendControls.dispose();
+        // The lanes abort synchronously unless an end is still on its way to its lane's store.
+        const joined = this.messageEnds.join();
+        const ended = joined === undefined ? [] : await joined;
         const disposed = await Promise.allSettled([
             this.durable.dispose(),
             this.volatile?.dispose(),
             this.checkpoint?.dispose()
         ]);
-        for (const outcome of disposed) {
+        for (const outcome of [...ended, ...disposed]) {
             if (outcome.status === 'rejected') {
                 throw outcome.reason;
             }
@@ -798,33 +802,31 @@ export class ALOutboundMessageRuntime<TPrepared> {
     }
 
     /**
-     * Cancels one message for the durable row retention (`DEFAULT_AL_REPOSITORY_TTL_MS`). A message the owner never
-     * admitted is still remembered, so a row later claimed for it completes without sending; a message with a live
-     * attempt has that attempt's transport signal aborted. Idempotent within the retention: only the first call
+     * Cancels one message: a message with a live attempt has that attempt's transport signal aborted, and the lane
+     * that holds the message ends it in a commit of its own, started here and joined by `dispose`. Until that commit
+     * lands, and for the durable row retention (`DEFAULT_AL_REPOSITORY_TTL_MS`), the page remembers the cancel, so a
+     * row claimed for the message completes without sending. Idempotent within the retention: only the first call
      * states the `cancelled` settlement.
      */
     cancel(msgId: string, traceId: string): ALOutboundCancelOutcome {
         const outcome = this.sendControls.cancel(msgId);
         if (outcome === 'cancelled') {
             this.emitSettlement({ kind: 'cancelled', msgId, traceId }, undefined);
+            void this.messageEnds.start(msgId, 'cancelled');
         }
         return outcome;
     }
 
     /**
-     * Hands one message to another carrier's owner: aborts its live attempt, completes every later
-     * effect of it silently and ends its receipt row, and states no settlement -- the message is not
+     * Hands one message to another carrier's owner: aborts its live attempt, completes every later effect of it
+     * silently and ends the message in the lane that holds it, and states no settlement -- the message is not
      * cancelled. Idempotent; a message already cancelled or handed over is left as it is.
      */
     async handOver(msgId: string): Promise<void> {
         if (this.disposed || this.sendControls.handOver(msgId) === 'already-ended') {
             return;
         }
-        await this.ready();
-        if (this.disposed) {
-            return;
-        }
-        await (await this.readLaneForMessage(msgId)).endReceipt(msgId);
+        await this.messageEnds.start(msgId, 'handed-over');
     }
 
     /**
@@ -848,6 +850,10 @@ export class ALOutboundMessageRuntime<TPrepared> {
         const computed = await admission.lane.commit(
             this.toEnqueueDispatch(msg, admission.planner, dispatchPlan !== undefined)
         );
+        const ending = this.messageEnds.startAdmittedEnds([{ lane: admission.lane, msgId: msg.id.msgId }]);
+        if (ending !== undefined) {
+            await ending;
+        }
         return ALOutboundMessageRuntime.toEnqueueResult(computed, msg);
     }
 
@@ -900,6 +906,12 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 throw outcome.reason;
             }
             members[index]!.forEach((dispatch, position) => computed.set(dispatch, outcome.value[position]!));
+        }
+        const ending = this.messageEnds.startAdmittedEnds(
+            planned.map(({ lane, dispatch }) => ({ lane, msgId: dispatch.msg.id.msgId }))
+        );
+        if (ending !== undefined) {
+            await ending;
         }
         return planned.map(({ dispatch }) =>
             ALOutboundMessageRuntime.toEnqueueResult(computed.get(dispatch)!, dispatch.msg)
@@ -987,8 +999,15 @@ export class ALOutboundMessageRuntime<TPrepared> {
 
     /** Memory reads, so a control about a message in memory never reaches IndexedDB. */
     private async readLaneForMessage(msgId: string): Promise<ALOutboundStoreLane<TPrepared>> {
+        return await this.readMemoryLaneOrDurable((lane) => lane.ownsMessage(msgId));
+    }
+
+    /** The first memory lane that holds what the caller asks about, else the durable lane; never an IndexedDB read. */
+    private async readMemoryLaneOrDurable(
+        holds: (lane: ALOutboundStoreLane<TPrepared>) => Promise<boolean>
+    ): Promise<ALOutboundStoreLane<TPrepared>> {
         for (const lane of [this.volatile, this.checkpoint]) {
-            if (lane !== undefined && await lane.ownsMessage(msgId)) {
+            if (lane !== undefined && await holds(lane)) {
                 return lane;
             }
         }
@@ -1003,7 +1022,6 @@ export class ALOutboundMessageRuntime<TPrepared> {
             stores,
             workerId: `${dependencies.effectWorkerId}/checkpoint`,
             dequeueTypes: new Set<string>(),
-            browserLocks: undefined,
             durableWorkOwnership: undefined,
             evictExpired: stores.evictExpired,
             checkpoint: stores.checkpoint,

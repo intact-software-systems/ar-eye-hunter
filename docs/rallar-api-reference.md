@@ -716,7 +716,13 @@ director's local action is refused by the director's rules, never
 Rallar Game's `match.sendIntent(intent, { resourceId, ttlMs })` passes the claim to
 the relay and returns the same `held-by-other` status; when the local session
 is the director, the match routes the intent locally and it claims nothing.
-Outputs, heartbeats, snapshots and sync requests claim nothing. The director's
+A director heartbeat uses the room WebSocket to reach connected members.
+If that carrier fails before local admission, the sender can try RTC. A server
+refusal ends the send. While the connection's WebSocket is down, the heartbeat
+goes over RTC alone, since a frame queued on a closed socket reaches no member.
+A queued receipt confirms local admission only. Each recipient still checks the
+appointment and heartbeat freshness. Outputs, heartbeats, snapshots and sync
+requests claim nothing. The director's
 own outputs go to the whole room: with
 `ack: 'all-logical-recipients'` when the output states it, best effort
 otherwise. While the local session is the director, its relay acts on an intent
@@ -2070,7 +2076,13 @@ missed sequences while its socket was down reads its next copy as `omitted`,
 never as loss. A recipient behind an RTC relay reports a gap to the relay, which
 forwards the recipient's own NACK toward the origin; the origin applies
 the entry rule to the recipient and sends the repair copy through the relay,
-which forwards it down the tree.
+which forwards it down the tree. A recipient confirms a message it holds
+buffered behind a gap only once it delivers it, on whichever carrier a copy
+arrives, so its renewed requests keep crossing the relay as a directly linked
+recipient's do, and an ended receipt keeps its row for them. Under persistent
+loss the handle of the message that revealed the gap therefore reads `failed`
+(`failure.kind: 'receipt-exhausted'`), never `acknowledged` for a delivery that
+did not happen.
 
 **Limits:** a live-only send records no positions; in a cluster the dequeue
 records every captured session with a live connection generation anywhere, and a
@@ -2098,14 +2110,15 @@ resync or the track expires, instead of a silent loss, in three cases the
 receipt does not cover: the server's dequeue dropped the session after the route
 captured the audience the receipt names, the send asked no logical receipt (its
 sequence stays a floor for every recipient until the track's row expires), or
-the `admitted` receipt arrived after the `complete` one; a relay forwards a gap
-NACK only for a receipted send, so an `ack: 'none'` ordered track behind a
-relay stalls until resync or expiry, and two recipients reporting one gap
-through one relay are two repair requests at the origin; a predecessor whose
-dequeue keeps answering deferred or pending keeps its index row, so if it never
-returns the rows after it on its track wait for its deadline, as they do when
-the write that clears an ended predecessor's index row fails. A server record
-that counts the RTC origin's sends is a later outcome.
+the `admitted` receipt arrived after the `complete` one; an `ack: 'none'`
+ordered track behind a relay is repaired whichever link lost its sequence,
+since the relay passes the origin's repair copy down again, and two recipients
+reporting one gap through one relay are two repair requests at the origin; a
+predecessor whose dequeue keeps answering deferred or pending keeps its index
+row, so if it never returns the rows after it on its track wait for its
+deadline, as they do when the write that clears an ended predecessor's index
+row fails. A server record that counts the RTC origin's sends is a later
+outcome.
 
 The missing sequence releases the buffered ones in order. Each release runs
 once its predecessor is delivered, and a batch that delivers one runs the
@@ -2135,11 +2148,16 @@ each interval stretched by a random factor between 1 and 1.5 drawn per
 receiver, and numbers each request, so the sender answers a renewal with a new
 retransmission while the reports later arrivals make of the same gap draw
 nothing more. A frame that is only late, by well under a second, draws no
-renewal. Renewal holds on direct links (a WS client and its server, RTC peers
-that send to each other directly); over an RTC relay a renewal reaches the
-sender only while the relay still holds a receipted row that waits on that
-receiver, since a relay forwards a gap NACK only then and never forwards a
-repair request. Each receiver
+renewal. Renewal holds on direct links and through RTC relays alike, on a
+receipted track and on an `ack: 'none'` one: a renewal asks the peer the gap was
+first reported to while that peer still forwards to the receiver, and the
+receiver's current upstream peer once it does not (the sender itself once the
+two are linked directly), and every relay passes a gap NACK on toward the
+sender, one relay hop lower each time within the hops the receiver granted it
+(one fewer than its room's live sessions, at most 255). The gap NACK carries the
+repair, so a repair request needs no forward. Over RTC a relayed gap NACK for
+an `ack: 'none'` send must carry the receiver's signature, checked against the
+key its room registers for it now. Each receiver
 that misses a sequence may draw `maxRepairs` retransmits of it (4 by default:
 its first report and three renewals; `qos: { repair: { algo: 'retransmit',
 opts: { maxRepairs } } }` sets it); on a receipted WS send whose wait for its
@@ -2296,7 +2314,12 @@ A receiver judges a room send against the room snapshot it holds:
   a `receiver` receipt completes for it as for any send; one its room then
   refuses for another reason is answered with that refusal's NACK, when the
   refusal sends one; one still retained at the message's deadline is answered
-  nothing, and its handle reads `expired`.
+  nothing, and its handle reads `expired`. A send the server kept after losing a
+  commit race, whose captured recipients have all left the room by the time it
+  is admitted, still expects them: its `admitted` names them, none of them is
+  sent the message, an ACK from any of them is refused as one from a recipient
+  the server never sent it, and its handle reads `expired` at its deadline,
+  never `acknowledged`.
 - **At or beyond the stamps, with the sender's member absent or not `active`,**
   it refuses the send `membership-fenced` and NACKs its hop. From the WS
   server, before the sender holds a receipt row, the handle settles `rejected`
@@ -2389,7 +2412,7 @@ shared service exposes `WebRtcConnectionService.PeerLaneOpenStatus: 'exhausted'`
 
 `ws.onStatus(listener, options?)` subscribes to status snapshots.
 
-`ws.onLifecycle(listener, options?)` subscribes to events such as `open`, `close`, `error`, `connected`, and `disconnected`.
+`ws.onLifecycle(listener, options?)` subscribes to events such as `open`, `close`, `error`, `connected`, and `disconnected`. A `disconnected` event's `reason` names why the connection ended: `rallar-disconnect` for the session's own disconnect, or `server-clock-ended: <cause>` when its server clock's lifetime ended it outside any command (the page was hidden, frozen or left, or the clock could no longer be calibrated).
 
 `ws.waitForOpen(options?)` waits until the websocket is open or returns a non-open status.
 

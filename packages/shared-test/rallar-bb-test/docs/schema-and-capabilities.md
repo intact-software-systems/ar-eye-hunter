@@ -471,7 +471,7 @@ only the owner removes one, so no cell removes.
   the cell's type whose `rosterVersion` equals that read's `body.group.rosterVersion`
   (`roster-stamp`, a `{resultCache...}` token in `contains`).
 - `fenced-catch-up`: the sender floors its first send `{ aboveCurrentBy: 1 }` and waits
-  for the `al.control.nack.v4` that refuses it `not-yet-in-sync`; only then does it send
+  for the `al.control.nack.v5` that refuses it `not-yet-in-sync`; only then does it send
   the cue, an unfloored second send. Over `rtc` a recipient refuses the copy and the
   sender commits its NACK. Over `ws` the server retains the send as a pending admission
   and answers an advisory NACK, which the sender leaves not handled, so the wait matches
@@ -774,20 +774,38 @@ origin's ending receipt confirms both recipients through one hop: the sender
 recipe's metadata `almRelayedReceiptOrigins` names each origin by its role and the
 handle of its send, as `almReceiptRoles` names a send's recipient roles. Its
 `almReceiptRoles` pin describes the sender's send. It runs before
-`granted-rtc-relay-only` and `granted-rtc-ordered-relay`: the three close their
-family because each reshapes the room's topology until its own last step. No hosted
-manifest carries it, nor the two `receipted-audience` cells above.
+`granted-rtc-relay-only`, `granted-rtc-ordered-relay`, `relayed-gap-renewal` and
+`relayed-unreceipted-gap-renewal`: the five close their family because each reshapes
+the room's topology until its own last step. No hosted manifest carries it, nor the
+two `receipted-audience` cells above.
+
+`relayed-gap-renewal` and `relayed-unreceipted-gap-renewal` (`scenarios/relay-path/`,
+three-agent, `rtc`, full scope) run on the same path. Every page states its peer id
+on the cue channel before the owner cues `start`; then the sender and the owner each
+originate an ordered track of three on an ordering key of its own (`ack: 'receiver'`
+in the first cell, `ack: 'none'` in the second), wait until both receivers entered the
+track at the first, hold the second send by its message id and send the third. Each
+origin releases its hold only once its outbound `control-admission` diagnostics
+committed the gap request numbered 3 (2 in the unreceipted cell) from each receiver,
+matched by the request number and the receiver's peer id. Every receiver enters each
+origin's track at the first, releases the third from its buffer and omits nothing;
+each origin reads its three handles `acknowledged` (`transport-accepted` unreceipted).
+After the run the identity assessment fails the cell unless one origin's recorded
+request wait names a `nackFromPeerId` other than its `nackLogicalRecipientPeerId`,
+a request a relay carried: the sender recipe's metadata `almRelayedGapRenewalOrigins`
+names each origin by its role, the request number and its waits. No hosted manifest
+carries either.
 
 A scenario definition's optional `connect.minReadyPeers` sets the readiness its roles' connects wait for;
 absent, each connect waits for every other agent of the cell.
 
-The `cross-carrier-duplicate` conformance scenario replays in both orders over
-`rtc-with-ws-fallback`, and its receiver waits for the `admission-outcome` that
-refuses the second copy as `not-handled`/`duplicate`. Both orders prove that
-refusal: in `rtc-then-ws` the second copy is the WS-carried multicast room
-envelope, which the api-v1 WS server routes to the room's other members, so the
-receiver refuses it on carrier `ws`. The Hetzner two-agent manifest runs both
-orders.
+The `cross-carrier-duplicate` conformance scenario (`cross-carrier-duplicate-rtc-then-ws`) replays the first RTC
+send's envelope on WS over `rtc-with-ws-fallback`, and its receiver waits for the `admission-outcome` that refuses the
+second copy as `not-handled`/`duplicate`, on either carrier. Neither carrier's
+`transport-accepted` is the receiver's admission (over RTC it is the frame leaving the sender's data channel), so the
+WS copy may commit first. The reverse order does not run: the product never admits a message on RTC while its WS
+admission lives (D56), and the receiver's refusal in both arrival orders is a unit test
+(`alm-cross-carrier-duplicate-outcome.test.ts`). The Hetzner two-agent manifest runs the scenario.
 
 The `ordering-resync` conformance scenario runs over every carrier. The sender sends seq 1, then
 seq 300 on the same ordering key, a gap wider than the repair window, and the receiver receives the
@@ -801,7 +819,7 @@ received, 298 past its position. The receiver waits for its own RTC `admission-o
 send as `not-handled`/`resync-required`. Over `ws` the WS server
 is that hop: it keeps its own ordering track, refuses the gapped send without relaying it, and NACKs
 the sender, so the sender waits for its `rallar.browser.alm.outbound_diagnostics`
-`control-admission` of that `al.control.nack.v4`, pinned on the gapped send's msgId through a wait
+`control-admission` of that `al.control.nack.v5`, pinned on the gapped send's msgId through a wait
 result reference. The sender admits that NACK as the word of its trusted server and states the
 relay rejection (`relayRejection: { relay: 'trusted-server' }`); the send requested no ACK, so its
 handle is already `transport-accepted` and keeps that state. When the lane's catalog input names
@@ -822,7 +840,7 @@ sends seq 2, then holds that one message by the id its send returned (`hold-mess
 `fault.inject` whose `match.msgId` names `{resultCache.<send-2>.value.msgId}`) and releases the hold of
 the type, so seq 3 passes while seq 2 stays held across every retransmission. The hop reads the gap and
 NACKs the range `2-2`: over `ws` the relay, over the RTC carriers the receiver. The sender waits for its
-`control-admission` of that `al.control.nack.v4` as `committed`, pinned on seq 3's msgId (`gap-nack`), then for
+`control-admission` of that `al.control.nack.v5` as `committed`, pinned on seq 3's msgId (`gap-nack`), then for
 the `commit-phases` of the retransmission the hint dispatched (`repair-dispatch-2`: seq 2's msgId, the cell's
 typeId, `"origin":"repair"`), and only then releases the message hold: under the hold the original is
 resubmitted as well, so a release right after the NACK would deliver seq 2 even if the hint were never served.
@@ -1352,14 +1370,19 @@ leftover rows can read it healthy, so the third send's own commit is proven by `
 same native hold as `delivery-reload`, sends one durable original with `ack: 'receiver'` and a `ttlMs` of the
 absence window plus 60 s (above one 10 s lease, the 16.6 s recovery bound and a whole successor connect), and proves
 it admitted, enqueued, retained and unsubmitted. Over `rtc-with-ws-fallback` it then polls its receipt until a WS
-attempt follows the hand-over to WS, so the WS row is committed before the page ends. The lane then closes that
-page. Under the hold the row stays reserved until its lease ends, so a successor's prologue first waits out one
+attempt follows the hand-over to WS, so the WS row is committed before the page ends. Its last commands send a
+second durable message under the same hold, with the marker `durable-takeover-cancelled`, prove it retained and cancel
+it, asserting `cancelled`. The lane then closes that page, a few hundred milliseconds after the cancel and before the
+cancelled message's 2 s receipt timer (`first-hop-timeout` over WS, `ack-timeout` over RTC) is due, so the timer row
+outlives the page unless the cancel stored the message's end. Under the hold the row stays reserved until its lease ends, so a successor's prologue first waits out one
 lease and a margin (an absent wait on a topic nothing emits) before it connects: its takeover's first batch then
 claims the row rather than finding it leased. The successor connects with the restored session, waits for the one
 `recovery` of the store that held the original (`browser-rtc-overlay` over `rtc`, `browser-ws-client` otherwise)
 reading `restored`, the store id embedding the session its own connect restored, and asserts that outcome's
 `claimed` above 0. The receiver waits for the carrier-tagged original over the sender's connect plus the original's
-lifetime, then proves for an absence window that no second copy arrives. A takeover while the owner's lease still
+lifetime. An absence wait on the cancelled marker follows; it also reads arrivals retained before it, and fails
+when the successor's restored timer, finding the cancelled send's row gone, charges the attempt and sends the
+message again. A last absence window proves no second copy of the scenario's type arrives. A takeover while the owner's lease still
 stands, recovered by a later batch at the lease end plus at most 16.6 s, is not run by the lane: that path claims in a
 batch that reports nothing, and the server keeps one socket per auth session, so the successor cannot connect before
 the owner's page is gone.

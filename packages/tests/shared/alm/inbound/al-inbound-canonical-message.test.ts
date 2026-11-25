@@ -8,6 +8,7 @@ import {
 
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import {
     planALMessageHandling,
     type ALMessageHandlingPlan,
@@ -302,6 +303,10 @@ function createCanonicalRuntime(): CanonicalRuntimeFixture {
     const delivered: string[] = [];
     const forwarded: string[] = [];
     const runtime = new ALInboundMessageRuntime({
+        readUpstreamPeerId: () => undefined,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+        isRoutedPeerReady: () => false,
+        isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         carrier: 'ws',
@@ -341,11 +346,12 @@ async function admitMessage(
         plan: planIncomingMessage(msg, source, computeALInboundPlanningObservations(read, false)),
         canForward: false,
         recordedParentPresent: true,
+        retriedCopyNextHopPeerIds: [],
         facts: readALInboundEffectFacts(nowMs, {
             selfPeerId: 'receiver',
             newControlId: crypto.randomUUID.bind(crypto),
             createInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
-        })
+        }, () => AL_GAP_NACK_RELAY_HOP_LIMIT)
     });
     expect(await admissionStore.commitBundle(bundle)).toBe('committed');
     return bundle;

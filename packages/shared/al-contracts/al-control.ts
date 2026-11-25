@@ -27,6 +27,7 @@ import {
     AL_MESSAGE_RESOURCE_LIMITS
 } from './al-message-resource-limits.ts';
 import type { ALSeqRange } from './al-runtime.ts';
+import { isALOwnWord } from './receipt-proof/al-receipt-proof.ts';
 
 /**
  * `subtree-complete-not-subscribed` ends the hop of a frozen recipient that delivered nothing, having answered
@@ -86,6 +87,11 @@ export interface ALNackPayload {
     readonly missingRanges?: readonly ALSeqRange[];
     /** Which request for the sequences it names this is, 1 for a report an arrival causes; present exactly on a `gap`. */
     readonly gapRequestNumber?: number;
+    /**
+     * How many more relays may forward it toward the origin; present exactly on a `gap`. Each relay forwards it one
+     * lower, so it lies outside the recipient's signature, as `fromPeerId` and `toPeerId` do.
+     */
+    readonly relayHopsLeft?: number;
     readonly serverSnapshotVersion?: number;
     readonly proof: SignatureProof | null;
 }
@@ -143,7 +149,7 @@ export type ALPeerRepairControlMessage = Exclude<ALPeerControlMessage, Readonly<
  * A relay that passes on an ACK for a recipient below it speaks for that recipient, not for its hop.
  */
 export function isALHopCompletionAck(ack: ALAckPayload): boolean {
-    return ack.fromPeerId === ack.logicalRecipientPeerId &&
+    return isALOwnWord(ack) &&
         (ack.status === 'delivered' || ack.status === 'subtree-complete' ||
             ack.status === 'subtree-complete-not-subscribed');
 }

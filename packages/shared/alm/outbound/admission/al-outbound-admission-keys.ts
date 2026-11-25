@@ -17,18 +17,26 @@ export function toALOutboundSentMessageKey(namespace: string, msgId: string): st
     return `${namespace}:sent:${msgId}`;
 }
 
-/** A pending-ACK row's identity: msgIds are origin-unique, so the origin and the id name it (D40). */
+/**
+ * A message's identity where origins share a namespace: msgIds are origin-unique, so the origin and the id name it (D40).
+ * Its pending-ACK row and its version row are keyed by it.
+ */
 export interface ALOutboundPendingAckRef {
     readonly originPeerId: string;
     readonly msgId: string;
 }
 
-export interface ToALOutboundPendingAckKeyInput extends ALOutboundPendingAckRef {
+/** The rows keyed by a message's origin and id: its receipt and its version. */
+export type ALOutboundOriginMessageRow = 'pending-ack' | 'msg-version';
+
+export interface ToALOutboundOriginMessageKeyInput extends ALOutboundPendingAckRef {
     readonly namespace: string;
+    /** `msg-version` is the row every commit that writes one of the message's rows moves, which a control fences on. */
+    readonly row: ALOutboundOriginMessageRow;
 }
 
-export function toALOutboundPendingAckKey(input: ToALOutboundPendingAckKeyInput): string {
-    return `${input.namespace}:pending-ack:${JSON.stringify([input.originPeerId, input.msgId])}`;
+export function toALOutboundOriginMessageKey(input: ToALOutboundOriginMessageKeyInput): string {
+    return `${input.namespace}:${input.row}:${JSON.stringify([input.originPeerId, input.msgId])}`;
 }
 
 export function toALOutboundRepairAttemptKey(namespace: string, msgId: string): string {

@@ -139,7 +139,7 @@ export const ORIGIN_PRINCIPAL_REF = {
 
 /** The overlap the server serves by default. */
 export const SERVED_REPLACED_LAYOUT_OVERLAP_MS = 15_000;
-const CHANNEL_PEER_IDS = ['b', 'c', 'd', 'g', 'r'];
+const CHANNEL_PEER_IDS = ['b', 'c', 'd', 'g', 'r', 'u', 'y'];
 
 export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInput): RtcOriginOverlayFixture {
     const ready = { peerIds: input.nextHopPeerIds };

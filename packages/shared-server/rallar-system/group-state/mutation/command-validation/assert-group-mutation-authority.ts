@@ -1,3 +1,4 @@
+import { assertGuestAdmissionAuthority, assertGuestAdmissionCommand, assertGuestExpiryCommand } from '../membership/group-guest-admission.ts';
 import type { GroupMutationCommand, GroupMutationIngressFacts } from '../group-mutation-contracts.ts';
 import { assertGroupMutationJoinCodeFacts } from './assert-group-mutation-join-code-facts.ts';
 
@@ -6,6 +7,7 @@ export function assertGroupMutationAuthority(
     facts: GroupMutationIngressFacts
 ): void {
     assertGroupMutationJoinCodeFacts(command, facts);
+    assertGuestAdmissionAuthority(command, facts);
     const authority = facts.authenticatedAuthority;
     if (facts.internalAuthority === 'none' && authority === null) {
         throw new TypeError('User group mutation requires authenticated authority facts');
@@ -43,6 +45,12 @@ function assertInternalMutationAuthority(
         throw new TypeError('Internal group maintenance cannot claim semantic actor authority');
     }
     switch (facts.internalAuthority) {
+        case 'guest-expiry':
+            assertGuestExpiryCommand(command);
+            return;
+        case 'guest-redemption':
+            assertGuestAdmissionCommand(command);
+            return;
         case 'formation-criterion':
             return assertFormationCriterionAuthority(command);
         case 'expiry':

@@ -13,6 +13,7 @@ import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendC
 import { toALOutboundMessageReference } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import type { ALOutboundSettledSendResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { toALOutboundWorkType } from '@shared/alm/outbound/al-outbound-work-entry.ts';
+import { AL_OUTBOUND_COMMIT_ATTEMPTS } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
 import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from '@shared/alm/outbound/to-al-outbound-prepared-fingerprint.ts';
 import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
@@ -466,7 +467,7 @@ describe('AL outbound durable effect lifecycle', () => {
         await runtime.dispose();
     });
 
-    it('retains a conflicted admission and rereads receipts before worker delivery', async () => {
+    it('rereads a conflicted admission at once, so the receipt its race committed stops worker delivery', async () => {
         vi.useFakeTimers();
 
         const sent: Array<OutboundTestPayload> = [];
@@ -481,7 +482,7 @@ describe('AL outbound durable effect lifecycle', () => {
             }
             rejectedFirstCommit = true;
             // The committed state races ahead of the caller's observation: the ACK lands and the
-            // caller is told its own bundle conflicted, so its retained admission must reread.
+            // caller is told its own bundle conflicted, so its next attempt must reread.
             expect(await commitBundle(bundle)).toBe('committed');
             expect(
                 await control.admit(
@@ -543,9 +544,10 @@ describe('AL outbound durable effect lifecycle', () => {
             })
         });
 
-        expect((await runtime.enqueueIfAbsent(msg)).verdict).toEqual({ kind: 'pending' });
+        const enqueued = runtime.enqueueIfAbsent(msg);
         await vi.advanceTimersByTimeAsync(200);
 
+        expect((await enqueued).verdict.kind).toBe('duplicate');
         expect(rejectedFirstCommit).toBe(true);
         expect(sent).toEqual([]);
         await runtime.dispose();
@@ -560,7 +562,7 @@ describe('AL outbound durable effect lifecycle', () => {
         const commitBundle = stores.admissionStore.commitBundle.bind(stores.admissionStore);
         let conflicts = 0;
         vi.spyOn(stores.admissionStore, 'commitBundle').mockImplementation(async (bundle, observation) => {
-            if (conflicts > 0) {
+            if (conflicts === AL_OUTBOUND_COMMIT_ATTEMPTS) {
                 return await commitBundle(bundle, observation);
             }
             conflicts++;
@@ -586,11 +588,12 @@ describe('AL outbound durable effect lifecycle', () => {
             })
         });
 
-        expect((await runtime.enqueueIfAbsent(msg)).verdict).toEqual({ kind: 'pending' });
+        const enqueued = runtime.enqueueIfAbsent(msg);
         await vi.advanceTimersByTimeAsync(200);
 
+        expect((await enqueued).verdict).toEqual({ kind: 'pending' });
         const stored = await stores.admissionStore.readStoredMessage(msg.id.msgId);
-        expect(conflicts).toBe(1);
+        expect(conflicts).toBe(AL_OUTBOUND_COMMIT_ATTEMPTS);
         expect(stored?.policy.ackTracking?.mode).toBe('receiver');
         expect(stored?.policy.receiptProofKeys).toEqual(keys);
         await runtime.dispose();

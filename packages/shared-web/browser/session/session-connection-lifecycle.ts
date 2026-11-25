@@ -17,7 +17,10 @@ import {
     toRallarOperationOptions,
     type RallarOperationOptions
 } from '@shared-web/browser/rallar-operation-options.ts';
-import type { RallarLifecycleCoordinator } from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';
+import type {
+    RallarConnectionEnd,
+    RallarLifecycleCoordinator
+} from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';
 import type { SessionPublicationCrypto } from '@shared-web/browser/session/session-publication-crypto.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import type { ALPublicationStageLimits } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
@@ -49,6 +52,8 @@ export interface RallarSessionConnectionLifecycle {
     disconnect(): Promise<void>;
     readRtcCaptureConfiguration(): RtcSignalingDiagnostics.CaptureConfiguration | undefined;
 }
+
+const RALLAR_SESSION_DISCONNECT: RallarConnectionEnd = { kind: 'disconnect' };
 
 interface PendingSessionConnection {
     readonly middlewareOptions: BrowserTransportInitOptions;
@@ -101,7 +106,7 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
             this.connectionGeneration += 1;
             this.connectionPromise = undefined;
             this.rtcCaptureConfiguration = undefined;
-            this.cleanupConnection(middleware);
+            this.cleanupConnection(middleware, RALLAR_SESSION_DISCONNECT);
         }).finally(() => {
             this.disconnectPromise = undefined;
         });
@@ -232,7 +237,7 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
             if (generation === this.connectionGeneration) {
                 this.connectionPromise = undefined;
                 try {
-                    this.cleanupConnection(middleware);
+                    this.cleanupConnection(middleware, RALLAR_SESSION_DISCONNECT);
                 }
                 catch (failure) {
                     reportBrowserConnectionCleanupFailure(toError(failure));
@@ -254,7 +259,10 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
             this.connectionGeneration += 1;
             this.connectionPromise = undefined;
             try {
-                this.cleanupConnection(connected.middleware);
+                this.cleanupConnection(connected.middleware, {
+                    kind: 'server-clock-ended',
+                    reason: toError(connected.serverClock.signal.reason).message
+                });
             }
             catch (failure) {
                 reportBrowserConnectionCleanupFailure(toError(failure));
@@ -264,7 +272,7 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
         this.stopClockObservation = () => connected.serverClock.signal.removeEventListener('abort', end);
     }
 
-    private cleanupConnection(middleware: ApiMiddleware | undefined): void {
+    private cleanupConnection(middleware: ApiMiddleware | undefined, end: RallarConnectionEnd): void {
         this.lifecycleIsDisconnected = true;
         this.stopClockObservation?.();
         this.stopClockObservation = undefined;
@@ -284,7 +292,7 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
         attempt(() => this.input.transportRuntime.shutdown());
         attempt(() => this.input.clearCurrentRoom());
         attempt(() => this.input.connectionRuntime.setConnectState('idle'));
-        attempt(() => this.input.lifecycle.disconnected());
+        attempt(() => this.input.lifecycle.disconnected(end));
         if (failure !== undefined) {
             throw failure;
         }

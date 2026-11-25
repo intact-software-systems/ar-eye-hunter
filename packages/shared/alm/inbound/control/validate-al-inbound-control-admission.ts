@@ -1,12 +1,15 @@
-import {
-    isALHopCompletionAck,
-    type ALAckPayload
-} from '../../../al-contracts/al-control.ts';
+import { isALHopCompletionAck } from '../../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../../al-contracts/al-message-resource-limits.ts';
 import { isALRecipientConfirmationAck } from '../../delivery/is-al-recipient-confirmation-ack.ts';
 import type { ALInboundControlAdmissionCandidate } from './compute-al-inbound-control-admission.ts';
-import { hasALOutsideStatement, isALSameReceiptStatement } from './is-al-same-receipt-statement.ts';
+import {
+    hasALOutsideStatement,
+    isALSameReceiptStatement,
+    toALReceiptStatementHistory,
+    toALReceiptStatementSubject,
+    type ALReceiptStatementSubject
+} from './is-al-same-receipt-statement.ts';
 
 /** Every reason this acknowledgement may not be admitted; an absent obligation makes the rest moot. */
 export function validateALInboundControlAdmission(
@@ -16,6 +19,8 @@ export function validateALInboundControlAdmission(
     if (!pending) {
         return [rejectInboundControl('Inbound acknowledgement sender has no pending obligation')];
     }
+    const history = toALReceiptStatementHistory(acks, nacks);
+    const subject = toALReceiptStatementSubject(ack);
     const issues: ALMessageRejection[] = [];
     if (!pending.expectedFromPeerIds.includes(ack.fromPeerId)) {
         issues.push(rejectInboundControl('Inbound acknowledgement sender has no pending obligation'));
@@ -25,10 +30,10 @@ export function validateALInboundControlAdmission(
             rejectInboundControl('Inbound acknowledgement names another origin than the message it acknowledges')
         );
     }
-    if (acks.some((prior) => isSameAckIdentity(prior, ack))) {
+    if (history.acks.some((prior) => isSameAckIdentity(prior, subject))) {
         issues.push(rejectInboundControl('Inbound acknowledgement was already admitted'));
     }
-    if (isALRecipientConfirmationAck(ack) && hasALOutsideStatement(pending, { acks, nacks }, ack)) {
+    if (isALRecipientConfirmationAck(ack) && hasALOutsideStatement(pending, history, subject)) {
         issues.push(
             rejectInboundControl('Inbound acknowledgement names a recipient that answered it is not subscribed')
         );
@@ -48,8 +53,10 @@ export function validateALInboundControlAdmission(
  * subtree completed. Only the terminal one completes its hop, so the two never duplicate each other. A word a child
  * forwards for another recipient repeats only under its own proof: another proof is another statement.
  */
-function isSameAckIdentity(prior: ALAckPayload, ack: ALAckPayload): boolean {
-    return prior.fromPeerId === ack.fromPeerId && isALHopCompletionAck(prior) === isALHopCompletionAck(ack) &&
+function isSameAckIdentity(prior: ALReceiptStatementSubject, ack: ALReceiptStatementSubject): boolean {
+    return prior.control.type === 'ack' && ack.control.type === 'ack' &&
+        prior.control.payload.fromPeerId === ack.control.payload.fromPeerId &&
+        isALHopCompletionAck(prior.control.payload) === isALHopCompletionAck(ack.control.payload) &&
         isALSameReceiptStatement(prior, ack);
 }
 

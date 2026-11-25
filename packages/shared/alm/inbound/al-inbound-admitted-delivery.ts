@@ -64,6 +64,7 @@ export namespace ALInboundAdmittedDelivery {
             | 'clock'
             | 'workClock'
             | 'effectPreparation'
+            | 'readGapNackRelayHops'
             | 'onResyncRequired'
             | 'receiptProofs'
             | 'diagnostics'
@@ -88,6 +89,7 @@ export class ALInboundAdmittedDelivery {
             verifyPublicationProof: dependencies.verifyPublicationProof,
             clock: dependencies.clock,
             effectPreparation: dependencies.effectPreparation,
+            readGapNackRelayHops: dependencies.readGapNackRelayHops,
             onResyncRequired: dependencies.onResyncRequired,
             receiptProofs: dependencies.receiptProofs,
             diagnostics: dependencies.diagnostics,

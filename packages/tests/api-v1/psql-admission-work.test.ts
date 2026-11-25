@@ -23,6 +23,7 @@ import type {
     ALInboundAdmissionStore,
     ALInboundWriteRequest
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import { toALOutboundOriginMessageKey } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
 import { toALOutboundMessageReference } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
@@ -325,7 +326,7 @@ describe('PostgreSQL outbound admission', () => {
         expect(await peekOutboundWorkReadyAt(backend.workQueue, namespace)).toBeUndefined();
     });
 
-    it('bumps the owning sender version when accepting outbound control messages', async () => {
+    it('moves the version of the acknowledged message, and not its sender version, when accepting a control', async () => {
         const { sql, repository } = storage;
         const namespace = 'psql-test:outbound:control-ack';
         const backend = new PSqlAdmissionWorkBackend({ sql, namespace, nowMs: Date.now });
@@ -395,10 +396,12 @@ describe('PostgreSQL outbound admission', () => {
 
         expect(acceptance).toEqual({ kind: 'committed' });
         const versionEntry = await repository.findEntry(namespace, `${namespace}:version:self`);
-        expect(JSON.parse(versionEntry!.value)).toEqual({
-            senderId: 'self',
-            version: 2
-        });
+        expect(JSON.parse(versionEntry!.value)).toEqual({ senderId: 'self', version: 1 });
+        const messageVersionEntry = await repository.findEntry(
+            namespace,
+            toALOutboundOriginMessageKey({ row: 'msg-version', namespace, originPeerId: 'self', msgId: msg.id.msgId })
+        );
+        expect(JSON.parse(messageVersionEntry!.value)).toEqual({ msgId: msg.id.msgId, version: 2 });
 
         const ackEntry = await repository.findEntry(
             namespace,
@@ -424,6 +427,8 @@ describe('PostgreSQL outbound admission', () => {
         await stores.admissionStore.commitBundle({
             senderId: 'self',
             expectedVersion: undefined,
+            fencesSender: true,
+            message: { originPeerId: 'self', msgId: msg.id.msgId, expectedVersion: undefined, expiresAtMs: undefined },
             mutations: [
                 {
                     kind: 'set-msg-owner',

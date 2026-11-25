@@ -41,7 +41,13 @@ it('accepts pending room admission and rejects an active membership without a jo
     };
     expect(validate(pending), JSON.stringify(validate.errors)).toBe(true);
     expect(validate({ ...pending, status: 'active' })).toBe(false);
-    expect(validate({ ...pending, status: 'active', joined: pending.updated })).toBe(true);
+    const active = { ...pending, status: 'active', joined: pending.updated };
+    expect(validate(active)).toBe(true);
+    const guestLease = { admittedAtEpochMs: 1, expiresAtEpochMs: 14_400_001 };
+    expect(validate({ ...active, role: 'member', guestLease })).toBe(true);
+    expect(validate({ ...active, role: 'owner' })).toBe(true);
+    expect(validate({ ...active, role: 'owner', guestLease })).toBe(false);
+    expect(validate({ ...active, role: 'admin', guestLease })).toBe(false);
 });
 
 it('accepts explicit null failure details while rejecting invalid non-null values', () => {

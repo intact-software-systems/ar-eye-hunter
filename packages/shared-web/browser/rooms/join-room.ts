@@ -86,6 +86,7 @@ async function joinAuthenticatedRoom(input: JoinRoomInput): Promise<GroupSnapsho
     const currentRoomRef = input.stateStore.resolveCurrentRoomRef();
     const generationId = input.newPresenceGenerationId();
     const snapshot = await joinStateGroup({
+        presenceOnly: target.options.presenceOnly,
         nowMs: () => readGroupPresenceCreationEpochMs(context),
         groupPresence: context.middleware.heartbeat.groupPresence,
         groupId: roomId,

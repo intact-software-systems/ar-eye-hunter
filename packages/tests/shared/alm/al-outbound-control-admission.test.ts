@@ -257,7 +257,7 @@ describe('outbound control admission identity', () => {
         expect(await admissionStore.readPendingAck({ originPeerId: 'sender', msgId: 'message' })).toBeUndefined();
         expect(JSON.stringify(ack)).toBe(candidate);
         const acceptedState = [...state.data];
-        expect((await control.admit(ack, 'peer')).kind).toBe('rejected');
+        expect((await control.admit(ack, 'peer')).kind).toBe('duplicate');
         expect([...state.data]).toEqual(acceptedState);
     });
 
@@ -345,14 +345,14 @@ describe('outbound control admission identity', () => {
         expect([...state.data]).toEqual(baseline);
     });
 
-    it('admits one stable repair hint and rejects a semantic duplicate', async () => {
+    it('admits one stable repair hint and answers a semantic duplicate `duplicate`', async () => {
         const { admissionStore, workQueue, control, state } = createFixture();
         await seedDirectObligation(admissionStore);
         const first = repairControl(1);
 
         expect(await control.admit(first, 'peer')).toEqual({ kind: 'committed' });
         const acceptedState = [...state.data];
-        expect((await control.admit(repairControl(2), 'peer')).kind).toBe('rejected');
+        expect((await control.admit(repairControl(2), 'peer')).kind).toBe('duplicate');
         expect([...state.data]).toEqual(acceptedState);
         expect(await readRetainedWork(admissionStore, workQueue)).toEqual([{
             kind: 'repair-hint',
@@ -1027,6 +1027,7 @@ function endMessageAfterNextCommit(
                 msgId: 'message',
                 stored: read.storedMessage,
                 expectedVersion: read.clientRecord?.version,
+                messageVersion: read.messageVersion,
                 openReceipt: read.pendingAck,
                 firstHopWait: read.firstHopWait
             }))

@@ -76,6 +76,48 @@ describe('director delivery admission', () => {
         expect(ws).not.toHaveBeenCalled();
     });
 
+    it('admits a director heartbeat once on the room WebSocket even when local RTC accepts sends', async () => {
+        const rtc = createMessageDelivery('rtc', { kind: 'admitted', durable: true, queuedAttempts: 1 });
+        const ws = createMessageDelivery('ws', { kind: 'admitted', durable: true, queuedAttempts: 1 });
+        const delivered: { carrier: string; roomRef: RallarDirectorStatus['roomRef']; }[] = [];
+        const transport = createTransport(rtc, async (message) => {
+            delivered.push({ carrier: 'ws', roomRef: message.roomRef });
+            return ws.handle;
+        }, {
+            rtcSend: async (message) => {
+                delivered.push({ carrier: 'rtc', roomRef: message.roomRef });
+                return rtc.handle;
+            }
+        });
+        const result = await transport.sendRoomEnvelope({ ...envelopeInput, bestEffortFirst: 'ws' });
+        expect(result).toEqual({ status: 'sent', ws: ws.handle });
+        expect(delivered).toEqual([{ carrier: 'ws', roomRef: current.roomRef }]);
+    });
+
+    it('lets a director heartbeat use RTC if the WS carrier failed, and honors a WS refusal', async () => {
+        const rtc = createMessageDelivery('rtc', { kind: 'admitted', durable: true, queuedAttempts: 1 });
+        const ws = createMessageDelivery('ws', { kind: 'failed', detail: 'WS disconnected' });
+        const options = { ...envelopeInput, bestEffortFirst: 'ws' as const };
+        expect(await createTransport(rtc, async () => ws.handle).sendRoomEnvelope(options))
+            .toEqual({ status: 'sent', ws: ws.handle, rtc: rtc.handle });
+        const denied = createMessageDelivery('ws', { kind: 'refused', reason: 'unauthorized', detail: 'Room denied' });
+        expect(await createTransport(rtc, async () => denied.handle).sendRoomEnvelope(options))
+            .toEqual({ status: 'failed', ws: denied.handle, reason: 'Room denied' });
+    });
+
+    it('sends a director heartbeat over RTC alone while the room WebSocket is down', async () => {
+        const rtc = createMessageDelivery('rtc', { kind: 'admitted', durable: false, queuedAttempts: 1 });
+        const ws = async (): Promise<never> => {
+            throw new Error('A down room WebSocket must not carry the heartbeat.');
+        };
+        const options = { ...envelopeInput, bestEffortFirst: 'ws' as const };
+        expect(await createTransport(rtc, ws, { isWebSocketDown: true }).sendRoomEnvelope(options))
+            .toEqual({ status: 'sent', rtc: rtc.handle });
+        const failed = createMessageDelivery('rtc', { kind: 'failed', detail: 'RTC failed' });
+        expect(await createTransport(failed, ws, { isWebSocketDown: true }).sendRoomEnvelope(options))
+            .toEqual({ status: 'failed', rtc: failed.handle, reason: 'RTC failed' });
+    });
+
     it('falls back after failed RTC and reports WS refusal reason', async () => {
         const rtc = createMessageDelivery('rtc', { kind: 'failed', detail: 'RTC failed' });
         const ws = createMessageDelivery('ws', { kind: 'refused', reason: 'unauthorized', detail: 'Room denied' });
@@ -427,7 +469,11 @@ describe('director notification fence', () => {
     it('stamps the snapshot and the roster of the director\'s cached room snapshot on a receipted room output', async () => {
         setRallarFacadeRoomSnapshots([toDirectorRoomSnapshot({ snapshotVersion: 9, rosterVersion: 4 })]);
         const facade = createRallarTestFacade();
-        const transport = new BrowserDirectorRelayTransport({ messages: facade.messages, readSession: () => mocks.apiMiddleware.session });
+        const transport = new BrowserDirectorRelayTransport({
+            messages: facade.messages,
+            readSession: () => mocks.apiMiddleware.session,
+            isWebSocketDown: () => false
+        });
 
         await transport.sendRoomEnvelope({ ...envelopeInput, ack: 'all-logical-recipients' });
 
@@ -453,7 +499,8 @@ describe('director command over a real RTC origin', () => {
         setRallarFacadeRoomSnapshots([snapshot]);
         const transport = new BrowserDirectorRelayTransport({
             messages: createRallarTestFacade().messages,
-            readSession: () => mocks.apiMiddleware.session
+            readSession: () => mocks.apiMiddleware.session,
+            isWebSocketDown: () => false
         });
 
         const result = await transport.sendCommand({ ...commandInput, current: { ...clientStatus, roomRef: ORIGIN_ROOM } });
@@ -552,8 +599,9 @@ function toRoomOperation(room: RoomChannelDouble): RallarMessagesOperations['roo
 }
 
 interface TransportChannels {
-    readonly room: RallarMessagesOperations['room'];
-    readonly rtcSend: RallarMessagesOperations['rtc']['send'];
+    readonly room?: RallarMessagesOperations['room'];
+    readonly rtcSend?: RallarMessagesOperations['rtc']['send'];
+    readonly isWebSocketDown?: boolean;
 }
 
 function createTransport(
@@ -575,6 +623,7 @@ function createTransport(
                 throw new Error('Not a ledger test');
             }
         },
-        readSession: () => ({ clientId: 'client', sessionId: 'session', username: 'user', accessToken: 'test', expiresAtEpochMs: 60_000 })
+        readSession: () => ({ clientId: 'client', sessionId: 'session', username: 'user', accessToken: 'test', expiresAtEpochMs: 60_000 }),
+        isWebSocketDown: () => channels?.isWebSocketDown ?? false
     });
 }

@@ -72,6 +72,11 @@ export async function readStoredControlOwnerIndex(
 export interface ALInboundControlSubject {
     readonly msgId: string;
     readonly fromPeerId: string;
+    /**
+     * The original sender to read the message's rows under when the index tracks it but not for `fromPeerId`, as for a
+     * new parent's layout child (6d); absent, the rows are read only for a child the index names.
+     */
+    readonly senderId?: string;
 }
 
 /** Absent when the owner index names no single original sender for the controlling peer. */
@@ -84,7 +89,8 @@ export async function readControlDecisionSurface(
     if (controlOwners === undefined) {
         return undefined;
     }
-    const senderId = resolveALInboundAcknowledgedSenderId(controlOwners, subject.fromPeerId);
+    const senderId = resolveALInboundAcknowledgedSenderId(controlOwners, subject.fromPeerId) ??
+        resolveALInboundTrackedSenderId(controlOwners, subject.senderId);
     if (senderId === undefined) {
         return undefined;
     }
@@ -107,6 +113,16 @@ function resolveALInboundAcknowledgedSenderId(
         return undefined;
     }
     return controlOwners.values.find((value) => value.peerId === fromPeerId)?.senderId ?? undefined;
+}
+
+/** The named original sender, when an unambiguous index tracks the message under it. */
+function resolveALInboundTrackedSenderId(
+    controlOwners: ALInboundControlOwnerIndex,
+    senderId: string | undefined
+): string | undefined {
+    return !controlOwners.ambiguous && controlOwners.values.some((value) => value.senderId === senderId)
+        ? senderId
+        : undefined;
 }
 
 export async function applyALInboundControlMutation(

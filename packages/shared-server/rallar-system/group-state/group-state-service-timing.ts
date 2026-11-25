@@ -69,6 +69,7 @@ type InternalCommandIngressCapture =
     | 'captureFormationAutomationMutationIngress'
     | 'captureTopologyPublicationMutationIngress'
     | 'captureTimelineDeadlineMutationIngress'
+    | 'captureGuestMembershipMutationIngress'
     | 'captureActivationStatusMutationIngress';
 
 // Internal ingress captures share one signature, so one factory
@@ -127,6 +128,7 @@ function createTimedIngressCaptureOperations(
         captureFormationCriterionMutationIngress: timedCommand('captureFormationCriterionMutationIngress'),
         captureFormationAutomationMutationIngress: timedCommand('captureFormationAutomationMutationIngress'),
         captureTopologyPublicationMutationIngress: timedCommand('captureTopologyPublicationMutationIngress'),
+        captureGuestMembershipMutationIngress: timedCommand('captureGuestMembershipMutationIngress'),
         captureTimelineDeadlineMutationIngress: timedCommand('captureTimelineDeadlineMutationIngress'),
         captureActivationStatusMutationIngress: timedCommand('captureActivationStatusMutationIngress'),
         captureExpiredPresenceMutationIngresses: async (atEpochMs) =>

@@ -95,6 +95,23 @@ it('sends listing-only intent through HTTP and adopts the authoritative metadata
     expect(result.group.metadata).toEqual({ rallarDirectoryListing: 'unlisted', theme: 'forest' });
 });
 
+it('sends the guest invitation verifier alone on the scoped owner update', async () => {
+    const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+    const workflows = await vi.importActual<typeof RoomGroupStateMutationWorkflows>(
+        '@shared-web/browser/rooms/room-group-state-mutation-workflows.ts'
+    );
+    roomWorkflowMocks.updateStateGroupDetails.mockImplementation(workflows.updateStateGroupDetails);
+    const snapshot = createRoomSnapshot('room-1', []);
+    const bodies: unknown[] = [];
+    vi.stubGlobal('fetch', async (_input: RequestInfo | URL, init?: RequestInit) => {
+        bodies.push(JSON.parse(String(init?.body)));
+        return toJsonResponse(snapshot);
+    });
+    const guestInvitationVerifier = 'ef'.repeat(32);
+    await createRallarFacade().rooms.update({ roomRef: snapshot.group, guestInvitationVerifier });
+    expect(bodies).toEqual([{ guestInvitationVerifier, actorPrincipalId: 'principal-1', actorSessionId: 'session-1' }]);
+});
+
 function toJsonResponse(body: object): Response {
     return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 }

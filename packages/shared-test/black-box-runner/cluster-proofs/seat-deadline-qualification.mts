@@ -86,7 +86,7 @@ class SeatDeadlineTrial {
                 await this.recoverOverdueOffer(deadline, offer, observer);
                 await this.claimSeat(deadline);
             } else {
-                await this.waitForClaimTime(deadline + (this.timing === 'before' ? -750 : 100));
+                await this.waitForClaimTime(deadline + (this.timing === 'before' ? -1_500 : 100));
                 const after = await this.claimSeat(deadline);
                 await delay(Math.max(0, deadline + 100 - after));
                 if (this.timing === 'after') await this.waitForPromotion(observer);
@@ -255,18 +255,15 @@ class SeatDeadlineTrial {
 
     private async waitForPromotion(observer: ViewPushProofSocket) {
         const { claim, next } = this.input;
-        let cursor = observer.frames.length;
-        const limit = AbortSignal.timeout(15_000);
-        while ((await this.readSeat(claim.origin, next))?.status !== 'offered') {
-            limit.throwIfAborted();
-            const notice = await observer.waitForFrame(frame => {
-                if (!hasViewInvalidatedTopic(frame)) return false;
-                const hint = decodeViewInvalidationMessage(frame);
-                return hint.resource === 'room-lobby' && hint.principalId === next.clientId &&
-                    hint.scope.workspaceId === this.workspaceId && hint.scope.applicationId === 'seat-qualification';
-            }, cursor);
-            cursor = observer.frames.indexOf(notice, cursor) + 1;
-        }
+        // The observer opened before release. Its invalidation can arrive before the claim node projects the seat.
+        await observer.waitForFrame(frame => {
+            if (!hasViewInvalidatedTopic(frame)) return false;
+            const hint = decodeViewInvalidationMessage(frame);
+            return hint.resource === 'room-lobby' && hint.principalId === next.clientId &&
+                hint.scope.workspaceId === this.workspaceId && hint.scope.applicationId === 'seat-qualification';
+        });
+        await waitForProofCondition(async () => (await this.readSeat(claim.origin, next))?.status === 'offered',
+            'confirmed promotion on the claim node');
     }
 
     private async readFinalAllocation(origin: string) {

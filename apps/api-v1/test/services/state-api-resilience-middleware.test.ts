@@ -226,3 +226,17 @@ function createStateApiConfiguration(
         }
     };
 }
+
+test('anonymous guest redemption shares its ingress limit across room names and caller-supplied client IDs', async () => {
+    const app = new Hono();
+    app.use('/api/state/*', createStateApiResilienceMiddleware({
+        namespace: crypto.randomUUID(),
+        configuration: createStateApiConfiguration({ request: 1, eventList: 1 })
+    }));
+    app.post('/api/state/*', context => context.text('admitted'));
+    const redeem = (room: string) => app.request('/api/state/apps/app/workspaces/ws/groups/' + room + '/guests/requests/abc', {
+        method: 'POST', headers: { 'x-client-id': room }
+    });
+    assert.equal((await redeem('market')).status, 200);
+    assert.equal((await redeem('square')).status, 429);
+});

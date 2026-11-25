@@ -1,6 +1,7 @@
 import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import { requireSnapshot, seedOpenGroup } from '../presence/group-presence-test-runtime.ts';
-import { computeGroupClockChange, computeGroupClockUpdate } from '@shared-server/rallar-system/group-state/mutation/aggregate/compute-group-clock-change.ts';
+import { computeGroupClockChange } from '@shared-server/rallar-system/group-state/mutation/aggregate/compute-group-clock-change.ts';
+import { computeGroupClockUpdate } from '@shared-server/rallar-system/group-state/mutation/aggregate/compute-group-clock-update.ts';
 import { expect, it } from 'vitest';
 
 it('freezes 8:14 at the server and resumes the same balance ten minutes later', () => {
@@ -50,9 +51,9 @@ it('resumes a plain clock without interpreting app-owned timeline metadata', asy
     const { group } = await requireSnapshot(repository, 'court');
     const clock = { name: 'match', revision: 3, status: 'paused', remainingMs: 9000 };
     const metadata = { rallarRoomClocks: [clock], rallarRoomTimelines: ['app-owned'] };
-    const result = computeGroupClockUpdate({ ...group, kind: 'room', metadata }, {
+    const result = computeGroupClockUpdate({ group: { ...group, kind: 'room', metadata }, command: {
         operation: 'resume', name: 'match', expectedRevision: 3, expectedDirectorEpoch: 1
-    }, 1000);
+    }, now: 1000 });
     expect(result).toMatchObject({ metadata: { rallarRoomTimelines: ['app-owned'], rallarRoomClocks: [
         { name: 'match', revision: 4, status: 'running', endsAtEpochMs: 10000 }
     ] } });
@@ -89,13 +90,13 @@ it('preserves elapsed boundaries across accepted writes from slower clocks', asy
     const { group } = await requireSnapshot(repository, 'court');
     const phases = [{ phase: 'first', startsAtEpochMs: 0 }, { phase: 'second', startsAtEpochMs: 995 }];
     const publish = { name: 'court', operation: 'publish-schedule' as const, expectedDirectorEpoch: 1, expectedRevision: 0, phases };
-    const first = computeGroupClockUpdate({ ...group, kind: 'room' }, publish, 1000);
+    const first = computeGroupClockUpdate({ group: { ...group, kind: 'room' }, command: publish, now: 1000 });
     if ('rejectionCode' in first) throw new Error(first.message);
     const slower = { ...publish, expectedRevision: 1 };
-    expect(computeGroupClockUpdate(first, { ...slower, phases: [phases[0], { ...phases[1], startsAtEpochMs: 1200 }] }, 990))
+    expect(computeGroupClockUpdate({ group: first, command: { ...slower, phases: [phases[0], { ...phases[1], startsAtEpochMs: 1200 }] }, now: 990 }))
         .toHaveProperty('rejectionCode');
-    const next = computeGroupClockUpdate(first, { ...slower, phases: [...phases, { phase: 'third', startsAtEpochMs: 1100 }] }, 990);
+    const next = computeGroupClockUpdate({ group: first, command: { ...slower, phases: [...phases, { phase: 'third', startsAtEpochMs: 1100 }] }, now: 990 });
     if ('rejectionCode' in next) throw new Error(next.message);
-    expect(computeGroupClockUpdate(next, { ...publish, expectedRevision: 2, phases: [...phases, { phase: 'third', startsAtEpochMs: 1000 }] }, 980))
+    expect(computeGroupClockUpdate({ group: next, command: { ...publish, expectedRevision: 2, phases: [...phases, { phase: 'third', startsAtEpochMs: 1000 }] }, now: 980 }))
         .toHaveProperty('rejectionCode');
 });

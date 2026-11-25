@@ -88,6 +88,12 @@ describe('native TypeScript 7 repository boundaries', () => {
             },
             {
                 dependency: 'typescript',
+                manifest: 'apps/grumpy-town/package.json',
+                section: 'devDependencies',
+                version: expectedTypeScriptVersion
+            },
+            {
+                dependency: 'typescript',
                 manifest: 'apps/rallar-black-box/package.json',
                 section: 'devDependencies',
                 version: expectedTypeScriptVersion

@@ -76,6 +76,7 @@ export function createClientRouteDeps(
     };
     const processClientAppInbox = input.processClientAppInbox;
     return {
+        readGuestRoom: async () => undefined, nowEpochMs: Date.now,
         clientStateService,
         requireApiAuthSession: () => {
             authCalls += 1;

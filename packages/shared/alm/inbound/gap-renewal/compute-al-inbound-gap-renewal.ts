@@ -17,8 +17,8 @@ import { toALInboundMessageReference } from '../al-inbound-canonical-message.ts'
 import type { ALInboundEffectIntent } from '../al-inbound-effect-intent.ts';
 import { toALInboundEffectId, type ALInboundDurableEffectWrite } from '../al-inbound-work-entry.ts';
 import {
-    isALInboundCountedSelf,
-    isALInboundRecipientReceiptIntent
+    isALInboundRecipientReceiptIntent,
+    resolveALInboundReceiptStanding
 } from '../receipt-proof/is-al-inbound-recipient-receipt.ts';
 import { isALOrderingHeldStartRange } from './compute-al-ordering-held-entry.ts';
 
@@ -108,7 +108,7 @@ export function toALInboundGapRenewalEffects(
         return [];
     }
     const { toPeerId } = gapNack.payload;
-    const countsSelf = isALInboundCountedSelf(read.msg, read.plan, input.selfPeerId);
+    const standing = resolveALInboundReceiptStanding(read.msg, read.plan, input.selfPeerId);
     const start = toALOrderingTrackStartInput({
         msg: read.msg,
         plan: read.plan,
@@ -128,7 +128,7 @@ export function toALInboundGapRenewalEffects(
             toPeerId,
             message: toALInboundMessageReference(read.msg),
             traceId: read.msg.id.traceId,
-            signsForRecipient: isALInboundRecipientReceiptIntent(gapNack, countsSelf),
+            signsForRecipient: isALInboundRecipientReceiptIntent(gapNack, standing),
             heldStart: isALOrderingHeldStartRange({ range, start })
         };
         return {

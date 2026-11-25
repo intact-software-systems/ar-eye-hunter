@@ -33,6 +33,31 @@ export const AL_MESSAGE_RESOURCE_LIMITS = {
     gapRenewalMaxStretch: 1.5
 } as const;
 
+/**
+ * The most relays a gap NACK may pass toward its origin, which the wire carries and each relay spends one of. The
+ * overlay planner bounds a layout's degree, not its depth, so a layout's longest line runs through every session of a
+ * room at the RTC room limit: the origin and `collectionEntries` recipients, with all but the last one relaying.
+ */
+export const AL_GAP_NACK_RELAY_HOP_LIMIT = AL_MESSAGE_RESOURCE_LIMITS.collectionEntries - 1;
+
+/**
+ * The relays a leaf grants its gap NACK in a room of `liveSessionCount` sessions. Layouts that disagree during a reshape
+ * route it along no one layout, so only the room's size bounds its path: one fewer than its sessions, and never above
+ * the wire limit. A cycle spends the grant, so a smaller room pays fewer forwards for one.
+ */
+export function computeALGapNackRelayHops(liveSessionCount: number): number {
+    return Math.min(AL_GAP_NACK_RELAY_HOP_LIMIT, Math.max(0, liveSessionCount - 1));
+}
+
+/**
+ * The relay hops a relay's forward of a gap NACK carries: one fewer than it received, and never more than one fewer than
+ * its own grant for the message's room, so a child that claims more than its room allows is bounded at its first relay.
+ * Below zero, the relay forwards nothing.
+ */
+export function computeALRelayedGapNackHops(receivedHops: number, relayGrant: number): number {
+    return Math.min(receivedHops, relayGrant) - 1;
+}
+
 /** An arrival's own gap report carries 1, so a receiver's first renewal of it carries 2. */
 export const AL_FIRST_GAP_RENEWAL_REQUEST_NUMBER = 2;
 

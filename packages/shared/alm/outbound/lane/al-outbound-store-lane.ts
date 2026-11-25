@@ -7,7 +7,6 @@ import type { ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
 import { AL_VOLATILE_STORE_EVICTION_INTERVAL_MS } from '../../ALStoreRetention.ts';
 import type { ALCheckpointPort } from '../../checkpoint/al-checkpoint.ts';
 import type { ALDeliveryAdmissionVerdict } from '../../delivery/al-delivery-lifecycle.ts';
-import type { ALBrowserLocks } from '../../storage/al-browser-locks.ts';
 import { ALStorageReadiness } from '../../storage/al-storage-readiness.ts';
 import {
     toALDurableWorkLaneOwnership,
@@ -44,6 +43,7 @@ import type {
     ALOutboundSettlementEmitter,
     ALOutboundSettlementFact
 } from '../al-outbound-message-runtime.ts';
+import { toALOutboundPendingControlId } from '../al-outbound-pending-admission.ts';
 import { ALOutboundRepairAdmission } from '../al-outbound-repair-admission.ts';
 import { ALOutboundRepairRetransmission } from '../al-outbound-repair-retransmission.ts';
 import {
@@ -51,22 +51,25 @@ import {
     AL_OUTBOUND_WORK_PAGE_SIZE,
     readALOutboundWorkReadyAt,
     toALOutboundDequeueWork,
+    toALOutboundWorkKey,
     toALOutboundWorkType,
     type ALOutboundDequeueDeferral,
     type ALOutboundWorkDeferral
 } from '../al-outbound-work-entry.ts';
 import type { ALOutboundControlSource } from '../compute-al-outbound-control-admission.ts';
 import type { ALOutboundComputedDto } from '../compute-al-outbound-dispatch.ts';
-import type {
-    ALOutboundControlAdmission,
-    ALOutboundControlAdmissionResult
+import {
+    AL_OUTBOUND_COMMIT_ATTEMPTS,
+    type ALOutboundControlAdmission
 } from '../control/al-outbound-control-admission.ts';
 import { ALOutboundReceiptAdmission } from '../control/al-outbound-receipt-admission.ts';
+import type { ALOutboundControlAdmissionResult } from '../control/read-al-outbound-recipient-proof.ts';
 import { ALOutboundFirstHopWait } from '../first-hop/al-outbound-first-hop-wait.ts';
+import { ALOutboundLaneMessageEnd } from '../message-end/al-outbound-lane-message-end.ts';
 import type { ALOutboundCanonicalHandoff } from './al-outbound-canonical-handoff.ts';
 import { ALOutboundDequeuedAdmission } from './al-outbound-dequeued-admission.ts';
 import type { ALOutboundReceiptWorkEvidence } from './al-outbound-receipt-observation.ts';
-import type { ALOutboundSendControls } from './al-outbound-send-controls.ts';
+import type { ALOutboundEndedReason, ALOutboundSendControls } from './al-outbound-send-controls.ts';
 import { computeALOutboundSettledCommittedRows } from './compute-al-outbound-settled-committed-rows.ts';
 import { recordALOutboundDequeueTiming } from './record-al-outbound-dequeue-timing.ts';
 import { runALOutboundDequeueClaimGroup } from './run-al-outbound-dequeue-claim-group.ts';
@@ -76,7 +79,8 @@ import {
     recordALOutboundClaimTerminalReason,
     settleALOutboundClaim,
     type ALOutboundClaimAttemptSettlement,
-    type ALOutboundClaimObservation
+    type ALOutboundClaimObservation,
+    type ALOutboundClaimRun
 } from './settle-al-outbound-claim.ts';
 
 export namespace ALOutboundStoreLane {
@@ -87,7 +91,6 @@ export namespace ALOutboundStoreLane {
         readonly workerId: string;
         /** Foreign queue rows only the durable lane admits; the volatile lane names none. */
         readonly dequeueTypes: ReadonlySet<string>;
-        readonly browserLocks: ALBrowserLocks | undefined;
         /** The session ownership the durable lane's work runs under; undefined for the volatile lane, which owns its memory pair. */
         readonly durableWorkOwnership: ALDurableWorkOwnership | undefined;
         /** The memory pair's sweep; undefined for a lane over a durable pair. */
@@ -124,8 +127,11 @@ export class ALOutboundStoreLane<TPrepared> {
     private readonly removeStorageResetListener: (() => void) | undefined;
     private readonly removeForeignCommitListener: (() => void) | undefined;
     private readonly takeOverSubscription: Unsubscribe | undefined;
+    private readonly messageEnd: ALOutboundLaneMessageEnd<TPrepared>;
     private nextEvictionAtMs = Number.NEGATIVE_INFINITY;
     private disposed = false;
+    /** The running batch's settled claims; its selection empties it, so a batch that never ended leaves nothing here. */
+    private claimRuns: ALOutboundClaimRun[] = [];
 
     constructor(input: ALOutboundStoreLane.Input<TPrepared>) {
         this.input = input;
@@ -141,6 +147,12 @@ export class ALOutboundStoreLane<TPrepared> {
         this.repairRetransmission = admissions.repairRetransmission;
         const workType = toALOutboundWorkType(stores.admissionStore.namespace);
         this.work = this.createWorkHandler(workPort, workType);
+        this.messageEnd = new ALOutboundLaneMessageEnd({
+            admissionStore: stores.admissionStore,
+            workPort,
+            nowMs: () => runtime.workClock.nowMs(),
+            announce: (rows) => this.work.committed(rows)
+        });
         this.removeForeignCommitListener = input.durableWorkOwnership?.onForeignCommit(
             workType,
             (rows) => this.applyForeignCommit(rows)
@@ -209,6 +221,11 @@ export class ALOutboundStoreLane<TPrepared> {
         this.work.committed(rows);
     }
 
+    /** Whether this lane holds the message an end must reach: stored, or retained by this page as an admission. */
+    async holdsMessageForEnd(msgId: string): Promise<boolean> {
+        return await this.messageEnd.holdsMessage(msgId);
+    }
+
     /** A memory read on the volatile lane: whether this lane admitted the message. */
     async ownsMessage(msgId: string): Promise<boolean> {
         return await this.input.stores.admissionStore.hasSentMessageAdmission(msgId);
@@ -247,6 +264,7 @@ export class ALOutboundStoreLane<TPrepared> {
             if (outcome.status === 'fulfilled') {
                 this.setCanonicalHandoff(outcome.value);
                 this.recordStorageHealth(outcome.value);
+                this.messageEnd.rememberRetainedAdmission(outcome.value.computed);
             }
         }
         const committedRows = computeALOutboundSettledCommittedRows(
@@ -293,8 +311,11 @@ export class ALOutboundStoreLane<TPrepared> {
             (unavailable): ALOutboundControlAdmissionResult => ({ kind: 'storage-unavailable', ...unavailable })
         );
         // A foreign control and a rejected one write nothing, so they owe no batch.
-        if (admitted.kind === 'committed' || admitted.kind === 'pending-control') {
+        if (admitted.kind === 'committed') {
             this.work.committed(AL_WORK_UNDESCRIBED_COMMIT);
+        }
+        else if (admitted.kind === 'pending-control') {
+            this.expeditePendingControl(msg);
         }
         return admitted;
     }
@@ -305,17 +326,32 @@ export class ALOutboundStoreLane<TPrepared> {
             (unavailable): ALOutboundControlAdmissionResult => ({ kind: 'storage-unavailable', ...unavailable })
         );
         if (admitted.kind === 'pending-control') {
-            this.work.committed(AL_WORK_UNDESCRIBED_COMMIT);
+            this.expeditePendingControl(control);
         }
         return admitted;
     }
 
     /**
-     * A hand-over ends this lane's receipt of the message and states nothing. A receipt its store
-     * cannot end stays until it expires.
+     * A control whose commit lost to this owner's own writes is replayed ahead of the running batch's remaining
+     * claims, and again while its replays keep losing, `AL_OUTBOUND_COMMIT_ATTEMPTS` runs in all: those
+     * claims are the writes it lost to, and a page of them can outlast the deadline it answers.
      */
-    async endReceipt(msgId: string): Promise<void> {
-        await this.readiness.runStoreOperation(() => this.repairAdmission.endReceipt(msgId), () => undefined);
+    private expeditePendingControl(control: ALMessage): void {
+        const { namespace } = this.input.stores.admissionStore;
+        this.work.expedite(
+            [toALOutboundWorkKey(namespace, toALOutboundPendingControlId(control))],
+            AL_OUTBOUND_COMMIT_ATTEMPTS
+        );
+        // Harmless when the batch claims the row: the follow-up batch this owes finds it gone, a readiness probe.
+        this.work.committed(AL_WORK_UNDESCRIBED_COMMIT);
+    }
+
+    /**
+     * Ends a cancelled or handed-over message in this lane's store and states nothing. An end whose commit conflicts
+     * is retained as work, announced as a commit's rows are; a store that cannot end it records that failure.
+     */
+    async endMessage(msgId: string, endedReason: ALOutboundEndedReason): Promise<void> {
+        await this.readiness.runStoreOperation(() => this.messageEnd.end(msgId, endedReason), () => undefined);
     }
 
     /** What the admission states, as this lane's store holds it: nothing on the memory pair survives the document. */
@@ -340,6 +376,7 @@ export class ALOutboundStoreLane<TPrepared> {
         batchStartedAtMs: number
     ): Promise<ALWorkReadySelection> {
         this.evictWhenDue();
+        this.claimRuns = [];
         const startedAtMs = this.input.runtime.workClock.nowMs();
         const claims = await port.claim({ maxCount: pageSize, observedEntries: undefined });
         const claimDurationMs = Math.max(0, this.input.runtime.workClock.nowMs() - startedAtMs);
@@ -411,6 +448,7 @@ export class ALOutboundStoreLane<TPrepared> {
                 return { status: 'completed' };
             }
             observed.evidence = this.createClaimEvidence(work, batchStartedAtMs, deferObservation);
+            observed.work = { effectId: work.effectId, payloadKind: work.payload.kind };
             if (commitsALOutboundWorkOutsideLane(work.payload.kind)) {
                 this.work.claimCommitted();
             }
@@ -451,11 +489,15 @@ export class ALOutboundStoreLane<TPrepared> {
     }
 
     private async settleOutboundClaim(settlement: ALOutboundClaimAttemptSettlement): Promise<ALWorkAttemptResult> {
-        return await settleALOutboundClaim({
+        const settled = await settleALOutboundClaim({
             ...settlement,
+            claimRun: this.work.getClaimRun(settlement.claim),
             capture: this.input.runtime.receiptWorkCapture,
-            readNowMs: () => this.input.runtime.workClock.nowMs()
+            readNowMs: () => this.input.runtime.workClock.nowMs(),
+            timed: this.input.runtime.diagnostics !== undefined
         });
+        this.claimRuns.push(...settled.runs);
+        return settled.outcome;
     }
 
     /** A deadline crossed during the read is expiry, not a defect: the work is dropped, not rejected. */
@@ -504,7 +546,10 @@ export class ALOutboundStoreLane<TPrepared> {
         }
         switch (effect.payload.kind) {
             case 'admit-message':
-                return await this.effects.admitPendingMessage(effect, evidence);
+                return await this.messageEnd.runAdmissionUnlessEnding(
+                    effect.payload.message.msgId,
+                    () => this.effects.admitPendingMessage(effect, evidence)
+                );
             case 'dequeue-message':
                 return await this.dequeuedAdmission.admitDequeuedMessage(effect, evidence, observed);
             case 'admit-control':
@@ -532,6 +577,8 @@ export class ALOutboundStoreLane<TPrepared> {
                     attemptIdentity: effect.effectId
                 });
                 return { status: 'completed' };
+            case 'end-message':
+                return await this.messageEnd.runEnd(effect.payload);
         }
     }
 
@@ -650,7 +697,12 @@ export class ALOutboundStoreLane<TPrepared> {
             claimedCount: event.claimedCount,
             completedCount: event.completedCount,
             rescheduledCount: event.rescheduledCount,
-            rejectedCount: event.rejectedCount
+            rejectedCount: event.rejectedCount,
+            claimDurationMs: event.claimDurationMs,
+            runDurationMs: event.runDurationMs,
+            releaseDurationMs: event.releaseDurationMs,
+            startedAtMs: event.startedAtMs,
+            claims: this.claimRuns
         });
     }
 
@@ -725,7 +777,6 @@ function createALOutboundLaneAdmissions<TPrepared>(
         toOutboxEntry: runtime.toOutboxEntry,
         decodePreparedMessage: runtime.decodePreparedMessage,
         clock: runtime.clock,
-        browserLocks: input.browserLocks,
         diagnostics: runtime.diagnostics,
         dequeueTiming: runtime.dequeueTiming,
         signAdmittedMessage: runtime.signAdmittedMessage,
@@ -819,7 +870,7 @@ function statesMessageDeadline<TPrepared>(kind: ALOutboundDurableEffect<TPrepare
     return kind === 'send-prepared' || kind === 'admit-message' || kind === 'dequeue-message';
 }
 
-/** The message a durable effect names, read from whichever field its own kind carries the id in. */
+/** The message a durable effect names to the page's ended-message guard, read from the field its kind carries it in. */
 function resolveALOutboundEffectMsgId<TPrepared>(
     effect: ALOutboundEffectSnapshot<TPrepared>
 ): string | undefined {
@@ -833,6 +884,9 @@ function resolveALOutboundEffectMsgId<TPrepared>(
         case 'repair-hint':
         case 'nack-retry':
             return payload.msgId;
+        // The end of a message the page ended is the one effect of it that still runs: the page's guard skips it.
+        case 'end-message':
+            return undefined;
         case 'admit-control':
             return payload.msg.id.msgId;
         case 'dequeue-message':

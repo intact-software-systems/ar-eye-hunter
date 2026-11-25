@@ -134,10 +134,12 @@ export class WsQueueBoxServerLiveDelivery {
             return encodingFailureResult(message, recipients, encoded.left);
         }
         const encodedByConnectionId = encoded.right!;
+        const eligible = sent.filter(recipient => this.#socket.connections.get(recipient.connectionId)?.socket
+            .acceptsOutbound?.(encodedByConnectionId.get(recipient.connectionId)!.text) !== false);
         const sendAttempt = this.sendEncodedToRecipients({
             encodedByConnectionId,
             invalidatedSessionId: input.sessionInvalidation?.sessionId,
-            recipients: sent,
+            recipients: eligible,
             expiresAtMs,
             scope: input.recipientScope ?? provenScope ?? undefined,
             principalId: input.accountView?.principalId ?? input.recipientPrincipalId,
@@ -149,11 +151,11 @@ export class WsQueueBoxServerLiveDelivery {
         this.#deliveryReporting.recordDiagnostics({
             kind: 'live-send',
             topicId: message.route.topicId,
-            recipientCount: recipients.length,
+            recipientCount: eligible.length,
             sentCount: sendAttempt.sentCount,
             payloadBytes: [...encodedByConnectionId.values()][0]?.text.length ?? 0
         });
-        return { ...toLiveSendResult(message, sent, sendAttempt), belowPositionPeerIds };
+        return { ...toLiveSendResult(message, eligible, sendAttempt), belowPositionPeerIds };
     }
 
     /** Each copy encoded once per distinct entry, by connection; Left: why the first copy that cannot encode fails. */
@@ -212,7 +214,8 @@ export class WsQueueBoxServerLiveDelivery {
         return this.sendEncodedToRecipients({
             encodedByConnectionId: new Map(recipients.map((recipient) => [recipient.connectionId, encodedMessage])),
             invalidatedSessionId: undefined,
-            recipients,
+            recipients: recipients.filter(recipient => this.#socket.connections.get(recipient.connectionId)?.socket
+                .acceptsOutbound?.(encodedMessage.text) !== false),
             expiresAtMs,
             scope: provenScope ?? undefined,
             principalId: undefined,

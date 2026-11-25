@@ -46,6 +46,10 @@ import {
     unsignedAckRefused
 } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/receipted-audience.ts';
 import { receiptedRelayPath } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/relay-path/receipted-relay-path.ts';
+import {
+    relayedGapRenewal,
+    relayedUnreceiptedGapRenewal
+} from '@shared-test/rallar-bb-test/conformance/alm/scenarios/relay-path/relayed-gap-renewal.ts';
 import { replyCorrelated } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/reply/reply-correlated.ts';
 import { replyFirstWins } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/reply/reply-first-wins.ts';
 import { replyTimeoutLate } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/reply/reply-timeout-late.ts';
@@ -154,7 +158,9 @@ const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
     { scenarioKey: 'forged-recipient-ack', carriers: forgedRecipientAck.carriers },
     // The relay path's lane evidence is local too, and it reshapes its room: a hosted entry places its cells
     // unsettled, and an unsettled placement has no settle behind the reshape.
-    { scenarioKey: 'receipted-relay-path', carriers: receiptedRelayPath.carriers }
+    { scenarioKey: 'receipted-relay-path', carriers: receiptedRelayPath.carriers },
+    { scenarioKey: 'relayed-gap-renewal', carriers: relayedGapRenewal.carriers },
+    { scenarioKey: 'relayed-unreceipted-gap-renewal', carriers: relayedUnreceiptedGapRenewal.carriers }
 ];
 
 export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEntry {

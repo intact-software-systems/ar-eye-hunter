@@ -1,5 +1,6 @@
-import { verifyPausedGroupAdmission } from './retention/verify-paused-group-admission.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { readGroupSessionSchedule } from '@shared/api/group-sessions/group-session-schedule.ts';
+import { closesGuestPlayOccurrence, roomGuestAccessMode } from '@shared/api/room-guests/access.ts';
 import { AuthSessionPersistence } from '../auth/persistence/auth-session-persistence.ts';
 import { PartyRepository } from '../parties/persistence/party-repository.ts';
 import { computeSha256CanonicalJson } from '../protocol/compute-sha256-canonical-json.ts';
@@ -10,7 +11,6 @@ import {
     captureAppInboxGroupMutationIngress,
     captureGroupMutationIngress,
     GroupMutationAuthorizationError,
-    readAndVerifyLiveGroupMutationSession,
     requireGroupMutationAuthorityProof,
     toGroupMutationEventId,
     verifyLiveGroupMutationSession,
@@ -36,6 +36,7 @@ import type {
     GroupMutationRead,
     GroupMutationSnapshotRead
 } from './mutation/group-mutation-contracts.ts';
+import { readGroupGuestTransportRows } from './mutation/membership/group-guest-transport-lifecycle.ts';
 import { computeGroupMutation } from './mutation/orchestration/compute-group-mutation.ts';
 import { readsAcceptedLayoutRow, readsGroupLayoutRows } from './mutation/read/group-mutation-read-scope.ts';
 import { readGroupMutation, readGroupMutationWithSnapshot } from './mutation/read/read-group-mutation.ts';
@@ -51,6 +52,7 @@ import {
 import { readGroupSessionCleanupCandidates } from './presence/group-session-cleanup.ts';
 import { GroupQuickJoinService } from './quick-join/group-quick-join-service.ts';
 import { GroupRetentionService } from './retention/group-retention-service.ts';
+import { verifyPausedGroupAdmission } from './retention/verify-paused-group-admission.ts';
 import { isGroupSessionViewAudienceCommand } from './schedule/compute-group-session-view-publication.ts';
 import { GroupSessionDirectory } from './schedule/group-session-directory.ts';
 import { readGroupSessionViewAudience } from './schedule/read-group-session-view-audience.ts';
@@ -216,6 +218,7 @@ function createIngressCaptureOperations(
     | 'captureFormationAutomationMutationIngress'
     | 'captureTopologyPublicationMutationIngress'
     | 'captureTimelineDeadlineMutationIngress'
+    | 'captureGuestMembershipMutationIngress'
     | 'captureActivationStatusMutationIngress'
 > {
     const { repository, authorityDependencies, captureInternalMutationIngress } = owners;
@@ -240,6 +243,12 @@ function createIngressCaptureOperations(
             captureInternalMutationIngress(command, 'formation-automation', atEpochMs),
         captureTopologyPublicationMutationIngress: async (command, atEpochMs) =>
             captureInternalMutationIngress(command, 'topology-publication', atEpochMs),
+        captureGuestMembershipMutationIngress: async (command, atEpochMs) =>
+            captureInternalMutationIngress(
+                command,
+                command.operation === 'removeGroupMember' ? 'guest-expiry' : 'guest-redemption',
+                atEpochMs
+            ),
         captureTimelineDeadlineMutationIngress: async (command, atEpochMs) =>
             captureInternalMutationIngress(command, 'timeline-deadline', atEpochMs),
         captureActivationStatusMutationIngress: async (command, atEpochMs) =>
@@ -330,13 +339,13 @@ async function readGroupMutationAttempt(
 ): Promise<GroupMutationRead> {
     const { read, authSession } = await readGroupMutation(
         {
-        repository: owners.repository,
-        command: ingress.command,
-        authSessionId: resolveGroupMutationAuthSessionId(ingress),
-        lobbyDefault: ingress.facts.lobbyDefault !== undefined
-    }
+            repository: owners.repository,
+            command: ingress.command,
+            authSessionId: resolveGroupMutationAuthSessionId(ingress),
+            lobbyDefault: ingress.facts.lobbyDefault !== undefined
+        }
     );
-    await verifyGroupMutationAttemptSession(owners, ingress, authSession);
+    await verifyGroupMutationAttemptSession({ owners, ingress, authSession, read });
     return await readGroupMutationFences(owners, ingress, read);
 }
 
@@ -346,13 +355,13 @@ async function readGroupMutationAttemptWithSnapshot(
 ): Promise<GroupMutationSnapshotRead> {
     const { read, currentSnapshot, authSession } = await readGroupMutationWithSnapshot(
         {
-        repository: owners.repository,
-        command: ingress.command,
-        authSessionId: resolveGroupMutationAuthSessionId(ingress),
-        lobbyDefault: ingress.facts.lobbyDefault !== undefined
-    }
+            repository: owners.repository,
+            command: ingress.command,
+            authSessionId: resolveGroupMutationAuthSessionId(ingress),
+            lobbyDefault: ingress.facts.lobbyDefault !== undefined
+        }
     );
-    await verifyGroupMutationAttemptSession(owners, ingress, authSession);
+    await verifyGroupMutationAttemptSession({ owners, ingress, authSession, read });
     return { read: await readGroupMutationFences(owners, ingress, read), currentSnapshot };
 }
 
@@ -373,24 +382,82 @@ function resolveGroupMutationAuthSessionId(ingress: GroupStateMutationCommand): 
     return null;
 }
 
+interface VerifyGroupMutationAttemptSessionInput {
+    readonly owners: GroupStateRuntimeOwners;
+    readonly ingress: GroupStateMutationCommand;
+    readonly authSession: GroupStateMutationExactAuthSession;
+    readonly read: GroupMutationRead;
+}
+
 /** An exact read carried the session row; a sequential read re-checks it with its own read. */
 async function verifyGroupMutationAttemptSession(
-    owners: GroupStateRuntimeOwners,
-    ingress: GroupStateMutationCommand,
-    authSession: GroupStateMutationExactAuthSession
+    { owners, ingress, authSession, read }: VerifyGroupMutationAttemptSessionInput
 ): Promise<void> {
     if (ingress.facts.internalAuthority !== 'none') {
         return;
     }
-    if (authSession.status === 'unread') {
-        await readAndVerifyLiveGroupMutationSession(owners.authorityDependencies, ingress);
+    const proof = requireGroupMutationAuthorityProof(ingress);
+    const session = authSession.status === 'unread'
+        ? await owners.authorityDependencies.authSessions.findBySessionId(proof.sessionId)
+        : authSession.session;
+    const now = ingress.facts.attemptAtEpochMs;
+    verifyLiveGroupMutationSession(proof, session, now);
+    if (!session?.guestRoom) {
         return;
     }
-    verifyLiveGroupMutationSession(
-        requireGroupMutationAuthorityProof(ingress),
-        authSession.session,
-        ingress.facts.attemptAtEpochMs
-    );
+    const command = ingress.command;
+    if (!isSameGroupRef(command.aggregateRef, session.guestRoom)) {
+        throw new GroupMutationAuthorizationError('Guest credentials are limited to the admitted room.');
+    }
+    const member = read.actorMember?.principalId === session.clientId ? read.actorMember : read.targetMember;
+    const mode = member?.principalId === session.clientId && read.group
+        ? roomGuestAccessMode(read.group.value, member, now)
+        : 'expired';
+    if (mode === 'expired') {
+        throw new GroupMutationAuthorizationError('Guest room admission ended.');
+    }
+    switch (command.operation) {
+        case 'connectPresence':
+        case 'heartbeatPresence':
+        case 'disconnectPresence':
+        case 'subscribeGroupTopic':
+        case 'unsubscribeGroupTopic':
+            if (command.sessionId === session.sessionId) {
+                return;
+            }
+            break;
+        case 'upsertMember':
+            // Leaving frees the guest's own seat; readmission needs a fresh identity and invitation.
+            if (command.targetPrincipalId === session.clientId && command.input.status === 'left') {
+                return;
+            }
+            break;
+        case 'appointDirector':
+            if (
+                mode === 'room' && (command.input.succession?.operation === 'claim-player' ||
+                    command.input.succession?.operation === 'claim-deputy')
+            ) {
+                return;
+            }
+            break;
+        case 'updateGroup':
+            if (
+                mode === 'finish-round' && closesGuestPlayOccurrence(command.input.roomClock) &&
+                command.input.roomDeadline === undefined
+            ) {
+                return;
+            }
+            // The director fence independently checks the current appointment, epoch and absence of unrelated edits.
+            if (
+                mode === 'room' &&
+                (command.input.roomClock?.expectedDirectorEpoch !== undefined ||
+                    command.input.roomDeadline?.expectedDirectorEpoch !== undefined)
+            ) {
+                return;
+            }
+            break;
+    }
+    throw new GroupMutationAuthorizationError('Guest room operation is unavailable.');
 }
 
 async function readGroupMutationFences(
@@ -414,7 +481,8 @@ async function readGroupMutationFences(
             isGroupSessionViewAudienceCommand(command)
         ? await readGroupSessionViewAudience(runtime, command.aggregateRef, ingress.facts.attemptAtEpochMs)
         : null;
-    const read = { ...initialRead, connectTriggerLatch, sessionViewAudience };
+    const guestTransportRows = await readGroupGuestTransportRows(owners.authSessions, command, initialRead);
+    const read = { ...initialRead, connectTriggerLatch, sessionViewAudience, guestTransportRows };
     if (!readsGroupLayoutRows(ingress.command)) {
         return read;
     }

@@ -343,6 +343,40 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         }).toEqual({ status: 'partial-failure', sentCount: 2, failedPeers: ['peer-3'] });
     });
 
+    it('skips a policy-filtered recipient before attempting native delivery', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const socket = createRecordingWsServer();
+        socket.connections.get('conn-3')!.socket.acceptsOutbound = () => false;
+        const service = shared.createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
+            readAuthenticatedConnectionScope: () => undefined,
+            outbox: new shared.InMemoryQueueBox(new Map()),
+            socket: socket,
+            name: 'server-1',
+            targetResolver: createTargetResolver()
+        });
+        onTestFinished(() => service.dispose());
+        const msg = shared.newALBroadcastMessage(
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-1',
+                route: { topicId: 'chat', resourceId: 'msg-dropped-frame', contextId: 'room-1' },
+                scope: 'room',
+                typeId: 'chat.message.v1',
+                resource: { text: 'dropped' },
+                options: { groupRef: groupRef('room-1') }
+            }
+        );
+
+        const result = service.sendToTargetsWithResult({ message: msg, sentPositions: null });
+
+        expect({
+            status: result.status,
+            sentCount: result.sentCount,
+            failedPeers: result.failures.map((failure) => failure.peerId)
+        }).toEqual({ status: 'sent-live', sentCount: 2, failedPeers: [] });
+    });
+
     it('treats targeted broadcast messages with no recipients as a successful no-op', async () => {
         const socket = createRecordingWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());

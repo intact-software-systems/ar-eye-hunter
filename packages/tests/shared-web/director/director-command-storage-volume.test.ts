@@ -136,7 +136,8 @@ function createCommandTransport(sender: BrowserRallarMessageSender): BrowserDire
             username: 'user',
             accessToken: 'test',
             expiresAtEpochMs: 60_000
-        })
+        }),
+        isWebSocketDown: () => false
     });
 }
 

@@ -33,9 +33,21 @@ export interface ALInboundDeliveryOwner {
     readonly effectId: string;
 }
 
+/** A carrier that brought a copy of a buffered message, and the peer that copy acknowledges to; null for none. */
+export interface ALInboundBufferedCopyCarrier {
+    readonly carrier: ALDeliveryCarrier;
+    readonly ackToPeerId: string | null;
+}
+
 export interface ALInboundOrderedDeliverySnapshot extends ALBufferedOrderedMessageSnapshot {
     /** The carrier the buffered message arrived on: its release is claimed and dispatched by that runtime. */
     readonly carrier: ALDeliveryCarrier;
+    /**
+     * Every carrier and acknowledging peer that brought a copy while the slot stood, each pair once, the slot's own pair
+     * (on `carrier`) first: a sender may hold its receipt on any carrier, and a reshape may hand the slot a second parent on the same
+     * one, so the release answers each.
+     */
+    readonly copyCarriers: readonly ALInboundBufferedCopyCarrier[];
     /**
      * The sequence the copy's completed delivery moves the track's progress through: `seq`, or past the expired copies a
      * bounded hold passed after the run this copy ends.
@@ -56,9 +68,21 @@ export interface ALStoredInboundBufferedSnapshot {
     readonly message: ALInboundMessageReference;
     readonly plan: ALMessageHandlingPlan;
     readonly carrier: ALDeliveryCarrier;
+    readonly copyCarriers: readonly ALInboundBufferedCopyCarrier[];
     readonly completesThrough: number;
     readonly delivery?: ALInboundDeliveryOwner;
 }
+
+/** The record fields of a stored buffered slot, which every reader of the row decodes. */
+export const AL_INBOUND_BUFFERED_SLOT_FIELDS = [
+    'trackKey',
+    'seq',
+    'message',
+    'plan',
+    'carrier',
+    'copyCarriers',
+    'completesThrough'
+] as const;
 
 export interface ALInboundBufferedSlot {
     readonly trackKey: string;
@@ -97,6 +121,7 @@ export function toALStoredInboundBufferedSnapshot(
         message: toALInboundMessageReference(snapshot.msg),
         plan: snapshot.plan,
         carrier: snapshot.carrier,
+        copyCarriers: snapshot.copyCarriers,
         completesThrough: snapshot.completesThrough,
         ...(snapshot.delivery === undefined ? {} : { delivery: snapshot.delivery })
     };
@@ -106,16 +131,19 @@ export function decodeALInboundBufferedSnapshot(
     value: unknown,
     slot: ALInboundBufferedSlot
 ): ALStoredInboundBufferedSnapshot {
-    const snapshot = decodeALAdmissionRecord(
-        value,
-        ['trackKey', 'seq', 'message', 'plan', 'carrier', 'completesThrough'],
-        ['delivery']
-    );
+    const snapshot = decodeALAdmissionRecord(value, AL_INBOUND_BUFFERED_SLOT_FIELDS, ['delivery']);
     const trackKey = decodeALAdmissionString(snapshot.trackKey);
     const seq = decodeALAdmissionNumber(snapshot.seq);
     const message = decodeALInboundMessageReference(snapshot.message);
     const plan = decodeALInboundPlan(snapshot.plan);
     const carrier = decodeALAdmissionCarrier(snapshot.carrier);
+    const copyCarriers = decodeALAdmissionArray(snapshot.copyCarriers, decodeBufferedCopyCarrier);
+    if (
+        copyCarriers[0]?.carrier !== carrier ||
+        new Set(copyCarriers.map(toBufferedCopyKey)).size !== copyCarriers.length
+    ) {
+        throw new TypeError('Persisted buffered copy carriers must name the slot carrier first, each pair once');
+    }
     const completesThrough = decodeALAdmissionNumber(snapshot.completesThrough);
     if (
         trackKey !== slot.trackKey || slot.key !== `${slot.prefix}${seq}` ||
@@ -130,7 +158,7 @@ export function decodeALInboundBufferedSnapshot(
         throw new TypeError('Persisted buffered plan does not match its sequence');
     }
     if (snapshot.delivery === undefined) {
-        return { trackKey, seq, message, plan, carrier, completesThrough };
+        return { trackKey, seq, message, plan, carrier, copyCarriers, completesThrough };
     }
     const delivery = decodeALAdmissionRecord(snapshot.delivery, ['effectId']);
     return {
@@ -139,8 +167,21 @@ export function decodeALInboundBufferedSnapshot(
         message,
         plan,
         carrier,
+        copyCarriers,
         completesThrough,
         delivery: { effectId: decodeALAdmissionString(delivery.effectId) }
+    };
+}
+
+function toBufferedCopyKey(copy: ALInboundBufferedCopyCarrier): string {
+    return JSON.stringify([copy.carrier, copy.ackToPeerId]);
+}
+
+function decodeBufferedCopyCarrier(value: unknown): ALInboundBufferedCopyCarrier {
+    const copy = decodeALAdmissionRecord(value, ['carrier', 'ackToPeerId']);
+    return {
+        carrier: decodeALAdmissionCarrier(copy.carrier),
+        ackToPeerId: copy.ackToPeerId === null ? null : decodeALAdmissionString(copy.ackToPeerId)
     };
 }
 
@@ -171,6 +212,7 @@ export async function readALInboundBufferedMessage(
         msg: owner.msg,
         plan: stored.plan,
         carrier: stored.carrier,
+        copyCarriers: stored.copyCarriers,
         completesThrough: stored.completesThrough,
         ownerRetainUntilMs: owner.retainUntilMs,
         ...(stored.delivery === undefined ? {} : { delivery: stored.delivery })

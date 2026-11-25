@@ -90,10 +90,11 @@ describe('RTC frozen room audience', () => {
         expect(new Set(readSentTargets(fixture.channels.d!).map((targets) => JSON.stringify(targets))))
             .toEqual(new Set([JSON.stringify(toOriginFrozenTargets(['b', 'c'], 4))]));
 
-        // Past the budget the exhaustion commit deletes the row (D63).
+        // Past the budget the exhaustion commit ends the message and keeps the row as its final snapshot (D63).
         await vi.advanceTimersByTimeAsync(4_000);
         expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
-            .toBeUndefined();
+            .toMatchObject({ mode: 'receiver', expectedPeerIds: ['b', 'c'] });
+        expect((await fixture.resources.admissionStore.readStoredMessage(message.id.msgId))?.ended).toBe(true);
     });
 
     it('re-admits the unfrozen original as the duplicate of its frozen canonical', async () => {

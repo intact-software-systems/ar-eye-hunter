@@ -8,10 +8,11 @@ import {
     toALOutboundOrderingTrackMutations,
     type ALOutboundAdmissionMutation
 } from './admission/al-outbound-admission-mutations.ts';
-import type {
-    ALOutboundCommitBundle,
-    ALOutboundDurableEffectWrite,
-    ALOutboundMessageReadDto
+import {
+    toALOutboundMessageFence,
+    type ALOutboundCommitBundle,
+    type ALOutboundDurableEffectWrite,
+    type ALOutboundMessageReadDto
 } from './admission/al-outbound-admission-store.ts';
 import { toALOutboundSentPolicy } from './admission/al-outbound-admission-validation.ts';
 import { toALOutboundRecordedSentPositions } from './admission/to-al-outbound-recorded-sent-positions.ts';
@@ -31,6 +32,10 @@ import {
 } from './control/to-al-outbound-dispatch-completion-receipt.ts';
 import { computeALOutboundFirstHopWaitWrites } from './first-hop/compute-al-outbound-first-hop-wait.ts';
 import { toALCapacityRefusedVerdict } from './lane/admit-al-outbound-volatile-budget.ts';
+import {
+    isALOutboundEmptyAudienceReceipt,
+    toALOutboundEmptyAudienceReceipt
+} from './message-end/to-al-outbound-empty-audience-receipt.ts';
 import { toALOutboundReadMessageEndBundle } from './message-end/to-al-outbound-message-end-bundle.ts';
 import {
     computeALOutboundRepairAttemptCharge,
@@ -44,7 +49,6 @@ import {
 import { toALOutboundPreparedFingerprint } from './to-al-outbound-prepared-fingerprint.ts';
 import {
     isALOutboundAckTrackingWritable,
-    toALOutboundEmptyAudienceReceipt,
     toALOutboundTrackedReceiptAlgo,
     trackALOutboundPendingAckSnapshot
 } from './transition-al-outbound-pending-ack.ts';
@@ -86,6 +90,21 @@ export interface ALOutboundDispatchWrites<TPrepared> {
     readonly durableEffects: readonly ALOutboundDurableEffectWrite<TPrepared>[];
 }
 
+/** What an admitted dispatch writes from: its canonical row, its repair charge, and whether it completes its receipt. */
+interface ComputeALOutboundDispatchWritesInput<TPrepared> {
+    readonly dispatch: ComputeALOutboundDispatchInput<TPrepared>;
+    readonly canonicalEntry: ResourceEntry;
+    readonly repairCharge: readonly ALOutboundAdmissionMutation[];
+    readonly completesReceiptAtAdmission: boolean;
+}
+
+/** How a dispatch with no early exit is routed. */
+interface ALOutboundRouteInput {
+    readonly durable: boolean;
+    readonly completesReceiptAtAdmission: boolean;
+    readonly queuedAttempts: number;
+}
+
 export function computeALOutboundDispatch<TPrepared>(
     input: ComputeALOutboundDispatchInput<TPrepared>
 ): ALOutboundComputedDto<TPrepared> {
@@ -99,40 +118,67 @@ export function computeALOutboundDispatch<TPrepared>(
         return toRepairExhaustedResult(read, repairCharge.left.detail);
     }
 
-    const awaitPhysicalDispatch = input.intent === 'enqueue' && read.plan.preparedMessages.length === 0;
+    const completesReceiptAtAdmission = isReceiptCompleteAtAdmission(input);
+    const awaitPhysicalDispatch = input.intent === 'enqueue' && read.plan.preparedMessages.length === 0 &&
+        !completesReceiptAtAdmission;
     const canonicalEntry = toChangedALMessageRow(input.outboxEntry, {
         status: awaitPhysicalDispatch ? EntityStatus.NEW : EntityStatus.COMPLETED
     });
-    const writes = computeDispatchWrites(input, canonicalEntry, repairCharge.right!);
-    const queuedAttempts = writes.durableEffects.filter((effect) => effect.payload.kind === 'send-prepared').length;
-    const verdict = computeALOutboundRouteVerdict(
-        read,
-        awaitPhysicalDispatch || read.plan.lane !== 'volatile',
-        queuedAttempts
-    );
+    const writes = computeDispatchWrites({
+        dispatch: input,
+        canonicalEntry,
+        repairCharge: repairCharge.right!,
+        completesReceiptAtAdmission
+    });
+    const verdict = computeALOutboundRouteVerdict(read, {
+        durable: awaitPhysicalDispatch || read.plan.lane !== 'volatile',
+        completesReceiptAtAdmission,
+        queuedAttempts: writes.durableEffects.filter((effect) => effect.payload.kind === 'send-prepared').length
+    });
+    const reason = verdict.kind === 'unroutable' ? verdict.detail : undefined;
     return {
-        ...toALOutboundComputedResult(
-            verdict,
-            verdict.kind === 'unroutable' ? verdict.detail : undefined,
-            [canonicalEntry]
-        ),
+        ...toALOutboundComputedResult(verdict, reason, [canonicalEntry]),
         msg: read.msg,
         trackedReceiptAlgo: verdict.kind === 'admitted'
             ? toALOutboundTrackedReceiptAlgo(read.plan.ackTracking)
             : 'none',
-        bundle: {
-            pendingAdmission: options.pendingAdmission,
-            claimedCanonical: options.claimedOutboxEntry,
-            senderId: read.msg.id.senderId,
-            expectedVersion: read.clientRecord?.version,
-            canonicalEntry,
-            mutations: writes.mutations,
-            durableEffects: writes.durableEffects.map((effect) => ({
-                ...effect,
-                retryAtMs: effect.retryAtMs ?? input.dispatchAtMs
-            })),
-            endedTimeoutEffectIds: []
-        }
+        bundle: toDispatchBundle(input, canonicalEntry, writes)
+    };
+}
+
+/**
+ * Whether this admission's receipt is complete with nobody to confirm it, which ends the message in the admission's
+ * own commit: a send with no copy then leaves no canonical row for a later dequeue. Only the admission decides it; a
+ * later dispatch of the message finds it ended.
+ */
+function isReceiptCompleteAtAdmission<TPrepared>(input: ComputeALOutboundDispatchInput<TPrepared>): boolean {
+    return input.intent === 'enqueue' && isALOutboundEmptyAudienceReceipt(input.read.plan);
+}
+
+function toDispatchBundle<TPrepared>(
+    input: ComputeALOutboundDispatchInput<TPrepared>,
+    canonicalEntry: ResourceEntry,
+    writes: ALOutboundDispatchWrites<TPrepared>
+): ALOutboundCommitBundle<TPrepared> {
+    const { read, options } = input;
+    return {
+        pendingAdmission: options.pendingAdmission,
+        claimedCanonical: options.claimedOutboxEntry,
+        senderId: read.msg.id.senderId,
+        expectedVersion: read.clientRecord?.version,
+        fencesSender: true,
+        message: toALOutboundMessageFence(
+            { originPeerId: read.msg.id.senderId, msgId: read.msg.id.msgId },
+            read.messageVersion,
+            toALOutboundMessageReference(read.canonicalScope, canonicalEntry, read.msg).expiresAtMs
+        ),
+        canonicalEntry,
+        mutations: writes.mutations,
+        durableEffects: writes.durableEffects.map((effect) => ({
+            ...effect,
+            retryAtMs: effect.retryAtMs ?? input.dispatchAtMs
+        })),
+        endedTimeoutEffectIds: []
     };
 }
 
@@ -153,29 +199,42 @@ function toRepairExhaustedResult<TPrepared>(
  * first-hop wait that stands until the receipt's first answer.
  */
 function computeDispatchWrites<TPrepared>(
-    input: ComputeALOutboundDispatchInput<TPrepared>,
-    canonicalEntry: ResourceEntry,
-    repairCharge: readonly ALOutboundAdmissionMutation[]
+    input: ComputeALOutboundDispatchWritesInput<TPrepared>
 ): ALOutboundDispatchWrites<TPrepared> {
-    const { read } = input;
+    const { dispatch, canonicalEntry } = input;
+    const { read } = dispatch;
     const messageExpiresAtMs = toALOutboundMessageReference(read.canonicalScope, canonicalEntry, read.msg).expiresAtMs;
-    const ackTracking = read.plan.preparedMessages.length > 0
-        ? computeAckTrackingWrites(input, messageExpiresAtMs)
-        : NO_ACK_TRACKING_WRITES;
-    const firstHop = computeALOutboundFirstHopWaitWrites(input, messageExpiresAtMs);
+    const receipt = computeReceiptWrites(input, messageExpiresAtMs);
+    const firstHop = computeALOutboundFirstHopWaitWrites(dispatch, messageExpiresAtMs);
     return {
         mutations: [
-            ...computeMessageMutations(read, canonicalEntry, ackTracking.completesReceipt),
-            ...repairCharge,
-            ...ackTracking.mutations,
+            ...computeMessageMutations(read, canonicalEntry, receipt.completesReceipt),
+            ...input.repairCharge,
+            ...receipt.mutations,
             ...firstHop.mutations
         ],
         durableEffects: [
-            ...computePreparedEffects(input, canonicalEntry),
-            ...ackTracking.durableEffects,
+            ...computePreparedEffects(dispatch, canonicalEntry),
+            ...receipt.durableEffects,
             ...firstHop.durableEffects
         ]
     };
+}
+
+/**
+ * The receipt writes of a dispatch, and whether its commit completes the message's receipt: an admission whose
+ * receipt nobody is left to confirm completes it with no row, and a dispatch with copies may complete its open row.
+ */
+function computeReceiptWrites<TPrepared>(
+    input: ComputeALOutboundDispatchWritesInput<TPrepared>,
+    messageExpiresAtMs: number
+): ALOutboundReceiptWrites<TPrepared> {
+    if (input.completesReceiptAtAdmission) {
+        return RECEIPT_COMPLETE_AT_ADMISSION;
+    }
+    return input.dispatch.read.plan.preparedMessages.length > 0
+        ? computeAckTrackingWrites(input.dispatch, messageExpiresAtMs)
+        : NO_RECEIPT_WRITES;
 }
 
 function toALOutboundComputedResult<TPrepared>(
@@ -186,13 +245,16 @@ function toALOutboundComputedResult<TPrepared>(
     return { verdict, reason, entries, trackedReceiptAlgo: 'none' };
 }
 
-/** A fresh (non-early-exit) dispatch either admits the message or has nowhere to route it. */
+/**
+ * A fresh (non-early-exit) dispatch admits the message when it keeps it durably, queues a copy, or completes its
+ * receipt at admission; otherwise it has nowhere to route it.
+ */
 function computeALOutboundRouteVerdict<TPrepared>(
     read: ALOutboundMessageReadDto<TPrepared>,
-    durable: boolean,
-    queuedAttempts: number
+    route: ALOutboundRouteInput
 ): ALDeliveryAdmissionVerdict {
-    return durable || read.plan.preparedMessages.length > 0
+    const { durable, queuedAttempts } = route;
+    return durable || route.completesReceiptAtAdmission || read.plan.preparedMessages.length > 0
         ? { kind: 'admitted', durable, queuedAttempts }
         : {
             kind: 'unroutable',
@@ -368,9 +430,9 @@ export interface ALOutboundCommitSettlementsInput<TPrepared> {
 }
 
 /**
- * What a committed dispatch states at once: each message it superseded, a receipt nobody is left to
- * confirm, and the receipt its re-plan completed -- only when this commit's own tracking completed it, which
- * its sent row's end marker states. A commit that ends a message for another reason states its own fact.
+ * What a committed dispatch states at once: each message it superseded, and the receipt it completed -- only when
+ * this commit itself completed it, which its sent row's end marker states. A commit that ends a message for another
+ * reason states its own fact.
  */
 export function toALOutboundCommitSettlements<TPrepared>(
     input: ALOutboundCommitSettlementsInput<TPrepared>
@@ -382,21 +444,28 @@ export function toALOutboundCommitSettlements<TPrepared>(
         replacementMsgId: input.msg.id.msgId,
         detail: 'A newer message replaced this one at its admission.'
     }));
-    const emptyAudience = input.intent === 'enqueue'
-        ? toALOutboundEmptyAudienceReceipt(input.read.plan)
-        : undefined;
     const completesReceipt = input.bundle.mutations.some((mutation) =>
         mutation.kind === 'set-sent-message' && mutation.ended
     );
-    const completion = completesReceipt
-        ? toALOutboundDispatchCompletionReceipt(input.read)
-        : undefined;
+    const completion = completesReceipt ? toCompletedReceiptFact(input.read) : undefined;
     const refusal = resolveALOutboundReplanRefusalSettlement(
         input.msg,
         toALOutboundAdmissionVerdict(input.read.plan),
         input.intent
     );
-    return [...superseded, emptyAudience, completion, refusal].filter((fact) => fact !== undefined);
+    return [...superseded, completion, refusal].filter((fact) => fact !== undefined);
+}
+
+/**
+ * The acknowledgement of the receipt a commit completed: the open row its re-plan completed, or, with no row open,
+ * the receipt an admission completed with nobody to confirm it.
+ */
+function toCompletedReceiptFact<TPrepared>(
+    read: ALOutboundDispatchCompletionRead<TPrepared>
+): ALOutboundSettlementFact | undefined {
+    return read.pendingAck === undefined
+        ? toALOutboundEmptyAudienceReceipt(read.msg)
+        : toALOutboundDispatchCompletionReceipt(read);
 }
 
 /**
@@ -417,25 +486,31 @@ function toALOutboundSupersededMsgIds<TPrepared>(bundle: ALOutboundCommitBundle<
     return [...new Set(replaced)];
 }
 
-/** A dispatch's receipt writes, and whether its tracking completed the open receipt, which ends the message. */
-interface ALOutboundAckTrackingWrites<TPrepared> extends ALOutboundDispatchWrites<TPrepared> {
+/** A dispatch's receipt writes, and whether its commit completes the message's receipt, which ends the message. */
+interface ALOutboundReceiptWrites<TPrepared> extends ALOutboundDispatchWrites<TPrepared> {
     readonly completesReceipt: boolean;
 }
 
-const NO_ACK_TRACKING_WRITES: ALOutboundAckTrackingWrites<never> = {
+const NO_RECEIPT_WRITES: ALOutboundReceiptWrites<never> = {
     mutations: [],
     durableEffects: [],
     completesReceipt: false
 };
 
+const RECEIPT_COMPLETE_AT_ADMISSION: ALOutboundReceiptWrites<never> = {
+    mutations: [],
+    durableEffects: [],
+    completesReceipt: true
+};
+
 function computeAckTrackingWrites<TPrepared>(
     input: ComputeALOutboundDispatchInput<TPrepared>,
     messageExpiresAtMs: number
-): ALOutboundAckTrackingWrites<TPrepared> {
+): ALOutboundReceiptWrites<TPrepared> {
     const { read } = input;
     const tracking = read.plan.ackTracking;
     if (tracking === undefined || !isALOutboundAckTrackingWritable(tracking)) {
-        return NO_ACK_TRACKING_WRITES;
+        return NO_RECEIPT_WRITES;
     }
 
     const pending = trackALOutboundPendingAckSnapshot({
@@ -446,18 +521,29 @@ function computeAckTrackingWrites<TPrepared>(
         nowMs: read.nowMs
     });
     if (!pending) {
-        return read.pendingAck
-            ? {
-                mutations: [
-                    { kind: 'delete-pending-ack', originPeerId: read.msg.id.senderId, msgId: read.msg.id.msgId },
-                    { kind: 'delete-repair-attempt', msgId: read.msg.id.msgId }
-                ],
-                durableEffects: [],
-                completesReceipt: true
-            }
-            : NO_ACK_TRACKING_WRITES;
+        return read.pendingAck ? toCompletedRowWrites(read.msg) : NO_RECEIPT_WRITES;
     }
+    return toOpenReceiptWrites(input, pending, messageExpiresAtMs);
+}
 
+/** The open receipt row a dispatch's tracking now fully confirms is deleted with its repair count. */
+function toCompletedRowWrites(msg: ALMessage): ALOutboundReceiptWrites<never> {
+    return {
+        mutations: [
+            { kind: 'delete-pending-ack', originPeerId: msg.id.senderId, msgId: msg.id.msgId },
+            { kind: 'delete-repair-attempt', msgId: msg.id.msgId }
+        ],
+        durableEffects: [],
+        completesReceipt: true
+    };
+}
+
+function toOpenReceiptWrites<TPrepared>(
+    input: ComputeALOutboundDispatchInput<TPrepared>,
+    pending: ALOutboundPendingAckSnapshot,
+    messageExpiresAtMs: number
+): ALOutboundReceiptWrites<TPrepared> {
+    const { read } = input;
     const opened: ALOutboundPendingAckSnapshot = read.pendingAck === undefined
         ? {
             ...pending,

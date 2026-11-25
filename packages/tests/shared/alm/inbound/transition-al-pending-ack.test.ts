@@ -32,6 +32,7 @@ import {
 
 import { INBOUND_TEST_EFFECT_PREPARATION } from '../inbound-runtime-test-fixture.ts';
 
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { toTestALAckPayload, toTestSignatureProof } from '../../../al-control-test-payloads.ts';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
@@ -238,9 +239,10 @@ async function computeDirectorArrival(admissionStore: ALInboundAdmissionStore, m
         readmission: false,
         read,
         plan: planAsDirector(msg, DIRECTOR_SOURCE, computeALInboundPlanningObservations(read, false)),
-        facts: readALInboundEffectFacts(nowMs, { ...INBOUND_TEST_EFFECT_PREPARATION, selfPeerId: 'director' }),
+        facts: readALInboundEffectFacts(nowMs, { ...INBOUND_TEST_EFFECT_PREPARATION, selfPeerId: 'director' }, () => AL_GAP_NACK_RELAY_HOP_LIMIT),
         canForward: true,
-        recordedParentPresent: true
+        recordedParentPresent: true,
+        retriedCopyNextHopPeerIds: []
     });
 }
 
@@ -257,7 +259,7 @@ async function computeDirectorRelease(
     return computeALInboundBufferedRelease({
         read,
         plan: planAsDirector(read.snapshot.msg, read.source, computeALInboundBufferedReleasePlanningObservations(read)),
-        facts: readALInboundEffectFacts(nowMs, { ...INBOUND_TEST_EFFECT_PREPARATION, selfPeerId: 'director' })
+        facts: readALInboundEffectFacts(nowMs, { ...INBOUND_TEST_EFFECT_PREPARATION, selfPeerId: 'director' }, () => AL_GAP_NACK_RELAY_HOP_LIMIT)
     });
 }
 
