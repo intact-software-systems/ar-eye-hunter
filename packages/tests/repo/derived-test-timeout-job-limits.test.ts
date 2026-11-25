@@ -83,11 +83,18 @@ const E2E_APP_JOB_BEFORE_LIFECYCLE_MS = 16 * 60_000;
 const E2E_APP_JOB_SETUP_MS = E2E_APP_JOB_BEFORE_LIFECYCLE_MS + FULL_STACK_WEB_SERVERS_START_BOUNDED_WAITS_MS;
 
 /**
- * The live recipes job's work besides its tests: containers, checkout, the lane setup, migrations and listing the
- * cases, then Playwright starting the API, SPA and control web servers. Release Gate runs 45224498021 and
- * 45207491208 spent 65 s and 59 s before the execute step, and the whole step, every case included, took under 2 min.
+ * The live recipes job's work before its execute step: containers, checkout, the lane setup, migrations and listing
+ * the cases. Release Gate runs 45224498021 and 45207491208 spent 65 s and 59 s on it; this allows one and a half times
+ * the slower, rounded up to the minute.
  */
-const E2E_LIVE_RECIPES_JOB_SETUP_MS = 5 * 60_000;
+const E2E_LIVE_RECIPES_JOB_BEFORE_EXECUTE_MS = 2 * 60_000;
+
+/**
+ * The live recipes job's setup: its work before the execute step, then Playwright starting that step's API, SPA and
+ * control web servers one after another, each under its own limit. The two runs' whole step, every case included, took
+ * under 2 min.
+ */
+const E2E_LIVE_RECIPES_JOB_SETUP_MS = E2E_LIVE_RECIPES_JOB_BEFORE_EXECUTE_MS + FULL_STACK_WEB_SERVERS_START_BOUNDED_WAITS_MS;
 
 /**
  * The Postgres integration job's work besides the view push test: every other step of the lane, none of them a
