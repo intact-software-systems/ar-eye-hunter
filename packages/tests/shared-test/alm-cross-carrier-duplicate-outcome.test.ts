@@ -142,17 +142,17 @@ async function runDuplicateOutcomeCommands(
 const WAIT_BUDGET_TEST_TIMEOUT_MS = 15_000;
 
 describe('the cross-carrier duplicate outcome wait', () => {
-    // Neither carrier's `transport-accepted` is the receiver's admission, so either copy may commit first in both orders.
-    it.each(['rtc-then-ws', 'ws-then-rtc'] as const)(
-        'accepts the refused copy on either carrier in %s, and fails when neither arrived twice',
-        async (order) => {
-            expect(await runDuplicateOutcomeCommands(order, [WS_ARRIVAL, RTC_ARRIVAL])).toBe(true);
-            expect(await runDuplicateOutcomeCommands(order, [RTC_ARRIVAL, WS_ARRIVAL])).toBe(true);
-            expect(await runDuplicateOutcomeCommands(order, [RTC_ARRIVAL])).toBe(false);
-            expect(await runDuplicateOutcomeCommands(order, [WS_ARRIVAL])).toBe(false);
-        },
-        WAIT_BUDGET_TEST_TIMEOUT_MS
-    );
+    it('matches the emitter\'s admission-outcome for the pair\'s refused WS copy in rtc-then-ws, and nothing else', async () => {
+        expect(await runDuplicateOutcomeCommands('rtc-then-ws', [RTC_ARRIVAL, WS_ARRIVAL])).toBe(true);
+        expect(await runDuplicateOutcomeCommands('rtc-then-ws', [WS_ARRIVAL, RTC_ARRIVAL])).toBe(false);
+        expect(await runDuplicateOutcomeCommands('rtc-then-ws', [RTC_ARRIVAL])).toBe(false);
+    }, WAIT_BUDGET_TEST_TIMEOUT_MS);
+
+    it('accepts the refused copy on either carrier in ws-then-rtc, and fails when neither arrived twice', async () => {
+        expect(await runDuplicateOutcomeCommands('ws-then-rtc', [WS_ARRIVAL, RTC_ARRIVAL])).toBe(true);
+        expect(await runDuplicateOutcomeCommands('ws-then-rtc', [RTC_ARRIVAL, WS_ARRIVAL])).toBe(true);
+        expect(await runDuplicateOutcomeCommands('ws-then-rtc', [WS_ARRIVAL])).toBe(false);
+    }, WAIT_BUDGET_TEST_TIMEOUT_MS);
 
     it.each(['rtc-then-ws', 'ws-then-rtc'] as const)('ignores newer routing and wrong-scenario admissions for %s', async (order) => {
         const diagnostics = await readDuplicateDiagnostics(order, [RTC_ARRIVAL, WS_ARRIVAL]);

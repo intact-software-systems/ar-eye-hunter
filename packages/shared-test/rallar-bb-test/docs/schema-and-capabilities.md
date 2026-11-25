@@ -782,17 +782,11 @@ A scenario definition's optional `connect.minReadyPeers` sets the readiness its 
 absent, each connect waits for every other agent of the cell.
 
 The `cross-carrier-duplicate` conformance scenario replays in both orders over
-`rtc-with-ws-fallback`, and its receiver reads the pair's latest
-`admission-outcome`, which refuses the second copy as `not-handled`/`duplicate`
-on either carrier: neither carrier's `transport-accepted` is the receiver's
-admission (over RTC it is the frame leaving the sender's data channel), so the
-replay may overtake the first copy. In `rtc-then-ws` the replay is the
-WS-carried multicast room envelope, which the api-v1 WS server routes to the
-room's other members. The first send asks a `receiver` receipt and
-lists the receiver (`recipientPeers: ['receiver']`): RTC carries a receipted room
-send only as an audience its origin freezes and signs (D756), so in `ws-then-rtc`
-the RTC replay of a room-wide WS copy would be refused, while a listed one is frozen
-and signed at the replay's RTC admission. The Hetzner two-agent manifest runs both
+`rtc-with-ws-fallback`, and its receiver waits for the `admission-outcome` that
+refuses the second copy as `not-handled`/`duplicate`. Both orders prove that
+refusal: in `rtc-then-ws` the second copy is the WS-carried multicast room
+envelope, which the api-v1 WS server routes to the room's other members, so the
+receiver refuses it on carrier `ws`. The Hetzner two-agent manifest runs both
 orders.
 
 The `ordering-resync` conformance scenario runs over every carrier. The sender sends seq 1, then
@@ -1015,7 +1009,7 @@ timeout bounds its iteration and the loop's 600 s timeout is only a ceiling, and
 arrive with a `messages.received` whose window covers the sender's body up to its last track, its storage baseline
 included (each role's recipe runs that much longer than an ordinary one), and whose `stallMs` is the time the sender
 may take to reach its first track: its baseline, its reconnect and one send. The count reads the arrivals logged
-before it started too, and needs no cue from the sender, which leaves right after its last track. The receiver then
+before it started too, and needs no cue from the sender, which leaves once its last track is acknowledged. The receiver then
 waits in its cell's history for the memory store's `ordering-tracks` statement of 256 (the eviction pass a newly opened track
 runs after its admission commit states it, not the delivery the arrivals count), and its `stats` reads
 `rallar.alm.orderingTracks` both `lte` and
@@ -1252,8 +1246,8 @@ since the command started or since its latest copy. A new copy is a matching eve
 page logged after the newest one the count saw, so a `recent` event history that evicts
 older copies does not read as a stall. The result and the `rallar.bb.messages.received`
 diagnostic then carry `stall: { stallMs, stalled }`, `stalled` saying whether the stall
-window ended the count, and a stalled count's failure message names the window. A count whose copies keep arriving may then take its whole `windowMs`, so
-a slow runner lengthens the count without failing it while a stopped sender still fails
+window ended the count, and a stalled count's failure message names the window. A count
+whose copies keep arriving may then take its whole `windowMs`, so a slow runner lengthens the count without failing it while a stopped sender still fails
 it within `stallMs`. An absence claim holds its whole window: command validation refuses
 `stallMs` beside `absent: true`.
 

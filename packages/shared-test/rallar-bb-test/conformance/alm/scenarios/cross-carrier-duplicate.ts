@@ -32,16 +32,13 @@ export const crossCarrierDuplicate: readonly AlmConformanceScenarioDefinition[] 
     roles: ['sender', 'receiver'],
     laneFamily: 'two-agent',
     toSenderCommands: (sender: AlmConformanceStepInput) => toCrossCarrierDuplicateSenderCommands(sender, order),
-    toRecipientCommands: toCrossCarrierDuplicateReceiverCommands
+    toRecipientCommands: (receiver: AlmConformanceStepInput) => toCrossCarrierDuplicateReceiverCommands(receiver, order)
 }));
 
 /**
  * One envelope over both carriers, which the product carries only by hand-over (D56); this replay forces it without a
  * trigger: it reuses the first handle's captured envelope on the other carrier.
- * The replay reads that envelope back from IndexedDB, so the first send opts into `local-outbox`. The first send asks
- * a `receiver` receipt, and RTC carries a receipted room send only as an audience its origin freezes, which it signs
- * (D756): a room-wide WS copy names no audience, so RTC would refuse its replay. The send therefore lists the receiver,
- * an audience the origin freezes and signs at the replay's own RTC admission.
+ * The replay reads that envelope back from IndexedDB, so the first send opts into `local-outbox`.
  * The sender proves its first copy was submitted and the replay admitted, never the replayed handle's
  * acknowledgement (D28). The receiver's count proves the second copy was not delivered twice, and its
  * duplicate-outcome wait proves the second copy arrived and was refused, in both orders.
@@ -57,7 +54,6 @@ function toCrossCarrierDuplicateSenderCommands(
         payload: { marker: sender.scenarioId, order },
         delivery: {
             ack: 'receiver',
-            recipientPeers: ['receiver'],
             durability: 'local-outbox',
             ttlMs: NON_EXPIRING_TTL_MS,
             commandTimeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS
@@ -96,18 +92,28 @@ function toCrossCarrierDuplicateSenderCommands(
 }
 
 /**
- * The receiver refused the pair's second copy, on either carrier in both orders: neither carrier's
- * `transport-accepted` is the receiver's admission (over RTC it is the frame leaving the sender's data channel, over WS
- * the server's), so the replay may reach the receiver before the first copy commits. The receiver reads the pair's
- * latest `admission-outcome`, the second arrival's or, when a copy's commit conflicted, its replay's verdict. It runs
- * after the absence window, when the outcome is already in the event buffer, so a short budget suffices. A receiver
- * stays one linear transcript for the reload identity join, so the either-carrier case is a wait and two assertions
- * rather than a composite.
+ * The receiver refused the pair's second copy. rtc-then-ws pins that copy to WS: RTC `transport-accepted` is the
+ * receiver's own hop ACK, so the RTC copy committed first. ws-then-rtc accepts either carrier, since WS
+ * `transport-accepted` is only the server's: it reads the pair's latest `admission-outcome`, the second arrival's or,
+ * when a copy's commit conflicted, its replay's verdict. Both run after the absence window, when the outcome is
+ * already in the event buffer, so a short budget suffices. A receiver stays one linear transcript for the reload
+ * identity join, so the either-carrier case is a wait and two assertions rather than a composite.
  */
 function toCrossCarrierDuplicateReceiverCommands(
-    receiver: AlmConformanceStepInput
+    receiver: AlmConformanceStepInput,
+    order: (typeof CROSS_CARRIER_ORDERS)[number]
 ): readonly RallarBlackBoxTestCommand[] {
     const arrivals = toSingleArrivalReceiverCommands(receiver);
+    if (order === 'rtc-then-ws') {
+        return [
+            ...arrivals,
+            toAdmissionOutcomeWait(receiver, {
+                name: 'duplicate-outcome-ws',
+                contains: '"carrier":"ws","outcome":"not-handled","reason":"duplicate"',
+                timeoutMs: toBudgetMs(ASSERT_TIMEOUT_MS, receiver.input.deadlineMs)
+            })
+        ];
+    }
     const latest = toAdmissionOutcomeWait(receiver, {
         name: 'duplicate-outcome-latest',
         timeoutMs: toBudgetMs(ASSERT_TIMEOUT_MS, receiver.input.deadlineMs)

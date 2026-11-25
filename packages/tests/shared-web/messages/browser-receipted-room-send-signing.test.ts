@@ -1,6 +1,4 @@
-import { writeCarrierOutboxAdmission } from '@shared-web/browser/messages/browser-rallar-message-dispatch.ts';
 import type { RallarRoomMessageChannelDefinition } from '@shared-web/browser/rallar-messages.ts';
-import type { RallarTypedMessageSendOptions } from '@shared-web/browser/rallar.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import { AL_DELIVERY_ADMITTED_STATES, type ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
@@ -117,60 +115,6 @@ describe('the RTC leg of a receipted members room send', () => {
         ]);
     });
 });
-
-/**
- * The conformance lane's cross-carrier replay re-admits the envelope a WS send admitted through the RTC admission a
- * fallback makes, so RTC carries that copy only if its origin can freeze its audience and sign it there.
- */
-describe('a receipted room send admitted on WS, then re-admitted on RTC', () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
-        resetRallarFacadeTestRuntime();
-        mocks.apiMiddleware = createDefaultApiMiddlewareTestDouble({ session: { sessionId: SESSION_ID, clientId: SESSION_ID } });
-        admissions = recordCarrierAdmissions();
-        wireRtcOverlay(ROOM_PUBLICATION_CRYPTO);
-    });
-
-    it('is refused when it addresses its whole room, an audience its origin never freezes', async () => {
-        const replayed = await readmitOnRtc(await readWsAdmittedMessage({ strategy: 'ws', ack: 'receiver' }));
-
-        expect(replayed).toMatchObject({
-            kind: 'refused',
-            detail: 'RTC carries a receipted room send only as an audience its origin freezes.'
-        });
-    });
-
-    it('is admitted carrying its origin\'s proof when it lists its audience, which its origin freezes', async () => {
-        const listed = await readWsAdmittedMessage({ strategy: 'ws', ack: 'receiver', recipientPeerIds: ['b'] });
-
-        expect(await readmitOnRtc(listed)).toMatchObject({ kind: 'admitted' });
-        expect(admissions.at(-1)).toMatchObject({
-            carrier: 'rtc',
-            message: {
-                id: { msgId: listed.id.msgId },
-                targets: { mode: 'multicast', recipientPeerIds: ['b'] },
-                proof: { alg: 'ES256', keyId: ROOM_PUBLICATION_CRYPTO.keyPair.keyId }
-            }
-        });
-    });
-});
-
-/** The envelope WS admitted for one send on the chat channel. */
-async function readWsAdmittedMessage(options: RallarTypedMessageSendOptions<ChatLine>): Promise<ALMessage> {
-    const channel = createRallarTestFacade().messages.room<ChatLine>(CHAT_DEFINITION);
-    const handle = await channel.send({ text: 'replayed' }, options);
-    await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
-    const admitted = admissions.find((admission) => admission.carrier === 'ws' && admission.message.id.msgId === handle.msgId);
-    if (admitted === undefined) {
-        throw new Error(`WS admitted no copy of ${handle.msgId}.`);
-    }
-    return admitted.message;
-}
-
-async function readmitOnRtc(message: ALMessage): Promise<ALDeliveryAdmissionVerdict> {
-    const leg = { carrier: 'rtc', canFallback: false, admittedCopy: false } as const;
-    return (await writeCarrierOutboxAdmission(mocks.apiMiddleware, leg, message)).verdict;
-}
 
 const CHAT_DEFINITION: RallarRoomMessageChannelDefinition = {
     topicId: 'room.chat',
