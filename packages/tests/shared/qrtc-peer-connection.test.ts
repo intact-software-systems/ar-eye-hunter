@@ -813,15 +813,17 @@ describe('QRtcPeerConnection', () => {
             }));
     });
 
-    it('refuses an answer below the applied remote generation and rolls back its offer, so it can renegotiate', async () => {
+    it('refuses an answer below the applied remote generation and reports the connection closed to its owner', async () => {
         const events: RtcSignalingDiagnostics.Event[] = [];
-        const { peer, native, sentSignals } = createPeerFixture(true, {}, createRecordingDependencies(events));
+        const onClosed = vi.fn(async () => {});
+        const { peer, native } = createPeerFixture(true, { onClosed }, createRecordingDependencies(events));
         await peer.handleSignal(createRemoteOffer('current-offer', 5, 'current-offer-sdp'));
         await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
         await peer.handleSignal(createRemoteAnswer('offer-1', 4, 'superseded-answer-sdp'));
 
-        expect(native.signalingState).toBe('stable');
+        expect(onClosed).toHaveBeenCalledExactlyOnceWith('peer-1');
         expect(native.receivedDescriptions.map((description) => description.sdp)).toEqual(['current-offer-sdp']);
+        expect(native.signalingState).toBe('have-local-offer');
         expect(events.filter((event) => event.kind === 'native-signal-decision' && event.signalType === 'Answer'))
             .toContainEqual(expect.objectContaining({
                 disposition: 'answer-superseded',
@@ -830,15 +832,6 @@ describe('QRtcPeerConnection', () => {
                 connectionGeneration: 4,
                 appliedRemoteGeneration: 5
             }));
-
-        await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
-        await peer.handleSignal(createRemoteAnswer('offer-1', 5, 'late-answer-sdp'));
-        await peer.handleSignal(createRemoteAnswer('offer-2', 5, 'current-answer-sdp'));
-        expect(sentSignals.map((signal) => [signal.signalType, 'offerId' in signal ? signal.offerId : undefined]))
-            .toEqual([['Answer', 'current-offer'], ['Offer', 'offer-1'], ['Offer', 'offer-2']]);
-        expect(native.signalingState).toBe('stable');
-        expect(native.receivedDescriptions.map((description) => description.sdp))
-            .toEqual(['current-offer-sdp', 'current-answer-sdp']);
     });
 
     it('holds at most 64 candidates, displacing the oldest', async () => {

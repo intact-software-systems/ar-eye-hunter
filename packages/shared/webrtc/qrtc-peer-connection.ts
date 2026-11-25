@@ -1308,7 +1308,8 @@ export class QRtcPeerConnection {
             return;
         }
         if (this.refuseSupersededDescription(capture, signal)) {
-            await this.rollBackRefusedOffer(capture);
+            // The mark refuses that remote runtime for this instance's lifetime; a replacement starts without one.
+            void this.stateCallbacks.onClosed?.(this.input.peerSessionId);
             return;
         }
         await this.applyRemoteDescription(pc, signal.payload.description, capture.nativeBatch);
@@ -1321,20 +1322,6 @@ export class QRtcPeerConnection {
             this.observeNativeSignal('retired-after-ice-flush', capture, signal);
             return;
         }
-        this.endLocalOffer();
-    }
-
-    /**
-     * A refused answer leaves this side's offer without an answer it may apply. Rolling the offer back returns the
-     * native connection to the description it holds, so an established connection can renegotiate; one still
-     * establishing stays under the establishment timeout.
-     */
-    private async rollBackRefusedOffer(capture: QRtcPeerConnection.NativeSignalCapture): Promise<void> {
-        this.endLocalOffer();
-        await this.applyLocalDescription(capture.pc, capture.nativeBatch, { type: 'rollback' });
-    }
-
-    private endLocalOffer(): void {
         this.outstandingOfferId = undefined;
         this.status.makingOffer = false;
         this.status.ignoreOffer = false;

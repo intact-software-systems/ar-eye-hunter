@@ -170,6 +170,26 @@ describe('WebRtcConnectionService signaling and creation', () => {
         expect(native.signalingState).toBe('have-local-offer');
     });
 
+    it('removes a still-establishing peer at once when an older remote connection answers its offer', async () => {
+        const fixture = createFixture(budgetInput());
+        await fixture.service.connectSignaler();
+        await fixture.receive({ ...offer(), connectionGeneration: 5 });
+        const native = fixture.nativePeer('z-peer');
+        await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+        const localOffer = fixture.sentSignals.find((signal) => signal.signalType === QRtcSignalingType.Offer);
+        await fixture.receive({
+            ...offer(),
+            signalType: QRtcSignalingType.Answer,
+            offerId: localOffer?.signalType === QRtcSignalingType.Offer ? localOffer.offerId : 'missing-offer',
+            connectionGeneration: 4,
+            payload: { description: { type: 'answer', sdp: 'older-answer' }, candidate: null }
+        });
+
+        expect(fixture.service.readPeer('z-peer')).toBeUndefined();
+        expect(native.connectionState).toBe('closed');
+        expect(native.receivedDescriptions).toEqual([{ type: 'offer', sdp: 'private-offer-sdp' }]);
+    });
+
     it('validates direct accepted-peer signaling before allocating native resources', async () => {
         const fixture = createFixture(budgetInput());
         const result = await fixture.service.acceptPeerIfAbsent(

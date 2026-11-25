@@ -626,11 +626,17 @@ A connection keeps one mark, the highest remote generation whose Offer or
 Answer it has applied, for the lifetime of the instance, and refuses every
 signal below it. An offer below the mark is refused before the collision
 handling: no remote description and no answer. An answer below the mark is
-refused unapplied and this side's offer is rolled back, so the native
-connection returns to the description it holds and stays able to renegotiate:
-an established connection offers again when it next needs to, and one still
-establishing has no description to return to and stays under the
-establishment timeout, which redials. Each refusal is a
+refused unapplied and the connection reports itself closed, so the connection
+service removes the peer as it does a natively closed one and the group
+manager dials it again with a new connection instance. Only a new instance
+recovers: the remote runtime that answered is older than one this instance
+applied, which happens when that runtime's clock stepped back or a second
+runtime shares its session id, so every later signal it sends would stay below
+the mark this instance keeps for its lifetime, and a rollback would only
+re-offer into the same refusal. A new instance starts without a mark and
+accepts that runtime's generation. The rule is the same for an established
+connection and one still establishing; waiting for the establishment timeout
+would only delay the same replacement. Each refusal is a
 `native-signal-decision` row with disposition `offer-superseded` or
 `answer-superseded` carrying the refused signal's `connectionGeneration` and
 the `appliedRemoteGeneration`. An equal generation is the same remote
