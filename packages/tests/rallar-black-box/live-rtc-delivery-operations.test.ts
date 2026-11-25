@@ -259,6 +259,83 @@ describe('live RTC delivery owner', () => {
         expect(recording.commands.filter(({ command }) => command.kind === 'rtc.connect')).toHaveLength(1);
     });
 
+    // B4 deleted the reconnect's Native acquisition input with these cases; a formation run still reaches every branch.
+    it('records each admitted Connect\'s successful native acquisition in the formation run', async () => {
+        const recording = createCapturingLiveRtcControl('native', 'enabled');
+        const run = await createLiveRtcDeliveryOperations({ ...config, rtcCaptureMode: 'native' }).runGroupFormation({
+            ...initialFormationInput(recording),
+            nativeAcquisition: {
+                readRtcNativeAcquisition: async (connection: RtcNativeCapturedConnection) =>
+                    Either.ofRight<typeof initialNativeAcquisitionFailure, RtcNativeAcquisitionProof>({ ...initialNativeProof, connection })
+            }
+        });
+
+        expect(run.nativeAcquisitions.map((proof) => proof.connection)).toEqual(run.rtcConnectCaptures);
+        expect(run.nativeAcquisitions[0]).toEqual(initialNativeProof);
+    });
+
+    it('refuses an unavailable native capture scope without calling the acquisition port or reading presence', async () => {
+        const recording = createCapturingLiveRtcControl('native', 'unavailable');
+        const calls: string[] = [];
+        const outcome = await createLiveRtcDeliveryOperations({ ...config, rtcCaptureMode: 'native' }).runGroupFormation({
+            ...initialFormationInput(recording),
+            nativeAcquisition: {
+                readRtcNativeAcquisition: async (connection: RtcNativeCapturedConnection) => {
+                    calls.push('acquisition');
+                    return Either.ofRight<typeof initialNativeAcquisitionFailure, RtcNativeAcquisitionProof>({ ...initialNativeProof, connection });
+                }
+            }
+        }).then(() => undefined, toError);
+
+        expect.soft(outcome).toMatchObject({
+            rtcConnectCaptures: [initialNativeConnectCaptures[0]],
+            nativeAcquisitions: [],
+            nativeAcquisitionFailure: { reason: 'native-capture-unavailable', connection: initialNativeConnectCaptures[0], source: null }
+        });
+        expect.soft(recording.milestones).not.toContain('presence:1');
+        expect(calls).toEqual([]);
+    });
+
+    it('retains the admitted Connect when the acquisition invocation throws before returning a promise', async () => {
+        const recording = createCapturingLiveRtcControl('native', 'enabled');
+        const acquisitionFailure = new Error('The native acquisition port threw during invocation.');
+        const outcome = await createLiveRtcDeliveryOperations({ ...config, rtcCaptureMode: 'native' }).runGroupFormation({
+            ...initialFormationInput(recording),
+            nativeAcquisition: {
+                readRtcNativeAcquisition: (_connection: RtcNativeCapturedConnection) => {
+                    throw acquisitionFailure;
+                }
+            }
+        }).then(() => undefined, toError);
+
+        expect.soft(outcome?.cause).toBe(acquisitionFailure);
+        expect.soft(outcome).toMatchObject({
+            rtcConnectCaptures: [initialNativePreflightCapture],
+            nativeAcquisitions: [],
+            nativeAcquisitionFailure: { reason: 'acquisition-failed', connection: initialNativePreflightCapture, cause: acquisitionFailure }
+        });
+        expect.soft(recording.milestones).not.toContain('presence:1');
+        expect(recording.commands.filter(({ command }) => command.kind === 'rtc.connect')).toHaveLength(1);
+    });
+
+    it('refuses a native acquisition under a non-Native capture request before any Connect or acquisition', async () => {
+        const recording = createCapturingLiveRtcControl('signaling', 'unavailable');
+        const calls: string[] = [];
+        const outcome = await createLiveRtcDeliveryOperations({ ...config, rtcCaptureMode: 'signaling' }).runGroupFormation({
+            ...initialFormationInput(recording),
+            nativeAcquisition: {
+                readRtcNativeAcquisition: async (connection: RtcNativeCapturedConnection) => {
+                    calls.push('acquisition');
+                    return Either.ofRight<typeof initialNativeAcquisitionFailure, RtcNativeAcquisitionProof>({ ...initialNativeProof, connection });
+                }
+            }
+        }).then(() => undefined, toError);
+
+        expect.soft(outcome?.message).toContain('Native acquisition requires an explicit Native capture request');
+        expect.soft(recording.commands.filter(({ command }) => command.kind === 'rtc.connect')).toEqual([]);
+        expect(calls).toEqual([]);
+    });
+
     it('keeps only the completed A and B Connect facts after initial pair readiness fails', async () => {
         const recording = createCapturingLiveRtcControl('native', 'unavailable');
         const readinessFailure = new Error('The initial pair did not become ready.');
@@ -1216,6 +1293,19 @@ describe('live RTC delivery owner', () => {
         });
     });
 });
+
+/** The initial formation of the retained-capture trio on `recording`, with every member's readiness awaited. */
+function initialFormationInput(recording: RecordingLiveRtcControl) {
+    return {
+        control: recording,
+        runId: 'retained-capture-run',
+        agents: recording.agents,
+        transport: 'messages.rtc' as const,
+        groupId: 'retained-room',
+        suffix: 'initial',
+        readinessScope: 'all' as const
+    };
+}
 
 function createCapturingLiveRtcControl(
     mode: RtcSignalingDiagnostics.CaptureMode,
