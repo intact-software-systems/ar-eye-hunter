@@ -13,7 +13,6 @@ import {
     type ALQosInputProvider
 } from '../../al-contracts/al-policy.ts';
 import { isALUnicastAddressedTo } from '../../al-contracts/is-al-unicast-addressed-to.ts';
-import { isALOwnWord } from '../../al-contracts/receipt-proof/al-receipt-proof.ts';
 import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import type { ALOutboundPendingAckSnapshot } from '../../alm/al-runtime-state-stores.ts';
 import type { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
@@ -22,7 +21,7 @@ import type {
     ALOutboundEnqueueResult,
     ALOutboundMessageRuntime
 } from '../../alm/outbound/al-outbound-message-runtime.ts';
-import type { ALOutboundControlAdmissionResult } from '../../alm/outbound/control/al-outbound-control-admission.ts';
+import type { ALOutboundControlAdmissionResult } from '../../alm/outbound/control/read-al-outbound-recipient-proof.ts';
 import type { ALReceiptRecordRef } from '../../alm/receipt-record/al-receipt-record-keys.ts';
 import type {
     ALReceiptRecordEndedHead,

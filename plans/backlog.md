@@ -297,8 +297,9 @@ and it has no status list.
   same statement, is still its `rejected` verdict (the 303 rejected
   `not-subscribed` NACK rows of one full-scope RTC run all came from
   `granted-rtc-ordered-relay`'s probe loop), and the WS server's receipt
-  aggregation refuses a repeated confirmation as a refusal under its guard
-  `already-confirmed`, with no `duplicate` label.
+  record answers a repeated confirmation `repeated` and writes nothing, which
+  the server's `ack-count` observation states as an ordinary count, with no
+  `duplicate` label.
 - The inbound work engine's idle busy poll (found while building the relay
   statement rules; on `main` at `d70f2f165`): an idle relay's two inbound
   rotation lanes report ready from rotation progress, not from a row, so its
@@ -785,12 +786,6 @@ and it has no status list.
 - A kept row polls the room authorizer every 50 ms while the room view is
   behind, and its replay does not read the sender's connection again (the
   held-send design's non-goals, D696).
-- A room member that never received a message can send an ACK the server
-  counts before the message was delivered. It belongs with the relay statement
-  rules (part C). In a send kept after a lost race whose captured audience has
-  left, the receipt records that audience never sent, so an ACK from such a
-  recipient is refused (`never-sent`) and the handle reads `expired`
-  (`ws-kept-send-receipt.test.ts`, D701, D708).
 - A replay hand-over (`onReplayAdmitted`) that rejects skips
   `recordReplayedAdmission` and `commitWork`: the message's diagnostic records
   the retry's `duplicate`, never `admitted`, and the delivery it wrote waits

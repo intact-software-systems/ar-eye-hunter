@@ -1619,8 +1619,8 @@ deadline, so a terminal fact is stated once per message across reloads. Afterwar
 meets the marker at `readSendGuards` and completes without a frame; a receipt is refused; a kept incomplete receipt row
 is the final snapshot, so
 [`validateALOutboundEndedMessageControl`](./message-end/validate-al-outbound-ended-message-control.ts) refuses an ACK or
-an outside-audience NACK while it stands and no settlement follows the terminal one (a kept complete row still admits
-them, a next hop's late terminal ACK included), and the server's own `commitOutsideAudience` answers `absent` for it;
+an outside-audience NACK, the server's own included, while it stands and no settlement follows the terminal one (a kept
+complete row still admits them, a next hop's late terminal ACK included);
 any other NACK but a gap is refused; a gap NACK or repair request, which names the message whose arrival revealed the
 gap, is admitted and served for every sequence it names that has not ended, the ended one served nothing and charged
 nothing; and a timer that meets an ended message's kept incomplete row writes nothing. A control commit decides its own

@@ -84,8 +84,6 @@ interface ReceiptFixtureOptions {
     readonly authorizedPeerIds?: readonly string[];
     /** The audience the router admits an outbox-fanned message to, which its dequeue records; none when absent. */
     readonly admittedAudience?: readonly string[];
-    /** The messages the router fans out to the outbox; every admitted message when absent. */
-    readonly fannedOutMsgIds?: readonly string[];
 }
 
 describe('WS server receipt aggregation for receiver acknowledgements', () => {
@@ -568,58 +566,6 @@ describe('WS server receipt aggregation over the receipt record', () => {
         });
     });
 
-    it('refuses the ACK of a recipient this server never sent the message, at ingress and at the count, as a typed rejection', async () => {
-        const observed: WsQueueBoxServerReceiptObservation[] = [];
-        const enqueued: ALMessage[] = [];
-        const aggregation = createAggregation(enqueued, () => 1_000, (observation) => observed.push(observation));
-        aggregation.recordAdmission({ ...admission(), expectedRecipientPeerIds: ['b'], neverSentRecipientPeerIds: ['b'] });
-        const ack = aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' });
-        const control = aggregateAckControl(ack);
-
-        expect(aggregation.readRelayedAckRejection(ack, { stage: 'ingress-protocol', controlIdentity: control.id })).toEqual({
-            code: 'unauthorized',
-            message: 'AL acknowledgement comes from a recipient this server never sent the message'
-        });
-        await aggregation.acceptControlMessage(control);
-
-        expect(observed).toMatchObject([
-            { kind: 'ack-rejection', owner: 'receipt-aggregation', failedGuards: ['never-sent'] },
-            { kind: 'ack-count', outcome: 'rejected', rejectionCode: 'unauthorized' }
-        ]);
-        expect(enqueued).toEqual([]);
-    });
-
-    it('counts the ACK of a recipient this server sent the message', async () => {
-        const observed: WsQueueBoxServerReceiptObservation[] = [];
-        const enqueued: ALMessage[] = [];
-        const aggregation = createAggregation(enqueued, () => 1_000, (observation) => observed.push(observation));
-        aggregation.recordAdmission({ ...admission(), expectedRecipientPeerIds: ['b'], neverSentRecipientPeerIds: [] });
-        const ack = aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' });
-
-        expect(aggregation.readRelayedAckRejection(ack)).toBeUndefined();
-        await aggregation.acceptControlMessage(aggregateAckControl(ack));
-
-        expect(observed.filter(({ kind }) => kind === 'ack-count'))
-            .toMatchObject([{ kind: 'ack-count', outcome: 'complete', rejectionCode: undefined }]);
-        expect(enqueued.map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource))))
-            .toMatchObject([{ phase: 'complete', confirmedRecipientPeerIds: ['b'] }]);
-    });
-
-    it('records the server own not-subscribed ACK for a recipient it never sent the message outside the audience', async () => {
-        const aggregation = createAggregation();
-        aggregation.recordAdmission({ ...admission(), neverSentRecipientPeerIds: ['b'] });
-
-        await aggregation.acceptControlMessage(
-            aggregateAckControl(aggregateAck({ fromPeerId: 'server', logicalRecipientPeerId: 'b', status: 'subtree-complete-not-subscribed' }))
-        );
-
-        expect(aggregation.sweep(Number.MAX_SAFE_INTEGER).map(({ receipt }) => receipt)).toMatchObject([{
-            phase: 'timed-out',
-            confirmedRecipientPeerIds: [],
-            outsideAudienceRecipientPeerIds: ['b']
-        }]);
-    });
-
     it('keeps a receipt whose every recipient answered outside open until its deadline, as it confirmed nobody', async () => {
         const fixture = createAggregation();
         await fixture.aggregation.writeAdmittedReceipt({
@@ -1066,7 +1012,7 @@ function registerReceiptFixtureRouting(service: WsQueueBoxServerService, options
     });
     service.onAnyInboxMessageDo('router', {
         onMessage: async (message) => {
-            if (options.fanout === 'outbox' && (options.fannedOutMsgIds?.includes(message.id.msgId) ?? true)) {
+            if (options.fanout === 'outbox') {
                 await service.enqueueOutboxIfAbsent(message, toRouterAuthority(options.admittedAudience));
             }
         }
@@ -1142,14 +1088,6 @@ function createTestInboundStore(admission: ALAdmissionMemoryState, clock: { nowM
         maxOrderingTracks: undefined,
         maxDeliveredMarkers: undefined
     });
-}
-
-/**
- * The in-memory stores never leave the microtask queue, so a loop of admissions would starve every timer: a commit
- * retry's backoff and the engine's next pass would wait until the loop ended, and the case's pace would depend on that.
- */
-async function yieldToTimers(): Promise<void> {
-    await new Promise((resolve) => setImmediate(resolve));
 }
 
 async function admitRoomMessage(fixture: ReceiptFixture): Promise<void> {

@@ -1,6 +1,6 @@
 import type { ALAckPayload } from '../../../al-contracts/al-control.ts';
+import { isALOwnWord } from '../../../al-contracts/receipt-proof/al-receipt-proof.ts';
 import { isALRecipientConfirmationAck } from '../../../alm/delivery/is-al-recipient-confirmation-ack.ts';
-import { isALOwnWord } from '../../../alm/inbound/control/is-al-same-receipt-statement.ts';
 import type { ALReceiptRecord } from '../../../alm/receipt-record/al-receipt-record.ts';
 import type { ALReceiptRecordConfirmationDto } from '../../../alm/receipt-record/validate-al-receipt-record-confirmation.ts';
 import type { Either } from '../../../resilience/Either.ts';

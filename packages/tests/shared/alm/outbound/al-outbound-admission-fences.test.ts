@@ -32,6 +32,7 @@ import {
 } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
 import {
     createALOutboundAdmissionStore,
+    toALOutboundMessageFence,
     type ALOutboundAdmissionStore,
     type ALOutboundCommitBundle,
     type ALOutboundNotYetInSyncRetrySchedule,
@@ -52,6 +53,7 @@ import {
     toALOutboundReadMessageEndBundle
 } from '@shared/alm/outbound/message-end/to-al-outbound-message-end-bundle.ts';
 import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
+import { acceptALOutboundOutsideAudienceNack } from '@shared/alm/outbound/transition-al-outbound-pending-ack.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { readIndexedDbRequest } from '@shared/persistence/indexed-db-request.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -301,7 +303,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
         const write = fixture.backend.write.bind(fixture.backend);
         let before = '';
         vi.spyOn(fixture.backend, 'write').mockImplementationOnce(async (operation) => {
-            expect(await fixture.store.commitOutsideAudience(toFenceReceipt(message), ['peer-1'])).toBe('committed');
+            expect(await commitRecipientOutside(fixture.store, message, 'peer-1')).toBe('committed');
             before = await fixture.readAdmissionState();
             return await write(operation);
         });
@@ -717,6 +719,37 @@ function toDeliveredAck(message: ALMessage, observedAtMs: number): ALMessage {
 
 function toFenceReceipt(message: ALMessage): ALOutboundPendingAckRef {
     return { originPeerId: message.id.senderId, msgId: message.id.msgId };
+}
+
+/** A commit of the message's own receipt row under both of its fences: the recipient recorded outside the receipt. */
+async function commitRecipientOutside(
+    store: ALOutboundAdmissionStore<OutboundTestPayload>,
+    message: ALMessage,
+    recipientPeerId: string
+): Promise<'committed' | 'conflict' | 'expired'> {
+    const receipt = toFenceReceipt(message);
+    const { clientRecord, messageVersion, pending, stored } = await store.readReceiptAdmission({
+        ...receipt,
+        phase: 'complete',
+        expectedRecipientPeerIds: []
+    });
+    if (pending === undefined || stored === undefined) {
+        throw new Error('the seeded message has no receipt row');
+    }
+    return await store.commitBundle({
+        senderId: receipt.originPeerId,
+        expectedVersion: clientRecord?.version,
+        fencesSender: true,
+        message: toALOutboundMessageFence(receipt, messageVersion, stored.reference.expiresAtMs),
+        mutations: [{
+            kind: 'set-pending-ack',
+            originPeerId: receipt.originPeerId,
+            snapshot: acceptALOutboundOutsideAudienceNack(pending, recipientPeerId),
+            expireAtTimestamp: stored.reference.expiresAtMs
+        }],
+        durableEffects: [],
+        endedTimeoutEffectIds: []
+    });
 }
 
 interface FenceSiblingCommit {

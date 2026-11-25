@@ -113,16 +113,3 @@ postgresIt('completes one receipt naming all fourteen receivers once the last he
     expect([...completed[0]!.confirmedRecipientPeerIds].sort()).toEqual(RECEIVER_PEER_IDS);
     expect(subjectReceipts().map((receipt) => receipt.phase)).not.toContain('timed-out');
 });
-
-/** Deletes only this unique namespace's work, canonical message/identity range and metadata. */
-async function cleanupReceiptStorage(input: ReceiptStorageCleanup): Promise<void> {
-    const { sql, namespace } = input;
-    const canonical = toALOutboundCanonicalKey(namespace, roomMessage(toHandoffRoomMessageInput(input.nowMs)));
-    const work = toALOutboundWorkKey(namespace, 'any-effect');
-    await sql`
-        delete from resource_inbox
-        where (ri_topic_id in ('AL_OUTBOUND_MESSAGE', 'AL_OUTBOUND_IDENTITY') and ri_resource_id = ${canonical.resourceId})
-            or (ri_topic_id = ${work.topicId} and ri_resource_id = ${work.resourceId})
-    `;
-    await sql`delete from runtime_state_store where store_namespace = ${namespace}`;
-}

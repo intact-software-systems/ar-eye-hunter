@@ -20,6 +20,7 @@ import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-run
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import { AL_OUTBOUND_COMMIT_ATTEMPTS } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
 import { createInMemoryALReceiptRecordStores } from '@shared/alm/receipt-record/al-receipt-record-stores.ts';
 import { ALReceiptRecord } from '@shared/alm/receipt-record/al-receipt-record.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
@@ -810,8 +811,7 @@ async function openObservedReceipt(record: ALReceiptRecord, msgId: string, expec
         expectedRecipientPeerIds,
         neverSentRecipientPeerIds: [],
         snapshotVersion: 7,
-        deadlineAtMs: 30000,
-        neverSentRecipientPeerIds: []
+        deadlineAtMs: 30000
     });
     if (opened.right === undefined) {
         throw new Error('test receipt was not opened');

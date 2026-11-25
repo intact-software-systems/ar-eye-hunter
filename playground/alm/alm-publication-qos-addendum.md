@@ -1585,8 +1585,9 @@ is green in three of three; in both all twenty arrive in order and none twice.
 In the first nine runs a lost repair frame was renewed end to end in two, both
 over `ws`, and the first-hop resend is proven by unit tests alone (D683). The
 recovery has stated limits: a lost only or last frame under `ack: 'none'` is
-not recovered, and renewal holds on direct links and not through an `rtc` relay
-(D680, D683, D693 and the backlog); and the lost stream
+not recovered, and renewal held on direct links and not through an `rtc` relay
+until the relay statement rules (D680, D683, D693, D725 to D730 and the
+backlog); and the lost stream
 start over `rtc` is its own slice (D669). The held-send path is built (D696 to
 D700): a send the server keeps starts its receipt when the server admits it, at
 ingress or at its replay, so a send kept behind its room view and then admitted
