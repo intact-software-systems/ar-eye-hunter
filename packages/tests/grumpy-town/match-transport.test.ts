@@ -42,6 +42,7 @@ describe('RTC-first game transport with scoped WS fallback', () => {
     it('does not relay live frames over WS when RTC accepts every intended peer', async () => {
         const attempts: WsAttempt[] = [];
         const transport = new TownMatchTransport({
+            timers: { nowMs: () => 0 },
             reliable: createUnavailableWs(attempts),
             realtime: { on: () => () => {}, send: async () => sent }
         });
@@ -54,6 +55,7 @@ describe('RTC-first game transport with scoped WS fallback', () => {
     it('falls back only for the missing peer and preserves frame identity, surfacing WS failure', async () => {
         const attempts: WsAttempt[] = [];
         const transport = new TownMatchTransport({
+            timers: { nowMs: () => 0 },
             reliable: createUnavailableWs(attempts),
             realtime: { on: () => () => {}, send: async () => ({ ...sent, status: 'partial', desiredPeerIds: ['bob', 'carol'] }) }
         });
@@ -74,6 +76,7 @@ describe('RTC-first game transport with scoped WS fallback', () => {
     it('uses WS when RTC throws and keeps checkpoint agreement on WS even when RTC is ready', async () => {
         const attempts: WsAttempt[] = [];
         const transport = new TownMatchTransport({
+            timers: { nowMs: () => 0 },
             reliable: createUnavailableWs(attempts),
             realtime: {
                 on: () => () => {},
@@ -87,6 +90,7 @@ describe('RTC-first game transport with scoped WS fallback', () => {
         expect(transport.getLiveSend()).toBe('ws');
         const checkpoint: TownMatchFrame = { ...frame, action: { kind: 'commit', digest: 'a'.repeat(64), proposalSequence: 4 } };
         const readyTransport = new TownMatchTransport({
+            timers: { nowMs: () => 0 },
             reliable: createUnavailableWs(attempts),
             realtime: { on: () => () => {}, send: async () => sent }
         });
@@ -97,10 +101,38 @@ describe('RTC-first game transport with scoped WS fallback', () => {
         readyTransport.stop();
     });
 
+    it('resends lost agreement without flooding slow peers, and immediately reaches a newly joined peer', async () => {
+        let now = 0;
+        const attempts: WsAttempt[] = [];
+        const transport = new TownMatchTransport({
+            timers: { nowMs: () => now },
+            reliable: createUnavailableWs(attempts),
+            realtime: { on: () => () => {}, send: async () => sent }
+        });
+        const ack: TownMatchFrame = { ...frame, action: { kind: 'ack', digest: 'a'.repeat(64), proposalSequence: 4 } };
+        async function pump(sequence: number, recipients: readonly string[]) {
+            await transport.write({ ...ack, sequence }, recipients).catch(() => {});
+        }
+
+        await pump(5, ['bob']);
+        now = 100;
+        await pump(6, ['bob', 'carol']);
+        for (now = 200; now < 1000; now += 100) await pump(now, ['bob', 'carol']);
+        expect(attempts.map(attempt => attempt.options?.recipientPeerIds)).toEqual([['bob'], ['carol']]);
+        now = 1100;
+        await pump(1000, ['bob', 'carol']);
+        expect(attempts[2]?.options?.recipientPeerIds).toEqual(['bob', 'carol']);
+        const next: TownMatchFrame = { ...frame, sequence: 1001, action: { kind: 'ack', digest: 'b'.repeat(64), proposalSequence: 7 } };
+        await transport.write(next, ['bob', 'carol']).catch(() => {});
+        expect(JSON.parse(attempts[3].wire)).toEqual(next);
+        transport.stop();
+    });
+
     it('cannot start a fallback after the owning match stops during an RTC send', async () => {
         const attempts: WsAttempt[] = [];
         const pending = Promise.withResolvers<RallarRoomRealtimeSendResult>();
         const transport = new TownMatchTransport({
+            timers: { nowMs: () => 0 },
             reliable: createUnavailableWs(attempts),
             realtime: { on: () => () => {}, send: async () => await pending.promise }
         });

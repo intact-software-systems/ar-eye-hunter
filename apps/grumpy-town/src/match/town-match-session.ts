@@ -86,6 +86,7 @@ export class TownMatchSession {
         this.dependencies = dependencies;
         this.roomRef = roomRef;
         this.transport = new TownMatchTransport({
+            timers: dependencies.timers,
             reliable: dependencies.browser.messages.room<string>({
                 roomRef,
                 topicId: 'app.grumpy-town.match',

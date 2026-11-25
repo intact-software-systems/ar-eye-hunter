@@ -3,12 +3,14 @@ import type { RallarRoomRealtimeJsonChannel } from '@shared-web/browser/rallar-r
 import { isAcceptedRealtimeSendResult } from '@shared-web/browser/realtime/browser-realtime-send-runtime.ts';
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import type { Timers } from '@shared/resilience/timers.ts';
 import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 
 import { decodeTownMatchFrame, type TownMatchFrame } from '../match-protocol.ts';
 
 export namespace TownMatchTransport {
     export interface Dependencies {
+        readonly timers: Pick<Timers, 'nowMs'>;
         readonly reliable: Pick<RallarTypedMessageChannel<string>, 'sendWs' | 'onWs'>;
         readonly realtime: Pick<RallarRoomRealtimeJsonChannel<string>, 'send' | 'on'>;
     }
@@ -26,6 +28,7 @@ export class TownMatchTransport {
     private readonly dependencies: TownMatchTransport.Dependencies;
     private readonly subscriptions = new SubscriptionScope();
     private readonly lifetime = new AbortController();
+    private readonly retryAfter = new Map<string, number>();
     private liveSend: 'rtc' | 'ws' | 'mixed' | 'none' = 'none';
 
     constructor(dependencies: TownMatchTransport.Dependencies) {
@@ -64,12 +67,14 @@ export class TownMatchTransport {
             return;
         }
         const live = frame.action.kind === 'controls' || frame.action.kind === 'poses';
+        const recipients = live ? recipientPeerIds : this.agreementRecipients(frame, recipientPeerIds);
+        if (recipients.length === 0) return;
         const wire = JSON.stringify(frame);
         const acceptedPeers = live ? await this.writeRealtime(frame, wire) : [];
         if (this.lifetime.signal.aborted) {
             return;
         }
-        const missing = recipientPeerIds.filter((peerId) => !acceptedPeers.includes(peerId));
+        const missing = recipients.filter((peerId) => !acceptedPeers.includes(peerId));
         if (live) {
             this.liveSend = missing.length === 0 ? 'rtc' : acceptedPeers.length > 0 ? 'mixed' : 'ws';
         }
@@ -87,7 +92,26 @@ export class TownMatchTransport {
         }
     }
 
+    /** New decisions are sent immediately; each peer gets one repeat per second to repair a lost decision. */
+    private agreementRecipients(frame: TownMatchFrame, recipients: readonly string[]): readonly string[] {
+        const now = this.dependencies.timers.nowMs();
+        for (const [key, deadline] of this.retryAfter) {
+            if (deadline <= now) this.retryAfter.delete(key);
+        }
+        const action = frame.action;
+        // ACK/commit/recovery envelopes have new send sequences even when they name the same checkpoint.
+        const decision = 'proposalSequence' in action ? [action.proposalSequence, action.digest] : [frame.sequence];
+        if (action.kind === 'recover') decision.push(action.checkpointEpoch, Number(action.committed));
+        return recipients.filter(peer => {
+            const key = JSON.stringify([peer, frame.matchId, frame.epoch, action.kind, ...decision]);
+            if (this.retryAfter.has(key)) return false;
+            this.retryAfter.set(key, now + 1000);
+            return true;
+        });
+    }
+
     stop(): void {
+        this.retryAfter.clear();
         this.lifetime.abort();
         this.subscriptions.unsubscribe();
     }
