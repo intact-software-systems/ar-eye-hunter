@@ -253,7 +253,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         const members = dispatches.map((dispatch) => ({ dispatch, phases: this.createCommitPhases(dispatch) }));
         try {
             const grouped = await this.commitGroupOnce(members)
-                .catch((error: unknown) => {
+                .catch((error) => {
                     console.warn('AL outbound group commit threw; its members commit alone', error);
                     return undefined;
                 });
@@ -338,7 +338,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         members: readonly ALOutboundGroupMember<TPrepared>[]
     ): Promise<readonly (ALOutboundDispatchAdmission.Result<TPrepared> | undefined)[] | undefined> {
         const startedAtMs = this.readTimingNowMs();
-        const decisions = await this.readGroupDecisions(members).catch((error: unknown) => {
+        const decisions = await this.readGroupDecisions(members).catch((error) => {
             this.recordGroupTiming(members, { startedAtMs, decisionEndedAtMs: undefined }, 'error');
             throw error;
         });
@@ -372,7 +372,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         const written = this.admissionStore.commitBundles(group.map(({ bundle }) => bundle));
         const outcome = await Promise.all(members.map(({ phases }) => phases.withCommitPhase(() => written))).then(
             (statuses) => statuses[0]!,
-            (error: unknown) => {
+            (error) => {
                 console.warn('AL outbound group commit threw; its members commit alone', error);
                 return 'error' as const;
             }

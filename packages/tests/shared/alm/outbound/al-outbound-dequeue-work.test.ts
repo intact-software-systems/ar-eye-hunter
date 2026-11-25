@@ -1462,25 +1462,22 @@ async function readMixedBatchMessageVersion(stores: OutboundTestStores, message:
     );
 }
 
+/** The fields of a stored outbound work row this file reads: its payload's kind and the message a send names. */
+interface StoredOutboundWorkRow {
+    readonly payload: Readonly<{ kind: string; message?: Readonly<{ msgId: string; }>; }>;
+}
+
 /** The message each `send-prepared` work row the store holds sends, one entry per row. */
 async function readSendEffectMsgIds(stores: OutboundTestStores): Promise<readonly string[]> {
     const workType = toALOutboundWorkType(stores.admissionStore.namespace);
     const rows = await Promise.all((await stores.workQueue.getAllKeys()).map((key) => stores.workQueue.getItem(key)));
     return rows.flatMap((row) => {
-        const msgId = row?.typeId === workType ? decodeSendEffectMsgId(JSON.parse(row.resource)) : undefined;
-        return msgId === undefined ? [] : [msgId];
+        if (row?.typeId !== workType) {
+            return [];
+        }
+        const { payload }: StoredOutboundWorkRow = JSON.parse(row.resource);
+        return payload.kind === 'send-prepared' && payload.message !== undefined ? [payload.message.msgId] : [];
     });
-}
-
-/** The message a stored outbound work row's `send-prepared` payload sends; undefined for any other payload. */
-function decodeSendEffectMsgId(value: unknown): string | undefined {
-    const payload: unknown = typeof value === 'object' && value !== null ? Reflect.get(value, 'payload') : undefined;
-    if (typeof payload !== 'object' || payload === null || Reflect.get(payload, 'kind') !== 'send-prepared') {
-        return undefined;
-    }
-    const message: unknown = Reflect.get(payload, 'message');
-    const msgId: unknown = typeof message === 'object' && message !== null ? Reflect.get(message, 'msgId') : undefined;
-    return typeof msgId === 'string' ? msgId : undefined;
 }
 
 /** The server's terminal receipt `msgId` of the message `subjectMsgId`. */
