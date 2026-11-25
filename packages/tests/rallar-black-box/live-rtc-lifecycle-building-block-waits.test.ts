@@ -23,6 +23,7 @@ import { LiveRtcLifecycleOperations } from '../../../tests/playwright/rallar-bla
 import {
     createCountedPage,
     measureBoundedWaitsMs,
+    settleUnderFakeTimers,
     spendBoundedWait,
     useBoundedWaitClock
 } from './bounded-wait-clock-fixture.ts';
@@ -194,10 +195,21 @@ describe('the live RTC lifecycle building blocks wait what their derivation coun
 
         expect(
             await measureBoundedWaitsMs(async () => {
-                const reopened = await lifecycle.reopen(run, { browser: COUNTED_BROWSER, config: BROWSER_CONFIG, index: 2 });
-                await lifecycle.connectPresence(run, reopened);
+                const reopenedRun = await lifecycle.reopen(run, { browser: COUNTED_BROWSER, config: BROWSER_CONFIG, index: 2 });
+                await lifecycle.connectPresence(reopenedRun, reopenedRun.agents[2]);
             })
         ).toBe(LIVE_RTC_LIFECYCLE_OPERATION_BOUNDED_WAITS_MS.reopenedPresence);
+    });
+
+    // Reopening replaced the member in the caller's own run.
+    it('reopens a member into a new run, leaving the caller\'s run as it was', async () => {
+        const run = createLifecycleRun();
+        const before = [...run.agents];
+
+        const reopenedRun = await settleUnderFakeTimers(() => lifecycle.reopen(run, { browser: COUNTED_BROWSER, config: BROWSER_CONFIG, index: 2 }));
+
+        expect(run.agents).toEqual(before);
+        expect([reopenedRun.agents[0], reopenedRun.agents[1], reopenedRun.agents[2] === before[2]]).toEqual([before[0], before[1], false]);
     });
 
     it('reopens a member, connects its presence and settles the survivors within the reopening\'s bounded waits', async () => {
@@ -205,9 +217,9 @@ describe('the live RTC lifecycle building blocks wait what their derivation coun
 
         expect(
             await measureBoundedWaitsMs(async () => {
-                const reopened = await lifecycle.reopen(run, { browser: COUNTED_BROWSER, config: BROWSER_CONFIG, index: 1 });
-                await lifecycle.connectPresence(run, reopened);
-                await lifecycle.settleSurvivors(run, reopened);
+                const reopenedRun = await lifecycle.reopen(run, { browser: COUNTED_BROWSER, config: BROWSER_CONFIG, index: 1 });
+                await lifecycle.connectPresence(reopenedRun, reopenedRun.agents[1]);
+                await lifecycle.settleSurvivors(reopenedRun, reopenedRun.agents[1]);
             })
         ).toBe(LIVE_RTC_LIFECYCLE_OPERATION_BOUNDED_WAITS_MS.reopening);
         expect(LIVE_RTC_LIFECYCLE_OPERATION_BOUNDED_WAITS_MS.reopenedPresence).toBe(

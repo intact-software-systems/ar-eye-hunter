@@ -100,10 +100,11 @@ test.describe('live RTC lifecycle acceptance', () => {
 
     test('reports a monotonic readiness fraction to a member that reopens', async ({ browser, request }, testInfo) => {
         test.setTimeout(computeLiveRtcLifecycleScenarioTimeoutMs('monotonic-readiness'));
-        const scenario = await openScenario(browser, request, 'progress');
+        let scenario = await openScenario(browser, request, 'progress');
         try {
             await lifecycle.activateGroup(scenario);
-            const reopened = await lifecycle.reopen(scenario, { browser, config: liveRtcAgentConfig(), index: 2 });
+            scenario = await lifecycle.reopen(scenario, { browser, config: liveRtcAgentConfig(), index: 2 });
+            const reopened = scenario.agents[2];
             // The agent ID survives reopening; the old page can emit while its context closes.
             const reopenedAt = await reopened.page.evaluate(() => performance.timeOrigin);
             const recording = await scenario.control.executeOk({
@@ -148,10 +149,11 @@ test.describe('live RTC lifecycle acceptance', () => {
 
     test('reports ready only after the accepted layout arrived', async ({ browser, request }) => {
         test.setTimeout(computeLiveRtcLifecycleScenarioTimeoutMs('accepted-layout-barrier'));
-        const scenario = await openScenario(browser, request, 'barrier');
+        let scenario = await openScenario(browser, request, 'barrier');
         try {
             await lifecycle.activateGroup(scenario);
-            const reopened = await lifecycle.reopen(scenario, { browser, config: liveRtcAgentConfig(), index: 1 });
+            scenario = await lifecycle.reopen(scenario, { browser, config: liveRtcAgentConfig(), index: 1 });
+            const reopened = scenario.agents[1];
             // The agent ID survives reopening; the old page can emit while its context closes.
             const reopenedAt = await reopened.page.evaluate(() => performance.timeOrigin);
             await lifecycle.connectPresence(scenario, reopened);
@@ -211,12 +213,13 @@ test.describe('live RTC lifecycle acceptance', () => {
 
     test('hydrates a dormant group without resurrecting its layouts', async ({ browser, request }) => {
         test.setTimeout(computeLiveRtcLifecycleScenarioTimeoutMs('hydration'));
-        const scenario = await openScenario(browser, request, 'hydration');
+        let scenario = await openScenario(browser, request, 'hydration');
         try {
             await lifecycle.activateGroup(scenario);
             await lifecycle.resetOwnerToDormant(scenario);
 
-            const reopened = await lifecycle.reopen(scenario, { browser, config: liveRtcAgentConfig(), index: 2 });
+            scenario = await lifecycle.reopen(scenario, { browser, config: liveRtcAgentConfig(), index: 2 });
+            const reopened = scenario.agents[2];
             await lifecycle.connectPresence(scenario, reopened);
 
             for (const health of await lifecycle.readHydratedHealths(scenario, reopened)) {

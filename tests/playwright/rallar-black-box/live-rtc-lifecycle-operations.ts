@@ -45,13 +45,13 @@ export namespace LiveRtcLifecycleOperations {
 
     export interface Control extends LiveRtcControlPort, Pick<LiveRtcControlClient, 'fetchRun'> {}
 
-    /** One scenario's trio on its own managed group; a reopened member replaces its predecessor in `agents`. */
+    /** One scenario's trio on its own managed group; reopening a member gives a new run with it in its place. */
     export interface Run {
         readonly control: Control;
         readonly runId: string;
         readonly groupId: string;
         readonly suffix: string;
-        agents: LiveRtcAgentTrio;
+        readonly agents: LiveRtcAgentTrio;
     }
 
     export interface ReopenInput {
@@ -159,11 +159,11 @@ export class LiveRtcLifecycleOperations {
         await this.#command(run, 'activate');
     }
 
-    /** Reopens a member with its restored session in place of the one it replaces in the run's trio. */
+    /** Reopens a member with its restored session; returns the run whose trio holds it in its predecessor's place. */
     async reopen(
         run: LiveRtcLifecycleOperations.Run,
         input: LiveRtcLifecycleOperations.ReopenInput
-    ): Promise<LiveRtcControlClient.Agent> {
+    ): Promise<LiveRtcLifecycleOperations.Run> {
         const reopened = await this.#config.formation.reopen({
             ...this.toAgentInput(run, run.agents[input.index]),
             browser: input.browser,
@@ -171,8 +171,7 @@ export class LiveRtcLifecycleOperations {
             transport: 'realtime'
         });
         const [a, b, c] = run.agents.map((agent, index) => index === input.index ? reopened : agent);
-        run.agents = [a, b, c];
-        return reopened;
+        return { ...run, agents: [a, b, c] };
     }
 
     /**
