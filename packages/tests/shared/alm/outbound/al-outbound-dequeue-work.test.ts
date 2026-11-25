@@ -12,13 +12,19 @@ import type { RallarTimingEvent } from '@shared-server/rallar-system/observabili
 import { newALReceiptControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
-import { toALOutboundSentMessageKey } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
+import { decodeALAdmissionClientRecord, decodeALOutboundMessageVersion } from '@shared/alm/al-admission-value-validation.ts';
+import {
+    toALOutboundOriginMessageKey,
+    toALOutboundSentMessageKey,
+    toALOutboundVersionKey
+} from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
 import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type { ALOutboundCapturedPolicy } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import { ALOutboundMessageRuntime, type ALOutboundDropReasonCode } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     AL_OUTBOUND_WORK_PAGE_SIZE,
-    computeALOutboundWorkEntry
+    computeALOutboundWorkEntry,
+    toALOutboundWorkType
 } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { createDefaultALOutboundRuntimeResources } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { ALOutboundDequeuedAdmission } from '@shared/alm/outbound/lane/al-outbound-dequeued-admission.ts';
@@ -46,6 +52,7 @@ import {
     createDefaultOutboundTestStores,
     drainEngine,
     peekOutboundWorkReadyAt,
+    readOutboundTestAdmission,
     runOutboundWorkTask,
     type OutboundTestStores
 } from '../outbound-runtime-test-fixture.ts';
@@ -882,6 +889,70 @@ describe('AL outbound dequeue work', () => {
         }
     });
 
+    it('commits a dequeued batch that holds receipt controls and a sequenced row of one sender in two writes', async () => {
+        // Pins a mixed batch refused as one group and committing its members alone, one after another.
+        const batch = await createMixedFenceBatch();
+        onTestFinished(async () => await batch.runtime.dispose());
+
+        await runOutboundWorkTask(batch.runtime);
+
+        for (const message of batch.messages) {
+            expect(await batch.stores.admissionStore.readStoredMessage(message.id.msgId), message.id.msgId).toBeDefined();
+            expect(await readMixedBatchMessageVersion(batch.stores, message), message.id.msgId).toBe(1);
+        }
+        expect(await readMixedBatchSenderVersion(batch.stores)).toBe(1);
+        expect(batch.groups.map(({ memberCount, outcome }) => ({ memberCount, outcome }))).toEqual(expect.arrayContaining([
+            { memberCount: 1, outcome: 'committed' },
+            { memberCount: 3, outcome: 'committed' }
+        ]));
+        expect(batch.groups).toHaveLength(2);
+        for (const entry of batch.entries) {
+            expect((await batch.outbox.getItem(entry.key))?.status).toBe(EntityStatus.COMPLETED);
+        }
+    });
+
+    it('when the sequenced row of a mixed batch loses its fence, the receipts\' write stands and each is sent once', async () => {
+        // Pins a mixed batch whose lost sender fence fails the receipts' write too, so each receipt commits a second
+        // time and its copy is queued twice.
+        const batch = await createMixedFenceBatch();
+        onTestFinished(async () => await batch.runtime.dispose());
+        const commitBundles = batch.stores.admissionStore.commitBundles.bind(batch.stores.admissionStore);
+        let interleaved = false;
+        vi.spyOn(batch.stores.admissionStore, 'commitBundles').mockImplementation(async (bundles) => {
+            if (!interleaved && bundles.some((bundle) => bundle.fencesSender)) {
+                interleaved = true;
+                // Another frame of the sender, on a track of its own, commits after the group read the sender version.
+                const frame = await readOutboundTestAdmission({
+                    store: batch.stores.admissionStore,
+                    message: { ...createDequeuedMessage('interleaved'), ordering: { orderingKey: 'interleaved-feed', epoch: 1, seq: 1 } },
+                    creationNow: () => Temporal.Now.instant(),
+                    clock: { nowMs: () => Date.now() }
+                });
+                expect(await commitBundles([frame])).toBe('committed');
+            }
+            return await commitBundles(bundles);
+        });
+
+        await runOutboundWorkTask(batch.runtime);
+
+        expect(batch.groups.map(({ memberCount, outcome }) => ({ memberCount, outcome }))).toEqual(expect.arrayContaining([
+            { memberCount: 1, outcome: 'conflict' },
+            { memberCount: 3, outcome: 'committed' }
+        ]));
+        expect(batch.groups).toHaveLength(2);
+        // Each row's message version moved once: the receipts' write committed them, and nothing committed them again.
+        for (const message of batch.messages) {
+            expect(await readMixedBatchMessageVersion(batch.stores, message), message.id.msgId).toBe(1);
+        }
+        const sends = await readSendEffectMsgIds(batch.stores);
+        for (const receipt of batch.receipts) {
+            expect(sends.filter((msgId) => msgId === receipt.id.msgId), receipt.id.msgId).toHaveLength(1);
+        }
+        expect(await batch.stores.admissionStore.readStoredMessage(batch.sequenced.id.msgId)).toBeDefined();
+        // The interleaved frame's commit and the sequenced row's own single commit after it.
+        expect(await readMixedBatchSenderVersion(batch.stores)).toBe(2);
+    });
+
     it('opens no supersedence session for a group whose every row the gate decided', async () => {
         const outbox = createOutboxQueue();
         const stores = createDefaultOutboundTestStores(outbox);
@@ -1335,12 +1406,90 @@ async function writeCorruptSentMessage(stores: OutboundTestStores, msgId: string
     });
 }
 
-function createDequeuedReceipt(): ALMessage {
+/** One page of the server's outbox: three receipt controls and, among them, one frame on a track. */
+interface MixedFenceBatch {
+    readonly outbox: InMemoryQueueBox;
+    readonly stores: OutboundTestStores;
+    readonly runtime: ALOutboundMessageRuntime<OutboundTestPayload>;
+    readonly receipts: readonly ALMessage[];
+    readonly sequenced: ALMessage;
+    readonly messages: readonly ALMessage[];
+    readonly entries: readonly ResourceEntry[];
+    /** The `admission-group` observations the batch's dequeue records. */
+    readonly groups: readonly Extract<ALOutboundDequeuedAdmission.TimingObservation, { kind: 'admission-group'; }>[];
+}
+
+/** The batch enqueued on a ready runtime whose every plan sends one copy, its rows not yet claimed. */
+async function createMixedFenceBatch(): Promise<MixedFenceBatch> {
+    const outbox = createOutboxQueue();
+    const stores = createDefaultOutboundTestStores(outbox);
+    const groups: Extract<ALOutboundDequeuedAdmission.TimingObservation, { kind: 'admission-group'; }>[] = [];
+    const runtime = createDefaultOutboundTestRuntime({
+        outbox,
+        stores,
+        dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
+        dequeueTiming: (observation) => {
+            if (observation.kind === 'admission-group') {
+                groups.push(observation);
+            }
+        },
+        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ peer: 'origin' }] }),
+        sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+    });
+    await runtime.ready();
+    const receipts = ['1', '2', '3'].map((index) => createDequeuedReceipt(`receipt-${index}`, `subject-${index}`));
+    const sequenced: ALMessage = { ...createDequeuedMessage('sequenced'), ordering: { orderingKey: 'feed', epoch: 1, seq: 1 } };
+    const messages = [receipts[0]!, sequenced, receipts[1]!, receipts[2]!];
+    const entries = messages.map((message) => QueueBoxUtilities.toResourceEntryFromMsg(message, DEQUEUE_TYPE, Temporal.Now.instant()));
+    for (const entry of entries) {
+        await outbox.enqueueIfAbsent(entry);
+    }
+    return { outbox, stores, runtime, receipts, sequenced, messages, entries, groups };
+}
+
+async function readMixedBatchSenderVersion(stores: OutboundTestStores): Promise<number | undefined> {
+    return await stores.backend.read(
+        toALOutboundVersionKey(stores.admissionStore.namespace, 'server'),
+        (value) => decodeALAdmissionClientRecord(value, 'server').version
+    );
+}
+
+async function readMixedBatchMessageVersion(stores: OutboundTestStores, message: ALMessage): Promise<number | undefined> {
+    const { senderId, msgId } = message.id;
+    return await stores.backend.read(
+        toALOutboundOriginMessageKey({ row: 'msg-version', namespace: stores.admissionStore.namespace, originPeerId: senderId, msgId }),
+        (value) => decodeALOutboundMessageVersion(value, msgId).version
+    );
+}
+
+/** The message each `send-prepared` work row the store holds sends, one entry per row. */
+async function readSendEffectMsgIds(stores: OutboundTestStores): Promise<readonly string[]> {
+    const workType = toALOutboundWorkType(stores.admissionStore.namespace);
+    const rows = await Promise.all((await stores.workQueue.getAllKeys()).map((key) => stores.workQueue.getItem(key)));
+    return rows.flatMap((row) => {
+        const msgId = row?.typeId === workType ? decodeSendEffectMsgId(JSON.parse(row.resource)) : undefined;
+        return msgId === undefined ? [] : [msgId];
+    });
+}
+
+/** The message a stored outbound work row's `send-prepared` payload sends; undefined for any other payload. */
+function decodeSendEffectMsgId(value: unknown): string | undefined {
+    const payload: unknown = typeof value === 'object' && value !== null ? Reflect.get(value, 'payload') : undefined;
+    if (typeof payload !== 'object' || payload === null || Reflect.get(payload, 'kind') !== 'send-prepared') {
+        return undefined;
+    }
+    const message: unknown = Reflect.get(payload, 'message');
+    const msgId: unknown = typeof message === 'object' && message !== null ? Reflect.get(message, 'msgId') : undefined;
+    return typeof msgId === 'string' ? msgId : undefined;
+}
+
+/** The server's terminal receipt `msgId` of the message `subjectMsgId`. */
+function createDequeuedReceipt(msgId = 'dequeued-receipt', subjectMsgId = 'subject'): ALMessage {
     return {
         ...newALReceiptControlMessage(
-            { v: 4, msgId: 'dequeued-receipt', senderId: 'server', ts: Date.now(), traceId: 'trace-al-outbound-dequeue-work' },
+            { v: 4, msgId, senderId: 'server', ts: Date.now(), traceId: 'trace-al-outbound-dequeue-work' },
             {
-                msgId: 'subject',
+                msgId: subjectMsgId,
                 originPeerId: 'origin',
                 phase: 'complete',
                 expectedRecipientPeerIds: ['recipient'],

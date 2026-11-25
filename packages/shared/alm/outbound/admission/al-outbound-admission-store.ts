@@ -858,8 +858,9 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
     }
 
     /**
-     * Bundles decided against one read of the version of one sender commit as one: one snapshot, one
-     * write that fences that version once and the own rows of every bundle, and one version bump. Two
+     * Bundles of one sender that take one fence commit as one: one snapshot and one write of the own rows and message
+     * version of every bundle. A group that fences the sender was decided against one read of its version, and its
+     * write fences that version once and bumps it once; a group that fences no sender writes no sender version. Two
      * bundles that write the same row were each decided without the write of the other, which sequential
      * commits never are, so that group answers `conflict` before it writes.
      */
@@ -962,8 +963,8 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
     }
 
     /**
-     * `candidates` is one non-empty group: every bundle shares the sender and the version it expects. Its versions keep
-     * the expiry its rows were computed with at `nowMs`.
+     * `candidates` is one non-empty group: every bundle shares the sender and the sender fence, and when they fence the
+     * sender, the version they expect. Its versions keep the expiry its rows were computed with at `nowMs`.
      */
     private async writeCommit(
         candidates: readonly ALOutboundCommitCandidate<TPrepared>[],
@@ -1096,18 +1097,18 @@ function hasALOutboundBundleWrites<TPrepared>(bundle: ALOutboundCommitBundle<TPr
         bundle.endedTimeoutEffectIds.length > 0;
 }
 
-/** Every bundle of one group was decided against the same read of the version of one sender. */
+/** Every bundle of one group takes one sender's one fence; a group that fences the sender read one version of it. */
 function assertALOutboundBundleGroup<TPrepared>(bundles: readonly ALOutboundCommitBundle<TPrepared>[]): void {
     const [first] = bundles;
     if (
         first !== undefined &&
         bundles.some((bundle) =>
-            bundle.senderId !== first.senderId || bundle.expectedVersion !== first.expectedVersion ||
-            bundle.fencesSender !== first.fencesSender
+            bundle.senderId !== first.senderId || bundle.fencesSender !== first.fencesSender ||
+            (first.fencesSender && bundle.expectedVersion !== first.expectedVersion)
         )
     ) {
         throw new TypeError(
-            'An outbound bundle group must share one sender, one expected version and one sender fence'
+            'An outbound bundle group must share one sender and one sender fence, and a sender-fenced one one expected version'
         );
     }
 }

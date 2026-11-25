@@ -45,6 +45,7 @@ import { recordPGliteStatements, type RecordedPGliteStatements } from '../../../
 import {
     createOutboundMessage,
     createOutboundRuntimeWithWorkTask,
+    createServerReceipt,
     OUTBOUND_TEST_SEND_PLANNER,
     runOutboundWorkTask
 } from '../../../shared/alm/outbound-runtime-test-fixture.ts';
@@ -153,6 +154,30 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
         // of its own, in key order, and takes no lock: one statement per row more. Its rows read nothing their sender's
         // other messages share, so no compare-and-set of the sender version precedes the last fence.
         expect(counts()).toEqual({ autocommit: 27, transactions: 6, inTransaction: 17 });
+    });
+
+    // A batch that mixes rows that fence the sender with rows that fence their own message alone was refused as one
+    // group and committed member by member: one refused write, then five transactions and two sender versions. As two
+    // writes, each transaction is five statements. The receipts': two of the three message versions each a
+    // compare-and-set of its own in key order, the third with every other row in one guarded batch, the hold on the
+    // claimed rows and one insert of the queue rows. The frames': both message versions each a compare-and-set, the
+    // sender version with every other row in the guarded batch, the hold and the queue insert.
+    it('commits a dequeued batch that mixes receipt controls with sequenced rows as two transactions', async () => {
+        const storage = await createPSqlAdmissionTestStorage();
+        const { runtime, sent, outbox, admissionStore } = createDequeueLane(storage);
+        await runOutboundWorkTask(runtime);
+        const rows = await enqueueMixedServerRows(outbox);
+        const writes = recordAdmissionWrites(admissionStore);
+        const recorded = recordPGliteStatements(storage.sql.raw);
+        onTestFinished(() => recorded.restore());
+
+        await runOutboundWorkTask(runtime);
+
+        expect(sent.map((message) => message.id.msgId).sort()).toEqual(rows.map(toMsgId).sort());
+        expect(writes.dequeueCommits()).toBe(2);
+        expect(await readSenderVersion(storage, 'server')).toBe(1);
+        const commits = recorded.eachTransaction().filter((statements) => statements.some(({ params }) => JSON.stringify(params).includes(':msg-version:')));
+        expect(commits.map((statements) => statements.length)).toEqual([5, 5]);
     });
 
     // Rows that read their admission, identity, proof and supersedence one after another, two rows at a time, cost
@@ -361,12 +386,31 @@ async function enqueueRows(
     return rows;
 }
 
+/** The server's page: three receipt controls, each of its own message, among two frames each on a track of its own. */
+async function enqueueMixedServerRows(outbox: QueueBoxResourceEntryRepository): Promise<ResourceEntry[]> {
+    const receipts = ['1', '2', '3'].map((index): ALMessage => ({
+        ...createServerReceipt(createOutboundMessage(`subject-${index}`), 'admitted', ['peer-1']),
+        constraints: { expiresAtMs: Date.now() + 30_000 }
+    }));
+    const frames = ['1', '2'].map((index): ALMessage => {
+        const message = createOutboundMessage(`frame-${index}`);
+        return { ...message, id: { ...message.id, senderId: 'server' }, ordering: { orderingKey: `track-${index}`, epoch: 1, seq: 1 } };
+    });
+    const rows: ResourceEntry[] = [];
+    for (const message of [receipts[0]!, frames[0]!, receipts[1]!, frames[1]!, receipts[2]!]) {
+        const row = QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox', Temporal.Now.instant());
+        await outbox.enqueue(row);
+        rows.push(row);
+    }
+    return rows;
+}
+
 function toMsgId(row: ResourceEntry): string {
     return decodePersistedALMessage(row.resource).id.msgId;
 }
 
-async function readSenderVersion(storage: PSqlAdmissionTestStorage): Promise<number | undefined> {
-    const entry = await storage.repository.findEntry(NAMESPACE, `${NAMESPACE}:version:self`);
+async function readSenderVersion(storage: PSqlAdmissionTestStorage, senderId = 'self'): Promise<number | undefined> {
+    const entry = await storage.repository.findEntry(NAMESPACE, `${NAMESPACE}:version:${senderId}`);
     return entry === undefined ? undefined : (JSON.parse(entry.value) as { version: number; }).version;
 }
 

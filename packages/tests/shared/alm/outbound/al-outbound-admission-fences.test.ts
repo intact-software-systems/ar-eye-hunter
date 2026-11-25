@@ -581,6 +581,38 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
         expect(await fixture.readAdmissionState()).toBe(before);
     });
 
+    it('commits a group that fences no sender although its bundles read different versions of it', async () => {
+        // Pins a group of own-message fences refused for an expected sender version no write of it checks.
+        const fixture = await createFenceFixture(storage);
+        const first = await readReceiptControlBundle(fixture.store, createFenceReceiptControl('receipt-before'));
+        expect(await fixture.store.commitBundle(await readServerTrackedBundle(fixture.store, 'server-event'))).toBe('committed');
+        const second = await readReceiptControlBundle(fixture.store, createFenceReceiptControl('receipt-after'));
+        expect([first.fencesSender, second.fencesSender]).toEqual([false, false]);
+        expect(second.expectedVersion).not.toBe(first.expectedVersion);
+
+        expect(await fixture.store.commitBundles([first, second])).toBe('committed');
+
+        expect(await readFenceMessageVersion(fixture, createFenceReceiptControl('receipt-before'))).toBe(1);
+        expect(await readFenceMessageVersion(fixture, createFenceReceiptControl('receipt-after'))).toBe(1);
+        expect(await fixture.backend.read(toALOutboundVersionKey(FENCE_NAMESPACE, 'server'), (value) => value)).toMatchObject({
+            version: second.expectedVersion
+        });
+    });
+
+    it('refuses a group that mixes bundles that fence the sender with bundles that do not', async () => {
+        // Pins the store's invariant that one write takes one sender fence: the admission parts a mixed group first.
+        const fixture = await createFenceFixture(storage);
+        const tracked = await readServerTrackedBundle(fixture.store, 'server-event');
+        const receipt = await readReceiptControlBundle(fixture.store, createFenceReceiptControl('receipt-beside'));
+        expect([tracked.fencesSender, receipt.fencesSender]).toEqual([true, false]);
+        expect(receipt.expectedVersion).toBe(tracked.expectedVersion);
+        const before = await fixture.readAdmissionState();
+
+        await expect(fixture.store.commitBundles([tracked, receipt])).rejects.toThrow(TypeError);
+
+        expect(await fixture.readAdmissionState()).toBe(before);
+    });
+
     it('commits each message alone when the sender version moves between a group\'s reads and its write', async () => {
         const fixture = await createFenceFixture(storage);
         const admission = createFenceDispatchAdmission(fixture);
@@ -955,6 +987,20 @@ async function readReceiptControlBundle(
         creationNow: () => Temporal.Now.instant(),
         clock: { nowMs: () => Date.now() },
         planner: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })
+    });
+}
+
+/** A message of the receipts' sender stating the first sequence of a track of its own: its commit fences that sender. */
+async function readServerTrackedBundle(
+    store: ALOutboundAdmissionStore<OutboundTestPayload>,
+    resourceId: string
+): Promise<ALOutboundCommitBundle<OutboundTestPayload>> {
+    const tracked = createTrackedFenceMessage(resourceId, `track-${resourceId}`);
+    return await readOutboundTestAdmission({
+        store,
+        message: { ...tracked, id: { ...tracked.id, senderId: 'server' } },
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: () => Date.now() }
     });
 }
 
