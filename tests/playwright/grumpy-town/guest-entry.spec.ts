@@ -205,12 +205,14 @@ test('the guest keeps the confirmed score when the owner closes the finished tow
     await page.getByRole('button', { name: 'Host match' }).click();
     await page.getByRole('button', { name: 'Invite guests' }).click();
     const guest = await browser.newContext();
+    const phone = await guest.newPage();
+    let roundStartedAt: number | undefined;
     try {
-        const phone = await guest.newPage();
         await phone.goto(await page.getByLabel('Guest invitation link').inputValue());
         await phone.getByRole('button', { name: 'Join this town' }).click();
         await phone.getByRole('button', { name: 'Ready', exact: true }).click();
         await page.getByRole('button', { name: 'Ready', exact: true }).click();
+        roundStartedAt = Date.now();
         await page.getByRole('button', { name: 'Start round' }).click();
         await expect(phone.locator('#round-results')).toBeVisible({ timeout: 225000 });
         await expect(phone.locator('#round-result-title')).toHaveText('Round complete');
@@ -222,6 +224,24 @@ test('the guest keeps the confirmed score when the owner closes the finished tow
         await expect(phone.getByRole('alert')).toContainText('fresh invitation', { timeout: 10000 });
         await expect(phone.getByRole('heading', { name: 'Round complete' })).toBeVisible();
         await expect(phone.getByRole('listitem')).toHaveText(scores);
+    }
+    catch (error) {
+        const players = await Promise.all([page, phone].map(player => player.evaluate(() => {
+            const game = document.querySelector<HTMLElement>('#online-game');
+            return {
+                phase: game?.dataset.phase, committedTick: game?.dataset.tick, poseTick: game?.dataset.poseTick,
+                transport: game?.dataset.poseTransport, remaining: game?.querySelector('#round-clock')?.textContent,
+                title: game?.querySelector('#round-result-title')?.textContent,
+                recovering: game?.querySelector('#round-status')?.textContent?.startsWith('Connection paused'),
+                rosterCount: document.querySelectorAll('#roster li').length,
+                visibility: document.visibilityState
+            };
+        }).catch(() => ({ pageUnavailable: true }))));
+        await test.info().attach('final-score-diagnostics', {
+            contentType: 'application/json',
+            body: JSON.stringify({ elapsedMs: roundStartedAt && Date.now() - roundStartedAt, host: players[0], guest: players[1] })
+        });
+        throw error;
     }
     finally {
         await guest.close();

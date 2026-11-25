@@ -34,3 +34,20 @@ it('shows the agreed final scores when the final commit arrives after the local 
     recovery.confirm({ epoch: 1, sequence: 2, digest: 'b'.repeat(64), state: finished }, 12001, 'bob', false);
     expect(recovery.status({ ...state, match: finished, now: 12001 }).interruption).toBeUndefined();
 });
+
+it('starts a fresh recovery interval when the players confirm progress between two stalls near the end', () => {
+    const lobby = createTownMatch('round', [{ id: 'bob', sessionId: 'bob-session', displayName: 'Bob' }]).right!;
+    const match = { ...lobby, phase: 'playing' as const, tick: 5380, remainingTicks: 20 };
+    const recovery = new TownMatchRecoveryWindow();
+    const state = { match, available: true, authorityAligned: true, recoveryRequired: false };
+    const first = { epoch: 1, sequence: 1, digest: 'a'.repeat(64), state: match };
+    recovery.confirm(first, 0, 'bob', true);
+    recovery.expire(match.matchId, 1500);
+    const next = { ...match, tick: 5395, remainingTicks: 5 };
+    recovery.confirm({ epoch: 1, sequence: 2, digest: 'b'.repeat(64), state: next }, 9000, 'bob', true);
+    // A delayed host pump first wakes after the second stall has already started.
+    recovery.expire(match.matchId, 12000);
+    expect(recovery.status({ ...state, match: next, now: 12000 }).interruption).toBeUndefined();
+    recovery.expire(match.matchId, 20500);
+    expect(recovery.status({ ...state, match: next, now: 20500 }).interruption).toBeDefined();
+});

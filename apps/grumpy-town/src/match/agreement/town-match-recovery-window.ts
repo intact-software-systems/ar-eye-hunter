@@ -50,13 +50,14 @@ export class TownMatchRecoveryWindow {
 
     confirm(checkpoint: TownCheckpoint, now: number, localId: string | undefined, isDirector: boolean): void {
         const { state } = checkpoint;
+        // Agreement ends the previous wait even if the next host pump is itself delayed.
+        this.recoveryStartedAt = undefined;
         this.lastActiveCommit = state.phase === 'playing' || state.phase === 'countdown'
             ? { at: now, epoch: checkpoint.epoch, matchId: state.matchId }
             : undefined;
         const observing = checkpoint.state.seats.some((seat) => seat.id === localId && seat.status === 'observer');
         if (state.phase === 'finished' || observing || (this.interruptedMatch && checkpoint.epoch > this.interruptedMatch.epoch && !isDirector)) {
             this.interruptedMatch = undefined;
-            this.recoveryStartedAt = undefined;
         }
     }
 }
