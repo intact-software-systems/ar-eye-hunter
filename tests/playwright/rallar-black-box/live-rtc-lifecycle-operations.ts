@@ -23,6 +23,7 @@ import type { LiveRtcDeliveryOperations } from './live-rtc-delivery-operations.t
 import {
     readRestoredSession,
     type FormationAgentInput,
+    type FormationDiagnosticEvent,
     type FormationHealth,
     type LiveRtcFormationOperations
 } from './live-rtc-formation-operations.ts';
@@ -204,6 +205,19 @@ export class LiveRtcLifecycleOperations {
             await agent.page.waitForTimeout(LIFECYCLE_ROOM_HELD_INTERVAL_MS);
         }
         throw new Error(`Agent ${agent.prefix} reopened without taking the room. ${lastFailure}`);
+    }
+
+    /** The formation changes an agent recorded since a stamp, read once from the control run. */
+    async readFormationChanges(
+        run: LiveRtcLifecycleOperations.Run,
+        agent: LiveRtcControlClient.Agent,
+        sinceEpochMs: number
+    ): Promise<readonly FormationDiagnosticEvent[]> {
+        return await this.#config.formation.readFormationDiagnostics({
+            ...this.toAgentInput(run, agent),
+            topic: 'rallar.browser.formation.changed',
+            sinceEpochMs
+        });
     }
 
     /**

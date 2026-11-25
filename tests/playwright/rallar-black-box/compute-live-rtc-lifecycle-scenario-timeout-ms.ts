@@ -117,6 +117,9 @@ const REDIAL_BOUNDED_WAITS_MS = 2 * LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS + DIAL_B
 /** The owner's reset, then its own dormant stage. */
 const OWNER_RESET_BOUNDED_WAITS_MS = LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS + STAGE_WAIT_BOUNDED_WAITS_MS;
 
+/** A read of an agent's recorded formation changes, outside any poll, is one control request. */
+const FORMATION_CHANGES_BOUNDED_WAITS_MS = CONTROL_REQUEST_TIMEOUT_MS;
+
 /** A reopened member's health, its room refresh, then its health again. */
 const HYDRATED_HEALTHS_BOUNDED_WAITS_MS = LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS + LIFECYCLE_HYDRATION_REFRESH_TIMEOUT_MS +
     LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS;
@@ -130,6 +133,7 @@ export const LIVE_RTC_LIFECYCLE_OPERATION_BOUNDED_WAITS_MS = {
     reopenedPresence: REOPENED_PRESENCE_BOUNDED_WAITS_MS,
     reopening: REOPENING_BOUNDED_WAITS_MS,
     roomHeld: ROOM_HELD_BOUNDED_WAITS_MS,
+    formationChanges: FORMATION_CHANGES_BOUNDED_WAITS_MS,
     trioReset: TRIO_RESET_BOUNDED_WAITS_MS,
     redial: REDIAL_BOUNDED_WAITS_MS,
     ownerReset: OWNER_RESET_BOUNDED_WAITS_MS,
@@ -157,9 +161,9 @@ const SCENARIO_BOUNDED_WAITS_MS: Readonly<Record<LiveRtcLifecycleScenario, numbe
     'monotonic-readiness': ACTIVATION_BOUNDED_WAITS_MS + REOPENING_BOUNDED_WAITS_MS +
         LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS +
         FORMATION_READINESS_BOUNDED_WAITS_MS + LIFECYCLE_PROGRESS_DIAGNOSTICS_POLL_TIMEOUT_MS,
-    /** Activation, a reopening, the reopened member taking the room, then its readiness. */
+    /** Activation, a reopening, the reopened member taking the room, then its readiness and the read of its changes. */
     'accepted-layout-barrier': ACTIVATION_BOUNDED_WAITS_MS + REOPENING_BOUNDED_WAITS_MS + ROOM_HELD_BOUNDED_WAITS_MS +
-        FORMATION_READINESS_BOUNDED_WAITS_MS,
+        FORMATION_READINESS_BOUNDED_WAITS_MS + FORMATION_CHANGES_BOUNDED_WAITS_MS,
     /**
      * Activation, every member's recorded dials side by side, the trio's reset to dormant, a hold, each member's
      * recorded dials again, then the next series dials again.

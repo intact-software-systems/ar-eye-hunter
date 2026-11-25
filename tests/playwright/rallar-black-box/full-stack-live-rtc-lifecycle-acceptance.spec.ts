@@ -159,11 +159,7 @@ test.describe('live RTC lifecycle acceptance', () => {
             await lifecycle.expectRoomHeld(scenario, reopened);
 
             const readiness = await formationOperations.readiness(lifecycle.toAgentInput(scenario, reopened));
-            const changes = await formationOperations.readFormationDiagnostics({
-                ...lifecycle.toAgentInput(scenario, reopened),
-                topic: 'rallar.browser.formation.changed',
-                sinceEpochMs: reopenedAt
-            });
+            const changes = await lifecycle.readFormationChanges(scenario, reopened, reopenedAt);
             const accepted = changes.filter(
                 (event) => acceptedIdentityOf(event) !== undefined
             );

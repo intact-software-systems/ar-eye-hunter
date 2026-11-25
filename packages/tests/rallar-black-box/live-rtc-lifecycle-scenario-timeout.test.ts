@@ -39,10 +39,10 @@ describe('live RTC lifecycle scenario timeouts', () => {
         expect(BROWSER_TEST_HARNESS_MARGIN_MS).toBe(MARGIN);
     });
 
-    // No command's enqueue request and no control run read outside a poll were counted; earlier, the scenarios counted
-    // neither the commands polled under the default result poll, the opening screens waited
-    // under the default assertion limit, the membership requests' result polls, the readiness's and the stage wait's
-    // result polls, nor the reopened member's health reads.
+    // The barrier scenario's read of its formation changes was not counted; before that, no command's enqueue request
+    // and no control run read outside a poll were, and earlier still, the scenarios counted neither the commands polled
+    // under the default result poll, the opening screens waited under the default assertion limit, the membership
+    // requests' result polls, the readiness's and the stage wait's result polls, nor the reopened member's health reads.
     it('gives each scenario every bounded wait it runs and the harness margin', () => {
         expect({
             discovery: computeLiveRtcLifecycleScenarioTimeoutMs('discovery'),
@@ -56,8 +56,10 @@ describe('live RTC lifecycle scenario timeouts', () => {
             discovery: MARGIN + TRIO_OPEN + MEMBERSHIP + 3 * CONNECT + 5_000 + 3 * (REQUEST + POLL) + POLL + DIALS,
             // The reopened member's recording health, its readiness, then its 15 s diagnostics poll.
             monotonicReadiness: MARGIN + TRIO_OPEN + ACTIVATION + REOPENING + POLL + READINESS + 15_000,
-            // The reopened member reads its health up to 15 times 2 s apart, then waits for readiness.
-            acceptedLayoutBarrier: MARGIN + TRIO_OPEN + ACTIVATION + REOPENING + 15 * (POLL + 2_000) + READINESS,
+            // The reopened member reads its health up to 15 times 2 s apart, waits for readiness, then reads its
+            // recorded formation changes.
+            acceptedLayoutBarrier: MARGIN + TRIO_OPEN + ACTIVATION + REOPENING + 15 * (POLL + 2_000) + READINESS +
+                REQUEST,
             // The members' recorded dials read side by side, the reset, each member's dormant stage, 60 s lane teardown
             // and health, a 5 s hold, each member's recorded dials read again, start, plan, the dials.
             reset: MARGIN + TRIO_OPEN + ACTIVATION + REQUEST + POLL + 3 * (STAGE + 60_000 + POLL) + 5_000 + 3 * REQUEST +

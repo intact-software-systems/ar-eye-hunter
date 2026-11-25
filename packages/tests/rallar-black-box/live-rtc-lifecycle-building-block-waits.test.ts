@@ -195,6 +195,15 @@ describe('the live RTC lifecycle building blocks wait what their derivation coun
         );
     });
 
+    it('reads a member\'s recorded formation changes within the changes read\'s bounded waits', async () => {
+        const run = createLifecycleRun();
+
+        expect(await measureBoundedWaitsMs(() => lifecycle.readFormationChanges(run, run.agents[1], 0))).toBe(
+            LIVE_RTC_LIFECYCLE_OPERATION_BOUNDED_WAITS_MS.formationChanges
+        );
+        expect(LIVE_RTC_LIFECYCLE_OPERATION_BOUNDED_WAITS_MS.formationChanges).toBe(CONTROL_REQUEST_TIMEOUT_MS);
+    });
+
     it('reads a reopened member that never takes the room on every attempt within the room-held bounded waits', async () => {
         const run = createLifecycleRun({});
 
