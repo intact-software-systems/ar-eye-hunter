@@ -79,7 +79,9 @@ it.each(
         });
         onTestFinished(() => registry.releaseAll());
         const handle = registry.open({ message: message, carrier: 'rtc', readDeadlineEpochMs: clock });
+        const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
         const runtime = createOutboundTestRuntimeFor({
+            diagnostics: (event) => diagnostics.push(event),
             stores: { admissionStore, workQueue },
             queueEngine: new InboxOutboxEngine(),
             nowMs: clock,
@@ -184,6 +186,12 @@ it.each(
             dequeueAudit: { attempts: 2 }
         });
         expect(message.constraints?.expiresAtMs).toBe(11_000);
+        // A batch's own selection claimed each replay: one run each, none expedited.
+        const replays = diagnostics.flatMap((event) =>
+            event.kind === 'control-admission' && event.msgId === 'ack' ? [{ admission: event.admission, run: event.run }] : []
+        );
+        expect(replays.length).toBeGreaterThan(0);
+        expect(replays).toEqual(replays.map(() => ({ admission: 'replay', run: 1 })));
     }
 );
 
@@ -294,10 +302,20 @@ it.each(
         expect(competingRepairs).toBe(lostCommits);
         gates.get('second')!();
         await waitUntil(() => diagnostics.some((event) => event.kind === 'effect-drain' && event.claims.some(isReplay)));
-        const drain = diagnostics.find((event) => event.kind === 'effect-drain' && event.claims.some(isReplay));
+        const drainIndex = diagnostics.findIndex((event) => event.kind === 'effect-drain' && event.claims.some(isReplay));
+        const drain = diagnostics[drainIndex];
         const replays = drain?.kind === 'effect-drain' ? drain.claims.filter(isReplay) : [];
         expect(new Set(replays.map((claim) => claim.effectId)).size).toBe(1);
         expect(replays.map(({ expedited, run }) => ({ expedited, run }))).toEqual(replayRuns.map((run) => ({ expedited: true, run })));
+        // The parked admission states itself direct; each run of its replay in the batch states itself expedited.
+        const parkedMsgId = path === 'peer ACK' ? 'ack' : 'receipt';
+        const admissions = diagnostics.slice(0, drainIndex).flatMap((event) =>
+            event.kind === 'control-admission' && event.msgId === parkedMsgId ? [{ admission: event.admission, run: event.run }] : []
+        );
+        expect(admissions).toEqual([
+            { admission: 'direct', run: undefined },
+            ...replayRuns.map((run) => ({ admission: 'expedited', run }))
+        ]);
     }
 );
 

@@ -1,5 +1,6 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { decodeALControlMessage, type ALReceiptPayload } from '../../../al-contracts/al-control.ts';
+import type { ALWorkClaimRun } from '../../work/al-work-handler.ts';
 import type { ALWorkOutcome } from '../../work/al-work-queue-port.ts';
 import {
     toALOutboundMessageFence,
@@ -60,6 +61,14 @@ export class ALOutboundReceiptAdmission<TPrepared> {
 
     /** The receipt control message itself, so its verdict is stated under the id of that control. */
     async admit(control: ALMessage): Promise<ALOutboundControlAdmissionResult> {
+        return await this.admitStated(control, undefined);
+    }
+
+    /** Admits a receipt and states its verdict with how it ran: on arrival, or in a work claim's run. */
+    private async admitStated(
+        control: ALMessage,
+        claimRun: ALWorkClaimRun | undefined
+    ): Promise<ALOutboundControlAdmissionResult> {
         const decoded = decodeALControlMessage(control).right;
         if (decoded?.type !== 'receipt') {
             return { kind: 'not-handled' };
@@ -68,7 +77,8 @@ export class ALOutboundReceiptAdmission<TPrepared> {
         writeALOutboundControlAdmissionDiagnostic(this.dependencies.diagnostics, {
             control,
             parsed: decoded,
-            admitted
+            admitted,
+            claimRun
         });
         return admitted;
     }
@@ -91,12 +101,12 @@ export class ALOutboundReceiptAdmission<TPrepared> {
         return { kind: 'pending-control' };
     }
 
-    /** A retained receipt is replayed until it commits or its deadline passes. */
-    async replay(payload: ALOutboundPendingControl): Promise<ALWorkOutcome> {
+    /** A retained receipt is replayed, in the run of the claim of its row, until it commits or its deadline passes. */
+    async replay(payload: ALOutboundPendingControl, claimRun: ALWorkClaimRun): Promise<ALWorkOutcome> {
         if (payload.expiresAtMs <= this.dependencies.clock.nowMs()) {
             return { status: 'completed' };
         }
-        const admitted = await this.admit(payload.msg);
+        const admitted = await this.admitStated(payload.msg, claimRun);
         return { status: admitted.kind === 'pending-control' ? 'retry' : 'completed' };
     }
 

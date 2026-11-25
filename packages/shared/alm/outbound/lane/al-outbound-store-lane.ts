@@ -17,6 +17,7 @@ import {
     AL_WORK_READINESS_MEMORY_MS,
     ALWorkHandler,
     type ALWorkAttemptResult,
+    type ALWorkBatchDiagnostics,
     type ALWorkDiagnostics,
     type ALWorkReadySelection
 } from '../../work/al-work-handler.ts';
@@ -82,6 +83,7 @@ import {
     type ALOutboundClaimObservation,
     type ALOutboundClaimRun
 } from './settle-al-outbound-claim.ts';
+import { toALOutboundWorkDiagnostic } from './to-al-outbound-work-diagnostic.ts';
 
 export namespace ALOutboundStoreLane {
     export interface Input<TPrepared> {
@@ -491,7 +493,7 @@ export class ALOutboundStoreLane<TPrepared> {
     private async settleOutboundClaim(settlement: ALOutboundClaimAttemptSettlement): Promise<ALWorkAttemptResult> {
         const settled = await settleALOutboundClaim({
             ...settlement,
-            claimRun: this.work.getClaimRun(settlement.claim),
+            claimRun: this.work.getClaimRun(settlement.claim.entry.key),
             capture: this.input.runtime.receiptWorkCapture,
             readNowMs: () => this.input.runtime.workClock.nowMs(),
             timed: this.input.runtime.diagnostics !== undefined
@@ -553,9 +555,7 @@ export class ALOutboundStoreLane<TPrepared> {
             case 'dequeue-message':
                 return await this.dequeuedAdmission.admitDequeuedMessage(effect, evidence, observed);
             case 'admit-control':
-                return effect.payload.msg.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID
-                    ? await this.receiptAdmission.replay(effect.payload)
-                    : await this.repairAdmission.replayControlAdmission(effect.payload);
+                return await this.replayControlAdmission(effect, effect.payload);
             case 'send-prepared':
                 evidence?.recordStage('send');
                 return await this.runPreparedSend(effect, effect.payload, deferObservation);
@@ -580,6 +580,17 @@ export class ALOutboundStoreLane<TPrepared> {
             case 'end-message':
                 return await this.messageEnd.runEnd(effect.payload);
         }
+    }
+
+    /** A parked control's replay states its verdict with the run of the claim that replays it. */
+    private async replayControlAdmission(
+        effect: ALOutboundEffectSnapshot<TPrepared>,
+        payload: Extract<ALOutboundDurableEffect<TPrepared>, { kind: 'admit-control'; }>
+    ): Promise<ALWorkAttemptResult> {
+        const claimRun = this.work.getClaimRun(effect.entry.key);
+        return payload.msg.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID
+            ? await this.receiptAdmission.replay(payload, claimRun)
+            : await this.repairAdmission.replayControlAdmission(payload, claimRun);
     }
 
     private readSettledBeforeEffect(
@@ -666,21 +677,18 @@ export class ALOutboundStoreLane<TPrepared> {
     /**
      * A probe is reported as it happens rather than folded into the batch: a batch that runs is one
      * of six reasons a probe read storage, and only the reason separates an owner re-reading because
-     * it committed from one re-reading because another writer woke every owner on the engine.
+     * it committed from one re-reading because another writer woke every owner on the engine. Only a
+     * drained batch reports the store's recovery and the server's dequeue timing: an aborted or failed
+     * batch's counts describe no rows it settled.
      */
     private recordWorkDiagnostics(event: ALWorkDiagnostics): void {
-        const { diagnostics } = this.input.runtime;
-        if (event.kind === 'readiness-probe') {
-            diagnostics?.({
-                kind: 'readiness-probe',
-                lane: this.input.lane,
-                workerId: event.workerId,
-                cause: event.cause,
-                readyAtMs: event.readyAtMs,
-                durationMs: event.durationMs
-            });
-            return;
+        if (event.kind === 'work-batch' && event.end === 'drained') {
+            this.recordDrainedBatch(event);
         }
+        this.input.runtime.diagnostics?.(toALOutboundWorkDiagnostic(event, this.input.lane, this.claimRuns));
+    }
+
+    private recordDrainedBatch(event: ALWorkBatchDiagnostics): void {
         this.input.stores.storageRecovery?.reportFirstBatch(event.claimedCount);
         if (this.input.runtime.dequeueTiming !== undefined) {
             recordALOutboundDequeueTiming(this.input.runtime.dequeueTiming, {
@@ -689,21 +697,6 @@ export class ALOutboundStoreLane<TPrepared> {
                 batch: event
             });
         }
-        diagnostics?.({
-            kind: 'effect-drain',
-            lane: this.input.lane,
-            workerId: event.workerId,
-            durationMs: event.durationMs,
-            claimedCount: event.claimedCount,
-            completedCount: event.completedCount,
-            rescheduledCount: event.rescheduledCount,
-            rejectedCount: event.rejectedCount,
-            claimDurationMs: event.claimDurationMs,
-            runDurationMs: event.runDurationMs,
-            releaseDurationMs: event.releaseDurationMs,
-            startedAtMs: event.startedAtMs,
-            claims: this.claimRuns
-        });
     }
 
     private createWorkHandler(workPort: ALWorkQueuePort, workType: string): ALWorkHandler {
