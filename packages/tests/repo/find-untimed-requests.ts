@@ -1,6 +1,6 @@
 import type { CallExpression, Node, OptionalCallExpression, Program } from '@babel/types';
 
-import { findSourceLines, toNodeName, walkNodes, type SourceNodeMatch } from './find-source-lines.ts';
+import { findSourceLines, toEnclosingFunctionName, toNodeName, walkNodes, type SourceNodeMatch } from './find-source-lines.ts';
 
 /** The wrappers that time the `fetch` they are given, so handing them the bare global is how it is timed. */
 const FETCH_TIMERS: ReadonlySet<string> = new Set(['toControlTimedFetch']);
@@ -86,18 +86,6 @@ function isUntimedRequestCall(node: Node, aliases: ReadonlySet<string>): boolean
     const receiver = toNodeName(unwrap(callee.object)) ?? '';
     return REQUEST_METHODS.has(toNodeName(callee.property) ?? '') &&
         (REQUEST_RECEIVER_NAME.test(receiver) || aliases.has(receiver)) && !namesOption(node, 'timeout');
-}
-
-/** The name of the function a node sits in, nearest first, if that function has one. */
-function toEnclosingFunctionName(ancestors: readonly Node[]): string | undefined {
-    const enclosing = ancestors.find((ancestor) =>
-        ancestor.type === 'FunctionDeclaration' || ancestor.type === 'FunctionExpression' ||
-        ancestor.type === 'ArrowFunctionExpression' || ancestor.type === 'ObjectMethod' || ancestor.type === 'ClassMethod'
-    );
-    if (enclosing?.type === 'FunctionDeclaration' || enclosing?.type === 'FunctionExpression') {
-        return toNodeName(enclosing.id);
-    }
-    return enclosing?.type === 'ObjectMethod' || enclosing?.type === 'ClassMethod' ? toNodeName(enclosing.key) : undefined;
 }
 
 /**

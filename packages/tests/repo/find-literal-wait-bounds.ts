@@ -1,6 +1,6 @@
 import type { Node } from '@babel/types';
 
-import { findSourceLines, toNodeName } from './find-source-lines.ts';
+import { findSourceLines, FUNCTION_TYPES, toEnclosingFunctionName, toNodeName } from './find-source-lines.ts';
 
 /** A name that says it holds a time: a timeout, deadline, wait, poll, interval, delay, hold or duration, or `…Ms`. */
 const TIMING_NAME = /timeout|deadline|wait|interval|poll|delay|hold|ttl|grace|settle|elapsed|duration|backoff|(?:Ms|_MS|Seconds|_SECONDS)$/i;
@@ -10,16 +10,6 @@ const COUNT_NAME = /(?:attempts|cycles|count|size|length)$/i;
 
 /** An upper-case constant's name. */
 const CONSTANT_NAME = /^[A-Z][A-Z\d_]*$/;
-
-/** The nodes that open a function's body. */
-const FUNCTION_TYPES: ReadonlySet<string> = new Set([
-    'FunctionDeclaration',
-    'FunctionExpression',
-    'ArrowFunctionExpression',
-    'ClassMethod',
-    'ClassPrivateMethod',
-    'ObjectMethod'
-]);
 
 /** A call whose arguments are times: a timer, a wait, a sleep, a hold, a poll, a retry or a bounded race. */
 const TIMING_CALLEE = /^(?:setTimeout|setInterval)$|wait|sleep|within|hold|poll|delay|timeout|retry|until/i;
@@ -74,23 +64,6 @@ function isCountValue(node: Node): boolean {
 function isExpectedValueArgument(parent: Node, child: Node): boolean {
     return (parent.type === 'CallExpression' || parent.type === 'OptionalCallExpression') &&
         EXPECTED_VALUE_MATCHERS.has(toNodeName(parent.callee) ?? '') && parent.arguments.some((argument) => argument === child);
-}
-
-/** The name the nearest enclosing function is known by: its own, its method key's or its binding's. */
-function toEnclosingFunctionName(outer: readonly Node[]): string | undefined {
-    const index = outer.findIndex((node) => FUNCTION_TYPES.has(node.type));
-    const fn = outer[index];
-    if (fn === undefined) {
-        return undefined;
-    }
-    if ('id' in fn && fn.id) {
-        return toNodeName(fn.id);
-    }
-    if ('key' in fn) {
-        return toNodeName(fn.key);
-    }
-    const binding = outer[index + 1];
-    return binding?.type === 'VariableDeclarator' ? toNodeName(binding.id) : undefined;
 }
 
 /** The `Math` method a call names, if it calls one. */
@@ -148,7 +121,9 @@ function judgeReturnedValue(outer: readonly Node[]): Verdict {
     return TIMING_NAME.test(toEnclosingFunctionName(outer) ?? '') ? 'wait' : 'value';
 }
 
-/** What the position a literal reached through `child` makes it, one ancestor at a time; `outer` lies beyond `parent`. */
+/**
+ * What the position a literal reached through `child` makes it, one ancestor at a time; `outer` lies beyond `parent`.
+ */
 function judgePosition(parent: Node, child: Node, outer: readonly Node[]): Verdict {
     switch (parent.type) {
         case 'BinaryExpression':
@@ -197,14 +172,14 @@ function isLiteralWaitBound(literal: Node, ancestors: readonly Node[]): boolean 
 }
 
 /**
- * Each line of a TypeScript source that passes a nonzero numeric literal as a wait bound, as `line: text`. A literal
- * is a wait bound by where it goes: the value of a property, class field, binding, assignment or default whose name
- * is a time; a value returned by a function named for a time; an argument of a timing call; an operand added to or
- * taken from a time; an argument of `Math.min`, or of `Math.max` beside a time; or the fallback of `??` or `||`. A literal
- * times a count is judged where the product goes. The initializer of an upper-case constant outside any function
- * names its value, and a literal inside an argument of a value matcher (`toBe`, `toEqual`, `toMatchObject`,
- * `toStrictEqual`) is an asserted expectation, so neither counts; a matcher reached through its callee, as in
- * `expect.poll(read, { timeout: 15_000 }).toBe(true)`, exempts nothing.
+ * Each line of a TypeScript source that passes a nonzero numeric literal as a wait bound, as `line: text`. A literal is
+ * a wait bound by where it goes: the value of a property, class field, binding, assignment or default whose name is a
+ * time; a value returned by a function named for a time; an argument of a timing call; an operand added to or taken
+ * from a time; an argument of `Math.min`, or of `Math.max` beside a time; or the fallback of `??` or `||`. A literal
+ * times a count is judged where the product goes. The initializer of an upper-case constant outside any function names
+ * its value, and a literal inside an argument of a value matcher (`toBe`, `toEqual`, `toMatchObject`, `toStrictEqual`)
+ * is an asserted expectation, so neither counts; a matcher reached through its callee, as in `expect.poll(read, {
+ * timeout: 15_000 }).toBe(true)`, exempts nothing.
  */
 export function findLiteralWaitBounds(source: string): readonly string[] {
     return findSourceLines(

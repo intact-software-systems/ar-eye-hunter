@@ -357,6 +357,21 @@ describe('literal waits on the derived tests\' paths', () => {
         ]);
     });
 
+    // The request finder knew an arrow function by no name, so a hosted entry bound as `const main = …` was not exempt.
+    it('knows a hosted entry arrow function by the name it is bound to', () => {
+        expect(findUntimedRequests(
+            [
+                'const main = async (): Promise<void> => {',
+                '    await run(options, { fetch });',
+                '};',
+                'const resolveTargets = async (): Promise<void> => {',
+                '    await run(options, { fetch });',
+                '};'
+            ].join('\n'),
+            new Set(['main'])
+        )).toEqual(['5: await run(options, { fetch });']);
+    });
+
     it('names a timeout for every request on the derived tests\' paths', () => {
         const untimed = Object.fromEntries(
             DERIVED_TEST_PATH_FILES.filter((relativePath) => existsSync(path.join(repoRoot, relativePath))).flatMap(

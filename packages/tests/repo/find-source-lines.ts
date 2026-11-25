@@ -27,6 +27,36 @@ export function toNodeName(node: Node | null | undefined): string | undefined {
     }
 }
 
+/** The nodes that open a function's body. */
+export const FUNCTION_TYPES: ReadonlySet<string> = new Set([
+    'FunctionDeclaration',
+    'FunctionExpression',
+    'ArrowFunctionExpression',
+    'ClassMethod',
+    'ClassPrivateMethod',
+    'ObjectMethod'
+]);
+
+/**
+ * The name the nearest enclosing function, among `outer` (nearest first), is known by: its own, its method key's or
+ * its binding's.
+ */
+export function toEnclosingFunctionName(outer: readonly Node[]): string | undefined {
+    const index = outer.findIndex((node) => FUNCTION_TYPES.has(node.type));
+    const fn = outer[index];
+    if (fn === undefined) {
+        return undefined;
+    }
+    if ('id' in fn && fn.id) {
+        return toNodeName(fn.id);
+    }
+    if ('key' in fn) {
+        return toNodeName(fn.key);
+    }
+    const binding = outer[index + 1];
+    return binding?.type === 'VariableDeclarator' ? toNodeName(binding.id) : undefined;
+}
+
 /** Calls `visit` with every node of the tree and its ancestors, nearest first. */
 export function walkNodes(node: Node, ancestors: readonly Node[], visit: (node: Node, ancestors: readonly Node[]) => void): void {
     visit(node, ancestors);
