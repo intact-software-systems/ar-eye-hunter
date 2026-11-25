@@ -410,6 +410,7 @@ const RALLAR_PAGE_CLEANUP_CLICK_TIMEOUT_MS = 2_000;
 /** A page's cleanup may click each of its buttons in turn. */
 export const RALLAR_PAGE_CLEANUP_BOUNDED_WAITS_MS = RALLAR_PAGE_CLEANUP_BUTTON_LABELS.length *
     RALLAR_PAGE_CLEANUP_CLICK_TIMEOUT_MS;
+
 const CONTROL_POLL_TIMERS = createDefaultTimers();
 
 export function readFullStackConfig(): FullStackConfig {
