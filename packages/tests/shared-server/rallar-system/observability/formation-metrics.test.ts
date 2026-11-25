@@ -209,7 +209,7 @@ describe('group formation metrics recorder', () => {
         });
         expect(metrics.wsOutboxNoLocalRecipientCount).toBe(1);
 
-        recorder.outboundWork({
+        const drain = {
             kind: 'effect-drain',
             lane: 'durable',
             workerId: 'al-outbound:test',
@@ -222,8 +222,21 @@ describe('group formation metrics recorder', () => {
             runDurationMs: 2,
             releaseDurationMs: 1,
             startedAtMs: 1,
-            claims: [{ payloadKind: 'send-prepared', effectId: 'effect-1', expedited: false, run: 1, durationMs: 2 }]
-        });
+            claims: [{
+                payloadKind: 'send-prepared',
+                effectId: 'effect-1',
+                expedited: false,
+                run: 1,
+                startedAtMs: 1,
+                durationMs: 2
+            }],
+            expeditedCount: 0,
+            end: 'drained'
+        } as const;
+        recorder.outboundWork(drain);
+        // A batch disposal or a failure ended counts no rows as settled.
+        recorder.outboundWork({ ...drain, end: 'aborted' });
+        recorder.outboundWork({ ...drain, end: 'failed' });
 
         expect(recorder.readMetrics().wsOutboundRejectedWorkCount).toBe(1);
     });

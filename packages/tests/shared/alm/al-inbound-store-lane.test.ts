@@ -171,6 +171,42 @@ describe('inbound store lanes', () => {
             .toEqual(new Set(['durable', 'volatile']));
     });
 
+    it('relays and reports as recovery only drained batches, never one disposal cut short', async () => {
+        const firstBatches: number[] = [];
+        const durable = createInboundTestBackendStores({
+            namespace: 'lane-aborted',
+            storage: 'memory',
+            observer: createPassThroughIndexedDbOperationObserver()
+        });
+        const dispatchEntered = Promise.withResolvers<void>();
+        const finishDispatch = Promise.withResolvers<void>();
+        onTestFinished(() => finishDispatch.resolve());
+        const fixture = createInboundTestRuntime({
+            carrier: 'ws',
+            stores: { ...durable.stores, createStorageRecovery: () => ({ reportFirstBatch: (count) => firstBatches.push(count) }) },
+            effectWorkerId: 'al-inbound:aborted',
+            gateDispatch: async () => {
+                dispatchEntered.resolve();
+                await finishDispatch.promise;
+            }
+        });
+        await fixture.runtime.ready();
+        const reportedBeforeAdmission = firstBatches.length;
+
+        await fixture.runtime.admitIncomingMessage(
+            createInboundTestMessage({ msgId: 'aborted-dispatch', durability: 'local-inbox' }),
+            INBOUND_TEST_SOURCE
+        );
+        void runInboundRounds(fixture);
+        await dispatchEntered.promise;
+        const disposing = fixture.runtime.dispose();
+        finishDispatch.resolve();
+        await disposing;
+
+        expect(firstBatches).toHaveLength(reportedBeforeAdmission);
+        expect(fixture.diagnostics.filter((event) => event.kind === 'effect-drain' && event.claimedCount > 0)).toEqual([]);
+    });
+
     it('sweeps its memory pair on its own round once per eviction interval, and the sweep shrinks the admission map', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         onTestFinished(() => {

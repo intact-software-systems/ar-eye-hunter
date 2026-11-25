@@ -7,6 +7,7 @@ import type { ALStorageHealth } from '../storage/al-storage-health.ts';
 import { toALStorageUnavailable } from '../storage/al-storage-unavailable.ts';
 import type { ALDurableWorkLaneOwnership } from './al-durable-work-ownership.ts';
 import type { ALWorkBatchObservations } from './al-work-batch-observations.ts';
+import { ALWorkBatchReport, computeALWorkElapsedMs } from './al-work-batch-report.ts';
 import { ALWorkEngineMembership } from './al-work-engine-membership.ts';
 import type {
     ALWorkClaim,
@@ -119,7 +120,29 @@ export interface ALWorkHandlerDependencies {
     readonly durableOwnership?: ALDurableWorkLaneOwnership;
 }
 
-export type ALWorkDiagnostics = ALWorkBatchDiagnostics | ALWorkReadinessProbeDiagnostics;
+export type ALWorkDiagnostics =
+    | ALWorkBatchStartedDiagnostics
+    | ALWorkBatchDiagnostics
+    | ALWorkReadinessProbeDiagnostics;
+
+/**
+ * A batch whose selection is reserved, stated before its first claim runs. Its `work-batch` end states the same
+ * `workerId` and `startedAtMs`, so a start with no end is a batch still running.
+ */
+export interface ALWorkBatchStartedDiagnostics {
+    readonly kind: 'work-batch-started';
+    readonly workerId: string;
+    /** The instant the run loop started, after the selection and the reservation. */
+    readonly startedAtMs: number;
+    /** The claims its selection reserved. */
+    readonly claimedCount: number;
+}
+
+/**
+ * How a started batch ended: it ran its claims out, disposal cut them short, or a claim group or the release flush
+ * threw. Only a drained batch's counts describe the rows it settled.
+ */
+export type ALWorkBatchEndKind = 'drained' | 'aborted' | 'failed';
 
 /**
  * What one batch did and where its time went. The four phases never sum to `durationMs`: the
@@ -137,6 +160,8 @@ export interface ALWorkBatchDiagnostics {
     readonly completedCount: number;
     readonly rescheduledCount: number;
     readonly rejectedCount: number;
+    /** The rows `expedite()` named that joined the batch after its selection; they count in `claimedCount` too. */
+    readonly expeditedCount: number;
     /** The selection's own read, as the owner measured it; zero for an owner that reserves without one. */
     readonly selectionDurationMs: number;
     /** The port's reservation of the selected rows. */
@@ -153,6 +178,7 @@ export interface ALWorkBatchDiagnostics {
      * own earlier start.
      */
     readonly startedAtMs: number;
+    readonly end: ALWorkBatchEndKind;
 }
 
 export interface ALWorkReadinessProbeDiagnostics {
@@ -181,13 +207,6 @@ export const AL_WORK_READINESS_MEMORY_MS = INBOX_OUTBOX_ENGINE_MAX_IDLE_MS;
  */
 export const AL_WORK_PROBE_EVERY_ROUND = 0;
 
-interface ALWorkCounts {
-    claimedCount: number;
-    completedCount: number;
-    rescheduledCount: number;
-    rejectedCount: number;
-}
-
 /** How a claim's run came to run: whether `expedite()` claimed it, and which of its runs in the batch it is (from 1). */
 export interface ALWorkClaimRun {
     readonly expedited: boolean;
@@ -212,23 +231,18 @@ interface ALWorkClaimTurn extends ALWorkClaimedRun {
     readonly attempt: Promise<ALWorkAttemptResult> | undefined;
 }
 
-/** What a running batch has accumulated: its outcome counts and the two phases the handler itself times. */
-interface ALWorkBatchProgress extends ALWorkCounts {
-    runDurationMs: number;
-    releaseDurationMs: number;
-}
-
 /** The mutable batch records and source start used while selecting and running its claims. */
 interface ALWorkClaimedRunInput {
     readonly releases: ALWorkRelease[];
-    readonly progress: ALWorkBatchProgress;
+    readonly progress: ALWorkBatchReport.Progress;
     readonly deferObservation: ALWorkObservationDeferral | undefined;
     readonly batchStartedAtMs: number;
+    readonly report: ALWorkBatchReport;
 }
 
 /** A batch that flushed its releases: what it counted, and its run unless disposal cut the claims short. */
 interface ALWorkBatchEnd {
-    readonly progress: ALWorkBatchProgress;
+    readonly progress: ALWorkBatchReport.Progress;
     readonly run: ALWorkClaimedRun | undefined;
     readonly startedAtMs: number;
     /** The queue key of every claim the batch completed. */
@@ -339,9 +353,12 @@ export class ALWorkHandler {
         }
     }
 
-    /** The run a claim is in while it runs: one the batch claimed runs once, an expedited one up to its runs. */
-    getClaimRun(claim: ALWorkClaim): ALWorkClaimRun {
-        const started = this.expeditedRunsStarted.get(toKeyAsString(claim.entry.key));
+    /**
+     * The run the claim of the row at `key` is in while it runs: one the batch claimed runs once, an expedited one up
+     * to its runs.
+     */
+    getClaimRun(key: Key): ALWorkClaimRun {
+        const started = this.expeditedRunsStarted.get(toKeyAsString(key));
         return started === undefined ? { expedited: false, run: 1 } : { expedited: true, run: started };
     }
 
@@ -382,7 +399,7 @@ export class ALWorkHandler {
             workerId,
             cause: probe.cause,
             readyAtMs: probe.readyAtMs ?? 'none',
-            durationMs: computeElapsedMs(probedAtMs, clock.nowMs())
+            durationMs: computeALWorkElapsedMs(probedAtMs, clock.nowMs())
         });
         return probe.readyAtMs;
     }
@@ -420,9 +437,10 @@ export class ALWorkHandler {
         const deferObservation = this.dependencies.batchObservations === undefined
             ? undefined
             : observations?.defer ?? this.dependencies.batchObservations.discard;
-        this.batch = this.runSelectedWork(deferObservation)
+        const report = new ALWorkBatchReport(this.dependencies);
+        this.batch = this.runSelectedWork(deferObservation, report)
             .then((ended) => this.endBatch(ended))
-            .catch((error) => this.failBatch(toError(error)))
+            .catch((error) => this.failBatch(toError(error), report))
             .then(
                 () => this.completeBatch(observations, undefined),
                 (error) => this.completeBatch(observations, toError(error))
@@ -473,8 +491,9 @@ export class ALWorkHandler {
         this.wakeAfterProgress(ended.progress);
     }
 
-    private failBatch(error: Error): void {
+    private failBatch(error: Error, report: ALWorkBatchReport): void {
         this.readiness.settle(undefined);
+        report.end('failed');
         if (error instanceof ALAdmissionCorruptionError) {
             throw error;
         }
@@ -485,7 +504,7 @@ export class ALWorkHandler {
      * A batch that touched work may have written more the page read before it could not see. A batch
      * that touched none advertised its own next time through `wakeAt` and must not re-enter this tick.
      */
-    private wakeAfterProgress(counts: ALWorkCounts): void {
+    private wakeAfterProgress(counts: ALWorkBatchReport.Progress): void {
         if (counts.claimedCount > 0 || counts.rejectedCount > 0) {
             this.dependencies.queueEngine.wake();
         }
@@ -501,14 +520,18 @@ export class ALWorkHandler {
         return this.runBatch().catch((error) => this.reportBatchFailure(toError(error)));
     }
 
-    private async runSelectedWork(deferObservation: ALWorkObservationDeferral | undefined): Promise<ALWorkBatchEnd> {
+    private async runSelectedWork(
+        deferObservation: ALWorkObservationDeferral | undefined,
+        report: ALWorkBatchReport
+    ): Promise<ALWorkBatchEnd> {
         const { clock } = this.dependencies;
         const startedAtMs = clock.nowMs();
-        const progress: ALWorkBatchProgress = {
+        const progress: ALWorkBatchReport.Progress = {
             claimedCount: 0,
             completedCount: 0,
             rescheduledCount: 0,
             rejectedCount: 0,
+            expeditedCount: 0,
             runDurationMs: 0,
             releaseDurationMs: 0
         };
@@ -525,7 +548,8 @@ export class ALWorkHandler {
                     releases,
                     progress,
                     deferObservation,
-                    batchStartedAtMs: startedAtMs
+                    batchStartedAtMs: startedAtMs,
+                    report
                 });
             }
         }
@@ -534,16 +558,14 @@ export class ALWorkHandler {
             // throws must not leave them waiting for their leases to expire.
             await this.flushReleases(releases, progress);
         }
-        if (run !== undefined) {
-            this.reportBatch(run, startedAtMs, progress);
-        }
+        report.end(run === undefined ? 'aborted' : 'drained');
         return { progress, run, startedAtMs, completedKeys: toALWorkCompletedKeys(releases) };
     }
 
     /**
      * The selection this batch claimed from and the instant its run loop started, or nothing once
-     * disposal ended the batch mid-claim, which leaves the wake and the diagnostics to whichever batch
-     * resumes.
+     * disposal ended the batch mid-claim, which leaves the wake to whichever batch resumes and ends
+     * its report as aborted.
      */
     private async runClaimedWork(input: ALWorkClaimedRunInput): Promise<ALWorkClaimedRun | undefined> {
         const { releases, progress, deferObservation, batchStartedAtMs } = input;
@@ -553,6 +575,7 @@ export class ALWorkHandler {
         progress.claimedCount = queued.length;
         const runStartedAtMs = clock.nowMs();
         const run = { selection, runStartedAtMs, deferObservation };
+        input.report.start({ batchStartedAtMs, selection, runStartedAtMs, progress });
         const grouped = this.shutdown.signal.aborted
             ? undefined
             : this.dependencies.runClaimGroup?.(queued, runStartedAtMs, deferObservation);
@@ -587,15 +610,23 @@ export class ALWorkHandler {
     }
 
     /** The batch's next claim: an expedited row still pending goes before every claim the batch already holds. */
-    private async shiftClaim(queued: ALWorkClaim[], progress: ALWorkBatchProgress): Promise<ALWorkClaim | undefined> {
+    private async shiftClaim(
+        queued: ALWorkClaim[],
+        progress: ALWorkBatchReport.Progress
+    ): Promise<ALWorkClaim | undefined> {
         const expedited = await this.claimExpedited();
         progress.claimedCount += expedited.length;
+        progress.expeditedCount += expedited.length;
         queued.unshift(...expedited);
         return queued.shift();
     }
 
     /** An expedited claim that answered `retry` with runs left goes first again instead of to the release. */
-    private rerunsExpedited(release: ALWorkRelease, queued: ALWorkClaim[], progress: ALWorkBatchProgress): boolean {
+    private rerunsExpedited(
+        release: ALWorkRelease,
+        queued: ALWorkClaim[],
+        progress: ALWorkBatchReport.Progress
+    ): boolean {
         const key = toKeyAsString(release.claim.entry.key);
         const runsLeft = this.expeditedRunsLeft.get(key) ?? 0;
         if (release.outcome.status !== 'retry' || runsLeft === 0 || this.shutdown.signal.aborted) {
@@ -656,28 +687,8 @@ export class ALWorkHandler {
         }
     }
 
-    private reportBatch(
-        run: ALWorkClaimedRun,
-        startedAtMs: number,
-        progress: ALWorkBatchProgress
-    ): void {
-        const { selection, runStartedAtMs } = run;
-        const { clock, workerId, diagnostics } = this.dependencies;
-        diagnostics?.({
-            kind: 'work-batch',
-            batchStartedAtMs: startedAtMs,
-            workerId,
-            durationMs: computeElapsedMs(startedAtMs, clock.nowMs()),
-            ...progress,
-            selectionDurationMs: selection.selectionDurationMs,
-            claimDurationMs: selection.claimDurationMs,
-            queueWaitMs: computeALWorkQueueWaitMs(selection.earliestDueAtMs, startedAtMs),
-            startedAtMs: runStartedAtMs
-        });
-    }
-
     private async finalizeExhaustedWork(
-        progress: ALWorkBatchProgress
+        progress: ALWorkBatchReport.Progress
     ): Promise<readonly ALWorkRelease[]> {
         const { port, pageSize } = this.dependencies;
         const releases: ALWorkRelease[] = [];
@@ -692,7 +703,7 @@ export class ALWorkHandler {
     /** The release the batch's flush owes this claim, or nothing at all for a retained one. */
     private async runOne(
         claim: ALWorkClaim,
-        progress: ALWorkBatchProgress,
+        progress: ALWorkBatchReport.Progress,
         turn: ALWorkClaimTurn
     ): Promise<ALWorkRelease | undefined> {
         const { clock, runClaim } = this.dependencies;
@@ -705,7 +716,7 @@ export class ALWorkHandler {
         catch (error) {
             result = toALWorkFailureOutcome(toError(error));
         }
-        progress.runDurationMs += computeElapsedMs(runStartedAtMs, clock.nowMs());
+        progress.runDurationMs += computeALWorkElapsedMs(runStartedAtMs, clock.nowMs());
         switch (result.status) {
             case 'retained':
                 this.releaseRetainedClaim(claim, result.settled);
@@ -733,13 +744,13 @@ export class ALWorkHandler {
 
     private async flushReleases(
         releases: readonly ALWorkRelease[],
-        progress: ALWorkBatchProgress
+        progress: ALWorkBatchReport.Progress
     ): Promise<void> {
         const { clock, port, storageHealth } = this.dependencies;
         const startedAtMs = clock.nowMs();
         await port.releaseAll(releases);
         const endedAtMs = clock.nowMs();
-        progress.releaseDurationMs = computeElapsedMs(startedAtMs, endedAtMs);
+        progress.releaseDurationMs = computeALWorkElapsedMs(startedAtMs, endedAtMs);
         if (releases.length > 0) {
             storageHealth?.recordRecoveryPoint(endedAtMs);
         }
@@ -783,19 +794,6 @@ function assertALWorkExpeditedRuns(maxRuns: number): void {
     if (!Number.isSafeInteger(maxRuns) || maxRuns < 1) {
         throw new RangeError('An expedited row is given at least one run');
     }
-}
-
-/** A clock that steps backwards under a system time change must never report a negative phase. */
-function computeElapsedMs(startedAtMs: number, endedAtMs: number): number {
-    return Math.max(0, endedAtMs - startedAtMs);
-}
-
-/** A batch that claimed nothing waited on nothing, so it reports no wait rather than a made-up one. */
-function computeALWorkQueueWaitMs(
-    earliestDueAtMs: number | undefined,
-    batchStartedAtMs: number
-): number {
-    return earliestDueAtMs === undefined ? 0 : computeElapsedMs(earliestDueAtMs, batchStartedAtMs);
 }
 
 function toALWorkCompletedKeys(releases: readonly ALWorkRelease[]): ReadonlySet<string> {

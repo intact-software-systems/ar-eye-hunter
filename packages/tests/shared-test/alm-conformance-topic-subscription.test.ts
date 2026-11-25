@@ -552,7 +552,8 @@ function toAdmittedControlEvent(control: ALMessage) {
     writeALOutboundControlAdmissionDiagnostic((event) => events.push(event), {
         control,
         parsed: parseALControlMessage(control)!,
-        admitted: { kind: 'committed' }
+        admitted: { kind: 'committed' },
+        claimRun: undefined
     });
     return toOutboundDiagnosticEvent(JSON.parse(JSON.stringify(events[0])));
 }

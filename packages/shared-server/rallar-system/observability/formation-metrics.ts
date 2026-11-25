@@ -190,7 +190,8 @@ export function createGroupFormationMetricsRecorder(): RallarGroupFormationMetri
 
     const outboundWork: ALOutboundRuntimeDiagnosticsSink = (event: ALOutboundRuntimeDiagnosticsEvent) => {
         try {
-            if (event.kind === 'effect-drain') {
+            // Only a drained batch's counts describe the rows it settled.
+            if (event.kind === 'effect-drain' && event.end === 'drained') {
                 metrics.wsOutboundRejectedWorkCount += event.rejectedCount;
             }
         }
