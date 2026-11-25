@@ -6,7 +6,7 @@ import {
 } from '@shared-server/rallar-system/observability/alm-receipt-diagnostics.ts';
 import type { QueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
 import { computeGroupStateSyncEntries } from '@shared-server/rallar-system/state-sync/state-sync-entry-computation.ts';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALNackControlMessage, type ALNackReason } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
@@ -116,21 +116,21 @@ describe('the receipt of a server publication is counted in the receipt record',
         expect(server.observations.filter((observation) => observation.kind === 'receipt-outbox')).toEqual([]);
     });
 
-    it('2 counts a session\'s ACK in the record and leaves the server\'s row and version as they were', async () => {
-        // Pins every ACK of a server publication being one fenced commit on the server's one version row.
+    it('2 counts a session\'s ACK in the record and leaves the server\'s row and the publication\'s version as they were', async () => {
+        // Pins every ACK of a server publication being one fenced commit on the publication's version row.
         const clock = installClock();
         const server = await createOwnReceiptServer(clock, defaultOptions(['a', 'b']));
         const delta = await publishDelta(server, clock, ['a', 'b']);
         const read = { msgId: delta.id.msgId, originPeerId: RECEIPT_SERVER_PEER_ID, phase: 'admitted', expectedRecipientPeerIds: ['a', 'b'] } as const;
         const before = await server.store.readReceiptAdmission(read);
-        expect(typeof before.clientRecord?.version).toBe('number');
+        expect(typeof before.messageVersion?.version).toBe('number');
 
         await server.service.acceptIncomingMessage(sessionAck(delta, 'a', 'delivered'), 'a');
 
         const after = await server.store.readReceiptAdmission(read);
         expect((await server.record.read(ownRef(delta))).right?.tally.confirmedRecipientPeerIds).toEqual(['a']);
+        expect(after.messageVersion?.version).toBe(before.messageVersion?.version);
         expect(after.pending?.ackedPeerIds).toEqual([]);
-        expect(after.clientRecord?.version).toBe(before.clientRecord?.version);
     });
 
     it('3 completes: the head ends complete, the row ends, and the admin read names every recipient confirmed', async () => {
@@ -228,9 +228,9 @@ describe('the receipt of a server publication is counted in the receipt record',
         }
     });
 
-    it('7 records a session a retry drops as outside; one dropped at the first dequeue is counted ahead and never tallied', async () => {
+    it('7 records a session a retry drops as outside; one dropped at the first dequeue writes nothing', async () => {
         // Pins a retry's drop being written where the record never reads it, and a first dequeue's drop, which
-        // precedes the head, being lost or held against a receipt that never expected it.
+        // precedes the pending row that would prove it, being counted ahead as a row no head ever reads.
         const clock = installClock();
         const left = new Set(['c']);
         const server = await createOwnReceiptServer(clock, { ...defaultOptions(['a', 'b', 'c']), left });
@@ -240,7 +240,7 @@ describe('the receipt of a server publication is counted in the receipt record',
             await server.engine.executeOnce();
             return copiesOf(server.sockets, delta);
         }).toEqual([1, 1, 0]);
-        expect(await readConfirmations(server, delta)).toEqual([expect.objectContaining({ recipientPeerId: 'c', kind: 'outside' })]);
+        expect(await readConfirmations(server, delta)).toEqual([]);
         expect((await server.record.read(ownRef(delta))).right?.head.opening.expectedRecipientPeerIds).toEqual(['a', 'b']);
         await server.service.acceptIncomingMessage(sessionAck(delta, 'a', 'delivered'), 'a');
 
@@ -428,6 +428,29 @@ describe('the receipt of a server publication is counted in the receipt record',
         expect(copiesOf(server.sockets, delta)).toEqual([sent, sent, sent]);
     });
 
+    it('leaves a late ACK of an ended publication whose head never opened to the outbound owner, and writes nothing', async () => {
+        // Pins an ended message's kept incomplete row proving an ACK that finds no head: it was counted ahead into a
+        // record no head reads, and the outbound owner, which refuses an ACK of a message that has ended, never saw it.
+        const clock = installClock();
+        const failing = { armed: false };
+        const server = await createOwnReceiptServer(clock, { ...defaultOptions(['a', 'b', 'c']), recordBackend: toFailingWhileArmed(failing) });
+        const notification = createNoRetryNotification(clock);
+        await server.service.enqueueOutboxIfAbsent(notification, audience(['a', 'b', 'c']));
+        failing.armed = true;
+        await settleDueWork(server, clock);
+        failing.armed = false;
+        expect((await server.record.read(ownRef(notification))).left).toEqual({ kind: 'head-absent' });
+        await runRowWindow(server, clock, notification);
+        expect((await server.store.readStoredMessage(notification.id.msgId))?.ended).toBe(true);
+        expect((await server.store.readReceiptState(ownRef(notification)))?.ackedPeerIds).toEqual([]);
+
+        await server.service.acceptIncomingMessage(sessionAck(notification, 'a', 'delivered'), 'a');
+
+        expect(await readConfirmations(server, notification)).toEqual([]);
+        expect(readReceiptAggregationVerdicts(server.observations, notification.id.msgId)).toEqual([]);
+        expect((await server.record.read(ownRef(notification))).left).toEqual({ kind: 'head-absent' });
+    });
+
     it('14 keeps the per-ACK count for a publication whose opening the record refuses', async () => {
         // Pins the ACKs of a publication with no head, and none possible, being dropped: the row would resend to every
         // recipient and keep a stray confirmation row per ACK.
@@ -485,6 +508,26 @@ function createDelta(clock: ReceiptClock): ALMessage {
         throw new Error('Expected one group-state delta entry');
     }
     return decodePersistedALMessage(entry.resource);
+}
+
+/** A receipted room notification of the server's that asks no retry: its row ends at its first ACK window. */
+function createNoRetryNotification(clock: ReceiptClock): ALMessage {
+    const msgId = 'snapshot-no-retry';
+    const message = newALBroadcastMessage({
+        createdAtEpochMs: clock.nowMs,
+        senderId: RECEIPT_SERVER_PEER_ID,
+        route: newALRoute('room.snapshot', ROOM.groupId, msgId),
+        scope: 'room',
+        typeId: 'snapshot.v1',
+        resource: { msgId },
+        options: {
+            groupRef: ROOM,
+            reliability: 'at-least-once',
+            qos: { ack: { algo: 'receiver' }, retry: { algo: 'none', opts: { maxAttempts: 0 } } },
+            ttlMs: NOTIFICATION_TTL_MS
+        }
+    });
+    return { ...message, id: { ...message.id, msgId } };
 }
 
 function audience(admittedAudience: readonly string[] | undefined): WsQueueBoxServerService.EnqueueAuthority {

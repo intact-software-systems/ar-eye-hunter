@@ -395,14 +395,20 @@ export class WsQueueBoxServerService {
         });
     }
 
-    /** Two reads for a logically receipted row of the server's own, one for any other. */
+    /**
+     * Two steps for a logically receipted row of the server's own, one for any other. An ended message keeps its
+     * incomplete row; it proves nothing, so a late ACK of it reaches the outbound owner, which refuses it.
+     */
     private async readOwnPendingReceipt(msgId: string): Promise<WsQueueBoxServerOwnPendingReceipt | undefined> {
         const pending = await this.readOwnPendingAck(msgId);
         if (pending === undefined) {
             return undefined;
         }
-        const sent = await this.admissionStore.readSentMessage(msgId);
-        return sent === undefined ? undefined : { message: sent.msg, pending };
+        const [stored, sent] = await Promise.all([
+            this.admissionStore.readStoredMessage(msgId),
+            this.admissionStore.readSentMessage(msgId)
+        ]);
+        return sent === undefined || stored?.ended !== false ? undefined : { message: sent.msg, pending };
     }
 
     private async readOwnPendingAck(msgId: string): Promise<ALOutboundPendingAckSnapshot | undefined> {

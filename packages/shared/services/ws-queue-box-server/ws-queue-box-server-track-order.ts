@@ -104,8 +104,9 @@ export class WsQueueBoxServerTrackOrder {
      * counts recipients of have none to record in. A dequeue or retry drop is judged from durable presence and recorded
      * whatever this instance's sockets hold; a send-time drop or skip is judged only for a session whose socket here is
      * open -- a session live elsewhere is its own instance's to send, one live nowhere is the retry's to judge. A
-     * server-own row's drop at its dequeue precedes its head and is counted ahead, and the head, which expects only the
-     * judged audience, never tallies it (D545); a drop or skip after the head opened is counted in it.
+     * server publication's drop at its first dequeue precedes the pending row that would prove it and writes nothing:
+     * the row and the head expect only the judged audience (D545). A skip once the row exists, before or after the
+     * head opened, is counted.
      */
     async writeOutsideAudience(
         message: ALMessage,

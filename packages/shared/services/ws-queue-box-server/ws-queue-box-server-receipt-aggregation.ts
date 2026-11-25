@@ -43,7 +43,6 @@ import {
 import type { Either } from '../../resilience/Either.ts';
 import type { InboxOutboxEngine } from '../inbox-outbox-engine.ts';
 import {
-    isWsQueueBoxServerOwnSessionAck,
     resolveWsQueueBoxServerHeadAbsentAck,
     type WsQueueBoxServerHeadAbsentAck
 } from './receipt/resolve-ws-queue-box-server-head-absent-ack.ts';
@@ -190,13 +189,13 @@ export namespace WsQueueBoxServerReceiptAggregation {
         readonly acceptServerReceipt: (control: ALMessage) => Promise<ALOutboundControlAdmissionResult>;
         /**
          * The server's pending receipt row of a logically receipted message it sent, with the sent message; undefined
-         * for any other message and for a row already complete. It proves an ACK that finds no head and opens a head
-         * its dequeue did not.
+         * for any other message, for a row already complete, and for a message that has ended, whose kept incomplete
+         * row it does not return. It proves an ACK that finds no head and opens a head its dequeue did not.
          */
         readonly readOwnPendingReceipt: (msgId: string) => Promise<WsQueueBoxServerOwnPendingReceipt | undefined>;
         /**
-         * The server's pending receipt row alone, of a logically receipted message it sent; undefined as
-         * `readOwnPendingReceipt` answers it. Its outside recipients prove an outside-audience NACK it admitted.
+         * The server's pending receipt row alone, of a logically receipted message it sent; undefined for any other
+         * message and for a row already complete. Its outside recipients prove an outside-audience NACK it admitted.
          */
         readonly readOwnPendingAck: (msgId: string) => Promise<ALOutboundPendingAckSnapshot | undefined>;
     }
@@ -464,12 +463,10 @@ export class WsQueueBoxServerReceiptAggregation {
         return route === 'rejected' ? WS_QUEUE_BOX_SERVER_REJECTED_COUNT : route;
     }
 
-    /** Only a session's ACK of a server publication reads the server's pending row, its one proof. */
+    /** Only an ACK of a server publication reads the server's pending row, its one proof. */
     private async readHeadAbsentAck(ack: ALAckPayload): Promise<WsQueueBoxServerHeadAbsentAck> {
         const { serverPeerId, readOwnPendingReceipt } = this.#dependencies;
-        const own = isWsQueueBoxServerOwnSessionAck(ack, serverPeerId)
-            ? await readOwnPendingReceipt(ack.ackedMsgId)
-            : undefined;
+        const own = ack.originPeerId === serverPeerId ? await readOwnPendingReceipt(ack.ackedMsgId) : undefined;
         const opening = own === undefined ? undefined : this.toOwnOpening(own);
         return { ack, serverPeerId, own, ownOpeningOpens: opening !== undefined && this.wouldOpen(opening) };
     }

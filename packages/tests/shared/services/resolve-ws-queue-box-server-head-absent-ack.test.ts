@@ -4,7 +4,6 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALAckPayload } from '@shared/al-contracts/al-control.ts';
 import type { ALOutboundPendingAckSnapshot } from '@shared/alm/al-runtime-state-stores.ts';
 import {
-    isWsQueueBoxServerOwnSessionAck,
     resolveWsQueueBoxServerHeadAbsentAck,
     type WsQueueBoxServerHeadAbsentAck
 } from '@shared/services/ws-queue-box-server/receipt/resolve-ws-queue-box-server-head-absent-ack.ts';
@@ -65,12 +64,33 @@ describe('an ACK that finds no head', () => {
             .toBe('count-ahead');
     });
 
-    it('is counted ahead when it is the server\'s own not-sent word, which needs no proof', () => {
-        // Pins a send-time skip that overtook its head being lost, so the receipt waited on a recipient never sent.
-        const notSent = ack({ fromPeerId: SERVER, status: 'subtree-complete-not-subscribed' });
+    it('is counted ahead when it is the server\'s own not-sent word for another origin, which needs no proof', () => {
+        // Pins a send-time skip of a client's send that overtook its head being lost, so the receipt waited on a
+        // recipient never sent.
+        const notSent = ack({ fromPeerId: SERVER, toPeerId: 'origin', originPeerId: 'origin', status: 'subtree-complete-not-subscribed' });
 
         expect(resolveWsQueueBoxServerHeadAbsentAck(input({ ack: notSent, own: undefined, ownOpeningOpens: false })))
             .toBe('count-ahead');
+    });
+
+    it('is counted ahead when it is the server\'s not-sent word for a recipient its pending row expects', () => {
+        // Pins a send-time skip of a server publication that overtook its head being lost, so the receipt waited on
+        // a recipient never sent.
+        const notSent = ack({ fromPeerId: SERVER, status: 'subtree-complete-not-subscribed' });
+
+        expect(resolveWsQueueBoxServerHeadAbsentAck(input({ ack: notSent }))).toBe('count-ahead');
+    });
+
+    it('writes nothing for the server\'s not-sent word of its own publication that its pending row does not prove', () => {
+        // Pins a first dequeue's drop, read before the dequeue commit writes the row, being counted ahead as a row
+        // no head reads; and the same for a recipient the row does not expect, or a row that would open no head.
+        const notSent = (recipient: string) => ack({ fromPeerId: SERVER, logicalRecipientPeerId: recipient, status: 'subtree-complete-not-subscribed' });
+
+        expect([
+            resolveWsQueueBoxServerHeadAbsentAck(input({ ack: notSent('a'), own: undefined, ownOpeningOpens: false })),
+            resolveWsQueueBoxServerHeadAbsentAck(input({ ack: notSent('c') })),
+            resolveWsQueueBoxServerHeadAbsentAck(input({ ack: notSent('a'), ownOpeningOpens: false }))
+        ]).toEqual(['rejected', 'rejected', 'rejected']);
     });
 
     it('is counted ahead for a session the server\'s pending row expects, when that row would open', () => {
@@ -91,16 +111,5 @@ describe('an ACK that finds no head', () => {
             resolveWsQueueBoxServerHeadAbsentAck(input({ ownOpeningOpens: false })),
             resolveWsQueueBoxServerHeadAbsentAck(input({ own: undefined, ownOpeningOpens: false }))
         ]).toEqual(['outbound-owner', 'outbound-owner']);
-    });
-});
-
-describe('a session\'s ACK of a server publication', () => {
-    it('names the server as its origin and is not the server\'s own not-sent word', () => {
-        // Pins the pending row being read for an ACK that needs no proof, or not read for the one that does.
-        expect([
-            isWsQueueBoxServerOwnSessionAck(ack({}), SERVER),
-            isWsQueueBoxServerOwnSessionAck(ack({ fromPeerId: SERVER, status: 'subtree-complete-not-subscribed' }), SERVER),
-            isWsQueueBoxServerOwnSessionAck(ack({ toPeerId: 'origin', originPeerId: 'origin' }), SERVER)
-        ]).toEqual([true, false, false]);
     });
 });

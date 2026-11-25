@@ -178,8 +178,10 @@ message.
   confirmation.
 
 An ACK that finds no head is proven before it is counted ahead: a client send's against the inbound admission row
-(the message under that origin, with the ACK's sender in the audience admission ran under), a session's ACK of a
-server publication against the server's pending row. The server's own `not-sent` needs no proof.
+(the message under that origin, with the ACK's sender in the audience admission ran under), an ACK of a server
+publication against the server's pending row, which an ended message's kept row does not prove. The server's own
+`not-sent` of a client's send needs no proof; of its own publication it is proven by that row as a session's ACK is,
+so a drop at the first dequeue, which precedes the row, writes nothing.
 
 An admission does not open a receipt whose largest terminal receipt (a `timed-out` naming every expected recipient
 outside) the receipt control could not encode: `receipt-not-encodable`, one warning, no record and no receipt. With
@@ -257,15 +259,14 @@ Real PostgreSQL, three instances, each client delaying every statement, BEGIN an
   that says its receipt is counted elsewhere. Derived from the code; no test holds such a stall.
 - **More than 256 recipients.** A send to more than 256 recipients is admitted and gets no receipt. A server
   publication whose opening the record or the codec refuses keeps the per-ACK fenced count in its row; the server's
-  own `not-sent` for it is counted ahead in a record no head reads, so a recipient the server skipped stays expected
-  in the row and keeps it open until its budget ends, and the publication reads `receipt-exhausted`.
+  own `not-sent` for it writes nothing, so a recipient the server skipped stays expected in the row and keeps it open
+  until its budget ends, and the publication reads `receipt-exhausted`.
 - **A receipt the control cannot carry** opens nothing (`receipt-not-encodable`, above), and a re-sent copy of it opens
   nothing either.
 - **Stray confirmation rows.** A room member outside a send's frozen audience (a unicast's addressee, a broadcast's
   except or recipient list) can write one confirmation row per message, since an ACK that finds no head is proven
-  against the raw audience admission ran under; and a server publication's first dequeue writes one row per recipient
-  it drops, counted ahead of the head. The tally ignores both, since it counts only the expected set, and each expires
-  with the window plus one grace.
+  against the raw audience admission ran under. The tally ignores it, since it counts only the expected set, and it
+  expires with the window plus one grace.
 - **One server name per cluster**, since the namespace derives from it.
 - **A burst of terminal receipts.** At +5 ms one instance delivers about 8 terminal receipts a second, and the ended
   work row of a `timed-out` end lives one grace (30 s): a burst above about 240 terminal receipts on one instance

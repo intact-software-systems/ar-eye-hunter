@@ -187,13 +187,16 @@ Follow these production paths directly when reviewing a change:
    hook, and the origin bypass `isALOriginAcknowledgement` skips the control-owner
    read) → aggregation `acceptControlMessage` →
    `acceptAck` → `writeConfirmation` → `ALReceiptRecord.count`; on `head-absent`,
-   `readHeadAbsentAck` reads the pending row (`readOwnPendingReceipt`) and
+   `readHeadAbsentAck` reads the pending row (`readOwnPendingReceipt`, which
+   answers nothing for a message that has ended) and
    `resolveWsQueueBoxServerHeadAbsentAck` routes it: `countAhead` when the row's
    opening would open and expects the sender, refused when it expects another,
    and otherwise to the outbound owner: when the opening would not open, the owner
    counts it in the row per ACK, fenced; with no logical row, a `hop` row counts
-   it; with no row at all the owner refuses it and writes nothing, as before. The
-   server's own `not-sent` is counted ahead unproven. A complete view →
+   it; with no row at all, or an ended message, the owner refuses it and writes
+   nothing, as before. The server's own `not-sent` is proven by the same row: it
+   is counted ahead when the row would open and expects its recipient, and writes
+   nothing otherwise (a first dequeue's drop precedes the row). A complete view →
    `endReceipt` → `end` → worker `committed` → ended work → `writeEndedReceipt` →
    `admitServerReceipt` → `acceptServerReceipt`, which settles the pending row.
    An outside-audience NACK reaches the outbound owner first; `writeOutsideAudienceNack`

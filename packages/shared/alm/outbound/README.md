@@ -1105,8 +1105,8 @@ publications and every producer row it sends under its peer id) alike, a recipie
 position, or a session a re-check dropped, is one `outside` confirmation in the receipt record: the server's
 outside-audience ACK, counted on the instance that dropped it as any ACK is
 ([`writeOutsideAudience`](../../services/ws-queue-box-server/ws-queue-box-server-track-order.ts)), which the origin
-reads in the receipt's `outsideAudienceRecipientPeerIds`. A server publication's drop at its dequeue precedes its
-record and is counted ahead; the record, which expects only the judged audience, never tallies it. The
+reads in the receipt's `outsideAudienceRecipientPeerIds`. A server publication's drop at its first dequeue precedes
+the pending row that would prove it and writes nothing; the row and the record expect only the judged audience. The
 read records
 whenever the stored row holds no positions yet, and stamps nothing on the stored canonical: the full priors live on
 the sent row (`ALStoredOutboundMessage.sentPositions`, `null` when nothing was recorded, which a row written before
