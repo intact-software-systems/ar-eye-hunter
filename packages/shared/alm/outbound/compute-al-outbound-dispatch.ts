@@ -1,7 +1,7 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { toChangedALMessageRow } from '../../al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs, type ALAckAlgo } from '../../al-contracts/al-policy.ts';
-import { EntityStatus, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import { EntityStatus, NOT_COMPLETED_RETRYABLE_STATUSES, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import type { ALOutboundPendingAckSnapshot, ALOutboundSentMessageSnapshot } from '../al-runtime-state-stores.ts';
 import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
 import {
@@ -341,7 +341,7 @@ function toEarlyDispatchResult<TPrepared>(
         return toALOutboundComputedResult({ kind: 'unroutable', reason: 'no-route', detail }, detail);
     }
     if (input.intent === 'enqueue' && read.sentSnapshot) {
-        return toDuplicateDispatchResult(read, input.outboxEntry);
+        return toDuplicateDispatchResult(input, read.sentSnapshot);
     }
     if (read.supersedenceAcceptance?.observation.status === 'superseded') {
         const detail = `Skipping superseded outbound message ${read.msg.id.msgId}`;
@@ -350,14 +350,18 @@ function toEarlyDispatchResult<TPrepared>(
     return undefined;
 }
 
+/**
+ * A replay answers `duplicate`. One whose read signed the row its sender still holds unsigned also stores that row,
+ * frozen and signed, and leaves the send to the row's dequeue. Nothing orders the replay behind the dequeue that
+ * freezes the row (ruling 22): the version fence lets one of the two store the proof, and the other reads it.
+ */
 function toDuplicateDispatchResult<TPrepared>(
-    read: ALOutboundMessageReadDto<TPrepared>,
-    outboxEntry: ResourceEntry
+    input: ComputeALOutboundDispatchInput<TPrepared>,
+    sentSnapshot: ALOutboundSentMessageSnapshot
 ): ALOutboundComputedDto<TPrepared> {
-    const entry = read.sentSnapshot?.outboxKey
-        ? { ...outboxEntry, key: read.sentSnapshot.outboxKey }
-        : undefined;
-    return {
+    const { read } = input;
+    const entry = sentSnapshot.outboxKey ? { ...input.outboxEntry, key: sentSnapshot.outboxKey } : undefined;
+    const duplicate: ALOutboundComputedDto<TPrepared> = {
         ...toALOutboundComputedResult(
             { kind: 'duplicate' },
             `Duplicate outbound message ${read.msg.id.msgId}`,
@@ -365,6 +369,31 @@ function toDuplicateDispatchResult<TPrepared>(
         ),
         trackedReceiptAlgo: toALOutboundTrackedReceiptAlgo(read.storedMessage?.policy.ackTracking)
     };
+    if (entry === undefined || !isALOutboundReadSignedHeldRow(read, sentSnapshot)) {
+        return duplicate;
+    }
+    const canonicalEntry = toChangedALMessageRow(entry, { status: EntityStatus.NEW });
+    return {
+        ...duplicate,
+        entries: [canonicalEntry],
+        bundle: toDispatchBundle(input, canonicalEntry, {
+            mutations: [toSentMessageMutation(read, canonicalEntry, false)],
+            durableEffects: []
+        })
+    };
+}
+
+/**
+ * Whether this read's signer signed an unsigned request whose stored row is unsigned too and still awaits its first
+ * dispatch. A row a dispatch already completed keeps what that dispatch stored.
+ */
+function isALOutboundReadSignedHeldRow<TPrepared>(
+    read: ALOutboundMessageReadDto<TPrepared>,
+    sentSnapshot: ALOutboundSentMessageSnapshot
+): boolean {
+    return read.originalMsg.proof === undefined && read.msg.proof !== undefined &&
+        sentSnapshot.msg.proof === undefined && read.canonicalEntry !== undefined &&
+        NOT_COMPLETED_RETRYABLE_STATUSES.has(read.canonicalEntry.status);
 }
 
 /** Keyed on the planner's drop code, never the human-readable `dropReason` string. */

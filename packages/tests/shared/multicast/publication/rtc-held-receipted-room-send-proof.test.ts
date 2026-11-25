@@ -6,7 +6,8 @@ import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-m
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 
-import { drainUntil } from '../../advance-until.ts';
+import { advanceUntil, drainUntil } from '../../advance-until.ts';
+import { loseOutboundCommitAttempts } from '../../alm/outbound-runtime-test-fixture.ts';
 import { createCountingSubtleCrypto, type CountingSubtleCrypto } from '../../signature/counting-subtle-crypto-fixtures.ts';
 import {
     createAvailablePublicationCryptoFixture,
@@ -24,6 +25,8 @@ import { createRtcRelayOverlayFixture } from '../rtc-relay-overlay-fixture.ts';
 
 /** The receipt window of an `at-least-once` send, after which its origin retries what is unconfirmed. */
 const ACK_TIMEOUT_MS = 2_000;
+/** A commit that loses its fence reads, decides and writes again, this many attempts in all. */
+const COMMIT_ATTEMPTS = 3;
 
 type HeldReceipt = 'receiver' | 'leader' | 'none';
 
@@ -90,33 +93,71 @@ describe('a receipted RTC room send held without its room snapshot (D585, D756)'
             .toBeUndefined();
     });
 
-    it('answers a replay that meets the freezing dequeue while it signs with the one stored row and its one proof, signing at most once per attempt', async () => {
+    it('answers a replay that settles while the freezing dequeue still signs with the proof the replay stored, which the dequeue then sends', async () => {
         const chain = await createRelayChain(['a', 'c'], {});
         const counting = createCountingSubtleCrypto();
         const origin = createHeldOrigin(chain.snapshot, toCounted(chain, counting));
-        const message = createHeldSend('held-replayed', 'receiver');
-        const held = await origin.manager.enqueueLegIfAbsent(message, 'hold');
-        await vi.advanceTimersByTimeAsync(200);
-        const releaseFreezingSign = counting.holdNextSign();
-        origin.groups.accept('room', chain.snapshot);
-        for (let step = 0; step < 20 && counting.counts.sign === 0; step++) {
-            await vi.advanceTimersByTimeAsync(100);
-            await drainUntil(() => counting.counts.sign > 0, 20);
-        }
+        const message = createHeldSend('held-replay-first', 'receiver');
+        const { held, releaseFreezingSign } = await holdUntilFreezingSign(origin, message, counting, chain.snapshot);
+
+        const replayed = await origin.manager.enqueueLegIfAbsent(message, 'hold');
+        const storedAtAnswer = await readCanonical(origin, held);
+        releaseFreezingSign();
+        await advanceUntil(() => origin.channels.c!.sent.length > 0, 100, 50);
+
+        // Nothing orders the two (ruling 22). The dequeue's write lost the fence; each of its attempts may sign once
+        // before it reads the stored proof.
+        expect(replayed.verdict.kind).toBe('duplicate');
+        expect(replayed.message.proof).toMatchObject({ alg: 'ES256', keyId: chain.keys.a!.keyPair.keyId });
+        expect(storedAtAnswer.proof).toEqual(replayed.message.proof);
+        expect((await readCanonical(origin, held)).proof).toEqual(replayed.message.proof);
+        expect(origin.channels.c!.sent.map((copy) => copy.proof)).toEqual([replayed.message.proof]);
+        expect(counting.counts.sign).toBeLessThanOrEqual(1 + COMMIT_ATTEMPTS);
+    });
+
+    it('answers a replay whose own sign lost to the freezing dequeue with the proof the dequeue stored', async () => {
+        const chain = await createRelayChain(['a', 'c'], {});
+        const counting = createCountingSubtleCrypto();
+        const origin = createHeldOrigin(chain.snapshot, toCounted(chain, counting));
+        const message = createHeldSend('held-dequeue-first', 'receiver');
+        const { held, releaseFreezingSign } = await holdUntilFreezingSign(origin, message, counting, chain.snapshot);
+        const releaseReplaySign = counting.holdNextSign();
 
         const replaying = origin.manager.enqueueLegIfAbsent(message, 'hold');
+        await drainUntil(() => counting.counts.sign === 2);
         releaseFreezingSign();
+        await advanceUntil(() => origin.channels.c!.sent.length > 0, 100, 50);
+        releaseReplaySign();
         const replayed = await replaying;
-        await drainUntil(() => origin.channels.c!.sent.length > 0);
-        await vi.advanceTimersByTimeAsync(200);
         const canonical = await readCanonical(origin, held);
 
-        // Nothing orders the replay behind the freezing dequeue (ruling 22): it may sign once and lose, at most one sign
-        // per attempt, and it answers with the stored row's proof.
-        expect(counting.counts.sign).toBeLessThanOrEqual(2);
         expect(replayed.verdict.kind).toBe('duplicate');
+        expect(canonical.proof).toMatchObject({ alg: 'ES256', keyId: chain.keys.a!.keyPair.keyId });
         expect(replayed.message.proof).toEqual(canonical.proof);
-        expect(new Set(origin.channels.c!.sent.map((copy) => copy.proof?.signature))).toEqual(new Set([canonical.proof!.signature]));
+        expect(origin.channels.c!.sent.map((copy) => copy.proof)).toEqual([canonical.proof]);
+        expect(counting.counts.sign).toBe(2);
+    });
+
+    it('answers a replay whose every write lost the fence to other sends with the row as stored, retaining no second admission', async () => {
+        const chain = await createRelayChain(['a', 'c'], {});
+        const counting = createCountingSubtleCrypto();
+        const origin = createHeldOrigin(chain.snapshot, toCounted(chain, counting));
+        const message = createHeldSend('held-replay-outpaced', 'receiver');
+        const { held, releaseFreezingSign } = await holdUntilFreezingSign(origin, message, counting, chain.snapshot);
+        const readLostCommits = loseOutboundCommitAttempts(origin.resources.admissionStore);
+
+        const answers: ALOutboundEnqueueResult[] = [];
+        void origin.manager.enqueueLegIfAbsent(message, 'hold').then((answer) => answers.push(answer));
+        // The last attempt of a commit that keeps losing waits out its backoff on the fake clock.
+        await advanceUntil(() => answers.length > 0, 10, 50);
+        releaseFreezingSign();
+        await advanceUntil(() => origin.channels.c!.sent.length > 0, 100, 50);
+        const canonical = await readCanonical(origin, held);
+
+        expect(readLostCommits()).toBe(COMMIT_ATTEMPTS);
+        expect(answers.map((answer) => [answer.verdict.kind, answer.message.proof])).toEqual([['duplicate', undefined]]);
+        expect(canonical.proof).toMatchObject({ alg: 'ES256', keyId: chain.keys.a!.keyPair.keyId });
+        expect(origin.channels.c!.sent.map((copy) => copy.proof)).toEqual([canonical.proof]);
     });
 
     it('freezes a held send that asks no receipt at its dequeue and sends it unsigned, signing nothing', async () => {
@@ -156,6 +197,21 @@ async function holdAndAcceptSnapshot(
         await drainUntil(() => isFrozenOrEnded(origin), 20);
     }
     return held;
+}
+
+/** Admits `message` while the room is uncached, caches `snapshot`, and stops the freezing dequeue inside its sign. */
+async function holdUntilFreezingSign(
+    origin: RtcOriginOverlayFixture,
+    message: ALMessage,
+    counting: CountingSubtleCrypto,
+    snapshot: GroupSnapshot
+): Promise<Readonly<{ held: ALOutboundEnqueueResult; releaseFreezingSign: () => void; }>> {
+    const held = await origin.manager.enqueueLegIfAbsent(message, 'hold');
+    await vi.advanceTimersByTimeAsync(200);
+    const releaseFreezingSign = counting.holdNextSign();
+    origin.groups.accept('room', snapshot);
+    await advanceUntil(() => counting.counts.sign > 0);
+    return { held, releaseFreezingSign };
 }
 
 function isFrozenOrEnded(origin: RtcOriginOverlayFixture): boolean {
