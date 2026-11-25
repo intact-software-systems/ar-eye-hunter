@@ -9,6 +9,8 @@ import { TryWithExhaustedError, TryWithPolicy } from '@shared/resilience/try-wit
  * bound keeps a dead control server failing fast and loudly, with its own transport error.
  */
 const CONTROL_GET_ATTEMPTS = 3;
+
+/** How long a control read pauses before it re-sends a request that produced no response. */
 const CONTROL_GET_RETRY_PAUSE_MS = 250;
 
 /** A control read that keeps failing in transport pauses between each of its attempts. */

@@ -372,7 +372,10 @@ const RTC_READINESS_WAIT_TOPIC = 'rallar.bb.rtc.readiness_wait_started';
 const RECIPE_RUN_TIMEOUT_MS = 180_000;
 /** Covers the agent's dispatch latency (its deadline starts at dispatch, the lane's at enqueue) and its cleanup. */
 const RECIPE_RESULT_GRACE_MS = 30_000;
+/** How long a sender's run waits for its receiver to connect before it is released anyway. */
 const RECEIVER_CONNECT_TIMEOUT_MS = 60_000;
+
+/** How long a control run poll pauses between its reads. */
 const CONTROL_POLL_INTERVAL_MS = 250;
 
 /** How long a signed-in page may take to show its run header. */

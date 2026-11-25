@@ -48,8 +48,10 @@ export const LIFECYCLE_SURVIVOR_REFRESH_TIMEOUT_MS = 20_000;
 /** How long the reopened member's readiness diagnostics are polled for a valid progress series. */
 export const LIFECYCLE_PROGRESS_DIAGNOSTICS_POLL_TIMEOUT_MS = 15_000;
 
-/** How many times, and how far apart, a reopened member's health is read until it holds the room. */
+/** How many times a reopened member's health is read until it holds the room. */
 export const LIFECYCLE_ROOM_HELD_ATTEMPTS = 15;
+
+/** How long the room-held check pauses after each health read that fails. */
 export const LIFECYCLE_ROOM_HELD_INTERVAL_MS = 2_000;
 
 /** How long the reopened member of a dormant group refreshes its room. */

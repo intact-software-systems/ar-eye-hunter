@@ -92,6 +92,16 @@ function findNumericConstantNames(source: string): readonly string[] {
     return [...source.matchAll(/^(?:export )?const ([A-Z][A-Z\d_]*_MS) =/gm)].map((match) => match[1]);
 }
 
+/** Each named wait declared straight after another declaration, so that it shares the doc above the first, as `line: text`. */
+function findUndocumentedPairedConstants(source: string): readonly string[] {
+    const lines = source.split('\n');
+    return lines.flatMap((line, index) => {
+        const previous = lines[index - 1]?.trim() ?? '';
+        const shared = /^(?:export )?const [A-Z][A-Z\d_]*_MS =/.test(line) && previous.endsWith(';');
+        return shared ? [`${index + 1}: ${line.trim()}`] : [];
+    });
+}
+
 describe('literal waits on the derived tests\' paths', () => {
     it('finds each way a literal wait bound is passed and passes over named ones', () => {
         expect(findLiteralWaits([
@@ -131,6 +141,28 @@ describe('literal waits on the derived tests\' paths', () => {
         );
 
         expect(duplicated).toEqual({});
+    });
+
+    // Pairs of waits shared one doc, which then described the second constant only by implication.
+    it('gives each named wait its own doc', () => {
+        expect(findUndocumentedPairedConstants([
+            '/** The appointment\'s own budget, and each relay start\'s. */',
+            'export const APPOINT_TIMEOUT_MS = 20_000;',
+            'export const RELAY_START_TIMEOUT_MS = 20_000;',
+            '',
+            '/** Documented. */',
+            'const OWN_TIMEOUT_MS = 1_000;'
+        ].join('\n'))).toEqual(['3: export const RELAY_START_TIMEOUT_MS = 20_000;']);
+        const paired = Object.fromEntries(
+            DERIVED_TEST_PATH_FILES.filter((relativePath) => existsSync(path.join(repoRoot, relativePath))).flatMap(
+                (relativePath) => {
+                    const found = findUndocumentedPairedConstants(readPathFile(relativePath));
+                    return found.length === 0 ? [] : [[relativePath, found]];
+                }
+            )
+        );
+
+        expect(paired).toEqual({});
     });
 
     // Two rounds each left a literal wait on these paths uncounted; a literal can no longer join a counted path.

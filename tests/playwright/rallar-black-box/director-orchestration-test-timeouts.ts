@@ -30,8 +30,10 @@ export const DIRECTOR_HEALTH_READ_TIMEOUT_MS = 15_000;
 /** How long an agent's health is polled until it reports its expected peers ready. */
 export const DIRECTOR_PEER_READINESS_POLL_TIMEOUT_MS = 60_000;
 
-/** The appointment's own budget, and each relay start's. */
+/** The appointment's own budget. */
 export const DIRECTOR_APPOINT_TIMEOUT_MS = 20_000;
+
+/** Each relay start's own budget. */
 export const DIRECTOR_RELAY_START_TIMEOUT_MS = 20_000;
 
 /** How long a relayed intent may take to report the director's receipt. */
