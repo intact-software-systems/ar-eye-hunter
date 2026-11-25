@@ -1056,27 +1056,38 @@ and it has no status list.
   It is either the receipt row's republication (one control id, above) or the
   answer to a re-sent copy (a fresh control id); the run did not read which.
 - A WS server's receipts backlog under five publishers at +5 ms per round
-  trip: with five publishers at 2 Hz the receipts backlog after their enqueue,
-  and the last ten messages read `complete` 4.0 to 6.3 times later than the
-  first ten (p50 7 168 to 10 650 ms against 1 699 to 1 795 ms). The count
-  keeps up (70 to 73 ms from the last ACK), and so do the enqueue attempts
-  (about 205 ms). The cause is measured: each instance's one outbound worker
-  runs one batch at a time, its claims one after another except that a batch's
-  dequeued rows are admitted together; it was busy throughout (19 to 24
-  batches of 0.79 to 0.96 s each, back to back, nearly all full pages of 16),
-  and completed 13 to 17 rows a second while the sends ran and 11 to 17 after.
-  The pool is ruled out (a transaction waited 0.6 ms from its `begin`, the
-  median), and so is the fence as a cause: 75 to 80 % of the receipt enqueues
-  conflict on the server's outbound version row, but 85 to 88 % of their
-  replays commit at their first attempt; the fence only adds replay claims to
-  the same worker. Every receipt stays exact and arrives before its 30 s
-  deadline, and one publisher keeps up. The worker is not the server
-  identity's: room messages under their publishers' identities share it, and
-  their p95 from the send to the last ACK, 6.2 to 6.9 s, is not yet attributed
-  to it. The lever: take the receipts' delivery off each instance's outbound
-  worker, and with it off the server identity's fence, for example by
-  delivering them from the receipt record's own work rows, or raise that
-  worker's throughput. For the maintainer.
+  trip, larger since the per-message fence (D703). Run again at `a4b87879a`
+  (`main` not run in this cell): with five publishers at 2 Hz, in three runs of
+  20 s of sends, the last ten messages read `complete` 7.4 to 11.3 times later
+  than the first ten (p50 24 157 to 24 741 ms against 2 137 to 3 344 ms; at
+  `396a38cae`, before the fence, 7 168 to 10 650 against 1 699 to 1 795), and
+  only 112 to 128 of 200 `complete` reached their publisher by the 30 s
+  deadline (all 200 before). In one run of 45 s of sends 76 of 450 did, and 192
+  read none 15 s after the last deadline; one receipt row expired undelivered.
+  The count keeps up (69 to 72 ms from the last ACK) and the record stays
+  exact: no message read `timed-out` or two terminal receipts. The cause is
+  measured: each instance's one outbound worker runs one batch at a time, its
+  claims one after another except that a batch's dequeued rows are admitted
+  together; it was busy throughout (12 to 14 batches of 1.18 to 1.37 s each,
+  nearly all full pages of 16) and completed 7.1 to 10.1 rows a second (13 to
+  17 before the fence). The same work now runs about 38 % more statements and
+  each commit takes about twice as long; fewer receipt enqueues conflict (58 to
+  62 % against 75 to 80 %), but only 52 to 55 % of their replays commit at
+  their first attempt (85 to 88 % before). The pool is ruled out (a
+  transaction waited 0.6 to 0.7 ms from its `begin`, the median). The deadline
+  rows of completed receipts that come due inside the 45 s run change the
+  drain after the sends stop by no clear margin (6.8 to 7.7 rows a second
+  against 6.7 to 9.5). The worker is not the server identity's: room messages
+  under their publishers' identities share it. The lever: take the receipts'
+  delivery off each instance's outbound worker, and with it off the server
+  identity's fence, for example by delivering them from the receipt record's
+  own work rows, or raise that worker's throughput. For the maintainer.
+- Two cheap economies of the receipt record, not taken: the runtime refusal
+  hook lists a head's confirmations it does not use (a head-only read would
+  make a client's ACK 7 round trips instead of 8), and a completed receipt's
+  deadline row stays until its deadline, when the worker claims it for one
+  `end` that answers `conflict` (expiring the deadline slot in `end`'s commit
+  would save that claim, at the cost of a work-slot read in every `end`).
 - A stall longer than half an ACK window on a server publication's receipt
   (D778): when the receipt record's end and its ended work together take
   longer (a stalled instance; a survivor that learns of the row only at its

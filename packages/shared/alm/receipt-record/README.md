@@ -186,7 +186,7 @@ publication against the server's pending row, which an ended message's kept row 
 so a drop at the first dequeue, which precedes the row, writes nothing.
 
 An admission does not open a receipt whose largest terminal receipt (a `timed-out` naming every expected recipient
-outside) the receipt control could not encode: `receipt-not-encodable`, one warning, no record and no receipt. With
+outside) the receipt control could not encode: `receipt-not-encodable`, a warning, no record and no receipt. With
 recipient ids of 128 characters, 249 recipients open and 250 do not. The check is one encode, under 1 % of an
 admission. The record's own `malformed-opening` is the backstop.
 
@@ -213,10 +213,14 @@ Round trips count BEGIN and COMMIT; none of the ACK's statements is serialized a
   work row read, both written in one transaction, the view's confirmations read) and the worker's one claim (3). The
   worker's first batch of each 10 s lease adds its two lease sweeps, each in its own transaction (6); the test pins
   that first batch, 17 in all, and `al-work-queue-port.test.ts` pins one sweep of each kind per lease.
-- The server's version row moves once per publication from the settled dequeue to the end, for 10 sessions and for
-  50: the terminal receipt's admission into the server's row (twice with the dequeue's own commit).
+- The publication's own version row moves once from the settled dequeue to the end, for 10 sessions and for 50: the
+  terminal receipt's admission into the server's row. The server's sender version does not move.
 - A receipt's own enqueue is 9 sequential round trips on the one version row every instance and every receipt shares,
-  and `acceptServerReceipt` fences on the origin's row, up to 13 round trips a try.
+  and `acceptServerReceipt` fences on the message's version row (on the origin's too only for an `admitted` receipt
+  of a tracked message), up to 13 round trips a try. The 9 and the 13 were measured before that fence moved and are
+  not re-measured.
+- A completed receipt's deadline row stays: `end` writes the ended work and leaves the deadline row, so the worker
+  claims it at the deadline for one `end` that answers `conflict`, and one head read that finds the head ended.
 
 ## Measured
 
@@ -230,29 +234,40 @@ Real PostgreSQL, three instances, each client delaying every statement, BEGIN an
 - **Through the WS server, one publisher keeps up**: the same 40 messages from one client session among 15 on three
   instances, about 31 ms at +0 ms and about 450 ms at +5 ms, with no trend across the run. **Five publishers keep up
   at +0 ms** (200 messages, 140 ACKs a second, about 23 ms).
-- **Five publishers at +5 ms backlog** (stated limit below). Each run counted all 2 800 ACKs, no ACK was refused,
-  and each message reached its publisher as one terminal receipt.
+- **Five publishers at +5 ms backlog** (stated limit below). Each run counted all its ACKs (2 800 in 20 s of sends,
+  6 300 in 45 s) and refused none; every message of the 20 s runs reached its publisher as one terminal receipt, and
+  no message read two or read `timed-out`.
 
 ## Stated limits
 
-- **A burst of receipts on each instance's one outbound worker.** With five publishers at 2 Hz and +5 ms per round
-  trip the receipts backlog after their enqueue: the last ten messages read `complete` 4.0 to 6.3 times later than
-  the first ten (p50 7 168 to 10 650 ms against 1 699 to 1 795 ms), and 116 to 118 of 200 terminal receipts were
-  still unread when the sends stopped. The count keeps up (70 to 73 ms from the last ACK to a complete count), and
-  so do the enqueue attempts (about 205 ms from the send). The cause is measured: each instance's one outbound worker
-  runs one batch at a time, its claims one after another except that a batch's dequeued rows are admitted together;
-  it was busy throughout (19 to 24 batches of 0.79 to 0.96 s each, back to back, nearly all full pages of 16), and it
-  completed 13 to 17 rows a second while the sends ran and 11 to 17 after they stopped. The pool is ruled out: a
-  transaction waited 0.6 ms from its `begin` to its callback (the median; at most 1.2 ms). So is the fence as a
-  cause: 75 to 80 % of the receipt enqueues conflict on the server's outbound version row, but 85 to 88 % of their
-  replays commit at their first attempt; the fence only adds a replay claim to the same worker, and a receipt that
-  did not conflict waits in it too. Every receipt stays exact and arrives before its 30 s deadline, the slowest
-  23 765 ms after its last ACK; sends kept up for longer would, derived and not run, end messages `timed-out`. The
-  worker is not the server identity's: the room messages, under their publishers' identities, share it, and their
-  p95 from the send to the last ACK offered, 6.2 to 6.9 s, is not yet attributed to it. The lever is to take the
-  receipts' delivery off each instance's outbound worker, and with it off the server identity's fence, for example
-  by delivering them from the record's own work rows, or to raise that worker's throughput. Neither brings the lag to
-  the record alone's 60 ms: the `end` and its ended work (170 to 420 ms) stay.
+- **A burst of receipts on each instance's one outbound worker.** Measured at `a4b87879a`, after the per-message
+  fence (D703), with five publishers at 2 Hz and +5 ms per round trip; `main` was not run in this cell. In three runs
+  of 20 s of sends the receipts backlog after their enqueue: the last ten messages read `complete` 7.4 to 11.3 times
+  later than the first ten (p50 24 157 to 24 741 ms against 2 137 to 3 344 ms), 172 to 176 of 200 terminal receipts
+  were still unread when the sends stopped, and only 112 to 128 of 200 `complete` reached their publisher by the
+  message's 30 s deadline. The count keeps up (69 to 72 ms from the last ACK to a complete count). The cause is
+  measured: each instance's one outbound worker runs one batch at a time, its claims one after another except that a
+  batch's dequeued rows are admitted together; it was busy throughout (12 to 14 batches of 1.18 to 1.37 s each,
+  back to back, nearly all full pages of 16), and it completed 7.1 to 10.1 rows a second while the sends ran and 6.7
+  to 9.5 after they stopped. The pool is ruled out: a transaction waited 0.6 to 0.7 ms from its `begin` to its
+  callback (the median). Against the first measurement, at `396a38cae` before the per-message fence, the same work
+  runs about 38 % more statements (about 69 300 a run against 50 400) and 28 % more transactions, and each commit
+  takes about twice as long (an enqueue 68 to 117 ms against 42 to 52, a dequeue 87 to 167 against 39 to 62), so the
+  worker completes about half the rows it did (13 to 17) and the last ten's lag more than doubled (7 168 to 10 650
+  ms). Fewer receipt enqueues conflict (58 to 62 % against 75 to 80 %, since an origin's ACK no longer moves the
+  server's version row), but only 52 to 55 % of their replays commit at their first attempt (85 to 88 % before).
+  The same cell with the receipt code of `52b914758`, before the last corrections to it, reads alike (two runs:
+  the last ten at 19 868 and 22 633 ms, about 68 500 statements). One run of 45 s of sends, so that the deadline rows
+  of completed receipts come due inside it: the drain after the sends stopped completed 6.8 to 7.7 rows a second
+  against 6.7 to 9.5 after the shorter runs, no clear change, but the backlog kept growing: 76 of 450 `complete`
+  reached their publisher by the deadline, 192 read none 15 s after the last deadline, and one receipt row expired
+  undelivered. No message read `timed-out` or two terminal receipts: the record stays exact, and its terminal
+  receipts arrive late, or past the origin's deadline plus grace not at all. The worker is not the server identity's:
+  the room messages, under their publishers' identities, share it (their p95 from the send to the last ACK offered,
+  2.1 to 2.4 s, against 6.2 to 6.9 s at `396a38cae`). The lever is to take the receipts' delivery off each instance's
+  outbound worker, and with it off the server identity's fence, for example by delivering them from the record's own
+  work rows, or to raise that worker's throughput. Neither brings the lag to the record alone's 60 ms: the `end` and
+  its ended work (170 to 420 ms) stay.
 - **A stall longer than half an ACK window, for a server publication.** When the record's end and its ended work
   together take longer than half a window (a stalled instance; a survivor that learns of the row only at its next
   readiness read, up to 3 s), the row's budget ends first and the process-local admin read says `receipt-exhausted`
@@ -262,13 +277,15 @@ Real PostgreSQL, three instances, each client delaying every statement, BEGIN an
 - **More than 256 recipients.** A send to more than 256 recipients is admitted and gets no receipt. A server
   publication whose opening the record or the codec refuses keeps the per-ACK fenced count in its row; the server's
   own `not-sent` for it writes nothing, so a recipient the server skipped stays expected in the row and keeps it open
-  until its budget ends, and the publication reads `receipt-exhausted`.
+  until its budget ends, and the publication reads `receipt-exhausted`. Its "was not opened" warning is written at
+  the dequeue and again at each of the row's windows, since each tries the opening anew.
 - **A receipt the control cannot carry** opens nothing (`receipt-not-encodable`, above), and a re-sent copy of it opens
   nothing either.
 - **Stray confirmation rows.** A room member outside a send's frozen audience (a unicast's addressee, a broadcast's
   except or recipient list) can write one confirmation row per message, since an ACK that finds no head is proven
-  against the raw audience admission ran under. The tally ignores it, since it counts only the expected set, and it
-  expires with the window plus one grace.
+  against the raw audience admission ran under. An ACK that arrives after its head expired is proven by the admission
+  row while that row lives, and writes one row no head reads. Neither is tallied: the tally counts only an open
+  head's expected set. Each expires with the window plus one grace.
 - **One server name per cluster**, since the namespace derives from it.
 - **A burst of terminal receipts.** At +5 ms one instance delivers about 8 terminal receipts a second, and the ended
   work row of a `timed-out` end lives one grace (30 s): a burst above about 240 terminal receipts on one instance
@@ -282,7 +299,9 @@ Real PostgreSQL, three instances, each client delaying every statement, BEGIN an
   by a window: its ACKs are counted ahead and never read, and its row reads `receipt-exhausted`. The dequeue's own
   retry usually opens it. The same holds from the window on which the row exhausts, since only a window that still
   retries reaches the hook. A lost `end` that no window reaches waits for the deadline worker, and a failed dequeue
-  attempt re-sends every copy, bounded by the outbound work's 20 attempts.
+  attempt re-sends every copy, bounded by the outbound work's 20 attempts. Such a publication also has only half its
+  ACK timeout to be confirmed: with `maxAttempts` 0 its head's deadline is `deadlineAtMs - floor(timeoutMs / 2)`. No
+  production publisher of the server asks for no retry.
 - **A re-sent copy** opens nothing for a message that names no deadline, one whose deadline lies beyond the window,
   one as old as the window by its own stamp, an admission row frozen to nobody, or a copy with no admission row. For a
   kept send whose replay left nobody to expect, the copy opens nothing and is answered nothing; this is reached only
