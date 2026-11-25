@@ -85,7 +85,6 @@ interface GroupFormationLifecycleRun {
 
 interface ReconnectFormationAgentInput {
     readonly control: LiveRtcControlPort;
-    readonly nativeAcquisition?: RtcNativeAcquisition;
     readonly runId: string;
     readonly reconnectingAgent: LiveRtcControlClient.FormationAgent;
     readonly survivingAgents: readonly [
@@ -342,7 +341,6 @@ async function reconnectFormationAgent(
     const startedAtMs = performance.now();
     const connection = await connectFormationAgent(config, {
         control: input.control,
-        nativeAcquisition: input.nativeAcquisition,
         runId: input.runId,
         agent: input.reconnectingAgent,
         transport: input.transport,
