@@ -6,12 +6,17 @@ import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fi
 import { townGroupPresence } from '../../../apps/grumpy-town/src/online/town-server.ts';
 import { canIssueGroupPresenceLease } from '@shared-web/browser/session/group-presence-policy.ts';
 
+it('can complete a renewal spanning three WAN operations before its whole-attempt deadline', () => {
+    const threeObservedRoundTripsMs = 3 * 591;
+    expect(townGroupPresence.requestTimeoutMs).toBeGreaterThan(threeObservedRoundTripsMs);
+});
+
 it('keeps room renewals eligible when a clock sample spans the observed 3.2-second server stall', () => {
     expect(canIssueGroupPresenceLease(townGroupPresence, 3_200)).toBe(true);
     expect(canIssueGroupPresenceLease(townGroupPresence, townGroupPresence.leaseMs)).toBe(false);
 });
 
-it('lets a survivor claim a silent host inside the 11.5-second recovery budget, with time left to resume', () => {
+it('lets a survivor claim a silent host inside the 14.5-second recovery budget, with time left to resume', () => {
     let room = createGroupSnapshotFixture({ applicationId: 'grumpy-town', workspaceId: 'test', groupId: 'market', sessionIds: ['owner', 'friend'] });
     room = { ...room, activeSessions: room.activeSessions.map(session => ({
         ...session, expiresAtEpochMs: session.sessionId === 'owner' ? townGroupPresence.leaseMs : 30_000
@@ -22,7 +27,7 @@ it('lets a survivor claim a silent host inside the 11.5-second recovery budget, 
         if (!('metadata' in result)) throw new Error(result.message);
         room = { ...room, group: { ...room.group, metadata: result.metadata } };
     }
-    const now = 8_500;
+    const now = 11_500;
     const friend = { principalId: 'friend', sessionId: 'friend', role: 'member' as const };
     expect(townHostCommand(room.group.metadata, friend, deadline => deadline <= 3_200 ? 'at-or-after' : 'before')).toBeUndefined();
     const claim = townHostCommand(room.group.metadata, friend, deadline => deadline <= now ? 'at-or-after' : 'before');

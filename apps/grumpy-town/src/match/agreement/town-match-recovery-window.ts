@@ -2,7 +2,8 @@ import type { TownMatchState } from '../town-match.ts';
 import type { TownCheckpoint } from './match-checkpoints.ts';
 
 const STALLED_COMMIT_MS = 1500;
-const INTERRUPT_AFTER_MS = 10000;
+// Allow the silent director’s room lease and reconnect reservation to expire, then give survivors time to agree.
+const INTERRUPT_AFTER_MS = 13_000;
 
 export namespace TownMatchRecoveryWindow {
     export interface Observation {

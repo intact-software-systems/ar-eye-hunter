@@ -642,8 +642,8 @@ return test does not establish that transition; retain it in reliability qualifi
 
 ### Silent host loss and opt-in room presence
 
-Grumpy Town grants room presence for eight seconds. Browsers renew every second, allow
-one second for the whole attempt and retry after 250 ms. Under Rallar’s
+Grumpy Town grants room presence for eleven seconds. Browsers renew every second, allow
+two seconds for the whole attempt and retry after 250 ms. Under Rallar’s
 safe-renewal check this allows a server-clock uncertainty window under 3.75
 seconds. In the iPhone guest trial, the short-lease configuration allowed only
 500 ms and the server recorded an event-loop stall of 3.2 seconds. The first
@@ -651,9 +651,9 @@ ordinary host message refusal followed its last room heartbeat request by about
 eight seconds.
 
 The organizer configures a 500 ms host reconnect reservation before its first
-appointment. A silent loss leaves room for a surviving player to claim at 8.5
+appointment. A silent loss leaves room for a surviving player to claim at 11.5
 seconds after the last lease began. The game’s existing three-browser trial
-allows 11.5 seconds for takeover and resumed play. Its silent-partition fixture drops
+allows 14.5 seconds for takeover and resumed play. Its silent-partition fixture drops
 all HTTP and gameplay frames while forwarding connection-local clock samples.
 A total outage through clock expiry retires the transport and selected room.
 Grumpy Town opens a fresh clocked connection when visible and asks Rallar to

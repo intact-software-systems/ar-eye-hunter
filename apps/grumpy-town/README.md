@@ -72,6 +72,20 @@ portrait and scaled by aspect in landscape. The default width is 13. The walkabl
 units with six interactive shops, five street objects, fountain/cart, six
 creatures, eight additional residents, civic/shop/house facades and street furniture; the camera follows through the streets.
 
+## Production deployment
+
+[Play Grumpy Town](https://grumpy-town.intact-software-systems.workers.dev). Cloudflare serves the static app and handles navigation to `/guest`. The standard Rallar API on Hetzner handles sign-in, guest invitations, presence and signaling. A player hosts each match.
+
+From the repository root, build for the public API and deploy the assets using the Cloudflare CLI.
+
+```sh
+cd apps/grumpy-town
+VITE_RALLAR_API_BASE_URL=https://api.rallar.intactss.com npm run build
+cf deploy ./dist
+```
+
+Verify a release by opening an invitation in a separate browser session, readying both players, and confirming each sees the other move after the host starts the round.
+
 ## Optional online lobby
 
 The Rallar application ID is `grumpy-town`. When switching from the prototype build, reload all devices and create a fresh town and invitation.
