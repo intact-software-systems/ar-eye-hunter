@@ -532,7 +532,16 @@ jobs:
         run: npm run test:api-v1:black-box:postgres:room-deadlines
 
       - name: Verify seat claim timing and expiry worker recovery on one host
-        run: npm run test:api-v1:black-box:postgres:seat-deadline
+        id: seat_deadline
+        run: npm run test:api-v1:black-box:postgres:seat-deadline -- --artifact-dir=../../.artifacts/api-v1-black-box/seat-deadline --run-id=${{ github.run_id }}-${{ github.run_attempt }}-seat-deadline
+
+      - name: Upload seat deadline proof artifacts
+        if: ${{ !cancelled() && steps.seat_deadline.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: api-v1-seat-deadline-${{ github.sha }}
+          path: .artifacts/api-v1-black-box/seat-deadline
+          if-no-files-found: error
 
       - name: Verify concurrent lobby commitments and overdue seat recovery
         run: npm run test:api-v1:black-box:postgres:room-lobbies
