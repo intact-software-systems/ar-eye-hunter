@@ -15,9 +15,8 @@ import {
     type ALOutboundMessageReadDto
 } from './admission/al-outbound-admission-store.ts';
 import { toALOutboundSentPolicy } from './admission/al-outbound-admission-validation.ts';
-import { isALOutboundReadSignedHeldRow } from './admission/is-al-outbound-read-signed-held-row.ts';
 import { toALOutboundRecordedSentPositions } from './admission/to-al-outbound-recorded-sent-positions.ts';
-import { toALOutboundMessageReference } from './al-outbound-canonical-message.ts';
+import { isALOutboundReadSignedHeldRow, toALOutboundMessageReference } from './al-outbound-canonical-message.ts';
 import type {
     ALOutboundDispatchPhase,
     ALOutboundDispatchPlan,
@@ -370,10 +369,11 @@ function toDuplicateDispatchResult<TPrepared>(
         ),
         trackedReceiptAlgo: toALOutboundTrackedReceiptAlgo(read.storedMessage?.policy.ackTracking)
     };
-    if (entry === undefined || !isALOutboundReadSignedHeldRow(read)) {
+    if (!isALOutboundReadSignedHeldRow(read)) {
         return duplicate;
     }
-    const canonicalEntry = toChangedALMessageRow(entry, { status: EntityStatus.NEW });
+    // The read holds the row it signed, so the entry already carries that row's key.
+    const canonicalEntry = toChangedALMessageRow(input.outboxEntry, { status: EntityStatus.NEW });
     return {
         ...duplicate,
         entries: [canonicalEntry],
