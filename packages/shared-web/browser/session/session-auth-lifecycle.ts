@@ -42,8 +42,8 @@ import { createDefaultTimers, type Timers } from '@shared/resilience/timers.ts';
 import { scheduleAtDeadline } from '@shared/resilience/timing/schedule-at-deadline.ts';
 import { resolveRtcCaptureConfiguration } from '@shared/webrtc/rtc-capture-configuration.ts';
 
-import { observeFinishingGuest } from './observe-finishing-guest.ts';
 import { deleteEndedSessionALRuntimeEntries } from './delete-ended-session-al-runtime-entries.ts';
+import { FinishingGuestObserver } from './finishing-guest-observer.ts';
 import type { RallarSessionConnectionLifecycle } from './session-connection-lifecycle.ts';
 
 export interface RallarAuthSessionEndOptions {
@@ -93,7 +93,7 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
     private readonly input: BrowserSessionAuthLifecycle.Input;
     private readonly timers: Timers;
     private loginGeneration = 0;
-    private guestExpiry?: ReturnType<typeof observeFinishingGuest>;
+    private guestExpiry?: FinishingGuestObserver;
 
     public constructor(input: BrowserSessionAuthLifecycle.Input) {
         this.input = input;
@@ -261,7 +261,9 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
             }
             seen.add(cause);
             const next = cause.cause;
-            if (!(next instanceof Error)) return;
+            if (!(next instanceof Error)) {
+                return;
+            }
             cause = next;
         }
     }
@@ -323,8 +325,10 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
     /** Without a calibrated connection clock the server judges the session on its next request. */
     private scheduleAuthExpiry(session: AuthSession | undefined): void {
         this.input.authRuntime.clearAuthExpiryTimer();
-        if (this.guestExpiry && (!session || this.guestExpiry.sessionKey !== toAuthSessionKey(session) ||
-            this.guestExpiry.connection !== this.input.transportRuntime.readConnection())) {
+        if (
+            this.guestExpiry && (!session || this.guestExpiry.sessionKey !== toAuthSessionKey(session) ||
+                this.guestExpiry.connection !== this.input.transportRuntime.readConnection())
+        ) {
             this.guestExpiry.stop();
             this.guestExpiry = undefined;
         }
@@ -357,9 +361,14 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         }
         if (currentSession?.guestRoom && serverNowEpochMs !== undefined) {
             const connection = this.input.transportRuntime.readConnection();
-            if (!connection) return;
-            const grant = this.guestExpiry ??= observeFinishingGuest({
-                session: currentSession, room: currentSession.guestRoom, now: serverNowEpochMs, connection,
+            if (!connection) {
+                return;
+            }
+            const grant = this.guestExpiry ??= new FinishingGuestObserver({
+                session: currentSession,
+                room: currentSession.guestRoom,
+                now: serverNowEpochMs,
+                connection,
                 changed: () => this.scheduleAuthExpiry(readSession())
             });
             try {
@@ -368,13 +377,21 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
             catch (error) {
                 // A transport failure cannot revoke the credential. Reconnect must verify again.
                 const stored = readSession();
-                if (this.guestExpiry === grant && !connection.serverClock.signal.aborted && stored && toAuthSessionKey(stored) === grant.sessionKey) {
+                if (
+                    this.guestExpiry === grant && !connection.serverClock.signal.aborted && stored &&
+                    toAuthSessionKey(stored) === grant.sessionKey
+                ) {
                     await this.disconnect();
                 }
                 throw error;
             }
             const stored = readSession();
-            if (this.guestExpiry !== grant || connection.serverClock.signal.aborted || !stored || toAuthSessionKey(stored) !== grant.sessionKey) return;
+            if (
+                this.guestExpiry !== grant || connection.serverClock.signal.aborted || !stored ||
+                toAuthSessionKey(stored) !== grant.sessionKey
+            ) {
+                return;
+            }
             const now = this.readServerExpiryEpochMs();
             if (now === undefined || grant.deadline > now) {
                 this.scheduleAuthExpiry(currentSession);
