@@ -9,10 +9,7 @@ import {
     LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS,
     LIVE_RTC_RETENTION_SOAK_TEST_TIMEOUT_MS
 } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-matrix-test-timeouts.ts';
-import {
-    LIVE_RTC_ALL_SCENARIOS_NATIVE_ACQUISITION_BOUNDED_WAITS_MS,
-    LIVE_RTC_PROOF_NATIVE_ACQUISITION_BOUNDED_WAITS_MS
-} from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-recorder-read-waits.ts';
+import { LIVE_RTC_MATRIX_NATIVE_ACQUISITION_BOUNDED_WAITS_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-recorder-read-waits.ts';
 import { projectDistributedRecipeCatalog } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
 import type {
     RallarBlackBoxDistributedGroupRef,
@@ -167,12 +164,12 @@ function readDiagnosticLegTimeoutMs(caseId: string): number {
  * and the every-scenario test add to their timeouts; the soak's cap already bounds its own.
  */
 function computeDiagnosticLegTestsMs(caseId: string): number {
-    const proofMs = LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS + LIVE_RTC_PROOF_NATIVE_ACQUISITION_BOUNDED_WAITS_MS;
+    const proofMs = LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS + LIVE_RTC_MATRIX_NATIVE_ACQUISITION_BOUNDED_WAITS_MS;
     if (caseId === 'default') {
         return proofMs;
     }
     return proofMs + toRtcB06AttemptTestTimeoutMs(caseId) +
-        (caseId === 'all-scenarios' ? LIVE_RTC_ALL_SCENARIOS_NATIVE_ACQUISITION_BOUNDED_WAITS_MS : 0);
+        (caseId === 'all-scenarios' ? LIVE_RTC_MATRIX_NATIVE_ACQUISITION_BOUNDED_WAITS_MS : 0);
 }
 
 /** The catalog declares each B06 case once per environment. */

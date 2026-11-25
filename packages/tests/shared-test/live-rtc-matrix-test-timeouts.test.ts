@@ -13,6 +13,7 @@ import {
     LIVE_RTC_RETENTION_SOAK_TEST_TIMEOUT_MS,
     RETENTION_RECONNECT_CYCLES
 } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-matrix-test-timeouts.ts';
+import { LIVE_RTC_MATRIX_NATIVE_ACQUISITION_BOUNDED_WAITS_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-recorder-read-waits.ts';
 
 const MARGIN = 60_000;
 /** A command that names no budget of its own is polled for its result for 45 s. */
@@ -81,6 +82,11 @@ describe('live RTC three-browser matrix test timeouts', () => {
 
     it('adds the cluster exchange\'s three readiness waits and six direct deliveries under a cluster API', () => {
         expect(CLUSTER_DIRECT_EXCHANGE_BOUNDED_WAITS_MS).toBe(3 * 60_000 + 6 * DELIVERY);
+    });
+
+    // The every-scenario count also read an acquisition for C's reconnect, which requests none.
+    it('reads one acquisition for each connect of the two formation runs under Native capture', () => {
+        expect(LIVE_RTC_MATRIX_NATIVE_ACQUISITION_BOUNDED_WAITS_MS).toBe(2 * 3 * 30_000);
     });
 
     it('gives every-scenario run its trios, permutations, opens, closes, probes, reconnect, direct message and cleanup', () => {

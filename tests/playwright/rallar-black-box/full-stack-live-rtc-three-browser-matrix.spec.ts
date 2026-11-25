@@ -20,10 +20,7 @@ import {
     RETENTION_CHECKPOINT_INTERVAL_CYCLES,
     RETENTION_RECONNECT_CYCLES
 } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-matrix-test-timeouts.ts';
-import {
-    LIVE_RTC_ALL_SCENARIOS_NATIVE_ACQUISITION_BOUNDED_WAITS_MS,
-    LIVE_RTC_PROOF_NATIVE_ACQUISITION_BOUNDED_WAITS_MS
-} from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-recorder-read-waits.ts';
+import { LIVE_RTC_MATRIX_NATIVE_ACQUISITION_BOUNDED_WAITS_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-recorder-read-waits.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import { LiveRtcFormationFailure } from './create-group-formation-lifecycle-driver.ts';
@@ -437,7 +434,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
         const diagnostics: LiveRtcDiagnosticsCheckpoint[] = [];
         const nativeAcquisition = rtcCaptureMode === 'native' && evidenceContext === null ? control : undefined;
         if (nativeAcquisition) {
-            test.setTimeout(testInfo.timeout + LIVE_RTC_PROOF_NATIVE_ACQUISITION_BOUNDED_WAITS_MS);
+            test.setTimeout(testInfo.timeout + LIVE_RTC_MATRIX_NATIVE_ACQUISITION_BOUNDED_WAITS_MS);
         }
         const failureDiagnostics: LiveRtcNackFailureDiagnostic[] = [];
         const rtcConnectCaptures: RtcNativeCapturedConnection[] = [];
@@ -735,7 +732,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
         const diagnostics: LiveRtcDiagnosticsCheckpoint[] = [];
         const nativeAcquisition = rtcCaptureMode === 'native' && evidenceContext === null ? control : undefined;
         if (nativeAcquisition) {
-            test.setTimeout(testInfo.timeout + LIVE_RTC_ALL_SCENARIOS_NATIVE_ACQUISITION_BOUNDED_WAITS_MS);
+            test.setTimeout(testInfo.timeout + LIVE_RTC_MATRIX_NATIVE_ACQUISITION_BOUNDED_WAITS_MS);
         }
         const failureDiagnostics: LiveRtcNackFailureDiagnostic[] = [];
         const rtcConnectCaptures: RtcNativeCapturedConnection[] = [];
@@ -909,9 +906,6 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             commandIds.push(reconnectC.commandId);
             if (reconnectC.rtcCapture) {
                 rtcConnectCaptures.push(reconnectC.rtcCapture);
-            }
-            if (reconnectC.nativeAcquisition) {
-                nativeAcquisitions.push(reconnectC.nativeAcquisition);
             }
             timings.push({
                 kind: 'reconnect-ready',
@@ -1252,9 +1246,6 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                         commandIds.push(reconnected.commandId);
                         if (reconnected.rtcCapture) {
                             rtcConnectCaptures.push(reconnected.rtcCapture);
-                        }
-                        if (reconnected.nativeAcquisition) {
-                            nativeAcquisitions.push(reconnected.nativeAcquisition);
                         }
                         timings.push({
                             kind: 'reconnect-ready',
