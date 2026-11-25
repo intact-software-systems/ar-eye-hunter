@@ -84,10 +84,13 @@ export function decodeALReceiptPayload(value: unknown): ALReceiptPayload {
  * origin or a recipient).
  */
 export function decodeALReceiptIdentifier(value: unknown, label: string, identity: 'message-id' | 'peer-id'): string {
-    return identity === 'message-id'
-        ? decodeControlIdentifier(value, label, AL_MESSAGE_RESOURCE_LIMITS.payloadBytes)
-        : decodeControlIdentifier(value, label);
+    return decodeControlIdentifier(value, label, AL_RECEIPT_IDENTIFIER_MAXIMUM_CHARACTERS[identity]);
 }
+
+const AL_RECEIPT_IDENTIFIER_MAXIMUM_CHARACTERS = {
+    'message-id': AL_MESSAGE_RESOURCE_LIMITS.payloadBytes,
+    'peer-id': AL_MESSAGE_RESOURCE_LIMITS.routeIdCharacters
+} as const;
 
 export function decodeALNackPayload(value: unknown): ALNackPayload {
     const record = decodeControlRecord(
