@@ -54,7 +54,7 @@ export class TownMatchRecoveryWindow {
             ? { at: now, epoch: checkpoint.epoch, matchId: state.matchId }
             : undefined;
         const observing = checkpoint.state.seats.some((seat) => seat.id === localId && seat.status === 'observer');
-        if (observing || (this.interruptedMatch && checkpoint.epoch > this.interruptedMatch.epoch && !isDirector)) {
+        if (state.phase === 'finished' || observing || (this.interruptedMatch && checkpoint.epoch > this.interruptedMatch.epoch && !isDirector)) {
             this.interruptedMatch = undefined;
             this.recoveryStartedAt = undefined;
         }

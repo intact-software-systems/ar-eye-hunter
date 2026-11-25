@@ -205,12 +205,14 @@ export class TownMatchCheckpoints {
         this.pending = undefined;
     }
 
+    get acknowledgedByAll(): boolean {
+        const pending = this.pending;
+        return !!pending && this.authority.members.every(member => pending.acknowledgements.includes(member.sessionId));
+    }
+
     private commitAcknowledged(): boolean {
         const pending = this.pending;
-        if (
-            !pending?.commitReceived ||
-            !this.authority.members.every((member) => pending.acknowledgements.includes(member.sessionId))
-        ) {
+        if (!pending?.commitReceived || !this.acknowledgedByAll) {
             return false;
         }
         this.committed = pending.checkpoint;

@@ -21,3 +21,16 @@ it('starts the active checkpoint deadline at countdown after players wait in a r
     recovery.expire(countdown.matchId, 42500);
     expect(recovery.status({ ...current, now: 42500 }).interruption).toContain('recovery could not be confirmed');
 });
+
+it('shows the agreed final scores when the final commit arrives after the local recovery timeout', () => {
+    const lobby = createTownMatch('round', [{ id: 'bob', sessionId: 'bob-session', displayName: 'Bob' }]).right!;
+    const match = { ...lobby, phase: 'playing' as const };
+    const recovery = new TownMatchRecoveryWindow();
+    const state = { match, available: true, authorityAligned: true, recoveryRequired: false };
+    recovery.confirm({ epoch: 1, sequence: 1, digest: 'a'.repeat(64), state: match }, 0, 'bob', false);
+    recovery.expire(match.matchId, 12000);
+    expect(recovery.status({ ...state, now: 12000 }).interruption).toBeDefined();
+    const finished = { ...match, phase: 'finished' as const };
+    recovery.confirm({ epoch: 1, sequence: 2, digest: 'b'.repeat(64), state: finished }, 12001, 'bob', false);
+    expect(recovery.status({ ...state, match: finished, now: 12001 }).interruption).toBeUndefined();
+});

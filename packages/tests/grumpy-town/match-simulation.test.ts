@@ -78,6 +78,29 @@ describe('director clock and control admission', () => {
         simulation.stop();
     });
 
+    it('advances at round time when confirmations arrive on delayed host pumps', () => {
+        const simulation = createCountdown();
+        for (let now = 251; now <= 6001; now += 250) {
+            simulation.advance(now, simulation.getState(), seatDeadlineClock(now));
+        }
+        expect(simulation.getState().tick).toBe(90);
+        simulation.stop();
+    });
+
+    it('limits a long wake even without a checkpoint and keeps the two-second agreement lead', () => {
+        const countdown = createCountdown().getState();
+        const simulation = new TownMatchSimulation({ ...countdown, phase: 'playing', countdownTicks: 0 }, 0);
+        const start = simulation.getState();
+        simulation.advance(1950, start, seatDeadlineClock(1950));
+        simulation.advance(60000, start, seatDeadlineClock(60000));
+        expect(simulation.getState().tick).toBe(60);
+        simulation.advance(60001, undefined, seatDeadlineClock(60001));
+        expect(simulation.getState().tick).toBe(60);
+        simulation.advance(120000, undefined, seatDeadlineClock(120000));
+        expect(simulation.getState().tick).toBe(120);
+        simulation.stop();
+    });
+
     it('caps unconfirmed progress and expires movement even if a duplicate input is redelivered', () => {
         const countdown = createCountdown().getState();
         const simulation = new TownMatchSimulation({ ...countdown, phase: 'playing', countdownTicks: 0 }, 0);

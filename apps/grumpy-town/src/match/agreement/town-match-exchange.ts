@@ -117,7 +117,8 @@ export class TownMatchExchange {
         const lastProposal = this.round.lastProposal;
         if (lastProposal) {
             await this.frames.write(lastProposal);
-            await this.writeCheckpointAction('commit', lastProposal);
+            // A peer can see its own acknowledgement even when the director cannot hear it.
+            if (checkpoints.acknowledgedByAll) await this.writeCheckpointAction('commit', lastProposal);
         }
     }
 

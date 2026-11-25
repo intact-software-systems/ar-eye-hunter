@@ -32,11 +32,15 @@ export class TownMatchSimulation {
     advance(now: number, committed: TownMatchState | undefined, clock: TownMatchTick['clock']): void {
         const confirmedTime = committed ? committed.tick - committed.countdownTicks : 0;
         const unconfirmedTime = this.state.tick - this.state.countdownTicks;
-        if (committed && unconfirmedTime - confirmedTime >= TOWN_MATCH_RATE * 2) {
+        const maxAdvance = TOWN_MATCH_RATE * 2;
+        const budget = committed ? maxAdvance - (unconfirmedTime - confirmedTime) : maxAdvance;
+        if (budget <= 0) {
             this.lastTick = now;
             return;
         }
-        const ticks = Math.min(3, Math.floor((now - this.lastTick) * TOWN_MATCH_RATE / 1000));
+        // A delayed host pump still owes real elapsed ticks, up to the agreement lead.
+        const elapsedTicks = Math.floor((now - this.lastTick) * TOWN_MATCH_RATE / 1000);
+        const ticks = Math.min(maxAdvance, budget, elapsedTicks);
         for (let index = 0; index < ticks; index += 1) {
             this.state = computeTownMatchTick({
                 state: this.state,
@@ -46,7 +50,7 @@ export class TownMatchSimulation {
                 now
             });
         }
-        this.lastTick += ticks * 1000 / TOWN_MATCH_RATE;
+        this.lastTick = elapsedTicks > maxAdvance ? now : this.lastTick + ticks * 1000 / TOWN_MATCH_RATE;
     }
 
     /** The room session validates scope, appointment and authenticated sender before this entry. */

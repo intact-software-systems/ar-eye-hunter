@@ -186,9 +186,6 @@ export class TownMatchFrames {
         const committed = this.round.checkpoints?.getState().committed;
         const now = this.dependencies.timers.nowMs();
         const view = this.connection.getView();
-        if (view.recovering) {
-            this.round.recovery.expire(view.match?.matchId, now);
-        }
         if (committed) {
             this.connection.error = '';
             this.round.recovery.confirm(committed, now, view.localId, view.isDirector);
