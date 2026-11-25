@@ -77,7 +77,23 @@ describe('match checkpoint agreement', () => {
         expect(report).toEqual({ checkpoint: countdown, committed: true });
         host.recover('alice-session', countdown, true);
         expect(host.recover('bob-session', report!.checkpoint, report!.committed).right).toBe(true);
-        expect(host.propose(unconfirmed, 'alice-session').right).toBe(true);
+        // The host discarded the pending proposal during its roster change and must issue a fresh sequence.
+        const resumed = { ...countdown, sequence: 8, digest: 'c'.repeat(64), state: { ...countdown.state, countdownTicks: 49 } };
+        expect(host.propose(resumed, 'alice-session').right).toBe(true);
+        expect(guest.propose(resumed, 'alice-session').left).toBeDefined();
+        guest.recover('alice-session', countdown, false);
+        expect(guest.propose(resumed, 'alice-session').left).toBeDefined();
+        guest.recover('bob-session', countdown, true);
+        expect(guest.propose(resumed, 'alice-session').left).toBeDefined();
+        guest.recover('alice-session', countdown, true);
+        expect(guest.propose(resumed, 'alice-session').right).toBe(true);
+        for (const peer of [host, guest]) {
+            peer.acknowledge(resumed, 'alice-session');
+            peer.commit(resumed, 'alice-session');
+            expect(peer.getState().committed).toBe(countdown);
+            peer.acknowledge(resumed, 'bob-session');
+            expect(peer.getState().committed).toBe(resumed);
+        }
     });
 
     it('accepts current director progress after a socket interruption without confirming abandoned work', () => {

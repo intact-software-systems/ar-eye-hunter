@@ -1,4 +1,5 @@
 import { chromium, expect, test, type Page } from '@playwright/test';
+import { writeFile } from 'node:fs/promises';
 
 import { decodeMatchWire } from './match-browser.ts';
 import { installGrumpyTownRtcTrial } from './match-rtc-browser.ts';
@@ -237,10 +238,9 @@ test('the guest keeps the confirmed score when the owner closes the finished tow
                 visibility: document.visibilityState
             };
         }).catch(() => ({ pageUnavailable: true }))));
-        await test.info().attach('final-score-diagnostics', {
-            contentType: 'application/json',
-            body: JSON.stringify({ elapsedMs: roundStartedAt && Date.now() - roundStartedAt, host: players[0], guest: players[1] })
-        });
+        const path = test.info().outputPath('final-score-diagnostics.json');
+        await writeFile(path, JSON.stringify({ elapsedMs: roundStartedAt && Date.now() - roundStartedAt, host: players[0], guest: players[1] }));
+        await test.info().attach('final-score-diagnostics', { contentType: 'application/json', path });
         throw error;
     }
     finally {

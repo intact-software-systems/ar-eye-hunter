@@ -159,6 +159,14 @@ export class TownMatchCheckpoints {
     }
 
     recover(senderId: string, checkpoint: TownCheckpointIdentity, committed: boolean): Either<string, boolean> {
+        if (!this.recoveryRequired && this.pending && !this.pending.commitReceived && committed &&
+            senderId === this.authority.sessionId && senderId !== this.localSessionId &&
+            sameCheckpoint(this.committed, checkpoint)) {
+            // The director returned to our committed point after a roster change only it observed.
+            // Keep the old proposal until a newer one arrives; its replacement needs a fresh quorum.
+            this.resynchronizing = true;
+            return Either.ofRight(false);
+        }
         const candidate = [this.recoveryCheckpoint, ...this.retainedProposals].find((retained) =>
             sameCheckpoint(retained, checkpoint)
         );
