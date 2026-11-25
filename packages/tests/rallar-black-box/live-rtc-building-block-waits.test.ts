@@ -1,6 +1,4 @@
 import {
-    afterEach,
-    beforeEach,
     describe,
     expect,
     it,
@@ -45,7 +43,8 @@ import {
     createCountedPage,
     measureBoundedWaitsMs,
     settleUnderFakeTimers,
-    spendBoundedWait
+    spendBoundedWait,
+    useBoundedWaitClock
 } from './bounded-wait-clock-fixture.ts';
 import { RecordingLiveRtcControl } from './recording-live-rtc-control-fixture.ts';
 
@@ -66,13 +65,7 @@ const operations = createLiveRtcDeliveryOperations({
 
 const run = { runId: 'run', groupId: 'room', suffix: 'counted' };
 
-beforeEach(() => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance', 'Date'] });
-});
-
-afterEach(() => {
-    vi.useRealTimers();
-});
+useBoundedWaitClock();
 
 function createControl(): RecordingLiveRtcControl {
     return new RecordingLiveRtcControl(undefined, spendBoundedWait);

@@ -208,7 +208,7 @@ export interface LoginUserInput {
 }
 
 export interface EnqueueControlCommandInput {
-    readonly request: APIRequestContext;
+    readonly request: Pick<APIRequestContext, 'post'>;
     readonly runId: string;
     readonly agentId: string;
     readonly commandId: string;
@@ -613,7 +613,7 @@ export async function enqueueControlCommand(input: EnqueueControlCommandInput): 
 }
 
 export async function readControlRun(
-    request: APIRequestContext,
+    request: Pick<APIRequestContext, 'get'>,
     runId: string
 ): Promise<ControlRunSnapshot> {
     const response = await readControlGetResponse(async () =>

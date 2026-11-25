@@ -107,7 +107,10 @@ export function resolveDirectorCommandResultPollTimeoutMs(
 }
 
 /** The control run as the scenario reads it over HTTP. */
-export function createDirectorControl(request: APIRequestContext, runId: string): DirectorOrchestration.Control {
+export function createDirectorControl(
+    request: Pick<APIRequestContext, 'get' | 'post'>,
+    runId: string
+): DirectorOrchestration.Control {
     return {
         executeResult: async (input) => {
             await enqueueControlCommand({ request, runId, ...input });
@@ -132,7 +135,7 @@ export async function runDirectorOrchestration(input: DirectorOrchestration.Inpu
 }
 
 async function waitForCommandResult(
-    request: APIRequestContext,
+    request: Pick<APIRequestContext, 'get'>,
     runId: string,
     input: DirectorOrchestration.CommandInput
 ): Promise<ControlResultEnvelope> {
@@ -149,7 +152,7 @@ async function waitForCommandResult(
 }
 
 async function waitForDirectorEvent(
-    request: APIRequestContext,
+    request: Pick<APIRequestContext, 'get'>,
     runId: string,
     input: DirectorOrchestration.EventExpectation
 ): Promise<void> {

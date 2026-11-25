@@ -1,6 +1,8 @@
 import type * as Playwright from '@playwright/test';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { vi } from 'vitest';
+import { afterEach, beforeEach, vi } from 'vitest';
+
+import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 /** The most fake timer turns a measured harness run may take before it is taken to hang. */
 const MEASURED_RUN_TURN_LIMIT = 10_000;
@@ -25,6 +27,22 @@ async function pollBoundedWait<T>(read: () => Promise<T> | T, timeoutMs: number)
     const value = await polling.run(true, async () => await read());
     await spendBoundedWait(timeoutMs);
     return value;
+}
+
+/**
+ * Runs every test of the calling file under fake timers for the clock a harness waits on. `vi.mock` is hoisted above
+ * a file's imports, so each file still names the counted `@playwright/test` module itself, through
+ * `toCountedPlaywrightModule`.
+ */
+export function useBoundedWaitClock(): void {
+    beforeEach(() => {
+        vi.useFakeTimers({
+            toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance', 'Date']
+        });
+    });
+    afterEach(() => {
+        vi.useRealTimers();
+    });
 }
 
 /** Runs a harness operation to its end under fake timers, advancing the fake clock through every wait it spends. */
@@ -152,4 +170,63 @@ export function createCountedPage(evaluate: () => PlaywrightArgument = () => und
         }
     });
     return page as Playwright.Page;
+}
+
+/** A command a counted control request context was sent. */
+export interface PostedControlCommand {
+    readonly agentId: string;
+    readonly commandId: string;
+    readonly command: RallarBlackBoxTestCommand;
+}
+
+/** The options a harness gives a control request; every request on a counted path names its timeout. */
+interface CountedRequestOptions {
+    readonly data?: Readonly<{ commandId: string; command: RallarBlackBoxTestCommand; }>;
+    readonly timeout?: number;
+}
+
+/**
+ * A response answering `body`. It stands for Playwright's whole `APIResponse`, of which the harnesses read only the
+ * status, the body and the disposal: the fixture's one typing seam for the request context.
+ */
+function toCountedResponse(status: number, body: object): Playwright.APIResponse {
+    const response: Pick<Playwright.APIResponse, 'status' | 'ok' | 'json' | 'text' | 'dispose'> = {
+        status: () => status,
+        ok: () => status < 300,
+        json: async () => body,
+        text: async () => JSON.stringify(body),
+        dispose: async () => undefined
+    };
+    return response as Playwright.APIResponse;
+}
+
+/** Spends a request's named timeout as a request outside any poll counts it; inside a counted poll it spends nothing. */
+async function spendRequestTimeout(options: CountedRequestOptions | undefined): Promise<void> {
+    if (options?.timeout === undefined) {
+        throw new Error('A counted control request names no timeout of its own.');
+    }
+    await spendBoundedWait(options.timeout);
+}
+
+/**
+ * A control request context whose every request spends its own named timeout, then answers: each posted command is
+ * accepted and recorded, and each read answers the run `readRun` makes of every command posted so far.
+ */
+export function createCountedControlRequest(
+    readRun: (posted: readonly PostedControlCommand[]) => object
+): Pick<Playwright.APIRequestContext, 'get' | 'post'> {
+    const posted: PostedControlCommand[] = [];
+    return {
+        get: async (_url: string, options?: CountedRequestOptions) => {
+            await spendRequestTimeout(options);
+            return toCountedResponse(200, readRun(posted));
+        },
+        post: async (url: string, options?: CountedRequestOptions) => {
+            await spendRequestTimeout(options);
+            if (options?.data !== undefined) {
+                posted.push({ agentId: decodeURIComponent(url.split('/').at(-2) ?? ''), ...options.data });
+            }
+            return toCountedResponse(202, {});
+        }
+    };
 }

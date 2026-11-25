@@ -1,7 +1,4 @@
-import type * as Playwright from '@playwright/test';
 import {
-    afterEach,
-    beforeEach,
     describe,
     expect,
     it,
@@ -10,7 +7,6 @@ import {
 
 import { computeCommandWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 import { RALLAR_BLACK_BOX_EXPECT_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/playwright-expect-timeouts.ts';
-import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 
 import type { BrowserRallarSmokeConfig } from '../../../tests/playwright/rallar-black-box/browser-rallar-smoke-config.ts';
@@ -29,22 +25,18 @@ import {
     TWO_AGENT_SEND_TIMEOUT_MS
 } from '../../../tests/playwright/rallar-black-box/two-agent-smoke-test-timeouts.ts';
 import {
+    createCountedControlRequest,
     createCountedPage,
     measureBoundedWaitsMs,
     settleUnderFakeTimers,
-    spendBoundedWait
+    useBoundedWaitClock,
+    type PostedControlCommand
 } from './bounded-wait-clock-fixture.ts';
 
 vi.mock('@playwright/test', async (importOriginal) => {
     const { toCountedPlaywrightModule } = await import('./bounded-wait-clock-fixture.ts');
     return toCountedPlaywrightModule(await importOriginal(), RALLAR_BLACK_BOX_EXPECT_TIMEOUT_MS);
 });
-
-interface PostedCommand {
-    readonly agentId: string;
-    readonly commandId: string;
-    readonly command: RallarBlackBoxTestCommand;
-}
 
 const config: BrowserRallarSmokeConfig = {
     apiBaseUrl: 'http://localhost:18080',
@@ -60,13 +52,7 @@ const config: BrowserRallarSmokeConfig = {
     leaveRoomOnClose: undefined
 };
 
-beforeEach(() => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance', 'Date'] });
-});
-
-afterEach(() => {
-    vi.useRealTimers();
-});
+useBoundedWaitClock();
 
 /** The session a connected agent is given, which a send names to reach it. */
 function toSessionId(agentId: string): string {
@@ -74,7 +60,7 @@ function toSessionId(agentId: string): string {
 }
 
 /** The value each command's result carries, enough for the smoke's own checks of it. */
-function toResultValue(posted: PostedCommand): ApiJsonObject {
+function toResultValue(posted: PostedControlCommand): ApiJsonObject {
     const { command, agentId } = posted;
     if (command.kind === 'rtc.connect') {
         return { sessionId: toSessionId(agentId) };
@@ -88,7 +74,7 @@ function toResultValue(posted: PostedCommand): ApiJsonObject {
 }
 
 /** A send's receiver records the message; a stats read and a report recipe each report for their agent. */
-function toRunEvents(posted: readonly PostedCommand[], kind: 'rtc.send' | 'stats' | 'recipe.run'): readonly ApiJsonObject[] {
+function toRunEvents(posted: readonly PostedControlCommand[], kind: 'rtc.send' | 'stats' | 'recipe.run'): readonly ApiJsonObject[] {
     return posted.filter(({ command }) => command.kind === kind).map(({ agentId, command }): ApiJsonObject => {
         if (command.kind !== 'rtc.send') {
             return { agentId };
@@ -103,7 +89,7 @@ function toRunEvents(posted: readonly PostedCommand[], kind: 'rtc.send' | 'stats
 }
 
 /** A control run that has answered every command posted to it. */
-function toRunSnapshot(posted: readonly PostedCommand[]): ApiJsonObject {
+function toRunSnapshot(posted: readonly PostedControlCommand[]): ApiJsonObject {
     return {
         agents: [...new Set(posted.map(({ agentId }) => agentId))].map((agentId) => ({ agentId })),
         results: posted.map((entry) => ({ commandId: entry.commandId, ok: true, result: { value: toResultValue(entry) } })),
@@ -115,27 +101,9 @@ function toRunSnapshot(posted: readonly PostedCommand[]): ApiJsonObject {
 
 /** A smoke whose browser opens counted pages and whose control run answers every command it is sent. */
 function createCountedSmoke(): BrowserRallarTwoAgentSmoke {
-    const posted: PostedCommand[] = [];
-    const request = Object.assign({} as Playwright.APIRequestContext, {
-        post: async (
-            url: string,
-            options: { data: { commandId: string; command: RallarBlackBoxTestCommand; }; timeout: number; }
-        ) => {
-            await spendBoundedWait(options.timeout);
-            posted.push({ agentId: decodeURIComponent(url.split('/').at(-2)!), ...options.data });
-            return { status: () => 202 };
-        },
-        get: async (_url: string, options: { timeout: number; }) => {
-            await spendBoundedWait(options.timeout);
-            return { ok: () => true, json: async () => toRunSnapshot(posted) };
-        }
-    });
-    const browser = Object.assign({} as Playwright.Browser, {
-        newContext: async () => ({ newPage: async () => createCountedPage(), close: async () => {} })
-    });
     return new BrowserRallarTwoAgentSmoke({
-        browser,
-        request,
+        browser: { newContext: async () => ({ newPage: async () => createCountedPage(), close: async () => {} }) },
+        request: createCountedControlRequest(toRunSnapshot),
         config,
         transport: 'realtime',
         suffix: 'counted',

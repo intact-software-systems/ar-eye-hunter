@@ -1,7 +1,6 @@
 import {
     expect,
     type APIRequestContext,
-    type Browser,
     type BrowserContext,
     type Page,
     type TestInfo
@@ -127,8 +126,8 @@ interface HealthSnapshot {
 
 export namespace BrowserRallarTwoAgentSmoke {
     export interface Dependencies {
-        readonly browser: Browser;
-        readonly request: APIRequestContext;
+        readonly browser: Readonly<{ newContext: () => Promise<Pick<BrowserContext, 'newPage' | 'close'>>; }>;
+        readonly request: Pick<APIRequestContext, 'get' | 'post'>;
         readonly config: BrowserRallarSmokeConfig;
         readonly transport: SmokeTransport;
         readonly suffix: string;
@@ -179,7 +178,7 @@ export namespace BrowserRallarTwoAgentSmoke {
 
 export class BrowserRallarTwoAgentSmoke {
     private readonly dependencies: BrowserRallarTwoAgentSmoke.Dependencies;
-    private readonly contexts: BrowserContext[] = [];
+    private readonly contexts: Pick<BrowserContext, 'close'>[] = [];
     private readonly agents: BrowserRallarTwoAgentSmoke.Agent[] = [];
     private readonly commandIds: string[] = [];
     private readonly messages: MessageExpectation[] = [];
