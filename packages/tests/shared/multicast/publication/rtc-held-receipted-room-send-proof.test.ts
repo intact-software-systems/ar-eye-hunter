@@ -1,12 +1,15 @@
+import 'fake-indexeddb/auto';
 import { describe, expect, it, vi } from 'vitest';
 
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toALPublicationProofSigningInput } from '@shared/al-contracts/publication-proof/al-publication-proof.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { createCountingIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 
 import { advanceUntil, drainUntil } from '../../advance-until.ts';
+import { createIndexedDbOriginStores } from '../../alm/create-indexed-db-origin-stores.ts';
 import { loseOutboundCommitAttempts } from '../../alm/outbound-runtime-test-fixture.ts';
 import { createCountingSubtleCrypto, type CountingSubtleCrypto } from '../../signature/counting-subtle-crypto-fixtures.ts';
 import {
@@ -29,6 +32,7 @@ const ACK_TIMEOUT_MS = 2_000;
 const COMMIT_ATTEMPTS = 3;
 
 type HeldReceipt = 'receiver' | 'leader' | 'none';
+type HeldStore = 'memory' | 'indexeddb';
 
 /**
  * D585 and D756: a durable room send admitted before its origin caches the room snapshot is held, as before, and the
@@ -93,27 +97,30 @@ describe('a receipted RTC room send held without its room snapshot (D585, D756)'
             .toBeUndefined();
     });
 
-    it('answers a replay that settles while the freezing dequeue still signs with the proof the replay stored, which the dequeue then sends', async () => {
-        const chain = await createRelayChain(['a', 'c'], {});
-        const counting = createCountingSubtleCrypto();
-        const origin = createHeldOrigin(chain.snapshot, toCounted(chain, counting));
-        const message = createHeldSend('held-replay-first', 'receiver');
-        const { held, releaseFreezingSign } = await holdUntilFreezingSign(origin, message, counting, chain.snapshot);
+    it.each<HeldStore>(['memory', 'indexeddb'])(
+        'answers a replay that settles while the freezing dequeue still signs with the proof the replay stored, which the dequeue then sends (%s)',
+        async (store) => {
+            const chain = await createRelayChain(['a', 'c'], {});
+            const counting = createCountingSubtleCrypto();
+            const origin = createHeldOrigin(chain.snapshot, toCounted(chain, counting), store);
+            const message = createHeldSend('held-replay-first', 'receiver');
+            const { held, releaseFreezingSign } = await holdUntilFreezingSign(origin, message, counting, chain.snapshot);
 
-        const replayed = await origin.manager.enqueueLegIfAbsent(message, 'hold');
-        const storedAtAnswer = await readCanonical(origin, held);
-        releaseFreezingSign();
-        await advanceUntil(() => origin.channels.c!.sent.length > 0, 100, 50);
+            const replayed = await origin.manager.enqueueLegIfAbsent(message, 'hold');
+            const storedAtAnswer = await readCanonical(origin, held);
+            releaseFreezingSign();
+            await advanceUntil(() => origin.channels.c!.sent.length > 0, 100, 50);
 
-        // Nothing orders the two (ruling 22). The dequeue's write lost the fence; each of its attempts may sign once
-        // before it reads the stored proof.
-        expect(replayed.verdict.kind).toBe('duplicate');
-        expect(replayed.message.proof).toMatchObject({ alg: 'ES256', keyId: chain.keys.a!.keyPair.keyId });
-        expect(storedAtAnswer.proof).toEqual(replayed.message.proof);
-        expect((await readCanonical(origin, held)).proof).toEqual(replayed.message.proof);
-        expect(origin.channels.c!.sent.map((copy) => copy.proof)).toEqual([replayed.message.proof]);
-        expect(counting.counts.sign).toBeLessThanOrEqual(1 + COMMIT_ATTEMPTS);
-    });
+            // Nothing orders the two (ruling 22). The dequeue's write lost the fence; each of its attempts may sign once
+            // before it reads the stored proof.
+            expect(replayed.verdict.kind).toBe('duplicate');
+            expect(replayed.message.proof).toMatchObject({ alg: 'ES256', keyId: chain.keys.a!.keyPair.keyId });
+            expect(storedAtAnswer.proof).toEqual(replayed.message.proof);
+            expect((await readCanonical(origin, held)).proof).toEqual(replayed.message.proof);
+            expect(origin.channels.c!.sent.map((copy) => copy.proof)).toEqual([replayed.message.proof]);
+            expect(counting.counts.sign).toBeLessThanOrEqual(1 + COMMIT_ATTEMPTS);
+        }
+    );
 
     it('answers a replay whose own sign lost to the freezing dequeue with the proof the dequeue stored', async () => {
         const chain = await createRelayChain(['a', 'c'], {});
@@ -175,9 +182,25 @@ describe('a receipted RTC room send held without its room snapshot (D585, D756)'
     });
 });
 
-/** The origin `a` over `c`, its room snapshot not yet cached. */
-function createHeldOrigin(snapshot: GroupSnapshot, publicationCrypto: PublicationCrypto): RtcOriginOverlayFixture {
-    const origin = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['c'], publicationCrypto });
+/** The origin `a` over `c`, its room snapshot not yet cached, admitting to the named store pair. */
+function createHeldOrigin(
+    snapshot: GroupSnapshot,
+    publicationCrypto: PublicationCrypto,
+    store: HeldStore = 'memory'
+): RtcOriginOverlayFixture {
+    if (store === 'indexeddb') {
+        // fake-indexeddb schedules on setImmediate, which stays real so its requests settle.
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    }
+    const origin = createRtcOriginOverlayFixture({
+        snapshot,
+        nextHopPeerIds: ['c'],
+        publicationCrypto,
+        stores: store === 'indexeddb'
+            ? createIndexedDbOriginStores(createCountingIndexedDbOperationObserver(), 'rtc-held-send')
+            : undefined
+    });
     origin.groups.delete('room');
     return origin;
 }
