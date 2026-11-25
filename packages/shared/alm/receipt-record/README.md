@@ -126,7 +126,8 @@ server already runs: lease 10 s, a page of 16 claims run one at a time. The aggr
 `end` it commits (`committed`); a survivor learns of another instance's row at its next readiness read, within 3 s.
 
 - A **deadline** row calls `end`: `timed-out` naming the recipients confirmed so far, or `complete` when the set is
-  complete. A head already ended answers `conflict` or `head-absent`, and nothing is written. When the queue calls a
+  complete. A head already ended answers `conflict` or `head-absent`, and nothing is written; a `conflict` is read
+  again, and a head still open (a fence another write held) retries the row. When the queue calls a
   row due before the record does (the queue may read another clock; PostgreSQL's reads the database's), `end` answers
   `not-due` and the row waits what the instance still lacks, never less than 250 ms, with no attempt spent; a
   `timed-out` receipt can so be up to 250 ms late on an instance whose clock runs behind the queue's.
@@ -149,7 +150,8 @@ receipt row's republication.
 
 A re-sent copy is answered from `read`, on any instance, to that sender alone and under a fresh control id: `admitted`
 with the confirmations so far while the head is open, and the terminal receipt, from the head's own sets, after the
-end too. A client that already holds the terminal receipt refuses the second as it refuses any receipt for an ended
+end too. A copy that finds an open head complete (the count that completed it lost its `end`) also ends it, as an
+admission whose `open` finds the set complete does. A client that already holds the terminal receipt refuses the second as it refuses any receipt for an ended
 message.
 
 ## How the WS server opens it

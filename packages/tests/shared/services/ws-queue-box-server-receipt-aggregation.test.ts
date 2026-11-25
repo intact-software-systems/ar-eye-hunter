@@ -671,6 +671,26 @@ describe('WS server receipt aggregation over the receipt record', () => {
         }
     );
 
+    // Pins a copy that finds its head open and complete, the count that completed it having lost its `end`, answering
+    // `admitted` and leaving the head open until a window or its deadline ends it.
+    it('ends a complete open head a re-sent copy finds, and its ended work delivers the complete receipt', async () => {
+        const fixture = createAggregation();
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
+        for (const recipientPeerId of ['b', 'c']) {
+            expect((await fixture.record.count({ ...RECORD_REF, recipientPeerId, kind: 'confirmed' })).right?.disposition).toBe('counted');
+        }
+
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'duplicate' }));
+        await runWorker(fixture);
+
+        expect((await fixture.record.read(RECORD_REF)).right?.head.phase).toBe('complete');
+        expect(readReceipts(fixture)).toMatchObject([
+            { phase: 'admitted', confirmedRecipientPeerIds: [] },
+            { phase: 'admitted', confirmedRecipientPeerIds: ['b', 'c'] },
+            { phase: 'complete', confirmedRecipientPeerIds: ['b', 'c'] }
+        ]);
+    });
+
     it.each<{ readonly name: string; readonly acceptance: ALInboundMessageRuntime.Acceptance; }>([
         { name: 'not-admitted as expired', acceptance: { kind: 'not-admitted', reason: 'expired' } },
         { name: 'not-admitted as a terminated pending admission', acceptance: { kind: 'not-admitted', reason: 'pending admission has terminated' } },

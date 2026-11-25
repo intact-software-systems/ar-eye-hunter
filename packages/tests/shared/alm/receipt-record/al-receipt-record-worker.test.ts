@@ -1,5 +1,6 @@
 import { describe, expect, it, onTestFinished } from 'vitest';
 
+import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import type { ALReceiptRecordEndedHead, ALReceiptRecordOpening } from '@shared/alm/receipt-record/al-receipt-record-rows.ts';
 import {
     createInMemoryALReceiptRecordStores,
@@ -20,6 +21,8 @@ import { AL_WORK_READINESS_MEMORY_MS } from '@shared/alm/work/al-work-handler.ts
 import { computeALWorkEntry } from '@shared/alm/work/compute-al-work-entry.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+
+import { createDelegatingALAdmissionWorkBackend } from '../create-delegating-al-admission-work-backend.ts';
 
 const T = 1_760_000_000_000;
 const DEADLINE_AT_MS = T + 5_000;
@@ -352,6 +355,51 @@ describe('ALReceiptRecordWorker', () => {
         await runRounds(fixture);
         expect(fixture.delivered).toEqual([ended.right]);
         expect((await readDeadlineRow(fixture.stores))?.status).toBe(EntityStatus.COMPLETED);
+    });
+
+    // A deadline whose `end` lost a fence while the head stayed open must be tried again: completing the row on any
+    // conflict would leave the head open past its deadline, with no terminal receipt.
+    it('retries a deadline whose end conflicted while the head stayed open', async () => {
+        const conflicting = { armed: false };
+        const fixture = createWorkerFixture({ recordBehindQueueMs: 0, writeEndedReceipt: async () => {} });
+        const record = new ALReceiptRecord({
+            backend: createDelegatingALAdmissionWorkBackend(fixture.stores.backend, {
+                write: async (operation, executionExpiresAtMs) => {
+                    if (conflicting.armed) {
+                        conflicting.armed = false;
+                        throw new ALAdmissionBackendConflictError('simulated receipt record conflict');
+                    }
+                    return await fixture.stores.backend.write(operation, executionExpiresAtMs);
+                }
+            }),
+            namespace: fixture.stores.namespace,
+            nowMs: () => fixture.recordClock.nowMs
+        });
+        const delivered: ALReceiptRecordEndedHead[] = [];
+        const { worker, engine } = createWorkerInstance({
+            record,
+            stores: fixture.stores,
+            workerClock: fixture.recordClock,
+            writeEndedReceipt: async (ended) => {
+                delivered.push(ended);
+            }
+        }, 'receipt-record-worker-conflicting');
+        await fixture.worker.dispose();
+        expect((await record.open(opening)).right?.head.phase).toBe('open');
+        worker.committed(deadlineWork, DEADLINE_AT_MS);
+
+        setNowMs(fixture, DEADLINE_AT_MS);
+        conflicting.armed = true;
+        await runRounds({ engine });
+        expect(await readPhase(fixture.record)).toBe('open');
+        const retried = await readDeadlineRow(fixture.stores);
+        expect(retried?.status).toBe(EntityStatus.RETRY);
+        expect(retried?.dequeueAudit.attempts).toBe(1);
+
+        setNowMs(fixture, DEADLINE_AT_MS + AL_RECEIPT_RECORD_WORK_LEASE_MS);
+        await runRounds({ engine });
+        expect(await readPhase(fixture.record)).toBe('timed-out');
+        expect(delivered).toEqual([(await fixture.record.read(ref)).right?.head]);
     });
 
     // A row the record cannot read must be refused for good, not retried until its attempts run out.

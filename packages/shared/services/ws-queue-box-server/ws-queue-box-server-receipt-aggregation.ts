@@ -638,8 +638,14 @@ export class WsQueueBoxServerReceiptAggregation {
         return false;
     }
 
-    private async answerFromView({ head, tally }: ALReceiptRecord.View): Promise<void> {
-        await this.writeAnswer(head.opening, tally, head.phase === 'open' ? 'admitted' : head.phase);
+    /** An open head the copy finds complete lost its `end`; the copy ends it, as an opening that finds it complete does. */
+    private async answerFromView(view: ALReceiptRecord.View): Promise<void> {
+        const { head, tally } = view;
+        if (head.phase === 'open') {
+            await this.answerOpened(view);
+            return;
+        }
+        await this.writeAnswer(head.opening, tally, head.phase);
     }
 
     private async writeAnswer(

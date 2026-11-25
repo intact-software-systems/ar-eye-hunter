@@ -45,6 +45,7 @@ export namespace ALReceiptRecordWorker {
 }
 
 const COMPLETED: ALWorkOutcome = { status: 'completed' };
+const RETRY: ALWorkOutcome = { status: 'retry' };
 
 /**
  * Claims the record's deadline and ended work on whichever instance runs it. Deadline work acts once: a second `end`
@@ -115,18 +116,21 @@ export class ALReceiptRecordWorker {
     private async endAtDeadline(ref: ALReceiptRecordRef): Promise<ALWorkOutcome> {
         this.work.claimCommitted();
         const ended = await this.dependencies.record.end(ref);
-        return ended.fold((refusal) => this.toDeadlineRefusalOutcome(refusal), () => COMPLETED);
+        return ended.left === undefined ? COMPLETED : await this.toDeadlineRefusalOutcome(ref, ended.left);
     }
 
     /**
-     * Another instance's `end`, or an end already written, answers a conflict or no head: both leave nothing to do.
-     * `not-due` means the queue's clock ran ahead of the record's, so the row waits what the record still lacks.
+     * No head leaves nothing to do. A conflict is re-read: an ended or absent head was ended elsewhere, and one still
+     * open lost a fence another write held, so the row is retried. `not-due` means the queue's clock ran ahead of the
+     * record's, so the row waits what the record still lacks.
      */
-    private toDeadlineRefusalOutcome(
+    private async toDeadlineRefusalOutcome(
+        ref: ALReceiptRecordRef,
         refusal: ALReceiptRecord.HeadAbsent | ALReceiptRecord.NotDue | ALReceiptRecord.Conflict
-    ): ALWorkOutcome {
+    ): Promise<ALWorkOutcome> {
         switch (refusal.kind) {
             case 'conflict':
+                return (await this.dependencies.record.read(ref)).right?.head.phase === 'open' ? RETRY : COMPLETED;
             case 'head-absent':
                 return COMPLETED;
             case 'not-due': {
