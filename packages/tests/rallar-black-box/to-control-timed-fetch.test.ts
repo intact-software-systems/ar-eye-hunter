@@ -43,4 +43,21 @@ describe('toControlTimedFetch', () => {
 
         expect(sent[0]?.signal?.aborted).toBe(true);
     });
+
+    // Both earlier cases passed a fetch that dropped the timeout whenever the caller passed a signal of its own.
+    it('still ends a request at the control request timeout when the caller passes a signal of its own', async () => {
+        const timeout = new AbortController();
+        vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal);
+        const caller = new AbortController();
+        const sent: RequestInit[] = [];
+        const timedFetch = toControlTimedFetch(async (_url, init) => {
+            sent.push(init ?? {});
+            return new Response('{}');
+        });
+
+        await timedFetch('http://localhost:18081/runs', { signal: caller.signal });
+        timeout.abort();
+
+        expect({ sent: sent[0]?.signal?.aborted, caller: caller.signal.aborted }).toEqual({ sent: true, caller: false });
+    });
 });
