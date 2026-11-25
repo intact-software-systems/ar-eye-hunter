@@ -37,8 +37,9 @@ export const LAYOUT_SWITCH_STREAM_DURATION_MS = LAYOUT_SWITCH_STREAM_LEAD_MS +
     2 * (LAYOUT_SWITCH_PROMOTION_POLL_TIMEOUT_MS + LAYOUT_SWITCH_HOLD_MS);
 
 /**
- * How long the receivers' events may take to drain once the streams settled; they are published as the frames
- * arrive, so they drain within as long again as the streams ran.
+ * How long the receivers' events may take to drain once the streams settled: a drain as long as the stream it drains,
+ * since the events are published as the frames arrive. A drain the limit ends says so, so a slow run is told apart
+ * from lost frames.
  */
 export const LAYOUT_SWITCH_RECEIVER_DRAIN_TIMEOUT_MS = LAYOUT_SWITCH_STREAM_DURATION_MS;
 

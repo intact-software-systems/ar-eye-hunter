@@ -7,7 +7,6 @@ import {
 } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 
-import { RALLAR_BLACK_BOX_RTC_STREAM_DEFAULT_DRAIN_TIMEOUT_MS } from '@shared-test/rallar-bb-test/rtc-stream.ts';
 import { AL_CHANNEL_SEND_DEFAULTS } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import {
     isSameGroupLayoutIdentity,
@@ -21,6 +20,10 @@ import {
     type LiveRtcLayoutSwitchEvidence,
     type LiveRtcLayoutSwitchStream
 } from './compute-live-rtc-layout-switch-evidence.ts';
+import {
+    drainLiveRtcLayoutSwitchReceivers,
+    type LiveRtcLayoutSwitchDrain
+} from './drain-live-rtc-layout-switch-receivers.ts';
 import {
     almDiagnostics,
     apiBaseUrl,
@@ -43,8 +46,6 @@ import {
     LAYOUT_SWITCH_HOLD_MS,
     LAYOUT_SWITCH_PROMOTION_POLL_INTERVAL_MS,
     LAYOUT_SWITCH_PROMOTION_POLL_TIMEOUT_MS,
-    LAYOUT_SWITCH_RECEIVER_DRAIN_POLL_INTERVAL_MS,
-    LAYOUT_SWITCH_RECEIVER_DRAIN_TIMEOUT_MS,
     LAYOUT_SWITCH_STREAM_DURATION_MS,
     LAYOUT_SWITCH_STREAM_LEAD_MS,
     LIVE_RTC_LAYOUT_SWITCH_TEST_TIMEOUT_MS
@@ -119,6 +120,7 @@ interface LayoutSwitchProgress {
     layoutReads: { label: string; readAtEpochMs: number; layouts: readonly (LiveRtcAcceptedLayout | undefined)[]; }[];
     switches: { label: string; requestedAtEpochMs: number; detectedAtEpochMs: number | null; }[];
     leafToLeafReadyAtSwitch2: Readonly<Record<string, boolean>> | null;
+    drainEndedBy: LiveRtcLayoutSwitchDrain.EndedBy | null;
 }
 
 /** The two files every run writes: the evidence before asserting, the progress in every outcome. */
@@ -235,7 +237,8 @@ async function openScenario(browser: Browser, request: APIRequestContext): Promi
         servedOverlapMs: null,
         layoutReads: [],
         switches: [],
-        leafToLeafReadyAtSwitch2: null
+        leafToLeafReadyAtSwitch2: null,
+        drainEndedBy: null
     };
     return { control, runId, groupId, suffix, agents, operations, progress };
 }
@@ -511,33 +514,19 @@ async function readLeafToLeafReadiness(
     return ready;
 }
 
-/**
- * Reads the run until every receiver holds every planned frame, or until the missing count has not changed for the
- * agent stream's own drain bound (`RALLAR_BLACK_BOX_RTC_STREAM_DEFAULT_DRAIN_TIMEOUT_MS`), so frames whose events
- * are still being published are waited for as long as they keep arriving, within the receivers' drain limit.
- */
+/** Drains the receivers' events and records in the progress what ended the drain. */
 async function drainReceivers(
     scenario: LayoutSwitchScenario,
     streams: readonly LiveRtcLayoutSwitchStream[]
 ): Promise<readonly LiveRtcControlClient.Event[]> {
-    const deadlineAtMs = Date.now() + LAYOUT_SWITCH_RECEIVER_DRAIN_TIMEOUT_MS;
-    let lastMissing = Infinity;
-    let lastChangedAtMs = Date.now();
-    for (;;) {
-        const { events } = await scenario.control.fetchRun(scenario.runId);
-        const missing = countLiveRtcMissingFrames({ runId: scenario.runId, streams, events });
-        if (missing !== lastMissing) {
-            lastMissing = missing;
-            lastChangedAtMs = Date.now();
-        }
-        if (
-            missing === 0 || Date.now() - lastChangedAtMs >= RALLAR_BLACK_BOX_RTC_STREAM_DEFAULT_DRAIN_TIMEOUT_MS ||
-            Date.now() >= deadlineAtMs
-        ) {
-            return events;
-        }
-        await holdFor(scenario, LAYOUT_SWITCH_RECEIVER_DRAIN_POLL_INTERVAL_MS);
-    }
+    const drained = await drainLiveRtcLayoutSwitchReceivers({
+        readEvents: async () => (await scenario.control.fetchRun(scenario.runId)).events,
+        countMissing: (events) => countLiveRtcMissingFrames({ runId: scenario.runId, streams, events }),
+        hold: async (ms) => await holdFor(scenario, ms),
+        now: Date.now
+    });
+    scenario.progress.drainEndedBy = drained.endedBy;
+    return drained.events;
 }
 
 async function holdFor(scenario: LayoutSwitchScenario, ms: number): Promise<void> {
