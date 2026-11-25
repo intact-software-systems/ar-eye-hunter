@@ -20,9 +20,11 @@ import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
 } from '../../shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import { toALOutboundEffectId } from '../../shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { createInMemoryALReceiptRecordStores } from '../../shared/alm/receipt-record/al-receipt-record-stores.ts';
 import { decodeALReceiptRecordWorkEntry } from '../../shared/alm/receipt-record/al-receipt-record-work-entry.ts';
 import { EnqueuedType } from '../../shared/api/api-config.ts';
+import type { ResourceEntry } from '../../shared/queuebox/ResourceEntry.ts';
 import { Either } from '../../shared/resilience/Either.ts';
 import { createDefaultBackgroundTimers } from '../../shared/resilience/timers.ts';
 import { toError } from '../../shared/resilience/to-error.ts';
@@ -53,8 +55,8 @@ interface ReceiptOwnerSocket {
 }
 
 const scope = { applicationId: 'app', workspaceId: 'workspace' };
-/** Inside the child's 15 s spawn limit. */
-const ENDED_WORK_RELEASE_TIMEOUT_MS = 5_000;
+/** Each wait is inside the child's 15 s spawn limit, and so are the two drains' waits together. */
+const AWAITED_FACT_TIMEOUT_MS = 5_000;
 
 export async function writePendingReceiptOwnerEvidence(
     evidencePath: string,
@@ -141,6 +143,10 @@ class ReceiptOwnerFixture {
     readonly receiptRecordStores = createInMemoryALReceiptRecordStores('server', () => this.clock.nowMs);
     /** Resolved by the record's first ended-work release; its own batch, which no engine pass awaits, makes it. */
     readonly endedWorkReleased = Promise.withResolvers<void>();
+    /** Resolved by the complete receipt's transport: its transport observation, or for a sink that observes nothing, its native send. */
+    readonly receiptTransported = Promise.withResolvers<void>();
+    /** Resolved by the release of the complete receipt's own send work, which follows its transport in every scenario. */
+    readonly receiptSendReleased = Promise.withResolvers<void>();
     readonly service: WsQueueBoxServerService;
     readonly socket: JsonWebSocketServer;
     readonly origin: SimulatedWebSocket;
@@ -225,7 +231,7 @@ class ReceiptOwnerFixture {
         // (`#worker.committed`), which no engine pass awaits: the fixture awaits that work's own release, after which
         // the work has observed what it issued, and runs no engine pass meanwhile, so every sink's run reads the clock
         // alike.
-        await awaitEndedWorkRelease(this.endedWorkReleased.promise);
+        await awaitFact(this.endedWorkReleased.promise, 'The receipt record\'s ended work was never released');
         const pending = this.observations.find((event) => event.kind === 'receipt-outbox' && event.receipt.phase === 'complete');
         if (this.sink !== 'disabled') {
             assert.equal(pending?.kind === 'receipt-outbox' && pending.verdict.kind, 'pending');
@@ -239,9 +245,15 @@ class ReceiptOwnerFixture {
         }
         this.backend.workQueue.reserveEntries = this.reserve;
         this.backend.workQueue.reserveTimeoutEntries = this.recover;
-        await drainReceipt(this.engine, () =>
-            this.origin.sent.some((text) => text.includes(this.effects.receiptControlMsgId)) ||
-            this.observations.some((event) => event.kind === 'receipt-transport' && event.receiptControlMsgId === this.effects.receiptControlMsgId));
+        // The clock stands still, so the retained receipt is ready and the one engine pass after the restore claims its
+        // admission work; its dequeue and its send follow in batches the earlier batches start, which the pass does not
+        // await. The fixture awaits the send's transport and release and runs no further pass, so the number of passes,
+        // and of the clock reads they make, is the same for every sink however long the work takes.
+        await this.engine.executeOnce();
+        await Promise.all([
+            awaitFact(this.receiptTransported.promise, 'The actual generated complete receipt did not reach its transport owner'),
+            awaitFact(this.receiptSendReleased.promise, 'The complete receipt\'s send work was never released')
+        ]);
         this.assertTransportEffects(scenario);
         this.clock.nowMs = 1700000000000;
         assert.ok(await this.store.readSentMessage(this.effects.receiptControlMsgId));
@@ -272,6 +284,9 @@ class ReceiptOwnerFixture {
                     this.effects.receiptReleaseStatuses.push(entry.status);
                 }
             }
+            if (releases.some((value) => isSendWorkOf(value.entry, this.effects.receiptControlMsgId))) {
+                this.receiptSendReleased.resolve();
+            }
             return result;
         };
     }
@@ -290,6 +305,9 @@ class ReceiptOwnerFixture {
 
     private recordObservation(event: WsQueueBoxServerReceiptObservation): void {
         this.observations.push(event);
+        if (event.kind === 'receipt-transport' && event.receiptControlMsgId === this.effects.receiptControlMsgId) {
+            this.receiptTransported.resolve();
+        }
         this.observer?.(this.toCapturedObservation(event));
         if ('receipt' in event && this.sink === 'mutating') {
             this.effects.mutationResults.push(Reflect.set(event.receipt.confirmedRecipientPeerIds, '0', 'forged'));
@@ -320,6 +338,11 @@ class ReceiptOwnerFixture {
         const nativeSend = this.origin.send.bind(this.origin);
         this.origin.send = (data) => {
             this.effects.nativeCalls += 1;
+            // An observing sink's run waits for the transport observation instead, which its batch publishes after
+            // the release: returning at the send would leave that observation to land after the run reset the clock.
+            if (this.observe === undefined && typeof data === 'string' && data.includes(this.effects.receiptControlMsgId)) {
+                this.receiptTransported.resolve();
+            }
             if (scenario === 'native-throw' || scenario === 'direct-failure') {
                 throw new Error('native fixture failure');
             }
@@ -434,30 +457,24 @@ async function generateCompleteReceipt(service: WsQueueBoxServerService): Promis
     assert.equal((await service.acceptIncomingMessage(ack, 'recipient')).right?.kind, 'control');
 }
 
-/** A bounded wait: an ended work that never releases fails the run loudly instead of hanging it. */
-async function awaitEndedWorkRelease(released: Promise<void>): Promise<void> {
+/** A work row names its effect, a send's beginning with the message it sends; a canonical message row names none. */
+function isSendWorkOf(entry: ResourceEntry, msgId: string): boolean {
+    const effectId: unknown = Reflect.get(JSON.parse(entry.resource), 'effectId');
+    return typeof effectId === 'string' && effectId.startsWith(`${toALOutboundEffectId(['send', msgId])}:`);
+}
+
+/** A bounded wait: a fact that never happens fails the run loudly, naming it, instead of hanging it. */
+async function awaitFact(fact: Promise<void>, missing: string): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timedOut = new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error('The receipt record\'s ended work was never released')), ENDED_WORK_RELEASE_TIMEOUT_MS);
+        timer = setTimeout(() => reject(new Error(missing)), AWAITED_FACT_TIMEOUT_MS);
     });
     try {
-        await Promise.race([released, timedOut]);
+        await Promise.race([fact, timedOut]);
     }
     finally {
         clearTimeout(timer);
     }
-}
-
-async function drainReceipt(engine: InboxOutboxEngine, finished: () => boolean): Promise<void> {
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-        engine.wake();
-        await engine.executeOnce();
-        if (finished()) {
-            return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-    assert.fail('The actual generated complete receipt did not reach its transport owner');
 }
 
 async function readCompetingReceiptBundle(

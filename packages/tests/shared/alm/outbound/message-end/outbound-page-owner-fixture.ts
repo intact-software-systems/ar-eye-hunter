@@ -84,6 +84,15 @@ export async function readEndMessageRow(
     return await stores.workQueue.getItem(key);
 }
 
+/** The `admit-message` row an `end-message` row names, in whatever status it reached. */
+export async function readEndMessageAdmissionRow(
+    stores: ALOutboundRuntimeStores<OutboundTestPayload>,
+    end: ResourceEntry | undefined
+): Promise<ResourceEntry | undefined> {
+    const effectId: unknown = end === undefined ? undefined : Reflect.get(Reflect.get(JSON.parse(end.resource), 'payload'), 'admissionEffectId');
+    return typeof effectId === 'string' ? await stores.workQueue.getItem(toALOutboundWorkKey(stores.admissionStore.namespace, effectId)) : undefined;
+}
+
 /** Hands every commit the tab announced to the owning tab, as the session channel does. */
 export function relayAnnouncedCommits(
     from: SessionOutboundTestRuntime<TestDurableWorkOwnership>,

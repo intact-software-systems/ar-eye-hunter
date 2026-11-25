@@ -246,7 +246,7 @@ describe('the receipt of a server publication is counted in the receipt record',
             return copiesOf(server.sockets, delta);
         }).toEqual([1, 1, 0]);
         expect(await readConfirmations(server, delta)).toEqual([]);
-        expect(readAckCountRecipients(server.observations, delta)).toEqual([]);
+        expect(readReceiptAggregationVerdicts(server.observations, delta.id.msgId)).toEqual([]);
         expect((await server.record.read(toOwnReceiptRef(delta))).right?.head.opening.expectedRecipientPeerIds).toEqual(['a', 'b']);
         await server.service.acceptIncomingMessage(sessionAck(delta, 'a', 'delivered'), 'a');
 
@@ -612,16 +612,6 @@ async function readConfirmations(server: OwnReceiptServer, message: ALMessage): 
     const keys = server.recordBackend.peekKeys().filter((key) => key.startsWith(prefix));
     const rows = await Promise.all(keys.map((key) => server.recordBackend.read(key, decodeALReceiptRecordConfirmation)));
     return rows.filter((row) => row !== undefined);
-}
-
-/** The recipients of the message's ACKs the aggregation observed counting, in the order it counted them. */
-function readAckCountRecipients(
-    observations: readonly WsQueueBoxServerReceiptObservation[],
-    message: ALMessage
-): readonly string[] {
-    return observations.flatMap((observation) =>
-        observation.kind === 'ack-count' && observation.ack.ackedMsgId === message.id.msgId ? [observation.ack.logicalRecipientPeerId] : []
-    );
 }
 
 /** The record holds its first write, which is the dequeue's `open` when nothing else writes it first. */
