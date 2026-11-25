@@ -13,7 +13,7 @@ import {
     DIRECTOR_CONNECT_TIMING,
     DIRECTOR_EVENT_POLL_TIMEOUT_MS,
     DIRECTOR_GROUP_REQUEST_TIMEOUT_MS,
-    DIRECTOR_HEALTH_READ_TIMEOUT_MS,
+    DIRECTOR_HEALTH_RESULT_POLL_TIMEOUT_MS,
     DIRECTOR_INTENT_RESULT_POLL_TIMEOUT_MS,
     DIRECTOR_PEER_READINESS_POLL_TIMEOUT_MS,
     DIRECTOR_RELAY_START_TIMEOUT_MS,
@@ -282,7 +282,7 @@ async function waitForDirectorPeerReadiness(
             agentId: agent.agentId,
             commandId: `director-health-${agent.prefix.toLowerCase()}-${attempt++}`,
             command: { kind: 'health' },
-            timeout: DIRECTOR_HEALTH_READ_TIMEOUT_MS
+            timeout: DIRECTOR_HEALTH_RESULT_POLL_TIMEOUT_MS
         }).catch(() => undefined);
         if (!result?.ok) {
             return [];

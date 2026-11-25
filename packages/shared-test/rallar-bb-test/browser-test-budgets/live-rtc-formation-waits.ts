@@ -45,11 +45,11 @@ export const FORMATION_CONNECT_RESULT_WAIT_MS = computeCommandResultWaitMs(
 );
 
 /** A formation run connects A, B and C one after another. */
-export const FORMATION_RUN_CONNECT_RESULT_WAIT_MS = LIVE_RTC_TRIO_SIZE * FORMATION_CONNECT_RESULT_WAIT_MS;
+export const FORMATION_RUN_CONNECT_BOUNDED_WAITS_MS = LIVE_RTC_TRIO_SIZE * FORMATION_CONNECT_RESULT_WAIT_MS;
 
 /**
  * One formation cycle's owner commands: the mesh configuration under its budget, the group read under its result
- * wait, the plan or reconfigure, the planned layout poll, the layout's connect and the activation. Every command is
+ * poll, the plan or reconfigure, the planned layout poll, the layout's connect and the activation. Every command is
  * enqueued, then polled for its result.
  */
 const FORMATION_CYCLE_COMMANDS_BOUNDED_WAITS_MS = computeEnqueuedCommandWaitMs(
@@ -63,7 +63,7 @@ const FORMATION_CYCLE_COMMANDS_BOUNDED_WAITS_MS = computeEnqueuedCommandWaitMs(
  * each run a formation cycle and wait for readiness side by side across their agents, the pair's peers first waiting
  * for each other's readiness before its activation.
  */
-export const FORMATION_RUN_BOUNDED_WAITS_MS = FORMATION_RUN_CONNECT_RESULT_WAIT_MS +
+export const FORMATION_RUN_BOUNDED_WAITS_MS = FORMATION_RUN_CONNECT_BOUNDED_WAITS_MS +
     LIVE_RTC_TRIO_SIZE * FORMATION_PRESENCE_POLL_TIMEOUT_MS +
     2 * (FORMATION_CYCLE_COMMANDS_BOUNDED_WAITS_MS + FORMATION_READINESS_BOUNDED_WAITS_MS) +
     LIVE_RTC_PEER_READINESS_TIMEOUT_MS;

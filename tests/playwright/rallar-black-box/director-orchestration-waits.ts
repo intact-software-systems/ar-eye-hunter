@@ -13,8 +13,8 @@ export const DIRECTOR_CONNECT_TIMING: RallarBlackBoxTestRtcConnectCommand = {
 /** Each group creation or membership request's own budget. */
 export const DIRECTOR_GROUP_REQUEST_TIMEOUT_MS = 10_000;
 
-/** How long one health read of the peer readiness poll waits for its result; the poll's own limit bounds it. */
-export const DIRECTOR_HEALTH_READ_TIMEOUT_MS = 15_000;
+/** How long one health read of the peer readiness poll is polled for its result; the readiness poll bounds it. */
+export const DIRECTOR_HEALTH_RESULT_POLL_TIMEOUT_MS = 15_000;
 
 /** How long an agent's health is polled until it reports its expected peers ready. */
 export const DIRECTOR_PEER_READINESS_POLL_TIMEOUT_MS = 60_000;

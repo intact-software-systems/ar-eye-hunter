@@ -38,7 +38,7 @@ export const LIVE_RTC_CLOSE_RESULT_POLL_TIMEOUT_MS = 45_000;
 /** How long the control client polls for an agent's reset result once the reset is enqueued. */
 export const LIVE_RTC_RESET_RESULT_POLL_TIMEOUT_MS = 30_000;
 
-/** Retiring an agent closes it, then resets it, each command its enqueue request and then its result wait. */
+/** Retiring an agent closes it, then resets it, each command its enqueue request and then its result poll. */
 export const LIVE_RTC_CLOSE_AND_RESET_BOUNDED_WAITS_MS =
     computeEnqueuedCommandWaitMs(LIVE_RTC_CLOSE_RESULT_POLL_TIMEOUT_MS) +
     computeEnqueuedCommandWaitMs(LIVE_RTC_RESET_RESULT_POLL_TIMEOUT_MS);

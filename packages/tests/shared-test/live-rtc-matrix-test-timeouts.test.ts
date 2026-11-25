@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
     FORMATION_CONNECT_RESULT_WAIT_MS,
     FORMATION_RUN_BOUNDED_WAITS_MS,
-    FORMATION_RUN_CONNECT_RESULT_WAIT_MS
+    FORMATION_RUN_CONNECT_BOUNDED_WAITS_MS
 } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-formation-waits.ts';
 import {
     CLUSTER_DIRECT_EXCHANGE_BOUNDED_WAITS_MS,
@@ -66,7 +66,7 @@ const CLEANUP = REQUEST + 15_000 + REQUEST;
 describe('live RTC three-browser matrix test timeouts', () => {
     it('waits for each formation connect its enqueue, its 135 s command timeout and the 45 s result poll', () => {
         expect(FORMATION_CONNECT_RESULT_WAIT_MS).toBe(10_000 + 180_000);
-        expect(FORMATION_RUN_CONNECT_RESULT_WAIT_MS).toBe(3 * (10_000 + 180_000));
+        expect(FORMATION_RUN_CONNECT_BOUNDED_WAITS_MS).toBe(3 * (10_000 + 180_000));
     });
 
     // The plan, the layout's connect, the activation and each readiness's last read wait the result poll, which went

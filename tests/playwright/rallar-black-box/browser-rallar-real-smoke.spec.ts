@@ -27,7 +27,7 @@ const CONTROL_BASE_URL = 'http://127.0.0.1:5180';
 const CONTROL_WS_URL = 'ws://127.0.0.1:5180/control';
 
 /** How long the smoke polls the run for a result once the command may have ended. */
-const RESULT_POLL_TIMEOUT_MS = 30_000;
+const RESULT_POLL_MARGIN_MS = 30_000;
 
 /** How long the smoke polls the run's events for the connect and send evidence. */
 const EVENT_POLL_TIMEOUT_MS = 10_000;
@@ -178,8 +178,8 @@ test('browser-rallar provider performs live RTC connect and realtime send when c
     };
     test.setTimeout(
         BROWSER_TEST_HARNESS_MARGIN_MS + DEFAULT_LIMIT_ASSERTIONS * RALLAR_BLACK_BOX_EXPECT_TIMEOUT_MS +
-            computeCommandResultWaitMs(connectCommand, RESULT_POLL_TIMEOUT_MS) +
-            computeCommandResultWaitMs(sendCommand, RESULT_POLL_TIMEOUT_MS) + EVENT_POLL_TIMEOUT_MS
+            computeCommandResultWaitMs(connectCommand, RESULT_POLL_MARGIN_MS) +
+            computeCommandResultWaitMs(sendCommand, RESULT_POLL_MARGIN_MS) + EVENT_POLL_TIMEOUT_MS
     );
 
     await enqueueCommand(request, runId, agentId, connectCommandId, connectCommand);
@@ -187,7 +187,7 @@ test('browser-rallar provider performs live RTC connect and realtime send when c
         const run = await fetchRun(request, runId);
         return run.results.some((result) => result.commandId === connectCommandId && result.ok === true);
     }, {
-        timeout: computeCommandResultPollTimeoutMs(connectCommand, RESULT_POLL_TIMEOUT_MS)
+        timeout: computeCommandResultPollTimeoutMs(connectCommand, RESULT_POLL_MARGIN_MS)
     }).toBe(true);
 
     await enqueueCommand(request, runId, agentId, sendCommandId, sendCommand);
@@ -195,7 +195,7 @@ test('browser-rallar provider performs live RTC connect and realtime send when c
         const run = await fetchRun(request, runId);
         return run.results.some((result) => result.commandId === sendCommandId && result.ok === true);
     }, {
-        timeout: computeCommandResultPollTimeoutMs(sendCommand, RESULT_POLL_TIMEOUT_MS)
+        timeout: computeCommandResultPollTimeoutMs(sendCommand, RESULT_POLL_MARGIN_MS)
     }).toBe(true);
 
     await expect.poll(async () => {
