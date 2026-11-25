@@ -54,6 +54,12 @@ export function groupRoomRef(group: RallarBlackBoxDistributedGroupRef): RallarBl
     };
 }
 
+/** How long a recipe connect waits for its ready peers when the recipe names no limit of its own. */
+const RALLAR_BLACK_BOX_RTC_CONNECT_DEFAULT_READY_TIMEOUT_MS = 5_000;
+
+/** How long a recipe connect's readiness wait pauses between its reads. */
+export const RALLAR_BLACK_BOX_RTC_CONNECT_READY_INTERVAL_MS = 100;
+
 export function rtcConnectReadiness(
     options: Readonly<{
         readyPeerCount?: number;
@@ -73,8 +79,8 @@ export function rtcConnectReadiness(
         timeoutMs: typeof options.readyTimeoutMs === 'number' &&
                 Number.isFinite(options.readyTimeoutMs)
             ? Math.max(1, Math.round(options.readyTimeoutMs))
-            : 5_000,
-        intervalMs: 100
+            : RALLAR_BLACK_BOX_RTC_CONNECT_DEFAULT_READY_TIMEOUT_MS,
+        intervalMs: RALLAR_BLACK_BOX_RTC_CONNECT_READY_INTERVAL_MS
     };
 }
 

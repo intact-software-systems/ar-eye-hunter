@@ -119,8 +119,8 @@ interface ConsoleNativeAttachment {
     readonly event: ApiJsonObject;
 }
 
-/** The readiness limit the Stability recipe authors for its connect. */
-const STABILITY_CONNECT_READINESS_TIMEOUT_MS = 10_000;
+/** The readiness limit the test expects the Stability recipe to author for its connect: an asserted value, not a wait. */
+const EXPECTED_STABILITY_CONNECT_READINESS_TIMEOUT_MS = 10_000;
 
 const COMPOSITE_RECIPE: ExecuteRecipeExpectation = {
     recipeId: 'composite-evidence-recipe',
@@ -468,7 +468,7 @@ function assertAuthoredStabilityRecipe(
         commandId: 'rtc-realtime-connect',
         transport: 'realtime',
         roomRef: manifest.group,
-        readiness: { minReadyPeers: 1, timeoutMs: STABILITY_CONNECT_READINESS_TIMEOUT_MS }
+        readiness: { minReadyPeers: 1, timeoutMs: EXPECTED_STABILITY_CONNECT_READINESS_TIMEOUT_MS }
     });
     expect(connect[0].rallar?.rtcCaptureMode).toBeUndefined();
     expect(authored.commands.find((command) => command.kind === 'rtc.stream')).toMatchObject({

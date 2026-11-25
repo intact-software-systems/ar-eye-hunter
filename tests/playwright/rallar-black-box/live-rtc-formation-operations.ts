@@ -102,6 +102,9 @@ export interface FormationReopenInput extends Pick<FormationAgentInput, 'runId' 
 
 const PEER_CREATED_TOPIC = 'rallar.browser.rtc.lifecycle';
 
+/** How long a formation readiness pauses before it reads the room again; its deadline bounds the reads. */
+const FORMATION_READINESS_RETRY_INTERVAL_MS = 100;
+
 export class LiveRtcFormationOperations {
     private issuedCommandCount = 0;
 
@@ -163,7 +166,10 @@ export class LiveRtcFormationOperations {
             nowEpochMs: () => performance.now(),
             randomUnit: () => 0.5,
             wait: (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs))
-        }).retryIntervalMsecs(100).maxRetryIntervalMsecs(100).backoffFactor(1).jitterRatio(0)
+        }).retryIntervalMsecs(FORMATION_READINESS_RETRY_INTERVAL_MS).maxRetryIntervalMsecs(
+            FORMATION_READINESS_RETRY_INTERVAL_MS
+        )
+            .backoffFactor(1).jitterRatio(0)
             .maxElapsedMsecs(Math.max(0, deadlineMs - performance.now())).fitDelayToElapsedBudget()
             .retryIf((failure) => failure instanceof FormationPeerMismatch);
         try {

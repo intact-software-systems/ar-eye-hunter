@@ -17,6 +17,8 @@ import { BROWSER_TEST_HARNESS_MARGIN_MS } from '@shared-test/rallar-bb-test/brow
 import { computeCommandResultWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 import { RALLAR_BLACK_BOX_EXPECT_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/playwright-expect-timeouts.ts';
 
+import { RESTORED_SESSION_LIFETIME_MS } from './restored-session-lifetime-ms.ts';
+
 const CONTROL_BASE_URL = 'http://127.0.0.1:5180';
 const CONTROL_WS_URL = 'ws://127.0.0.1:5180/control';
 
@@ -121,7 +123,7 @@ test('browser-rallar provider performs live RTC connect and realtime send when c
             sessionId: restoreSessionId,
             expiresAtEpochMs: Number.isFinite(restoreExpiresAt)
                 ? restoreExpiresAt
-                : Date.now() + 30 * 60 * 1000
+                : Date.now() + RESTORED_SESSION_LIFETIME_MS
         });
     }
 

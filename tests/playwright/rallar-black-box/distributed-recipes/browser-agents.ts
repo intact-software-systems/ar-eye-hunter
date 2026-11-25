@@ -26,6 +26,7 @@ import {
     FULL_STACK_SPA_ORIGIN,
     readFullStackConfig
 } from '../full-stack-helpers.ts';
+import { RESTORED_SESSION_LIFETIME_MS } from '../restored-session-lifetime-ms.ts';
 import { executeOk } from './distributed-control.ts';
 
 type ProviderUnderTest = 'simulated' | 'browser-rallar';
@@ -122,6 +123,9 @@ const DISTRIBUTED_COMMAND_RESULT_POLL_MARGIN_MS = 30_000;
 /** How long a group creation or membership request is polled for its result: its budget, then the poll margin. */
 export const DISTRIBUTED_GROUP_REQUEST_RESULT_WAIT_MS = DISTRIBUTED_GROUP_REQUEST_TIMEOUT_MS +
     DISTRIBUTED_COMMAND_RESULT_POLL_MARGIN_MS;
+
+/** How long a scripted control agent reports each of its commands took. */
+const SCRIPTED_RESULT_DURATION_MS = 1;
 
 /** How long a scripted control agent's WebSocket may take to open. */
 export const SCRIPTED_CONTROL_AGENT_OPEN_TIMEOUT_MS = 10_000;
@@ -235,7 +239,7 @@ function readRestoredAgentAuth(prefix: AgentPrefix): AgentAuth | undefined {
             sessionId,
             expiresAtEpochMs: numberEnv(`VITE_RALLAR_AGENT_${prefix}_EXPIRES_AT_EPOCH_MS`) ??
                 numberEnv(`VITE_RALLAR_${prefix}_EXPIRES_AT_EPOCH_MS`) ??
-                Date.now() + 30 * 60 * 1000
+                Date.now() + RESTORED_SESSION_LIFETIME_MS
         }
     };
 }
@@ -371,8 +375,8 @@ export function scriptedControlResult(
             status: input.ok ? 'ok' : 'failed',
             ok: input.ok,
             startedAtEpochMs: now,
-            endedAtEpochMs: now + 1,
-            durationMs: 1,
+            endedAtEpochMs: now + SCRIPTED_RESULT_DURATION_MS,
+            durationMs: SCRIPTED_RESULT_DURATION_MS,
             value: {
                 scripted: true,
                 commandKind: input.command.command.kind

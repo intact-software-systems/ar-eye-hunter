@@ -17,11 +17,14 @@ import {
 /** How long each connect waits for its one peer to be ready. */
 const TWO_AGENT_PEER_READINESS_TIMEOUT_MS = 30_000;
 
+/** How long each connect's readiness wait pauses between its reads. */
+const TWO_AGENT_PEER_READINESS_INTERVAL_MS = 250;
+
 /** Each connect waits for its one peer to be ready. */
 export const TWO_AGENT_PEER_READINESS = {
     minReadyPeers: 1,
     timeoutMs: TWO_AGENT_PEER_READINESS_TIMEOUT_MS,
-    intervalMs: 250
+    intervalMs: TWO_AGENT_PEER_READINESS_INTERVAL_MS
 };
 
 /** A delivery's send budget. */

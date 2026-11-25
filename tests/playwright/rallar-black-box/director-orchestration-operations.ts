@@ -87,6 +87,15 @@ interface ScenarioState extends DirectorOrchestration.Input {
 
 const RELAY_HANDLE = 'director-relay';
 
+/** How long the director's appointment stays fresh without a heartbeat; the stale hold outlasts it. */
+const DIRECTOR_HEARTBEAT_TTL_MS = 1_200;
+
+/** How often each relay sends its heartbeat. */
+const DIRECTOR_HEARTBEAT_INTERVAL_MS = 300;
+
+/** How often the director's relay sends its snapshot. */
+const DIRECTOR_SNAPSHOT_INTERVAL_MS = 500;
+
 /** The wait a caller names for a command's result, or else the command's own budget and then the result poll. */
 export function resolveDirectorCommandResultWaitMs(
     input: Readonly<{ command: RallarBlackBoxTestCommand; timeout?: number; }>
@@ -283,7 +292,7 @@ async function appointDirector(scenario: ScenarioState): Promise<number | undefi
         command: {
             kind: 'director.appoint',
             ...directorRoomFields(scenario.room),
-            heartbeatTtlMs: 1_200,
+            heartbeatTtlMs: DIRECTOR_HEARTBEAT_TTL_MS,
             timeoutMs: DIRECTOR_APPOINT_TIMEOUT_MS
         }
     });
@@ -343,8 +352,8 @@ async function startDirectorRelays(scenario: ScenarioState): Promise<void> {
                 topicId: scenario.topicId,
                 intentTypeId: `${scenario.topicId}.intent`,
                 outputTypeId: `${scenario.topicId}.output`,
-                heartbeatIntervalMs: 300,
-                snapshotIntervalMs: 500,
+                heartbeatIntervalMs: DIRECTOR_HEARTBEAT_INTERVAL_MS,
+                snapshotIntervalMs: DIRECTOR_SNAPSHOT_INTERVAL_MS,
                 timeoutMs: DIRECTOR_RELAY_START_TIMEOUT_MS
             }
         });

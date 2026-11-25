@@ -552,6 +552,9 @@ async function connectWhenPlanned(
     throw new Error(`The connect never found a published layout: ${lastError}`);
 }
 
+/** How long the dial witness's poll pauses between its reads of the agent's events. */
+const LIFECYCLE_DIAL_POLL_INTERVAL_MS = 500;
+
 /** The dial witness the two positive controls assert: the agent's own recorded peer-created events. */
 async function expectDialed(
     scenario: AcceptanceScenario,
@@ -563,7 +566,7 @@ async function expectDialed(
             async () => await formationOperations.countPeerCreated(agentInput(scenario, agent)),
             {
                 timeout: LIFECYCLE_DIAL_POLL_TIMEOUT_MS,
-                intervals: [500]
+                intervals: [LIFECYCLE_DIAL_POLL_INTERVAL_MS]
             }
         )
         .toBeGreaterThanOrEqual(atLeast);

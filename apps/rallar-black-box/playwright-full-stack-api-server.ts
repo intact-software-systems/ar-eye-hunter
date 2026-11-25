@@ -10,6 +10,12 @@ import {
 } from '../../packages/shared-test/rallar-bb-test/browser-test-budgets/full-stack-web-server-start-timeouts.ts';
 import { ALM_CONFORMANCE_GRANTED_TOPIC_ID } from '../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-step-identities.ts';
 
+/**
+ * How long the timed full-stack API may take to stop gracefully once Playwright stops it. It runs after the tests, so
+ * it counts against the job, not any test's timeout.
+ */
+const FULL_STACK_API_GRACEFUL_SHUTDOWN_TIMEOUT_MS = 7_000;
+
 export type FullStackApiServerMode = typeof FULL_STACK_API_SERVER_MODES[number];
 
 export interface FullStackApiV1WebServer {
@@ -162,7 +168,9 @@ export function createFullStackApiV1WebServer(
         timeout: mode === 'memory' ? FULL_STACK_MEMORY_API_START_TIMEOUT_MS : FULL_STACK_POSTGRES_API_START_TIMEOUT_MS,
         ...(input.timingCaptureDirectory === undefined
             ? {}
-            : { gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 7_000 } })
+            : {
+                gracefulShutdown: { signal: 'SIGTERM' as const, timeout: FULL_STACK_API_GRACEFUL_SHUTDOWN_TIMEOUT_MS }
+            })
     };
 }
 
