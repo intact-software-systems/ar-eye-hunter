@@ -250,7 +250,7 @@ for (const outcome of ['active', 'observer', 'solo', 'interrupted-solo'] as cons
             if (outcome === 'solo' || outcome === 'interrupted-solo') {
                 if (outcome === 'interrupted-solo') {
                     await expect(carol.getByRole('heading', { name: 'Round interrupted', exact: true }))
-                        .toBeVisible({ timeout: 12000 });
+                        .toBeVisible({ timeout: 15000 });
                     await expect(carol.locator('#round-winners')).toContainText('Confirmed points');
                 }
                 await carol.screenshot({ path: test.info().outputPath('offline-exit-phone.png') });
@@ -452,10 +452,10 @@ test('a silent backup pauses confirmed play and resumes without replaying contro
         dropMatchMessages = true;
         await expect(alice.locator('#round-status')).toContainText('Waiting for confirmed match state');
         await expect(alice.getByRole('heading', { name: 'Round interrupted', exact: true })).toBeVisible({
-            timeout: 12000
+            timeout: 15000
         });
         await expect(bob.getByRole('heading', { name: 'Round interrupted', exact: true })).toBeVisible({
-            timeout: 12000
+            timeout: 15000
         });
         await expect(alice.locator('#round-winners')).toContainText('Confirmed points');
         dropMatchMessages = false;
@@ -471,7 +471,7 @@ test('a silent backup pauses confirmed play and resumes without replaying contro
         dropMatchMessages = true;
         for (const player of [alice, bob]) {
             await expect(player.getByRole('heading', { name: 'Round interrupted', exact: true })).toBeVisible({
-                timeout: 12000
+                timeout: 15000
             });
         }
     }
@@ -524,7 +524,7 @@ for (const fault of ['silent network loss', 'browser suspension'] as const) {
             const confirmedScore = await bob.locator('#round-score').textContent();
             const confirmedTick = Number(await bob.locator('#online-game').getAttribute('data-tick'));
             await expect(bob.getByRole('heading', { name: 'Round interrupted', exact: true })).toBeVisible({
-                timeout: 12000
+                timeout: 15000
             });
             await expect(bob.locator('#round-score')).toHaveText(confirmedScore!);
             await expect(bob.locator('#online-game')).toHaveAttribute('data-tick', String(confirmedTick));
@@ -534,7 +534,7 @@ for (const fault of ['silent network loss', 'browser suspension'] as const) {
             }
             for (const page of pages) {
                 await expect(page.getByRole('heading', { name: 'Round interrupted', exact: true })).toBeVisible({
-                    timeout: 12000
+                    timeout: 15000
                 });
                 await expect(page.locator('#online-game')).toHaveAttribute('data-match-id', matchId!);
                 await expect(page.locator('#online-game')).toHaveAttribute('data-phase', 'interrupted', {
@@ -723,15 +723,16 @@ for (const lostPlayer of ['host', 'backup'] as const) {
         try {
             await startTownMatch([alice, bob]);
             const survivor = lostPlayer === 'host' ? bob : alice;
+            const disconnectedAt = Date.now();
             await (lostPlayer === 'host' ? first : second).close();
             await expect(survivor.locator('#round-status')).toContainText('Waiting for confirmed match state');
-            const pausedAt = Date.now();
+
             const clock = await survivor.locator('#round-clock').textContent();
             const score = await survivor.locator('#round-score').textContent();
             await expect(survivor.getByRole('heading', { name: 'Round interrupted', exact: true })).toBeVisible({
-                timeout: 12000
+                timeout: 15000
             });
-            expect(Date.now() - pausedAt).toBeGreaterThan(8500);
+            expect(Date.now() - disconnectedAt).toBeGreaterThan(13_000);
             await expect(survivor.locator('#round-clock')).toHaveText(clock!);
             await expect(survivor.locator('#round-score')).toHaveText(score!);
             await survivor.getByRole('button', { name: 'Back to solo', exact: true }).click();
@@ -779,7 +780,7 @@ for (const roomRead of ['stalled', 'missing'] as const) {
             await expect(alice.locator('#round-status')).toContainText('Waiting for confirmed match state');
             await expect.poll(() => stalledReads).toBeGreaterThan(0);
             await expect(alice.getByRole('heading', { name: 'Round interrupted', exact: true })).toBeVisible({
-                timeout: 12000
+                timeout: 15000
             });
             await expect(alice.locator('#round-winners')).toContainText('Confirmed points');
             await alice.getByRole('button', { name: 'Back to solo', exact: true }).click();

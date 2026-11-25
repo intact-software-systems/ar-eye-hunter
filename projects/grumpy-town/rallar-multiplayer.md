@@ -46,7 +46,8 @@ Authority/recovery changes clear it. Confirmed freezes and terminal phases overr
 live rendering; scores, world effects, results and recovery retain checkpoint truth.
 The host publishes at most 20 compact pose frames/second independently of checkpoint
 acknowledgements. Controls retain their existing host-receipt expiry and dash counter.
-Wire build is `grumpy-town-v6`; reload all clients together.
+Wire build `grumpy-town-v7` identifies the wider checkpoint lead. Refresh open
+tabs on all devices when a room reports different game versions.
 
 The first RTC phone trial found remote movement acceptable but local movement
 jittery/jumpy and Dash often unresponsive. Local presentation was still bounded
@@ -406,7 +407,7 @@ after asynchronous work; repeated known proposals avoid redundant hashing. Pendi
 and committed checkpoints are retained for retransmission. Ready/start/rematch intents
 retry until committed state confirms them. Input sequences survive expiry, and blur
 or visibility loss clears the runtime's input directly rather than waiting for another
-render frame. Speculative simulation stops two seconds beyond confirmed progress.
+render frame. Speculative simulation stops 4.5 seconds beyond confirmed progress.
 
 A same-director newcomer produces an explicit interruption from committed state,
 never speculative scores. Current roster adoption discards the outstanding
@@ -429,7 +430,7 @@ expiry under replay and foreign-session/old-round refusal. These checks do not p
 physical-phone performance or three-minute results.
 
 A focused impaired-network trial now drops one peer's outgoing match messages
-while leaving its Rallar connection and authority traffic alive. After 1.5 seconds
+while leaving its Rallar connection and authority traffic alive. After 4.5 seconds
 without a new committed checkpoint, both clients show a confirmation pause and
 the director pauses speculative time. Checkpoint retransmission continues; restoring
 the missing acknowledgements resumes the same round. Device input during the pause
@@ -642,8 +643,8 @@ return test does not establish that transition; retain it in reliability qualifi
 
 ### Silent host loss and opt-in room presence
 
-Grumpy Town grants room presence for eight seconds. Browsers renew every second, allow
-one second for the whole attempt and retry after 250 ms. Under Rallar’s
+Grumpy Town grants room presence for eleven seconds. Browsers renew every second, allow
+two seconds for the whole attempt and retry after 250 ms. Under Rallar’s
 safe-renewal check this allows a server-clock uncertainty window under 3.75
 seconds. In the iPhone guest trial, the short-lease configuration allowed only
 500 ms and the server recorded an event-loop stall of 3.2 seconds. The first
@@ -651,9 +652,9 @@ ordinary host message refusal followed its last room heartbeat request by about
 eight seconds.
 
 The organizer configures a 500 ms host reconnect reservation before its first
-appointment. A silent loss leaves room for a surviving player to claim at 8.5
+appointment. A silent loss leaves room for a surviving player to claim at 11.5
 seconds after the last lease began. The game’s existing three-browser trial
-allows 11.5 seconds for takeover and resumed play. Its silent-partition fixture drops
+allows 14.5 seconds for takeover and resumed play. Its silent-partition fixture drops
 all HTTP and gameplay frames while forwarding connection-local clock samples.
 A total outage through clock expiry retires the transport and selected room.
 Grumpy Town opens a fresh clocked connection when visible and asks Rallar to

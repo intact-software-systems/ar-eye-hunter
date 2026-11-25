@@ -4,6 +4,7 @@ import { SingleFlight } from '@shared/resilience/single-flight.ts';
 import { decodeTownCheckpoint } from '../agreement/match-snapshot.ts';
 import {
     TOWN_MATCH_BUILD,
+    TOWN_MATCH_BUILD_MISMATCH,
     TOWN_MATCH_PROTOCOL,
     validateTownMatchFrame,
     type TownMatchAction,
@@ -66,7 +67,7 @@ export class TownMatchFrames {
         }
         await this.accept(frame, senderId, 'local');
         if (
-            !this.validateReception(frame, senderId, this.roomRef) || this.round.members.length < 2 ||
+            this.receptionIssues(frame, senderId, this.roomRef).length > 0 || this.round.members.length < 2 ||
             (frame.action.kind === 'controls' && this.connection.getView().isDirector)
         ) {
             return;
@@ -84,26 +85,32 @@ export class TownMatchFrames {
     }
 
     async receive(reception: TownMatchTransport.Reception): Promise<void> {
-        if (this.validateReception(reception.frame, reception.senderId, reception.targetRoomRef)) {
+        const issues = this.receptionIssues(reception.frame, reception.senderId, reception.targetRoomRef);
+        if (issues.includes(TOWN_MATCH_BUILD_MISMATCH) && this.connection.error !== TOWN_MATCH_BUILD_MISMATCH) {
+            this.connection.report(TOWN_MATCH_BUILD_MISMATCH);
+        }
+        if (issues.length === 0) {
             await this.accept(reception.frame, reception.senderId, reception.transport);
         }
     }
 
-    private validateReception(frame: TownMatchFrame, senderId: string, targetRoomRef: GroupRef | undefined): boolean {
-        const checkpointState = this.round.checkpoints?.getState();
-        return !this.signal.aborted && this.connection.permitsMatchFrame(senderId, frame) && validateTownMatchFrame(frame, {
-                    roomRef: this.roomRef,
-                    targetRoomRef,
-                    director: this.dependencies.browser.director.status(this.roomRef),
-                    members: this.round.members,
-                    senderId,
-                    matchId: resolveTownFrameMatchId(frame, checkpointState)
-                }).length === 0;
+    private receptionIssues(frame: TownMatchFrame, senderId: string, targetRoomRef: GroupRef | undefined): readonly string[] {
+        if (this.signal.aborted || !this.connection.permitsMatchFrame(senderId, frame)) {
+            return ['This room session cannot exchange match messages.'];
+        }
+        return validateTownMatchFrame(frame, {
+            roomRef: this.roomRef,
+            targetRoomRef,
+            director: this.dependencies.browser.director.status(this.roomRef),
+            members: this.round.members,
+            senderId,
+            matchId: resolveTownFrameMatchId(frame, this.round.checkpoints?.getState())
+        });
     }
 
     private async accept(frame: TownMatchFrame, senderId: string, transport: 'rtc' | 'ws' | 'local'): Promise<void> {
         this.connection.reconcileAuthority();
-        if (!this.validateReception(frame, senderId, this.roomRef) || !this.round.checkpoints) {
+        if (this.receptionIssues(frame, senderId, this.roomRef).length > 0 || !this.round.checkpoints) {
             return;
         }
         if (frame.action.kind === 'proposal') {
@@ -176,7 +183,7 @@ export class TownMatchFrames {
             this.connection.reconcileAuthority();
             if (
                 checkpoint.right && this.connection.isCurrent(generation) &&
-                this.validateReception(frame, senderId, this.roomRef)
+                this.receptionIssues(frame, senderId, this.roomRef).length === 0
             ) {
                 this.round.checkpoints?.propose(checkpoint.right, senderId);
             }

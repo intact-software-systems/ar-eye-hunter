@@ -35,7 +35,7 @@ const members = [
 ];
 const frame = {
     protocol: 'grumpy-town.match.v1',
-    build: 'grumpy-town-v6',
+    build: 'grumpy-town-v7',
     roomRef,
     epoch: 3,
     matchId: 'round',
@@ -45,16 +45,12 @@ const frame = {
 const reception = { roomRef, targetRoomRef: roomRef, director, members, senderId: 'bob-session', matchId: 'round' };
 
 describe('Rallar match protocol admission', () => {
-    it('decodes bounded controls and rejects malformed, oversized and incompatible messages', () => {
+    it('decodes bounded controls and rejects malformed and oversized messages', () => {
         expect(decodeTownMatchFrame(JSON.stringify(frame)).right).toEqual(frame);
         for (
             const invalid of [
                 { ...frame, protocol: 'old' },
                 { ...frame, build: 'old' },
-                { ...frame, build: 'grumpy-town-v1' },
-                { ...frame, build: 'grumpy-town-v2' },
-                { ...frame, build: 'grumpy-town-v3' },
-                { ...frame, build: 'grumpy-town-v5' },
                 { ...frame, epoch: -1 },
                 { ...frame, sequence: 1.5 },
                 { ...frame, roomRef: { groupId: 'town' } },
@@ -84,6 +80,23 @@ describe('Rallar match protocol admission', () => {
         for (const committed of [false, true]) {
             const action = { ...recovery, committed };
             expect(decodeTownMatchFrame(JSON.stringify({ ...frame, action })).right?.action).toEqual(action);
+        }
+    });
+
+    it('rejects the previous movement build with reload guidance only for an authorized peer', () => {
+        const older = decodeTownMatchFrame(JSON.stringify({ ...frame, build: 'grumpy-town-v6' })).right!;
+        expect(older).toBeDefined();
+        expect(validateTownMatchFrame(older, reception)).toEqual([
+            'Players are using different game versions. Reload Grumpy Town on every device to play together.'
+        ]);
+        for (const invalid of [
+            { ...reception, senderId: 'outsider' },
+            { ...reception, targetRoomRef: { ...roomRef, groupId: 'other' } },
+            { ...reception, matchId: 'previous-round' }
+        ]) {
+            const issues = validateTownMatchFrame(older, invalid);
+            expect(issues.length).toBeGreaterThan(0);
+            expect(issues.join(' ')).not.toContain('Reload');
         }
     });
 

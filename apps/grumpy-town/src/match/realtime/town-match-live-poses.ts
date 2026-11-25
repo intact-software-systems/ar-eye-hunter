@@ -1,5 +1,6 @@
 import type { TownMatchFrame, TownMatchPose } from '../match-protocol.ts';
-import { TOWN_MATCH_RATE, type TownMatchState } from '../town-match.ts';
+import { TOWN_MATCH_CHECKPOINT_LEAD_TICKS } from '../agreement/town-match-recovery-window.ts';
+import type { TownMatchState } from '../town-match.ts';
 
 export namespace TownMatchLivePoses {
     export interface Sample {
@@ -33,7 +34,7 @@ export class TownMatchLivePoses {
             : match.tick;
         if (
             action.kind !== 'poses' || match.phase !== 'playing' || frame.matchId !== match.matchId ||
-            action.tick < match.tick || action.tick > baseTick + TOWN_MATCH_RATE * 2 + 3 ||
+            action.tick < match.tick || action.tick > baseTick + TOWN_MATCH_CHECKPOINT_LEAD_TICKS + 3 ||
             (this.latest && (frame.sequence <= this.latest.sequence || action.tick <= this.latest.tick))
         ) {
             return false;

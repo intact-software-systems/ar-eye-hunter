@@ -125,7 +125,7 @@ test('an invited guest can ready and dash in a match hosted by the owner', async
         const start = page.getByRole('button', { name: 'Start round' });
         await expect(start).toBeEnabled();
         // Players may talk in a ready lobby longer than the active round's recovery deadline.
-        await page.waitForTimeout(13000);
+        await page.waitForTimeout(16000);
         await start.click();
         await expect(phone.locator('#online-game')).toHaveAttribute('data-phase', 'playing', { timeout: 15000 });
         const guestGame = phone.locator('#online-game');

@@ -32,25 +32,26 @@ for (const hostOffsetMs of [-2_000, 2_000]) {
             await startTownMatch([alice, bob]);
             const matchId = await alice.locator('#online-game').getAttribute('data-match-id');
             const tick = Number(await bob.locator('#online-game').getAttribute('data-tick'));
-            // Continue beyond the eight-second presence lease, requiring successful renewals.
+            // Continue beyond the eleven-second presence lease, requiring successful renewals.
             await expect.poll(async () => Number(await bob.locator('#online-game').getAttribute('data-tick')), {
                 timeout: 20000
-            }).toBeGreaterThan(tick + 300);
+            }).toBeGreaterThan(tick + 390);
             await expect(bob.locator('#online-game')).toHaveAttribute('data-match-id', matchId!);
             const x = Number(await bob.locator('#online-game').getAttribute('data-x'));
             await bob.keyboard.down('KeyD');
             await expect.poll(async () => Number(await alice.locator('#online-game').getAttribute('data-peer-x')))
                 .toBeGreaterThan(x + 1);
             await bob.keyboard.up('KeyD');
+            const disconnectedAt = Date.now();
             await contexts[0].close();
             await expect(bob.locator('#round-status')).toContainText('Waiting for confirmed match state');
-            const pausedAt = Date.now();
+
             const clock = await bob.locator('#round-clock').textContent();
             const score = await bob.locator('#round-score').textContent();
             await expect(bob.getByRole('heading', { name: 'Round interrupted', exact: true })).toBeVisible({
-                timeout: 12000
+                timeout: 15000
             });
-            expect(Date.now() - pausedAt).toBeGreaterThan(8500);
+            expect(Date.now() - disconnectedAt).toBeGreaterThan(13_000);
             await expect(bob.locator('#round-clock')).toHaveText(clock!);
             await expect(bob.locator('#round-score')).toHaveText(score!);
             await bob.getByRole('button', { name: 'Back to solo', exact: true }).click();

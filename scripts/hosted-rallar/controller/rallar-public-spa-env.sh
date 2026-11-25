@@ -165,7 +165,7 @@ apply_rallar_public_cors_defaults() {
 	local spa_origin api_defaults control_defaults
 	spa_origin="$(rallar_public_url_origin "${RALLAR_BLACK_BOX_SPA_URL}" || printf 'https://%s' "${RALLAR_BLACKBOX_HOST}")"
 	api_defaults="$(rallar_csv_append_unique \
-		"https://${RALLAR_BLACKBOX_HOST},https://ar-eye-hunter.pages.dev,https://relic-hunters-v1.intact-software-systems.workers.dev" \
+		"https://${RALLAR_BLACKBOX_HOST},https://ar-eye-hunter.pages.dev,https://relic-hunters-v1.intact-software-systems.workers.dev,https://grumpy-town.intact-software-systems.workers.dev" \
 		"${spa_origin}")"
 	control_defaults="${spa_origin}"
 
