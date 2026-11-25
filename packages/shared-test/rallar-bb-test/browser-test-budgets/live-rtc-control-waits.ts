@@ -39,10 +39,3 @@ export const LIVE_RTC_RESET_RESULT_WAIT_MS = 30_000;
 /** Retiring an agent closes it, then resets it, each command its enqueue request and then its result wait. */
 export const LIVE_RTC_CLOSE_AND_RESET_BOUNDED_WAITS_MS = computeCommandWaitMs(LIVE_RTC_CLOSE_RESULT_WAIT_MS) +
     computeCommandWaitMs(LIVE_RTC_RESET_RESULT_WAIT_MS);
-
-/** How long the control client waits for one agent's diagnostics read. */
-export const LIVE_RTC_DIAGNOSTICS_READ_TIMEOUT_MS = 30_000;
-
-/** A diagnostics capture reads each of the trio's agents in turn, each read a command with its own result wait. */
-export const LIVE_RTC_DIAGNOSTICS_CAPTURE_BOUNDED_WAITS_MS = LIVE_RTC_TRIO_SIZE *
-    computeCommandWaitMs(LIVE_RTC_DIAGNOSTICS_READ_TIMEOUT_MS);

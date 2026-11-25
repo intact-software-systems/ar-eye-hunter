@@ -1,4 +1,5 @@
 import { parse } from '@babel/parser';
+import type { CallExpression, Node, OptionalCallExpression } from '@babel/types';
 
 /** The `APIRequestContext` methods that send a request, each taking its options second. */
 const REQUEST_METHODS: ReadonlySet<string> = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'fetch']);
@@ -6,26 +7,16 @@ const REQUEST_METHODS: ReadonlySet<string> = new Set(['get', 'post', 'put', 'pat
 /** A receiver the harnesses name for the request context it is: `request`, `#request`, `input.request`, `page.request`. */
 const REQUEST_RECEIVER_NAME = /request$/i;
 
-interface SyntaxNode {
-    readonly type: string;
-    readonly loc?: Readonly<{ start: Readonly<{ line: number; }>; }> | null;
-    readonly [key: string]: unknown;
-}
-
-function isSyntaxNode(value: unknown): value is SyntaxNode {
-    return typeof value === 'object' && value !== null && typeof (value as { type?: unknown; }).type === 'string';
-}
-
 /** The name an identifier, private name or member expression is known by, if it has one. */
-function toName(node: unknown): string | undefined {
-    if (!isSyntaxNode(node)) {
+function toName(node: Node | null | undefined): string | undefined {
+    if (!node) {
         return undefined;
     }
     switch (node.type) {
         case 'Identifier':
-            return typeof node.name === 'string' ? node.name : undefined;
+            return node.name;
         case 'PrivateName':
-            return toName(node.id);
+            return node.id.name;
         case 'MemberExpression':
         case 'OptionalMemberExpression':
             return toName(node.property);
@@ -35,33 +26,31 @@ function toName(node: unknown): string | undefined {
 }
 
 /** Whether a call sends a request through a request context: a request method of a receiver named for one. */
-function isRequestCall(node: SyntaxNode): boolean {
+function isRequestCall(node: Node): node is CallExpression | OptionalCallExpression {
     if (node.type !== 'CallExpression' && node.type !== 'OptionalCallExpression') {
         return false;
     }
     const callee = node.callee;
-    return isSyntaxNode(callee) && (callee.type === 'MemberExpression' || callee.type === 'OptionalMemberExpression') &&
+    return (callee.type === 'MemberExpression' || callee.type === 'OptionalMemberExpression') &&
         REQUEST_METHODS.has(toName(callee.property) ?? '') && REQUEST_RECEIVER_NAME.test(toName(callee.object) ?? '');
 }
 
 /** Whether a request call's options are written out and name a `timeout` of their own. */
-function namesTimeout(call: SyntaxNode): boolean {
-    const options = (call.arguments as readonly unknown[])[1];
-    return isSyntaxNode(options) && options.type === 'ObjectExpression' &&
-        (options.properties as readonly unknown[]).some((property) =>
-            isSyntaxNode(property) && property.type === 'ObjectProperty' && toName(property.key) === 'timeout'
-        );
+function namesTimeout(call: CallExpression | OptionalCallExpression): boolean {
+    const options = call.arguments[1];
+    return options?.type === 'ObjectExpression' &&
+        options.properties.some((property) => property.type === 'ObjectProperty' && toName(property.key) === 'timeout');
 }
 
 /** Calls `visit` with every node of the tree. */
-function walk(node: SyntaxNode, visit: (node: SyntaxNode) => void): void {
+function walk(node: Node, visit: (node: Node) => void): void {
     visit(node);
     for (const [key, value] of Object.entries(node)) {
         if (key === 'loc' || key.endsWith('Comments')) {
             continue;
         }
         for (const child of Array.isArray(value) ? value : [value]) {
-            if (isSyntaxNode(child)) {
+            if (typeof child === 'object' && child !== null && typeof child.type === 'string') {
                 walk(child, visit);
             }
         }
@@ -78,7 +67,7 @@ export function findUntimedRequests(source: string): readonly string[] {
     const lines = source.split('\n');
     const program = parse(source, { sourceType: 'module', plugins: ['typescript'], errorRecovery: true }).program;
     const found = new Set<number>();
-    walk(program as unknown as SyntaxNode, (node) => {
+    walk(program, (node) => {
         if (isRequestCall(node) && !namesTimeout(node) && node.loc) {
             found.add(node.loc.start.line);
         }

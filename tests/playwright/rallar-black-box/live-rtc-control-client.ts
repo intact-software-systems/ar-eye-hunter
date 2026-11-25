@@ -18,12 +18,12 @@ import { computeCommandResultPollTimeoutMs } from '@shared-test/rallar-bb-test/b
 import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
 import {
     LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS,
-    LIVE_RTC_DIAGNOSTICS_READ_TIMEOUT_MS,
     LIVE_RTC_HEALTH_READ_TIMEOUT_MS,
     LIVE_RTC_MESSAGE_WAIT_TIMEOUT_MS,
     LIVE_RTC_PEER_ABSENCE_TIMEOUT_MS,
     LIVE_RTC_PEER_READINESS_TIMEOUT_MS
 } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-control-waits.ts';
+import { LIVE_RTC_DIAGNOSTICS_READ_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-diagnostics-waits.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';

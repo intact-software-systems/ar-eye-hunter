@@ -8,10 +8,10 @@ import {
 } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-agent-opening-waits.ts';
 import {
     LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS,
-    LIVE_RTC_DIAGNOSTICS_CAPTURE_BOUNDED_WAITS_MS,
     LIVE_RTC_TRIO_SIZE,
     LIVE_RTC_UNBUDGETED_COMMAND_WAIT_MS
 } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-control-waits.ts';
+import { LIVE_RTC_DIAGNOSTICS_CAPTURE_BOUNDED_WAITS_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-diagnostics-waits.ts';
 import { FORMATION_RUN_BOUNDED_WAITS_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-formation-waits.ts';
 
 import {

@@ -111,11 +111,11 @@ describe('a control run read', () => {
                 throw new Error('apiRequestContext.get: read ECONNRESET');
             });
             const startedAtMs = Date.now();
-            const read = readControlRun(request, 'run').catch((error: unknown) => error);
+            const refused = expect(readControlRun(request, 'run')).rejects.toThrow('read ECONNRESET');
 
             await vi.runAllTimersAsync();
 
-            await expect(read).resolves.toBeInstanceOf(Error);
+            await refused;
             expect(timeouts).toEqual([CONTROL_REQUEST_TIMEOUT_MS, CONTROL_REQUEST_TIMEOUT_MS, CONTROL_REQUEST_TIMEOUT_MS]);
             expect(Date.now() - startedAtMs).toBe(CONTROL_GET_BOUNDED_WAITS_MS);
         }
