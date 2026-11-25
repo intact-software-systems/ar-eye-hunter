@@ -53,6 +53,8 @@ interface ReceiptOwnerSocket {
 }
 
 const scope = { applicationId: 'app', workspaceId: 'workspace' };
+/** Inside the child's 15 s spawn limit. */
+const ENDED_WORK_RELEASE_TIMEOUT_MS = 5_000;
 
 export async function writePendingReceiptOwnerEvidence(
     evidencePath: string,
@@ -137,7 +139,8 @@ class ReceiptOwnerFixture {
     readonly observations: WsQueueBoxServerReceiptObservation[] = [];
     readonly engine = new InboxOutboxEngine();
     readonly receiptRecordStores = createInMemoryALReceiptRecordStores('server', () => this.clock.nowMs);
-    receiptRecordReleases = 0;
+    /** Resolved by the record's first ended-work release; its own batch, which no engine pass awaits, makes it. */
+    readonly endedWorkReleased = Promise.withResolvers<void>();
     readonly service: WsQueueBoxServerService;
     readonly socket: JsonWebSocketServer;
     readonly origin: SimulatedWebSocket;
@@ -161,7 +164,7 @@ class ReceiptOwnerFixture {
         });
         this.observe = sink === 'disabled' ? undefined : (event) => this.recordObservation(event);
         this.holdClaims();
-        this.countReceiptRecordReleases();
+        this.observeEndedWorkRelease();
         installReceiptConflict(this.store, this.effects);
         this.service = this.createServer();
         this.service.authorizeInboundMessagesWith({
@@ -219,9 +222,10 @@ class ReceiptOwnerFixture {
         await generateCompleteReceipt(this.service);
         // The record's ended work delivers the complete receipt, whose first commit conflicts and is retained as work.
         // The conflict is set inside that commit. The ended work runs in the batch its end's commit started
-        // (`#worker.committed`), which no engine pass awaits: the drain waits for that work's own release, after which
-        // the work has observed what it issued.
-        await drainReceipt(this.engine, () => this.effects.conflicted && this.receiptRecordReleases > 0);
+        // (`#worker.committed`), which no engine pass awaits: the fixture awaits that work's own release, after which
+        // the work has observed what it issued, and runs no engine pass meanwhile, so every sink's run reads the clock
+        // alike.
+        await awaitEndedWorkRelease(this.endedWorkReleased.promise);
         const pending = this.observations.find((event) => event.kind === 'receipt-outbox' && event.receipt.phase === 'complete');
         if (this.sink !== 'disabled') {
             assert.equal(pending?.kind === 'receipt-outbox' && pending.verdict.kind, 'pending');
@@ -272,12 +276,14 @@ class ReceiptOwnerFixture {
         };
     }
 
-    private countReceiptRecordReleases(): void {
+    private observeEndedWorkRelease(): void {
         const { backend: { workQueue }, namespace } = this.receiptRecordStores;
         const release = workQueue.releaseEntries.bind(workQueue);
         workQueue.releaseEntries = async (releases) => {
             const result = await release(releases);
-            this.receiptRecordReleases += releases.filter((value) => decodeALReceiptRecordWorkEntry(value.entry, namespace).kind === 'ended').length;
+            if (releases.some((value) => decodeALReceiptRecordWorkEntry(value.entry, namespace).kind === 'ended')) {
+                this.endedWorkReleased.resolve();
+            }
             return result;
         };
     }
@@ -426,6 +432,20 @@ async function generateCompleteReceipt(service: WsQueueBoxServerService): Promis
         })
     );
     assert.equal((await service.acceptIncomingMessage(ack, 'recipient')).right?.kind, 'control');
+}
+
+/** A bounded wait: an ended work that never releases fails the run loudly instead of hanging it. */
+async function awaitEndedWorkRelease(released: Promise<void>): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error('The receipt record\'s ended work was never released')), ENDED_WORK_RELEASE_TIMEOUT_MS);
+    });
+    try {
+        await Promise.race([released, timedOut]);
+    }
+    finally {
+        clearTimeout(timer);
+    }
 }
 
 async function drainReceipt(engine: InboxOutboxEngine, finished: () => boolean): Promise<void> {
