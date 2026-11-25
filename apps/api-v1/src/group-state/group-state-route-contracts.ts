@@ -378,6 +378,7 @@ export interface GroupStateRouteDependencies {
         request: GroupStateRouteRequest
     ) => Promise<GroupStateRouteAuthSession>;
     readonly processGroupAppInbox: ProcessGroupAppInbox;
+    readonly processGuestAdmission: GroupStateInboxService['processGuestAdmissionUntilCompletion'];
     readonly processQuickJoin: GroupStateInboxService['processQuickJoinUntilCompletion'];
     readonly processGroupMove: GroupStateInboxService['processGroupMoveUntilCompletion'];
     readonly listGroupMoves: GroupMoveService['listForPrincipal'];

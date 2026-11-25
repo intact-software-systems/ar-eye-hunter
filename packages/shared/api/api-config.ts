@@ -36,6 +36,8 @@ export function readServerClockEpoch(value: ApiJsonValue, expectedPeerId: string
 }
 
 export interface AuthSession {
+    /** A guest transport reads only this room and its own session. The server authorizes every operation. */
+    readonly guestRoom?: GroupRef;
     readonly clientId: string;
     readonly accessToken: string;
     readonly username: string;

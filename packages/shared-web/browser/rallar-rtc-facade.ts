@@ -239,5 +239,7 @@ export interface RallarRtcFacade {
     /** Reloads browser ICE configuration for subsequent transports; existing peers and server caching are unchanged. */
     refreshIceConfig(options?: RallarRtcIceConfigRefreshOptions): Promise<void>;
     restartIce(peerId: string): Promise<RallarRtcRecoveryResult>;
+    /** Close the existing native peer and its lanes immediately. */
+    disconnectPeer(peerId: string): void;
     reconnectPeer(peerId: string, options?: RallarRtcReconnectOptions): Promise<RallarRtcRecoveryResult>;
 }

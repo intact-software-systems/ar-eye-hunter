@@ -773,6 +773,8 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         return {
             read,
             outboxEntry: toChangedALMessageRow(entry, {
+                // Freezing or signing on another carrier keeps the original canonical row's identity.
+                typeId: read.canonicalEntry?.typeId ?? entry.typeId,
                 key: read.canonicalEntry?.key ?? read.sentSnapshot?.outboxKey ??
                     toALOutboundCanonicalKey(this.admissionStore.canonicalScope, read.msg)
             }),

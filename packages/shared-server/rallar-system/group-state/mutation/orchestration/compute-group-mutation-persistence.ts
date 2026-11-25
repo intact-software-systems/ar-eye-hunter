@@ -1,3 +1,5 @@
+import { groupGuestTransportEffects } from '../membership/group-guest-transport-lifecycle.ts';
+import { AUTH_SESSIONS_BY_SESSION_NAMESPACE, authSessionKey } from '../../../auth/persistence/auth-storage-keys.ts';
 import { readGroupSessionSchedule } from '@shared/api/group-sessions/group-session-schedule.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { GROUP_SESSION_INTENTS_NAMESPACE, groupSessionIntentKey } from '../../schedule/group-session-intent-storage.ts';
@@ -89,7 +91,18 @@ function computeGroupMutationGuardedBatch(
     read: GroupMutationRead
 ): RuntimeStateGuardedBatch {
     const effects: RuntimeStateGuardedBatchEffect[] = [];
-    effects.push(...computePresenceAndMembershipEffects(computed));
+    effects.push(...computePresenceAndMembershipEffects(computed), ...groupGuestTransportEffects(computed, read));
+    const guestSession = computed.guestTransportSession;
+    if (guestSession) {
+        effects.push({
+            effectId: 'room-guest-transport',
+            operation: 'insert',
+            namespace: AUTH_SESSIONS_BY_SESSION_NAMESPACE,
+            key: authSessionKey(guestSession.sessionId),
+            value: encodeRuntimeStateJsonValue(guestSession),
+            expireAtTimestamp: guestSession.expiresAtEpochMs
+        });
+    }
     effects.push(...computeSessionEffects(computed), ...(computed.directorAuthorityFences ?? []));
     if (computed.directorPresenceGroup && read.group) {
         effects.push({ effectId: 'director-presence', ...groupStateUpdateGroupDescriptor(computed.directorPresenceGroup, read.group.entry.revision) });

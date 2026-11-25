@@ -17,6 +17,7 @@ import { registerAuthCredentialMutationRoutes } from './auth/register-auth-crede
 import { registerAuthUserMutationRoutes } from './auth/register-auth-user-mutation-routes.ts';
 
 export interface ConfigRouteDependencies {
+    readonly requireTransportSession?: ConfigRouteDependencies['requireApiAuthSession'];
     readonly requireApiAuthSession: (
         req: { header(name: string): string | undefined; }
     ) => Promise<IssuedAuthSession>;

@@ -41,6 +41,14 @@ export function assertRoomClockMutation(value: unknown): asserts value is RoomCl
     const keys = ['name', 'expectedRevision', 'expectedDirectorEpoch', 'operation'];
     if (command.operation === 'advance-phase') {
         keys.push('phase');
+        if (Object.hasOwn(command, 'participantPrincipalIds')) {
+            const ids = command.participantPrincipalIds;
+            if (command.name !== 'guest-play' || !Array.isArray(ids) || ids.some(id => typeof id !== 'string' || !id) ||
+                new Set(ids).size !== ids.length) {
+                throw new TypeError('Invalid guest-play participant list.');
+            }
+            keys.push('participantPrincipalIds');
+        }
         assertRoomDeadlineName(command.phase);
         if (Object.hasOwn(command, 'successor')) {
             keys.push('successor');

@@ -197,7 +197,9 @@ export function createBrowserDirectorComposition(
     });
     const relayTransport = new BrowserDirectorRelayTransport({
         messages: input.messaging.messages,
-        readSession
+        readSession,
+        isWebSocketDown: () =>
+            input.session.readMiddleware()?.middleware.webSocketQueueBox.readHealth().isOpen === false
     });
     const directorRelays = new BrowserDirectorRelayRuntime({
         status: directorStatus,

@@ -183,6 +183,7 @@ function toUpdateCommand(
             maxMembers: request.maxMembers ?? null,
             maxSpectators: request.maxSpectators ?? null,
             maxSessionsPerMember: request.maxSessionsPerMember ?? null,
+            ...(request.guestInvitationVerifier === undefined ? {} : { guestInvitationVerifier: request.guestInvitationVerifier }),
             ...(request.roomClock === undefined ? {} : { roomClock: structuredClone(request.roomClock) }),
             ...(request.roomDeadline === undefined ? {} : { roomDeadline: structuredClone(request.roomDeadline) }),
             metadata: request.metadata ? structuredClone(request.metadata) : null,

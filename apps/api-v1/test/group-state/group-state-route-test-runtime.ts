@@ -50,6 +50,7 @@ export interface GroupStateRouteTestRuntimeInput {
     readonly processGroupAppInbox?: GroupStateRouteDependencies[
         'processGroupAppInbox'
     ];
+    readonly processGuestAdmission?: GroupStateRouteDependencies['processGuestAdmission'];
     readonly processQuickJoin?: GroupStateRouteDependencies['processQuickJoin'];
     readonly processGroupMove?: GroupStateRouteDependencies['processGroupMove'];
     readonly listGroupMoves?: GroupStateRouteDependencies['listGroupMoves'];
@@ -116,6 +117,7 @@ export function createGroupStateRouteTestDependencies(
         processGroupAppInbox: input.processGroupAppInbox ?? defaultProcessGroupAppInbox,
         processGroupMove: input.processGroupMove ?? (() => Promise.reject(new Error('Unexpected group move mutation'))),
         listGroupMoves: input.listGroupMoves ?? (() => Promise.reject(new Error('Unexpected group move recovery'))),
+        processGuestAdmission: input.processGuestAdmission ?? (() => Promise.reject(new Error('Unexpected guest admission'))),
         processQuickJoin: input.processQuickJoin ?? (() => Promise.reject(new Error('Unexpected Quick Join mutation'))),
         groupAdmissionQuota: input.groupAdmissionQuota ?? createGroupAdmissionQuota({
             windowMs: 60_000,

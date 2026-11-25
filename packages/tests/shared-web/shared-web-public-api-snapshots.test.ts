@@ -920,6 +920,10 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
         }
     },
     {
+        filePath: 'packages/shared-web/browser/rooms/entry/redeem-guest-invitation.ts',
+        expected: { values: ['createRoomGuestSecret', 'redeemRoomGuestInvitation'], types: [], starExports: [], namespaceExports: [] }
+    },
+    {
         filePath: 'packages/shared-web/mod.ts',
         expected: {
             values: [
@@ -984,6 +988,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 './browser/rallar-ai.ts',
                 './browser/rallar-crdt.ts',
                 './browser/rallar.ts',
+                './browser/rooms/entry/redeem-guest-invitation.ts',
                 './browser/rooms/room-group-state-http-api.ts',
                 './browser/rtc/rtc-topology-http-api.ts',
                 './browser/session/client-session-http-api.ts',

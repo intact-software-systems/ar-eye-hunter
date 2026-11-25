@@ -145,6 +145,12 @@ const sameLogicalActionRequestIdentityReuse: readonly SameLogicalActionRequestId
         requestId: 'bb-unlisted-hideRoom-{runId}'
     },
     {
+        actionNames: ['aReplayedLeaveCannotRestoreTheDepartedGuest', 'theGuestLeavesItsOwnSeatAndTheLinkSurvives'],
+        file: `${apiV1RecipeDirectory}/api-v1-group-governance-authority.json`,
+        kind: 'sequential-replay',
+        requestId: 'govauth-guest-leave-{runId}'
+    },
+    {
         actionNames: [
             'firstCrdtHttpMutation',
             'rejectChangedCrdtHttpIntent',

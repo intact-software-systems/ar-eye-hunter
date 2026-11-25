@@ -1,3 +1,4 @@
+import { readRoomGuestRequest, assertRoomGuestSeat } from '@shared-server/http/room-guest-request.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type {
     GraphDiagnosticReadOptions,
@@ -157,8 +158,10 @@ export function registerGraphTopologyRoutes(
         async (c) => {
             try {
                 const groupRef = toGroupRef(c);
+                const guest = await readRoomGuestRequest(c.req, groupRef);
                 const snapshot = await readCurrentGroupSnapshot(groupRef, deps);
-                await assertCanReadGroupSnapshot(c.req, deps, snapshot);
+                if (guest) assertRoomGuestSeat(guest, snapshot, deps.now());
+                else await assertCanReadGroupSnapshot(c.req, deps, snapshot);
                 return c.json(await deps.topologyQuery.readTopologyView(groupRef));
             }
             catch (error) {
