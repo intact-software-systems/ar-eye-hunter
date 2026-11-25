@@ -124,8 +124,8 @@ The shared town uses the same movement, dash/drop and zoom controls. The three-m
 round targets 100 individual points and permits several qualifiers. Online players
 are real human sessions; BOT PAL remains only in solo.
 Ready submits your username for the round's player labels. The host associates it
-with your authenticated seat and retains it through results. This trial uses wire
-build `grumpy-town-v6`; refresh every open trial tab before playing together.
+with your authenticated seat and retains it through results. The current match build is `grumpy-town-v7`. If players have different versions,
+refresh Grumpy Town on every device before starting a round.
 Leaving hands ownership to another active member, or closes the town when its
 last member leaves. Lost action replies expose a retry button. Returning to solo
 opens the playground immediately while the online session finishes cancelling

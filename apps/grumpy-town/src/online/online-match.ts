@@ -103,6 +103,7 @@ export class OnlineMatch {
             this.game?.getError(),
             view.available,
             view.isDirector,
+            view.waitingForLobbyPeers,
             view.error,
             view.appointmentEligibility,
             view.appointing,
@@ -123,7 +124,9 @@ export class OnlineMatch {
         controls.replaceChildren();
         const status = document.createElement('p');
         status.textContent = view.error || this.game?.getError() ||
-            (match && !this.game?.isReady() ? 'Preparing the town…' : match
+            (view.waitingForLobbyPeers
+                ? 'Waiting for friends to connect. If a friend cannot ready up, reload Grumpy Town on their device.'
+                : match && !this.game?.isReady() ? 'Preparing the town…' : match
                 ? `${match.members.filter((member) => member.ready).length}/${match.members.length} ready · ${
                     view.isDirector ? 'You direct this match' : 'Player-hosted match'
                 }`

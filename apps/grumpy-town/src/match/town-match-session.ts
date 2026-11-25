@@ -50,6 +50,7 @@ export namespace TownMatchSession {
         readonly isDirector: boolean;
         readonly available: boolean;
         readonly recovering: boolean;
+        readonly waitingForLobbyPeers: boolean;
         readonly observing: boolean;
         readonly interruption: string | undefined;
         readonly inputGeneration: number;

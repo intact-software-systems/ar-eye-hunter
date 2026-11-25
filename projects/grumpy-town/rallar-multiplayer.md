@@ -46,7 +46,8 @@ Authority/recovery changes clear it. Confirmed freezes and terminal phases overr
 live rendering; scores, world effects, results and recovery retain checkpoint truth.
 The host publishes at most 20 compact pose frames/second independently of checkpoint
 acknowledgements. Controls retain their existing host-receipt expiry and dash counter.
-Wire build is `grumpy-town-v6`; reload all clients together.
+Wire build `grumpy-town-v7` identifies the wider checkpoint lead. Refresh open
+tabs on all devices when a room reports different game versions.
 
 The first RTC phone trial found remote movement acceptable but local movement
 jittery/jumpy and Dash often unresponsive. Local presentation was still bounded

@@ -1,6 +1,7 @@
-import type { RallarTypedMessageChannel } from '@shared-web/browser/messages/rallar-message-contracts.ts';
-import type { RallarRoomRealtimeJsonChannel } from '@shared-web/browser/rallar-realtime-facade.ts';
+import type { RallarTypedMessageChannel } from '@shared-web/browser/rallar-core.ts';
+import type { RallarRoomRealtimeJsonChannel } from '@shared-web/browser/rallar-realtime.ts';
 import { isAcceptedRealtimeSendResult } from '@shared-web/browser/realtime/browser-realtime-send-runtime.ts';
+import { isALDeliveryAdmitted, isALDeliveryTerminal } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
@@ -66,34 +67,25 @@ export class TownMatchTransport {
         if (this.lifetime.signal.aborted || recipientPeerIds.length === 0) {
             return;
         }
-        const live = frame.action.kind === 'controls' || frame.action.kind === 'poses';
-        const recipients = live ? recipientPeerIds : this.agreementRecipients(frame, recipientPeerIds);
-        if (recipients.length === 0) return;
         const wire = JSON.stringify(frame);
-        const acceptedPeers = live ? await this.writeRealtime(frame, wire) : [];
-        if (this.lifetime.signal.aborted) {
+        if (frame.action.kind !== 'controls' && frame.action.kind !== 'poses') {
+            await this.writeAgreement(frame, wire, recipientPeerIds);
             return;
         }
-        const missing = recipients.filter((peerId) => !acceptedPeers.includes(peerId));
-        if (live) {
-            this.liveSend = missing.length === 0 ? 'rtc' : acceptedPeers.length > 0 ? 'mixed' : 'ws';
-        }
-        if (missing.length > 0) {
-            const sent = await this.dependencies.reliable.sendWs(wire, {
-                recipientPeerIds: missing,
-                ttlMs: live ? 250 : 2000,
-                reliability: 'best-effort',
-                ack: 'none'
-            });
-            const delivery = sent.lifecycle();
-            if (delivery.state === 'failed' || delivery.state === 'rejected') {
-                throw new Error('Match traffic could not reach Rallar. Waiting to reconnect.');
-            }
+        const acceptedPeers = await this.writeRealtime(frame, wire);
+        if (this.lifetime.signal.aborted) return;
+        const missing = recipientPeerIds.filter(peer => !acceptedPeers.includes(peer));
+        this.liveSend = missing.length === 0 ? 'rtc' : acceptedPeers.length > 0 ? 'mixed' : 'ws';
+        if (missing.length === 0) return;
+        const sent = await this.sendWs(wire, missing, 250);
+        const delivery = sent.lifecycle();
+        if (delivery.state === 'failed' || delivery.state === 'rejected') {
+            throw new Error('Match traffic could not reach Rallar. Waiting to reconnect.');
         }
     }
 
-    /** New decisions are sent immediately; each peer gets one repeat per second to repair a lost decision. */
-    private agreementRecipients(frame: TownMatchFrame, recipients: readonly string[]): readonly string[] {
+    /** Repeat a lost agreement at most once a second per peer; failed admissions can retry immediately. */
+    private async writeAgreement(frame: TownMatchFrame, wire: string, recipients: readonly string[]): Promise<void> {
         const now = this.dependencies.timers.nowMs();
         for (const [key, deadline] of this.retryAfter) {
             if (deadline <= now) this.retryAfter.delete(key);
@@ -102,11 +94,49 @@ export class TownMatchTransport {
         // ACK/commit/recovery envelopes have new send sequences even when they name the same checkpoint.
         const decision = 'proposalSequence' in action ? [action.proposalSequence, action.digest] : [frame.sequence];
         if (action.kind === 'recover') decision.push(action.checkpointEpoch, Number(action.committed));
-        return recipients.filter(peer => {
+        const retryAt = now + 1000;
+        const reserved = new Map<string, string>();
+        for (const peer of recipients) {
             const key = JSON.stringify([peer, frame.matchId, frame.epoch, action.kind, ...decision]);
-            if (this.retryAfter.has(key)) return false;
-            this.retryAfter.set(key, now + 1000);
-            return true;
+            if (this.retryAfter.has(key)) continue;
+            this.retryAfter.set(key, retryAt);
+            reserved.set(key, peer);
+        }
+        if (reserved.size === 0) return;
+        const release = () => {
+            for (const key of reserved.keys()) {
+                // A slow admission can settle after a newer retry has reserved the same peer.
+                if (this.retryAfter.get(key) === retryAt) this.retryAfter.delete(key);
+            }
+        };
+        try {
+            const handle = await this.sendWs(wire, [...reserved.values()], 2000);
+            const delivery = handle.lifecycle();
+            if (isALDeliveryAdmitted(delivery)) return;
+            if (isALDeliveryTerminal(delivery)) {
+                throw new Error('Match traffic could not reach Rallar. Waiting to reconnect.');
+            }
+            // Admission can arrive after sendWs returns. Let the host continue ticking while it settles.
+            void handle.wait({
+                until: ['accepted', 'queued', 'transport-accepted', 'acknowledged'],
+                timeoutMs: 2000,
+                signal: this.lifetime.signal
+            }).then(outcome => {
+                if (!isALDeliveryAdmitted(outcome.lifecycle)) release();
+            }, release);
+        }
+        catch (error) {
+            release();
+            throw error;
+        }
+    }
+
+    private sendWs(wire: string, recipientPeerIds: readonly string[], ttlMs: number) {
+        return this.dependencies.reliable.sendWs(wire, {
+            recipientPeerIds,
+            ttlMs,
+            reliability: 'best-effort',
+            ack: 'none'
         });
     }
 

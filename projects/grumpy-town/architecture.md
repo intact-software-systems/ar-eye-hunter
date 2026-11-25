@@ -112,7 +112,8 @@ If a public capability cannot support this, improve Rallar rather than bypass it
   Small corrections blend; canonical freeze/recovery/lifecycle resets take priority.
   The live contract includes bounded dash state/clouds to prevent replaying a
   consumed dash from an older checkpoint. Readiness needs host-observed cooldown.
-  Current wire build is `grumpy-town-v6`; reload all clients together.
+  Wire build `grumpy-town-v7` allows host poses up to the 4.5-second checkpoint
+  lead plus three ticks of tolerance. All players must use the same build.
 
 Every envelope binds full scoped `GroupRef`, match ID, protocol/rules version,
 appointment epoch and relevant sequence/tick. Authenticate sender identity from

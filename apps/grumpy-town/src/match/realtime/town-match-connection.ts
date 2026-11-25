@@ -60,6 +60,8 @@ export class TownMatchConnection {
                 match &&
                     !match.seats.some((seat) => seat.id === session?.clientId && seat.status === 'active')
             ),
+            waitingForLobbyPeers: director.isDirector && members.length > 1 && checkpoint?.pending?.checkpoint.state.phase === 'lobby' &&
+                members.some(peer => !match?.members.some(member => member.sessionId === peer.sessionId)),
             recovering,
             interruption,
             inputGeneration: this.round.generation,

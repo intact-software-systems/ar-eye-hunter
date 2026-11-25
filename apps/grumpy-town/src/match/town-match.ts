@@ -200,7 +200,8 @@ function advanceTownMatchPlayer(input: TownMatchTick, player: TownMatchPlayer): 
     const member = input.state.members.find((member) => member.id === player.id);
     const sample = input.inputs.find((sample) =>
         sample.playerId === player.id &&
-        sample.sessionId === member?.sessionId && sample.matchId === input.state.matchId && sample.expiresAt > input.now
+        sample.sessionId === member?.sessionId && sample.matchId === input.state.matchId &&
+        sample.receivedAt <= input.now && sample.expiresAt > input.now
     );
     const controls = sample?.controls ?? { x: 0, z: 0, dash: player.consumedDash };
     const moved = computePracticePlayerTick({

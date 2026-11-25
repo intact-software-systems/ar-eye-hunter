@@ -118,6 +118,54 @@ describe('director clock and control admission', () => {
         simulation.stop();
     });
 
+    it.each([4000, 60000])('a movement received at wake time %i only affects subsequent ticks', (wake) => {
+        const state = { ...createCountdown().getState(), phase: 'playing' as const, countdownTicks: 0 };
+        const simulation = new TownMatchSimulation(state, 0);
+        const movement = createFrame(1, { kind: 'controls', x: 1, z: 0, dash: 0 });
+        simulation.accept(movement, 'bob-session', wake);
+        simulation.advance(wake, state, seatDeadlineClock(wake));
+        const atWake = simulation.getState();
+        expect(atWake.players[1].x).toBe(state.players[1].x);
+        simulation.advance(wake + 34, atWake, seatDeadlineClock(wake + 34));
+        expect(simulation.getState().players[1].x).toBeGreaterThan(atWake.players[1].x);
+        simulation.stop();
+    });
+
+    it('uses the recent playable interval when a long wake exceeds the catch-up limit', () => {
+        const state = { ...createCountdown().getState(), phase: 'playing' as const, countdownTicks: 0 };
+        const simulation = new TownMatchSimulation(state, 0);
+        const dash = createFrame(1, { kind: 'controls', x: 1, z: 0, dash: 1 });
+        simulation.accept(dash, 'alice-session', 0);
+        simulation.accept(dash, 'bob-session', 59900);
+        simulation.advance(60000, state, seatDeadlineClock(60000));
+        const [alice, bob] = simulation.getState().players;
+        expect(alice.consumedDash).toBe(0);
+        expect(bob.consumedDash).toBe(1);
+        expect(bob.x - state.players[1].x).toBeLessThan(2);
+        simulation.stop();
+    });
+
+    it('replays changes of direction and input expiry identically on delayed and regular pumps', () => {
+        const state = { ...createCountdown().getState(), phase: 'playing' as const, countdownTicks: 0 };
+        const delayed = new TownMatchSimulation(state, 0);
+        const regular = new TownMatchSimulation(state, 0);
+        const right = createFrame(1, { kind: 'controls', x: 1, z: 0, dash: 0 });
+        const turnAndDash = createFrame(2, { kind: 'controls', x: 0, z: 1, dash: 1 });
+        delayed.accept(right, 'bob-session', 0);
+        delayed.accept(turnAndDash, 'bob-session', 200);
+        delayed.advance(1000, state, seatDeadlineClock(1000));
+
+        regular.accept(right, 'bob-session', 0);
+        regular.advance(200, state, seatDeadlineClock(200));
+        regular.accept(turnAndDash, 'bob-session', 200);
+        regular.advance(400, state, seatDeadlineClock(400));
+        regular.advance(1000, state, seatDeadlineClock(1000));
+        expect(delayed.getState().players[1]).toEqual(regular.getState().players[1]);
+        expect(delayed.getState().players[1].consumedDash).toBe(1);
+        delayed.stop();
+        regular.stop();
+    });
+
     it('rejects another session and an old round before they can move a player', () => {
         const countdown = createCountdown().getState();
         const simulation = new TownMatchSimulation({ ...countdown, phase: 'playing', countdownTicks: 0 }, 0);
