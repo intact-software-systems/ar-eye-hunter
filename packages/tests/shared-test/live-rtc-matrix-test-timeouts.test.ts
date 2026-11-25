@@ -115,14 +115,19 @@ describe('live RTC three-browser matrix test timeouts', () => {
     // Each reconnect is already bounded by its own wait, so the soak is capped at three hours below its derived sum: the
     // margin, a trio, the formation, eleven checkpoints, per cycle C's close (enqueued, then 45 s), the 60 s absence and
     // the reconnect, the closes and resets, the artifact evidence, the cleanup and the recorder drain under release.
+    // Under result release each command outside a poll also sent an uncounted release request: the trio's three
+    // admission reads and three membership requests, the formation's three connects and per cycle its five owner
+    // commands and last readiness read, three reads per checkpoint, per cycle C's close, connect and last readiness
+    // read, the six closes and resets and the cleanup's side-by-side closes.
     it('caps the retention soak at its three-hour operational bound below its derived sum', () => {
         const cycle = REQUEST + 45_000 + 60_000 + CONNECT + READINESS;
+        const releases = 3 + 3 + (3 + 2 * (5 + 1)) + 11 * 3 + RETENTION_RECONNECT_CYCLES * 3 + 3 * 2 + 1;
         const boundedWaits = TRIO + MEMBERSHIP + FORMATION + 11 * DIAGNOSTICS + RETENTION_RECONNECT_CYCLES * cycle +
-            3 * CLOSE_AND_RESET + ARTIFACT_EVIDENCE + CLEANUP + REQUEST;
+            3 * CLOSE_AND_RESET + ARTIFACT_EVIDENCE + CLEANUP + REQUEST + releases * REQUEST;
 
         // The bounded waits held the margin as well, which no other bounded-waits sum does.
         expect(LIVE_RTC_RETENTION_SOAK_BOUNDED_WAITS_MS).toBe(boundedWaits);
-        expect(MARGIN + boundedWaits).toBe(45_930_000);
+        expect(MARGIN + boundedWaits).toBe(49_540_000);
         expect(LIVE_RTC_RETENTION_SOAK_TEST_TIMEOUT_MS).toBe(3 * 60 * 60_000);
     });
 });

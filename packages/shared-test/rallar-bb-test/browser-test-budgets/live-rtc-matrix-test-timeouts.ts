@@ -29,7 +29,9 @@ import {
 import { LIVE_RTC_DIAGNOSTICS_CAPTURE_BOUNDED_WAITS_MS } from './live-rtc-diagnostics-waits.ts';
 import {
     FORMATION_RECONNECT_BOUNDED_WAITS_MS,
-    FORMATION_RUN_BOUNDED_WAITS_MS
+    FORMATION_RECONNECT_COMMANDS,
+    FORMATION_RUN_BOUNDED_WAITS_MS,
+    FORMATION_RUN_COMMANDS
 } from './live-rtc-formation-waits.ts';
 import { LIVE_RTC_ARTIFACT_EVIDENCE_BOUNDED_WAITS_MS } from './live-rtc-recorder-read-waits.ts';
 import { SETTLED_TRIO_RETIREMENT_BOUNDED_WAITS_MS } from './settled-trio-retirement-bounded-waits-ms.ts';
@@ -125,10 +127,19 @@ const RETENTION_CYCLE_BOUNDED_WAITS_MS = computeEnqueuedCommandWaitMs(LIVE_RTC_C
 const RETENTION_CHECKPOINTS = 1 + RETENTION_RECONNECT_CYCLES / RETENTION_CHECKPOINT_INTERVAL_CYCLES;
 
 /**
+ * The commands the soak waits on outside its polls, one after another: each agent's recording admission and membership
+ * request, the formation run's, each agent's read per checkpoint, every cycle's close and reconnect, each agent's close
+ * and reset, and the finalization's closes, which run side by side.
+ */
+const RETENTION_SOAK_COMMANDS = 2 * LIVE_RTC_TRIO_SIZE + FORMATION_RUN_COMMANDS +
+    RETENTION_CHECKPOINTS * LIVE_RTC_TRIO_SIZE +
+    RETENTION_RECONNECT_CYCLES * (1 + FORMATION_RECONNECT_COMMANDS) +
+    2 * LIVE_RTC_TRIO_SIZE + 1;
+
+/**
  * A trio, its membership and formation, each checkpoint's diagnostics, every cycle, the closes and resets, the artifact
- * evidence, the attempt's finalization and, under result release, the recorder drain after it. Under result release
- * each command the soak counts also sends one release request under the control request timeout, which this sum
- * leaves out: the soak's operational bound, far below the sum either way, is its limit.
+ * evidence, the attempt's finalization and, under result release, the recorder drain after it and the one release
+ * request each of the soak's commands sends after its result, under the control request timeout.
  */
 export const LIVE_RTC_RETENTION_SOAK_BOUNDED_WAITS_MS = TRIO_OPENING_BOUNDED_WAITS_MS +
     GROUP_MEMBERSHIP_BOUNDED_WAITS_MS +
@@ -138,7 +149,8 @@ export const LIVE_RTC_RETENTION_SOAK_BOUNDED_WAITS_MS = TRIO_OPENING_BOUNDED_WAI
     LIVE_RTC_TRIO_SIZE * LIVE_RTC_CLOSE_AND_RESET_BOUNDED_WAITS_MS +
     LIVE_RTC_ARTIFACT_EVIDENCE_BOUNDED_WAITS_MS +
     ATTEMPT_FINALIZATION_BOUNDED_WAITS_MS +
-    CONTROL_REQUEST_TIMEOUT_MS;
+    CONTROL_REQUEST_TIMEOUT_MS +
+    RETENTION_SOAK_COMMANDS * CONTROL_REQUEST_TIMEOUT_MS;
 
 /**
  * The soak's operational limit. Each reconnect is bounded by its own wait, so a cycle that fails ends the soak; this
