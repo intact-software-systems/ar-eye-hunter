@@ -6,19 +6,19 @@ import type {
 import { decodeAlmRuntimeRecord } from '../decode-alm-runtime-record.ts';
 
 /** The clock and the abortable sleep the browser adapter binds. */
-export interface AlmMatchingMessagesPort {
+interface AlmMatchingMessagesPort {
     readonly now: () => number;
     readonly sleep: (ms: number) => Promise<void>;
     readonly withAbort: <T>(operation: Promise<T>, signal: AbortSignal | undefined) => Promise<T>;
 }
 
-export interface AlmReceivedMessageMatch {
+interface AlmReceivedMessageMatch {
     readonly connection: string;
     readonly typeId: string;
     readonly msgId: string | undefined;
 }
 
-export interface ObserveAlmMatchingMessagesInput {
+interface ObserveAlmMatchingMessagesInput {
     readonly port: AlmMatchingMessagesPort;
     readonly context: RallarBlackBoxTestCommandContext;
     readonly holdFullWindow: boolean;
@@ -30,14 +30,17 @@ export interface ObserveAlmMatchingMessagesInput {
     readonly signal: AbortSignal | undefined;
 }
 
-export interface AlmMatchingMessages {
+interface AlmMatchingMessages {
     /** Each matched inbound event's message `data`, in arrival order. */
     readonly copies: readonly RallarBlackBoxTestRecord[];
     /** Whether the stall window ended the observation before its deadline. */
     readonly stalled: boolean;
 }
 
-/** The retained matching copies, and the event id of the newest, which a recent history keeps however many it evicts. */
+/**
+ * The retained matching copies, and the event id of the newest the observation has seen. A recent history evicts the
+ * oldest events first, so it drops the newest copy only after every older one, and only a later copy names a new id.
+ */
 interface AlmMatchingCopies {
     readonly copies: readonly RallarBlackBoxTestRecord[];
     readonly newestEventId: string | undefined;
@@ -73,8 +76,9 @@ export async function observeAlmMatchingMessages(input: ObserveAlmMatchingMessag
             input.signal
         );
         const observed = resolveAlmMatchingCopies(input.context.state().events, input.match);
-        progressEpochMs = observed.newestEventId === matching.newestEventId ? progressEpochMs : input.port.now();
-        matching = observed;
+        const arrived = observed.newestEventId !== undefined && observed.newestEventId !== matching.newestEventId;
+        progressEpochMs = arrived ? input.port.now() : progressEpochMs;
+        matching = { copies: observed.copies, newestEventId: observed.newestEventId ?? matching.newestEventId };
     }
     return { copies: matching.copies, stalled: false };
 }

@@ -10,7 +10,7 @@ import type {
     RallarBlackBoxTestMessagesReceivedResultValue
 } from '../rallar-black-box-alm-result-values.ts';
 
-export interface AlmReceivedOutcomeInput {
+interface AlmReceivedOutcomeInput {
     readonly command: RallarBlackBoxTestMessagesReceivedCommand;
     readonly received: readonly AlmReceivedMessageIdentity[];
     /** `undefined` when the command claims no order. */
@@ -21,7 +21,7 @@ export interface AlmReceivedOutcomeInput {
 }
 
 /** The count's outcome, and the fixed-size summary its diagnostic carries in place of the unbounded copy list. */
-export interface AlmReceivedJudgement {
+interface AlmReceivedJudgement {
     readonly outcome: RallarBlackBoxTestCommandOutcome;
     readonly summary: Omit<RallarBlackBoxTestMessagesReceivedResultValue, 'received'>;
 }
