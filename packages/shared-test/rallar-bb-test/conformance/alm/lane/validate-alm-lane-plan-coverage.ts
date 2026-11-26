@@ -11,10 +11,19 @@ export interface ValidateAlmLanePlanCoverageInput extends Pick<AlmLaneParameters
 
 /**
  * A run that is not narrowed must plan at least one scenario over its carrier, so a required lane cannot pass having
- * run nothing. A run narrowed by `only` or `skip` may plan nothing on purpose.
+ * run nothing. A narrowed run may plan nothing on purpose.
  */
 export function validateAlmLanePlanCoverage(input: ValidateAlmLanePlanCoverageInput): readonly string[] {
-    const narrowed = input.only.length > 0 || input.skip.length > 0;
     const plansAScenario = input.families.some(({ scenarioKeys }) => scenarioKeys.length > 0);
-    return narrowed || plansAScenario ? [] : [`no ${input.scope} ALM scenario runs over ${input.carrier}`];
+    return isAlmLanePlanNarrowed(input) || plansAScenario
+        ? []
+        : [`no ${input.scope} ALM scenario runs over ${input.carrier}`];
+}
+
+/**
+ * Whether `RALLAR_BLACK_BOX_ALM_ONLY` or `_SKIP` narrows a run: the one rule by which a plan is excused from a check
+ * of everything it should hold. `_FAMILIES` narrows no plan, since the plan names every family's cells.
+ */
+export function isAlmLanePlanNarrowed({ only, skip }: Pick<AlmLaneParameters, 'only' | 'skip'>): boolean {
+    return only.length > 0 || skip.length > 0;
 }

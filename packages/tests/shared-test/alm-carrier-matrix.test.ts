@@ -9,6 +9,10 @@ import {
     type AlmConformanceCarrier
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import {
+    ALM_CONFORMANCE_LANE_FAMILIES,
+    type AlmConformanceTag
+} from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
+import {
     ALM_CARRIER_MATRIX,
     type AlmCarrierMatrix,
     type AlmCarrierOutcome
@@ -27,11 +31,14 @@ import {
     toOriginRefusalFacts,
     type AlmCarrierHandleOutcome
 } from '@shared-test/rallar-bb-test/conformance/alm/carrier-matrix/to-alm-carrier-outcome-facts.ts';
+import { validateAlmCarrierMatrixPlan } from '@shared-test/rallar-bb-test/conformance/alm/carrier-matrix/validate-alm-carrier-matrix-plan.ts';
 import {
     validateAlmCarrierMatrix,
     type AlmCarrierMatrixCatalogueCell
 } from '@shared-test/rallar-bb-test/conformance/alm/carrier-matrix/validate-alm-carrier-matrix.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+import { resolveAlmLanePlan } from '@shared-test/rallar-bb-test/conformance/alm/lane/resolve-alm-lane-plan.ts';
+import type { ValidateAlmLanePlanCoverageInput } from '@shared-test/rallar-bb-test/conformance/alm/lane/validate-alm-lane-plan-coverage.ts';
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
 
@@ -130,6 +137,88 @@ describe('validateAlmCarrierMatrix', () => {
 
     it('accepts the lane catalogue against the matrix beside it', () => {
         expect(validateAlmCarrierMatrix({ matrix: ALM_CARRIER_MATRIX, cells: toCatalogueCells() })).toEqual([]);
+    });
+});
+
+/**
+ * The plan the lane records over one carrier: each family's cells as the lane resolves them from that family's
+ * catalogue, in the declared order, with nothing narrowed.
+ */
+function toLanePlan(carrier: AlmConformanceCarrier, scope: AlmConformanceTag): ValidateAlmLanePlanCoverageInput {
+    const parameters = {
+        scope,
+        carriers: [carrier],
+        families: ALM_CONFORMANCE_LANE_FAMILIES,
+        order: 'declared',
+        seed: null,
+        rooms: 'family',
+        only: [],
+        skip: []
+    } as const;
+    return {
+        carrier,
+        scope,
+        only: parameters.only,
+        skip: parameters.skip,
+        families: ALM_CONFORMANCE_LANE_FAMILIES.map((family) => ({
+            family,
+            scenarioKeys: resolveAlmLanePlan({
+                family,
+                carrier,
+                scenarios: createAlmConformanceRecipes({ ...toConformanceInput(carrier), laneFamilies: [family] }),
+                scope,
+                parameters,
+                mintSeed: () => 0
+            }).cellOrder.scenarioKeys
+        }))
+    };
+}
+
+describe('validateAlmCarrierMatrixPlan', () => {
+    it('reports each lane cell the matrix names over the carrier of a full plan that leaves it out, and no cell it names over another carrier', () => {
+        const plan = {
+            carrier: 'ws',
+            scope: 'full',
+            families: [{ family: 'two-agent', scenarioKeys: ['another-cell'] }],
+            only: [],
+            skip: []
+        } as const;
+
+        expect(validateAlmCarrierMatrixPlan({ matrix: TWO_CAPABILITY_MATRIX, plan })).toEqual([
+            'first names the lane cell first-on-ws over ws, which the full plan leaves out'
+        ]);
+    });
+
+    it.each(ALM_CONFORMANCE_CARRIERS)('accepts the full plan the lane resolves over %s from the catalogue', (carrier) => {
+        expect(validateAlmCarrierMatrixPlan({ matrix: ALM_CARRIER_MATRIX, plan: toLanePlan(carrier, 'full') })).toEqual([]);
+    });
+
+    it('reports exactly the cell taken out of the full plan the lane resolves', () => {
+        const full = toLanePlan('rtc', 'full');
+        const families = full.families.map(({ family, scenarioKeys }) => ({
+            family,
+            scenarioKeys: scenarioKeys.filter((scenarioKey) => scenarioKey !== 'claim-refused-on-rtc')
+        }));
+
+        expect(full.families.flatMap(({ scenarioKeys }) => scenarioKeys)).toContain('claim-refused-on-rtc');
+        expect(validateAlmCarrierMatrixPlan({ matrix: ALM_CARRIER_MATRIX, plan: { ...full, families } })).toEqual([
+            'exclusive-claim names the lane cell claim-refused-on-rtc over rtc, which the full plan leaves out'
+        ]);
+    });
+
+    it.each([
+        { only: ['another-cell'], skip: [] },
+        { only: [], skip: ['first-on-ws'] }
+    ])('does not judge a full plan its run narrowed, whatever it leaves out: %j', ({ only, skip }) => {
+        const plan = { carrier: 'ws', scope: 'full', families: [], only, skip } as const;
+
+        expect(validateAlmCarrierMatrixPlan({ matrix: TWO_CAPABILITY_MATRIX, plan })).toEqual([]);
+    });
+
+    it('does not judge a smoke plan, whatever it leaves out', () => {
+        const plan = { carrier: 'ws', scope: 'smoke', families: [], only: [], skip: [] } as const;
+
+        expect(validateAlmCarrierMatrixPlan({ matrix: TWO_CAPABILITY_MATRIX, plan })).toEqual([]);
     });
 });
 
