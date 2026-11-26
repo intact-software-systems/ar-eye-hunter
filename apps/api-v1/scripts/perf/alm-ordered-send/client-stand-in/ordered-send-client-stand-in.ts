@@ -94,11 +94,14 @@ const NO_REPAIR_ANSWER: OrderedSendClientStandIn.RepairAnswer = { reoffers: [], 
  *
  * Where it is coarser than the product. The product marks a message ended on a NACK only when the NACK is a relay's
  * refusal of the whole send or removes an open receipt (`toALOutboundControlMessageEnd`): an `expired` or a `stale`
- * NACK read before any receipt ends the wait and leaves the message to its lifetime, and here it ends the send. The
- * product takes a receipt for terminal when it is `timed-out` or confirms every recipient
- * (`isALOutboundTerminalReceipt`); here the phase the server states, `complete`, stands for the second. The product
- * holds one repair budget for each requester of a message; here a send has one, its server being the one requester.
- * `expired` is recorded for bookkeeping at the first poll past a send's lifetime: the product writes no end then.
+ * NACK read before any receipt ends the wait and leaves the message to its lifetime, and here it ends the send. A
+ * `no-leader` NACK refuses the whole send in the product only while the message holds no receipt row
+ * (`resolveALOutboundRelayRejection`): once it holds one, the NACK ends nothing there, neither the message nor a
+ * wait, and here it ends the send. The product takes a receipt for terminal when it is `timed-out` or confirms every
+ * recipient (`isALOutboundTerminalReceipt`); here the phase the server states, `complete`, stands for the second.
+ * The product holds one repair budget for each requester of a message; here a send has one, its server being the one
+ * requester. `expired` is recorded for bookkeeping at the first poll past a send's lifetime: the product writes no
+ * end then.
  *
  * What it does not model: the client's outbound commits, their conflicts and its engine's timing, so a re-offer
  * leaves as soon as the run asks for it and an end takes effect at once; the client's `ack-timeout` schedule once the

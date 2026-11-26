@@ -83,6 +83,10 @@ the third silent resend, about 8 s after the offer, it ends the message as `rece
 First-hop resends in a run are therefore the client's own behaviour under a slow receipt, not
 something the cell adds; the 8 s is read from the code and was not measured against a browser.
 
+The margin under that 2 s wait is thin at the reference load even with no latency added: in one
+reference run at +0 ms the 99th percentile from offer to complete receipt reached 1.95 s. That is why
+a healthy run can still show a few first-hop resends.
+
 ## Running it
 
 The cell needs a migrated PostgreSQL database that nothing else works while the run lasts, and a
@@ -120,9 +124,15 @@ included; `--silent` keeps it off the terminal. The cell itself never prints or 
 Each option is one `--name=value` token. An invocation with an issue in its options prints every
 issue, runs nothing and exits with status 2; no issue repeats a text of the command line, and a
 `--database-url` that is no `postgres://` or `postgresql://` URL is refused there, before anything
-could print it. Status 0 means the run completed, whatever its figures. A run that could not be
-carried out, such as a database it cannot reach, prints the name of the error and its message, cut
-at 240 characters with anything URL-shaped removed, and exits with status 1.
+could print it. So is one that holds whitespace, a quote (`"` or `'`), a backtick or an angle
+bracket: percent-encode each, in a password too. The URL parser takes such a character as it is, and
+the removal of URL-shaped text from an error's message stops at one, so the rest of a password that
+held one could be printed.
+
+Status 0 means the run completed, whatever its figures. A run that could not be carried out, such as
+a database it cannot reach, prints the name of the error and its message, cut at 240 characters with
+anything URL-shaped removed, and exits with status 1. An error from the database driver may name the
+host, the role or the database, never the password.
 
 The fifteen sessions, the three instances, the listener pool of one connection, the send's lifetime
 and the tail are fixed for every run and recorded in the artifact as its constants.
@@ -141,11 +151,17 @@ unless `--out` names another place. It holds:
 - the run's wall time and when observation ended; over the send window and over the tail, each
   apart, the event loop's lag and the processor time of the whole process, every thread;
 - the full report;
-- of the observations, the count of each list, and in full, with their instants, the lists a run
-  keeps short: the later offers (`resends`), the receipts, the NACKs and repair requests
-  (`controls`), the sends the stand-in ended (`sendEnds`), the repairs it declined
-  (`declinedRepairs`), and the first offers and the ACKs that threw. The first offers, the ACKs, the
-  arrivals and the hand-offs are counted and otherwise left out: a reference run reads 2,800 copies.
+- of the observations, the count of each list, and:
+  - in full, with their instants: the later offers (`resends`), the receipts, the NACKs and repair
+    requests (`controls`), any control of another kind (`unclassifiedControls`), the sends the
+    stand-in ended (`sendEnds`), and the first offers and the ACKs that threw. Each stayed under a
+    thousand entries in every reference run;
+  - summarised: the repairs the stand-in declined (`declinedRepairs`), as the count by reason, the
+    first 200 with their instants, and one row for each send and reason with its count and its first
+    and last instant. A stalled track draws a decline for each ended send at each execution of each
+    request, and one reference run declined 7,111;
+  - counted and otherwise left out: the first offers, the ACKs, the arrivals and the hand-offs. A
+    reference run reads 2,800 copies.
 
 It holds no database URL: the options are kept without it, and the message of an error is cut at 240
 characters and cleared of anything URL-shaped when it is recorded.
@@ -191,7 +207,11 @@ first offer, however often its publisher offered it again.
   delivery; when that write loses, the send is handed off again and the router publishes its copies
   again.
 - **Sends a server instance handed to its application subscriber.** Counted where the router is
-  called, on the server; "more than once" is the cause of the repeated copies above.
+  called, on the server; "more than once" is the cause of the repeated copies above. "Answered
+  pending-admission and never handed" counts the sends whose first offer the entry answered
+  `pending-admission`, retaining the admission as a work row, and that neither a replay nor a later
+  offer admitted before observation ended: no instance handed such a send to its application, and
+  its sender is owed a receipt it never got.
 - **Receipts.** Over the sends answered `admitted` or `pending-admission`, from the first offer.
   A send's state is its first terminal receipt: `complete`, or `timed out` when the server gave up
   after the send's lifetime. `admitted only` read an `admitted` receipt and no terminal one before
@@ -210,7 +230,8 @@ first offer, however often its publisher offered it again.
   the `admitted` receipt again, one more outbox row.
 - **Sends the stand-in ended, and repairs it declined.** Only under `client-stand-in`: the sends
   ended, by cause, and the re-offers a repair request asked for that the stand-in did not make
-  because the send had ended or expired. See [sender recovery](#sender-recovery).
+  because the send had ended or expired, when the request was served or by the instant the re-offer
+  was to leave. See [sender recovery](#sender-recovery).
 - **Before each track's first control.** The sends each publisher offered before it read the first
   NACK or repair request naming a send of its track, and their copies. Up to that instant a track
   has had only the server working for it, so this view is the one to compare between `none` and
@@ -237,7 +258,9 @@ server alone, and a track the server stalls stays stalled.
 own planner and limits.
 
 - **Repair.** It answers a gap NACK or a repair request by offering the missing sequences of its
-  track again, 32 to an execution, once for each request number, with four repairs to a send.
+  track again, 32 to an execution, once for each request number, with four repairs to a send. A
+  re-offer leaves one turn of the event loop after its request was served; a send that ended or
+  expired in that turn is not offered, and its repair is counted as declined.
 - **First hop.** A send that has read no receipt of any phase within 2 s of its offer is offered
   again, up to three times, 2 s apart.
 - **The end of a send.** It ends a send as the client ends a message, and offers an ended or expired
@@ -256,12 +279,21 @@ a client's frame has left its socket whatever the server then does with it.
 
 It does not model the client's outbound commits and engine timing, so a re-offer leaves as soon as
 the run asks for it and an end takes effect at once; nor the client's ack-timeout schedule once the
-server has answered. It is coarser than the client in one place: the client marks a message ended on
-a NACK only for a relay's refusal of the whole send or when the NACK removes an open receipt
-(`packages/shared/alm/outbound/message-end/to-al-outbound-control-message-end.ts`), and the stand-in
-ends the send on any NACK that may end one. What a browser does after `resync-required` or
-`receipt-exhausted` is not modelled under either recovery: a publisher goes on offering the next
-send of the same track.
+server has answered. It is coarser than the client in three places, as the comment of
+`OrderedSendClientStandIn` states them:
+
+- **The NACK end rule.** The client marks a message ended on a NACK only for a relay's refusal of
+  the whole send or when the NACK removes an open receipt
+  (`packages/shared/alm/outbound/message-end/to-al-outbound-control-message-end.ts`), and the
+  stand-in ends the send on any NACK that may end one.
+- **The terminal receipt.** The client takes a receipt for terminal when it is `timed-out` or
+  confirms every recipient; the stand-in takes the phase the server states, `complete`, for the
+  second.
+- **The repair budget.** The client holds one repair budget for each requester of a message; the
+  stand-in holds one for a send, its server being the one requester.
+
+What a browser does after `resync-required` or `receipt-exhausted` is not modelled under either
+recovery: a publisher goes on offering the next send of the same track.
 
 ## What the added latency covers
 
@@ -339,7 +371,7 @@ outside a transaction holds no connection while it waits.
 | `instance/`                           | One API instance: its database lifecycle, the delayed database handle and notification port, its WS server and its sessions. |
 | `client-stand-in/`                    | What a publisher does under `client-stand-in`.                                                                               |
 | `report/`                             | `computeOrderedSendReport` and each group of its figures, pure over the observations.                                        |
-| `artifact/`                           | The artifact, its limits, the environment it records, its file and its summary.                                              |
+| `artifact/`                           | The artifact, what it keeps of the declined repairs, its limits, the environment it records, its file and its summary.       |
 
 The unit tests mirror these paths under `packages/tests/shared-server/performance/alm-ordered-send/`.
 `packages/tests/shared-server/integration/postgres/alm-ordered-send-cell.test.ts` runs a small cell

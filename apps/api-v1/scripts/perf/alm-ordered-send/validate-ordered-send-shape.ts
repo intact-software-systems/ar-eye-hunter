@@ -18,7 +18,10 @@ export interface OrderedSendShape {
     readonly sendsPerSecond: number;
     /** The length of the send window, in seconds. */
     readonly durationS: number;
-    /** What each round trip to the database costs on top of its own time, in milliseconds. */
+    /**
+     * What each of the delayed round trips to the database costs on top of its own time, in milliseconds
+     * (`ORDERED_SEND_DELAYED_ROUND_TRIPS`); the others cost nothing more.
+     */
     readonly delayMs: number;
     readonly senderRecovery: OrderedSendSenderRecovery;
     /** The most connections each instance's application pool opens: its statements and transactions share them. */
