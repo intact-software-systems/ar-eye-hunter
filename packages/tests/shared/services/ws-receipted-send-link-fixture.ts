@@ -296,10 +296,9 @@ function createServerWorkHolds(
                     if (next?.stage === 'before-write') {
                         await next.hold.arrive();
                     }
-                    const status = await commitBundle(bundle).catch((error: unknown) => {
-                        next?.refuse(new Error(`The held admission write of ${next.msg.id.msgId} threw`, { cause: error }));
-                        throw error;
-                    });
+                    const written = commitBundle(bundle);
+                    written.catch(() => next?.refuse(new Error(`The held admission write of ${next.msg.id.msgId} threw`)));
+                    const status = await written;
                     if (next?.stage === 'after-commit') {
                         if (status !== 'committed') {
                             next.refuse(new Error(`The held admission write of ${next.msg.id.msgId} answered ${status}`));
