@@ -14,10 +14,15 @@ import type { AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
  * What the send a capability names comes to on one carrier.
  *
  * `refused` names who refuses. The `call` throws a validation issue and returns no handle. The `origin` ends the
- * handle `rejected` before any carrier attempt. The `trusted-server` and a `peer` hop answer with a NACK, which the
- * origin admits and states as a rejection by that relay; a peer's `membership-fenced` NACK is one only while the send
- * has no receipt row, and ends that hop's receipt once it has one. The `receiver` refuses the proof `of` a frame or of
- * a receipt at its own inbound admission with `code`, delivers and counts nothing, and answers nothing.
+ * handle `rejected` before any carrier attempt. The `trusted-server` and a `peer` hop refuse the send at their own
+ * admission and answer the hop that sent it with a NACK. The origin admits a peer's NACK only from a peer the send
+ * owes: a unicast's addressee, a peer its receipt expects, a session a server admitted the send to, or a hop its
+ * carrier sends every frame through. It states an admitted NACK as a rejection by that relay, except that a
+ * `membership-fenced` NACK, and the trusted server's `unauthorized` or `no-leader`, is a rejection only while the send
+ * has no receipt row: with one, an admitted `membership-fenced` or `unauthorized` NACK ends the send's receipt
+ * `receipt-exhausted`, cause `hop-refused`. The `receiver` refuses the proof `of` a frame or of a receipt at its own
+ * inbound admission with `code`, delivers and counts nothing, and answers nothing; a frame the page's room admission
+ * refuses keeps the room's refusal instead.
  *
  * `handed-to-ws` names where the fallback strategy leaves RTC: at `routing` the browser sends over WS at once, one WS
  * attempt and no hand-over evidence; at `admission` the RTC leg's verdict, refused or unroutable, is the evidence row
@@ -89,14 +94,16 @@ const CACHED_AUTHORITY_REVOCATION_BOUND = {
     limit: 'at worst 60 s after the snapshot\'s last renewal'
 } as const satisfies AlmCarrierProof;
 
-/** The RTC cell of a publication whose sender has not read its revoke: the same under either RTC strategy. */
+const RTC_RELAY_PUBLICATION_PROOF_TEST = 'packages/tests/shared/multicast/rtc-relay-publication-proof.test.ts';
+
+/** The RTC cell of a publication whose sender has not read its revoke: what either RTC strategy shows of it. */
 const REVOKED_PUBLICATION_DROPPED_BY_A_HOP = {
     kind: 'stated',
     outcome: { kind: 'refused', by: 'receiver', of: 'frame', code: 'no-publish-grant' },
     proofs: [
         {
             kind: 'unit-test',
-            testFile: 'packages/tests/shared/multicast/rtc-relay-publication-proof.test.ts',
+            testFile: RTC_RELAY_PUBLICATION_PROOF_TEST,
             testName: 'drops a frame its publisher signed before a revoke the relay has since observed',
             because:
                 'A hop that has observed the revoke drops the frame `unauthorized: no-publish-grant` and forwards nothing.'
@@ -109,7 +116,7 @@ const RTC_ROOM_SNAPSHOT_ADMISSION_TEST =
     'packages/tests/shared/multicast/room-authority/rtc-room-snapshot-admission.test.ts';
 const AL_OUTBOUND_CONTROL_ADMISSION_TEST = 'packages/tests/shared/alm/al-outbound-control-admission.test.ts';
 
-/** The RTC cell of a room send from a member that left: the same under either RTC strategy. */
+/** The RTC cell of a room send from a member that left: what either RTC strategy shows of it. */
 const LEFT_SENDER_FENCED_BY_A_RECEIVER = {
     kind: 'stated',
     outcome: { kind: 'refused', by: 'peer', reason: 'membership-fenced' },
@@ -131,14 +138,26 @@ const LEFT_SENDER_FENCED_BY_A_RECEIVER = {
             testFile: AL_OUTBOUND_CONTROL_ADMISSION_TEST,
             testName: 'states a peer membership-fenced NACK before any receipt row as rejected by that peer',
             because:
-                'Before any receipt row exists, the origin reads the `membership-fenced` NACK of the peer its send is addressed to as a rejection by that peer.'
+                'The origin of a unicast that holds no receipt row reads its addressee\'s `membership-fenced` NACK as a rejection by that peer.'
         },
         {
             kind: 'unit-test',
             testFile: AL_OUTBOUND_CONTROL_ADMISSION_TEST,
             testName: 'ends a receipt a hop refused for good',
             because:
-                'Once a receipt row exists, the origin reads the same NACK as the end of that hop\'s receipt, `receipt-exhausted`, and not as a rejection.'
+                'Once a receipt row exists, the origin reads the same NACK as the end of the send\'s receipt, `receipt-exhausted` with cause `hop-refused`, and not as a rejection.'
+        },
+        {
+            kind: 'unit-test',
+            testFile: AL_OUTBOUND_CONTROL_ADMISSION_TEST,
+            testName: 'still refuses a membership-fenced NACK from a peer the send owes nothing',
+            because:
+                'A room send that asked no receipt owes no peer an answer: its origin refuses the NACK and states nothing.'
+        },
+        {
+            kind: 'unproven',
+            closedBy:
+                'a unit pin that the origin of a room send frozen to an audience refuses a frozen recipient\'s `membership-fenced` NACK while it holds no receipt row'
         },
         {
             kind: 'unproven',
@@ -151,10 +170,15 @@ const LEFT_SENDER_FENCED_BY_A_RECEIVER = {
 const BROWSER_MESSAGE_AUDIENCES_TEST = 'packages/tests/shared-web/messages/browser-message-audiences.test.ts';
 const BROWSER_RTC_PEER_SEND_TEST = 'packages/tests/shared-web/messages/browser-rtc-peer-send.test.ts';
 const RTC_ROOM_UNICAST_DISPATCH_TEST = 'packages/tests/shared/multicast/rtc-room-unicast-dispatch.test.ts';
+const WEB_RTC_OVERLAY_FROZEN_AUDIENCE_TEST = 'packages/tests/shared/multicast/web-rtc-overlay-frozen-audience.test.ts';
 const RTC_PUBLICATION_SIGNING_TEST = 'packages/tests/shared/multicast/rtc-publication-signing.test.ts';
 const BROWSER_MESSAGE_FALLBACK_IDENTITY_TEST =
     'packages/tests/shared-web/messages/browser-message-fallback-identity.test.ts';
 const WS_CLIENT_RELAY_REJECTION_TEST = 'packages/tests/shared/services/ws-queue-box-client-relay-rejection.test.ts';
+
+/** Why a row about a frame's proof of origin does not apply to `ws`. */
+const WS_SEND_CARRIES_NO_PROOF =
+    'A WS send carries no proof: the authenticated socket names its sender, and the server verifies only the proof a handed-over copy carries.';
 
 /**
  * Each capability whose outcome differs by carrier on purpose, or that a single carrier proves, and what proves each
@@ -244,7 +268,7 @@ export const ALM_CARRIER_MATRIX = {
                     },
                     {
                         kind: 'unit-test',
-                        testFile: 'packages/tests/shared/multicast/web-rtc-overlay-frozen-audience.test.ts',
+                        testFile: WEB_RTC_OVERLAY_FROZEN_AUDIENCE_TEST,
                         testName: 'refuses a %s broadcast that names no room as unsupported, sending nothing',
                         because:
                             'An `all` broadcast that reaches the RTC origin is refused `unsupported` and sends nothing.'
@@ -488,7 +512,7 @@ export const ALM_CARRIER_MATRIX = {
     },
     'room-audience-over-frame-limit': {
         statement:
-            'A room audience of more than 256 sessions does not fit an RTC frame, which carries its frozen audience.',
+            'A room send to more than 256 recipient sessions does not fit an RTC frame, which carries its frozen audience.',
         cells: {
             ws: {
                 kind: 'stated',
@@ -514,7 +538,7 @@ export const ALM_CARRIER_MATRIX = {
                 proofs: [
                     {
                         kind: 'unit-test',
-                        testFile: 'packages/tests/shared/multicast/web-rtc-overlay-frozen-audience.test.ts',
+                        testFile: WEB_RTC_OVERLAY_FROZEN_AUDIENCE_TEST,
                         testName: 'send to a room of 300 sessions as unsupported, naming the bound and sending nothing',
                         because:
                             'The lane cannot stage a room this large: the origin refuses a room send to 299 recipients as `unsupported` and sends nothing.'
@@ -640,7 +664,17 @@ export const ALM_CARRIER_MATRIX = {
                 ]
             },
             rtc: REVOKED_PUBLICATION_DROPPED_BY_A_HOP,
-            'rtc-with-ws-fallback': REVOKED_PUBLICATION_DROPPED_BY_A_HOP
+            'rtc-with-ws-fallback': {
+                ...REVOKED_PUBLICATION_DROPPED_BY_A_HOP,
+                proofs: [
+                    ...REVOKED_PUBLICATION_DROPPED_BY_A_HOP.proofs,
+                    {
+                        kind: 'unproven',
+                        closedBy:
+                            'a receipted publication over this carrier: no hop answers the frame it drops, so the receipt runs out and the send is handed to WS, where the server refuses it `no-publish-grant`; nothing pins that chain'
+                    }
+                ]
+            }
         }
     },
     'frame-without-proof': {
@@ -648,8 +682,7 @@ export const ALM_CARRIER_MATRIX = {
         cells: {
             ws: {
                 kind: 'not-applicable',
-                because:
-                    'A WS send carries no proof: the authenticated socket names its sender, and the server verifies only the proof a handed-over copy carries.'
+                because: WS_SEND_CARRIES_NO_PROOF
             },
             rtc: {
                 kind: 'stated',
@@ -661,7 +694,7 @@ export const ALM_CARRIER_MATRIX = {
                 outcome: { kind: 'refused', by: 'receiver', of: 'frame', code: 'missing-proof' },
                 proofs: [{
                     kind: 'unit-test',
-                    testFile: 'packages/tests/shared/multicast/rtc-relay-publication-proof.test.ts',
+                    testFile: RTC_RELAY_PUBLICATION_PROOF_TEST,
                     testName: 'drops a frame without a proof at the first hop',
                     because:
                         'A hop drops a granted frame without a proof `unauthorized: missing-proof` and forwards nothing; its admission is given the frame and its channel peer, not the strategy that sent it.'
@@ -675,8 +708,7 @@ export const ALM_CARRIER_MATRIX = {
         cells: {
             ws: {
                 kind: 'not-applicable',
-                because:
-                    'A WS send carries no proof: the authenticated socket names its sender, and the server verifies only the proof a handed-over copy carries.'
+                because: WS_SEND_CARRIES_NO_PROOF
             },
             rtc: {
                 kind: 'stated',
@@ -769,7 +801,7 @@ export const ALM_CARRIER_MATRIX = {
     },
     'left-sender-send': {
         statement:
-            'A room send from a member that left is refused by the first authority that has read the leave: the WS server, or over RTC a receiver.',
+            'A room send from a member that left is refused by the first authority that has read the leave, the WS server or over RTC a receiver, and what its origin states of that refusal depends on what the send is owed.',
         cells: {
             ws: {
                 kind: 'stated',
@@ -777,7 +809,17 @@ export const ALM_CARRIER_MATRIX = {
                 proofs: [{ kind: 'lane-cell', scenarioKey: 'fenced-rejection' }]
             },
             rtc: LEFT_SENDER_FENCED_BY_A_RECEIVER,
-            'rtc-with-ws-fallback': LEFT_SENDER_FENCED_BY_A_RECEIVER
+            'rtc-with-ws-fallback': {
+                ...LEFT_SENDER_FENCED_BY_A_RECEIVER,
+                proofs: [
+                    ...LEFT_SENDER_FENCED_BY_A_RECEIVER.proofs,
+                    {
+                        kind: 'unproven',
+                        closedBy:
+                            'a receipted room send over this carrier: the receipt a fencing receiver ends is handed to WS as `receipt-exhausted`, where the server fences the send; nothing pins that end'
+                    }
+                ]
+            }
         }
     },
     'resync-recovery-owner': {

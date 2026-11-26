@@ -25,11 +25,26 @@ Who refuses (`by`):
 
 - `call`: the send call throws a validation issue, at `path` with `code`. No handle exists.
 - `origin`: the sender's page ends the handle `rejected` before any carrier attempt.
-- `trusted-server`: the WS server answers with a NACK, and the sender states a rejection by its
-  trusted server.
-- `peer`: an RTC peer answers with a NACK, and the sender states a rejection by that peer.
+- `trusted-server`: the WS server refuses the send at its own admission and answers the sender with a
+  NACK.
+- `peer`: an RTC peer refuses the send at its own admission and answers the hop that sent it with a
+  NACK.
 - `receiver`: the page a frame or a receipt reaches refuses its proof (`of` names which, `code`
-  why). It delivers nothing and answers nothing.
+  why). It delivers nothing and answers nothing. A frame the page's room admission refuses keeps the
+  room's refusal instead.
+
+`refused` by the `trusted-server` or a `peer` says who refused and why. What the sender's page then
+states is decided by two conditions:
+
+- **Is the NACK from a peer the send owes?** The origin admits a peer's NACK only from a unicast's
+  addressee, a peer its receipt expects, a session a server admitted the send to, or a hop its
+  carrier sends every frame through. A NACK from any other peer is refused and the origin states
+  nothing: a room send that asked no receipt owes no peer an answer. The trusted server's rejection
+  needs no such check.
+- **Does the send hold a receipt row?** The origin states an admitted NACK as a rejection by that
+  relay. But a `membership-fenced` NACK, and the trusted server's `unauthorized` or `no-leader`, is a
+  rejection only while the send has no receipt row. With one, an admitted `membership-fenced` or
+  `unauthorized` NACK ends the send's receipt instead: `receipt-exhausted`, cause `hop-refused`.
 
 Where a send is handed to WS (`at`):
 
