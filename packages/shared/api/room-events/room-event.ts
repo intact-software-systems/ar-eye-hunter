@@ -51,6 +51,13 @@ export namespace RoomEvent {
         readonly proposals: readonly Proposal[];
         readonly offer: Offer | null;
     }
+    export interface ChangeInput {
+        readonly event: RoomEvent;
+        readonly principalId: string;
+        readonly command: Command;
+        readonly nowEpochMs: number;
+        readonly handoverWindowMs?: number;
+    }
     export type Command =
         | { readonly action: 'create'; readonly courts: readonly CourtSetup[]; readonly closesAt: number; readonly claimWindowMs?: number; readonly emptyReturnWindowMs?: number }
         | { readonly action: 'offer-handover'; readonly recipientId: string }
@@ -126,10 +133,11 @@ function proposeParty(event: RoomEvent, command: Extract<RoomEvent.Command, { ac
     return acceptParty({ ...event, proposals: [...event.proposals, proposal] }, proposal, player);
 }
 
-function applyCommand(event: RoomEvent, command: RoomEvent.Command, player: string, now: number, handoverWindowMs?: number): RoomEvent {
+function applyCommand(input: RoomEvent.ChangeInput): RoomEvent {
+    const { event, command, principalId: player } = input;
     switch (command.action) {
         case 'offer-handover': case 'accept-handover': case 'cancel-handover':
-            return changeEventHandover(event, player, command, now, handoverWindowMs);
+            return changeEventHandover({ ...input, command });
         case 'create': throw new TypeError('Event already exists.');
         case 'propose': return proposeParty(event, command, player);
         case 'accept': {
@@ -152,11 +160,11 @@ function applyCommand(event: RoomEvent, command: RoomEvent.Command, player: stri
 }
 
 /** The service fences membership, organizer permission and the court director in the same write. */
-export function changeRoomEvent(input: { event: RoomEvent; command: RoomEvent.Command; principalId: string; nowEpochMs: number; handoverWindowMs?: number }): RoomEvent {
+export function changeRoomEvent(input: RoomEvent.ChangeInput): RoomEvent {
     const { event, command, principalId, nowEpochMs } = input;
     const settled = settleOffers(event.handover && nowEpochMs >= event.handover.expiresAt ? clearEventHandover(event) : event, nowEpochMs);
     if (command.action !== 'settle' && (settled.closed || event.removed.includes(principalId))) throw new TypeError('Event access has ended.');
     if ((command.action === 'close' || command.action === 'remove') && principalId !== event.organizerId) throw new TypeError('Organizer permission required.');
-    const next = command.action === 'settle' ? settled : offerCourts(applyCommand(settled, command, principalId, nowEpochMs, input.handoverWindowMs), nowEpochMs);
+    const next = command.action === 'settle' ? settled : offerCourts(applyCommand({ ...input, event: settled }), nowEpochMs);
     return next === event ? event : { ...next, revision: event.revision + 1 };
 }

@@ -18,9 +18,12 @@ export function clearEventHandover(event: RoomEvent): RoomEvent {
     return rest;
 }
 
-export function changeEventHandover(event: RoomEvent, actor: string,
-    command: Extract<RoomEvent.Command, { action: 'offer-handover' | 'cancel-handover' | 'accept-handover' }>,
-    now: number, windowMs?: number): RoomEvent {
+interface HandoverChange extends RoomEvent.ChangeInput {
+    readonly command: Extract<RoomEvent.Command, { action: 'offer-handover' | 'cancel-handover' | 'accept-handover' }>;
+}
+
+export function changeEventHandover(input: HandoverChange): RoomEvent {
+    const { event, principalId: actor, command, nowEpochMs: now, handoverWindowMs: windowMs } = input;
     if (command.action === 'offer-handover') {
         if (actor !== event.organizerId || command.recipientId === actor || event.removed.includes(command.recipientId) || event.handover) {
             throw new TypeError('Only the organizer can offer a single pending handover to another event player.');

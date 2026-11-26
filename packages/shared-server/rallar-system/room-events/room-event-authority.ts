@@ -1,5 +1,5 @@
-import { playerOffer } from '@shared/api/room-events/room-event-courts.ts';
-import { isLiveGroupPresenceSession } from '../group-state/policy/group-policy-primitives.ts';
+import { fenceRuntimeStateEntry } from '../../runtime-state/guarded-batch/fence-runtime-state-entry.ts';
+import { readHandoverPresence } from './read-handover-presence.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { readRallarGroupDirectorAppointment } from '@shared/api/group-director.ts';
 import type { RoomGuestLease } from '@shared/api/room-guests/invitation.ts';
@@ -8,7 +8,6 @@ import type { GroupMember, GroupRef } from '@shared/api/group-types.ts';
 import type { RoomEvent } from '@shared/api/room-events/room-event.ts';
 import { roomGuestAccessMode } from '@shared/api/room-guests/access.ts';
 import type { RuntimeStateGuardedBatchEffect } from '../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
-import type { RuntimeStateEntry } from '../../runtime-state/runtime-state-repository.ts';
 import type { AuthSessionPersistence } from '../auth/persistence/auth-session-persistence.ts';
 import { AUTH_SESSIONS_BY_SESSION_NAMESPACE } from '../auth/persistence/auth-storage-keys.ts';
 import { GroupMutationAuthorizationError } from '../group-state/group-mutation-authority.ts';
@@ -69,7 +68,7 @@ export class RoomEventAuthority {
         if (command?.action === 'propose' && command.players.some(player => !audience.includes(player) || event?.removed.includes(player))) {
             throw new GroupMutationAuthorizationError('A party can invite only current event players.');
         }
-        const fences = [fence(GROUPS_NAMESPACE, lobby.entry), fence(AUTH_SESSIONS_BY_SESSION_NAMESPACE, session.entry)];
+        const fences = [fenceRuntimeStateEntry(GROUPS_NAMESPACE, lobby.entry), fenceRuntimeStateEntry(AUTH_SESSIONS_BY_SESSION_NAMESPACE, session.entry)];
         if (command?.action === 'offer-handover' || command?.action === 'accept-handover') {
             const offering = command.action === 'offer-handover';
             const recipientId = offering ? command.recipientId : input.principalId;
@@ -78,7 +77,7 @@ export class RoomEventAuthority {
                 (offering ? event.organizerId !== input.principalId : event.handover?.recipientId !== input.principalId)) {
                 throw new GroupMutationAuthorizationError('Handover requires an eligible event organizer.');
             }
-            fences.push(...await this.recipientPresence(event, recipientId, now, offering ? undefined : input.sessionId));
+            fences.push(...await readHandoverPresence({ ...this.dependencies, event, recipientId, now, acceptingSession: offering ? undefined : input.sessionId }));
         }
         if (command?.action === 'release' && input.principalId !== event?.organizerId) {
             const court = { ...input.lobby, groupId: command.groupId };
@@ -99,31 +98,6 @@ export class RoomEventAuthority {
             this.organizersByApplication[applicationId].includes(principalId));
     }
 
-    private async recipientPresence(event: RoomEvent, recipientId: string, now: number, acceptingSession?: string): Promise<RuntimeStateGuardedBatchEffect[]> {
-        const { groups, authSessions } = this.dependencies;
-        const seat = playerOffer(event, recipientId);
-        const rooms = [event.lobby];
-        if (seat?.deadline === null) rooms.push({ ...event.lobby, groupId: seat.groupId });
-        for (const room of rooms) {
-            const admission = await groups.findPresenceAdmissionEntry({ ...room, principalId: recipientId });
-            if (!admission) continue;
-            for (const candidate of admission.value.admittedSessions) {
-                if (acceptingSession !== undefined && candidate.sessionId !== acceptingSession) continue;
-                const present = await groups.findPresenceEntry({ ...room, sessionId: candidate.sessionId });
-                if (!present || !isLiveGroupPresenceSession(present.value, now) || !isExactlyAdmitted(admission.value, present.value)) continue;
-                const fences = [fence(PRESENCE_ADMISSIONS_NAMESPACE, admission.entry), fence(SESSIONS_NAMESPACE, present.entry)];
-                // Acceptance already fences this issued session through the actor check.
-                if (acceptingSession === undefined) {
-                    const issued = await authSessions.findSessionBySessionIdEntry(candidate.sessionId);
-                    if (!issued || issued.value.guestRoom || issued.value.clientId !== recipientId || issued.value.expiresAtEpochMs <= now) continue;
-                    fences.push(fence(AUTH_SESSIONS_BY_SESSION_NAMESPACE, issued.entry));
-                }
-                return fences;
-            }
-        }
-        throw new GroupMutationAuthorizationError('The handover recipient must be present in the event.');
-    }
-
     private async directorFences(court: GroupRef, actor: RoomEventActor, now: number): Promise<RuntimeStateGuardedBatchEffect[]> {
         const groups = this.dependencies.groups;
         const [group, presence, admission, member] = await Promise.all([groups.findGroupEntry(court),
@@ -136,11 +110,6 @@ export class RoomEventAuthority {
             presence.value.principalId !== actor.principalId || !isExactlyAdmitted(admission.value, presence.value)) {
             throw new GroupMutationAuthorizationError('A current court director and live appointment are required to release the court.');
         }
-        return [fence(GROUPS_NAMESPACE, group.entry), fence(SESSIONS_NAMESPACE, presence.entry), fence(PRESENCE_ADMISSIONS_NAMESPACE, admission.entry)];
+        return [fenceRuntimeStateEntry(GROUPS_NAMESPACE, group.entry), fenceRuntimeStateEntry(SESSIONS_NAMESPACE, presence.entry), fenceRuntimeStateEntry(PRESENCE_ADMISSIONS_NAMESPACE, admission.entry)];
     }
-}
-
-function fence(namespace: string, row: RuntimeStateEntry): RuntimeStateGuardedBatchEffect {
-    return { operation: 'update-exact', effectId: namespace + ':' + row.key, namespace, key: row.key, expectedRevision: row.revision,
-        expectedValue: row.value, value: row.value, expireAtTimestamp: row.expireAtTimestamp };
 }

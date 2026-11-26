@@ -134,7 +134,7 @@ export class TemporaryEventService {
         if (input.command.action === 'claim' && !!authority.guestLease !== !!input.courtTransport) {
             throw new TypeError('A guest claiming a court must bind its own court session.');
         }
-        const after = nextEventForPlayer(before?.value ?? null, input, nowEpochMs, this.config.handoverWindowMs);
+        const after = nextEventForPlayer({ before: before?.value ?? null, input, nowEpochMs, handoverWindowMs: this.config.handoverWindowMs });
         const result = { revision: after.revision };
         if (after === before?.value) return await this.dependencies.appInbox.commit(context, result, async () => {});
         return await this.commit({ before, after, actor: input, command: input.command, authority, requestId: input.requestId,
@@ -191,7 +191,14 @@ export class TemporaryEventService {
     }
 }
 
-function nextEventForPlayer(before: RoomEvent | null, input: RoomEventMutation, nowEpochMs: number, handoverWindowMs: number): RoomEvent {
+interface NextPlayerEvent {
+    readonly before: RoomEvent | null;
+    readonly input: RoomEventMutation;
+    readonly nowEpochMs: number;
+    readonly handoverWindowMs: number;
+}
+
+function nextEventForPlayer({ before, input, nowEpochMs, handoverWindowMs }: NextPlayerEvent): RoomEvent {
     if (input.command.action === 'create') {
         if (before) throw new TypeError('This lobby already has an event.');
         return createRoomEvent({ lobby: input.lobby, organizerId: input.principalId, command: input.command, nowEpochMs });
