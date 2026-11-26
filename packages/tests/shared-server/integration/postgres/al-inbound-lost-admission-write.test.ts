@@ -6,6 +6,8 @@ import {
     it
 } from 'vitest';
 
+import type { ALInboundCommitBundle } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+
 import {
     createInboundTestMessage,
     createInboundTestOrderedDelivery,
@@ -71,5 +73,13 @@ describe('Postgres inbound admission after a lost write', () => {
 
         expect(stale.observations.deliveryProgress?.value?.completedThrough ?? 0).toBe(0);
         expect(fresh.observations.deliveryProgress?.value?.completedThrough).toBe(1);
+        // The stale bundle would have written the track's progress back to 0, undoing the completion; the fresh one keeps 1.
+        expect(readWrittenCompletedThrough(stale)).toBe(0);
+        expect(readWrittenCompletedThrough(fresh)).toBe(1);
     });
 });
+
+/** The track progress the bundle would write. */
+function readWrittenCompletedThrough(bundle: ALInboundCommitBundle): number | undefined {
+    return bundle.mutations.flatMap((mutation) => mutation.kind === 'set-delivery-progress' ? [mutation.value.completedThrough] : [])[0];
+}

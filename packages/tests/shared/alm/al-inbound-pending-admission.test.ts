@@ -34,6 +34,7 @@ import {
     createInboundTestMessage,
     createInboundTestRuntime,
     INBOUND_TEST_SOURCE,
+    loseInboundAdmissionWritesOf,
     loseInboundWritesFromNowOn,
     restoreInboundWritesOnRetention,
     setNextInboundAdmissionParked,
@@ -625,14 +626,16 @@ it('retains a resync-required drop whose commit conflicted, and its replay commi
 
     // The next send of the track commits between the gapped send's read and its write, as two frames of one socket do;
     // every later attempt's write of the gapped send is lost too, so it is parked however often its owner looks again.
+    // Only its writes are lost: the next send's own batch writes are the store's.
+    const gappedMessage = createInboundTestMessage({ msgId: 'track-gapped', seq: 300 });
     const commitBundle = stores.admissionStore.commitBundle.bind(stores.admissionStore);
     vi.spyOn(stores.admissionStore, 'commitBundle').mockImplementationOnce(async (bundle) => {
         expect((await runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'track-next', seq: 2 }), PENDING_SOURCE)).right)
             .toEqual({ kind: 'admitted' });
-        restoreInboundWritesOnRetention(stores, loseInboundWritesFromNowOn(stores.admissionStore));
+        restoreInboundWritesOnRetention(stores, loseInboundAdmissionWritesOf(stores.admissionStore, gappedMessage, commitBundle));
         return await commitBundle(bundle);
     });
-    const gapped = await runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'track-gapped', seq: 300 }), PENDING_SOURCE);
+    const gapped = await runtime.admitIncomingMessage(gappedMessage, PENDING_SOURCE);
 
     expect(gapped.right).toEqual({ kind: 'pending-admission' });
     await expect.poll(async () => {
@@ -687,14 +690,14 @@ it('a drop retained on a commit conflict states pending first and its replay\'s 
     expect((await runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'track-first', seq: 1 }), PENDING_SOURCE)).right)
         .toEqual({ kind: 'admitted' });
     // The next send of the track commits inside the gapped send's write, and every later attempt's write of the gapped
-    // send is lost, so it is retained however often its owner looks again.
+    // send is lost, so it is retained however often its owner looks again; the next send's own writes are the store's.
+    const gapped = createInboundTestMessage({ msgId: 'track-gapped', seq: 300, traceId: 'trace-track-gapped' });
     const commitBundle = stores.admissionStore.commitBundle.bind(stores.admissionStore);
     vi.spyOn(stores.admissionStore, 'commitBundle').mockImplementationOnce(async (bundle) => {
         await runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'track-next', seq: 2 }), PENDING_SOURCE);
-        restoreInboundWritesOnRetention(stores, loseInboundWritesFromNowOn(stores.admissionStore));
+        restoreInboundWritesOnRetention(stores, loseInboundAdmissionWritesOf(stores.admissionStore, gapped, commitBundle));
         return await commitBundle(bundle);
     });
-    const gapped = createInboundTestMessage({ msgId: 'track-gapped', seq: 300, traceId: 'trace-track-gapped' });
 
     expect((await runtime.admitIncomingMessage(gapped, PENDING_SOURCE)).right).toEqual({ kind: 'pending-admission' });
     await expect.poll(async () => {

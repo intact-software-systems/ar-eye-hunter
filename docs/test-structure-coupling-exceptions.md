@@ -444,7 +444,7 @@ moved or changed test.
       "id": "alm-inbound-conflict-bounded-admission-attempts",
       "domain": "ALM incoming optimistic admission recovery",
       "owner": "Rallar shared maintainers",
-      "summary": "An initial incoming delivery makes at most three admission commit attempts, each read and decided afresh; one that loses all three retains pending work for fresh worker admission after restart.",
+      "summary": "An initial incoming delivery whose writes are lost makes at most three admission commit writes before it is retained as pending work for fresh worker admission after restart.",
       "semanticCoverage": "packages/tests/shared/al-inbound-message-runtime.test.ts#retains a write lost on each of its three attempts for fresh admission after runtime restart",
       "coverageRelation": "The fixture commits an actual competing owner observation through the bound real store method, lets the original bundle lose CAS, and loses every later write. It checks three commit attempts in one outer runtime call, pending NEW work and no premature effects, then recreates the runtime and proves ordered delivery, forwarding and duplicate handling.",
       "interactionRequirement": {

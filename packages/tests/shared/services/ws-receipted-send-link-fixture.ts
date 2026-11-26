@@ -26,6 +26,7 @@ import {
     type ControlFrameLabel
 } from '../../ws-receipted-send-test-controls.ts';
 import { createWorkerHold, type WorkerHold } from '../alm/create-worker-hold.ts';
+import { isInboundAdmissionWriteOf } from '../alm/inbound-runtime-test-fixture.ts';
 import {
     createWsClientCarrierStores,
     createWsClientMintingPlanner,
@@ -96,8 +97,9 @@ export interface WsReceiptedSendLink {
     /** The server's release of `msg`'s kept row, once its replay ran, waits at the returned hold; the row stays claimed. */
     holdServerKeptRowRelease(msg: ALMessage): WorkerHold;
     /**
-     * The server's admission writes go to its store's own commit until one loses to the store's fence; every later one
-     * is answered `conflict` without a write, however many attempts its owner makes, until the server retains a message.
+     * The server's admission writes go to its store's own commit until one loses to the store's fence; every later
+     * admission write of that message is answered `conflict` without a write, however many attempts its owner makes,
+     * until the server retains a message. Every other write stays the store's own.
      */
     loseServerAdmissionWritesAfterTheFirstLoss(): void;
     /** The recipient's `delivered` ACK through the server's ingress, as its socket would send it. */
@@ -273,6 +275,8 @@ function createServerWorkHolds(
     const enqueueIfAbsent = workQueue.enqueueIfAbsent.bind(workQueue);
     const writeHolds: ServerAdmissionWriteHold[] = [];
     let losing: 'no' | 'after-the-first-loss' | 'yes' = 'no';
+    // Only the message whose write lost first loses again; every other write is the store's own.
+    let lostMessage: Pick<ALMessage['id'], 'msgId' | 'senderId'> | undefined;
     let writesSpied = false;
     // One routing of the store's commit serves the holds and the losses, so neither removes the other.
     const routeWrites = (): void => {
@@ -281,10 +285,10 @@ function createServerWorkHolds(
         }
         writesSpied = true;
         vi.spyOn(admissionStore, 'commitBundle').mockImplementation(async (bundle) => {
-            if (losing === 'yes') {
+            if (losing === 'yes' && lostMessage !== undefined && isInboundAdmissionWriteOf(bundle, lostMessage)) {
                 return 'conflict';
             }
-            const index = writeHolds.findIndex((held) => isAdmissionWriteOf(bundle, held.msg));
+            const index = writeHolds.findIndex((held) => isInboundAdmissionWriteOf(bundle, held.msg.id));
             const next = index < 0 ? undefined : writeHolds.splice(index, 1)[0];
             if (next?.stage === 'before-write') {
                 await next.hold.arrive();
@@ -294,6 +298,7 @@ function createServerWorkHolds(
             const status = await written;
             if (status === 'conflict' && losing === 'after-the-first-loss') {
                 losing = 'yes';
+                lostMessage = { msgId: bundle.observations.msgId, senderId: bundle.observations.senderId };
             }
             if (next?.stage === 'after-commit') {
                 if (status !== 'committed') {
@@ -333,6 +338,7 @@ function createServerWorkHolds(
             vi.spyOn(workQueue, 'enqueueIfAbsent').mockImplementationOnce(async (entry) => {
                 const retained = await enqueueIfAbsent(entry);
                 losing = 'no';
+                lostMessage = undefined;
                 return retained;
             });
         },
@@ -353,11 +359,6 @@ interface ServerAdmissionWriteHold {
     readonly stage: ServerAdmissionWriteStage;
     /** Fails the hold's `arrived` with why the held write will never arrive at it. */
     readonly refuse: (reason: Error) => void;
-}
-
-function isAdmissionWriteOf(bundle: ALInboundCommitBundle, msg: ALMessage): boolean {
-    return bundle.observations.msgId === msg.id.msgId && bundle.observations.senderId === msg.id.senderId &&
-        bundle.mutations.some((mutation) => mutation.kind === 'set-inbound-message');
 }
 
 function isKeptRowOf(entry: ResourceEntry, msg: ALMessage, namespace: string): boolean {

@@ -578,11 +578,11 @@ describe('inbound admission preparation boundary', () => {
             // Each of the arrival's attempts lost; the one fresh QueueBox attempt committed one more candidate.
             expect(statuses).toEqual([...Array.from({ length: arrivalCandidates }, () => 'conflict'), 'committed']);
             expect(candidates).toHaveLength(arrivalCandidates + 1);
-            const committedControls = candidates[arrivalCandidates]!.durableEffects.flatMap((effect) =>
-                effect.payload.kind === 'send-control' ? [effect.payload.msg] : []
-            );
-            expect(controls).toEqual(committedControls);
-            expect(controls).not.toEqual(candidates[0]!.durableEffects);
+            const toSentControls = (candidate: ALInboundCommitBundle) =>
+                candidate.durableEffects.flatMap((effect) => effect.payload.kind === 'send-control' ? [effect.payload.msg] : []);
+            expect(controls).toEqual(toSentControls(candidates[arrivalCandidates]!));
+            // The lost first candidate's controls are never sent: the committed attempt prepared its own.
+            expect(controls).not.toEqual(toSentControls(candidates[0]!));
         }
         finally {
             await runtime.dispose();

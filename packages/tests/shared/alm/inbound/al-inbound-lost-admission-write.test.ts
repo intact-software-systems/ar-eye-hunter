@@ -6,6 +6,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import type { ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import { ALStorageUnavailableError } from '@shared/alm/storage/al-storage-unavailable.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
@@ -121,8 +122,9 @@ it('admits an admission that loses exactly two writes', async () => {
 
 // A readmission that waits for the first copy's delivery wrote nothing: answered as a lost write, it was read and
 // decided twice more for the same answer before it was retained.
-it('answers a readmission that waits for its first delivery as waiting, and retains it', async () => {
-    const fixture = createRuntime('waiting');
+it('answers a readmission that waits for its first delivery as waiting, and retains it after one attempt', async () => {
+    const plans: string[] = [];
+    const fixture = createRuntime('waiting', (msg) => plans.push(`plan ${msg.id.msgId}`));
     const wsArrival: ALInboundMessageRuntime.Source = { kind: 'trusted-server' };
     // Admitted over RTC, which this WS runtime never claims, so the forged copy's delivery stays queued.
     const rtcArrival: ALInboundMessageRuntime.Source = { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID };
@@ -132,9 +134,12 @@ it('answers a readmission that waits for its first delivery as waiting, and reta
 
     const attempt = await createInboundTestAdmission(fixture.stores).attempt(origin, wsArrival, planInboundTestMessage);
     expect(attempt.right?.kind).toBe('waiting');
+    plans.length = 0;
 
     expect((await fixture.runtime.admitIncomingMessage(origin, wsArrival)).right).toEqual({ kind: 'pending-admission' });
     expect(await readRetainedAdmissions(fixture.stores)).toEqual([{ msgId: 'queued-first', status: EntityStatus.NEW }]);
+    // One attempt plans twice, before its read and against it; a lane that attempted again would plan twice more.
+    expect(plans).toEqual(['plan queued-first', 'plan queued-first']);
 });
 
 // A store failure that is no conflict was swallowed as a lost write, or arrived wrapped by the retry primitive when the
@@ -149,6 +154,23 @@ it('answers a store failure that is no conflict as the lane answers it today, at
 
     for (const fixture of [first, third]) {
         await expect(fixture.runtime.admitIncomingMessage(FIRST, INBOUND_TEST_SOURCE)).rejects.toBe(failure);
+        expect(await readRetainedAdmissions(fixture.stores)).toEqual([]);
+    }
+});
+
+// A storage failure arriving at the third attempt wrapped by the retry primitive would no longer read as storage, and
+// would reject the arrival where at the first attempt it is answered not admitted.
+it('answers a storage failure as storage-unavailable, at the first attempt and at the third', async () => {
+    const failure = new ALStorageUnavailableError({ cause: 'transaction-failed', detail: 'admission write aborted' });
+    const first = createRuntime('storage-failure-first');
+    vi.spyOn(first.stores.admissionStore, 'commitBundle').mockRejectedValueOnce(failure);
+    const third = createRuntime('storage-failure-third');
+    loseNextAdmissionWrites(third.stores.admissionStore, 2);
+    vi.spyOn(third.stores.admissionStore, 'commitBundle').mockRejectedValueOnce(failure);
+
+    for (const fixture of [first, third]) {
+        expect((await fixture.runtime.admitIncomingMessage(FIRST, INBOUND_TEST_SOURCE)).right)
+            .toEqual({ kind: 'not-admitted', reason: 'storage-unavailable' });
         expect(await readRetainedAdmissions(fixture.stores)).toEqual([]);
     }
 });

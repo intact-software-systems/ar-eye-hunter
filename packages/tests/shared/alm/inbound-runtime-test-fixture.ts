@@ -466,6 +466,31 @@ export function loseInboundWritesFromNowOn(admissionStore: ALInboundAdmissionSto
 }
 
 /**
+ * Whether `bundle` is a data admission's write of the message `id` names, whether it stores the message or drops it:
+ * not another message's write, nor the control or finalization bookkeeping written about it later.
+ */
+export function isInboundAdmissionWriteOf(bundle: ALInboundCommitBundle, id: Pick<ALMessage['id'], 'msgId' | 'senderId'>): boolean {
+    return bundle.observations.msgId === id.msgId && bundle.observations.senderId === id.senderId &&
+        bundle.admissionExpiresAtMs !== null;
+}
+
+/**
+ * From now on every admission write of `msg` is lost: `commitBundle` answers `conflict` and writes nothing, while every
+ * other write goes to `commit`, the store's own commit bound before any seam was armed on it. Answers the restore
+ * function.
+ */
+export function loseInboundAdmissionWritesOf(
+    admissionStore: ALInboundAdmissionStore,
+    msg: ALMessage,
+    commit: ALInboundAdmissionStore['commitBundle']
+): () => void {
+    const commitBundle = vi.spyOn(admissionStore, 'commitBundle').mockImplementation(async (bundle) =>
+        isInboundAdmissionWriteOf(bundle, msg.id) ? 'conflict' : await commit(bundle)
+    );
+    return () => commitBundle.mockRestore();
+}
+
+/**
  * The next admission is parked: its first write loses to a real competing commit of its own provenance row
  * (`setNextInboundCommitConflicted`), and every later one is answered `conflict` without a write. Answers the restore
  * function. The competing commit is the store's commit as it stands, so a seam still armed on it must be restored first.
@@ -478,6 +503,8 @@ export function setNextInboundAdmissionParked(admissionStore: ALInboundAdmission
 /**
  * Runs `restoreWrites` as the next retained row is written to `stores.workQueue`: after the parked arrival's last
  * attempt and before the batch its retention schedules can claim the row, so that replay commits as the store's own.
+ * Arm it before any other seam on `stores.workQueue.enqueueIfAbsent`: it binds the method as it stands, so on a method
+ * already spied its write would run that spy, and a once queued there would be taken by this write.
  */
 export function restoreInboundWritesOnRetention(stores: ALInboundRuntimeStores, restoreWrites: () => void): void {
     const enqueueIfAbsent = stores.workQueue.enqueueIfAbsent.bind(stores.workQueue);

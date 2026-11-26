@@ -48,9 +48,8 @@ test('a second session\'s exclusive send on a claimed resource is NACKed held-by
     }
 });
 
-// The loser's write is lost to the winner's claim, and its fresh look reads that claim at once: it is refused then,
-// rather than retained for a replay to refuse.
-test('two sessions claiming one free resource at once: the loser reads the winner\'s claim on its next attempt, is NACKed held-by-other, reaches no one and starts no receipt', async () => {
+// Pins a second winner of one free resource, and a loser retained for a replay to refuse rather than refused at once.
+test('two sessions claiming one free resource at once: one wins, and the loser is refused at once with its held-by-other NACK, reaches no one and starts no receipt', async () => {
     const { runtime, room } = await createClaimRuntime();
     try {
         const first = createPickupSend({ room, senderId: 'session-1', ownership: 'exclusive', ttlMs: SEND_TTL_MS });
@@ -60,8 +59,11 @@ test('two sessions claiming one free resource at once: the loser reads the winne
             runtime.service.acceptIncomingMessage(first, 'session-1'),
             runtime.service.acceptIncomingMessage(second, 'session-2')
         ]);
-        await waitForRoomSends(() => readNackReasons(runtime.sent, 'session-2').length > 0);
-        await waitForRoomSends(() => false);
+        // Until the loser's NACK, the winner's send to both other sessions and its admitted receipt have arrived.
+        await waitForRoomSends(() =>
+            readNackReasons(runtime.sent, 'session-2').length > 0 && readPickupSends(runtime.sent).length >= 2 &&
+            readReceiptPhases(runtime.sent, 'session-1').length > 0
+        );
 
         assert.deepEqual(firstAcceptance.right, { kind: 'admitted' });
         assert.deepEqual(secondAcceptance.right, { kind: 'not-admitted', reason: HELD_BY_OTHER_DETAIL });
