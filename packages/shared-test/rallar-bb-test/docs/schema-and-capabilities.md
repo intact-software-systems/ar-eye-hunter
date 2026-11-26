@@ -1790,6 +1790,16 @@ limits. Runtime execution for `loop` is available for sequential repeated child
 commands. Runtime execution for `parallel` is available for bounded concurrent
 groups with sequential child commands inside each group.
 
+A `loop` writes its placeholders into every string of a child command before
+the child runs: `{loop.index}` (zero-based, counted over every child the loop
+has run), `{loop.iteration}` (from 1), `{loop.commandIndex}` (the child's
+zero-based position in `commands`), `{loop.elapsedMs}` (milliseconds since the
+loop started) and `{loop.atEpochMs}` (the agent's clock in epoch milliseconds).
+A string that is exactly one placeholder becomes that number; a placeholder
+inside a longer string is written as text. `elapsedMs` and `atEpochMs` come
+from one clock read, taken when the child is resolved. A `wait.timeoutFrom`
+reference may be keyed by the first four, not by `{loop.atEpochMs}`.
+
 Schema-authoring views and catalog previews should inspect nested child
 commands recursively. A top-level `loop` or `parallel` can still require live
 Rallar services when a child command uses `rtc.*`, `ws.*`, or `http.request`.

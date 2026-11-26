@@ -7,6 +7,8 @@ export interface LoopChildContext {
     readonly index: number;
     readonly iteration: number;
     readonly elapsedMs: number;
+    /** The runtime clock when the child was resolved; `elapsedMs` is derived from this same read. */
+    readonly atEpochMs: number;
     readonly commandIndex: number;
 }
 
@@ -17,10 +19,10 @@ export interface LoopChildCommandInput {
     readonly deadlineEpochMs?: number;
 }
 
-type LoopPlaceholderName = 'index' | 'iteration' | 'elapsedMs' | 'commandIndex';
+type LoopPlaceholderName = 'index' | 'iteration' | 'elapsedMs' | 'atEpochMs' | 'commandIndex';
 
-const LOOP_PLACEHOLDER_PATTERN = /\{loop\.(index|iteration|elapsedMs|commandIndex)\}/g;
-const LOOP_EXACT_PLACEHOLDER_PATTERN = /^\{loop\.(index|iteration|elapsedMs|commandIndex)\}$/;
+const LOOP_PLACEHOLDER_PATTERN = /\{loop\.(index|iteration|elapsedMs|atEpochMs|commandIndex)\}/g;
+const LOOP_EXACT_PLACEHOLDER_PATTERN = /^\{loop\.(index|iteration|elapsedMs|atEpochMs|commandIndex)\}$/;
 
 export function toLoopChildCommand(input: LoopChildCommandInput): RallarBlackBoxTestCommand {
     const { template, context, deadlineEpochMs } = input;
