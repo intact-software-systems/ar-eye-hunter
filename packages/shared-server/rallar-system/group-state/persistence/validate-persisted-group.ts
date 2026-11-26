@@ -1,3 +1,4 @@
+import { validatedRoomEventFields } from '@shared/api/room-events/room-event-binding.ts';
 import { GROUP_ACTIVATION_CONDITIONS } from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
 import {
     GROUP_ACTIVATION_STATUS_KEYS,
@@ -32,7 +33,7 @@ import {
     requirePositiveSafeInteger,
     requireRecord
 } from '../group-state-validation-primitives.ts';
-import { isRoomGuestInvitation, hasValidRoomGuestLease } from '@shared/api/room-guests/invitation.ts';
+import { validatedRoomGuestFields, hasValidRoomGuestLease } from '@shared/api/room-guests/invitation.ts';
 import { requireUnitRate } from '../require-unit-rate.ts';
 import { validateStoredGroupActivationStatus } from './validate-stored-group-activation-status.ts';
 
@@ -94,10 +95,7 @@ const STORED_MEMBER_KEYS = [
 
 export function validateStoredGroup(group: unknown, ref: GroupRef): asserts group is Group {
     const value = requireRecord(group, 'Stored group value');
-    assertExactKeys(value, [...STORED_GROUP_KEYS, 'guestInvitation'], 'Stored group value');
-    if (value.guestInvitation !== undefined && !isRoomGuestInvitation(value.guestInvitation)) {
-        throw new TypeError('Stored guest invitation is invalid.');
-    }
+    assertExactKeys(value, [...STORED_GROUP_KEYS, ...validatedRoomGuestFields(value), ...validatedRoomEventFields(value)], 'Stored group value');
     assertRequiredKeys(value, STORED_GROUP_KEYS, 'Stored group value');
     validateScopedRecord(value, ref, 'Stored group');
     nullableNonEmptyString(value.slug, 'Stored group slug');
@@ -135,10 +133,14 @@ function assertStoredGroupRetention(group: ValidationRecord): void {
     ) {
         throw new TypeError('Stored scheduled rooms require bounded player capacity and temporary retention');
     }
+    if (group.temporaryPlayerRoom !== undefined && (group.temporaryPlayerRoom !== true || retention === null ||
+        group.kind !== 'room' || group.expiresAtEpochMs === null)) {
+        throw new TypeError('Temporary player rooms require bounded retention.');
+    }
     if (retention === null) {
         return;
     }
-    if (group.expiresAtEpochMs !== null || group.purgeAfterEpochMs !== null) {
+    if ((group.temporaryPlayerRoom !== true && !group.eventRoom && group.expiresAtEpochMs !== null) || group.purgeAfterEpochMs !== null) {
         throw new TypeError('Stored temporary group must not have absolute expiry or purge deadlines');
     }
     if ((retention.emptyPresenceFingerprint === null) !== (group.emptySinceEpochMs === null)) {

@@ -4,7 +4,8 @@ import { readGroupSessionSchedule } from '@shared/api/group-sessions/group-sessi
 import type {
     Group,
     GroupEvent,
-    GroupPresenceAdmission
+    GroupPresenceAdmission,
+    GroupRef
 } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
@@ -32,6 +33,7 @@ import {
     groupStateInsertPresenceAdmissionDescriptor,
     groupStateUpdatePresenceAdmissionDescriptor
 } from '../persistence/presence/group-presence-write-descriptors.ts';
+import type { GroupPresenceSummaryStoredRead } from '../persistence/group-state-repository-reads.ts';
 import type { GroupRetentionService } from './group-retention-service.ts';
 
 interface RetentionReceiptInput {
@@ -83,7 +85,7 @@ export function computeGroupRetentionWrite(
     const effects = group.status === 'deleted'
         ? computeRetirementDeletes(read)
         : group.status === 'archived'
-        ? computeArchivePresenceFences(read)
+        ? computeArchivePresenceFences(read.authority, read.ingress.command.groupRef, read.attemptAtEpochMs)
         : [];
     if (closedLobby) effects.push(...computeGroupLobbyEffects({ read: closedLobby, after: null, roomRef: read.ingress.command.groupRef }));
     effects.push(computeRetentionReceiptEffect(read, receipt), ...publication.provenance, ...access.provenance, ...lobbyPublication.provenance);
@@ -165,26 +167,26 @@ function toRetentionEvent(read: GroupRetentionService.Read, group: Group): Group
     };
 }
 
-function computeArchivePresenceFences(read: GroupRetentionService.Read): RuntimeStateGuardedBatchEffect[] {
+export function computeArchivePresenceFences(authority: GroupPresenceSummaryStoredRead, ref: GroupRef, now: number): RuntimeStateGuardedBatchEffect[] {
     // Every observed presence revision and active principal admission must agree before archival can commit.
-    const effects: RuntimeStateGuardedBatchEffect[] = read.authority.presenceSessions.map((stored) => ({
-        effectId: `retention-presence:${stored.value.sessionId}`,
+    const effects: RuntimeStateGuardedBatchEffect[] = authority.presenceSessions.map((stored) => ({
+        effectId: `retention-presence:${ref.groupId}:${stored.value.sessionId}`,
         ...groupStateDeletePresenceDescriptor(stored.value, stored.entry.revision)
     }));
-    const admissions = new Map(read.authority.admissions.map((stored) => [stored.value.principalId, stored]));
-    const principals = read.authority.members.filter(({ value }) => value.status === 'active').map(({ value }) =>
+    const admissions = new Map(authority.admissions.map((stored) => [stored.value.principalId, stored]));
+    const principals = authority.members.filter(({ value }) => value.status === 'active').map(({ value }) =>
         value.principalId
     ).toSorted();
     for (const principalId of principals) {
         const stored = admissions.get(principalId);
         const admission: GroupPresenceAdmission = {
-            ...read.ingress.command.groupRef,
+            ...ref,
             principalId,
             admittedSessions: [],
-            updatedAtEpochMs: Math.max(read.attemptAtEpochMs, stored?.value.updatedAtEpochMs ?? 0)
+            updatedAtEpochMs: Math.max(now, stored?.value.updatedAtEpochMs ?? 0)
         };
         effects.push({
-            effectId: `retention-admission:${principalId}`,
+            effectId: `retention-admission:${ref.groupId}:${principalId}`,
             ...(stored === undefined
                 ? groupStateInsertPresenceAdmissionDescriptor(admission)
                 : groupStateUpdatePresenceAdmissionDescriptor(admission, stored.entry.revision))

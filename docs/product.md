@@ -185,6 +185,14 @@ During a pause, a returning participant can read the frozen phase and millisecon
 start even before clock calibration finishes. Resume shifts future program starts once. Independent
 UTC deadlines retain their published times. A director disconnect preserves the program's state.
 
+## Temporary games and pickup events
+
+An app can enable private games for players with temporary identities. Starting a game creates the room and seats its creator in one operation. An invitation preview shows the room name and available seats. Joining takes an explicit action. The room has a fixed expiry, an empty-room return window, and an app-configured capacity that includes the creator. Grumpy Town uses four seats by default. Opening the shared link on a different device creates a separate visit.
+
+Room management belongs to one player at a time. An explicit transfer gives a present player the invitation and moderation rights while the previous manager stays seated. The match director keeps running the current game. A lost connection can trigger game director succession while leaving room management with its current holder.
+
+Operators grant organizer rights per application through `group.eventOrganizerIdsByApplication`. Deployment administrators can also organize events. An authorized organizer can use a private lobby to run several event-owned courts. Players consent to queue as a party, receive an offer for one court, and choose when to enter. A guest keeps their player identity and lobby membership when taking the court grant. The oldest group that fits has priority and individual offers expire after the configured claim window. The organizer or the current court director releases a court by its occurrence. Releasing one court leaves the other matches running. Event removal ends lobby and court access for that player, and optional link rotation stops new arrivals through the old invitation.
+
 ## Sharing rooms
 
 AR Eye Hunter and Relic Hunters let hosts create code-protected or invite-only

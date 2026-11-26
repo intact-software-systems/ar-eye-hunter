@@ -17,6 +17,7 @@ export interface MutationRouteInventoryRow {
 }
 
 export const MUTATION_ROUTE_OWNER_PATHS = {
+    eventInbox: 'packages/shared-server/rallar-system/room-events/temporary-event-service.ts',
     groupMove: 'packages/shared-server/rallar-system/group-state/move/group-move-inbox.ts',
     clientInbox: 'packages/shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts',
     clientHandler: 'packages/shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts',
@@ -36,6 +37,8 @@ export const MUTATION_ROUTE_OWNER_PATHS = {
 } as const;
 
 export const MUTATION_ROUTE_OWNER_DISPATCH_PATHS = {
+    'TemporaryEventService.execute': 'execute',
+    'TemporaryEventService.settle': 'settle',
     handleGroupMove: 'handleGroupMove',
     expireGroupMove: 'expireGroupMove',
     'AppAdminInboxService.pruneExpiredCommand': 'pruneExpiredCommand',
@@ -520,6 +523,23 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         familyRegistrationMarker: 'registerGroupAdmissionRoutes',
         rootSource: 'groupRoot',
         constructionRootMarker: 'registerGroupStateRoutes'
+    },
+    {
+        transport: 'HTTP', entrypoint: 'POST /api/state/apps/:applicationId/workspaces/:workspaceId/temporary-rooms/requests/:requestId',
+        type: 'GROUP_GUEST_ADMIT', source: 'temporaryCreation', registrationMarker: 'registerTemporaryRoomRoutes',
+        enqueueSource: 'temporaryCreation', enqueueMarker: 'processTemporaryRoomCreation', ownerSource: 'groupHandler',
+        owner: 'GroupStateInboxHandler.processGroupStateMutation', typeOwnerSource: 'groupContracts', dispatchSource: 'groupInbox',
+        familyRegistrationMarker: 'registerTemporaryRoomRoutes', rootSource: 'groupRoot', constructionRootMarker: 'registerGroupStateRoutes'
+    },
+    {
+        transport: 'HTTP', entrypoint: `POST ${GROUP_ITEM_ROUTE}/event${MUTATION_REQUEST_ROUTE}`,
+        type: 'app:rallar-events:mutate', source: 'eventRoutes', registrationMarker: 'registerRoomEventRoutes',
+        enqueueSource: 'eventRoutes', enqueueMarker: 'mutate.submit', ownerSource: 'eventInbox', owner: 'TemporaryEventService.execute'
+    },
+    {
+        transport: 'MAINTENANCE', entrypoint: 'event deadline wake', type: 'app:rallar-events:deadline',
+        source: 'eventInbox', registrationMarker: 'installDurableDeadline', enqueueSource: 'eventInbox', enqueueMarker: 'expire.enqueue',
+        ownerSource: 'eventInbox', owner: 'TemporaryEventService.settle'
     },
     {
         transport: 'HTTP',

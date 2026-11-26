@@ -1,4 +1,4 @@
-import { readPausedTimelineRetention } from '../../retention/compute-empty-group-lifetime.ts';
+import { readArrivalRetention } from '../../retention/compute-empty-group-lifetime.ts';
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
 
 import type {
@@ -41,7 +41,7 @@ export function computeDisconnectGroupPresence(
     if (disconnectedAt < existing.value.lastHeartbeatAtEpochMs) {
         return noOp(command, read, facts);
     }
-    if (facts.internalAuthority === 'expiry' && readPausedTimelineRetention(group) === null) {
+    if (facts.internalAuthority === 'expiry' && !group.eventRoom && readArrivalRetention(group) === null) {
         return computeGroupPresenceWrite({
             command,
             read,

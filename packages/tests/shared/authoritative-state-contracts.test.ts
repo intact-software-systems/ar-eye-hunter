@@ -44,7 +44,7 @@ type _RtcResultHasNoOptionalFields = Assert<Equal<OptionalKeys<RtcRttAppInboxRes
 
 /** Every entry names a reviewed semantic absence, never construction convenience. */
 type AuthoritativeOptionalKeyAllowlist = Readonly<{
-    Group: 'guestInvitation'; // A room may have no outstanding invitation.
+    Group: 'guestInvitation' | 'temporaryPlayerRoom' | 'eventRoom'; // Regular rooms may have no invitation, temporary manager, or event binding.
     GroupMember: 'guestLease'; // Ordinary account members have no guest lease.
     SerializedGraphInfoSnapshot: 'measured';
 }>;

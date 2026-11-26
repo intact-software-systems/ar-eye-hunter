@@ -14,7 +14,8 @@ import { registerGroupStateMutationRoutes } from './register-group-state-mutatio
 import { registerGroupStateReadRoutes } from './register-group-state-read-routes.ts';
 import { registerGroupTopicSubscriptionRoutes } from './register-group-topic-subscription-routes.ts';
 
-import { registerRoomGuestRedemptionRoute } from './register-room-guest-redemption-route.ts';
+import { registerTemporaryRoomRoutes } from './guests/register-temporary-room-routes.ts';
+import { registerRoomGuestRedemptionRoute } from './guests/register-room-guest-redemption-route.ts';
 
 export function registerGroupStateRoutes(
     app: Hono,
@@ -29,6 +30,7 @@ export function registerGroupStateRoutes(
     registerGroupStateMutationRoutes(app, dependencies, authorization);
     registerGroupLifecycleRoutes(app, dependencies);
     registerRoomGuestRedemptionRoute(app, dependencies);
+    registerTemporaryRoomRoutes(app, dependencies);
     registerGroupAdmissionRoutes(app, dependencies);
     registerGroupMembershipRoutes(app, dependencies, authorization);
     registerGroupPresenceRoutes(app, dependencies, authorization);

@@ -58,6 +58,10 @@ test('a guest joins with a shuffled name and reloads the same seat without an ac
         await expect(phone.getByText(nickname, { exact: true })).toBeVisible();
         await expect(page.locator('#roster li')).toHaveCount(2);
         await expect(page.locator('#roster')).toContainText(nickname);
+        const { accessToken } = await response.json();
+        expect(typeof accessToken).toBe('string');
+        expect(await phone.evaluate((token: string) => [localStorage, sessionStorage].every(storage =>
+            Object.values(storage).every(value => !String(value).includes(token))), accessToken)).toBe(true);
         await phone.reload();
         await expect(phone.getByRole('heading', { name: 'Your town lobby' })).toBeVisible();
         await expect(phone.getByText(nickname, { exact: true })).toBeVisible();
@@ -81,7 +85,7 @@ test('a replaced invitation asks the visitor for a fresh link', async ({ page, b
     try {
         const visitor = await guest.newPage();
         await visitor.goto(previous);
-        await visitor.getByRole('button', { name: 'Join this town' }).click();
+        await expect(visitor.getByRole('button', { name: 'Join this town' })).toBeHidden();
         await expect(visitor.getByRole('alert')).toContainText('fresh invitation');
         await expect(page.locator('#roster li')).toHaveCount(1);
     }
@@ -258,6 +262,15 @@ test('a phone guest reloads into the same playing round and moves again', async 
     const guest = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
     try {
         const phone = await guest.newPage();
+        let admissionDelivered = false;
+        await phone.route('**/guests/requests/*', async route => {
+            const response = await route.fetch();
+            const access = await response.json();
+            const lifetime = access.expiresAtEpochMs - access.issuedAtEpochMs;
+            await route.fulfill({ response, json: { ...access,
+                expiresAtEpochMs: access.issuedAtEpochMs, issuedAtEpochMs: access.issuedAtEpochMs - lifetime } });
+            admissionDelivered = true;
+        }, { times: 1 });
         await phone.goto(await owner.getByLabel('Guest invitation link').inputValue());
         const nickname = await phone.getByRole('status', { name: 'Your nickname' }).innerText();
         await phone.getByRole('button', { name: 'Join this town' }).click();
@@ -267,29 +280,20 @@ test('a phone guest reloads into the same playing round and moves again', async 
         const game = phone.locator('#online-game');
         await expect(game).toHaveAttribute('data-phase', 'playing', { timeout: 20000 });
         const matchId = await game.getAttribute('data-match-id');
-        // An old local admission deadline requires Rallar to verify the unchanged seat on reload.
-        const admissionDeadline = await phone.evaluate(() => {
-            const visit = JSON.parse(sessionStorage.getItem('grumpy-town.guest-visit')!);
-            const lifetime = visit.access.expiresAtEpochMs - visit.access.issuedAtEpochMs;
-            visit.access.expiresAtEpochMs = visit.access.issuedAtEpochMs;
-            visit.access.issuedAtEpochMs -= lifetime;
-            sessionStorage.setItem('grumpy-town.guest-visit', JSON.stringify(visit));
-            return Number(visit.access.expiresAtEpochMs);
-        });
+        expect(admissionDelivered).toBe(true);
         await phone.reload();
         await expect(game).toHaveAttribute('data-phase', 'playing', { timeout: 22000 });
         await expect(game).toHaveAttribute('data-match-id', matchId!);
         await expect(phone.getByLabel('Your nickname')).toHaveText(nickname);
         await expect(phone.getByRole('button', { name: 'Dash and drop' })).toBeEnabled({ timeout: 12000 });
-        await expect.poll(async () => Number(await game.getAttribute('data-tick'))).toBeGreaterThan(45);
+        await expect.poll(async () => Number(await game.getAttribute('data-tick')), { timeout: 15000 }).toBeGreaterThan(45);
         const host = owner.locator('#online-game');
         const originalX = Number(await host.getAttribute('data-peer-x'));
         await phone.keyboard.down('KeyD');
         await expect.poll(async () => Number(await host.getAttribute('data-peer-x'))).toBeGreaterThan(originalX + 0.2);
         await phone.keyboard.up('KeyD');
         await expect(host).toHaveAttribute('data-match-id', matchId!);
-        expect(await phone.evaluate(() => JSON.parse(sessionStorage.getItem('auth.session')!).expiresAtEpochMs))
-            .toBe(admissionDeadline);
+        expect(await phone.evaluate(() => [localStorage, sessionStorage].every(storage => !storage.getItem('auth.session')))).toBe(true);
     }
     finally {
         await guest.close();

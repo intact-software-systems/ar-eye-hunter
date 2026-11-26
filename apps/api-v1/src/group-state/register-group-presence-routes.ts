@@ -66,7 +66,7 @@ async function handleConnectGroupPresenceRoute(
     authorization: GroupStateRouteAuthorization
 ): Promise<Response> {
     try {
-        const authSession = await requireRoomParticipantSession(context.req, { ...toGroupStateRouteScope(context), groupId: context.req.param('groupId') }, dependencies);
+        const authSession = await requireRoomParticipantSession({ request: context.req, roomRef: { ...toGroupStateRouteScope(context), groupId: context.req.param('groupId') }, dependencies });
         const scope = toGroupStateRouteScope(context);
         const groupId = context.req.param('groupId');
         const sessionId = context.req.param('sessionId');
@@ -108,7 +108,7 @@ async function handleHeartbeatGroupPresenceRoute(
     authorization: GroupStateRouteAuthorization
 ): Promise<Response> {
     try {
-        const authSession = await requireRoomParticipantSession(context.req, { ...toGroupStateRouteScope(context), groupId: context.req.param('groupId') }, dependencies);
+        const authSession = await requireRoomParticipantSession({ request: context.req, roomRef: { ...toGroupStateRouteScope(context), groupId: context.req.param('groupId') }, dependencies });
         const scope = toGroupStateRouteScope(context);
         const groupId = context.req.param('groupId');
         const sessionId = context.req.param('sessionId');
@@ -145,7 +145,7 @@ async function handleDisconnectGroupPresenceRoute(
     authorization: GroupStateRouteAuthorization
 ): Promise<Response> {
     try {
-        const authSession = await requireRoomParticipantSession(context.req, { ...toGroupStateRouteScope(context), groupId: context.req.param('groupId') }, dependencies);
+        const authSession = await requireRoomParticipantSession({ request: context.req, roomRef: { ...toGroupStateRouteScope(context), groupId: context.req.param('groupId') }, dependencies });
         const scope = toGroupStateRouteScope(context);
         const groupId = context.req.param('groupId');
         const sessionId = context.req.param('sessionId');

@@ -23,7 +23,11 @@ export async function readGroupGuestTransportRows(repository: AuthSessionPersist
     }
     if (read.targetMember?.guestLease && (command.operation === 'removeGroupMember' || command.operation === 'banGroupMember' ||
         command.operation === 'upsertMember')) ids.add(read.targetMember.principalId);
-    const rows = await Promise.all(Array.from(ids, async id => repository.findSessionBySessionIdEntry(await roomGuestTransportSessionId(id))));
+    const rows = await Promise.all(Array.from(ids, async id => {
+        const member = read.targetMember?.principalId === id ? read.targetMember : read.activeMembers?.find(entry => entry.principalId === id);
+        const sessionId = member?.guestLease?.courtSessionId ?? await roomGuestTransportSessionId(id);
+        return repository.findSessionBySessionIdEntry(sessionId);
+    }));
     return rows.filter(row => row !== undefined).filter(row => row.value.guestRoom && isSameGroupRef(row.value.guestRoom, command.aggregateRef));
 }
 

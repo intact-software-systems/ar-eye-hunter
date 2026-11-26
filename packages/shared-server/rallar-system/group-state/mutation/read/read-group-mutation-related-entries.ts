@@ -1,4 +1,4 @@
-import { directorAuthorityAdmissionPrincipal } from './resolve-group-mutation-read-identities.ts';
+import { groupAuthorityAdmissionPrincipal } from './resolve-group-mutation-read-identities.ts';
 import { GroupStateRepository } from '../../persistence/group-state-repository.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
 import { groupSessionIntentPrincipal } from './group-mutation-read-scope.ts';
@@ -67,7 +67,7 @@ export async function readGroupMutationRelatedEntries({
         ),
         readAdmission(targetPrincipalId),
         readOptionalMemberEntry(repository, command, ownerMemberId),
-        readAdmission(directorAuthorityAdmissionPrincipal(command, ownerPrincipalId)),
+        readAdmission(groupAuthorityAdmissionPrincipal(command, ownerPrincipalId)),
         readOptionalMemberEntry(repository, command, directorMemberId),
         readAdmission(appointsDirector ? directorPrincipalId : null),
         readOptionalPublicationGrantEntry(

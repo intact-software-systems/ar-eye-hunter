@@ -45,7 +45,10 @@ export function assertGuestAdmissionCommand(command: GroupMutationCommand): void
     if (command.input.guestDisplayName !== undefined && !isRoomGuestDisplayName(command.input.guestDisplayName)) {
         throw new TypeError('Invalid room guest display name.');
     }
-    const binding = command.input.guestTransport;
+    assertGuestTransport(command.input.guestTransport);
+}
+
+export function assertGuestTransport(binding: GroupGuestAdmission.Transport | undefined): void {
     if (!binding || Object.keys(binding).length !== 2 || typeof binding.sessionId !== 'string' ||
         !/^guest-session-[0-9a-f]{64}$/u.test(binding.sessionId) || typeof binding.accessTokenDigest !== 'string' ||
         !isBase64UrlOfByteLength(binding.accessTokenDigest, 32)) {

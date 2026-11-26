@@ -1,3 +1,4 @@
+import { assertEventRoomMutation } from '../../../room-events/assert-event-room-mutation.ts';
 import { computeGroupTimelineSettlement } from '../../schedule/compute-group-timeline-settlement.ts';
 import { computeGroupDirectorAppointment } from '../aggregate/compute-group-director-appointment.ts';
 import { requiresGroupLobbyRead } from '../../lobby/requires-group-lobby-read.ts';
@@ -75,6 +76,7 @@ export function computeGroupMutation(input: GroupMutationInput): GroupMutationCo
         });
     }
 
+    if (read.group) assertEventRoomMutation(read.group.value, command, facts);
     if (requiresGroupLobbyRead(command, read, facts.lobbyDefault !== undefined) && !read.lobbyState) {
         throw new TypeError('Room lobby admission requires the observed private roster and account commitments');
     }
@@ -92,7 +94,7 @@ function computeFreshGroupMutation(
         case 'changeGroupSession':
             return computeGroupSessionMutation(command, read, facts);
         case 'createGroup':
-            return computeCreate(command, read, facts);
+            return computeCreate({ command, read, facts });
         case 'updateGroup':
             return computeUpdate(command, read, facts);
         case 'appointDirector':
