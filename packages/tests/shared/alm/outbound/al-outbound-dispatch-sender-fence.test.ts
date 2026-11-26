@@ -63,7 +63,6 @@ const DISPATCHES = [
     { dispatch: 'a sequenced message on a shared head that records no recipient', sender: 'moved' }, // 10: the room sent floor
     { dispatch: 'a tracked row dequeued again, its positions recorded', sender: 'moved' }, // 11: reads no head, no position
     { dispatch: 'a tracked row recording its recipients\' positions at its first dequeue', sender: 'moved' }, // 12
-    { dispatch: 'a follower: a tracked row dequeued behind its batch predecessor', sender: 'moved' }, // 12b
     { dispatch: 'a tracked message, repaired', sender: 'moved' }, // 13
     { dispatch: 'a tracked message that names no deadline, minting', sender: 'moved' }, // 14: writes no track row
     { dispatch: 'a message under a supersedence key', sender: 'moved' }, // 15
@@ -334,13 +333,6 @@ const SCENARIOS: Readonly<Record<DispatchName, () => Promise<ArrangedDispatch>>>
             recordsSentPositions: authority === undefined ? undefined : ['peer-1']
         });
         return await toAdmittedDequeue(createSenderFenceLane(recordingAtDequeue), createFeedFrame('recorded-at-dequeue', 1, ['peer-1']));
-    },
-    'a follower: a tracked row dequeued behind its batch predecessor': async () => {
-        // The predecessor is dispatched first, so the run's one commit is the follower's.
-        const lane = createSenderFenceLane(toHeldThenSentPlanner());
-        await (await toAdmittedDequeue(lane, createFeedFrame('predecessor', 1, ['peer-1']))).run();
-        const arranged = await toAdmittedDequeue(lane, createFeedFrame('follower', 2, ['peer-1']));
-        return { ...arranged, dispatch: { ...arranged.dispatch, batchPredecessorSeqs: [1] } };
     },
     'a tracked message, repaired': async () => {
         const lane = createSenderFenceLane(REPAIRED_PLANNER);

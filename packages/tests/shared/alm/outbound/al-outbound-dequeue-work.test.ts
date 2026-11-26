@@ -1012,6 +1012,24 @@ describe('AL outbound dequeue work', () => {
         expectEachRowDispatchedAndSentOnce(batch);
     });
 
+    it('fences the sender for a follower dequeued in one batch with its predecessor', async () => {
+        // Pins a follower's decision leaving the sender fence: a follower holds a place on its predecessor's track, so
+        // it joins its predecessor's fence group, and their one write moves the sender version once. A follower that
+        // fenced no sender would commit in a group of its own.
+        const batch = await createDequeuedFenceBatch([1, 2].map((seq) => ({
+            ...createDequeuedMessage(`track-${seq}`),
+            ordering: { orderingKey: 'feed', epoch: 1, seq }
+        })));
+        onTestFinished(async () => await batch.runtime.dispose());
+
+        await runMixedFenceBatch(batch);
+
+        expect(batch.groups).toHaveLength(1);
+        expect(toMixedBatchGroupOutcomes(batch)).toEqual([{ memberCount: 2, outcome: 'committed' }]);
+        expect(await readMixedBatchSenderVersion(batch.stores)).toBe(1);
+        expectEachRowDispatchedAndSentOnce(batch);
+    });
+
     it('opens no supersedence session for a group whose every row the gate decided', async () => {
         const outbox = createOutboxQueue();
         const stores = createDefaultOutboundTestStores(outbox);
@@ -1465,17 +1483,11 @@ async function writeCorruptSentMessage(stores: OutboundTestStores, msgId: string
     });
 }
 
-/**
- * One page of the server's outbox: three receipt controls and, among them, one frame on a track. Each receipt names
- * its own subject: an outbox row is keyed by the route, which a receipt addresses by its subject, so receipts of one
- * subject would share one row and the page would hold one of them.
- */
-interface MixedFenceBatch {
+/** One page of the server's outbox, dequeued as one batch. */
+interface DequeuedFenceBatch {
     readonly outbox: InMemoryQueueBox;
     readonly stores: OutboundTestStores;
     readonly runtime: ALOutboundMessageRuntime<OutboundTestPayload>;
-    readonly receipts: readonly ALMessage[];
-    readonly sequenced: ALMessage;
     readonly messages: readonly ALMessage[];
     readonly entries: readonly ResourceEntry[];
     /** The `admission-group` observations the batch's dequeue records. */
@@ -1486,8 +1498,19 @@ interface MixedFenceBatch {
     readonly dispatched: readonly Readonly<{ claimedKey: string; publicationKey: string; }>[];
 }
 
-/** The batch enqueued on a ready runtime whose every plan sends one copy, its rows not yet claimed. */
-async function createMixedFenceBatch(): Promise<MixedFenceBatch> {
+/**
+ * Three receipt controls and, among them, one frame on a track. Each receipt names its own subject: an outbox row is
+ * keyed by the route, which a receipt addresses by its subject, so receipts of one subject would share one row and the
+ * page would hold one of them.
+ */
+async function createMixedFenceBatch(): Promise<DequeuedFenceBatch> {
+    const receipts = ['1', '2', '3'].map((index) => createDequeuedReceipt(`receipt-${index}`, `subject-${index}`));
+    const sequenced: ALMessage = { ...createDequeuedMessage('sequenced'), ordering: { orderingKey: 'feed', epoch: 1, seq: 1 } };
+    return await createDequeuedFenceBatch([receipts[0]!, sequenced, receipts[1]!, receipts[2]!]);
+}
+
+/** The messages enqueued on a ready runtime whose every plan sends one copy, their rows not yet claimed. */
+async function createDequeuedFenceBatch(messages: readonly ALMessage[]): Promise<DequeuedFenceBatch> {
     const outbox = createOutboxQueue();
     const stores = createDefaultOutboundTestStores(outbox);
     const groups: Extract<ALOutboundDequeuedAdmission.TimingObservation, { kind: 'admission-group'; }>[] = [];
@@ -1515,29 +1538,26 @@ async function createMixedFenceBatch(): Promise<MixedFenceBatch> {
         }
     });
     await runtime.ready();
-    const receipts = ['1', '2', '3'].map((index) => createDequeuedReceipt(`receipt-${index}`, `subject-${index}`));
-    const sequenced: ALMessage = { ...createDequeuedMessage('sequenced'), ordering: { orderingKey: 'feed', epoch: 1, seq: 1 } };
-    const messages = [receipts[0]!, sequenced, receipts[1]!, receipts[2]!];
     const entries = messages.map((message) => QueueBoxUtilities.toResourceEntryFromMsg(message, DEQUEUE_TYPE, Temporal.Now.instant()));
     for (const entry of entries) {
         await outbox.enqueueIfAbsent(entry);
     }
-    return { outbox, stores, runtime, receipts, sequenced, messages, entries, groups, sent, dispatched };
+    return { outbox, stores, runtime, messages, entries, groups, sent, dispatched };
 }
 
 /** Runs the batch's dequeue, then the batch of sends its commits queued. */
-async function runMixedFenceBatch(batch: MixedFenceBatch): Promise<void> {
+async function runMixedFenceBatch(batch: DequeuedFenceBatch): Promise<void> {
     await runOutboundWorkTask(batch.runtime);
     await runOutboundWorkTask(batch.runtime);
 }
 
 /** The batch's `admission-group` observations as member count and outcome. */
-function toMixedBatchGroupOutcomes(batch: MixedFenceBatch): readonly Readonly<{ memberCount: number; outcome: string; }>[] {
+function toMixedBatchGroupOutcomes(batch: DequeuedFenceBatch): readonly Readonly<{ memberCount: number; outcome: string; }>[] {
     return batch.groups.map(({ memberCount, outcome }) => ({ memberCount, outcome }));
 }
 
 /** Every claimed row of the batch dispatched on its own commit's answer, and every message sent exactly once. */
-function expectEachRowDispatchedAndSentOnce(batch: MixedFenceBatch): void {
+function expectEachRowDispatchedAndSentOnce(batch: DequeuedFenceBatch): void {
     const claimedKeys = batch.entries.map((entry) => toKeyAsString(entry.key)).sort();
     expect(batch.dispatched.map(({ claimedKey }) => claimedKey).sort()).toEqual(claimedKeys);
     for (const { claimedKey, publicationKey } of batch.dispatched) {

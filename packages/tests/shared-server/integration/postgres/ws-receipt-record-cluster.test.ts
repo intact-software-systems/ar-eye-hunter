@@ -319,7 +319,13 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL WS 
         ]);
         expect(log.statements.filter(({ transaction, values }) => transaction !== null && namesKey(values, serverVersionKey))).toEqual([]);
         const enqueueStart = log.statements.findIndex(({ transaction }) => transaction === enqueue);
-        expect(log.statements.slice(0, enqueueStart).some(({ transaction, values }) => transaction === null && namesKey(values, serverVersionKey))).toBe(true);
+        // The decision's first turn reads both version rows, and one turn's reads are one statement: only this
+        // control's own decision names both.
+        expect(
+            log.statements.slice(0, enqueueStart).some(({ transaction, values }) =>
+                transaction === null && namesKey(values, serverVersionKey) && namesKey(values, controlVersionKey)
+            )
+        ).toBe(true);
     }, CASE_TIMEOUT_MS);
 });
 
