@@ -53,8 +53,7 @@ async function commitCompletion(
         trackKey: TRACK_KEY,
         seq: 1,
         observedSlot: read.snapshot,
-        observedProgress: read.observations.deliveryProgress!.value!,
-        completesThrough: 1
+        observedProgress: read.observations.deliveryProgress!.value!
     });
 }
 
@@ -101,8 +100,9 @@ it('refuses a completion whose position another completion moved', async () => {
     expect(await readStoredSlot(admissionStore)).toBeUndefined();
 });
 
-// The slot the completion read is the one it deletes: a slot that holds another message than the read is not it.
-it('refuses a completion whose slot holds another message than it read', async () => {
+// The slot the completion read is the one it deletes: an observation that names another message than the stored slot
+// holds is not that slot.
+it('refuses a completion whose observed slot is not the stored one', async () => {
     const admissionStore = await createAdmittedStore();
     const read = await readCompletion(admissionStore);
     const other = createInboundTestMessage({ msgId: 'other-message', seq: 1 });

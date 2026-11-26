@@ -4,6 +4,7 @@ import {
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -68,10 +69,11 @@ describe('Postgres inbound delivery completion', () => {
         const second = createInboundTestMessage({ msgId: 'message-2', seq: 2 });
         const later: ALMessage = { ...second, constraints: { expiresAtMs: original.expireAtTimestamp + 60_000 } };
         const begin = completing!.begin;
-        vi.spyOn(completing!, 'begin').mockImplementationOnce(async (write) => {
+        const held = vi.spyOn(completing!, 'begin').mockImplementationOnce(async (write) => {
             await admit(admittingStore, later);
             return await begin(write);
         });
+        onTestFinished(() => held.mockRestore());
 
         expect(await createInboundTestOrderedDelivery(completingStore).complete(first)).toBe('completed');
 

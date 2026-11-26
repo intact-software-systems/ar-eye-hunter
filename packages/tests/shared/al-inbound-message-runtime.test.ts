@@ -323,6 +323,7 @@ describe('ALInboundMessageRuntime', () => {
 
         await runtime.admitIncomingMessage(first, source);
         await completionRead.promise;
+        expect(dispatchedTexts).toEqual(['one']);
         vi.setSystemTime(Date.now() + 1_000);
         await runtime.admitIncomingMessage(createOrderedMessage(2, 'two'), source);
         releaseCompletion.resolve();
