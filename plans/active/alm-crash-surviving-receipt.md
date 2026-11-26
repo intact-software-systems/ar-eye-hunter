@@ -579,6 +579,24 @@ Its stated limits:
 - _No first-hop wait._ A send with no first-hop wait whose `admitted` frame is lost reads its terminal receipt
   alone.
 
+### 11. An ordered delivery's completion
+
+The completion of an ordered delivery, which moves its track's delivery progress and deletes the delivered slot after
+the application was handed the message, was fenced on every row of the message's observation. The next admission on
+the same track rewrites the progress row to extend its expiry with the same position, so the completion conflicted,
+its work came back, read the position unmoved and handed the same message to the application a second or third time.
+The defect is as old as the expiry refresh; the faster ingress of the live `admitted` only made the next send land
+inside the completion's read-to-commit window on every run.
+
+The completion is guarded on its position and its slot alone, in one write whose guard comes first: it commits when
+the stored `completedThrough` and the stored slot are the ones it read, keeps the larger of the stored and observed
+expiry, and writes nothing otherwise. A conflict that remains is a real move: another completion, a gap pass or a
+resynchronization moved the position, or the slot is gone or holds something else. Where the position moved, the
+work that comes back reads the message completed and dispatches nothing.
+
+Not changed: an admission's own guard still fences on the whole progress value, so a completion that commits first
+makes that admission conflict and replay, which has no external effect.
+
 ## Approaches considered
 
 1. **Reuse the durable `receiver` pending row** (ruled first, then replaced). One owner for every receipt
