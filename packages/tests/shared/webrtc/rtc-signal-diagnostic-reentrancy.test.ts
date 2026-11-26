@@ -17,7 +17,7 @@ describe('native signal ownership after synchronous diagnostics', () => {
                 peerSessionId: 'peer',
                 iceCandidates: { iceServers: [], expiresAtEpochMs: 100 },
                 isPolite: true,
-                offerGeneration: 1
+                connectionGeneration: 1
             }, {
                 createOfferId: new DeterministicRtcOfferIds().createOfferId,
                 signalingDiagnostics: {
@@ -47,7 +47,7 @@ describe('native signal ownership after synchronous diagnostics', () => {
                 await peer.handleSignal({
                     signalType: 'Offer',
                     offerId: 'setup',
-                    offerGeneration: 1,
+                    connectionGeneration: 1,
                     payload: { description: { type: 'offer', sdp: 'setup' }, candidate: null }
                 });
             }
@@ -58,15 +58,20 @@ describe('native signal ownership after synchronous diagnostics', () => {
                 peer.connect();
             };
             const signal: QRtcSignal = kind === 'answer'
-                ? { signalType: 'Answer', offerId: 'offer-1', payload: { description: { type: 'answer', sdp: 'old-answer' }, candidate: null } }
+                ? {
+                    signalType: 'Answer',
+                    connectionGeneration: 1,
+                    offerId: 'offer-1',
+                    payload: { description: { type: 'answer', sdp: 'old-answer' }, candidate: null }
+                }
                 : kind === 'offer'
                 ? {
                     signalType: 'Offer',
                     offerId: 'old-offer',
-                    offerGeneration: 1,
+                    connectionGeneration: 1,
                     payload: { description: { type: 'offer', sdp: 'old-offer' }, candidate: null }
                 }
-                : { signalType: 'IceCandidate', payload: { description: null, candidate: { candidate: 'old-candidate' } } };
+                : { signalType: 'IceCandidate', connectionGeneration: 1, payload: { description: null, candidate: { candidate: 'old-candidate' } } };
             await peer.handleSignal(signal);
             const replacement = runtime.createdConnections[1];
             expect.soft(peer.status.pc).toBe(replacement);
@@ -77,7 +82,7 @@ describe('native signal ownership after synchronous diagnostics', () => {
             await peer.handleSignal({
                 signalType: 'Offer',
                 offerId: 'current-offer',
-                offerGeneration: 1,
+                connectionGeneration: 1,
                 payload: { description: { type: 'offer', sdp: 'current-offer' }, candidate: null }
             });
             expect(replacement.receivedDescriptions).toEqual([{ type: 'offer', sdp: 'current-offer' }]);

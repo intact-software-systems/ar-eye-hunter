@@ -151,6 +151,7 @@ function toAnswerEnvelope(messageId: string, sdp: string, offerId: string): stri
             sessionId: 'sender',
             token: 'test-token',
             signalType: 'Answer',
+            connectionGeneration: 1,
             offerId,
             payload: { description: { type: 'answer', sdp }, candidate: null }
         }

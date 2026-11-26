@@ -368,13 +368,17 @@ describe('original native owner evidence', () => {
             }
         });
         for (const candidate of ['first', 'last']) {
-            await peer.connection.handleSignal({ signalType: 'IceCandidate', payload: { description: null, candidate: { candidate } } });
+            await peer.connection.handleSignal({
+                signalType: 'IceCandidate',
+                connectionGeneration: 1,
+                payload: { description: null, candidate: { candidate } }
+            });
         }
         events.length = 0;
         await peer.connection.handleSignal({
             signalType: 'Offer',
             offerId: 'offer',
-            offerGeneration: 1,
+            connectionGeneration: 1,
             payload: { description: { type: 'offer', sdp: 'private-sdp' }, candidate: null }
         });
         expect(attempted).toEqual(['first', 'last']);
@@ -446,15 +450,21 @@ describe('original native owner evidence', () => {
                 await expect(peer.connection.handleSignal({
                     signalType: 'Offer',
                     offerId: 'offer',
-                    offerGeneration: 1,
+                    connectionGeneration: 1,
                     payload: { description: { type: 'offer', sdp: 'private-sdp' }, candidate: null }
                 })).rejects.toBe(failure);
             }
             else {
-                await native.setRemoteDescription({ type: 'offer' });
+                await peer.connection.handleSignal({
+                    signalType: 'Offer',
+                    offerId: 'offer',
+                    connectionGeneration: 1,
+                    payload: { description: { type: 'offer', sdp: 'private-sdp' }, candidate: null }
+                });
                 vi.spyOn(native, 'addIceCandidate').mockRejectedValue(failure);
                 await expect(peer.connection.handleSignal({
                     signalType: 'IceCandidate',
+                    connectionGeneration: 1,
                     payload: { description: null, candidate: { candidate: 'private-candidate' } }
                 })).rejects.toBe(failure);
             }
@@ -494,7 +504,7 @@ describe('original native owner evidence', () => {
         await expect(peer.connection.handleSignal({
             signalType: 'Offer',
             offerId: 'offer',
-            offerGeneration: 1,
+            connectionGeneration: 1,
             payload: { description: { type: 'offer', sdp: 'private-sdp' }, candidate: null }
         })).rejects.toBe(failure);
         await native.channels[0].fail();
@@ -697,7 +707,7 @@ describe('original native owner evidence', () => {
             peer.connection.handleSignal({
                 signalType: 'Offer',
                 offerId: 'offer',
-                offerGeneration: 1,
+                connectionGeneration: 1,
                 payload: { description: { type: 'offer', sdp: 'private-sdp' }, candidate: null }
             })
         ).rejects.toBe(failure);
@@ -736,7 +746,7 @@ describe('original native owner evidence', () => {
         const applying = peer.connection.handleSignal({
             signalType: 'Offer',
             offerId: 'offer',
-            offerGeneration: 1,
+            connectionGeneration: 1,
             payload: { description: { type: 'offer', sdp: 'private-sdp' }, candidate: null }
         });
         await entered.promise;
@@ -971,9 +981,15 @@ describe('original native owner evidence', () => {
         Object.defineProperty(native, 'sctp', { configurable: true, value: sctp });
         native.dispatchEvent(new Event('signalingstatechange'));
         expect(peer.connection.readNativeSnapshot().state).toMatchObject({ transportObjectOrdinal: { status: 'observed', value: 1 }, attachmentGap: false });
-        await native.setRemoteDescription({ type: 'offer', sdp: 'private-sdp' });
+        await peer.connection.handleSignal({
+            signalType: 'Offer',
+            offerId: 'offer',
+            connectionGeneration: 1,
+            payload: { description: { type: 'offer', sdp: 'private-sdp' }, candidate: null }
+        });
         await peer.connection.handleSignal({
             signalType: 'IceCandidate',
+            connectionGeneration: 1,
             payload: { description: null, candidate: { candidate: 'private-address', usernameFragment: 'private-fragment' } }
         });
         const candidates = events.filter((row) => row.kind === 'native-candidate-application');
@@ -1068,6 +1084,40 @@ describe('original native owner evidence', () => {
         service.ensurePeerConnectionStarted('peer', true);
         service.disconnectPeer('peer');
         expect(reads).toBe(0);
+        runtime.dispose();
+    });
+
+    it('records a peer replaced for an older remote connection answer under its own issuer', async () => {
+        const runtime = installNativeRtcRuntime();
+        const events: RtcSignalingDiagnostics.Event[] = [];
+        const service = createService(events);
+        const peer = service.ensurePeerConnectionStarted('z-peer', true).right?.peer;
+        if (!peer) {
+            throw new Error('Expected started peer');
+        }
+        const native = runtime.createdConnections[0];
+        await peer.connection.handleSignal({
+            signalType: 'Offer',
+            offerId: 'remote-offer',
+            connectionGeneration: 5,
+            payload: { description: { type: 'offer', sdp: 'private-sdp' }, candidate: null }
+        });
+        await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+        await peer.connection.handleSignal({
+            signalType: 'Answer',
+            offerId: 'offer',
+            connectionGeneration: 4,
+            payload: { description: { type: 'answer', sdp: 'private-sdp' }, candidate: null }
+        });
+
+        expect(service.readPeer('z-peer')).toBeUndefined();
+        const terminating = events.filter((row) => row.kind === 'service-peer-observation' && row.service.stage === 'terminating');
+        expect(terminating).toEqual([
+            expect.objectContaining({ service: expect.objectContaining({ issuer: { status: 'observed', value: 'superseded-answer' } }) })
+        ]);
+        expect(toRtcNativeObservationProjection(JSON.parse(JSON.stringify(terminating[0]))).event).toMatchObject({
+            service: { issuer: { status: 'observed', value: 'superseded-answer' } }
+        });
         runtime.dispose();
     });
 

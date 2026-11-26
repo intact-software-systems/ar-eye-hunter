@@ -126,7 +126,7 @@ function createNativeMediaChannelFixture(): NativeMediaChannelFixture {
         peerSessionId: 'peer-1',
         iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
         isPolite: false,
-        offerGeneration: 1
+        connectionGeneration: 1
     }, new DeterministicRtcOfferIds());
     peerConnection.connect();
     peers.push(peerConnection);

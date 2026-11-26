@@ -296,6 +296,7 @@ function validateResult(input: DiagnosticsInput, result: RtcPeerConnectionDiagno
             rtcBaselineIssue('$.rawEvidence.signalingMessagesSent', 'counter-mismatch', 'Unexpected.')
         );
     }
+    // Both argument paths cap candidates per peer at 5, below the 64 a connection holds, so none is displaced.
     const expected = {
         queuedIceCandidateCount: input.peers * input.iceCandidatesPerPeer,
         flushedIceCandidateCount: input.peers * input.iceCandidatesPerPeer,

@@ -275,7 +275,7 @@ function createPeer(sessionId: string, peerId: string): WebRtcConnectionService.
         token: 'fixture-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         isPolite: false,
-        offerGeneration: 1
+        connectionGeneration: 1
     }, new DeterministicRtcOfferIds());
     const channel = new QRtcDataChannel(connection, { faultPort: createPassThroughTransportFaultPort(), peerId, dataChannelName: 'test' });
     return { peerId, connection, channel, channels: new Map([['reliable', channel]]), media: new QRtcMediaChannel(connection, { peerId }) };

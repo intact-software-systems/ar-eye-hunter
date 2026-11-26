@@ -610,21 +610,75 @@ data/media lane startup; deletion observers run after owned teardown. Reentrant
 observers therefore see a complete lifetime boundary and cannot lose a replacement
 or allocate through a half-created peer record.
 
-Signals carry no ordering key, so one peer's offers can reach the other side out
-of order. Every Offer signal therefore carries a required `offerGeneration`, a
-non-negative integer; Answer and ICE signals carry none, and the shared decoder
-used by the browser and the server route refuses an Offer without it and the
-field on any other signal. The offering runtime assigns each new native peer
-connection the generation `max(now, last + 1)` from its epoch clock, so a
-redial outranks the connection it replaced even when the clock repeats or steps
-back, and every offer that connection sends, an ICE restart's included, carries
-it. The answering connection keeps the highest generation it has applied, for
-its own lifetime, across native resets. It refuses an offer below that mark
-before the collision handling: no remote description, no answer, and a
-`native-signal-decision` row with disposition `offer-superseded` carrying the
-refused `offerGeneration` and the `appliedOfferGeneration`. An equal generation
-is the same connection renegotiating and is applied as before; a higher one is
-applied and raises the mark.
+Signals carry no ordering key, so one peer's signals can reach the other side
+out of order. Every Offer, Answer and IceCandidate signal therefore carries a
+required `connectionGeneration`, a non-negative integer that identifies the
+sending peer connection instance; the shared decoder used by the browser and
+the server route refuses a signal without it. Each runtime gives each new peer
+connection instance it opens the generation `max(now, last + 1)` from its epoch
+clock, so a redial outranks the connection it replaced even when the clock
+repeats or steps back, and calls `connect()` once per instance; every signal
+the instance sends, an ICE restart's included, carries its generation.
+Generations from the two sides' clocks are never compared with each other: a
+receiver compares only generations the same remote runtime assigned.
+
+A connection keeps one mark, the highest remote generation whose Offer or
+Answer it has applied, for the lifetime of the instance, and refuses every
+signal below it. An offer below the mark is refused before the collision
+handling: no remote description and no answer. Each refusal is a
+`native-signal-decision` row with disposition `offer-superseded` or
+`answer-superseded` carrying the refused signal's `connectionGeneration` and
+the `appliedRemoteGeneration`. An equal generation is the same remote
+connection renegotiating and is applied as before; a higher one is applied and
+raises the mark, so a remote connection that answered this side's offer
+outranks an older one whose offer arrives later.
+
+The answer rule applies only to an answer to the offer this side has
+outstanding: a stale answer is `answer-ineligible` first, whatever its
+generation, and replaces nothing. An answer to the outstanding offer that is
+below the mark is refused unapplied and the connection reports itself closed
+with the termination issuer `superseded-answer`, so the connection service
+removes the peer as it does a natively closed one. Only a new instance
+recovers: the remote runtime that answered is older than one this instance
+applied, which happens when that runtime's clock stepped back or a second
+runtime shares its session id, so every later signal it sends would stay below
+the mark this instance keeps for its lifetime, and a rollback would only
+re-offer into the same refusal. A new instance starts without a mark and
+accepts that runtime's generation. The rule is the same for an established
+connection and one still establishing; waiting for the establishment timeout
+would only delay the same replacement. The group manager dials the peer again
+while it is still dial-allowed and within its attempt budget; on the waiting
+side the new instance waits for the remote's offer. A remote that alternates
+higher offers with lower answers ends `connect-exhausted` with the budget's
+cooldown, so the replacements are bounded.
+
+An offer below the mark stays refused rather than replacing the instance:
+replacing would tear down the instance negotiating with the newest remote
+connection and bring back the reordering defect the offer generation exists to
+prevent. After a remote restart with a stepped-back clock the local native
+connection dies with the old association, and the next inbound signal reaches
+a replacement instance, at worst after one establishment timeout. The refusal
+persists only while two live runtimes share one session id.
+
+A candidate that arrives before its native connection holds a remote
+description is held. Once the native connection holds one, a connection judges
+each remote candidate against the same mark. A candidate of a newer generation
+belongs to a remote connection whose description has not arrived yet, so it is
+held until a description of its generation is applied. Both are held even while
+an impolite connection ignores a colliding offer, because that remote
+connection may yet answer this side's offer. A candidate of the marked
+generation is applied, or dropped as `ice-ignored` while a colliding offer is
+ignored. A candidate of an older generation belongs to a superseded remote
+connection; it is dropped, held or not, with a
+`native-signal-decision` row with disposition `ice-superseded` carrying its
+`connectionGeneration` and the `appliedRemoteGeneration`. At most 64 candidates
+are held; a further one displaces the oldest, recorded as `ice-displaced`. Held
+candidates belong to the native connection and end with it. The rule cannot
+tell candidates of one connection apart: an ICE restart's candidate that
+overtakes the restart offer, and an answerer's candidate gathered under its
+earlier ICE credentials, carry the current generation, so they are applied to
+the description the native connection holds and refused natively, as before
+the generation existed.
 
 Before targeted, heartbeat, or complete collection reads, browser repair
 captures the observed snapshot identity. An authoritative `404`, heartbeat
