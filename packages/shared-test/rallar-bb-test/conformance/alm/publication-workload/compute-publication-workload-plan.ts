@@ -19,7 +19,7 @@ export function computePublicationWorkloadFrameCount(
     return parameters.windowMs / parameters.publishIntervalMs;
 }
 
-/** Defined for a point `validatePublicationWorkloadParameters` passes. A ratio's fraction of a message rounds down. */
+/** Defined for a point `validatePublicationWorkloadParameters` passes. */
 export function computePublicationWorkloadPlan(parameters: PublicationWorkloadParameters): PublicationWorkloadPlan {
     const frameCount = computePublicationWorkloadFrameCount(parameters);
     const subscriberCount = parameters.participantCount - 1;
@@ -28,8 +28,17 @@ export function computePublicationWorkloadPlan(parameters: PublicationWorkloadPa
         configuredRateHz: 1_000 / parameters.publishIntervalMs,
         subscriberCount,
         expectedDeliveriesPerSubscriber: frameCount,
-        minDeliveriesPerSubscriber: Math.floor(frameCount * parameters.minReceiveRatio),
-        minAcceptedSends: Math.floor(frameCount * parameters.minSendSuccessRatio),
+        minDeliveriesPerSubscriber: computeMinimumFrameCount(frameCount, parameters.minReceiveRatio),
+        minAcceptedSends: computeMinimumFrameCount(frameCount, parameters.minSendSuccessRatio),
         logicalFanoutMessages: frameCount * subscriberCount
     };
+}
+
+/**
+ * The smallest whole count whose share of the frames reaches the ratio. The count is tested as a share because the
+ * product alone can land under the whole number it stands for: 100 x 0.57 is 56.99999999999999.
+ */
+function computeMinimumFrameCount(frameCount: number, ratio: number): number {
+    const floor = Math.floor(frameCount * ratio);
+    return floor / frameCount >= ratio ? floor : floor + 1;
 }

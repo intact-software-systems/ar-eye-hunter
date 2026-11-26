@@ -99,6 +99,40 @@ const BROKEN_BOUNDS: readonly BrokenBound[] = [
         bound: 'a zero ready timeout',
         change: { readyTimeoutMs: 0 },
         issue: { path: '$.readyTimeoutMs', code: 'invalid-ready-timeout-ms' }
+    },
+    {
+        bound: 'a zero TTL',
+        change: { ttlMs: 0 },
+        issue: { path: '$.ttlMs', code: 'invalid-ttl-ms' }
+    },
+    {
+        bound: 'a receive ratio that is not a number',
+        change: { minReceiveRatio: Number.NaN },
+        issue: { path: '$.minReceiveRatio', code: 'invalid-min-receive-ratio' }
+    },
+    {
+        bound: 'a group with an empty group id',
+        change: { group: { ...POINT.group, groupId: '' } },
+        issue: { path: '$.group.groupId', code: 'required' }
+    },
+    {
+        // The 500 ms interval is under this cadence, and the cadence is the wrong value: the policy allows 60,000.
+        bound: 'a cadence above the policy limit, which the interval is then not held to',
+        change: { publication: { ...POINT.publication, cadenceMs: 70_000 } },
+        issue: { path: '$.publication.cadenceMs', code: 'invalid-cadence-ms' }
+    },
+    {
+        // The 256-byte payload is above this budget, and the budget is the wrong value: the policy needs 1 byte.
+        bound: 'a zero drain.bytes, which the payload is then not held to',
+        change: { publication: { ...POINT.publication, drain: { messages: 8, bytes: 0 } } },
+        issue: { path: '$.publication.drain.bytes', code: 'invalid-drain-bytes' }
+    },
+    {
+        // 5,000,000 / 500 = 10,000 frames. {"seq":10000,"sentAtEpochMs":1802088000000,"pad":""} is 52 bytes and
+        // {"seq":1,"sentAtEpochMs":1802088000000,"pad":""} is 48: 50 bytes hold a frame count within the limit.
+        bound: '10,000 frames, which the payload is then not sized for',
+        change: { windowMs: 5_000_000, payloadBytes: 50 },
+        issue: { path: '$.windowMs', code: 'frame-count-above-limit' }
     }
 ];
 
@@ -153,9 +187,9 @@ describe('publication workload parameters', () => {
             .toEqual([]);
     });
 
-    it('derives 600 frames, 2 Hz, 14 subscribers, a floor of 570 and 8,400 fan-out messages', () => {
-        // 300,000 / 500 = 600 frames; 1,000 / 500 = 2 Hz; 15 - 1 = 14 subscribers; floor(600 x 0.95) = 570
-        // deliveries; floor(600 x 0.99) = 594 accepted sends; 600 x 14 = 8,400 fan-out messages.
+    it('derives 600 frames, 2 Hz, 14 subscribers, at least 570 deliveries and 8,400 fan-out messages', () => {
+        // 300,000 / 500 = 600 frames; 1,000 / 500 = 2 Hz; 15 - 1 = 14 subscribers; 570 of 600 is 0.95 and
+        // 594 of 600 is 0.99; 600 x 14 = 8,400 fan-out messages.
         expect(computePublicationWorkloadPlan(POINT)).toEqual({
             frameCount: 600,
             configuredRateHz: 2,
@@ -167,17 +201,26 @@ describe('publication workload parameters', () => {
         });
     });
 
-    it('rounds a ratio that leaves a fraction of a message down: 60 frames at 0.96 need 57, not 58', () => {
-        // 30,000 / 500 = 60 frames; 60 x 0.96 = 57.6, and the floor is 57.
+    it.each([
+        // 57 of 60 is 0.95, under the ratio; 58 of 60 is 0.9667.
+        { frameCount: 60, ratio: 0.96, minimum: 58 },
+        // 57 of 100 is the ratio itself; 56 of 100 is 0.56.
+        { frameCount: 100, ratio: 0.57, minimum: 57 },
+        { frameCount: 60, ratio: 0.95, minimum: 57 },
+        { frameCount: 600, ratio: 0.95, minimum: 570 },
+        { frameCount: 600, ratio: 0.99, minimum: 594 },
+        // 0 of 1 is under every valid ratio.
+        { frameCount: 1, ratio: 0.95, minimum: 1 }
+    ])('needs $minimum of $frameCount frames to reach a ratio of $ratio', ({ frameCount, ratio, minimum }) => {
         const plan = computePublicationWorkloadPlan({
             ...POINT,
-            windowMs: 30_000,
-            minReceiveRatio: 0.96,
-            minSendSuccessRatio: 0.96
+            windowMs: frameCount * 500,
+            minReceiveRatio: ratio,
+            minSendSuccessRatio: ratio
         });
 
-        expect(plan.minDeliveriesPerSubscriber).toBe(57);
-        expect(plan.minAcceptedSends).toBe(57);
+        expect(plan.minDeliveriesPerSubscriber).toBe(minimum);
+        expect(plan.minAcceptedSends).toBe(minimum);
     });
 
     it('serialises to the declared byte size at the widest sequence number and at most three bytes less at sequence 1', () => {

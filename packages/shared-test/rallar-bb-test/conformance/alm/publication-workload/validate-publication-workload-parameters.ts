@@ -2,7 +2,11 @@ import {
     validateALPublicationPolicy,
     type ALPublicationPolicy
 } from '@shared/al-contracts/publication/al-publication-policy.ts';
-import { RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES, type RallarValidationIssue } from '@shared/api/rallar-validation.ts';
+import {
+    RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES,
+    validateRallarGroupRef,
+    type RallarValidationIssue
+} from '@shared/api/rallar-validation.ts';
 
 import type { RallarBlackBoxDistributedGroupRef } from '../../../distributed-run.ts';
 import { RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS } from '../../../rallar-black-box-test-contracts.ts';
@@ -38,29 +42,32 @@ export const PUBLICATION_WORKLOAD_LIMITS = {
 } as const;
 
 /**
- * A point whose window gives no whole frame count is sized against the one-frame template, the smallest any point
+ * A point with no whole frame count within the limit is sized against the one-frame template, the smallest any point
  * has, so its payload is reported only when no frame count could hold it.
  */
 const SMALLEST_FRAME_COUNT = 1;
 
 /**
- * Each field contributes the first bound it breaks. A bound stated against another field is checked only when that
- * field holds its own: a window is a multiple of nothing while the interval is no positive integer.
+ * A field contributes the first bound it breaks; `group` and `publication` contribute every issue of their own
+ * validators. A bound stated against another field is checked only when that other field holds its own bound.
  */
 export function validatePublicationWorkloadParameters(
     parameters: PublicationWorkloadParameters
 ): readonly RallarValidationIssue[] {
+    const publicationIssues = validateALPublicationPolicy(parameters.publication);
+    const wholeFrameCount = resolveWholeFrameCount(parameters);
     return [
+        ...validateRallarGroupRef(parameters.group, '$.group').issues,
         validateParticipantCount(parameters.participantCount),
         validateCarrier(parameters.carrier),
-        validatePublishIntervalMs(parameters),
-        validateWindowMs(parameters),
-        ...validateALPublicationPolicy(parameters.publication),
-        validatePayloadBytes(parameters),
-        validatePositiveInteger(parameters, 'ttlMs', 'invalid-ttl-ms'),
+        validatePublishIntervalMs(parameters, publicationIssues),
+        validateWindowMs(parameters, wholeFrameCount),
+        ...publicationIssues,
+        validatePayloadBytes(parameters, wholeFrameCount, publicationIssues),
+        validatePositiveMilliseconds(parameters, 'ttlMs', 'invalid-ttl-ms'),
         validateShare(parameters, 'minReceiveRatio', 'invalid-min-receive-ratio'),
         validateShare(parameters, 'minSendSuccessRatio', 'invalid-min-send-success-ratio'),
-        validatePositiveInteger(parameters, 'readyTimeoutMs', 'invalid-ready-timeout-ms')
+        validatePositiveMilliseconds(parameters, 'readyTimeoutMs', 'invalid-ready-timeout-ms')
     ].filter((issue) => issue !== undefined);
 }
 
@@ -83,16 +90,16 @@ function validateCarrier(carrier: AlmConformanceCarrier): RallarValidationIssue 
         : toIssue('carrier', 'invalid-carrier', `Expected one of ${ALM_CONFORMANCE_CARRIERS.join(', ')}.`);
 }
 
-function validatePublishIntervalMs(parameters: PublicationWorkloadParameters): RallarValidationIssue | undefined {
+function validatePublishIntervalMs(
+    parameters: PublicationWorkloadParameters,
+    publicationIssues: readonly RallarValidationIssue[]
+): RallarValidationIssue | undefined {
     const { publishIntervalMs, publication } = parameters;
-    if (decodePositiveInteger(publishIntervalMs) === undefined) {
-        return toIssue(
-            'publishIntervalMs',
-            'invalid-publish-interval-ms',
-            'Expected a positive integer of milliseconds.'
-        );
+    const ownIssue = validatePositiveMilliseconds(parameters, 'publishIntervalMs', 'invalid-publish-interval-ms');
+    if (ownIssue !== undefined) {
+        return ownIssue;
     }
-    return publishIntervalMs < publication.cadenceMs
+    return hasNoIssueAt(publicationIssues, '$.publication.cadenceMs') && publishIntervalMs < publication.cadenceMs
         ? toIssue(
             'publishIntervalMs',
             'publish-interval-below-cadence',
@@ -101,46 +108,62 @@ function validatePublishIntervalMs(parameters: PublicationWorkloadParameters): R
         : undefined;
 }
 
-function validateWindowMs(parameters: PublicationWorkloadParameters): RallarValidationIssue | undefined {
-    if (decodePositiveInteger(parameters.windowMs) === undefined) {
-        return toIssue('windowMs', 'invalid-window-ms', 'Expected a positive integer of milliseconds.');
+function validateWindowMs(
+    parameters: PublicationWorkloadParameters,
+    wholeFrameCount: number | undefined
+): RallarValidationIssue | undefined {
+    const { publishIntervalMs } = parameters;
+    const { maxFrameCount } = PUBLICATION_WORKLOAD_LIMITS;
+    const ownIssue = validatePositiveMilliseconds(parameters, 'windowMs', 'invalid-window-ms');
+    if (ownIssue !== undefined) {
+        return ownIssue;
     }
-    if (decodePositiveInteger(parameters.publishIntervalMs) === undefined) {
+    if (decodePositiveInteger(publishIntervalMs) === undefined) {
         return undefined;
     }
-    const frameCount = computePublicationWorkloadFrameCount(parameters);
-    if (!Number.isInteger(frameCount)) {
+    if (wholeFrameCount === undefined) {
         return toIssue(
             'windowMs',
             'window-not-multiple-of-publish-interval',
-            `Expected a multiple of the publish interval of ${parameters.publishIntervalMs} ms.`
+            `Expected a multiple of the publish interval of ${publishIntervalMs} ms.`
         );
     }
-    return frameCount > PUBLICATION_WORKLOAD_LIMITS.maxFrameCount
+    return wholeFrameCount > maxFrameCount
         ? toIssue(
             'windowMs',
             'frame-count-above-limit',
-            `Expected at most ${PUBLICATION_WORKLOAD_LIMITS.maxFrameCount} frames; the window holds ${frameCount}.`
+            `Expected at most ${maxFrameCount} frames; the window holds ${wholeFrameCount}.`
         )
         : undefined;
 }
 
-function validatePayloadBytes(parameters: PublicationWorkloadParameters): RallarValidationIssue | undefined {
+function validatePayloadBytes(
+    parameters: PublicationWorkloadParameters,
+    wholeFrameCount: number | undefined,
+    publicationIssues: readonly RallarValidationIssue[]
+): RallarValidationIssue | undefined {
     const { payloadBytes } = parameters;
     if (!Number.isInteger(payloadBytes)) {
         return toIssue('payloadBytes', 'invalid-payload-bytes', 'Expected an integer of bytes.');
     }
-    const minimumBytes = computePublicationWorkloadMinimumPayloadBytes(resolveSizedFrameCount(parameters));
+    const sizedFrameCount =
+        wholeFrameCount !== undefined && wholeFrameCount <= PUBLICATION_WORKLOAD_LIMITS.maxFrameCount
+            ? wholeFrameCount
+            : SMALLEST_FRAME_COUNT;
+    const minimumBytes = computePublicationWorkloadMinimumPayloadBytes(sizedFrameCount);
     return payloadBytes < minimumBytes
         ? toIssue(
             'payloadBytes',
             'payload-bytes-below-template-minimum',
             `Expected at least ${minimumBytes} bytes, the payload with no filler at the widest sequence number.`
         )
-        : validatePayloadBytesCeiling(parameters);
+        : validatePayloadBytesCeiling(parameters, publicationIssues);
 }
 
-function validatePayloadBytesCeiling(parameters: PublicationWorkloadParameters): RallarValidationIssue | undefined {
+function validatePayloadBytesCeiling(
+    parameters: PublicationWorkloadParameters,
+    publicationIssues: readonly RallarValidationIssue[]
+): RallarValidationIssue | undefined {
     const { payloadBytes, publication } = parameters;
     if (payloadBytes > PUBLICATION_WORKLOAD_LIMITS.maxPayloadBytes) {
         return toIssue(
@@ -149,7 +172,7 @@ function validatePayloadBytesCeiling(parameters: PublicationWorkloadParameters):
             `Expected at most the message payload limit of ${PUBLICATION_WORKLOAD_LIMITS.maxPayloadBytes} bytes.`
         );
     }
-    return payloadBytes > publication.drain.bytes
+    return hasNoIssueAt(publicationIssues, '$.publication.drain.bytes') && payloadBytes > publication.drain.bytes
         ? toIssue(
             'payloadBytes',
             'payload-bytes-above-drain-bytes',
@@ -158,9 +181,9 @@ function validatePayloadBytesCeiling(parameters: PublicationWorkloadParameters):
         : undefined;
 }
 
-function validatePositiveInteger(
+function validatePositiveMilliseconds(
     parameters: PublicationWorkloadParameters,
-    field: 'ttlMs' | 'readyTimeoutMs',
+    field: 'publishIntervalMs' | 'windowMs' | 'ttlMs' | 'readyTimeoutMs',
     code: string
 ): RallarValidationIssue | undefined {
     return decodePositiveInteger(parameters[field]) === undefined
@@ -177,12 +200,15 @@ function validateShare(
     return share > 0 && share <= 1 ? undefined : toIssue(field, code, 'Expected a share above 0 and at most 1.');
 }
 
-function resolveSizedFrameCount(parameters: PublicationWorkloadParameters): number {
-    const frameCount = computePublicationWorkloadFrameCount(parameters);
-    return decodePositiveInteger(parameters.publishIntervalMs) !== undefined &&
-            decodePositiveInteger(frameCount) !== undefined
-        ? frameCount
-        : SMALLEST_FRAME_COUNT;
+/** Whole frames of a positive whole interval: the window is then that many intervals, so it holds its own bound too. */
+function resolveWholeFrameCount(parameters: PublicationWorkloadParameters): number | undefined {
+    return decodePositiveInteger(parameters.publishIntervalMs) === undefined
+        ? undefined
+        : decodePositiveInteger(computePublicationWorkloadFrameCount(parameters));
+}
+
+function hasNoIssueAt(issues: readonly RallarValidationIssue[], path: string): boolean {
+    return issues.every((issue) => issue.path !== path);
 }
 
 function toIssue(
