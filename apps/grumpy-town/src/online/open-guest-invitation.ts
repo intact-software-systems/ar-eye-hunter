@@ -24,7 +24,7 @@ export async function openGuestInvitation(root: HTMLElement, signal: AbortSignal
     const room = fragment.get('room') ?? new URLSearchParams(location.search).get('room');
     const invitationSecret = fragment.get('invite');
     const valid = Boolean(room && room.trim().length && room.length <= 256 && isGuestInvitationVerifier(invitationSecret));
-    root.innerHTML = `<main class="loading">
+    root.innerHTML = `<main class="loading" hidden>
         <h1>Town invitation</h1>
         <p>Your town nickname is <output aria-label="Your nickname"></output>.</p>
         <button type="button" id="shuffle">Shuffle nickname</button>
@@ -32,6 +32,7 @@ export async function openGuestInvitation(root: HTMLElement, signal: AbortSignal
         <button type="button" class="primary" id="join" hidden>Join this town</button>
         <p><a>Play solo</a></p>
     </main>`;
+    const panel = root.querySelector('main')!;
     const output = root.querySelector('output')!;
     const shuffle = root.querySelector<HTMLButtonElement>('#shuffle')!;
     const join = root.querySelector<HTMLButtonElement>('#join')!;
@@ -44,6 +45,8 @@ export async function openGuestInvitation(root: HTMLElement, signal: AbortSignal
         if (signal.aborted) return;
     }
     catch {
+        if (signal.aborted) return;
+        panel.hidden = false;
         message.textContent = 'Allow browser storage and reopen the invitation to keep your guest seat.';
         return;
     }
@@ -52,6 +55,7 @@ export async function openGuestInvitation(root: HTMLElement, signal: AbortSignal
         index = randomNicknameIndex(nicknames.length);
     }
     output.value = nicknames[index];
+    panel.hidden = false;
     shuffle.disabled = hasPendingGuestVisit(visit);
     shuffle.addEventListener('click', () => {
         const offset = 1 + randomNicknameIndex(nicknames.length - 1);

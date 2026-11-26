@@ -96,7 +96,7 @@ export class RallarRoomEvent extends AuthenticatedResource<RoomEvent.View | null
             if (!this.current(attempt) || !claimed || claimed.deadline !== null || claimed.occurrence !== offer.occurrence ||
                 claimed.offerRevision !== offer.offerRevision || claimed.partyId !== offer.partyId || claimed.groupId !== room.groupId) throw new Error('The court assignment has changed.');
             if (session.guestRoom && access) {
-                this.grants.switchTo(attempt.session, access);
+                this.grants.switchTo(attempt.session, this.browser.session(), access);
                 await this.browser.auth.activateGuest({ room, access, username: session.username });
             }
             await this.selectRoom(room, signal);
@@ -110,7 +110,7 @@ export class RallarRoomEvent extends AuthenticatedResource<RoomEvent.View | null
             const { signal } = attempt;
             const session = await this.grants.lobbySession(this.browser.session(), signal);
             if (session.guestRoom) {
-                this.grants.switchTo(attempt.session, session);
+                this.grants.switchTo(attempt.session, this.browser.session(), session);
                 await this.browser.auth.activateGuest({ room: this.lobby, access: session, username: session.username });
             }
             await this.selectRoom(this.lobby, signal);

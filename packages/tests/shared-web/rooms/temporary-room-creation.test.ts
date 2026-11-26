@@ -102,14 +102,19 @@ it('a late denial from another tab does not discard the proof for a newer pendin
     await expect(secondTab.start({})).resolves.toMatchObject({ room });
 });
 
-it('sends no creation request if the private proof cannot be durably protected', async () => {
-    const fetch = vi.fn();
-    vi.stubGlobal('fetch', fetch);
+it('leaves the server without a room if the private proof cannot be durably protected', async () => {
+    const createdRooms = new Set<string>();
+    vi.stubGlobal('fetch', async () => {
+        createdRooms.add(room.groupId);
+        return Response.json({ room, access });
+    });
     const creation = new TemporaryRoomCreation(room, {
         ...browserStorage, readOrCreate: async () => { throw new Error('Secure storage unavailable'); }
     });
     await expect(creation.start({})).rejects.toThrow('Secure storage unavailable');
-    expect(fetch).not.toHaveBeenCalled();
+    expect(createdRooms.size).toBe(0);
+    await new TemporaryRoomCreation(room, browserStorage).start({});
+    expect([...createdRooms]).toEqual([room.groupId]);
 });
 
 it('two tabs starting together submit the same durable creation proof', async () => {

@@ -122,7 +122,7 @@ claim after transport loss or reload. `returnToLobby()` reselects the event
 lobby without surrendering its membership. A temporary player uses distinct
 room credentials for those two connections under the same player identity.
 Start a guest visit with `auth.activateGuest({room, access, username})` using
-the admission Rallar returned for that room. After a page reload, explicitly recover the guest
-visit through your app’s invitation flow and call `activateGuest` again. A signed-out event
+the admission Rallar returned for that room. After a page reload, restore the same player
+by passing their previously saved room admission to `activateGuest` again. A signed-out event
 watcher waits for authentication. With an active court visit, the watcher retrieves the
 same player's lobby grant from the protected credential store before reading the event.

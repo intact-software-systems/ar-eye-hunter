@@ -41,6 +41,7 @@ h2 { font-size: 28px; margin: 8px 0; letter-spacing: -1px; }
 .eyebrow { font-size: 10px; font-weight: 800; letter-spacing: 2px; }
 .primary { background: #bfc581; }
 .loading { min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px; text-align: center; }
+.loading[hidden] { display: none; }
 .loading a { color: #315f5b; font-weight: bold; }
 @media (pointer: coarse) { footer { font-size: 0; } footer span { display: block; font-size: 9px; } }
 @media (max-height: 500px) and (orientation: landscape) { .controls { left: 22px; right: 22px; bottom: 15px; } #joystick { width: 80px; height: 80px; } #puck { inset: 21px; } #dash { width: 76px; height: 76px; } .stick-wrap > span, footer { display: none; } .play-hint { bottom: 15px; } .play-hint p { margin: 6px 0 0; } .zoom { top: 80px; flex-direction: row; } .scoreboard { top: 77px; } }

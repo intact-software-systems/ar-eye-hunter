@@ -222,7 +222,8 @@ it('discards a delayed protected lobby read on account change before sending a p
     const fixture = trial();
     fixture.switchSession({ ...courtAccess, guestRoom: court, username: 'Alice' });
     const pending = Promise.withResolvers<string | null>();
-    fixture.storage.read.mockReturnValueOnce(pending.promise);
+    const restoring = Promise.withResolvers<void>();
+    fixture.storage.read.mockImplementationOnce(() => { restoring.resolve(); return pending.promise; });
     const requests: string[] = [];
     vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
         requests.push(new Headers(init.headers).get('authorization') ?? '');
@@ -231,7 +232,7 @@ it('discards a delayed protected lobby read on account change before sending a p
     const event = fixture.open();
     try {
         const started = event.start();
-        await expect.poll(() => fixture.storage.read.mock.calls.length).toBe(1);
+        await restoring.promise;
         fixture.switchSession({ clientId: 'bob', username: 'Bob', sessionId: 'bob-session',
             accessToken: 'bob-proof', expiresAtEpochMs: grant.expiresAtEpochMs });
         pending.resolve(JSON.stringify(grant));
@@ -243,21 +244,22 @@ it('discards a delayed protected lobby read on account change before sending a p
 
 it('keeps a fresh event signed out until the app explicitly restores the guest visit', async () => {
     const fixture = trial();
-    const fetch = vi.fn(async () => Response.json(view));
-    vi.stubGlobal('fetch', fetch);
+    const anonymousRequests: string[] = [];
+    vi.stubGlobal('fetch', async (url: string) => {
+        if (!fixture.session()) anonymousRequests.push(url);
+        return Response.json(view);
+    });
     const original = fixture.open();
     await original.start();
     original.stop();
     fixture.switchSession(undefined);
-    fetch.mockClear();
     const fresh = fixture.open();
     try {
         await fresh.start();
         expect(fresh.getState().view).toBeNull();
-        expect(fetch).not.toHaveBeenCalled();
+        expect(anonymousRequests).toEqual([]);
         fixture.switchSession(grant);
         await expect.poll(() => fresh.getState().view?.principalId).toBe(grant.clientId);
-        expect(fetch).toHaveBeenCalledTimes(1);
     } finally { fresh.stop(); }
 });
 

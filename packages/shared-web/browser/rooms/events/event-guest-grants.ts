@@ -24,7 +24,7 @@ export class EventGuestGrants {
     private readonly storage: EventGuestGrants.Storage;
     private readonly prefix: string;
     private savedLobby: AuthSession | undefined;
-    private transition: { identity: AuthSession; destination: string } | undefined;
+    private transition: { identity: AuthSession; source?: string; destination: string } | undefined;
 
     constructor(lobby: GroupRef, storage: EventGuestGrants.Storage) {
         this.lobby = lobby;
@@ -34,14 +34,15 @@ export class EventGuestGrants {
 
     /** Only an SDK-verified room switch belongs to the same resource operation. */
     identity(active: AuthSession | undefined): AuthSession | undefined {
-        if (active && this.transition?.destination === toAuthSessionKey(active)) return this.transition.identity;
+        const key = active && toAuthSessionKey(active);
+        if (key && this.transition && (key === this.transition.source || key === this.transition.destination)) return this.transition.identity;
         this.transition = undefined;
         if (active !== this.savedLobby) this.savedLobby = undefined;
         return active;
     }
 
-    switchTo(identity: AuthSession, destination: Pick<AuthSession, 'clientId' | 'sessionId'>): void {
-        this.transition = { identity, destination: toAuthSessionKey(destination) };
+    switchTo(identity: AuthSession, source: AuthSession | undefined, destination: Pick<AuthSession, 'clientId' | 'sessionId'>): void {
+        this.transition = { identity, source: source && toAuthSessionKey(source), destination: toAuthSessionKey(destination) };
     }
 
     async lobbySession(active: AuthSession | undefined, signal: AbortSignal): Promise<AuthSession> {
