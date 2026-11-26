@@ -1,7 +1,7 @@
 # Edge order: ordered room sends, sorted at the two ends
 
 Status: a plan to decide on. Nothing is built. The verdict so far is **viable, with one measurement still owed**
-(section 2.5) and the maintainer's rulings in section 4: rulings 1 and 2 are made, rulings 3 to 6 are open. It
+(section 2.5) and the maintainer's rulings in section 4: rulings 1 to 3 are made, rulings 4 to 6 are open. It
 builds on the unordered path, which keeps up under load only on the tree of PR 885, so it follows that pull request
 and does not replace it.
 
@@ -229,7 +229,7 @@ Three things to know:
   (`shared/al-contracts/al-message-persistence-validation.ts:31-45`, `:91`;
   `shared/al-contracts/al-message-persistence/persisted-al-value-validation.ts:36-38`). There is no metadata bag.
 - So there are two places: inside `payload.resource`, wrapped and unwrapped by Rallar Web, which changes no contract
-  and no server; or a new envelope field, which every hop must be deployed to accept first. This is ruling 3.
+  and no server; or a new envelope field, which every hop must be deployed to accept first. Ruling 3 chose the payload.
 - A wrapper is seen by anything that reads the payload without Rallar Web's unwrapping. Section "Consumers on the
   server" says who that is.
 
@@ -392,13 +392,20 @@ once; otherwise the receiver waits the window and starts at the lowest message i
 window's length is a channel option with a default that slice 1's measured reordering sets; a message that arrives
 after its receiver entered past it is dropped as late and counted.
 
-**3. Where the counter rides (before slice 3).**
+**3. Where the counter rides (before slice 3). Ruled on 2026-11-26: inside the payload.**
 
-- _Inside the payload, wrapped and unwrapped by Rallar Web_ (recommended). No contract change, no server change, and
+- _Inside the payload, wrapped and unwrapped by Rallar Web_ (chosen). No contract change, no server change, and
   relays carry it today. Anything that reads the payload without Rallar Web sees the wrapper, and both ends must
   declare the channel the same way.
-- _A new envelope field._ Clean for every reader. It is a contract change that every hop must be deployed to accept
-  before any browser sends it, since the decoders refuse unknown fields.
+- _A new envelope field_ (not chosen). Clean for every reader. It is a contract change that every hop must be
+  deployed to accept before any browser sends it, since the decoders refuse unknown fields.
+
+What follows from the ruling: the envelope, the server and the relays do not change. Rallar Web wraps the payload
+of an edge-ordered channel's sends before a granted topic's proof is signed, and unwraps it before the handler, so
+the application sees its own payload. Slice 3 makes the payload size limit count the wrapper. A receiver unwraps only on a
+channel it declared edge-ordered, so a channel declared differently at the two ends is an application error that
+slice 3 reports. A topic with a server handler, and a send addressed to the server, are refused `order: 'edge'`
+until that handler unwraps.
 
 **4. The names (before slice 3).** `order: 'edge'` on the channel, "edge order" in the documents, and what the app
 sees on each message (stream and position) and in a gap report.
