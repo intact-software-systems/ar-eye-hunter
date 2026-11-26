@@ -713,6 +713,26 @@ and it has no status list.
   reads one histogram, so the publication workload family reports each
   subscriber's delivered sample age on its own. A figure across subscribers or
   across runs needs the merge; its first reader adds it.
+- Two functions named `decodeLoopResultValue` guard a loop's result value by
+  different fields: the private one in
+  `packages/shared-test/rallar-bb-test/runtime/to-runtime-stats.ts` (a string
+  `commandId` and any `pacing`) and the exported one in
+  `packages/shared-test/rallar-bb-test/distributed-run-observation/decode-composite-result-values.ts`
+  (a `results` array and numeric `iterations` and `childResultCount`). Each
+  then casts the whole value, so a field neither checked is trusted. The
+  publication workload family's figures decode the loop fields they read
+  themselves. One decoder that names each bad field would serve all three; it
+  waits on a change to either reader.
+- `multicastDeliveryPlan` in
+  `packages/shared-test/rallar-bb-test/fixtures/rtc-multicast-recipes.ts` sets
+  a receiver's delivery threshold to
+  `Math.floor(expectedInboundMessages * minReceiveRatio)`. The floor is under
+  the ratio whenever the product is not whole. A float product can also land
+  under the whole number it stands for (100 x 0.57 is 56.99999999999999), and
+  the floor is then one message short where the product is whole. The
+  publication workload family takes the smallest count whose share reaches
+  the ratio (`computePublicationWorkloadPlan`). The multicast manifests are
+  built from this plan; it waits on the next change to those recipes.
 - The local baseline's median command time is not a regression figure, even as the median of several runs per
   side (D664): of five comparisons of one commit with itself, three read outside the band (five runs per side: 77
   against 89 ms and 80 against 89 ms; ten per side: 83 against 71 ms), on a machine that ran other work: one of the

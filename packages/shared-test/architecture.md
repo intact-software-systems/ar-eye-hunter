@@ -135,6 +135,9 @@ observable event fields are defined by the
 The ALM conformance lane's own evidence — the per-cell runner regime and how to
 read a red against it — is described by the
 [ALM observation artifact](./rallar-bb-test/docs/alm-observation-artifact.md).
+The [ALM publication workload family](./rallar-bb-test/docs/alm-publication-workload.md)
+describes one point of that family: its parameters, what each role runs, its local proof and
+what each field of its figures record means.
 These maps keep the independent command, control and analysis families directly
 locatable without moving unrelated owners merely to change a directory count.
 
