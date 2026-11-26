@@ -66,6 +66,8 @@ export interface OrderedSendCellRunDependencies {
 /** What a run read of the process it ran in. It is for the artifact, and no part of what the report computes. */
 export interface OrderedSendCellRuntime {
     readonly sendWindow: OrderedSendSendWindowFigures;
+    /** The most connections each instance's application pool opened: the API's default. */
+    readonly applicationPoolMaxConnections: number;
 }
 
 export interface OrderedSendCellRunResult {
@@ -272,7 +274,10 @@ async function observeOrderedSends(
     if (run.ledger.getFailures().length > 0) {
         throw new AggregateError(run.ledger.getFailures(), 'An offer of the ordered-send cell threw.');
     }
-    return { observations: { ...offers, ...reads }, runtime: { sendWindow } };
+    return {
+        observations: { ...offers, ...reads },
+        runtime: { sendWindow, applicationPoolMaxConnections: run.instances[0].applicationPoolMaxConnections }
+    };
 }
 
 /**

@@ -6,6 +6,8 @@ import { toError } from '@shared/resilience/to-error.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import type { ConnectionContext } from '@shared/websocket/json-web-socket-server.ts';
 
+import apiV1Defaults from '../../../resources/configuration/defaults-config.json' with { type: 'json' };
+import type { ApiV1CircuitBreakerConfiguration } from '../../../src/configuration/api-v1-configuration.ts';
 import {
     createDefaultApiV1DatabaseLifecycle,
     type ApiV1DatabaseLifecycle,
@@ -32,6 +34,14 @@ export interface OrderedSendInstanceInput {
     readonly recordHandOff: (message: ALMessage, instanceIndex: number) => void;
 }
 
+/** What an instance takes from the API's configuration. */
+export interface OrderedSendInstanceConfig {
+    /** The most connections the instance's application pool opens: its statements and transactions share them. */
+    readonly applicationPoolMaxConnections: number;
+    /** The circuit breaker of the instance's queue reads. */
+    readonly queueResilience: ApiV1CircuitBreakerConfiguration;
+}
+
 export interface OrderedSendInstanceDependencies {
     /** The instance's own pools on the run's database. The instance closes it. */
     readonly lifecycle: ApiV1DatabaseLifecycle;
@@ -42,6 +52,8 @@ export interface OrderedSendInstanceDependencies {
 /** One API instance of a run: its own pools, its own WS server, and the sessions whose sockets are on it. */
 export interface OrderedSendInstance {
     readonly instanceIndex: number;
+    /** The most connections the instance's application pool opens. */
+    readonly applicationPoolMaxConnections: number;
     /** The entry a frame of a session connected here reaches, as its socket's frame would. */
     readonly acceptIncomingMessage: WsQueueBoxServerService['acceptIncomingMessage'];
     /** Opens every connection of the application pool, so the send window opens none. */
@@ -61,14 +73,22 @@ const WARM_HOLD_SECONDS = 0.1;
 /** A session's authorisation outlasts any run by far. */
 const SESSION_LIFETIME_MS = 24 * 60 * 60 * 1_000;
 
-/** The instance's lifecycle as the API's own factory builds it, with the cell's pool sizes, on the run's database. */
+/**
+ * One instance on the run's database, over a lifecycle the API's own factory builds. The size of its application
+ * pool and the circuit breaker of its queue reads are the API's defaults, read from the `defaults-config.json` the
+ * API starts from; a deployment's profile or environment may override either, and a run does not. The listener
+ * pool's size and the idle time of both pools are the cell's own.
+ */
 export async function createDefaultOrderedSendInstance(
     input: OrderedSendInstanceInput,
     databaseUrl: string,
     clock: OrderedSendClock
 ): Promise<OrderedSendInstance> {
-    const { applicationPoolMaxConnections, listenerPoolMaxConnections, poolIdleTimeoutSeconds } =
-        ORDERED_SEND_CELL_CONSTANTS;
+    const { listenerPoolMaxConnections, poolIdleTimeoutSeconds } = ORDERED_SEND_CELL_CONSTANTS;
+    const config: OrderedSendInstanceConfig = {
+        applicationPoolMaxConnections: apiV1Defaults.database.applicationPool.maxConnections,
+        queueResilience: apiV1Defaults.topology.queueResilience
+    };
     const lifecycle = await createDefaultApiV1DatabaseLifecycle({
         database: {
             mode: 'postgres',
@@ -76,7 +96,7 @@ export async function createDefaultOrderedSendInstance(
             schemaInitialization: 'disabled',
             pubSub: 'postgres',
             applicationPool: {
-                maxConnections: applicationPoolMaxConnections,
+                maxConnections: config.applicationPoolMaxConnections,
                 idleTimeoutSeconds: poolIdleTimeoutSeconds
             },
             listenerPool: { maxConnections: listenerPoolMaxConnections, idleTimeoutSeconds: poolIdleTimeoutSeconds }
@@ -84,15 +104,39 @@ export async function createDefaultOrderedSendInstance(
         pgliteEvidence: { mode: 'disabled', pollIntervalMs: 1_000 },
         statementCensus: undefined
     });
-    return createOrderedSendInstance(input, { lifecycle, clock });
+    return await createOrderedSendInstance(input, config, { lifecycle, clock });
 }
 
 /**
- * One instance over its lifecycle. Its WS server sends every statement through the delayed handle and publishes
- * every NOTIFY through the delayed port; only the pool's warm-up uses the lifecycle's own handle.
+ * One instance over its lifecycle, which it owns from here on: an instance that cannot be wired closes the lifecycle
+ * before it fails. Its WS server sends every statement through the delayed handle and publishes every NOTIFY through
+ * the delayed port; only the pool's warm-up uses the lifecycle's own handle.
  */
-export function createOrderedSendInstance(
+export async function createOrderedSendInstance(
     input: OrderedSendInstanceInput,
+    config: OrderedSendInstanceConfig,
+    dependencies: OrderedSendInstanceDependencies
+): Promise<OrderedSendInstance> {
+    try {
+        return wireOrderedSendInstance(input, config, dependencies);
+    }
+    catch (error) {
+        try {
+            await dependencies.lifecycle.close();
+        }
+        catch (closeError) {
+            throw new AggregateError(
+                [toError(error), toError(closeError)],
+                'An ordered-send instance failed to be wired, and its lifecycle failed to close.'
+            );
+        }
+        throw error;
+    }
+}
+
+function wireOrderedSendInstance(
+    input: OrderedSendInstanceInput,
+    config: OrderedSendInstanceConfig,
     dependencies: OrderedSendInstanceDependencies
 ): OrderedSendInstance {
     const { lifecycle } = dependencies;
@@ -109,13 +153,15 @@ export function createOrderedSendInstance(
         publisherId: `ordered-send-${input.runId}-instance-${instanceIndex}`,
         authorizeRoomMessage: input.authorizeRoomMessage,
         recordHandOff: (message) => input.recordHandOff(message, instanceIndex),
+        queueResilience: config.queueResilience,
         nowEpochMs
     });
     const disconnects: (() => void)[] = [];
     return {
         instanceIndex,
+        applicationPoolMaxConnections: config.applicationPoolMaxConnections,
         acceptIncomingMessage: (value, connectionId) => server.service.acceptIncomingMessage(value, connectionId),
-        warmApplicationPool: () => warmApplicationPool(lifecycle.database),
+        warmApplicationPool: () => warmApplicationPool(lifecycle.database, config.applicationPoolMaxConnections),
         start: () => startOrderedSendWsServer(server),
         connectSession: (sessionPeerId, socket) => {
             disconnects.push(connectOrderedSendSession({
@@ -140,10 +186,10 @@ function requireNotificationPort(lifecycle: ApiV1DatabaseLifecycle): ApiV1Databa
 }
 
 /** One statement for each connection the pool may open, all held at once, on the lifecycle's own handle. */
-async function warmApplicationPool(database: PSqlSql): Promise<void> {
+async function warmApplicationPool(database: PSqlSql, applicationPoolMaxConnections: number): Promise<void> {
     await Promise.all(
         Array.from(
-            { length: ORDERED_SEND_CELL_CONSTANTS.applicationPoolMaxConnections },
+            { length: applicationPoolMaxConnections },
             () => database<readonly object[]>`select pg_sleep(${WARM_HOLD_SECONDS})`
         )
     );

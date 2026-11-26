@@ -6,8 +6,6 @@ export interface OrderedSendCellConstants {
     readonly sessionCount: number;
     /** The WS server instances on the one database, sharing one store namespace and the name `server`. */
     readonly instanceCount: number;
-    /** The most connections each instance's application pool opens: its statements and transactions share them. */
-    readonly applicationPoolMaxConnections: number;
     /** The most connections each instance's listener pool opens: its LISTEN subscriptions hold them. */
     readonly listenerPoolMaxConnections: number;
     /**
@@ -34,7 +32,6 @@ export interface OrderedSendCellConstants {
 export const ORDERED_SEND_CELL_CONSTANTS: OrderedSendCellConstants = {
     sessionCount: 15,
     instanceCount: 3,
-    applicationPoolMaxConnections: 10,
     listenerPoolMaxConnections: 1,
     poolIdleTimeoutSeconds: 0,
     sendLifetimeMs: AL_CHANNEL_SEND_DEFAULTS.notification.ttlMs,

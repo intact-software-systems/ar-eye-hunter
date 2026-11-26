@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { computeOrderedSendReport } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/compute-ordered-send-report.ts';
@@ -8,6 +9,14 @@ import {
 } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/run-ordered-send-cell.ts';
 import type { OrderedSendShape } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/validate-ordered-send-shape.ts';
 import { requirePostgresDatabaseUrl } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
+
+/** The API's own defaults: each instance of a run takes its application pool's size from them. */
+const API_V1_DEFAULTS = JSON.parse(
+    readFileSync(
+        new URL('../../../../../apps/api-v1/resources/configuration/defaults-config.json', import.meta.url),
+        'utf8'
+    )
+);
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 
@@ -84,6 +93,7 @@ async function runSmallCell(
     expect(sendWindow.wallMs).toBeGreaterThanOrEqual(1_750);
     expect(sendWindow.loopLag.ticks).toBeGreaterThan(0);
     expect(sendWindow.cpu.coresBusy).toBeGreaterThan(0);
+    expect(run.right!.runtime.applicationPoolMaxConnections).toBe(API_V1_DEFAULTS.database.applicationPool.maxConnections);
     return run.right!.observations;
 }
 

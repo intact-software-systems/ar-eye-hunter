@@ -163,11 +163,10 @@ describe('computeOrderedSendSchedule', () => {
 });
 
 describe('ORDERED_SEND_CELL_CONSTANTS', () => {
-    it('fixes fifteen sessions on three instances, a pool of ten, a 30 s lifetime, a 45 s grace and a 100 ms ACK spread', () => {
+    it('fixes fifteen sessions on three instances, a 30 s lifetime, a 45 s grace and a 100 ms ACK spread', () => {
         expect(ORDERED_SEND_CELL_CONSTANTS).toEqual({
             sessionCount: 15,
             instanceCount: 3,
-            applicationPoolMaxConnections: 10,
             listenerPoolMaxConnections: 1,
             poolIdleTimeoutSeconds: 0,
             sendLifetimeMs: 30_000,

@@ -73,6 +73,8 @@ export interface OrderedSendWsServerInput {
     readonly authorizeRoomMessage: RallarServerWsRoomAuthorizer;
     /** Invoked once each time the server hands a message to its application, before the application runs. */
     readonly recordHandOff: (message: ALMessage) => void;
+    /** The circuit breaker of the server's queue reads: the API's `topology.queueResilience`. */
+    readonly queueResilience: ApiV1CircuitBreakerConfiguration;
     readonly nowEpochMs: () => number;
 }
 
@@ -106,6 +108,7 @@ interface OrderedSendWsServiceInput {
     readonly queueEngine: InboxOutboxEngine;
     readonly targetResolver: WsServerTargetResolver;
     readonly relayedAcks: RelayedAckNoticeChannel;
+    readonly queueResilience: ApiV1CircuitBreakerConfiguration;
 }
 
 interface OrderedSendRouterInput {
@@ -129,14 +132,6 @@ interface OrderedSendSubscribersInput {
 
 /** The peer id every instance of the API answers as: the `wsRuntimeName` its composition root passes. */
 export const ORDERED_SEND_SERVER_PEER_ID = 'default-qbox-server';
-
-/** The circuit breaker of the API's queues, as `defaults-config.json` states it under `topology.queueResilience`. */
-export const API_V1_DEFAULT_QUEUE_RESILIENCE: ApiV1CircuitBreakerConfiguration = {
-    failureThreshold: 10,
-    openDurationMs: 10_000,
-    resetDurationMs: 10_000,
-    samplingDurationMs: 10_000
-};
 
 /** A pub/sub requeue puts a failed remote send's WS outbox row back, as the middleware names it. */
 const PUB_SUB_REQUEUE_TYPES: ReadonlySet<string> = new Set([EnqueuedType.WS_OUTBOX]);
@@ -166,7 +161,8 @@ export function createOrderedSendWsServer(input: OrderedSendWsServerInput): Orde
         socketServer,
         queueEngine,
         targetResolver,
-        relayedAcks: channels.relayedAcks
+        relayedAcks: channels.relayedAcks,
+        queueResilience: input.queueResilience
     });
 
     // Registered before the router's own observer, which runs the application: a hand-off is read before it starts.
@@ -232,7 +228,7 @@ function createOrderedSendWsService(input: OrderedSendWsServiceInput): WsQueueBo
         keepsVolatileMessageInMemory: isInstanceLocalRtcSignal,
         outboundStores: stores.outbound,
         dequeueResilience: createApiV1QueueResilience(
-            API_V1_DEFAULT_QUEUE_RESILIENCE,
+            input.queueResilience,
             ResourceInboxResilience.DEFAULT_RESERVATION_LEASE_MS,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY
         ),
