@@ -1,4 +1,4 @@
-import { mountEventRoster } from './event-roster.ts';
+import { mountEventRoster } from './mount-event-roster.ts';
 import { renderCourtProgram } from './render-court-program.ts';
 import { rallar, type RoomSchedule, type RoomClockCommand, type RoomClockObservation, type RoomTimelineAdvance } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
