@@ -18,6 +18,7 @@ import type {
 } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 import { DECLARED_CELL_ORDER } from './alm-conformance-test-input.ts';
+import { IDLE_RALLAR_EDGE_ORDER_USAGE } from './idle-rallar-edge-order-usage.ts';
 
 const SENDER_AGENT_ID = 'alm-sender-w0-synthetic';
 const RECEIVER_AGENT_ID = 'alm-receiver-w0-synthetic';
@@ -69,7 +70,8 @@ const SENDER_REPORT = toReport({
     replyWaitsOpen: 0,
     publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS),
     ordering: createALInboundOrderingCounters(),
-    congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures()
+    congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures(),
+    edgeOrder: IDLE_RALLAR_EDGE_ORDER_USAGE
 });
 const RECEIVER_REPORT = toReport({
     usage: { admissions: 30, bytes: 1_200, oldestAgeMs: 900, tracks: 0 },
@@ -82,7 +84,8 @@ const RECEIVER_REPORT = toReport({
     replyWaitsOpen: 0,
     publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS),
     ordering: createALInboundOrderingCounters(),
-    congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures()
+    congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures(),
+    edgeOrder: IDLE_RALLAR_EDGE_ORDER_USAGE
 });
 const LATER_SENDER_REPORT = toReport({
     usage: { admissions: 0, bytes: 0, oldestAgeMs: 0, tracks: 0 },
@@ -95,7 +98,8 @@ const LATER_SENDER_REPORT = toReport({
     replyWaitsOpen: 0,
     publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS),
     ordering: createALInboundOrderingCounters(),
-    congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures()
+    congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures(),
+    edgeOrder: IDLE_RALLAR_EDGE_ORDER_USAGE
 });
 
 describe('the ALM observation ledger readings', () => {

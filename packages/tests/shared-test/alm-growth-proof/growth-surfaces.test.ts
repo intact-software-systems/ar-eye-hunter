@@ -10,8 +10,21 @@ import {
     GROWTH_SURFACES,
     GROWTH_SURVEY_SURFACE_IDS
 } from '../../../shared-test/rallar-bb-test/alm/growth-proof/growth-surfaces.ts';
-import { computeGrowthVerdict } from '../../../shared-test/rallar-bb-test/alm/growth-proof/growth-verdict.ts';
+import {
+    computeGrowthVerdict,
+    type GrowthSamples
+} from '../../../shared-test/rallar-bb-test/alm/growth-proof/growth-verdict.ts';
 import { readMediumScaleChurnClientCount } from '../api-v1-recipe-test-fixture.ts';
+
+const NO_SAMPLES: GrowthSamples = {
+    postgres: [],
+    'admin-system': [],
+    'admin-queues': [],
+    'admin-realtime': [],
+    'api-heap': [],
+    'process-rss': [],
+    'browser-stats': []
+};
 
 describe('Growth surface classification', () => {
     it('classifies every surface of the growth survey, each with at least one reader', () => {
@@ -83,15 +96,7 @@ describe('Growth surface classification', () => {
                         churnFailedRunIds: []
                     }
                 },
-                samples: {
-                    postgres: toSamples(settledAt),
-                    'admin-system': [],
-                    'admin-queues': [],
-                    'admin-realtime': [],
-                    'api-heap': [],
-                    'process-rss': [],
-                    'browser-stats': []
-                }
+                samples: { ...NO_SAMPLES, postgres: toSamples(settledAt) }
             }).rows[0]?.outcome;
 
         expect(computeOutcome(() => 0)).toBe('pass');
@@ -141,15 +146,7 @@ describe('Growth surface classification', () => {
                 surveyedSurfaceIds: [authUsers.id],
                 surfaces: [authUsers],
                 run: { windowStartedAtEpochMs, workload: toWorkload(churnStarted) },
-                samples: {
-                    postgres: toSamples(clientIdsAhead),
-                    'admin-system': [],
-                    'admin-queues': [],
-                    'admin-realtime': [],
-                    'api-heap': [],
-                    'process-rss': [],
-                    'browser-stats': []
-                }
+                samples: { ...NO_SAMPLES, postgres: toSamples(clientIdsAhead) }
             }).rows.filter((row) => row.surfaceId === authUsers.id).map((row) => row.outcome);
 
         expect(computeOutcomes(14, 0)).toEqual(['pass', 'pass']);
@@ -206,6 +203,65 @@ describe('Growth surface classification', () => {
         ]);
     });
 
+    it('bounds a page\'s edge-order stores by their counts, and its open sends by each send\'s deadline', () => {
+        const toDeclaration = (field: string) =>
+            GROWTH_SURFACES.filter((surface) => surface.readers.some((reader) => reader.path.join('.') === `rallar.alm.edgeOrder.${field}`))
+                .map((surface) => ({
+                    id: surface.id,
+                    classification: surface.classification,
+                    readers: surface.readers.map((reader) => [reader.source, reader.path.join('.')])
+                }));
+
+        expect(toDeclaration('streams')).toEqual([{
+            id: 85,
+            classification: { growthClass: 'count-capped', cap: 256 },
+            readers: [['browser-stats', 'rallar.alm.edgeOrder.streams']]
+        }]);
+        expect(toDeclaration('evictedStreams')).toEqual([{
+            id: 86,
+            classification: { growthClass: 'count-capped', cap: 256 },
+            readers: [['browser-stats', 'rallar.alm.edgeOrder.evictedStreams']]
+        }]);
+        expect(toDeclaration('heldMessages')).toEqual([{
+            id: 87,
+            classification: { growthClass: 'count-capped', cap: 65_536 },
+            readers: [['browser-stats', 'rallar.alm.edgeOrder.heldMessages']]
+        }]);
+        expect(toDeclaration('sendStreams')).toEqual([{
+            id: 88,
+            classification: { growthClass: 'count-capped', cap: 256 },
+            readers: [['browser-stats', 'rallar.alm.edgeOrder.sendStreams']]
+        }]);
+        expect(toDeclaration('openSends')).toEqual([{
+            id: 89,
+            classification: { growthClass: 'ttl-within-run', ttlMs: 30_000, sweepMs: 0 },
+            readers: [['browser-stats', 'rallar.alm.edgeOrder.openSends']]
+        }]);
+    });
+
+    it('passes a page\'s edge-order streams at the 256 it follows, and fails them one above', () => {
+        const streams = GROWTH_SURFACES.find((surface) => surface.id === 85)!;
+        const windowStartedAtEpochMs = 1_800_000_000_000;
+        // One agent reporting every 30 s for 20 minutes; its last reading is `lastFollowed`.
+        const toSamples = (lastFollowed: number) =>
+            Array.from({ length: 41 }, (_value, sample) => ({
+                atEpochMs: windowStartedAtEpochMs + sample * 30_000,
+                agentId: 'controller-01',
+                serviceId: null,
+                value: { rallar: { alm: { edgeOrder: { streams: sample === 40 ? lastFollowed : sample * 6 } } } } satisfies ApiJsonValue
+            }));
+        const computeRow = (lastFollowed: number) =>
+            computeGrowthVerdict({
+                surveyedSurfaceIds: [streams.id],
+                surfaces: [streams],
+                run: { windowStartedAtEpochMs, workload: null },
+                samples: { ...NO_SAMPLES, 'browser-stats': toSamples(lastFollowed) }
+            }).rows[0]!;
+
+        expect([computeRow(256).outcome, computeRow(256).bound]).toEqual(['pass', '≤ 256']);
+        expect(computeRow(257).outcome).toBe('fail');
+    });
+
     describe('group current-snapshot cache', () => {
         const audience = GROWTH_SURFACES.filter((surface) => surface.id === 20 || surface.id === 21);
         const windowStartedAtEpochMs = 1_800_000_000_000;
@@ -234,15 +290,7 @@ describe('Growth surface classification', () => {
                 surveyedSurfaceIds: audience.map((surface) => surface.id),
                 surfaces: audience,
                 run: { windowStartedAtEpochMs, workload },
-                samples: {
-                    postgres: [],
-                    'admin-system': [],
-                    'admin-queues': [],
-                    'admin-realtime': adminRealtime,
-                    'api-heap': [],
-                    'process-rss': [],
-                    'browser-stats': []
-                }
+                samples: { ...NO_SAMPLES, 'admin-realtime': adminRealtime }
             }).rows;
 
         it('bounds both rows by the cache cap the run started its API processes with', () => {
@@ -297,15 +345,7 @@ describe('Growth surface classification', () => {
                 surveyedSurfaceIds: [surface.id],
                 surfaces: [surface],
                 run: { windowStartedAtEpochMs, workload },
-                samples: {
-                    postgres: [],
-                    'admin-system': [],
-                    'admin-queues': [],
-                    'admin-realtime': [],
-                    'api-heap': [],
-                    'process-rss': [],
-                    'browser-stats': browserStats
-                }
+                samples: { ...NO_SAMPLES, 'browser-stats': browserStats }
             }).rows[0]!;
 
         it('passes while every agent retains at most the events the workload bounds, and fails one above', () => {
