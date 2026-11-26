@@ -157,7 +157,14 @@ async function followSessionLink(page: Page, link: string, game: 'arena' | 'reli
     await expect(page.getByRole('article', { name: 'Session details', exact: true })).toBeVisible();
 }
 
-export async function guestSessionBookingJourney(page: Page, guest: Page, browser: Browser, game: 'arena' | 'relic'): Promise<void> {
+interface GuestSessionBookingJourneyInput {
+    readonly page: Page;
+    readonly guest: Page;
+    readonly browser: Browser;
+    readonly game: 'arena' | 'relic';
+}
+
+export async function guestSessionBookingJourney({ page, guest, browser, game }: GuestSessionBookingJourneyInput): Promise<void> {
     await signInRoomPlayer(page, 'alice', game);
     const session = await scheduleThroughControls(page, 300_000, true);
     await guest.goto(session.link);
@@ -181,6 +188,11 @@ export async function guestSessionBookingJourney(page: Page, guest: Page, browse
     } finally { await other.close(); }
     const claim = booking.getByRole('button', { name: 'Claim my lobby seat' });
     const requests: string[] = [];
+    const accountOnlyReads: string[] = [];
+    guest.on('request', request => {
+        const path = new URL(request.url()).pathname;
+        if (path.endsWith('/group-directory') || path.endsWith('/tournament')) accountOnlyReads.push(path);
+    });
     await guest.route('**/session/guest/requests/*', async route => {
         const response = await route.fetch();
         expect(response.status()).toBe(200);
@@ -204,6 +216,10 @@ export async function guestSessionBookingJourney(page: Page, guest: Page, browse
     await expect(page.getByRole('region', { name: 'Scheduled sessions', exact: true })).toContainText('0 of 2 player seats available.');
     await expect(guest.getByText(`Entered ${session.groupId}.`, { exact: true })).toBeVisible();
     await expect(guest.getByRole('button', { name: 'Logout', exact: true })).toBeVisible();
+    if (game === 'arena') {
+        await expect(guest.getByRole('button', { name: 'Appoint this SPA' })).toBeDisabled();
+    }
+    expect(accountOnlyReads).toEqual([]);
     expect(requests).toHaveLength(2);
     expect(requests[1]).toBe(requests[0]);
 }
