@@ -1,3 +1,5 @@
+import { WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts';
+
 /** The round trips to the database a run adds its shape's latency to. */
 export const ORDERED_SEND_DELAYED_ROUND_TRIPS: readonly string[] = [
     'Every statement the three instances send outside a transaction waits the delay before it is sent.',
@@ -42,7 +44,8 @@ export const ORDERED_SEND_CELL_LIMITS: readonly string[] = [
     'first-hop wait with the product\'s own planning and limits, but not the client\'s outbound commits and engine ' +
     'timing, its ack-timeout schedule, or the end of a message whose retries are spent. Under `none` a publisher ' +
     'offers each send once and answers nothing.',
-    'The receipt aggregates of an instance are bounded at 4096; the shapes run here stay far below it.',
+    `The receipt aggregates of an instance are bounded at ${WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES}; the ` +
+    'shapes run here stay far below it.',
     'The database is local, on the disk and the processor of the machine that runs the cell: its own time and its ' +
     'fsync are that machine\'s, and other work on the machine shows in the load average the artifact records.',
     'The artifact holds the report and not the observations it was computed from.'

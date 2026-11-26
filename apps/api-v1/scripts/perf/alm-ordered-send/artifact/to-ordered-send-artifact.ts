@@ -94,7 +94,7 @@ export interface OrderedSendArtifact extends OrderedSendArtifactSource {
     readonly report: OrderedSendReport;
 }
 
-export const ORDERED_SEND_ARTIFACT_SCHEMA = 'rallar.alm.ordered-send-cell.v1';
+const ORDERED_SEND_ARTIFACT_SCHEMA = 'rallar.alm.ordered-send-cell.v1';
 
 export function toOrderedSendArtifact(input: ToOrderedSendArtifactInput): OrderedSendArtifact {
     const { observations, runtime } = input.run;

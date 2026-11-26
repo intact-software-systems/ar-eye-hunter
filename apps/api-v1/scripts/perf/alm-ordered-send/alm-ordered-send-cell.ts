@@ -42,6 +42,9 @@ interface OrderedSendRunStart {
     readonly startedAtMs: number;
 }
 
+/** Exit status 2: the invocation was refused for its options, and nothing ran. */
+const REFUSED_EXIT_STATUS = 2;
+
 /**
  * One invocation of the cell, from the arguments after the script's name: every issue of its options and nothing
  * run, or one reference run on the database the options name, its artifact written and its summary to print. A run
@@ -98,9 +101,6 @@ async function writeOrderedSendRun(
     await writeOrderedSendArtifact(artifact, artifactPath);
     return { artifactPath, summary: toOrderedSendSummary(artifact) };
 }
-
-/** Exit status 2: the invocation was refused for its options, and nothing ran. */
-const REFUSED_EXIT_STATUS = 2;
 
 if (import.meta.main) {
     const outcome = await runAlmOrderedSendCell(process.argv.slice(2));
