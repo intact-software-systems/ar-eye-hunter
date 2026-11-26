@@ -17,12 +17,11 @@ export function decodeEventRecord(input: unknown, label: string): PlainJsonRecor
 export function decodeEventOffer(value: PlainJsonValue | undefined): RoomEvent.Offer {
     const row = requireRecord(value, 'Court offer');
     requireExactKeys(row, ['groupId', 'partyId', 'occurrence', 'offerRevision', 'deadline'], 'Court offer');
-    requireEpoch(row.occurrence, 'Court occurrence');
-    requireEpoch(row.offerRevision, 'Offer revision');
-    if (!row.occurrence || !row.offerRevision) throw new TypeError('Invalid offer revision.');
+    const occurrence = positive(row.occurrence, 'Court occurrence');
+    const offerRevision = positive(row.offerRevision, 'Offer revision');
     if (row.deadline !== null) requireEpoch(row.deadline, 'Claim deadline');
     return { groupId: assertValidRallarRouteId(row.groupId), partyId: assertValidRallarRouteId(row.partyId),
-        occurrence: row.occurrence, offerRevision: row.offerRevision, deadline: row.deadline };
+        occurrence, offerRevision, deadline: row.deadline };
 }
 
 export function decodeExpiredEventOffer(value: PlainJsonValue | undefined): RoomEvent.ExpiredOffer {

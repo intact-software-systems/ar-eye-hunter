@@ -118,7 +118,7 @@ test('a signed-in player re-enters their claimed court from a second browser', a
     }
 });
 
-test('a guest opening a court alert sees the current allocation and can requeue after expiry', async ({ page, browser, baseURL }) => {
+test('a guest retries a committed queue request on the same page and recovers their court alert after expiry', async ({ page, browser, baseURL }) => {
     test.skip(!config.enabled, config.skipReason);
     const lobby = { applicationId: 'club', workspaceId: crypto.randomUUID(), groupId: 'pickup' };
     const operator = await openEvent(page, lobby, 'create');
@@ -137,7 +137,33 @@ test('a guest opening a court alert sees the current allocation and can requeue 
         await guest.goto(exampleUrl);
         await expect(guest.getByText('Alerts are unavailable in this browser. You can still join the queue.')).toBeVisible({ timeout: 3000 });
         await guest.getByRole('button', { name: 'Join event' }).click();
+        const queueAttempts: { path: string; body: object }[] = [];
+        await guest.route('**/event/requests/*', async route => {
+            const request = route.request();
+            const body = request.postDataJSON();
+            if (body.action !== 'propose') return route.continue();
+            queueAttempts.push({ path: new URL(request.url()).pathname, body });
+            if (queueAttempts.length > 1) return route.continue();
+            const committed = await route.fetch();
+            expect(committed.ok()).toBe(true);
+            await route.abort('failed');
+        });
         await guest.getByRole('button', { name: 'Join queue' }).click();
+        const retry = guest.getByRole('button', { name: 'Retry last action' });
+        await expect(retry).toBeVisible({ timeout: 3000 });
+        await expect(guest.locator('#queue:visible, #enter:visible')).toBeDisabled();
+        await retry.click();
+        await expect(retry).toBeHidden();
+        await expect.poll(() => queueAttempts.length).toBe(2);
+        await expect(guest.getByRole('button', { name: 'Enter east' })).toBeEnabled();
+        expect(queueAttempts[1]).toEqual(queueAttempts[0]);
+        const allocation = await operator.evaluate(async ({ event }) => {
+            const roster = event.organizerView();
+            await roster.start();
+            try { return roster.getState().view?.courts.map(court => ({ occurrence: court.occurrence, seats: court.seats.length })); }
+            finally { roster.stop(); }
+        });
+        expect(allocation).toEqual([{ occurrence: 1, seats: 1 }]);
         await expect(guest.getByRole('button', { name: 'Enter east' })).toBeVisible();
         const alert = { type:'rallar-court-ready', lobby, offerRevision:2, tag:'a'.repeat(32) };
         const launch = exampleUrl + '#' + new URLSearchParams({courtAlert:JSON.stringify(alert)});

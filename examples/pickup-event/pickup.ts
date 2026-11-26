@@ -10,7 +10,7 @@ import { disableCourtReadyNotifications, enableCourtReadyNotifications } from '@
 
 const button = (id: string) => document.querySelector<HTMLButtonElement>('#' + id)!;
 const join = button('join'), queue = button('queue'), enter = button('enter'), leave = button('leave');
-const notify = button('notify'), disable = button('disable');
+const notify = button('notify'), disable = button('disable'), retry = button('retry');
 const status = document.querySelector<HTMLElement>('[role=status]')!;
 const notice = document.querySelector<HTMLElement>('#notifications')!;
 const error = document.querySelector<HTMLElement>('[role=alert]')!;
@@ -41,7 +41,9 @@ async function open(): Promise<void> {
         let inCourt = false;
         const clicked = followPickupAlert({ lobby, event: resource, signal: lifetime.signal, reportError: message => { error.textContent = message; } });
         function render(): void {
-            const { view, busy: working, error: failure } = resource.getState();
+            const { view, busy: working, error: failure, retryPending } = resource.getState();
+            retry.hidden = !retryPending;
+            retry.disabled = working;
             if (failure) error.textContent = failure;
             if (!view || view.closed) {
                 queue.hidden = leave.hidden = enter.hidden = notify.hidden = disable.hidden = true;
@@ -57,13 +59,14 @@ async function open(): Promise<void> {
             enter.textContent = offered ? 'Enter ' + offered.groupId : 'Enter court';
             notify.hidden = !alerts;
             disable.hidden = !alerts || Notification.permission !== 'granted';
-            for (const control of [queue, leave, enter, notify, disable]) control.disabled = working;
+            for (const control of [queue, leave, enter, notify, disable]) control.disabled = working || retryPending;
         }
         resource.onChange(render);
         await resource.start();
         await clicked.refresh();
         render();
         if (alerts) showInstalledAlertSupport(notice, lifetime.signal);
+        bind(retry, () => resource.retry());
         bind(queue, async () => {
             await resource.act({ action:'propose', partyId:crypto.randomUUID(), players:[access.clientId] });
             inCourt = false;

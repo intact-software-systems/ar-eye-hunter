@@ -161,7 +161,9 @@ Read the public key while mounting the event. A null value means delivery is dis
 From the player's tap handler, call
 `enableCourtReadyNotifications(event, registration.pushManager, publicKey)`.
 The same operations apply to an admitted guest and a signed-in player. Disabling alerts
-withdraws consent for that device and event.
+withdraws consent for that device and event. Enabling alerts checks the browser subscription’s
+application server key before storing consent. On a key mismatch, an organizer can restore
+the previous VAPID identity or enroll under a separate service-worker registration.
 
 In the service worker, use `courtReadyNotification` to display the generic alert and
 `openCourtAlertClick` to remember the tapped offer before focusing or opening the app.

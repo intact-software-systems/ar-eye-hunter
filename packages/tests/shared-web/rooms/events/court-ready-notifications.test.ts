@@ -1,3 +1,4 @@
+import { decodeBase64Url } from '@shared/encoding/base64url.ts';
 import { afterEach, expect, it, vi } from 'vitest';
 import { enableCourtReadyNotifications, disableCourtReadyNotifications } from '@shared-web/browser/rooms/events/court-ready-notifications.ts';
 import type { RallarRoomEvent } from '@shared-web/browser/rooms/events/rallar-room-event.ts';
@@ -9,15 +10,22 @@ it('preserves a usable queue after permission refusal and revokes consent only f
     let permission: NotificationPermission = 'denied';
     vi.stubGlobal('Notification', { requestPermission: async () => permission });
     const endpoint = 'https://web.push.apple.com/test';
-    const subscription = { endpoint, toJSON: () => ({ endpoint, keys: { p256dh: 'B' + 'A'.repeat(86), auth: 'A'.repeat(22) } }) };
+    const existingKey = 'B' + 'A'.repeat(86);
+    const options = { applicationServerKey: Uint8Array.from(decodeBase64Url(existingKey).right!).buffer, userVisibleOnly: true };
+    const subscription = { endpoint, options, unsubscribe: vi.fn(), toJSON: () => ({ endpoint, keys: { p256dh: 'B' + 'A'.repeat(86), auth: 'A'.repeat(22) } }) };
     const commands: RallarRoomEvent.Action[] = [];
     const event = { act: async (command: RallarRoomEvent.Action) => { commands.push(command); },
         getState: () => ({ busy: false, retryPending: false, error: null,
             view: { principalId: 'guest', closed: false } as RoomEvent.View }) };
-    const pushManager = { getSubscription: async () => subscription, subscribe: async () => subscription };
+    const pushManager = { getSubscription: async () => subscription, subscribe: vi.fn(async () => subscription) };
     expect(await enableCourtReadyNotifications(event, pushManager, 'B' + 'A'.repeat(86))).toBe('denied');
     expect(commands).toEqual([]);
     permission = 'granted';
+    const newKey = 'BB' + 'A'.repeat(85);
+    await expect(enableCourtReadyNotifications(event, pushManager, newKey)).rejects.toThrow(/different application server key/i);
+    expect(commands).toEqual([]);
+    expect(pushManager.subscribe).not.toHaveBeenCalled();
+    expect(subscription.unsubscribe).not.toHaveBeenCalled();
     await enableCourtReadyNotifications(event, pushManager, 'B' + 'A'.repeat(86));
     await disableCourtReadyNotifications(event, pushManager);
     expect(commands).toEqual([{ action: 'enable-court-alerts', subscription: { endpoint, ...subscription.toJSON().keys } },

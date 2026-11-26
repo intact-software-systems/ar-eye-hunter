@@ -1,13 +1,13 @@
 import { isApiJsonObject, type ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { decodeEventPushSubscription } from '@shared/api/room-events/room-event-alerts.ts';
-import { decodeBase64Url } from '@shared/encoding/base64url.ts';
+import { decodeBase64Url, toBase64Url } from '@shared/encoding/base64url.ts';
 import { readApiBaseUrl } from '../../api-client-config.ts';
 import { sendApiHttpRequest } from '../../api/send-api-http-request.ts';
 import type { RallarRoomEvent } from './rallar-room-event.ts';
 
 interface CourtPushManager {
-    getSubscription(): Promise<Pick<PushSubscription, 'endpoint' | 'toJSON'> | null>;
-    subscribe(options: PushSubscriptionOptionsInit): Promise<Pick<PushSubscription, 'endpoint' | 'toJSON'>>;
+    getSubscription(): Promise<Pick<PushSubscription, 'endpoint' | 'toJSON' | 'options'> | null>;
+    subscribe(options: PushSubscriptionOptionsInit): Promise<Pick<PushSubscription, 'endpoint' | 'toJSON' | 'options'>>;
 }
 
 /** Read at startup so a user gesture can request OS permission immediately. */
@@ -40,6 +40,10 @@ export async function enableCourtReadyNotifications(event: Pick<RallarRoomEvent,
     if (key?.byteLength !== 65) throw new TypeError('Invalid Web Push public key.');
     if (await Notification.requestPermission() !== 'granted') return 'denied';
     const device = await manager.getSubscription() ?? await manager.subscribe({ userVisibleOnly: true, applicationServerKey: Uint8Array.from(key) });
+    const boundKey = device.options.applicationServerKey;
+    if (!boundKey || toBase64Url(new Uint8Array(boundKey)) !== applicationServerKey) {
+        throw new Error('This device subscription uses a different application server key. Ask the organizer to restore the key or provide a separate app registration.');
+    }
     const subscription = decodeEventPushSubscription({ endpoint: device.endpoint, ...device.toJSON().keys });
     await changeConsent(event, principal, { action: 'enable-court-alerts', subscription });
     return 'enabled';
