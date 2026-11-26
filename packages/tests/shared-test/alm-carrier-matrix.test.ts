@@ -4,13 +4,29 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import {
+    ALM_CONFORMANCE_CARRIERS,
+    type AlmConformanceCarrier
+} from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import {
     ALM_CARRIER_MATRIX,
     type AlmCarrierMatrix,
     type AlmCarrierOutcome
 } from '@shared-test/rallar-bb-test/conformance/alm/carrier-matrix/alm-carrier-matrix.ts';
-import { toAlmCarrierMatrixCellProofs } from '@shared-test/rallar-bb-test/conformance/alm/carrier-matrix/to-alm-carrier-matrix-cell-proofs.ts';
+import {
+    resolveAlmCarrierMatrixCellCarriers,
+    type AlmCarrierMatrixScenarioKey
+} from '@shared-test/rallar-bb-test/conformance/alm/carrier-matrix/resolve-alm-carrier-matrix-cell-carriers.ts';
+import { resolveAlmWorldSendCarriers } from '@shared-test/rallar-bb-test/conformance/alm/carrier-matrix/resolve-alm-world-send-carriers.ts';
+import {
+    toAlmCarrierMatrixCellProofs,
+    toAlmCarrierMatrixLaneProofs
+} from '@shared-test/rallar-bb-test/conformance/alm/carrier-matrix/to-alm-carrier-matrix-cell-proofs.ts';
+import {
+    toAlmCarrierOutcomeFacts,
+    toOriginRefusalFacts,
+    type AlmCarrierHandleOutcome
+} from '@shared-test/rallar-bb-test/conformance/alm/carrier-matrix/to-alm-carrier-outcome-facts.ts';
 import {
     validateAlmCarrierMatrix,
     type AlmCarrierMatrixCatalogueCell
@@ -48,33 +64,44 @@ function toCatalogueCells(): readonly AlmCarrierMatrixCatalogueCell[] {
     );
 }
 
+/** Two capabilities whose stated cells name three lane cells and one proof of another kind; no other cell applies. */
+const TWO_CAPABILITY_MATRIX: AlmCarrierMatrix = {
+    first: {
+        statement: 'A first probe send.',
+        cells: {
+            ws: {
+                kind: 'stated',
+                outcome: { kind: 'delivered' },
+                proofs: [{ kind: 'lane-cell', scenarioKey: 'first-on-ws' }, { kind: 'unproven', closedBy: 'a second cell' }]
+            },
+            rtc: OUTSIDE_THE_PROBE,
+            'rtc-with-ws-fallback': {
+                kind: 'stated',
+                outcome: { kind: 'delivered' },
+                proofs: [{ kind: 'lane-cell', scenarioKey: 'first-on-fallback' }]
+            }
+        }
+    },
+    ...toProbeMatrix('probe-cell')
+};
+
 describe('toAlmCarrierMatrixCellProofs', () => {
     it('yields each proof of each stated cell under its capability and carrier, in the order written, and nothing for a cell that is not applicable', () => {
-        const matrix: AlmCarrierMatrix = {
-            first: {
-                statement: 'A first probe send.',
-                cells: {
-                    ws: {
-                        kind: 'stated',
-                        outcome: { kind: 'delivered' },
-                        proofs: [{ kind: 'lane-cell', scenarioKey: 'first-on-ws' }, { kind: 'unproven', closedBy: 'a second cell' }]
-                    },
-                    rtc: OUTSIDE_THE_PROBE,
-                    'rtc-with-ws-fallback': {
-                        kind: 'stated',
-                        outcome: { kind: 'delivered' },
-                        proofs: [{ kind: 'lane-cell', scenarioKey: 'first-on-fallback' }]
-                    }
-                }
-            },
-            ...toProbeMatrix('probe-cell')
-        };
-
-        expect(toAlmCarrierMatrixCellProofs(matrix)).toEqual([
+        expect(toAlmCarrierMatrixCellProofs(TWO_CAPABILITY_MATRIX)).toEqual([
             { capabilityId: 'first', carrier: 'ws', proof: { kind: 'lane-cell', scenarioKey: 'first-on-ws' } },
             { capabilityId: 'first', carrier: 'ws', proof: { kind: 'unproven', closedBy: 'a second cell' } },
             { capabilityId: 'first', carrier: 'rtc-with-ws-fallback', proof: { kind: 'lane-cell', scenarioKey: 'first-on-fallback' } },
             { capabilityId: 'probe', carrier: 'rtc', proof: { kind: 'lane-cell', scenarioKey: 'probe-cell' } }
+        ]);
+    });
+});
+
+describe('toAlmCarrierMatrixLaneProofs', () => {
+    it('yields each lane cell a capability names on a carrier, in the same order, and no proof of another kind', () => {
+        expect(toAlmCarrierMatrixLaneProofs(TWO_CAPABILITY_MATRIX)).toEqual([
+            { capabilityId: 'first', carrier: 'ws', scenarioKey: 'first-on-ws' },
+            { capabilityId: 'first', carrier: 'rtc-with-ws-fallback', scenarioKey: 'first-on-fallback' },
+            { capabilityId: 'probe', carrier: 'rtc', scenarioKey: 'probe-cell' }
         ]);
     });
 });
@@ -321,5 +348,94 @@ describe('ALM_CARRIER_MATRIX', () => {
 
         expect(limits.length).toBeGreaterThan(0);
         expect(unquoted.map(({ document, limit }) => [document, limit])).toEqual([]);
+    });
+});
+
+/**
+ * Written by hand from the carriers each scenario stated for itself before the matrix owned them: a carrier that
+ * changes here without its scenario's cell changing is a wrong resolution.
+ */
+const EXPECTED_CELL_CARRIERS: readonly (readonly [AlmCarrierMatrixScenarioKey, readonly AlmConformanceCarrier[]])[] = [
+    ['claim-first-wins', ['ws', 'rtc-with-ws-fallback']],
+    ['claim-expires-reclaims', ['ws']],
+    ['claim-refused-on-rtc', ['rtc']],
+    ['world-routing', ['ws', 'rtc', 'rtc-with-ws-fallback']],
+    ['server-command', ['ws']],
+    ['ws-unicast-receipt', ['ws', 'rtc', 'rtc-with-ws-fallback']],
+    ['unicast-fallback', ['rtc-with-ws-fallback']],
+    ['ordering-gap-repair', ['ws', 'rtc']],
+    ['seeded-loss-unreceipted-stream', ['ws']],
+    ['repair-exhausted', ['rtc']],
+    ['granted-rtc-relay-only', ['rtc']],
+    ['granted-rtc-revoked-publisher', ['rtc', 'rtc-with-ws-fallback']],
+    ['granted-rtc-missing-proof', ['rtc']],
+    ['granted-rtc-forged-sender', ['rtc']],
+    ['unsigned-ack-refused', ['rtc', 'rtc-with-ws-fallback']],
+    ['forged-recipient-ack', ['rtc']],
+    ['reply-correlated', ['ws', 'rtc-with-ws-fallback']],
+    ['reply-timeout-late', ['ws']],
+    ['reply-first-wins', ['ws']],
+    ['fenced-rejection', ['ws']],
+    ['ordering-resync', ['ws', 'rtc', 'rtc-with-ws-fallback']],
+    ['fenced-catch-up', ['ws', 'rtc']]
+];
+
+describe('resolveAlmCarrierMatrixCellCarriers', () => {
+    it.each(EXPECTED_CELL_CARRIERS)('resolves the carriers the matrix names %s on', (scenarioKey, carriers) => {
+        expect(resolveAlmCarrierMatrixCellCarriers(scenarioKey)).toEqual(carriers);
+    });
+
+    it('takes exactly the scenarios the matrix names as a lane cell', () => {
+        const named = new Set(toAlmCarrierMatrixLaneProofs(ALM_CARRIER_MATRIX).map(({ scenarioKey }) => scenarioKey));
+        // @ts-expect-error No cell names `reply-undelivered` as its proof, so the matrix has no carriers to resolve for it.
+        const unnamed: AlmCarrierMatrixScenarioKey = 'reply-undelivered';
+
+        expect(new Set(EXPECTED_CELL_CARRIERS.map(([scenarioKey]) => scenarioKey))).toEqual(named);
+        expect(named).not.toContain(unnamed);
+    });
+});
+
+describe('resolveAlmWorldSendCarriers', () => {
+    it('selects the carriers on which a world broadcast leaves its sender\'s page: every one that does not refuse it', () => {
+        expect(resolveAlmWorldSendCarriers()).toEqual(['ws', 'rtc-with-ws-fallback']);
+    });
+});
+
+describe('toAlmCarrierOutcomeFacts', () => {
+    it('translates each outcome into the facts its observation must hold', () => {
+        expect(toAlmCarrierOutcomeFacts({ kind: 'refused', by: 'origin', reason: 'unsupported' })).toEqual([
+            ['refused', 'failure.kind', 'equals', 'refused'],
+            ['unsupported', 'failure.reason', 'equals', 'unsupported'],
+            ['no-attempt', 'attempts', 'equals', 0]
+        ]);
+        expect(toAlmCarrierOutcomeFacts({ kind: 'handed-to-ws', at: 'routing' })).toEqual([
+            ['one-attempt', 'attempts', 'equals', 1],
+            ['ws-attempt', 'attemptCarriers.0', 'equals', 'ws'],
+            ['no-fallback', 'carrierFallback', 'exists', false]
+        ]);
+        expect(toAlmCarrierOutcomeFacts({ kind: 'handed-to-ws', at: 'after-admission', reason: 'not-ready' })).toEqual([
+            ['fallback-from', 'carrierFallback.from', 'equals', 'rtc'],
+            ['fallback-to', 'carrierFallback.to', 'equals', 'ws'],
+            ['fallback-reason', 'carrierFallback.reason', 'equals', 'not-ready']
+        ]);
+    });
+
+    it('states the same three facts for an origin refusal a cell knows by its reason alone', () => {
+        expect(toOriginRefusalFacts('no-publish-grant')).toEqual([
+            ['refused', 'failure.kind', 'equals', 'refused'],
+            ['no-publish-grant', 'failure.reason', 'equals', 'no-publish-grant'],
+            ['no-attempt', 'attempts', 'equals', 0]
+        ]);
+    });
+
+    it('takes no outcome whose evidence is not on the sender\'s handle', () => {
+        // @ts-expect-error A delivered send leaves no fact of its own on the handle: each cell asserts its own evidence.
+        const delivered: AlmCarrierHandleOutcome = { kind: 'delivered' };
+        // @ts-expect-error A hand-over at admission is evidenced by the RTC leg's attempt row, which no cell asserts yet.
+        const atAdmission: AlmCarrierHandleOutcome = { kind: 'handed-to-ws', at: 'admission', reason: 'no-route' };
+        // @ts-expect-error A frame its receiver refuses is evidenced on the receiving page, never on the sender's handle.
+        const byTheReceiver: AlmCarrierHandleOutcome = { kind: 'refused', by: 'receiver', of: 'frame', code: 'missing-proof' };
+
+        expect([delivered.kind, atAdmission.kind, byTheReceiver.kind]).toEqual(['delivered', 'handed-to-ws', 'refused']);
     });
 });

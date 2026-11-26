@@ -1,12 +1,10 @@
 import { NON_EXPIRING_SEND_TIMEOUT_MS, NON_EXPIRING_TTL_MS } from '../../alm-conformance-budgets.ts';
-import type { AlmConformanceCarrier } from '../../alm-conformance-carriers.ts';
 import { toAdmissionCommands, toSendCommand } from '../../alm-conformance-message-commands.ts';
 import { toAddressedSendCommands } from '../../alm-conformance-receipt-commands.ts';
 import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import { FULL_TAGS, type AlmConformanceScenarioDefinition } from '../../alm-conformance-scenario-definition.ts';
+import { resolveAlmCarrierMatrixCellCarriers } from '../../carrier-matrix/resolve-alm-carrier-matrix-cell-carriers.ts';
 import { toAwaitReplyCommands, toReplyCommands, toReplyLateWait } from './reply-commands.ts';
-
-const REPLY_TIMEOUT_LATE_CARRIERS: readonly AlmConformanceCarrier[] = ['ws'];
 
 /** Short beside the cell, since the receiver holds its reply until the sender's release, which follows the timeout. */
 const REPLY_TIMEOUT_MS = 1_000;
@@ -20,7 +18,7 @@ export const replyTimeoutLate: AlmConformanceScenarioDefinition = {
     scenarioId: 'reply-timeout-late',
     scenarioKey: 'reply-timeout-late',
     tags: FULL_TAGS,
-    carriers: REPLY_TIMEOUT_LATE_CARRIERS,
+    carriers: resolveAlmCarrierMatrixCellCarriers('reply-timeout-late'),
     roles: ['sender', 'receiver'],
     laneFamily: 'addressed',
     toSenderCommands: (sender) => [

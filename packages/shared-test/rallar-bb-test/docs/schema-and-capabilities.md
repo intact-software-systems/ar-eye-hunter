@@ -834,7 +834,7 @@ The hosted combined recipe shares one connect across its cells and names no owne
 neither the field nor the waits.
 
 The `ordering-gap-repair` conformance scenario runs over the single-hop carriers `ws` and `rtc`
-(`ALM_CONFORMANCE_SINGLE_HOP_CARRIERS`) and repairs an in-window gap by range. The sender sends seq 1 and
+(the `ordered-gap-repair` capability of `ALM_CARRIER_MATRIX` names it there) and repairs an in-window gap by range. The sender sends seq 1 and
 proves it left (`observe-transport-accepted-1`, asserted `transport-accepted` or `acknowledged`; a room of two pages
 gives the sender one next hop, so the carrier's acceptance orders seq 1 first), arms the native hold of its type on each carrier the cell can hold,
 sends seq 2, then holds that one message by the id its send returned (`hold-message-2-<carrier>`, a

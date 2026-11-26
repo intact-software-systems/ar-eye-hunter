@@ -2,7 +2,6 @@ import { AL_CONTROL_NACK_TYPE_ID } from '@shared/al-contracts/al-control-type-id
 
 import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
 
-import { ALM_CONFORMANCE_CARRIERS } from '../alm-conformance-carriers.ts';
 import {
     ALM_STORAGE_DIAGNOSTICS_TOPIC,
     toControlAdmissionWait,
@@ -18,7 +17,12 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../alm-conformance-scenario-definition.ts';
+import { ALM_CARRIER_MATRIX } from '../carrier-matrix/alm-carrier-matrix.ts';
+import { resolveAlmCarrierMatrixCellCarriers } from '../carrier-matrix/resolve-alm-carrier-matrix-cell-carriers.ts';
 import { toSettledStateCommands } from '../to-settled-state-commands.ts';
+
+/** Who refuses the gapped send on each carrier, and why: the hop that orders the track there. */
+const RESYNC_CELLS = ALM_CARRIER_MATRIX['resync-recovery-owner'].cells;
 
 const RESYNC_GAP_SEQ = 300;
 /** The frame the receiver never receives over RTC: seq 300's record names it as the receiver's prior. */
@@ -34,7 +38,7 @@ export const orderingResync: AlmConformanceScenarioDefinition = {
     scenarioId: 'ordering-resync',
     scenarioKey: 'ordering-resync',
     tags: FULL_TAGS,
-    carriers: ALM_CONFORMANCE_CARRIERS,
+    carriers: resolveAlmCarrierMatrixCellCarriers('ordering-resync'),
     roles: ['sender', 'receiver'],
     laneFamily: 'two-agent',
     toSenderCommands: toOrderingResyncSenderCommands,
@@ -44,7 +48,9 @@ export const orderingResync: AlmConformanceScenarioDefinition = {
 function toOrderingResyncSenderCommands(
     sender: AlmConformanceStepInput
 ): readonly RallarBlackBoxTestCommand[] {
-    return sender.input.carrier === 'ws' ? toRelayResyncSenderCommands(sender) : toPriorGapSenderCommands(sender);
+    return RESYNC_CELLS[sender.input.carrier].outcome.by === 'trusted-server'
+        ? toRelayResyncSenderCommands(sender)
+        : toPriorGapSenderCommands(sender);
 }
 
 /**
@@ -107,14 +113,15 @@ function toOrderingResyncReceiverCommands(
     receiver: AlmConformanceStepInput
 ): readonly RallarBlackBoxTestCommand[] {
     const [delivered, absentSecond] = toSingleArrivalReceiverCommands(receiver);
-    if (receiver.input.carrier === 'ws') {
+    const refusal = RESYNC_CELLS[receiver.input.carrier].outcome;
+    if (refusal.by === 'trusted-server') {
         return [delivered, absentSecond];
     }
     return [
         delivered,
         toAdmissionOutcomeWait(receiver, {
             name: 'resync-outcome',
-            contains: '"carrier":"rtc","outcome":"not-handled","reason":"resync-required"',
+            contains: `"carrier":"rtc","outcome":"not-handled","reason":"${refusal.reason}"`,
             timeoutMs: toVerdictTimeoutMs(receiver.input.deadlineMs)
         }),
         ...(receiver.input.recoveryOwner === 'record' ? toRecoveryOwnerWaits(receiver) : []),

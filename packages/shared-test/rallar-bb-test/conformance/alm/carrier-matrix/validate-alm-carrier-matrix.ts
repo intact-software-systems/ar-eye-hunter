@@ -1,7 +1,7 @@
 import type { AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
 import type { AlmConformanceTag } from '../alm-conformance-scenario-definition.ts';
 import type { AlmCarrierMatrix } from './alm-carrier-matrix.ts';
-import { toAlmCarrierMatrixCellProofs } from './to-alm-carrier-matrix-cell-proofs.ts';
+import { toAlmCarrierMatrixLaneProofs, type AlmCarrierMatrixLaneProof } from './to-alm-carrier-matrix-cell-proofs.ts';
 
 /** One scenario the catalogue creates over one carrier. */
 export interface AlmCarrierMatrixCatalogueCell {
@@ -16,19 +16,13 @@ export interface ValidateAlmCarrierMatrixInput {
     readonly cells: readonly AlmCarrierMatrixCatalogueCell[];
 }
 
-interface AlmCarrierMatrixLaneProof {
-    readonly capabilityId: string;
-    readonly carrier: AlmConformanceCarrier;
-    readonly scenarioKey: string;
-}
-
 /**
  * The matrix and the catalogue agree when every lane cell a capability names runs over that carrier in the `full`
  * scope, and the catalogue runs a scenario the matrix names over no carrier the matrix leaves out: a named scenario's
  * carriers are then the matrix's.
  */
 export function validateAlmCarrierMatrix({ matrix, cells }: ValidateAlmCarrierMatrixInput): readonly string[] {
-    const laneProofs = toLaneProofs(matrix);
+    const laneProofs = toAlmCarrierMatrixLaneProofs(matrix);
     const namedScenarioKeys = new Set(laneProofs.map((proof) => proof.scenarioKey));
     return [
         ...laneProofs.flatMap((proof) => validateLaneProof(proof, cells.find((cell) => isSameCell(proof, cell)))),
@@ -54,10 +48,4 @@ function validateLaneProof(
 
 function isSameCell(proof: AlmCarrierMatrixLaneProof, catalogueCell: AlmCarrierMatrixCatalogueCell): boolean {
     return proof.carrier === catalogueCell.carrier && proof.scenarioKey === catalogueCell.scenarioKey;
-}
-
-function toLaneProofs(matrix: AlmCarrierMatrix): readonly AlmCarrierMatrixLaneProof[] {
-    return toAlmCarrierMatrixCellProofs(matrix).flatMap(({ capabilityId, carrier, proof }) =>
-        proof.kind === 'lane-cell' ? [{ capabilityId, carrier, scenarioKey: proof.scenarioKey }] : []
-    );
 }

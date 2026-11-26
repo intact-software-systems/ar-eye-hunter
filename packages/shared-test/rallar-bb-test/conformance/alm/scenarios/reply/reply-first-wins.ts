@@ -4,7 +4,6 @@ import type {
 } from '../../../../rallar-black-box-test-contracts.ts';
 
 import { NON_EXPIRING_SEND_TIMEOUT_MS, NON_EXPIRING_TTL_MS } from '../../alm-conformance-budgets.ts';
-import type { AlmConformanceCarrier } from '../../alm-conformance-carriers.ts';
 import {
     toAudienceSendCommands,
     toReceiptWindowCommands,
@@ -18,14 +17,13 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId, toConnectionName } from '../../alm-conformance-step-identities.ts';
+import { resolveAlmCarrierMatrixCellCarriers } from '../../carrier-matrix/resolve-alm-carrier-matrix-cell-carriers.ts';
 import {
     toAwaitReplyCommands,
     toReplyCommands,
     toReplyIdentityCommands,
     toReplyLateWait
 } from './reply-commands.ts';
-
-const REPLY_FIRST_WINS_CARRIERS: readonly AlmConformanceCarrier[] = ['ws'];
 
 const BOTH_CONFIRMED: AlmConformanceReceiptRoles = {
     confirmed: ['receiver', 'recipient-b'],
@@ -44,7 +42,7 @@ export const replyFirstWins: AlmConformanceScenarioDefinition = {
     scenarioId: 'reply-first-wins',
     scenarioKey: 'reply-first-wins',
     tags: FULL_TAGS,
-    carriers: REPLY_FIRST_WINS_CARRIERS,
+    carriers: resolveAlmCarrierMatrixCellCarriers('reply-first-wins'),
     roles: ALM_CONFORMANCE_THREE_AGENT_ROLES,
     laneFamily: 'three-agent',
     toReceiptRoles: () => BOTH_CONFIRMED,

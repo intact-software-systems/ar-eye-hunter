@@ -158,7 +158,8 @@ const WS_CLIENT_RELAY_REJECTION_TEST = 'packages/tests/shared/services/ws-queue-
 
 /**
  * Each capability whose outcome differs by carrier on purpose, or that a single carrier proves, and what proves each
- * cell. A scenario a cell names runs over exactly the carriers that name it (`validateAlmCarrierMatrix`).
+ * cell. A scenario a cell names runs over exactly the carriers that name it: it takes them from here
+ * (`resolveAlmCarrierMatrixCellCarriers`).
  */
 export const ALM_CARRIER_MATRIX = {
     'exclusive-claim': {

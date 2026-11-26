@@ -1,7 +1,6 @@
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
 import { NON_EXPIRING_TTL_MS } from '../../alm-conformance-budgets.ts';
-import type { AlmConformanceCarrier } from '../../alm-conformance-carriers.ts';
 import {
     toAudienceSendCommands,
     toReceiptReadCommands,
@@ -14,10 +13,9 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
+import { resolveAlmCarrierMatrixCellCarriers } from '../../carrier-matrix/resolve-alm-carrier-matrix-cell-carriers.ts';
 import { toClaim, toClaimExpiryWait } from './claim-commands.ts';
 
-/** The claim's lease is its message's lifetime; the cell runs where the WS server holds the claim. */
-const CLAIM_EXPIRES_CARRIERS: readonly AlmConformanceCarrier[] = ['ws'];
 const SHORT_CLAIM_TTL_MS = 3_000;
 /** Recipient-b's hold starts once the short claim has arrived, so it outlasts that claim's lifetime. */
 const CLAIM_EXPIRY_WAIT_MS = 3_500;
@@ -28,16 +26,16 @@ const SENDER_AND_RECEIVER_CONFIRMED: AlmConformanceReceiptRoles = {
 };
 
 /**
- * The sender claims the cell's resource with a short-lived room send. Recipient-b receives it, holds past its
- * lifetime and claims the same resource from its own session: the expired claim frees the key, so the server admits
- * and delivers the reclaim to the sender and the receiver, and its receipt ends acknowledged. The sender's closing
- * window proves the one copy it received is the reclaim, never an echo of its own claim.
+ * The sender claims the cell's resource with a short-lived room send, whose lifetime is the claim's lease. Recipient-b
+ * receives it, holds past its lifetime and claims the same resource from its own session: the expired claim frees the
+ * key, so the server admits and delivers the reclaim to the sender and the receiver, and its receipt ends acknowledged.
+ * The sender's closing window proves the one copy it received is the reclaim, never an echo of its own claim.
  */
 export const claimExpiresReclaims: AlmConformanceScenarioDefinition = {
     scenarioId: 'claim-expires-reclaims',
     scenarioKey: 'claim-expires-reclaims',
     tags: FULL_TAGS,
-    carriers: CLAIM_EXPIRES_CARRIERS,
+    carriers: resolveAlmCarrierMatrixCellCarriers('claim-expires-reclaims'),
     roles: ALM_CONFORMANCE_THREE_AGENT_ROLES,
     laneFamily: 'three-agent',
     toSenderCommands: (sender) => [
