@@ -6,7 +6,10 @@ const NOW_MS = 1_000;
 
 interface ObservedSend {
     readonly position: number;
+    /** Every recipient acknowledged the send. */
     end(): void;
+    /** The send was refused or cancelled: no copy of it can still arrive. */
+    refuse(): void;
 }
 
 /** Opens, stamps and observes one send as the wiring does: a position at the call, the rest once the send exists. */
@@ -15,13 +18,16 @@ function send(sender: EdgeOrderSender, expiresAtMs: number, retried = true): Obs
 } {
     const position = sender.openSend();
     const stamp = sender.stampSend(position, NOW_MS);
-    let ended = false;
-    sender.observeSend(position, { expiresAtMs, retried, hasEnded: () => ended });
+    let end: EdgeOrderSender.SendEnd = 'open';
+    sender.observeSend(position, { expiresAtMs, retried, getEnd: () => end });
     return {
         position,
         stamp,
         end: () => {
-            ended = true;
+            end = 'delivered';
+        },
+        refuse: () => {
+            end = 'undelivered';
         }
     };
 }
@@ -49,14 +55,16 @@ describe('EdgeOrderSender', () => {
             stream: 'stream-a',
             position: 1,
             lowestOpenPosition: 1,
-            earlierCanArriveUntilMs: undefined
+            earlierCanArriveUntilMs: undefined,
+            holes: []
         });
         const second = send(sender, 12_000);
         expect(second.stamp).toEqual({
             stream: 'stream-a',
             position: 2,
             lowestOpenPosition: 1,
-            earlierCanArriveUntilMs: 10_000
+            earlierCanArriveUntilMs: 10_000,
+            holes: []
         });
         // The latest, not the most recent: send 2 outlives send 3.
         const third = send(sender, 11_000);
@@ -64,7 +72,8 @@ describe('EdgeOrderSender', () => {
             stream: 'stream-a',
             position: 3,
             lowestOpenPosition: 1,
-            earlierCanArriveUntilMs: 12_000
+            earlierCanArriveUntilMs: 12_000,
+            holes: []
         });
 
         first.end();
@@ -74,7 +83,8 @@ describe('EdgeOrderSender', () => {
             stream: 'stream-a',
             position: 4,
             lowestOpenPosition: 3,
-            earlierCanArriveUntilMs: 11_000
+            earlierCanArriveUntilMs: 11_000,
+            holes: []
         });
 
         third.end();
@@ -83,7 +93,8 @@ describe('EdgeOrderSender', () => {
             stream: 'stream-a',
             position: 5,
             lowestOpenPosition: 5,
-            earlierCanArriveUntilMs: undefined
+            earlierCanArriveUntilMs: undefined,
+            holes: []
         });
     });
 
@@ -123,7 +134,8 @@ describe('EdgeOrderSender', () => {
             stream: 'stream-a',
             position: 3,
             lowestOpenPosition: 2,
-            earlierCanArriveUntilMs: 9_000
+            earlierCanArriveUntilMs: 9_000,
+            holes: []
         });
     });
 
@@ -137,7 +149,8 @@ describe('EdgeOrderSender', () => {
             stream: 'stream-a',
             position: 2,
             lowestOpenPosition: 1,
-            earlierCanArriveUntilMs: Number.MAX_SAFE_INTEGER
+            earlierCanArriveUntilMs: Number.MAX_SAFE_INTEGER,
+            holes: []
         });
     });
 
@@ -162,7 +175,8 @@ describe('EdgeOrderSender', () => {
             stream: 'stream-a',
             position: 2,
             lowestOpenPosition: 2,
-            earlierCanArriveUntilMs: undefined
+            earlierCanArriveUntilMs: undefined,
+            holes: []
         });
         expect(sender.openSend()).toBe(3);
     });
@@ -176,7 +190,111 @@ describe('EdgeOrderSender', () => {
             stream: 'stream-a',
             position: 1,
             lowestOpenPosition: 1,
-            earlierCanArriveUntilMs: undefined
+            earlierCanArriveUntilMs: undefined,
+            holes: []
         });
+    });
+
+    it('states a refused or cancelled send between open ones as a hole at once, and an acknowledged one never', () => {
+        const sender = new EdgeOrderSender('stream-a');
+        send(sender, 10_000);
+        const refused = send(sender, 10_000);
+        const acknowledged = send(sender, 10_000);
+        const cancelled = send(sender, 10_000);
+        send(sender, 10_000);
+
+        refused.refuse();
+        acknowledged.end();
+        cancelled.refuse();
+
+        // Send 3 reached every recipient: one of them may hold it and not have sorted it yet, so it is no hole.
+        expect(send(sender, 10_000).stamp).toEqual({
+            stream: 'stream-a',
+            position: 6,
+            lowestOpenPosition: 1,
+            earlierCanArriveUntilMs: 10_000,
+            holes: [[2, 2], [4, 4]]
+        });
+    });
+
+    it('states a send that never set out as a hole once a later send has taken the next position', () => {
+        const sender = new EdgeOrderSender('stream-a');
+        send(sender, 10_000);
+        const neverSetOut = sender.openSend();
+        const next = sender.openSend();
+        sender.endSend(neverSetOut);
+
+        expect(sender.stampSend(next, NOW_MS)).toMatchObject({ position: 3, lowestOpenPosition: 1, holes: [[2, 2]] });
+    });
+
+    it('states neighbouring holes as one run, and only those below the stamped send', () => {
+        const sender = new EdgeOrderSender('stream-a');
+        send(sender, 10_000);
+        const refused = [send(sender, 10_000), send(sender, 10_000), send(sender, 10_000)];
+        const builtLate = sender.openSend();
+        const after = send(sender, 10_000);
+        for (const each of refused) {
+            each.refuse();
+        }
+        after.refuse();
+
+        expect(sender.stampSend(builtLate, NOW_MS).holes).toEqual([[2, 4]]);
+        expect(send(sender, 10_000).stamp.holes).toEqual([[2, 4], [6, 6]]);
+    });
+
+    it('keeps a failed send open until its deadline, and states it as a hole from then on', () => {
+        const sender = new EdgeOrderSender('stream-a');
+        send(sender, 20_000);
+        // A failed send reads open: a copy that already set out can still arrive.
+        send(sender, 5_000);
+        const third = sender.openSend();
+        const fourth = sender.openSend();
+
+        expect(sender.stampSend(third, 4_999)).toMatchObject({ lowestOpenPosition: 1, holes: [] });
+        expect(sender.stampSend(fourth, 5_000)).toMatchObject({ lowestOpenPosition: 1, holes: [[2, 2]] });
+    });
+
+    it('drops a hole from its stamps once every send below it has ended: the lowest open position says it', () => {
+        const sender = new EdgeOrderSender('stream-a');
+        const first = send(sender, 10_000);
+        send(sender, 10_000).refuse();
+        send(sender, 10_000);
+
+        first.end();
+
+        expect(send(sender, 10_000).stamp).toMatchObject({ position: 4, lowestOpenPosition: 3, holes: [] });
+    });
+
+    it('states at most 16 runs of holes, the lowest first, and the next ones once those are passed', () => {
+        const sender = new EdgeOrderSender('stream-a');
+        const first = send(sender, 10_000);
+        // Positions 2 to 41: every even one refused, every odd one open, so each hole is a run of its own.
+        const sends = Array.from({ length: 40 }, () => send(sender, 10_000));
+        for (const each of sends.filter((_send, index) => index % 2 === 0)) {
+            each.refuse();
+        }
+
+        const stated = send(sender, 10_000).stamp.holes;
+        expect(stated).toHaveLength(16);
+        expect(stated[0]).toEqual([2, 2]);
+        expect(stated[15]).toEqual([32, 32]);
+
+        first.end();
+        for (const each of sends.slice(0, 31)) {
+            each.end();
+        }
+        expect(send(sender, 10_000).stamp).toMatchObject({ lowestOpenPosition: 33, holes: [[34, 34], [36, 36], [38, 38], [40, 40]] });
+    });
+
+    it('counts the sends still open and the holes it still states, and nothing once they have ended', () => {
+        const sender = new EdgeOrderSender('stream-a');
+        const first = send(sender, 10_000);
+        send(sender, 10_000).refuse();
+        send(sender, 8_000);
+
+        expect(sender.countOpenSends(NOW_MS)).toBe(3);
+        first.end();
+        expect(sender.countOpenSends(NOW_MS)).toBe(1);
+        expect(sender.countOpenSends(8_000)).toBe(0);
     });
 });

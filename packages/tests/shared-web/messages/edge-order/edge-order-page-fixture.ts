@@ -7,6 +7,7 @@ import { BrowserRallarMessagesController } from '@shared-web/browser/messages/br
 import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import { BrowserGrantedTopics } from '@shared-web/browser/messages/publication/browser-granted-topics.ts';
 import { BrowserPublicationStages } from '@shared-web/browser/messages/publication/browser-publication-stages.ts';
+import type { RallarRoomMessageChannelDefinition } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import { BrowserTopicSubscriptions } from '@shared-web/browser/messages/topic-subscription/browser-topic-subscriptions.ts';
 import type { BrowserWebSocketInboxHandler } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
@@ -28,6 +29,20 @@ import { createDefaultBrowserServerClockFixture } from '../../connection/browser
 import { toQueuedMessageAdmission } from '../browser-message-sender-fixture.ts';
 
 export const EDGE_ORDER_TEST_ROOM: GroupRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
+
+export interface EdgeOrderTestMove {
+    readonly n: number;
+}
+
+/** The edge-ordered room channel the two-page tests send and receive on. */
+export const EDGE_ORDER_TEST_MOVES: RallarRoomMessageChannelDefinition = {
+    roomRef: EDGE_ORDER_TEST_ROOM,
+    topicId: 'room.moves',
+    typeId: 'game.move',
+    purpose: 'command',
+    access: 'members',
+    order: 'edge'
+};
 
 /**
  * One browser page's messaging stack over a middleware double. What the page hands a carrier is recorded, in
@@ -159,4 +174,9 @@ export function createEdgeOrderPage(input: EdgeOrderPageInput): EdgeOrderPage {
 /** Lets what an already resolved promise unblocked run: the page's sends are a few awaits deep. */
 export async function settleTurns(): Promise<void> {
     await vi.advanceTimersByTimeAsync(0);
+}
+
+/** What the page stated it did not hand over: gaps, dropped arrivals and held messages it gave up. */
+export function readEdgeOrderDrops(page: EdgeOrderPage): ALInboundRuntimeDiagnosticsEvent[] {
+    return page.diagnostics.filter((event) => event.kind.startsWith('edge-order-') && !(event.kind === 'edge-order-arrival' && event.outcome === 'held'));
 }

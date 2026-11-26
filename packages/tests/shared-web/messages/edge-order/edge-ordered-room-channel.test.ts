@@ -2,16 +2,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type {
     RallarMessage,
+    RallarMessageHandle,
     RallarRoomMessageChannelDefinition,
     RallarTypedMessageChannel
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 
-import { createEdgeOrderPage, EDGE_ORDER_TEST_ROOM, type EdgeOrderPage } from './edge-order-page-fixture.ts';
-
-interface Move {
-    readonly n: number;
-}
+import {
+    createEdgeOrderPage,
+    EDGE_ORDER_TEST_MOVES,
+    EDGE_ORDER_TEST_ROOM,
+    readEdgeOrderDrops,
+    type EdgeOrderPage,
+    type EdgeOrderTestMove
+} from './edge-order-page-fixture.ts';
 
 interface SeenMove {
     readonly n: number;
@@ -19,38 +23,30 @@ interface SeenMove {
     readonly position: number | undefined;
 }
 
-const MOVES: RallarRoomMessageChannelDefinition = {
-    roomRef: EDGE_ORDER_TEST_ROOM,
-    topicId: 'room.moves',
-    typeId: 'game.move',
-    purpose: 'command',
-    access: 'members',
-    order: 'edge'
-};
-const PLAIN_MOVES: RallarRoomMessageChannelDefinition = { ...MOVES, order: undefined };
+const PLAIN_MOVES: RallarRoomMessageChannelDefinition = { ...EDGE_ORDER_TEST_MOVES, order: undefined };
 
 interface TwoPages {
     readonly alice: EdgeOrderPage;
     readonly bob: EdgeOrderPage;
-    readonly send: RallarTypedMessageChannel<Move>;
+    readonly send: RallarTypedMessageChannel<EdgeOrderTestMove>;
     readonly seen: SeenMove[];
-    readonly messages: RallarMessage<Move>[];
+    readonly messages: RallarMessage<EdgeOrderTestMove>[];
 }
 
 /** Alice sends on the channel; Bob listens on both carriers and records what his handlers were given, in order. */
-function createTwoPages(bobDefinition = MOVES): TwoPages {
+function createTwoPages(bobDefinition = EDGE_ORDER_TEST_MOVES): TwoPages {
     const alice = createEdgeOrderPage({ sessionId: 'alice-session' });
     const bob = createEdgeOrderPage({ sessionId: 'bob-session' });
     const seen: SeenMove[] = [];
-    const messages: RallarMessage<Move>[] = [];
-    const receive = bob.messages.room<Move>(bobDefinition);
-    const record = (payload: Move, message: RallarMessage<Move>): void => {
+    const messages: RallarMessage<EdgeOrderTestMove>[] = [];
+    const receive = bob.messages.room<EdgeOrderTestMove>(bobDefinition);
+    const record = (payload: EdgeOrderTestMove, message: RallarMessage<EdgeOrderTestMove>): void => {
         seen.push({ n: payload.n, transport: message.transport, position: message.order?.position });
         messages.push(message);
     };
     receive.onWs(record);
     receive.onRtc(record);
-    return { alice, bob, send: alice.messages.room<Move>(MOVES), seen, messages };
+    return { alice, bob, send: alice.messages.room<EdgeOrderTestMove>(EDGE_ORDER_TEST_MOVES), seen, messages };
 }
 
 async function sendMoves(pages: TwoPages, carrier: 'ws' | 'rtc', count: number): Promise<readonly ALMessage[]> {
@@ -58,11 +54,6 @@ async function sendMoves(pages: TwoPages, carrier: 'ws' | 'rtc', count: number):
         await (carrier === 'ws' ? pages.send.sendWs({ n }) : pages.send.sendRtc({ n }));
     }
     return pages.alice.sent[carrier];
-}
-
-/** What the page stated it did not hand over: gaps, dropped arrivals and held messages it gave up. */
-function edgeOrderDiagnostics(page: EdgeOrderPage): object[] {
-    return page.diagnostics.filter((event) => event.kind.startsWith('edge-order-') && !(event.kind === 'edge-order-arrival' && event.outcome === 'held'));
 }
 
 /** The positions the page stated it held for their turn, in arrival order. */
@@ -94,7 +85,7 @@ describe('an edge-ordered room channel: order', () => {
             { n: 3, transport: carrier, position: 3 }
         ]);
         expect(new Set(pages.messages.map((message) => message.order?.stream)).size).toBe(1);
-        expect(edgeOrderDiagnostics(pages.bob)).toEqual([]);
+        expect(readEdgeOrderDrops(pages.bob)).toEqual([]);
     });
 
     it.each(['ws', 'rtc'] as const)('puts a pair swapped in transit over %s back in send order', async (carrier) => {
@@ -108,7 +99,7 @@ describe('an edge-ordered room channel: order', () => {
         await pages.bob.deliver(carrier, second);
         expect(pages.seen.map((move) => move.n)).toEqual([1, 2, 3]);
         expect(heldPositions(pages.bob)).toEqual([3]);
-        expect(edgeOrderDiagnostics(pages.bob)).toEqual([]);
+        expect(readEdgeOrderDrops(pages.bob)).toEqual([]);
     });
 
     it('sorts one stream that arrives over both carriers, and gives each message to its own carrier\'s handlers', async () => {
@@ -143,7 +134,7 @@ describe('an edge-ordered room channel: order', () => {
             { n: 1, transport: 'rtc', position: 1 },
             { n: 2, transport: 'ws', position: 2 }
         ]);
-        expect(edgeOrderDiagnostics(pages.bob)).toEqual([
+        expect(readEdgeOrderDrops(pages.bob)).toEqual([
             expect.objectContaining({ kind: 'edge-order-arrival', outcome: 'late', carrier: 'ws', position: 1 }),
             expect.objectContaining({ kind: 'edge-order-arrival', outcome: 'late', carrier: 'rtc', position: 2 })
         ]);
@@ -153,10 +144,10 @@ describe('an edge-ordered room channel: order', () => {
         const alice = createEdgeOrderPage({ sessionId: 'alice-session' });
         const bob = createEdgeOrderPage({ sessionId: 'bob-session' });
         const seen: number[] = [];
-        bob.messages.room<Move>(MOVES).onWs((payload) => {
+        bob.messages.room<EdgeOrderTestMove>(EDGE_ORDER_TEST_MOVES).onWs((payload) => {
             seen.push(payload.n);
         });
-        const send = alice.messages.room<Move>(MOVES);
+        const send = alice.messages.room<EdgeOrderTestMove>(EDGE_ORDER_TEST_MOVES);
         await send.sendRtc({ n: 1 });
         await send.sendWs({ n: 2 });
 
@@ -165,14 +156,14 @@ describe('an edge-ordered room channel: order', () => {
         await bob.deliver('ws', alice.sent.ws[0]);
 
         expect(seen).toEqual([2]);
-        expect(edgeOrderDiagnostics(bob)).toEqual([]);
+        expect(readEdgeOrderDrops(bob)).toEqual([]);
     });
 
     it('waits for an async handler to finish one message before it is given the next', async () => {
         const pages = createTwoPages();
         const steps: string[] = [];
         let finishFirst: () => void = () => {};
-        pages.bob.messages.room<Move>(MOVES).onWs(async (payload) => {
+        pages.bob.messages.room<EdgeOrderTestMove>(EDGE_ORDER_TEST_MOVES).onWs(async (payload) => {
             steps.push(`start ${payload.n}`);
             if (payload.n === 1) {
                 await new Promise<void>((resolve) => {
@@ -198,7 +189,7 @@ describe('an edge-ordered room channel: the wrapper', () => {
     it('gives the handler the application payload, never the wrapper, and leaves the envelope as it travelled', async () => {
         const pages = createTwoPages();
         const laneSeen: object[] = [];
-        pages.bob.messages.ws.onMessage<Move>({ topicId: 'room.moves' }, (message) => {
+        pages.bob.messages.ws.onMessage<EdgeOrderTestMove>({ topicId: 'room.moves' }, (message) => {
             laneSeen.push(message.payload);
         });
         const [first] = await sendMoves(pages, 'ws', 1);
@@ -218,7 +209,7 @@ describe('an edge-ordered room channel: the wrapper', () => {
         const text = 'x'.repeat(200);
         const alice = createEdgeOrderPage({ sessionId: 'alice-session', maxPayloadBytes: JSON.stringify({ text }).length });
         const pages = createTwoPages();
-        const edge = alice.messages.room<{ text: string; }>(MOVES);
+        const edge = alice.messages.room<{ text: string; }>(EDGE_ORDER_TEST_MOVES);
         const plain = alice.messages.room<{ text: string; }>({ ...PLAIN_MOVES, topicId: 'room.notes' });
 
         const fits = await plain.sendWs({ text });
@@ -233,7 +224,7 @@ describe('an edge-ordered room channel: the wrapper', () => {
         await pages.bob.deliver('ws', next);
         // Nothing of the refused send set out, so the next send took its position.
         expect(pages.messages.map((message) => message.order?.position)).toEqual([1, 2]);
-        expect(edgeOrderDiagnostics(pages.bob)).toEqual([]);
+        expect(readEdgeOrderDrops(pages.bob)).toEqual([]);
     });
 });
 
@@ -265,9 +256,9 @@ describe('an edge-ordered room channel: the send side', () => {
         const otherTab = createEdgeOrderPage({ sessionId: 'alice-session' });
         const otherRoom = { ...EDGE_ORDER_TEST_ROOM, groupId: 'other-room' };
         await pages.send.sendWs({ n: 1 });
-        await pages.alice.messages.room<Move>(MOVES).sendWs({ n: 2 });
-        await pages.alice.messages.room<Move>({ ...MOVES, roomRef: otherRoom }).sendWs({ n: 3 });
-        await otherTab.messages.room<Move>(MOVES).sendWs({ n: 4 });
+        await pages.alice.messages.room<EdgeOrderTestMove>(EDGE_ORDER_TEST_MOVES).sendWs({ n: 2 });
+        await pages.alice.messages.room<EdgeOrderTestMove>({ ...EDGE_ORDER_TEST_MOVES, roomRef: otherRoom }).sendWs({ n: 3 });
+        await otherTab.messages.room<EdgeOrderTestMove>(EDGE_ORDER_TEST_MOVES).sendWs({ n: 4 });
 
         const stamps = [...pages.alice.sent.ws, ...otherTab.sent.ws].map((message) => JSON.parse(message.payload.resource).edgeOrder);
 
@@ -290,31 +281,52 @@ describe('an edge-ordered room channel: the send side', () => {
         await pages.bob.deliver('ws', next);
 
         expect(pages.seen.map((move) => [move.n, move.position])).toEqual([[1, 1], [3, 2]]);
-        expect(edgeOrderDiagnostics(pages.bob)).toEqual([]);
+        expect(readEdgeOrderDrops(pages.bob)).toEqual([]);
     });
 
-    it('closes a refused send\'s position in a burst only once the sends before it have ended', async () => {
+    it('closes a refused send\'s position in a burst at once, while the sends before it are still open', async () => {
         const text = 'x'.repeat(200);
         const alice = createEdgeOrderPage({ sessionId: 'alice-session', maxPayloadBytes: JSON.stringify({ text }).length });
         const pages = createTwoPages();
-        const channel = alice.messages.room<{ text: string; }>(MOVES);
+        const channel = alice.messages.room<{ text: string; }>(EDGE_ORDER_TEST_MOVES);
 
         // One turn: each send has its position before the one before it is found refused.
         const burst = [channel.sendWs({ text: 'a' }), channel.sendWs({ text }), channel.sendWs({ text: 'c' })];
-        const [first, refused] = await Promise.all(burst);
+        const [, refused] = await Promise.all(burst);
         expect(refused.lifecycle().state).toBe('rejected');
         const [one, three] = alice.sent.ws;
         await pages.bob.deliver('ws', one);
         await pages.bob.deliver('ws', three);
-        // Send 1 is still open, so message 3 can only say that nothing below 1 has ended: the receiver waits.
-        expect(pages.messages.map((message) => message.order?.position)).toEqual([1]);
 
-        first.cancel();
-        await channel.sendWs({ text: 'd' });
-        await pages.bob.deliver('ws', alice.sent.ws[2]);
+        // Send 1 is still open, so message 3 cannot say that everything below it has ended: it names the hole.
+        expect(JSON.parse(three.payload.resource).edgeOrder).toMatchObject({ lowestOpenPosition: 1, holes: [[2, 2]] });
+        expect(pages.messages.map((message) => message.order?.position)).toEqual([1, 3]);
+        expect(readEdgeOrderDrops(pages.bob)).toEqual([
+            expect.objectContaining({ kind: 'edge-order-gap', fromPosition: 2, toPosition: 2, reason: 'ended-at-sender' })
+        ]);
+    });
 
-        expect(pages.messages.map((message) => message.order?.position)).toEqual([1, 3, 4]);
-        expect(edgeOrderDiagnostics(pages.bob)).toEqual([
+    it.each<[string, (handle: RallarMessageHandle, pages: TwoPages) => Promise<void>]>([
+        ['cancelled', async (handle) => {
+            handle.cancel();
+            await Promise.resolve();
+        }],
+        ['expired', async () => {
+            await vi.advanceTimersByTimeAsync(2_000);
+        }]
+    ])('closes the position of a %s send at once on the next message', async (_end, endSecond) => {
+        const pages = createTwoPages();
+        await pages.send.sendWs({ n: 1 });
+        const second = await pages.send.sendWs({ n: 2 }, { ttlMs: 2_000 });
+        await endSecond(second, pages);
+        await pages.send.sendWs({ n: 3 });
+        const [first, , third] = pages.alice.sent.ws;
+
+        await pages.bob.deliver('ws', first);
+        await pages.bob.deliver('ws', third);
+
+        expect(pages.seen.map((move) => move.n)).toEqual([1, 3]);
+        expect(readEdgeOrderDrops(pages.bob)).toEqual([
             expect.objectContaining({ kind: 'edge-order-gap', fromPosition: 2, toPosition: 2, reason: 'ended-at-sender' })
         ]);
     });
@@ -354,8 +366,17 @@ describe('an edge-ordered room channel: gaps and drops', () => {
         await pages.bob.deliver('ws', second);
         expect(pages.seen.map((move) => move.n)).toEqual([1, 3]);
         const stream = pages.messages[0].order?.stream;
-        expect(edgeOrderDiagnostics(pages.bob)).toEqual([
-            { kind: 'edge-order-gap', senderId: 'alice-session', stream, fromPosition: 2, toPosition: 2, reason: 'cannot-arrive' },
+        expect(readEdgeOrderDrops(pages.bob)).toEqual([
+            {
+                kind: 'edge-order-gap',
+                topicId: 'room.moves',
+                typeId: 'game.move',
+                senderId: 'alice-session',
+                stream,
+                fromPosition: 2,
+                toPosition: 2,
+                reason: 'cannot-arrive'
+            },
             {
                 kind: 'edge-order-arrival',
                 outcome: 'late',
@@ -381,7 +402,7 @@ describe('an edge-ordered room channel: gaps and drops', () => {
         pages.bob.detach();
         await vi.advanceTimersByTimeAsync(60_000);
         expect(pages.seen.map((move) => move.n)).toEqual([1]);
-        expect(edgeOrderDiagnostics(pages.bob)).toEqual([{ kind: 'edge-order-held-dropped', count: 2 }]);
+        expect(readEdgeOrderDrops(pages.bob)).toEqual([{ kind: 'edge-order-held-dropped', count: 2 }]);
 
         // A copy of 1 is still late, and 2 is still next.
         await pages.bob.deliver('ws', first);
@@ -394,13 +415,13 @@ describe('an edge-ordered room channel: gaps and drops', () => {
 describe('an edge-ordered room channel: declared on one end only', () => {
     it('does not hand over a message that carries no stamp, and states it', async () => {
         const pages = createTwoPages();
-        await pages.alice.messages.room<Move>(PLAIN_MOVES).sendWs({ n: 1 });
+        await pages.alice.messages.room<EdgeOrderTestMove>(PLAIN_MOVES).sendWs({ n: 1 });
         const [plain] = pages.alice.sent.ws;
 
         await pages.bob.deliver('ws', plain);
 
         expect(pages.seen).toEqual([]);
-        expect(edgeOrderDiagnostics(pages.bob)).toEqual([{
+        expect(readEdgeOrderDrops(pages.bob)).toEqual([{
             kind: 'edge-order-arrival',
             outcome: 'unwrapped',
             msgId: plain.id.msgId,
@@ -442,20 +463,20 @@ describe('an edge-ordered room channel: refused shapes', () => {
     ])('refuses %s', (_shape, definition, path) => {
         const page = createEdgeOrderPage({ sessionId: 'alice-session' });
 
-        expect(() => page.messages.room<Move>({ ...MOVES, ...definition })).toThrow(unsupported(path));
+        expect(() => page.messages.room<EdgeOrderTestMove>({ ...EDGE_ORDER_TEST_MOVES, ...definition })).toThrow(unsupported(path));
     });
 
     it('refuses a channel that names no room, and an order it does not know', () => {
         const page = createEdgeOrderPage({ sessionId: 'alice-session' });
-        const { roomRef: _roomRef, ...roomless } = MOVES;
+        const { roomRef: _roomRef, ...roomless } = EDGE_ORDER_TEST_MOVES;
 
-        expect(() => page.messages.channel<Move>(roomless)).toThrow(unsupported('$.order'));
-        expect(() => page.messages.room<Move>({ ...MOVES, order: 'hop' as 'edge' })).toThrow(
+        expect(() => page.messages.channel<EdgeOrderTestMove>(roomless)).toThrow(unsupported('$.order'));
+        expect(() => page.messages.room<EdgeOrderTestMove>({ ...EDGE_ORDER_TEST_MOVES, order: 'hop' as 'edge' })).toThrow(
             expect.objectContaining({ issues: [expect.objectContaining({ path: '$.order', code: 'invalid-order' })] })
         );
     });
 
-    it.each<[string, string, (channel: RallarTypedMessageChannel<Move>) => Promise<object>]>([
+    it.each<[string, string, (channel: RallarTypedMessageChannel<EdgeOrderTestMove>) => Promise<object>]>([
         ['a best-effort send', '$.reliability', (channel) => channel.send({ n: 1 }, { reliability: 'best-effort' })],
         ['a best-effort QoS request', '$.qos.delivery', (channel) => channel.send({ n: 1 }, { qos: { delivery: { algo: 'best-effort' } } })],
         ['a send that asks no receipt', '$.ack', (channel) => channel.sendWs({ n: 1 }, { ack: 'none' })],

@@ -1,11 +1,16 @@
-import type { EdgeOrderGap } from '@shared-web/browser/messages/edge-order/edge-order-gap.ts';
+import {
+    toEdgeOrderStreamKey,
+    type EdgeOrderStreamOrigin
+} from '@shared-web/browser/messages/edge-order/edge-order-received-stream.ts';
 import type { EdgeOrderReceiverLimits } from '@shared-web/browser/messages/edge-order/edge-order-receiver-limits.ts';
 import { EdgeOrderReceiver } from '@shared-web/browser/messages/edge-order/edge-order-receiver.ts';
 import { decodeEdgeOrderWirePayload } from '@shared-web/browser/messages/edge-order/edge-order-wire-payload.ts';
 import type {
     RallarMessageOrder,
+    RallarMessageOrderGap,
     RallarMessagePayload,
-    RallarMessageTransport
+    RallarMessageTransport,
+    RallarTypedMessageChannelDefinition
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toALMessageTrace } from '@shared/al-contracts/trace/to-al-message-trace.ts';
@@ -14,6 +19,7 @@ import {
     type ALInboundRuntimeDiagnosticsSink
 } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { computeUtf8ByteLength } from '@shared/encoding/compute-utf8-byte-length.ts';
+import { KeyedSerialRuns } from '@shared/resilience/keyed-serial-runs.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
 
 type EdgeOrderCarrier = Extract<RallarMessageTransport, 'rtc' | 'ws'>;
@@ -41,6 +47,18 @@ export namespace EdgeOrderArrivals {
         readonly typeId: string;
     }
 
+    export type GapHandler = NonNullable<RallarTypedMessageChannelDefinition['onOrderGap']>;
+
+    /** What the receive side keeps now, and what it has not handed over since the page loaded. */
+    export interface Usage {
+        readonly streams: number;
+        readonly heldMessages: number;
+        readonly evictedStreams: number;
+        readonly lateDrops: number;
+        readonly gaps: number;
+        readonly heldDropped: number;
+    }
+
     export interface Dependencies {
         readonly limits: EdgeOrderReceiverLimits;
         /**
@@ -57,14 +75,19 @@ export namespace EdgeOrderArrivals {
 /**
  * The receive side of the page's edge-ordered channels. One sorter serves both carriers, because one sender's
  * stream can arrive over both: each arrival is unwrapped, put in its stream's order, and handed over when its
- * turn comes, one message at a time. Everything it holds or does not hand over is stated in the inbound diagnostics.
+ * turn comes. Everything it holds or does not hand over is stated in the inbound diagnostics, and each gap is given
+ * to the handler its channel declared.
  */
 export class EdgeOrderArrivals {
-    private readonly declaredRoutes = new Set<string>();
+    /** By route: the gap handler its latest declaration named; absent when no declaration named one. */
+    private readonly declaredRoutes = new Map<string, EdgeOrderArrivals.GapHandler | undefined>();
     private readonly receiver: EdgeOrderReceiver<EdgeOrderArrivals.HandOver>;
     private readonly dependencies: EdgeOrderArrivals.Dependencies;
-    /** Every hand-over so far: the next one starts when it settles, so an async handler finishes a message first. */
-    private handedOver: Promise<void> = Promise.resolve();
+    /**
+     * Per stream, its hand-overs and gap reports in the stream's order: the next starts when the one before it
+     * settles, so an async handler finishes a message first. A handler that never settles stops its own stream only.
+     */
+    private readonly streamRuns = new KeyedSerialRuns<string>();
 
     constructor(dependencies: EdgeOrderArrivals.Dependencies) {
         this.dependencies = dependencies;
@@ -74,15 +97,20 @@ export class EdgeOrderArrivals {
                 schedule: (run, delayMs) => dependencies.timers.schedule(() => this.runWake(run), delayMs)
             },
             handOver: (handOver) => {
-                this.handedOver = this.handedOver.then(() => dependencies.handOver(handOver));
+                const streamKey = toEdgeOrderStreamKey(toStreamOrigin(handOver.message, handOver.order.stream));
+                void this.streamRuns.run(streamKey, () => dependencies.handOver(handOver));
             },
-            reportGap: (gap) => this.recordGap(gap)
+            reportGap: (gap) => this.reportGap(gap)
         });
     }
 
-    /** A page declares a channel's topic and type edge-ordered once; every room of that channel is then sorted. */
-    declare(route: EdgeOrderArrivals.Route): void {
-        this.declaredRoutes.add(toRouteKey(route.topicId ?? route.typeId, route.typeId));
+    /**
+     * A page declares a channel's topic and type edge-ordered once; every room of that channel is then sorted. The
+     * latest gap handler declared for the route stands, as the latest channel for it does.
+     */
+    declare(route: EdgeOrderArrivals.Route, onOrderGap: EdgeOrderArrivals.GapHandler | undefined): void {
+        const routeKey = toRouteKey(route.topicId ?? route.typeId, route.typeId);
+        this.declaredRoutes.set(routeKey, onOrderGap ?? this.declaredRoutes.get(routeKey));
     }
 
     isDeclared(message: ALMessage): boolean {
@@ -97,18 +125,33 @@ export class EdgeOrderArrivals {
             return;
         }
         const order: RallarMessageOrder = { stream: wire.stamp.stream, position: wire.stamp.position };
+        const origin = toStreamOrigin(message, order.stream);
         const outcome = this.receiver.accept({
-            senderId: message.id.senderId,
+            origin,
             stamp: wire.stamp,
             expiresAtMs: message.constraints?.expiresAtMs ?? Number.MAX_SAFE_INTEGER,
             byteLength: computeUtf8ByteLength(message.payload.resource),
             message: { carrier, message, payload: wire.payload, order }
         });
         if (outcome === 'handed-over') {
-            await this.handedOver;
+            await this.streamRuns.whenIdle(toEdgeOrderStreamKey(origin));
             return;
         }
         this.recordArrival({ carrier, message, outcome, order });
+    }
+
+    /** Forgets the streams that have gone quiet, then counts what is left. It reads the connect's clock. */
+    readUsage(): EdgeOrderArrivals.Usage {
+        this.receiver.forgetQuietStreams();
+        const counts = this.receiver.getCounts();
+        return {
+            streams: counts.streams,
+            heldMessages: counts.heldMessages,
+            evictedStreams: counts.evictedStreams,
+            lateDrops: counts.lateMessages,
+            gaps: counts.gaps,
+            heldDropped: counts.droppedMessages
+        };
     }
 
     /** The connect is gone, and with it the clock every held message was judged by. */
@@ -132,8 +175,19 @@ export class EdgeOrderArrivals {
         }
     }
 
-    private recordGap(gap: EdgeOrderGap): void {
+    /**
+     * States the gap, and gives it to its channel's handler in the stream's turn: after the handlers of the messages
+     * before it. What the handler throws is logged, and the stream goes on.
+     */
+    private reportGap(gap: RallarMessageOrderGap): void {
         recordALInboundDiagnostic(this.dependencies.readInboundDiagnostics(), { kind: 'edge-order-gap', ...gap });
+        const onOrderGap = this.declaredRoutes.get(toRouteKey(gap.topicId, gap.typeId));
+        if (onOrderGap === undefined) {
+            return;
+        }
+        void this.streamRuns.run(toEdgeOrderStreamKey(gap), () => onOrderGap(gap)).catch((error) => {
+            console.error('Error notifying Rallar order gap handler', error);
+        });
     }
 
     private recordArrival(arrival: UnhandedEdgeOrderArrival): void {
@@ -150,6 +204,15 @@ export class EdgeOrderArrivals {
             ...toALMessageTrace(message)
         });
     }
+}
+
+function toStreamOrigin(message: ALMessage, stream: string): EdgeOrderStreamOrigin {
+    return {
+        topicId: message.route.topicId,
+        typeId: message.payload.typeId,
+        senderId: message.id.senderId,
+        stream
+    };
 }
 
 function toRouteKey(topicId: string, typeId: string): string {

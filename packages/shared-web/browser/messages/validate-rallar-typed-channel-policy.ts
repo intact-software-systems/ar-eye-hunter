@@ -18,6 +18,7 @@ export interface RallarTypedChannelPolicyInput {
     readonly recovery?: unknown;
     readonly publication?: unknown;
     readonly order?: string;
+    readonly onOrderGap?: unknown;
 }
 
 const RALLAR_STORAGE_UNAVAILABLE_POLICIES: readonly RallarStorageUnavailablePolicy[] = ['refuse', 'volatile'];
@@ -131,7 +132,16 @@ function validateRallarChannelPublication(definition: RallarTypedChannelPolicyIn
  */
 function validateRallarChannelOrder(definition: RallarTypedChannelPolicyInput): readonly RallarValidationIssue[] {
     if (definition.order === undefined) {
-        return [];
+        return definition.onOrderGap === undefined
+            ? []
+            : [{
+                path: '$.onOrderGap',
+                code: 'unsupported',
+                message: 'Only an edge-ordered channel reports order gaps.'
+            }];
+    }
+    if (definition.onOrderGap !== undefined && typeof definition.onOrderGap !== 'function') {
+        return [{ path: '$.onOrderGap', code: 'invalid-order-gap-handler', message: 'onOrderGap must be a function.' }];
     }
     if (definition.order !== 'edge') {
         return [{ path: '$.order', code: 'invalid-order', message: 'Order must be edge.' }];

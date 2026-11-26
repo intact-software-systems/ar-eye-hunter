@@ -1,9 +1,9 @@
-import type { EdgeOrderGapReason } from '@shared-web/browser/messages/edge-order/edge-order-gap.ts';
 import type {
     EdgeOrderHeldMessage,
     EdgeOrderReceivedStream
 } from '@shared-web/browser/messages/edge-order/edge-order-received-stream.ts';
 import type { EdgeOrderReceiverLimits } from '@shared-web/browser/messages/edge-order/edge-order-receiver-limits.ts';
+import type { RallarMessageOrderGapReason } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 
 /**
  * What a stream does next. `start` and `skip` both continue the stream at `nextPosition`; `skip` also gives up the
@@ -18,13 +18,13 @@ export type EdgeOrderStreamStep<Message> =
         readonly kind: 'skip';
         readonly fromPosition: number;
         readonly nextPosition: number;
-        readonly reason: EdgeOrderGapReason;
+        readonly reason: RallarMessageOrderGapReason;
     };
 
 /** When the stream must stop holding its lowest message whatever is still missing, and why. */
 interface EdgeOrderHeldRelease {
     readonly atMs: number;
-    readonly reason: EdgeOrderGapReason;
+    readonly reason: RallarMessageOrderGapReason;
 }
 
 interface EdgeOrderHoldingStream<Message> {
@@ -47,13 +47,11 @@ export function computeEdgeOrderStreamStep<Message>(
         return { kind: 'hand-over', held: next };
     }
     const lowest = resolveLowestHeld(stream.held);
-    if (stream.nextPosition !== undefined && stream.endedBelowPosition > stream.nextPosition) {
-        return {
-            kind: 'skip',
-            fromPosition: stream.nextPosition,
-            nextPosition: Math.min(stream.endedBelowPosition, lowest?.stamp.position ?? stream.endedBelowPosition),
-            reason: 'ended-at-sender'
-        };
+    const endedSkip = stream.nextPosition === undefined
+        ? undefined
+        : computeEndedSkip(stream, stream.nextPosition, lowest);
+    if (endedSkip !== undefined) {
+        return endedSkip;
     }
     if (lowest === undefined) {
         return { kind: 'rest' };
@@ -62,6 +60,46 @@ export function computeEdgeOrderStreamStep<Message>(
     return stream.nextPosition === undefined
         ? computeEntryStep(holding, limits.entryWaitMs)
         : computeGapStep(holding, stream.nextPosition);
+}
+
+/** The skip past the positions from `nextPosition` up that the sender has said are over; absent when it said none. */
+function computeEndedSkip<Message>(
+    stream: Readonly<EdgeOrderReceivedStream<Message>>,
+    nextPosition: number,
+    lowest: EdgeOrderHeldMessage<Message> | undefined
+): EdgeOrderStreamStep<Message> | undefined {
+    const firstOpenPosition = computeFirstOpenPosition(stream, nextPosition);
+    if (firstOpenPosition === nextPosition) {
+        return undefined;
+    }
+    return {
+        kind: 'skip',
+        fromPosition: nextPosition,
+        // A held message is never passed: a send cancelled after a copy of it arrived is still handed over.
+        nextPosition: Math.min(firstOpenPosition, lowest?.stamp.position ?? firstOpenPosition),
+        reason: 'ended-at-sender'
+    };
+}
+
+/**
+ * The first position from `fromPosition` up that the sender has not said is over: every position below the highest
+ * `lowestOpenPosition` it stated has ended, and so has every hole the stamp of a held message states.
+ */
+function computeFirstOpenPosition<Message>(
+    stream: Readonly<EdgeOrderReceivedStream<Message>>,
+    fromPosition: number
+): number {
+    const holes = [...stream.held.values()]
+        .flatMap((held) => held.stamp.holes)
+        .sort((left, right) => left[0] - right[0]);
+    let firstOpenPosition = Math.max(fromPosition, stream.endedBelowPosition);
+    for (const [fromHole, toHole] of holes) {
+        if (fromHole > firstOpenPosition) {
+            break;
+        }
+        firstOpenPosition = Math.max(firstOpenPosition, toHole + 1);
+    }
+    return firstOpenPosition;
 }
 
 function computeEntryStep<Message>(
@@ -125,7 +163,7 @@ function computeHeldMessageRelease<Message>(
 function resolvePastCapReason<Message>(
     stream: Readonly<EdgeOrderReceivedStream<Message>>,
     limits: EdgeOrderReceiverLimits
-): EdgeOrderGapReason | undefined {
+): RallarMessageOrderGapReason | undefined {
     if (stream.forgotten) {
         return 'stream-cap';
     }

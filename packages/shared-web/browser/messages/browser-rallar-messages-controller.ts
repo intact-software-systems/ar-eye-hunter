@@ -30,6 +30,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
 
+import { readBrowserServerExpiryEpochMs } from '../connection/server-clock/browser-server-clock-session.ts';
 import type { BrowserRallarDeliveryRegistry } from './browser-rallar-delivery-registry.ts';
 import { BrowserRallarMessageDispatch } from './browser-rallar-message-dispatch.ts';
 import type { BrowserSessionDeliveries } from './browser-session-deliveries.ts';
@@ -79,7 +80,11 @@ export class BrowserRallarMessagesController {
         const inputValidator = new BrowserMessageInputValidator({
             readMaxPayloadBytes: input.readMessageMaxPayloadBytes
         });
-        const sender = createMessageSender(input, inputValidator);
+        const edgeOrderStreams = new EdgeOrderSendStreams({
+            newStreamId: input.newEdgeOrderStreamId,
+            maxStreams: EDGE_ORDER_RECEIVER_DEFAULT_LIMITS.maxStreams
+        });
+        const sender = createMessageSender(input, inputValidator, edgeOrderStreams);
         this.sender = sender;
         const sendReply: RallarMessageReplySender = async (request, payload, options) =>
             await sender.sendReply(request, payload, options);
@@ -108,7 +113,11 @@ export class BrowserRallarMessagesController {
                     ...input.deliveries.getReplyCounts(),
                     publication: input.publicationStages.readReport(context),
                     ordering: context.middleware.orderingCounters.readReport(),
-                    congestionEpisodes: context.middleware.congestionEpisodes.readReport()
+                    congestionEpisodes: context.middleware.congestionEpisodes.readReport(),
+                    edgeOrder: {
+                        ...this.subscriptions.readEdgeOrderUsage(),
+                        ...edgeOrderStreams.readUsage(readBrowserServerExpiryEpochMs(context.serverTime))
+                    }
                 };
             }
         );
@@ -163,7 +172,8 @@ export class BrowserRallarMessagesController {
 
 function createMessageSender(
     input: BrowserRallarMessagesController.Input,
-    inputValidator: BrowserMessageInputValidator
+    inputValidator: BrowserMessageInputValidator,
+    edgeOrderStreams: EdgeOrderSendStreams
 ): BrowserRallarMessageSender {
     return new BrowserRallarMessageSender({
         creation: input.creation,
@@ -177,10 +187,7 @@ function createMessageSender(
         }),
         sessionDeliveries: input.sessionDeliveries,
         inputValidator,
-        edgeOrderStreams: new EdgeOrderSendStreams({
-            newStreamId: input.newEdgeOrderStreamId,
-            maxStreams: EDGE_ORDER_RECEIVER_DEFAULT_LIMITS.maxStreams
-        }),
+        edgeOrderStreams,
         connect: input.connect,
         requireSession: input.requireSession,
         resolveDefaultRoom: input.resolveDefaultRoom,

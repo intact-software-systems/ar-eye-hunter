@@ -213,6 +213,8 @@ export type ALInboundRuntimeDiagnosticsEvent =
          * The reason is the receiver's: the sender ended the send, it can no longer arrive, or a bound was reached.
          */
         kind: 'edge-order-gap';
+        topicId: string;
+        typeId: string;
         senderId: string;
         stream: string;
         fromPosition: number;
