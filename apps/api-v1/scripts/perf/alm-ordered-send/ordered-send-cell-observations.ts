@@ -116,7 +116,8 @@ export interface OrderedSendCellReceipt {
  * with the reason it gave. Of a gap in a track the server tells the sender twice, by a `gap` NACK and by a
  * `missing-seq` repair request, and both name the message whose arrival showed the gap, never one that is missing.
  * Under the sender recovery `none` a session of the cell answers neither and sends nothing again; under
- * `client-stand-in` its publisher answers both as `OrderedSendClientStandIn` states, and each answer is in `resends`.
+ * `client-stand-in` its publisher answers both as `OrderedSendClientStandIn` states: each send it offers again is in
+ * `resends`, and each it declines to, for a send that has ended or expired, is in `declinedRepairs`.
  */
 export type OrderedSendCellControl =
     | { readonly type: 'nack'; readonly msgId: string; readonly reason: ALNackReason; readonly atMs: number; }
@@ -129,6 +130,36 @@ export type OrderedSendCellControl =
 export interface OrderedSendCellUnclassifiedControl {
     /** The payload type the frame's envelope names. */
     readonly typeId: string;
+    readonly atMs: number;
+}
+
+/**
+ * A publisher's stand-in ended a send, as the product's WS client ends a message: from then on it offers the send
+ * again for no cause. `cause` says what ended it:
+ * - `first-hop-exhausted`: its first-hop resends are spent and its publisher has read no receipt of it;
+ * - `terminal-receipt`: its publisher read a `complete` or a `timed-out` receipt of it;
+ * - `terminal-nack`: its publisher read a NACK that refuses it for good;
+ * - `repair-budget-spent`: a repair request asked for it again and found its repairs spent;
+ * - `expired`: its lifetime ended before anything else ended it.
+ * A send has at most one end. Only a run under the sender recovery `client-stand-in` records any.
+ */
+export interface OrderedSendCellSendEnd {
+    readonly msgId: string;
+    readonly cause: 'first-hop-exhausted' | 'terminal-receipt' | 'terminal-nack' | 'repair-budget-spent' | 'expired';
+    /** The instant of the frame, the deadline's poll or the request that ended it. */
+    readonly atMs: number;
+}
+
+/**
+ * A publisher's stand-in did not offer a send again that a repair request asked for, because the product's WS client
+ * would not have: `send-ended`, the send `msgId` was asked for and had ended; `send-expired`, it was asked for and its
+ * lifetime was over; `named-send-expired`, the request named `msgId`, whose lifetime was over, so the request raised
+ * no repair hint at all and nothing it asked for was looked at. The first two are one for each send and execution of
+ * a request, the third one for each request.
+ */
+export interface OrderedSendCellDeclinedRepair {
+    readonly msgId: string;
+    readonly reason: 'send-ended' | 'send-expired' | 'named-send-expired';
     readonly atMs: number;
 }
 
@@ -148,6 +179,10 @@ export interface OrderedSendCellObservations {
     readonly receipts: readonly OrderedSendCellReceipt[];
     readonly controls: readonly OrderedSendCellControl[];
     readonly unclassifiedControls: readonly OrderedSendCellUnclassifiedControl[];
+    /** Empty in a run under the sender recovery `none`. */
+    readonly sendEnds: readonly OrderedSendCellSendEnd[];
+    /** Empty in a run under the sender recovery `none`. */
+    readonly declinedRepairs: readonly OrderedSendCellDeclinedRepair[];
     /** The instant the run stopped observing: nothing that happened later is in any list. */
     readonly observationEndedAtMs: number;
 }

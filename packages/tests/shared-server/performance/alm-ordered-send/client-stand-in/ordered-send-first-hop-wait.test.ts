@@ -17,9 +17,9 @@ function createWait(messageExpiresAtMs: number): OrderedSendFirstHopWait {
     });
 }
 
-/** The wait a turn leaves: the one it holds on, or the one it was given once that has ended. */
+/** The wait a turn leaves: the one it holds on, or the one it was given once its retries are spent or its message expired. */
 function toNextWait(turn: OrderedSendFirstHopTurn, wait: OrderedSendFirstHopWait): OrderedSendFirstHopWait {
-    return turn.kind === 'ended' ? wait : turn.wait;
+    return turn.kind === 'waiting' || turn.kind === 'resend' ? turn.wait : wait;
 }
 
 describe('computeOrderedSendFirstHopTurn', () => {
@@ -41,7 +41,7 @@ describe('computeOrderedSendFirstHopTurn', () => {
         expect(computeOrderedSendFirstHopTurn(resent, 5_012).kind).toBe('waiting');
     });
 
-    it('resends three times, two seconds apart, and ends at the deadline after the third', () => {
+    it('resends three times, two seconds apart, and is exhausted at the deadline after the third, 8 s after the offer', () => {
         const turns: [string, number][] = [];
         let wait = createWait(31_000);
         for (const nowMs of [3_000, 5_000, 7_000, 9_000, 11_000]) {
@@ -50,11 +50,11 @@ describe('computeOrderedSendFirstHopTurn', () => {
             turns.push([turn.kind, wait.snapshot.attempts]);
         }
 
-        expect(turns).toEqual([['resend', 1], ['resend', 2], ['resend', 3], ['ended', 3], ['ended', 3]]);
+        expect(turns).toEqual([['resend', 1], ['resend', 2], ['resend', 3], ['exhausted', 3], ['exhausted', 3]]);
     });
 
-    it('ends without a resend once its message\'s lifetime is over', () => {
-        expect(computeOrderedSendFirstHopTurn(createWait(3_000), 3_000).kind).toBe('ended');
+    it('is expired, with no resend, once its message\'s lifetime is over, whatever retries it has left', () => {
+        expect(computeOrderedSendFirstHopTurn(createWait(3_000), 3_000)).toEqual({ kind: 'expired' });
         expect(computeOrderedSendFirstHopTurn(createWait(3_000.5), 3_000).kind).toBe('resend');
     });
 });

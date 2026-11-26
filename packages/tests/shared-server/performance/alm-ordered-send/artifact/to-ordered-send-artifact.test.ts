@@ -70,6 +70,8 @@ const INPUT: ToOrderedSendArtifactInput = {
             receipts: [],
             controls: [],
             unclassifiedControls: [],
+            sendEnds: [],
+            declinedRepairs: [],
             observationEndedAtMs: 76_500.25
         },
         runtime: { sendWindow: SEND_WINDOW, applicationPoolMaxConnections: 10 }

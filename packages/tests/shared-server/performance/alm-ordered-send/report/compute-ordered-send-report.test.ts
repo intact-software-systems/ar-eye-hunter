@@ -16,6 +16,8 @@ const NO_OBSERVATIONS: OrderedSendCellObservations = {
     receipts: [],
     controls: [],
     unclassifiedControls: [],
+    sendEnds: [],
+    declinedRepairs: [],
     observationEndedAtMs: 0
 };
 
@@ -1075,7 +1077,9 @@ describe('computeOrderedSendReport', () => {
                 receiptsOfUnknownMessage: 6,
                 controlsOfUnknownMessage: 7,
                 unclassifiedControls: 8,
-                resendsOfUnknownMessage: 9
+                resendsOfUnknownMessage: 9,
+                sendEndsOfUnknownMessage: 0,
+                declinedRepairsOfUnknownMessage: 0
             });
             expect(report.sends.attempted).toBe(2);
             expect(report.delivery).toMatchObject({ handedToApplication: 1, copiesExpected: 3, copiesRead: 1 });
@@ -1167,6 +1171,18 @@ describe('computeOrderedSendReport', () => {
                     'first-hop': { count: 0, byAcceptance: NO_OFFERS_BY_ACCEPTANCE, sendsResent: 0, largestAttempt: null }
                 }
             },
+            standIn: {
+                sendsEnded: 0,
+                endsByCause: {
+                    'first-hop-exhausted': 0,
+                    'terminal-receipt': 0,
+                    'terminal-nack': 0,
+                    'repair-budget-spent': 0,
+                    expired: 0
+                },
+                repairsDeclined: 0,
+                repairsDeclinedByReason: { 'send-ended': 0, 'send-expired': 0, 'named-send-expired': 0 }
+            },
             unmatched: {
                 sendsWithARepeatedMsgId: 0,
                 arrivalsOfUnknownMessage: 0,
@@ -1176,7 +1192,9 @@ describe('computeOrderedSendReport', () => {
                 receiptsOfASendNotAccepted: 0,
                 controlsOfUnknownMessage: 0,
                 unclassifiedControls: 0,
-                resendsOfUnknownMessage: 0
+                resendsOfUnknownMessage: 0,
+                sendEndsOfUnknownMessage: 0,
+                declinedRepairsOfUnknownMessage: 0
             }
         });
     });

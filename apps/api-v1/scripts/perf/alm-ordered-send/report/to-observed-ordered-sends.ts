@@ -1,11 +1,13 @@
 import type {
     OrderedSendCellArrival,
     OrderedSendCellControl,
+    OrderedSendCellDeclinedRepair,
     OrderedSendCellHandOff,
     OrderedSendCellObservations,
     OrderedSendCellReceipt,
     OrderedSendCellResend,
-    OrderedSendCellSend
+    OrderedSendCellSend,
+    OrderedSendCellSendEnd
 } from '../ordered-send-cell-observations.ts';
 
 /** One write of a copy to its recipient's socket, as the cell read it there: its instant and its place in `arrivals`. */
@@ -34,6 +36,10 @@ export interface ObservedOrderedSend {
     readonly controls: readonly OrderedSendCellControl[];
     /** The later offers of the send, in the order offered. */
     readonly resends: readonly OrderedSendCellResend[];
+    /** The ends its publisher's stand-in recorded of the send: at most one in a run of the cell. */
+    readonly sendEnds: readonly OrderedSendCellSendEnd[];
+    /** The repairs its publisher's stand-in declined of the send, in the order declined. */
+    readonly declinedRepairs: readonly OrderedSendCellDeclinedRepair[];
 }
 
 interface PositionedOrderedSendArrival {
@@ -53,13 +59,17 @@ export function toObservedOrderedSends(observations: OrderedSendCellObservations
     const receiptsByMsgId = Map.groupBy(observations.receipts, (receipt) => receipt.msgId);
     const controlsByMsgId = Map.groupBy(observations.controls, (control) => control.msgId);
     const resendsByMsgId = Map.groupBy(observations.resends, (resend) => resend.msgId);
+    const sendEndsByMsgId = Map.groupBy(observations.sendEnds, (end) => end.msgId);
+    const declinedRepairsByMsgId = Map.groupBy(observations.declinedRepairs, (declined) => declined.msgId);
     return [...toOrderedSendByMsgId(observations.sends).values()].map((send) => ({
         send,
         copies: toObservedOrderedSendCopies(send, arrivalsByMsgId.get(send.msgId) ?? []),
         handOffs: handOffsByMsgId.get(send.msgId) ?? [],
         receipts: receiptsByMsgId.get(send.msgId) ?? [],
         controls: controlsByMsgId.get(send.msgId) ?? [],
-        resends: resendsByMsgId.get(send.msgId) ?? []
+        resends: resendsByMsgId.get(send.msgId) ?? [],
+        sendEnds: sendEndsByMsgId.get(send.msgId) ?? [],
+        declinedRepairs: declinedRepairsByMsgId.get(send.msgId) ?? []
     }));
 }
 

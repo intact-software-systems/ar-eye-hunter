@@ -107,8 +107,9 @@ const ORDERED_SEND_SCOPE = { applicationId: 'ordered-send-cell', workspaceId: 'd
 const TAIL_POLL_MS = 25;
 
 /**
- * How often the run looks for a first-hop resend that has come due: a resend leaves at most this long after its
- * deadline, 2 s after the offer before it. The product's client finds its deadline by its own work timer.
+ * How often the run looks for a first-hop resend that has come due, a wait whose retries are spent and a send whose
+ * lifetime is over: a resend leaves, and a send ends, at most this long after its deadline. The product's client
+ * finds its deadline by its own work timer.
  */
 const FIRST_HOP_POLL_MS = 10;
 
@@ -280,12 +281,16 @@ async function observeOrderedSends(
 
     const reads = run.log.endObservation();
     const offers = run.ledger.close();
+    const standInRecord = {
+        sendEnds: [...(run.clientStandIn?.getSendEnds() ?? [])],
+        declinedRepairs: [...(run.clientStandIn?.getDeclinedRepairs() ?? [])]
+    };
     await Promise.all([...run.answersInFlight, firstHopResends]);
     if (run.ledger.getFailures().length > 0) {
         throw new AggregateError(run.ledger.getFailures(), 'An offer of the ordered-send cell threw.');
     }
     return {
-        observations: { ...offers, ...reads },
+        observations: { ...offers, ...reads, ...standInRecord },
         runtime: { sendWindow, applicationPoolMaxConnections: run.instances[0].applicationPoolMaxConnections }
     };
 }
@@ -423,18 +428,25 @@ async function offerRepairAnswer(
             return;
         }
         answer.reoffers.forEach((reoffer) => reofferOrderedSend(reoffer, run));
-        answer = answer.followUp === undefined ? undefined : clientStandIn.serveRepairFollowUp(answer.followUp);
+        answer = answer.followUp === undefined
+            ? undefined
+            : clientStandIn.serveRepairFollowUp(answer.followUp, run.clock.nowMs());
     }
 }
 
-/** Offers each first-hop resend within one poll of its deadline, while observation lasts. */
+/**
+ * Offers each first-hop resend within one poll of its deadline, while observation lasts, and has the stand-in end
+ * within one poll each send whose retries are spent or whose lifetime is over.
+ */
 async function offerFirstHopResendsWhenDue(
     clientStandIn: OrderedSendClientStandIn,
     run: OrderedSendRun
 ): Promise<void> {
     await run.clock.sleep(FIRST_HOP_POLL_MS);
     while (run.log.isObserving()) {
-        clientStandIn.takeFirstHopResendsDue(run.clock.nowMs()).forEach((reoffer) => reofferOrderedSend(reoffer, run));
+        const nowMs = run.clock.nowMs();
+        clientStandIn.takeFirstHopResendsDue(nowMs).forEach((reoffer) => reofferOrderedSend(reoffer, run));
+        clientStandIn.endExpiredSends(nowMs);
         await run.clock.sleep(FIRST_HOP_POLL_MS);
     }
 }

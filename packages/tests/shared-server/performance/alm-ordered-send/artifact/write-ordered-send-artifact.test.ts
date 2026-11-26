@@ -43,6 +43,8 @@ const ARTIFACT = toOrderedSendArtifact({
             receipts: [],
             controls: [],
             unclassifiedControls: [],
+            sendEnds: [],
+            declinedRepairs: [],
             observationEndedAtMs: 0
         },
         runtime: {

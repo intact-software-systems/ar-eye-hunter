@@ -12,14 +12,22 @@ const SERVER = 'default-qbox-server';
 const TRACK = '["ordered-send-cell","default","room-1"]:session-01-a:0';
 const NO_ATTEMPTS_SERVED: ReadonlySet<string> = new Set();
 
-/** The sends 1 to `count` of the publisher's track, none of them repaired yet, each with four repairs to spend. */
+/** Every request here is served at this instant, one second before the sends' lifetime ends. */
+const NOW_MS = 30_000;
+
+/**
+ * The sends 1 to `count` of the publisher's track, none of them repaired yet, each with four repairs to spend, alive
+ * until 31,000 ms and not ended.
+ */
 function toSentMessages(count: number): OrderedSendSentMessage[] {
     return Array.from({ length: count }, (_, index) => ({
         msgId: `session-01-a-send-${index + 1}`,
         trackKey: TRACK,
         seq: index + 1,
         maxRepairs: 4,
-        repairAttempts: 0
+        repairAttempts: 0,
+        expiresAtMs: 31_000,
+        ended: false
     }));
 }
 
@@ -41,7 +49,8 @@ describe('computeOrderedSendRepairReoffers', () => {
             hint: toGapHint([{ from: 3, to: 4 }, { from: 6, to: 6 }], 1),
             namedMsgId: 'session-01-a-send-8',
             sentMessages: toSentMessages(8),
-            servedAttemptIdentities: NO_ATTEMPTS_SERVED
+            servedAttemptIdentities: NO_ATTEMPTS_SERVED,
+            nowMs: NOW_MS
         });
 
         expect(repair.reoffers.map(({ msgId, attempt }) => [msgId, attempt])).toEqual([
@@ -58,7 +67,8 @@ describe('computeOrderedSendRepairReoffers', () => {
             hint: toGapHint([{ from: 3, to: 3 }], 1),
             namedMsgId: 'session-01-a-send-4',
             sentMessages: toSentMessages(8),
-            servedAttemptIdentities: NO_ATTEMPTS_SERVED
+            servedAttemptIdentities: NO_ATTEMPTS_SERVED,
+            nowMs: NOW_MS
         });
         const served = new Set(first.reoffers.map(({ attemptIdentity }) => attemptIdentity));
 
@@ -66,13 +76,15 @@ describe('computeOrderedSendRepairReoffers', () => {
             hint: toGapHint([{ from: 3, to: 3 }, { from: 5, to: 5 }], 1),
             namedMsgId: 'session-01-a-send-6',
             sentMessages: toSentMessages(8),
-            servedAttemptIdentities: served
+            servedAttemptIdentities: served,
+            nowMs: NOW_MS
         });
         const renewed = computeOrderedSendRepairReoffers({
             hint: toGapHint([{ from: 3, to: 3 }], 2),
             namedMsgId: 'session-01-a-send-4',
             sentMessages: toSentMessages(8).map((sent) => sent.seq === 3 ? { ...sent, repairAttempts: 1 } : sent),
-            servedAttemptIdentities: served
+            servedAttemptIdentities: served,
+            nowMs: NOW_MS
         });
 
         expect(first.reoffers.map(({ msgId }) => msgId)).toEqual(['session-01-a-send-3']);
@@ -85,13 +97,15 @@ describe('computeOrderedSendRepairReoffers', () => {
             hint: toGapHint([{ from: 7, to: 10 }], 1),
             namedMsgId: 'session-01-a-send-8',
             sentMessages: toSentMessages(8),
-            servedAttemptIdentities: NO_ATTEMPTS_SERVED
+            servedAttemptIdentities: NO_ATTEMPTS_SERVED,
+            nowMs: NOW_MS
         });
         const onAnotherTrack = computeOrderedSendRepairReoffers({
             hint: { ...toGapHint([{ from: 3, to: 3 }], 1), orderingTrackKey: `${TRACK}-of-another-epoch` },
             namedMsgId: 'session-01-a-send-8',
             sentMessages: toSentMessages(8),
-            servedAttemptIdentities: NO_ATTEMPTS_SERVED
+            servedAttemptIdentities: NO_ATTEMPTS_SERVED,
+            nowMs: NOW_MS
         });
 
         expect(pastTheLastOffer.reoffers.map(({ msgId }) => msgId))
@@ -99,21 +113,101 @@ describe('computeOrderedSendRepairReoffers', () => {
         expect(onAnotherTrack.reoffers).toEqual([]);
     });
 
-    it('spends at most the repairs the client plans for a message, and none for a message it plans none for', () => {
+    it('re-offers a send with a repair left, names one whose repairs are spent for its publisher to end, and passes over one the client plans no repair for', () => {
+        const [one, two, three] = toSentMessages(3);
         const sentMessages: OrderedSendSentMessage[] = [
-            { msgId: 'session-01-a-send-1', trackKey: TRACK, seq: 1, maxRepairs: 4, repairAttempts: 3 },
-            { msgId: 'session-01-a-send-2', trackKey: TRACK, seq: 2, maxRepairs: 4, repairAttempts: 4 },
-            { msgId: 'session-01-a-send-3', trackKey: TRACK, seq: 3, maxRepairs: 0, repairAttempts: 0 }
+            { ...one, repairAttempts: 3 },
+            { ...two, repairAttempts: 4 },
+            { ...three, maxRepairs: undefined }
         ];
 
         const repair = computeOrderedSendRepairReoffers({
             hint: toGapHint([{ from: 1, to: 3 }], 5),
             namedMsgId: 'session-01-a-send-4',
             sentMessages,
-            servedAttemptIdentities: NO_ATTEMPTS_SERVED
+            servedAttemptIdentities: NO_ATTEMPTS_SERVED,
+            nowMs: NOW_MS
         });
 
         expect(repair.reoffers.map(({ msgId, attempt }) => [msgId, attempt])).toEqual([['session-01-a-send-1', 4]]);
+        expect(repair.budgetSpentMsgIds).toEqual(['session-01-a-send-2']);
+        expect(repair.declined).toEqual([]);
+    });
+
+    it('finds no budget spent for a request number it has served before: the same gap reported again ends nothing', () => {
+        const hint = toGapHint([{ from: 2, to: 2 }], 4);
+        const fourthRepair = computeOrderedSendRepairReoffers({
+            hint,
+            namedMsgId: 'session-01-a-send-3',
+            sentMessages: toSentMessages(3).map((sent) => sent.seq === 2 ? { ...sent, repairAttempts: 3 } : sent),
+            servedAttemptIdentities: NO_ATTEMPTS_SERVED,
+            nowMs: NOW_MS
+        });
+
+        const reportedAgain = computeOrderedSendRepairReoffers({
+            hint,
+            namedMsgId: 'session-01-a-send-3',
+            sentMessages: toSentMessages(3).map((sent) => sent.seq === 2 ? { ...sent, repairAttempts: 4 } : sent),
+            servedAttemptIdentities: new Set(fourthRepair.reoffers.map(({ attemptIdentity }) => attemptIdentity)),
+            nowMs: NOW_MS
+        });
+
+        expect(fourthRepair.reoffers.map(({ msgId, attempt }) => [msgId, attempt])).toEqual([['session-01-a-send-2', 4]]);
+        expect(reportedAgain).toEqual({ reoffers: [], declined: [], budgetSpentMsgIds: [], followUpHint: undefined });
+    });
+
+    it('re-offers no send its publisher has ended, whatever repairs it has left, and says which it declined', () => {
+        const repair = computeOrderedSendRepairReoffers({
+            hint: toGapHint([{ from: 2, to: 4 }], 1),
+            namedMsgId: 'session-01-a-send-5',
+            sentMessages: toSentMessages(5).map((sent) => sent.seq === 3 ? { ...sent, ended: true } : sent),
+            servedAttemptIdentities: NO_ATTEMPTS_SERVED,
+            nowMs: NOW_MS
+        });
+
+        expect(repair.reoffers.map(({ msgId }) => msgId)).toEqual(['session-01-a-send-2', 'session-01-a-send-4']);
+        expect(repair.declined).toEqual([{ msgId: 'session-01-a-send-3', reason: 'send-ended' }]);
+        expect(repair.budgetSpentMsgIds).toEqual([]);
+    });
+
+    it('re-offers no send whose lifetime is over at the instant the request is served, ended or not', () => {
+        const sentMessages = toSentMessages(4).map((sent) => {
+            if (sent.seq === 1) {
+                return { ...sent, expiresAtMs: 30_000 };
+            }
+            return sent.seq === 2 ? { ...sent, expiresAtMs: 29_000, ended: true } : { ...sent, expiresAtMs: 30_000.5 };
+        });
+
+        const repair = computeOrderedSendRepairReoffers({
+            hint: toGapHint([{ from: 1, to: 3 }], 1),
+            namedMsgId: 'session-01-a-send-4',
+            sentMessages,
+            servedAttemptIdentities: NO_ATTEMPTS_SERVED,
+            nowMs: NOW_MS
+        });
+
+        expect(repair.reoffers.map(({ msgId }) => msgId)).toEqual(['session-01-a-send-3']);
+        expect(repair.declined).toEqual([
+            { msgId: 'session-01-a-send-1', reason: 'send-expired' },
+            { msgId: 'session-01-a-send-2', reason: 'send-expired' }
+        ]);
+    });
+
+    it('declines the send a request without a range names once that send has ended', () => {
+        const repair = computeOrderedSendRepairReoffers({
+            hint: { trigger: 'repair', requestedByPeerId: SERVER, missingRanges: [], failedPeerIds: [] },
+            namedMsgId: 'session-01-a-send-2',
+            sentMessages: toSentMessages(2).map((sent) => sent.seq === 2 ? { ...sent, ended: true } : sent),
+            servedAttemptIdentities: NO_ATTEMPTS_SERVED,
+            nowMs: NOW_MS
+        });
+
+        expect(repair).toEqual({
+            reoffers: [],
+            declined: [{ msgId: 'session-01-a-send-2', reason: 'send-ended' }],
+            budgetSpentMsgIds: [],
+            followUpHint: undefined
+        });
     });
 
     it('serves 32 sequences of one request at a time and leaves the rest of its ranges as one follow-up hint', () => {
@@ -123,13 +217,15 @@ describe('computeOrderedSendRepairReoffers', () => {
             hint,
             namedMsgId: 'session-01-a-send-45',
             sentMessages: toSentMessages(45),
-            servedAttemptIdentities: NO_ATTEMPTS_SERVED
+            servedAttemptIdentities: NO_ATTEMPTS_SERVED,
+            nowMs: NOW_MS
         });
         const secondPage = computeOrderedSendRepairReoffers({
             hint: firstPage.followUpHint!,
             namedMsgId: 'session-01-a-send-45',
             sentMessages: toSentMessages(45),
-            servedAttemptIdentities: new Set(firstPage.reoffers.map(({ attemptIdentity }) => attemptIdentity))
+            servedAttemptIdentities: new Set(firstPage.reoffers.map(({ attemptIdentity }) => attemptIdentity)),
+            nowMs: NOW_MS
         });
 
         const firstThirtyTwoMissingSeqs = [...Array.from({ length: 20 }, (_, index) => index + 1), 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33];
@@ -154,13 +250,15 @@ describe('computeOrderedSendRepairReoffers', () => {
             hint,
             namedMsgId: 'session-01-a-send-5',
             sentMessages: toSentMessages(8),
-            servedAttemptIdentities: NO_ATTEMPTS_SERVED
+            servedAttemptIdentities: NO_ATTEMPTS_SERVED,
+            nowMs: NOW_MS
         });
         const again = computeOrderedSendRepairReoffers({
             hint,
             namedMsgId: 'session-01-a-send-5',
             sentMessages: toSentMessages(8),
-            servedAttemptIdentities: new Set(first.reoffers.map(({ attemptIdentity }) => attemptIdentity))
+            servedAttemptIdentities: new Set(first.reoffers.map(({ attemptIdentity }) => attemptIdentity)),
+            nowMs: NOW_MS
         });
 
         expect(first.reoffers.map(({ msgId, attempt }) => [msgId, attempt])).toEqual([['session-01-a-send-5', 1]]);

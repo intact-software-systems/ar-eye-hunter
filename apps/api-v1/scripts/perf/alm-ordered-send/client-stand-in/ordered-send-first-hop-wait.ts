@@ -21,10 +21,13 @@ export interface CreateOrderedSendFirstHopWaitInput {
     readonly messageExpiresAtMs: number;
 }
 
-/** What a wait does at one instant: nothing yet, or a resend, each with the wait it then holds, or its end. */
+/**
+ * What a wait does at one instant: nothing yet, or a resend, each with the wait it then holds; or it finds its retries
+ * spent, `exhausted`, or its message's lifetime over, `expired`.
+ */
 export type OrderedSendFirstHopTurn =
     | { readonly kind: 'waiting' | 'resend'; readonly wait: OrderedSendFirstHopWait; }
-    | { readonly kind: 'ended'; };
+    | { readonly kind: 'exhausted' | 'expired'; };
 
 /**
  * The wait the product's client records with the dispatch that writes a send's first frame
@@ -50,9 +53,10 @@ export function createOrderedSendFirstHopWait(input: CreateOrderedSendFirstHopWa
 /**
  * What the wait does at `nowMs`, by the product's own `computeALOutboundFirstHopTimeout`: before its deadline
  * nothing; at it, while a retry is left and the message lives, a resend and a deadline one timeout after `nowMs`;
- * with its retries spent or its message's lifetime over, its end. A frame here leaves the moment it is offered, so
- * none is ever held, and no re-plan is refused. The product then ends the message as `receipt-exhausted`; a
- * publisher of the cell only stops resending it.
+ * with its retries spent, `exhausted`, where the product ends the message as `receipt-exhausted`
+ * (`ALOutboundFirstHopWait.commitDecision`); with its message's lifetime over, `expired`, where the product drops the
+ * wait of a message that is no longer live. A frame here leaves the moment it is offered, so none is ever held, and
+ * no re-plan is refused.
  */
 export function computeOrderedSendFirstHopTurn(wait: OrderedSendFirstHopWait, nowMs: number): OrderedSendFirstHopTurn {
     const decision = computeALOutboundFirstHopTimeout({
@@ -69,10 +73,13 @@ export function computeOrderedSendFirstHopTurn(wait: OrderedSendFirstHopWait, no
             return { kind: 'waiting', wait: { ...wait, snapshot: decision.next } };
         case 'resend':
             return { kind: 'resend', wait: { ...wait, snapshot: decision.next } };
-        case 'ended':
-        case 'orphaned':
         case 'exhausted':
+            return { kind: 'exhausted' };
+        case 'orphaned':
+            return { kind: 'expired' };
+        case 'ended':
         case 'refused':
-            return { kind: 'ended' };
+            // The product answers `ended` for no wait and `refused` for a refused re-plan: neither is given above.
+            throw new TypeError(`A held first-hop wait with no refused re-plan was answered ${decision.kind}.`);
     }
 }

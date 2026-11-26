@@ -19,6 +19,8 @@ const NO_FIGURES: OrderedSendReport = computeOrderedSendReport({
     receipts: [],
     controls: [],
     unclassifiedControls: [],
+    sendEnds: [],
+    declinedRepairs: [],
     observationEndedAtMs: 0
 });
 
@@ -118,6 +120,18 @@ const STALLED_RUN: OrderedSendSummarySource = {
                 }
             }
         },
+        standIn: {
+            sendsEnded: 197,
+            endsByCause: {
+                'first-hop-exhausted': 91,
+                'terminal-receipt': 23,
+                'terminal-nack': 0,
+                'repair-budget-spent': 0,
+                expired: 83
+            },
+            repairsDeclined: 14,
+            repairsDeclinedByReason: { 'send-ended': 12, 'send-expired': 0, 'named-send-expired': 2 }
+        },
         unmatched: NO_FIGURES.unmatched
     }
 };
@@ -145,6 +159,8 @@ describe('toOrderedSendSummary', () => {
             'sends that drew a nack 12, a repair request 12',
             'resends: repair 12 (answered duplicate 12), first-hop 570 (answered admitted 2, duplicate 568); ' +
             'sends offered again 190',
+            'sends the stand-in ended: 197 (first-hop-exhausted 91, terminal-receipt 23, expired 83); ' +
+            'repairs it declined for an ended or expired send: 14 (send-ended 12, named-send-expired 2)',
             'before each track\'s first control (5 of 5 tracks drew one): 37 sends, 434 of 518 copies written; ' +
             'due time to first write over expected copies p50 45.0 ms, p95 not reached',
             'send window: 19.9 s; event-loop lag p50 0.1 ms, p95 2.0 ms, p99 10.7 ms, max 31.0 ms, ' +
@@ -232,11 +248,27 @@ describe('toOrderedSendSummary', () => {
             }
         };
 
-        expect(toOrderedSendSummary(withStrays).slice(15)).toEqual([
+        expect(toOrderedSendSummary(withStrays).slice(16)).toEqual([
             'recorded beside the sends the cell knows: arrivalsOfUnknownMessage 2, unclassifiedControls 1',
             'delays below zero, in no figure: sends.latenessMs 1, receipts.offerToCompleteMs 2',
             'copies written before their send\'s offer was read, in no delay figure: 3'
         ]);
+    });
+
+    it('says the stand-in ended and declined nothing when it did neither, and prints no such line for a run without one', () => {
+        const nothingEnded: OrderedSendSummarySource = {
+            ...STALLED_RUN,
+            report: { ...STALLED_RUN.report, standIn: NO_FIGURES.standIn }
+        };
+        const withoutStandIn: OrderedSendSummarySource = {
+            ...nothingEnded,
+            shape: { ...STALLED_RUN.shape, senderRecovery: 'none' }
+        };
+
+        expect(toOrderedSendSummary(nothingEnded)[13]).toBe(
+            'sends the stand-in ended: none; repairs it declined for an ended or expired send: none'
+        );
+        expect(toOrderedSendSummary(withoutStandIn).join('\n')).not.toContain('stand-in ended');
     });
 
     it('says a delay has no sample when no send reached it', () => {

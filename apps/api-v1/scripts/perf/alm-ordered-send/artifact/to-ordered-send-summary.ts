@@ -93,7 +93,7 @@ function toReceiptLines(report: OrderedSendReport): readonly string[] {
 
 /** What the server asked of the publishers, what they offered again, and the server's work before it first asked. */
 function toRecoveryLines(source: OrderedSendSummarySource): readonly string[] {
-    const { controls, resends, beforeFirstControl } = source.report;
+    const { controls, resends, beforeFirstControl, standIn } = source.report;
     const beforeFirstControlDelays = beforeFirstControl.dueToFirstReadOverExpectedCopiesMs;
     return [
         controls.byType.nack + controls.byType.repair === 0
@@ -107,6 +107,13 @@ function toRecoveryLines(source: OrderedSendSummarySource): readonly string[] {
             : `resends: repair ${toResendsOfCause(resends.byCause.repair)}, ` +
                 `first-hop ${toResendsOfCause(resends.byCause['first-hop'])}; ` +
                 `sends offered again ${resends.sendsResent}`,
+        ...(source.shape.senderRecovery === 'client-stand-in'
+            ? [
+                `sends the stand-in ended: ${toCountWithBreakdown(standIn.sendsEnded, standIn.endsByCause)}; ` +
+                `repairs it declined for an ended or expired send: ` +
+                toCountWithBreakdown(standIn.repairsDeclined, standIn.repairsDeclinedByReason)
+            ]
+            : []),
         `before each track's first control (${beforeFirstControl.tracksWithAControl} of ` +
         `${source.shape.publishers} tracks drew one): ${beforeFirstControl.sends} sends, ` +
         `${beforeFirstControl.copiesRead} of ${beforeFirstControl.copiesExpected} copies written; ` +
@@ -150,6 +157,11 @@ function toStrayLines(report: OrderedSendReport): readonly string[] {
 
 function toResendsOfCause(resends: OrderedSendResendCauseFigures): string {
     return resends.count === 0 ? '0' : `${resends.count} (answered ${toCountsAboveZero(resends.byAcceptance)})`;
+}
+
+/** A count with the keys that make it up, or `none` for 0. */
+function toCountWithBreakdown(count: number, counts: Readonly<Record<string, number>>): string {
+    return count === 0 ? 'none' : `${count} (${toCountsAboveZero(counts)})`;
 }
 
 function toP50AndP95(delays: OrderedSendDelaySummary): string {

@@ -29,18 +29,38 @@ function toFrame(seq: number): string {
     return `{"frame-of-send":${seq}}`;
 }
 
-/** A stand-in whose publisher has offered the sends 1 to `count` of its track, every one at 1,000 ms. */
+function offerSend(standIn: OrderedSendClientStandIn, seq: number, offeredAtMs: number): void {
+    standIn.recordFirstOffer({
+        send: toSend(seq),
+        message: toOrderedSendMessage({ send: toSend(seq), roomRef: ROOM, createdAtEpochMs: 1_800_000_000_000 }),
+        frame: toFrame(seq),
+        offeredAtMs
+    });
+}
+
+/**
+ * A stand-in whose publisher has offered the sends 1 to `count` of its track, every one at 1,000 ms. A send lives the
+ * 30 s of the `notification` channel, so each is alive until 31,000 ms.
+ */
 function createStandInAfterOffers(count: number): OrderedSendClientStandIn {
     const standIn = new OrderedSendClientStandIn(SERVER);
     for (let seq = 1; seq <= count; seq += 1) {
-        standIn.recordFirstOffer({
-            send: toSend(seq),
-            message: toOrderedSendMessage({ send: toSend(seq), roomRef: ROOM, createdAtEpochMs: 1_800_000_000_000 }),
-            frame: toFrame(seq),
-            offeredAtMs: 1_000
-        });
+        offerSend(standIn, seq, 1_000);
     }
     return standIn;
+}
+
+/** The same frame, read at another instant than 1,200 ms. */
+function readAt(read: OrderedSendSocketRead, atMs: number): OrderedSendSocketRead {
+    switch (read.kind) {
+        case 'receipt':
+            return { ...read, receipt: { ...read.receipt, atMs } };
+        case 'control':
+            return { ...read, control: { ...read.control, atMs } };
+        case 'arrival':
+        case 'unclassified-control':
+            return read;
+    }
 }
 
 function toReceiptRead(seq: number, phase: ALReceiptPayload['phase']): OrderedSendSocketRead {
@@ -156,22 +176,30 @@ describe('OrderedSendClientStandIn', () => {
         expect(renewalAnswer.reoffers).toEqual([{ send: toSend(4), frame: toFrame(4), cause: 'repair', attempt: 2 }]);
     });
 
-    it('spends four repairs on a send, as the product\'s client plans, and answers no fifth request for it', () => {
+    it('spends four repairs on a send, as the product\'s client plans, and ends the send when a fifth request finds them spent', () => {
         const standIn = createStandInAfterOffers(2);
 
-        const attempts = [1, 2, 3, 4, 5].map((gapRequestNumber) =>
-            standIn.acceptSocketRead(PUBLISHER, toGapNackRead(2, [{ from: 1, to: 1 }], gapRequestNumber))
-                .reoffers.map(({ attempt }) => attempt)
+        const attempts = [1, 2, 3, 4, 5, 6].map((gapRequestNumber) =>
+            standIn.acceptSocketRead(
+                PUBLISHER,
+                readAt(toGapNackRead(2, [{ from: 1, to: 1 }], gapRequestNumber), 1_000 + gapRequestNumber * 100)
+            ).reoffers.map(({ attempt }) => attempt)
         );
 
-        expect(attempts).toEqual([[1], [2], [3], [4], []]);
+        expect(attempts).toEqual([[1], [2], [3], [4], [], []]);
+        expect(standIn.getSendEnds()).toEqual([
+            { msgId: 'session-01-a-send-1', cause: 'repair-budget-spent', atMs: 1_500 }
+        ]);
+        expect(standIn.getDeclinedRepairs()).toEqual([
+            { msgId: 'session-01-a-send-1', reason: 'send-ended', atMs: 1_600 }
+        ]);
     });
 
     it('serves a wide gap 32 sends at a time, and the rest when its follow-up is served', () => {
         const standIn = createStandInAfterOffers(40);
 
         const firstPage = standIn.acceptSocketRead(PUBLISHER, toGapNackRead(40, [{ from: 1, to: 39 }], 1));
-        const secondPage = standIn.serveRepairFollowUp(firstPage.followUp!);
+        const secondPage = standIn.serveRepairFollowUp(firstPage.followUp!, 1_201);
 
         expect(firstPage.reoffers.map(({ send }) => send.seq)).toEqual(Array.from({ length: 32 }, (_, index) => index + 1));
         expect(secondPage.reoffers.map(({ send }) => send.seq)).toEqual([33, 34, 35, 36, 37, 38, 39]);
@@ -186,5 +214,126 @@ describe('OrderedSendClientStandIn', () => {
         expect(standIn.acceptSocketRead('session-02-b', toReceiptRead(1, 'admitted')))
             .toEqual({ reoffers: [], followUp: undefined });
         expect(standIn.takeFirstHopResendsDue(3_000)).toHaveLength(3);
+    });
+
+    it('ends a send whose three first-hop resends drew no answer, 8 s after its offer, and offers it again by no path', () => {
+        const standIn = createStandInAfterOffers(2);
+        [3_000, 5_000, 7_000].forEach((nowMs) => standIn.takeFirstHopResendsDue(nowMs));
+
+        expect(standIn.getSendEnds()).toEqual([]);
+        expect(standIn.takeFirstHopResendsDue(9_000)).toEqual([]);
+        expect(standIn.getSendEnds()).toEqual([
+            { msgId: 'session-01-a-send-1', cause: 'first-hop-exhausted', atMs: 9_000 },
+            { msgId: 'session-01-a-send-2', cause: 'first-hop-exhausted', atMs: 9_000 }
+        ]);
+
+        // The gap NACK names send 2, which has ended too: it still raises its hint, and the send it asks for is declined.
+        const gapAnswer = standIn.acceptSocketRead(PUBLISHER, readAt(toGapNackRead(2, [{ from: 1, to: 1 }], 1), 9_500));
+        expect(gapAnswer).toEqual({ reoffers: [], followUp: undefined });
+        expect(standIn.takeFirstHopResendsDue(11_000)).toEqual([]);
+        expect(standIn.getDeclinedRepairs()).toEqual([
+            { msgId: 'session-01-a-send-1', reason: 'send-ended', atMs: 9_500 }
+        ]);
+        expect(standIn.getSendEnds()).toHaveLength(2);
+    });
+
+    it('ends a send on a complete or a timed-out receipt its publisher read, and not on an admitted one', () => {
+        const standIn = createStandInAfterOffers(4);
+
+        standIn.acceptSocketRead(PUBLISHER, toReceiptRead(1, 'admitted'));
+        standIn.acceptSocketRead(PUBLISHER, readAt(toReceiptRead(2, 'complete'), 1_300.5));
+        standIn.acceptSocketRead(PUBLISHER, readAt(toReceiptRead(3, 'timed-out'), 1_400));
+        standIn.acceptSocketRead(PUBLISHER, readAt(toReceiptRead(2, 'complete'), 1_450));
+        standIn.acceptSocketRead('session-02-b', readAt(toReceiptRead(4, 'complete'), 1_460));
+
+        expect(standIn.getSendEnds()).toEqual([
+            { msgId: 'session-01-a-send-2', cause: 'terminal-receipt', atMs: 1_300.5 },
+            { msgId: 'session-01-a-send-3', cause: 'terminal-receipt', atMs: 1_400 }
+        ]);
+    });
+
+    it('re-offers nothing for a repair of a send it has ended, and re-offers the live sends the same request asks for', () => {
+        const standIn = createStandInAfterOffers(4);
+        standIn.acceptSocketRead(PUBLISHER, toReceiptRead(1, 'admitted'));
+        standIn.acceptSocketRead(PUBLISHER, toReceiptRead(2, 'complete'));
+
+        const answer = standIn.acceptSocketRead(PUBLISHER, readAt(toGapNackRead(4, [{ from: 1, to: 3 }], 1), 1_500));
+
+        expect(answer.reoffers.map(({ send, cause, attempt }) => [send.seq, cause, attempt]))
+            .toEqual([[1, 'repair', 1], [3, 'repair', 1]]);
+        expect(standIn.getDeclinedRepairs()).toEqual([
+            { msgId: 'session-01-a-send-2', reason: 'send-ended', atMs: 1_500 }
+        ]);
+    });
+
+    it('ends a send on a NACK that refuses it for good, ends only its wait on not-yet-in-sync, and neither on a gap', () => {
+        const standIn = createStandInAfterOffers(4);
+
+        standIn.acceptSocketRead(PUBLISHER, readAt(toNackRead(1, 'expired', {}), 1_250));
+        standIn.acceptSocketRead(PUBLISHER, readAt(toNackRead(2, 'not-yet-in-sync', {}), 1_260));
+        standIn.acceptSocketRead(PUBLISHER, readAt(toNackRead(3, 'resync-required', {}), 1_270));
+        const gapAnswer = standIn.acceptSocketRead(PUBLISHER, readAt(toGapNackRead(4, [{ from: 1, to: 3 }], 1), 1_280));
+
+        expect(standIn.getSendEnds()).toEqual([
+            { msgId: 'session-01-a-send-1', cause: 'terminal-nack', atMs: 1_250 },
+            { msgId: 'session-01-a-send-3', cause: 'terminal-nack', atMs: 1_270 }
+        ]);
+        expect(gapAnswer.reoffers.map(({ send }) => send.seq)).toEqual([2]);
+        expect(standIn.takeFirstHopResendsDue(3_000).map(({ send }) => send.seq)).toEqual([4]);
+    });
+
+    it('ends as expired, at the first instant given at or past its lifetime, each send nothing ended before', () => {
+        const standIn = createStandInAfterOffers(3);
+        standIn.acceptSocketRead(PUBLISHER, toReceiptRead(1, 'admitted'));
+        standIn.acceptSocketRead(PUBLISHER, toReceiptRead(2, 'complete'));
+        standIn.acceptSocketRead(PUBLISHER, toReceiptRead(3, 'admitted'));
+
+        standIn.endExpiredSends(30_999.5);
+        expect(standIn.getSendEnds()).toEqual([{ msgId: 'session-01-a-send-2', cause: 'terminal-receipt', atMs: 1_200 }]);
+
+        standIn.endExpiredSends(31_000);
+        standIn.endExpiredSends(31_010);
+        expect(standIn.getSendEnds()).toEqual([
+            { msgId: 'session-01-a-send-2', cause: 'terminal-receipt', atMs: 1_200 },
+            { msgId: 'session-01-a-send-1', cause: 'expired', atMs: 31_000 },
+            { msgId: 'session-01-a-send-3', cause: 'expired', atMs: 31_000 }
+        ]);
+    });
+
+    it('raises no hint for a request that names an expired send, though the sends it asks for still live', () => {
+        const standIn = new OrderedSendClientStandIn(SERVER);
+        offerSend(standIn, 3, 1_000);
+        offerSend(standIn, 1, 5_000);
+        offerSend(standIn, 2, 5_000);
+        [1, 2, 3].forEach((seq) => standIn.acceptSocketRead(PUBLISHER, readAt(toReceiptRead(seq, 'admitted'), 5_100)));
+
+        const whileItLives = standIn.acceptSocketRead(PUBLISHER, readAt(toGapNackRead(3, [{ from: 2, to: 2 }], 1), 30_999));
+        const onceExpired = standIn.acceptSocketRead(PUBLISHER, readAt(toGapNackRead(3, [{ from: 1, to: 2 }], 2), 31_000));
+
+        expect(whileItLives.reoffers.map(({ send }) => send.seq)).toEqual([2]);
+        expect(onceExpired).toEqual({ reoffers: [], followUp: undefined });
+        expect(standIn.getDeclinedRepairs()).toEqual([
+            { msgId: 'session-01-a-send-3', reason: 'named-send-expired', atMs: 31_000 }
+        ]);
+    });
+
+    it('declines a send that expired between two executions of one request, at the instant of the later one', () => {
+        const standIn = new OrderedSendClientStandIn(SERVER);
+        for (let seq = 1; seq <= 40; seq += 1) {
+            offerSend(standIn, seq, seq <= 39 ? 1_000 : 2_000);
+        }
+
+        const firstPage = standIn.acceptSocketRead(PUBLISHER, readAt(toGapNackRead(40, [{ from: 1, to: 39 }], 1), 30_990));
+        const secondPage = standIn.serveRepairFollowUp(firstPage.followUp!, 31_000);
+
+        expect(firstPage.reoffers).toHaveLength(32);
+        expect(secondPage.reoffers).toEqual([]);
+        expect(standIn.getDeclinedRepairs()).toEqual(
+            [33, 34, 35, 36, 37, 38, 39].map((seq) => ({
+                msgId: `session-01-a-send-${seq}`,
+                reason: 'send-expired',
+                atMs: 31_000
+            }))
+        );
     });
 });

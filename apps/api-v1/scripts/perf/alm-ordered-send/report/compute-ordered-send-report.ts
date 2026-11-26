@@ -28,6 +28,10 @@ import {
     type OrderedSendSendFigures
 } from './compute-ordered-send-send-figures.ts';
 import {
+    computeOrderedSendStandInFigures,
+    type OrderedSendStandInFigures
+} from './compute-ordered-send-stand-in-figures.ts';
+import {
     computeOrderedSendUnmatchedFigures,
     type OrderedSendUnmatchedFigures
 } from './compute-ordered-send-unmatched-figures.ts';
@@ -45,6 +49,7 @@ export interface OrderedSendReport {
     readonly controls: OrderedSendControlFigures;
     readonly beforeFirstControl: OrderedSendBeforeFirstControlFigures;
     readonly resends: OrderedSendResendFigures;
+    readonly standIn: OrderedSendStandInFigures;
     readonly unmatched: OrderedSendUnmatchedFigures;
 }
 
@@ -58,6 +63,7 @@ export function computeOrderedSendReport(observations: OrderedSendCellObservatio
         controls: computeOrderedSendControlFigures(observedSends),
         beforeFirstControl: computeOrderedSendBeforeFirstControlFigures(observedSends),
         resends: computeOrderedSendResendFigures(observedSends),
+        standIn: computeOrderedSendStandInFigures(observedSends),
         unmatched: computeOrderedSendUnmatchedFigures(observations)
     };
 }

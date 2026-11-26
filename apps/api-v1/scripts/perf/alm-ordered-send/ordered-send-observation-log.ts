@@ -11,8 +11,11 @@ import type {
 } from './ordered-send-cell-observations.ts';
 import { toOrderedSendSocketRead, type OrderedSendSocketRead } from './to-ordered-send-socket-read.ts';
 
-/** What a run observes beside what it offers. */
-export type OrderedSendObservedReads = Omit<OrderedSendCellObservations, 'sends' | 'resends'>;
+/** What a run observes of its sessions' sockets and its instances: not what it offers, nor what its stand-ins record. */
+export type OrderedSendObservedReads = Omit<
+    OrderedSendCellObservations,
+    'sends' | 'resends' | 'sendEnds' | 'declinedRepairs'
+>;
 
 /** One frame a session's socket read while observation lasted. */
 export interface OrderedSendRecordedFrame {

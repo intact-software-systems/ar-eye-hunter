@@ -40,10 +40,13 @@ export const ORDERED_SEND_CELL_LIMITS: readonly string[] = [
     'The envelope carries no room send fence, which a browser\'s room send carries and the server checks.',
     'A frame enters at the server\'s `acceptIncomingMessage`, below the socket bridge: its size check and its JSON ' +
     'parse are no part of a run, and a session is a socket object with no WebSocket.',
-    'Under the sender recovery `client-stand-in` a publisher answers gap NACKs and repair requests and holds the ' +
-    'first-hop wait with the product\'s own planning and limits, but not the client\'s outbound commits and engine ' +
-    'timing, its ack-timeout schedule, or the end of a message whose retries are spent. Under `none` a publisher ' +
-    'offers each send once and answers nothing.',
+    'Under the sender recovery `client-stand-in` a publisher answers gap NACKs and repair requests, holds the ' +
+    'first-hop wait and ends a send as the product\'s WS client does, with the product\'s own planning and limits. It ' +
+    'does not model the client\'s outbound commits and engine timing or its ack-timeout schedule, and it ends a ' +
+    'send on any NACK that may end one, where the client ends the message only for a relay\'s refusal or an open ' +
+    'receipt removed. Under `none` a publisher offers each send once and answers nothing.',
+    'What a browser does after `resync-required` or `receipt-exhausted` is not modelled: under either recovery a ' +
+    'publisher goes on offering the next send of the same track.',
     `The receipt aggregates of an instance are bounded at ${WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES}; the ` +
     'shapes run here stay far below it.',
     'The database is local, on the disk and the processor of the machine that runs the cell: its own time and its ' +

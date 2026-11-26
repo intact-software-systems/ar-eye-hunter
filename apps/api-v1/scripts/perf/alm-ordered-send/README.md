@@ -177,12 +177,31 @@ read. A run of the cell leaves all three at zero.
 server alone, and a track the server stalls stays stalled.
 
 `client-stand-in`: a publisher stands where a browser's WS client would, deciding with the product's
-own planner and limits. It answers a gap NACK or a repair request by offering the missing sequences
-of its track again, and it holds the first-hop wait: a send that has read no receipt of any phase
-within the wait is offered again, up to the product's retry limit. It does not model the client's
-outbound commits and engine timing, so a re-offer leaves as soon as the run asks for it; nor the
-client's ack-timeout schedule once the server has answered; nor the end of a message whose retries
-are spent, which here is only offered no more.
+own planner and limits.
+
+- **Repair.** It answers a gap NACK or a repair request by offering the missing sequences of its
+  track again, 32 to an execution, once for each request number, with four repairs to a send.
+- **First hop.** A send that has read no receipt of any phase within 2 s of its offer is offered
+  again, up to three times, 2 s apart.
+- **The end of a send.** It ends a send as the client ends a message, and offers an ended or expired
+  send again for no cause:
+  - `first-hop-exhausted`: the three first-hop resends drew no receipt, about 8 s after the offer;
+  - `terminal-receipt`: the publisher read a `complete` or a `timed-out` receipt of it;
+  - `terminal-nack`: the publisher read a NACK that refuses the send for good;
+  - `repair-budget-spent`: a repair request asked for it again and found its four repairs spent;
+  - `expired`: its 30 s lifetime ended before anything else ended it.
+
+  A repair request that names an expired send raises no repair hint at all. The summary and the
+  artifact count the sends ended by cause, and the re-offers declined for an ended or expired send.
+
+It does not model the client's outbound commits and engine timing, so a re-offer leaves as soon as
+the run asks for it and an end takes effect at once; nor the client's ack-timeout schedule once the
+server has answered. It is coarser than the client in one place: the client marks a message ended on
+a NACK only for a relay's refusal of the whole send or when the NACK removes an open receipt
+(`packages/shared/alm/outbound/message-end/to-al-outbound-control-message-end.ts`), and the stand-in
+ends the send on any NACK that may end one. What a browser does after `resync-required` or
+`receipt-exhausted` is not modelled under either recovery: a publisher goes on offering the next
+send of the same track.
 
 ## What the added latency covers
 
@@ -231,7 +250,8 @@ least the option's value and often more.
   WebSocket.
 - **Partly delayed.** NOTIFY delivery, LISTEN, connection opens and the second protocol round trip
   of a call carry no added latency, as listed above.
-- **A stand-in, not a client.** `client-stand-in` leaves out what the section above names.
+- **A stand-in, not a client.** `client-stand-in` leaves out what the section above names, and
+  neither recovery models what a browser does after `resync-required` or `receipt-exhausted`.
 - **Receipt aggregates.** An instance bounds its receipt aggregates at 4096; the shapes the options
   allow in a short window stay far below it, and a longer or faster run may not.
 - **A local database.** PostgreSQL shares the machine's disk and processor with the cell. Other
