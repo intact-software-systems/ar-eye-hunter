@@ -241,8 +241,8 @@ Real PostgreSQL, three instances, each client delaying every statement, BEGIN an
   5.6 to 9.0 ms, at +5 ms 60.5 to 62.8 ms, the last ten messages no slower than the first ten; 560 of 560
   confirmations, every head complete, one `end` winner per message, in three runs of each.
 - **Through the WS server, one publisher keeps up**: the same 40 messages from one client session among 15 on three
-  instances, about 31 ms at +0 ms and about 450 ms at +5 ms, with no trend across the run. **Five publishers keep up
-  at +0 ms** (200 messages, 140 ACKs a second, about 23 ms).
+  instances, in the first measurement about 31 ms at +0 ms and about 450 ms at +5 ms, with no trend across the run.
+  **Five publishers keep up at +0 ms** (200 messages, 140 ACKs a second; about 23 ms in the first measurement).
 - **Five publishers keep up at +5 ms.** Five client sessions, on instances a, b, c, a and b, each send at 2 Hz for
   20 s (200 messages, 140 ACKs a second). In each of three runs all 200 read `complete` before their deadline; over
   the last ten messages `admitted` reached its publisher 0.13 to 0.14 s after the send and `complete` 0.42 to 0.47 s
@@ -257,7 +257,9 @@ Real PostgreSQL, three instances, each client delaying every statement, BEGIN an
   the same five publishers on the same machine read 111 to 124 of 200 `complete` by the deadline and the last ten's
   `admitted` 18 to 19 s after the send, so a publisher saw a send end `failed` when no receipt arrived inside its
   first-hop budget of about 8 s, and else `expired` at its deadline, for a message every recipient confirmed.
-- **The record stays exact.** No run, before or after, read `timed-out` or two terminal receipts for one message.
+- **The record stays exact.** No publisher's room message, before or after, read `timed-out` or two terminal
+  receipts. Of the server's own publications, the runs before ended 3 of 120 `timed-out`, 2 `complete` and
+  never opened the rest; the runs after completed all 120.
 
 ## Stated limits
 

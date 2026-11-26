@@ -52,15 +52,17 @@ ruling 7.
 8. In the same message (2026-11-25): **"rebase onto main"**.
 9. Which fix the receipts' delivery takes (2026-11-25; asked "Which fix should #885 build for the five-publisher
    receipt delivery problem?", with the options "A + B (Recommended)", "A alone" and "All receipts live"):
-   **"A + B (Recommended)"**. A: a receipt control's commits fence on the receipt's own version row only, not on
-   the server's sender version. B: the `admitted` receipt is sent directly on the admitting socket, with the
-   stored outbox row as the fallback when the origin has no socket on that instance. After the controller explained
+   **"A + B (Recommended)"**. (The options as the ledger describes them, not the maintainer's words: A, a receipt
+   control's commits fence on the receipt's own version row only, not on the server's sender version; B, the
+   `admitted` receipt is sent directly on the admitting socket, with the stored outbox row as the fallback when the
+   origin has no socket on that instance.) After the controller explained
    where the fence is and why: "Yes I think it is good." After two explanations, where the fence is and how a
    conditional write validates a read: "proceed with A + B".
 10. How far fix A reaches (2026-11-25; asked "How far should fix A reach in #885?", with the options "Wide
-    (Recommended)" and "Narrow", receipt controls only): **"Wide (Recommended)"**: every commit that read no shared
-    sender state fences on its own message's version only, so receipts, the server's handed-off controls, its
-    unsequenced publications and a client's plain broadcast, in the browser too.
+    (Recommended)" and "Narrow", receipt controls only): **"Wide (Recommended)"**. (What the wide option means, as
+    the ledger describes it, not the maintainer's words: every commit that read no shared sender state fences on
+    its own message's version only, so receipts, the server's handed-off controls, its unsequenced publications and
+    a client's plain broadcast, in the browser too.)
 
 ## What the measurement found
 
@@ -941,7 +943,8 @@ commits that ended `conflict`, of all such commits. Ranges are over the runs of 
 | Five with the server's own, +5 ms, 20 s | control | 3    | 80-99 of 200         | 1.33-1.85 / 19.3-28.2      | 13.8-15.3 | 4.0-7.7 / 20.0-27.0        | 3.5-5.1   | 175-179          | 2.7-3.1 of 20.1   | 414-416              | 224-243 of 400    | 34-36 % / 16-18 %          |
 |                                         | built   | 3    | 200 of 200 each      | 0.16-0.17 / 0.13-0.14      | 0.77-0.87 | 0.54-0.61 / 0.46-0.57      | 0.84-1.01 | 0                | 19.4-19.5 of 20.1 | 243-245              | 0 of 200          | 0 / 0                      |
 
-No run of either tree ended a message `timed-out` or read a second terminal receipt for one. The built tree's
+No run of either tree ended a publisher's room message `timed-out` or read a second terminal receipt for one;
+the control's runs ended 3 of the server's own 120 publications `timed-out` (below). The built tree's
 enqueues are the terminal receipts alone: every `admitted` in every built run (40, 200 or 450 a run) was written to
 the publisher's socket on the admitting instance and none became an outbox row.
 

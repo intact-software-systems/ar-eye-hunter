@@ -5,8 +5,11 @@ lifecycle boundary: it enqueues, accepts control messages, claims work, and rout
 each claimed durable effect to the owner that runs it. It never sends or mutates
 admission state itself. [`ALOutboundDispatchAdmission`](./al-outbound-dispatch-admission.ts)
 owns optimistic read/compute/commit. Nothing serializes a sender's commits, in a tab or across tabs:
-every commit is fenced on its message's version, and on the sender's one version too when its decision read rows the
-sender's messages share, and a commit whose write lost a fence it took reads, decides and writes again at once, `AL_OUTBOUND_COMMIT_ATTEMPTS` (3)
+a dispatch is fenced on its message's version, and on the sender's one version too when its decision read rows the
+sender's messages share; a message end, an ACK window, a repair hint's follow-up and a first-hop wait's own commits
+are fenced on both whatever they read, a peer control on its message's version alone, and the not-yet-in-sync retry
+schedule on the sender's version alone ([the version rows](#the-admission-directory)). A dispatch whose write lost a
+fence it took reads, decides and writes again at once, `AL_OUTBOUND_COMMIT_ATTEMPTS` (3)
 attempts in all, the last after a jittered 10 ms pause; past the bound a send retains its request as
 a pending admission and any other commit leaves its claim to its work retry (see
 [Commit conflicts](#commit-conflicts)).
@@ -389,8 +392,10 @@ among them: only a client-state event carries an ordering), and a client's plain
 on the server. The decision still reads the sender version, in its first turn's batched read, and the bundle carries
 the version it saw; the write re-reads and moves it only for a bundle that fences it. A message end through
 [`toALOutboundMessageEndBundle`](./message-end/to-al-outbound-message-end-bundle.ts), an `ack-timeout` window, a
-repair hint's follow-up, a first-hop wait's own commits and the not-yet-in-sync retry schedule fence the sender
-whatever their message. A peer control reads and writes only
+repair hint's follow-up and a first-hop wait's own commits fence the sender as well as the message, whatever their
+read; the not-yet-in-sync retry schedule fences on the sender version alone, with no message version
+(`scheduleNotYetInSyncRetry` in [`al-outbound-control-admission.ts`](./control/al-outbound-control-admission.ts)). A
+peer control reads and writes only
 its message's rows, so it fences on that message's version alone: a send, repair or control of another message of
 the same sender never conflicts with it (ruling 24). So does a server receipt, unless it is an `admitted` receipt that
 reads the shared-head rows, the sent positions and the room floor (ruling 26); a bundle states this as `fencesSender`,
@@ -498,10 +503,13 @@ attempt starts.
 ### Commit conflicts
 
 Every admission -- a send, a control hand-off, a dequeue, a repair -- runs the same read, computation,
-validation and optimistic commit, and no queue or Web Lock orders the commits of a sender. Each commit
-is fenced on its message's version, and a commit whose decision read rows its sender's messages share on the
-sender's one version too, which is what keeps a track's sequences unique and gap-free: two commits that read one
-version mint one sequence, and only one of their writes lands. The other
+validation and optimistic commit, and no queue or Web Lock orders the commits of a sender. Each dispatch
+is fenced on its message's version, and a dispatch whose decision read rows its sender's messages share on the
+sender's one version too, which is what keeps a track's sequences unique and gap-free: two dispatches that read one
+version mint one sequence, and only one of their writes lands. The commits that are not dispatches fence as the
+version-row paragraph of [the admission directory](#the-admission-directory) states: a message end, an ACK window, a
+repair hint's follow-up and a first-hop wait's own commits on both versions, a peer control on its message's alone,
+and the not-yet-in-sync retry schedule on the sender's alone. The other
 write answers `conflict`, and its commit reads, decides and writes again at once
 (`AL_OUTBOUND_COMMIT_CONFLICT_RETRY` in
 [`al-outbound-dispatch-admission.ts`](./al-outbound-dispatch-admission.ts), on the shared
@@ -518,10 +526,8 @@ Past the bound a send retains its request: the canonical payload, immutable iden
 `pending`, meaning durable ownership exists, not that transport ran. A replay, a dequeue and a
 repair that lose every attempt throw a retryable conflict, so their claim's work retry runs them
 again. A burst of one sender's commits that share a fence is the costly case: each round of its attempts lands
-one commit, so most of a large burst is retained and replayed one by one by the durable worker
-(measured, while every commit of a sender still fenced its version, in the in-memory server test that admits 4096
-at once: about 33 s against about 6 s with the removed commit lock). Commits of one sender's messages that read
-no shared row share no fence, and do not contend.
+one commit, so most of a large burst is retained and replayed one by one by the durable worker. Commits of one
+sender's messages that read no shared row share no fence, and do not contend.
 
 Controls are `volatile` (`computeALControlMessage` in
 [`al-control.ts`](../../al-contracts/al-control.ts)), so a runtime with a memory pair — both browser
