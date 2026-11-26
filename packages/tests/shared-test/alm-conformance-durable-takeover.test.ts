@@ -31,6 +31,8 @@ import { toConformanceInput } from './alm-conformance-test-input.ts';
 import { toFaultInjectShape } from './to-fault-inject-shape.ts';
 
 const STORAGE_TOPIC = 'rallar.browser.alm.storage';
+/** The receipt timer of a `command` send: `first-hop-timeout` over WS, `ack-timeout` over RTC. */
+const RECEIPT_TIMER_MS = 2_000;
 
 function findTakeover(carrier: AlmConformanceCarrier): AlmConformanceScenario & { readonly successor: RallarBlackBoxTestRecipe; } {
     const scenario = createAlmConformanceRecipes(toConformanceInput(carrier))
@@ -82,7 +84,8 @@ describe('durable-takeover conformance scenario', () => {
         expect(scenario.successor.recipeId).toBe(`alm-${carrier}-durable-takeover-successor`);
     });
 
-    // The cancel is the owner's last command: its page closes before the cancelled message's 2 s receipt timer is due.
+    // The owner pauses after the cancel so the cancel reaches storage, then its page closes before the cancelled
+    // message's 2 s receipt timer is due.
     it.each(ALM_CONFORMANCE_CARRIERS)('has the %s owner admit and retain one durable send, then send and cancel a second, under a held carrier', (carrier) => {
         const holds = carrier === 'rtc-with-ws-fallback'
             ? ['fault.inject:rtc:until-cleared', 'fault.inject:ws:until-cleared']
@@ -104,8 +107,13 @@ describe('durable-takeover conformance scenario', () => {
             'assert',
             'assert',
             'messages.cancel',
-            'assert'
+            'assert',
+            'wait:diagnostic:absent'
         ]);
+        const pause = findTakeover(carrier).sender.commands.findLast((command) => command.kind === 'wait');
+        // Half the timer is left for the page to close after the pause.
+        expect(pause?.timeoutMs).toBeGreaterThanOrEqual(500);
+        expect(pause?.timeoutMs).toBeLessThanOrEqual(RECEIPT_TIMER_MS / 2);
         const payloads = findTakeover(carrier).sender.commands.flatMap((command) =>
             command.kind === 'messages.send' && !('replayOnCarrier' in command) ? [command.payload] : []
         );
