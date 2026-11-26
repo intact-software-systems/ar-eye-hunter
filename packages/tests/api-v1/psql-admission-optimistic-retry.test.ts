@@ -59,7 +59,8 @@ describe('PSql admission optimistic retry', () => {
         const message = createInboundMessage('inbound-conflict');
         conflictNextInboundCommit({ storage, namespace, msg: message, nowMs: Date.now });
 
-        await expect(store.commitMutations({
+        await expect(store.commitBundle({
+            admissionExpiresAtMs: null,
             senderId: 'peer-1',
             observations: (await readIncoming(store, message, Date.now())).observations,
             mutations: [{
@@ -73,7 +74,8 @@ describe('PSql admission optimistic retry', () => {
                     originAuthenticated: false
                 },
                 expireAtTimestamp: Date.now() + 60_000
-            }]
+            }],
+            durableEffects: []
         })).resolves.toBe('conflict');
     });
 
@@ -94,7 +96,8 @@ describe('PSql admission optimistic retry', () => {
         const message = createInboundMessage('inbound-error');
         vi.spyOn(sql, 'begin').mockRejectedValueOnce(new Error('inbound storage unavailable'));
 
-        await expect(store.commitMutations({
+        await expect(store.commitBundle({
+            admissionExpiresAtMs: null,
             senderId: 'peer-1',
             observations: (await readIncoming(store, message, Date.now())).observations,
             mutations: [{
@@ -108,7 +111,8 @@ describe('PSql admission optimistic retry', () => {
                     originAuthenticated: false
                 },
                 expireAtTimestamp: Date.now() + 60_000
-            }]
+            }],
+            durableEffects: []
         })).rejects.toThrow('inbound storage unavailable');
     });
 

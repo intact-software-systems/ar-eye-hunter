@@ -723,6 +723,12 @@ Web and API deploy together.
 | Buffered release                | [`ALInboundOrderedDelivery`](./al-inbound-ordered-delivery.ts) reads progress and buffered work, computes a permitted release or resynchronization result, and commits the observed transition.                                                                                                                                                                                                                                                            | Local dispatch occurs only after the required release decision; the same batch promotes the track's next release (D190), and later work becomes eligible through the same worker.                                                                          |
 | Gap renewal                     | A `renew-gap` row comes due: [`ALInboundGapRenewal`](./gap-renewal/al-inbound-gap-renewal.ts) reads the track's ordering snapshot and, while part of its range is still missing, retains the gap NACK and `missing-seq` request for that part under the row's number and the next number's timer.                                                                                                                                                          | The claim completes; the retained controls are sent as any `send-control` row is, and the next timer comes due later.                                                                                                                                      |
 
+**A delivery's completion.** After a buffered release hands an ordered message to the application, its completion
+moves the track's delivery progress and deletes the slot in one write guarded on its position and its slot alone
+(`commitDeliveryCompletion`), keeping the later of the stored and observed expiry. An admission's expiry refresh or a
+control row written meanwhile therefore never sends a delivered message to the application again; a conflict that
+remains is a real move, and where the position moved the work that comes back reads the message completed.
+
 `validateALInboundControlAdmission` returns every reason an acknowledgement is
 inadmissible; the caller joins them into one rejection reason. Only an absent pending
 obligation short-circuits, because the remaining checks read that obligation.

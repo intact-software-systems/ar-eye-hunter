@@ -165,7 +165,8 @@ async function seedPendingAcknowledgement(stores: ALInboundRuntimeStores): Promi
         nowMs: Date.now(),
         prePlan: planALMessageHandling(message, { selfPeerId: 'self', nowMs: Date.now() })
     });
-    await stores.admissionStore.commitMutations({
+    await stores.admissionStore.commitBundle({
+        admissionExpiresAtMs: null,
         senderId: 'peer-1',
         observations: read.observations,
         mutations: [{
@@ -194,7 +195,8 @@ async function seedPendingAcknowledgement(stores: ALInboundRuntimeStores): Promi
             msgId: 'acked-msg',
             value: { ambiguous: false, values: [{ peerId: 'peer-2', senderId: 'peer-1' }] },
             expireAtTimestamp
-        }]
+        }],
+        durableEffects: []
     });
 }
 

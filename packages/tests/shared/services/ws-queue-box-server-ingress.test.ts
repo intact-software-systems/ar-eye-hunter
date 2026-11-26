@@ -690,13 +690,8 @@ describe('WS server bounded and authorized admission', () => {
             authorize: async () => ({ authorized: true, roomAudience: { recipientPeerIds: ['session-1', 'session-2'], snapshotVersion: 1 } })
         });
         const resentMsgId = `message-${resent}`;
-        // Each send waits for the one before it to reach the application: a delivery whose ordered completion meets the
-        // next send's admission is dispatched again, which this case does not pin.
         for (const seq of sends) {
             expect((await fixture.service.acceptIncomingMessage(createOrderedRoomMessage(seq), 'session-1')).left).toBeUndefined();
-            if (seq === fixture.delivered.length + 1) {
-                await expect.poll(() => fixture.delivered.map((message) => message.id.msgId)).toContain(`message-${seq}`);
-            }
         }
         await expect.poll(() => readReceiptPhases(fixture.socket, resentMsgId)).toEqual(['admitted']);
 
@@ -712,6 +707,34 @@ describe('WS server bounded and authorized admission', () => {
         await expect.poll(() => fixture.delivered.map((message) => message.id.msgId)).toEqual(delivered);
         expect(readReceiptPhases(peer, resentMsgId)).toEqual([]);
         expect(peer.sent.filter((frame) => decodePersistedALMessage(frame).id.msgId === resentMsgId)).toHaveLength(1);
+    });
+
+    // Each send's admission extends the track's progress expiry; a completion fenced on that whole row conflicted, and
+    // its work handed the delivered message to the application a second or third time.
+    it('hands each ordered message to the application once when sends arrive back to back', async () => {
+        const fixture = await createServerIngressFixture();
+        const peer = new SimulatedWebSocket('ws://peer');
+        await peer.open();
+        attachTestWebSocket(fixture.server, new ConnectionContext({ id: 'session-2', socket: peer }));
+        const received: string[] = [];
+        fixture.service.onAnyInboxMessageDo('application', {
+            onMessage: async (message) => {
+                received.push(message.id.msgId);
+            }
+        });
+        fixture.service.authorizeInboundMessagesWith({
+            sendNacks: false,
+            authorize: async () => ({ authorized: true, roomAudience: { recipientPeerIds: ['session-1', 'session-2'], snapshotVersion: 1 } })
+        });
+        for (const seq of [1, 2, 3]) {
+            expect((await fixture.service.acceptIncomingMessage(createOrderedRoomMessage(seq), 'session-1')).left).toBeUndefined();
+        }
+
+        await expect.poll(() => received).toEqual(['message-1', 'message-2', 'message-3']);
+        await settleQueueEngine(fixture.engine);
+        expect(received).toEqual(['message-1', 'message-2', 'message-3']);
+        const trackKey = toALOrderingTrackKey(createOrderedRoomMessage(1))!;
+        expect((await fixture.admissionStore.readOrderedDelivery(trackKey, 4)).completedThrough).toBe(3);
     });
 
     it('leaves a durable message in QueueBox when an application subscriber fails', async () => {

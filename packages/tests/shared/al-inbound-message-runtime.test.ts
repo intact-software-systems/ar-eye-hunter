@@ -9,6 +9,7 @@ import {
 } from 'vitest';
 
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import {
     createInMemoryALAdmissionState,
     InMemoryAdmissionBackend,
@@ -296,6 +297,42 @@ describe('ALInboundMessageRuntime', () => {
         await expect.poll(() => deliveredSenderIds).toEqual(['peer-1', 'peer-2']);
     });
 
+    // The next admission on the track extends the progress row's expiry; a completion fenced on that whole row
+    // conflicted, and its work handed the delivered message to the application again.
+    it('hands an ordered message to the application once when the next message of its track is admitted during its completion', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const first = createOrderedMessage(1, 'one');
+        const trackKey = toALOrderingTrackKey(first)!;
+        const completionRead = Promise.withResolvers<void>();
+        const releaseCompletion = Promise.withResolvers<void>();
+        const readBufferedRelease = stores.admissionStore.readBufferedRelease.bind(stores.admissionStore);
+        vi.spyOn(stores.admissionStore, 'readBufferedRelease').mockImplementationOnce(async (input) => {
+            const read = await readBufferedRelease(input);
+            completionRead.resolve();
+            await releaseCompletion.promise;
+            return read;
+        });
+        onTestFinished(() => releaseCompletion.resolve());
+        const { runtime, dispatchedTexts } = createInboundHarness(stores);
+        const source: ALInboundMessageRuntime.Source = {
+            kind: 'ws-client',
+            peerId: 'peer-1',
+            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        };
+
+        await runtime.admitIncomingMessage(first, source);
+        await completionRead.promise;
+        vi.setSystemTime(Date.now() + 1_000);
+        await runtime.admitIncomingMessage(createOrderedMessage(2, 'two'), source);
+        releaseCompletion.resolve();
+
+        await expect.poll(() => dispatchedTexts).toEqual(['one', 'two']);
+        await waitForSettledALInboundWork(stores.workQueue);
+        expect(dispatchedTexts).toEqual(['one', 'two']);
+        expect((await stores.admissionStore.readOrderedDelivery(trackKey, 3)).completedThrough).toBe(2);
+    });
+
     it('retains a conflicted control admission as work the inbound worker completes', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         const { backend, stores } = createInboundBackedStores(
@@ -313,7 +350,8 @@ describe('ALInboundMessageRuntime', () => {
             nowMs: Date.now(),
             prePlan: planALMessageHandling(pendingMessage, { selfPeerId: 'self', nowMs: Date.now() })
         });
-        await stores.admissionStore.commitMutations({
+        await stores.admissionStore.commitBundle({
+            admissionExpiresAtMs: null,
             senderId: 'peer-1',
             observations: read.observations,
             mutations: [{
@@ -349,7 +387,8 @@ describe('ALInboundMessageRuntime', () => {
                 msgId: 'missing-msg',
                 value: { ambiguous: false, values: [{ peerId: 'peer-2', senderId: 'peer-1' }] },
                 expireAtTimestamp
-            }]
+            }],
+            durableEffects: []
         });
         const commitBundle = stores.admissionStore.commitBundle.bind(stores.admissionStore);
         let attempts = 0;

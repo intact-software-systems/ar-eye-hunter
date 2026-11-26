@@ -21,7 +21,7 @@ import type { ALPendingAckSnapshot } from '@shared/al-contracts/al-control.ts';
 import type {
     ALInboundAdmissionRead,
     ALInboundAdmissionStore,
-    ALInboundWriteRequest
+    ALInboundCommitBundle
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { toALOutboundOriginMessageKey } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
 import { toALOutboundMessageReference } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
@@ -122,6 +122,7 @@ describe('PostgreSQL inbound admission', () => {
         });
 
         const candidate = {
+            admissionExpiresAtMs: null,
             senderId: 'peer-1',
             observations: (await readIncoming(store)).observations,
             mutations: [
@@ -137,11 +138,12 @@ describe('PostgreSQL inbound admission', () => {
                     },
                     expireAtTimestamp: Date.now() + 60_000
                 }
-            ]
-        } satisfies ALInboundWriteRequest;
+            ],
+            durableEffects: []
+        } satisfies ALInboundCommitBundle;
 
-        expect(await store.commitMutations(candidate)).toBe('committed');
-        expect(await store.commitMutations(candidate)).toBe('conflict');
+        expect(await store.commitBundle(candidate)).toBe('committed');
+        expect(await store.commitBundle(candidate)).toBe('conflict');
         const owner = await repository.findEntry(namespace, `${namespace}:msg-owner:msg-1:peer-1`);
         expect(JSON.parse(owner!.value)).toMatchObject({ msgId: 'msg-1', senderId: 'peer-1' });
         expect(await repository.findEntry(namespace, `${namespace}:version:peer-1`)).toBeUndefined();
@@ -167,7 +169,8 @@ describe('PostgreSQL inbound admission', () => {
         });
         const expireAtTimestamp = Date.now() + 60_000;
 
-        await store.commitMutations({
+        await store.commitBundle({
+            admissionExpiresAtMs: null,
             senderId: 'peer-1',
             observations: (await readIncoming(store)).observations,
             mutations: [
@@ -207,7 +210,8 @@ describe('PostgreSQL inbound admission', () => {
                     value: { ambiguous: false, values: [{ peerId: 'peer-2', senderId: 'peer-1' }] },
                     expireAtTimestamp
                 }
-            ]
+            ],
+            durableEffects: []
         });
         const admitted = await createTestALInboundControlAdmission({
             carrier: 'ws',

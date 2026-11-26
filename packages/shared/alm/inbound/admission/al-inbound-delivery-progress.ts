@@ -1,4 +1,47 @@
 import type { ALOrderingObservation } from '../../../al-contracts/al-runtime.ts';
+import { jsonEquals } from '../../../repository/state-utils.ts';
+import { Either } from '../../../resilience/Either.ts';
+import type { ALInboundAdmissionMutation, ALInboundDeliveryProgress } from '../al-inbound-admission-store.ts';
+import type { ALInboundResolvedDeliverySnapshot } from '../al-inbound-ordering-validation.ts';
+import type { ALInboundIndexedMarker } from './al-inbound-delivered-marker-index.ts';
+
+/** One ordered delivery's completion: what it read, and the position it completes through. */
+export interface ALInboundDeliveryCompletion {
+    readonly trackKey: string;
+    readonly seq: number;
+    /** The slot as the completion read it; the write requires the stored slot to equal it. */
+    readonly observedSlot: ALInboundResolvedDeliverySnapshot;
+    /** The progress as the completion read it; the write requires the stored `completedThrough` to equal its. */
+    readonly observedProgress: ALInboundDeliveryProgress;
+    readonly completesThrough: number;
+}
+
+/**
+ * The completion's write against what the store holds now: the progress moved to `completesThrough` and the delivered
+ * slot deleted, keeping the later of the stored and observed expiry. `conflict` when the stored `completedThrough` or
+ * the stored slot is not the one the completion read.
+ */
+export function computeALInboundDeliveryCompletionMutations(
+    completion: ALInboundDeliveryCompletion,
+    storedSlot: ALInboundResolvedDeliverySnapshot | undefined,
+    storedProgress: ALInboundDeliveryProgress | undefined
+): Either<'conflict', readonly ALInboundAdmissionMutation[]> {
+    const { trackKey, seq, observedProgress } = completion;
+    if (
+        storedProgress === undefined || storedProgress.completedThrough !== observedProgress.completedThrough ||
+        !jsonEquals(storedSlot, completion.observedSlot)
+    ) {
+        return Either.ofLeft('conflict');
+    }
+    return Either.ofRight([{
+        kind: 'set-delivery-progress',
+        trackKey,
+        value: {
+            completedThrough: completion.completesThrough,
+            expireAtTimestamp: Math.max(storedProgress.expireAtTimestamp, observedProgress.expireAtTimestamp)
+        }
+    }, { kind: 'delete-buffered', trackKey, seq }]);
+}
 
 export interface ALInboundDeliveryCompletionInput {
     readonly completedThrough: number;
@@ -62,4 +105,15 @@ export function computeALOrderingDeliveryPredecessorSeq(observation: ALOrderingO
         return priorSeq;
     }
     return seq - 1;
+}
+
+/** The delivered markers a committed write sets, as a capped store's marker index records them. */
+export function toALInboundDeliveredMarkers(
+    mutations: readonly ALInboundAdmissionMutation[]
+): readonly ALInboundIndexedMarker[] {
+    return mutations.flatMap((mutation) =>
+        mutation.kind === 'set-delivery-progress'
+            ? [{ trackKey: mutation.trackKey, expireAtTimestamp: mutation.value.expireAtTimestamp }]
+            : []
+    );
 }

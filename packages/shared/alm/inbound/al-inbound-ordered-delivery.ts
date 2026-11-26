@@ -252,20 +252,12 @@ export class ALInboundOrderedDelivery {
         if (completes === undefined || this.dependencies.signal.aborted) {
             return 'retry';
         }
-        const status = await this.dependencies.admissionStore.commitMutations({
-            senderId: msg.id.senderId,
-            observations: read.observations,
-            mutations: [
-                {
-                    kind: 'set-delivery-progress',
-                    trackKey,
-                    value: {
-                        completedThrough: completes,
-                        expireAtTimestamp: progress.expireAtTimestamp
-                    }
-                },
-                { kind: 'delete-buffered', trackKey, seq }
-            ]
+        const status = await this.dependencies.admissionStore.commitDeliveryCompletion({
+            trackKey,
+            seq,
+            observedSlot: read.snapshot,
+            observedProgress: progress,
+            completesThrough: completes
         });
         return status === 'conflict' ? 'retry' : 'completed';
     }
