@@ -146,6 +146,8 @@ class ReceiptOwnerFixture {
     readonly receiptTransported = Promise.withResolvers<void>();
     /** Resolved by the release of the complete receipt's own send work, which follows its transport in every scenario. */
     readonly receiptSendReleased = Promise.withResolvers<void>();
+    /** Resolved by the first release of the complete receipt's work after the restore: its retained admission's. */
+    readonly receiptAdmissionReleased = Promise.withResolvers<void>();
     readonly service: WsQueueBoxServerService;
     readonly socket: JsonWebSocketServer;
     readonly origin: SimulatedWebSocket;
@@ -237,17 +239,26 @@ class ReceiptOwnerFixture {
         }
         assert.equal(this.effects.conflicted, true);
         assert.equal(await this.store.readSentMessage(this.effects.receiptControlMsgId), undefined);
-        assert.equal(this.origin.sent.length, 0);
+        // The origin is connected here, so its admitted receipt was written to its socket at admission; the complete
+        // receipt's send has not run.
+        assert.deepEqual(this.origin.sent.map(toReceiptPhase), ['admitted']);
         this.configureNative(scenario);
         if (scenario.startsWith('publish') || scenario === 'direct-failure') {
             await this.installPublication(scenario);
         }
         this.backend.workQueue.reserveEntries = this.reserve;
         this.backend.workQueue.reserveTimeoutEntries = this.recover;
-        // The clock stands still, so the retained receipt is ready and the one engine pass after the restore claims its
-        // admission work; its dequeue and its send follow in batches the earlier batches start, which the pass does not
-        // await. The fixture awaits the send's transport and release and runs no further pass, so the number of passes,
-        // and of the clock reads they make, is the same for every sink however long the work takes.
+        // The clock stands still, so the retained receipt is ready and the first engine pass after the restore claims its
+        // admission work, alone: the admitted receipt went to the origin's socket and left no row. The dequeue that
+        // admission makes claimable waits for a pass, and the engine runs none of its own here, so the fixture awaits
+        // the admission's release, lets its batch end (a running batch answers no work to a pass; it ends on the
+        // in-memory stores' own continuations), and runs a second pass. The send follows in a batch the dequeue starts,
+        // which the pass does not await. The fixture awaits the send's transport and release and runs no further pass,
+        // so the number of passes, and of the clock reads they make, is the same for every sink however long the work
+        // takes.
+        await this.engine.executeOnce();
+        await awaitFact(this.receiptAdmissionReleased.promise, 'The complete receipt\'s retained admission was never released');
+        await new Promise((resolve) => setImmediate(resolve));
         await this.engine.executeOnce();
         await Promise.all([
             awaitFact(this.receiptTransported.promise, 'The actual generated complete receipt did not reach its transport owner'),
@@ -273,7 +284,8 @@ class ReceiptOwnerFixture {
         this.backend.workQueue.reserveTimeoutEntries = async () => new Map();
         const release = this.backend.workQueue.releaseEntries.bind(this.backend.workQueue);
         this.backend.workQueue.releaseEntries = async (releases) => {
-            if (releases.some((value) => value.entry.resource.includes(this.effects.receiptControlMsgId))) {
+            const releasesReceipt = releases.some((value) => value.entry.resource.includes(this.effects.receiptControlMsgId));
+            if (releasesReceipt) {
                 this.effects.lastReceiptReleaseAtMs = Date.now();
             }
             const result = await release(releases);
@@ -285,6 +297,9 @@ class ReceiptOwnerFixture {
             }
             if (releases.some((value) => isSendWorkOf(value.entry, this.effects.receiptControlMsgId))) {
                 this.receiptSendReleased.resolve();
+            }
+            if (releasesReceipt && this.backend.workQueue.reserveEntries === this.reserve) {
+                this.receiptAdmissionReleased.resolve();
             }
             return result;
         };
@@ -308,6 +323,7 @@ class ReceiptOwnerFixture {
             this.receiptTransported.resolve();
         }
         this.observer?.(this.toCapturedObservation(event));
+        // Every observation that carries a receipt, the live admitted's transport first.
         if ('receipt' in event && this.sink === 'mutating') {
             this.effects.mutationResults.push(Reflect.set(event.receipt.confirmedRecipientPeerIds, '0', 'forged'));
             this.effects.mutationResults.push(Reflect.set(event, 'receiptControlMsgId', 'forged'));
@@ -324,6 +340,7 @@ class ReceiptOwnerFixture {
         if (this.sink === 'unsafe' && event.kind === 'receipt-work') {
             return { ...event, workLocator: 'unsafe identity sentinel' };
         }
+        // Every control's transport, so the live admitted's first and the complete control's after it.
         if (this.sink === 'unsafe-transport' && event.kind === 'receipt-transport') {
             return { ...event, connectionId: 'unsafe identity sentinel' };
         }
@@ -455,6 +472,12 @@ async function generateCompleteReceipt(service: WsQueueBoxServerService): Promis
         })
     );
     assert.equal((await service.acceptIncomingMessage(ack, 'recipient')).right?.kind, 'control');
+}
+
+/** The phase of a receipt frame written to a socket. */
+function toReceiptPhase(frame: string): string | undefined {
+    const control = decodeALControlMessage(decodePersistedALMessage(frame)).right;
+    return control?.type === 'receipt' ? control.payload.phase : undefined;
 }
 
 /** A work row names its effect, a send's beginning with the message it sends; a canonical message row names none. */

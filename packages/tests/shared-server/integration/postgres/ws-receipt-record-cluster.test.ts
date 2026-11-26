@@ -233,13 +233,18 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL WS 
         await expectStoredEnd(cluster, toRef(msgId), { phase: 'complete', confirmedRecipientPeerIds: ['r1', 'r2'], outsideAudienceRecipientPeerIds: [] });
         expect(readCompleteOutboxVerdicts(cluster, msgId)).toEqual<ReturnType<typeof readCompleteOutboxVerdicts>>(['admitted']);
         await expect.poll(() => phases(cluster, msgId), POLL).toEqual(['admitted', 'complete']);
-        // The losing `end` records no refusal, no further count and no failed receipt.
+        // The losing `end` records no refusal, no further count and no failed receipt. The origin is connected to the
+        // admitting instance, so its admitted receipt is observed as its transport on that socket and enqueued nowhere.
         expect(readReceiptAggregationVerdicts(cluster.observations, msgId)).toEqual<readonly ReceiptAggregationVerdict[]>([
             'ack-count:complete',
             'ack-count:complete',
-            'receipt-outbox:admitted:admitted',
             'receipt-outbox:complete:admitted'
         ]);
+        expect(
+            cluster.observations.filter((observation) =>
+                observation.kind === 'receipt-transport' && observation.receipt.msgId === msgId && observation.receipt.phase === 'admitted'
+            )
+        ).toMatchObject([{ transport: 'recipient', originIsHere: true, outcome: 'sent' }]);
         expect(readTerminalReceiptIdentities(cluster.originSockets, msgId)).toHaveLength(1);
     }, CASE_TIMEOUT_MS);
 

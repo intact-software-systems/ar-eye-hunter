@@ -690,8 +690,13 @@ describe('WS server bounded and authorized admission', () => {
             authorize: async () => ({ authorized: true, roomAudience: { recipientPeerIds: ['session-1', 'session-2'], snapshotVersion: 1 } })
         });
         const resentMsgId = `message-${resent}`;
+        // Each send waits for the one before it to reach the application: a delivery whose ordered completion meets the
+        // next send's admission is dispatched again, which this case does not pin.
         for (const seq of sends) {
             expect((await fixture.service.acceptIncomingMessage(createOrderedRoomMessage(seq), 'session-1')).left).toBeUndefined();
+            if (seq === fixture.delivered.length + 1) {
+                await expect.poll(() => fixture.delivered.map((message) => message.id.msgId)).toContain(`message-${seq}`);
+            }
         }
         await expect.poll(() => readReceiptPhases(fixture.socket, resentMsgId)).toEqual(['admitted']);
 

@@ -41,8 +41,10 @@ export const LINK_START_MS = Date.UTC(2026, 10, 20, 12);
 export const LINK_MESSAGE_TTL_MS = 30_000;
 const LINK_ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 /**
- * Passes of one step: a send the server's replay admits is delivered after six passes and its `admitted` reaches the
- * sender after nine, so twelve carry a replayed send to its sender within the step that let the server admit it.
+ * Passes of one step: a send the server's replay admits has its `admitted` written to the origin's socket by that
+ * replay, and the sender reads it in the third pass; it read it in the ninth while every `admitted` was an outbox row.
+ * Twelve carry a replayed send's answers to its sender within the step that let the server admit it, an outbox row's
+ * answer included.
  */
 const LINK_PASSES_PER_STEP = 12;
 
@@ -73,6 +75,8 @@ export interface WsReceiptedSendLink {
     writeHeldFramesSideBySide(): Promise<readonly string[]>;
     /** Hands one more copy of a written frame to ingress; its acceptance kind, or `rejected`. */
     writeCopy(msg: ALMessage): Promise<string>;
+    /** The next `count` frames the server writes the origin, counted from this call, are lost on the wire. */
+    loseFramesToOrigin(count: number): void;
     /** The recipient's `delivered` ACK through the server's ingress, as its socket would send it. */
     acknowledge(msg: ALMessage): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>>;
     /** Moves the one clock, then `LINK_PASSES_PER_STEP` times: the server's engine, its answers to the client, the client's due work. */
@@ -121,6 +125,7 @@ export async function createWsReceiptedSendLink(startView: WsReceiptedSendRoomVi
         holdFrames: client.holdFrames,
         writeHeldFramesSideBySide: client.writeHeldFramesSideBySide,
         writeCopy: client.writeCopy,
+        loseFramesToOrigin: exchange.loseFrames,
         acknowledge: async (msg) => await server.service.acceptIncomingMessage(toWireCopy(toPeerAck(msg)), LINK_PEER_ID),
         advance: async (ms) => {
             vi.setSystemTime(Date.now() + ms);
@@ -193,16 +198,30 @@ function createLinkClient(server: ServerIngressFixture): LinkClient {
     };
 }
 
-function createLinkExchange(
-    server: ServerIngressFixture,
-    client: LinkClient
-): { readonly serverControls: readonly WsReceiptedSendServerControl[]; run(): Promise<void>; } {
+/** The relay of the server's frames to the origin's sender, which can lose frames on the wire. */
+interface LinkExchange {
+    readonly serverControls: readonly WsReceiptedSendServerControl[];
+    run(): Promise<void>;
+    loseFrames(count: number): void;
+}
+
+function createLinkExchange(server: ServerIngressFixture, client: LinkClient): LinkExchange {
     const serverControls: WsReceiptedSendServerControl[] = [];
+    const lost = new Set<number>();
     let relayed = 0;
+    const loseFrames = (count: number): void => {
+        const from = server.socket.sent.length;
+        for (let frame = from; frame < from + count; frame += 1) {
+            lost.add(frame);
+        }
+    };
     const run = async (): Promise<void> => {
         for (let pass = 0; pass < LINK_PASSES_PER_STEP; pass += 1) {
             await drainEngine(server.engine);
             for (; relayed < server.socket.sent.length; relayed += 1) {
+                if (lost.has(relayed)) {
+                    continue;
+                }
                 const answer = decodePersistedALMessage(String(server.socket.sent[relayed]));
                 const admission = (await acceptWsQueueBoxClientControlMessage(client.ws, answer)).kind;
                 serverControls.push({ ...toControlLabel(answer), admission });
@@ -210,7 +229,7 @@ function createLinkExchange(
             await drainOutboundWorkDueNow(client.ws, client.stores);
         }
     };
-    return { serverControls, run };
+    return { serverControls, run, loseFrames };
 }
 
 function createLinkSenderReads(

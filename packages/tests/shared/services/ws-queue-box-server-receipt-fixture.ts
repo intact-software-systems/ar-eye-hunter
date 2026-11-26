@@ -547,6 +547,8 @@ export async function runReceiptWorkerHandoff(input: ReceiptWorkerHandoffInput):
     const claims: ReceiptWorkClaim[] = [];
     let worker: 'A' | 'B' = 'A';
     holdReceiptWorkForWorker({ ...input, claims, readWorker: () => worker });
+    // The origin's socket refuses the live `admitted` once, so its receipt is the row the two workers hand over.
+    refuseNextNativeSend(alice);
     expect((await local.service.acceptIncomingMessage(roomMessage(toHandoffRoomMessageInput(input.nowMs)), 'a')).right?.kind)
         .toBe('admitted');
     // Admission may have started A already; settle that batch and its commit-triggered follow-up.
@@ -559,6 +561,16 @@ export async function runReceiptWorkerHandoff(input: ReceiptWorkerHandoffInput):
     const receiptDequeue = claims.find((claim) => claim.worker === 'A' && claim.payloadType === AL_CONTROL_RECEIPT_TYPE_ID)!;
     expect(claims.filter((claim) => claim.worker === 'B' && claim.msgId === receiptDequeue.msgId).map((claim) => claim.action)).toEqual(['send-prepared']);
     return { receipts: readSentReceipts(alice), wrongFrames: wrong.sent, claims };
+}
+
+/** The socket's next native send throws, as a socket closing under it would; its later sends are its own. */
+function refuseNextNativeSend(socket: SimulatedWebSocket): void {
+    const send = socket.send.bind(socket);
+    vi.spyOn(console, 'error').mockImplementationOnce(() => undefined);
+    socket.send = () => {
+        socket.send = send;
+        throw new Error('Native WebSocket refused the frame');
+    };
 }
 
 /** The room message the handoff and its storage cleanup name. */

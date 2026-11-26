@@ -7,6 +7,7 @@ import {
     type ALDeliverySettlement
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { computeALDeliveryDeadline, computeALDeliveryLifecycle } from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
 import {
     createWsReceiptedSendLink,
@@ -319,11 +320,12 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
     it('characterization: a copy of a send kept after a lost race, written before its replay ran: one admitted for it', async () => {
         const link = await createWsReceiptedSendLink('in-sync');
         const [first, second] = await sendTwoOrderedSideBySide(link);
-        expect(await link.writeCopy(second)).toBe('admitted');
+        // The server's started engine claims the kept row's replay as soon as the race retains it, and nothing else is
+        // queued now that the first send's admitted receipt went to the origin's socket: the copy meets that replay's
+        // write and joins the kept row.
+        expect(await link.writeCopy(second)).toBe('pending-admission');
         expect(await link.writeCopy(first)).toBe('duplicate');
         await link.advance(0);
-        // A receipt written while another write holds the server sender's version is retried after a 1 ms backoff,
-        // which no pass at one clock reading can pass.
         await link.advance(200);
         await link.advance(200);
         await advanceInSecondsTo(link, LINK_MESSAGE_TTL_MS + 31_000);
@@ -339,6 +341,80 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
         ]);
         expect(link.deliveredToPeer(first)).toBe(1);
         expect(link.deliveredToPeer(second)).toBe(1);
+    });
+
+    // Pins a lost admitted frame leaving its sender resending into silence.
+    it('an admitted the origin never reads is answered again at the first-hop window, from the record', async () => {
+        const link = await createWsReceiptedSendLink('in-sync');
+        link.loseFramesToOrigin(1);
+        const sent = await link.send(toRoomNotice());
+        await link.advance(0);
+        // The server wrote the admitted at the send's admission; the wire lost it.
+        expect(link.readReceiptsToOrigin(sent).map((receipt) => receipt.phase)).toEqual(['admitted']);
+        expect(toControlsOf(link, sent)).toEqual([]);
+        expect((await link.readSenderRows(sent)).waits).toBe(true);
+        await link.advance(2_000);
+        expect(link.written).toEqual([sent.id.msgId, sent.id.msgId]);
+        expect(toControlsOf(link, sent)).toEqual([{ control: 'receipt:admitted', admission: 'committed' }]);
+        expect(link.deliveredToPeer(sent)).toBe(1);
+        expect((await link.readSenderRows(sent)).waits).toBe(false);
+        expect((await link.acknowledge(sent)).left).toBeUndefined();
+        await link.advance(200);
+        expect(toControlsOf(link, sent).at(-1)).toEqual({ control: 'receipt:complete', admission: 'committed' });
+        expect(link.settlements.filter((fact) => fact.kind === 'acknowledgement').at(-1)).toMatchObject({
+            complete: true,
+            confirmedRecipientPeerIds: ['peer-b']
+        });
+    });
+
+    // Pins a send with no first-hop wait that a lost admitted leaves without its terminal receipt, or resending.
+    it('a send with retry none whose admitted is lost reads its complete receipt and nothing else', async () => {
+        const link = await createWsReceiptedSendLink('in-sync');
+        link.loseFramesToOrigin(1);
+        const notice = toRoomNotice();
+        const sent = await link.send({ ...notice, qos: { ...notice.qos, retry: { algo: 'none' } } });
+        await link.advance(0);
+        // The server wrote the admitted at the send's admission and the wire lost it; the send stays open.
+        expect(link.readReceiptsToOrigin(sent).map((receipt) => receipt.phase)).toEqual(['admitted']);
+        expect(link.deliveredToPeer(sent)).toBe(1);
+        expect((await link.readSenderRows(sent)).ended).toBe(false);
+        // A send with retry none holds no first-hop wait and no first-hop timeout work row: nothing resends it.
+        expect((await link.readSenderRows(sent)).waits).toBe(false);
+        expect(await link.readFirstHopTimeoutStatus(sent)).toBeUndefined();
+
+        expect((await link.acknowledge(sent)).left).toBeUndefined();
+        await link.advance(200);
+
+        expect(toControlsOf(link, sent)).toEqual([{ control: 'receipt:complete', admission: 'committed' }]);
+        expect(link.written).toHaveLength(1);
+        expect(link.settlements.filter((fact) => fact.msgId === sent.id.msgId).at(-1)?.kind).toBe('acknowledgement');
+    });
+
+    // Pins a kept send whose wait its NACK ended being sent again for an admitted that never arrived.
+    it('a kept send\'s admitted, lost after its not-yet-in-sync answer, is not sent again', async () => {
+        const link = await createWsReceiptedSendLink('behind');
+        const sent = await link.send(toRoomNotice());
+        await link.advance(0);
+        expect(toControlsOf(link, sent)).toEqual([{ control: 'nack:not-yet-in-sync', admission: 'committed' }]);
+        link.loseFramesToOrigin(1);
+
+        link.setRoomView('in-sync');
+        await link.advance(200);
+        expect(link.deliveredToPeer(sent)).toBe(1);
+        // The server wrote the replay's admitted, which the wire lost. The NACK ended the first-hop wait, and that end
+        // completed its timeout work row: this run reads COMPLETED, not an absent row.
+        expect(link.readReceiptsToOrigin(sent).map((receipt) => receipt.phase)).toEqual(['admitted']);
+        expect((await link.readSenderRows(sent)).waits).toBe(false);
+        expect(await link.readFirstHopTimeoutStatus(sent)).toBe(EntityStatus.COMPLETED);
+
+        expect((await link.acknowledge(sent)).left).toBeUndefined();
+        await link.advance(200);
+
+        expect(toControlsOf(link, sent)).toEqual([
+            { control: 'nack:not-yet-in-sync', admission: 'committed' },
+            { control: 'receipt:complete', admission: 'committed' }
+        ]);
+        expect(link.written).toHaveLength(1);
     });
 
     it('a kept send that names no deadline: the client stamps one, and the receipt times out at it', async () => {

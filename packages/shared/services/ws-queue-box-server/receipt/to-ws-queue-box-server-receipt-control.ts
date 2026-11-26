@@ -38,6 +38,14 @@ export function toWsQueueBoxServerEndedReceiptControlId(ref: ALReceiptRecordRef)
 }
 
 /**
+ * Whether a lost copy of this receipt is recovered by its sender's resend: an `admitted` receipt with a head behind
+ * it, which a re-sent copy is answered from. One that expects nobody has no head and is the send's only answer.
+ */
+export function isWsQueueBoxServerResendRecoveredReceipt(receipt: ALReceiptPayload): boolean {
+    return receipt.phase === 'admitted' && receipt.expectedRecipientPeerIds.length > 0;
+}
+
+/**
  * Whether the control's own codec carries the largest receipt this opening can need. That is a `timed-out` receipt
  * naming every expected recipient outside: a terminal receipt lists each recipient once across its two sets, both
  * keys are always written, one list costs one comma more than a split, and only `timed-out`, one character longer than

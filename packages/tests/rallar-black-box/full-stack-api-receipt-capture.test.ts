@@ -156,6 +156,7 @@ function toReceiptOwnerChildSource({ msgId, expectedRecipientPeerIds }: ReceiptO
                 message, verdict: { kind: 'admitted', durable: true, queuedAttempts: 0 },
                 entries: [], trackedReceiptAlgo: 'none'
             }),
+            liveDelivery: { sendToResolvedPeerWithEvidence: () => ({ sentCount: 0, writes: [] }) },
             acceptServerControl: async () => ({ kind: 'not-handled' }),
             acceptServerReceipt: async () => ({ kind: 'not-handled' }),
             readOwnPendingReceipt: async () => undefined,
@@ -991,6 +992,42 @@ describe('full-stack private upstream receipt capture', () => {
         expect(captured.records).toContainEqual(expect.objectContaining({ kind: 'receipt-work' }));
         expect(captured.summary.rejectedLines).toBeGreaterThan(0);
         expect(captured.mode).toBe(0o600);
+    });
+
+    // Pins a live admitted's transport observation the safe projection drops or reshapes, or whose rewritten
+    // connection identity it lets through.
+    it('projects a live admitted\'s transport observation', async () => {
+        const captured = await capturePendingReceipt({ scenario: 'native-return', sink: 'collecting', appInboxPhaseTiming: true });
+        const live = captured.records.filter((record) =>
+            record.kind === 'receipt-transport' && record.receiptControlMsgId !== captured.effects.receiptControlMsgId
+        );
+        expect(live).toEqual([{
+            kind: 'receipt-transport',
+            serverPeerId: 'server',
+            receiptControlMsgId: expect.any(String),
+            traceId: 'trace-full-stack-api-receipt-owner-fixture',
+            receipt: {
+                msgId: 'subject',
+                originPeerId: 'origin',
+                expectedRecipientPeerIds: ['recipient'],
+                confirmedRecipientPeerIds: [],
+                snapshotVersion: 7,
+                phase: 'admitted',
+                observedAtEpochMs: 1700000000000
+            },
+            transport: 'recipient',
+            nativeCall: 'returned',
+            connectionId: 'origin',
+            publisherCall: 'absent',
+            originIsHere: true,
+            outcome: 'sent',
+            submissionAttempted: true
+        }]);
+        expect(toSafeApiWsReceiptObservation(live[0])).toEqual(live[0]);
+
+        const unsafe = await capturePendingReceipt({ scenario: 'native-return', sink: 'unsafe-transport', appInboxPhaseTiming: true });
+        expect(unsafe.text).not.toContain('unsafe identity sentinel');
+        expect(unsafe.records.filter((record) => record.kind === 'receipt-transport')).toEqual([]);
     });
 
     it('retains actual owner-produced count and outbox fields through the real child recorder', async () => {

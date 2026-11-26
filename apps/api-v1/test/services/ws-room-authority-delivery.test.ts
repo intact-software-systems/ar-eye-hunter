@@ -512,8 +512,9 @@ test('a WS-carried receiver room multicast queues durable delivery to the other 
         const roomFrames = (frames: readonly string[]) => frames.filter((frame) => decodePersistedALMessage(frame).route.topicId === 'room.chat');
         await waitForRoomFrames(() => roomFrames(bobFrames).length + roomFrames(carolFrames).length >= 2);
 
-        // The room message and the origin's admitted receipt: one row each.
-        assert.equal((await harness.outbox.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND_MESSAGE').length, 2);
+        // The room message is a row; the origin's admitted receipt went to its socket on this instance and is none.
+        assert.deepEqual(readReceipts(senderFrames).map((receipt) => receipt.phase), ['admitted']);
+        assert.equal((await harness.outbox.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND_MESSAGE').length, 1);
         assert.deepEqual(roomFrames(bobFrames).map((frame) => decodePersistedALMessage(frame).id), [message.id]);
         assert.deepEqual(roomFrames(carolFrames).map((frame) => decodePersistedALMessage(frame).id), [message.id]);
         assert.deepEqual(roomFrames(senderFrames), []);

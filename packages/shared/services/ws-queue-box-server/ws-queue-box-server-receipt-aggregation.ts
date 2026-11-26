@@ -52,6 +52,7 @@ import {
     WS_QUEUE_BOX_SERVER_REJECTED_COUNT,
     type WsQueueBoxServerCountedAck
 } from './receipt/to-ws-queue-box-server-counted-ack.ts';
+import { toWsQueueBoxServerLiveReceiptTransport } from './receipt/to-ws-queue-box-server-live-receipt-transport.ts';
 import {
     isWsQueueBoxServerOwnOutsideAudienceNack,
     toWsQueueBoxServerOutsideAudienceConfirmation,
@@ -63,6 +64,7 @@ import {
 } from './receipt/to-ws-queue-box-server-own-receipt-opening.ts';
 import {
     isWsQueueBoxServerReceiptEncodable,
+    isWsQueueBoxServerResendRecoveredReceipt,
     toWsQueueBoxServerEndedReceiptControlId,
     toWsQueueBoxServerReceiptControlMessage,
     toWsQueueBoxServerReceiptPayload,
@@ -76,9 +78,11 @@ import {
     type WsQueueBoxServerReceiptTerms
 } from './receipt/to-ws-queue-box-server-receipt-opening.ts';
 import type { WsServerRoomAudience } from './ws-queue-box-server-contracts.ts';
+import type { WsQueueBoxServerLiveDelivery } from './ws-queue-box-server-live-delivery.ts';
 import type { WsQueueBoxServerPreparedMessage } from './ws-queue-box-server-outbound-planning.ts';
 import {
     recordWsQueueBoxServerReceiptObservation,
+    toImmutableWsQueueBoxServerReceipt,
     toImmutableWsQueueBoxServerReceiptAck,
     toImmutableWsQueueBoxServerReceiptAggregate,
     toWsQueueBoxServerReceiptOutboxVerdict,
@@ -170,13 +174,16 @@ export namespace WsQueueBoxServerReceiptAggregation {
          */
         readonly readIngressAudience: (msgId: string, originPeerId: string) => Promise<readonly string[] | undefined>;
         /**
-         * The service's outbound owner admitting one receipt as a durable `WS_OUTBOX` row, so its
-         * dequeue reaches the origin through the cluster publisher wherever the origin is connected.
+         * The service's outbound owner admitting one receipt as a durable `WS_OUTBOX` row, so its dequeue reaches the
+         * origin through the cluster publisher wherever the origin is connected. An `admitted` receipt with a head
+         * behind it goes to the origin's sockets here first, and is a row only when no socket here took it.
          */
         readonly enqueueOutbox: (
             message: ALMessage,
             plan: ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage>
         ) => Promise<ALOutboundEnqueueResult>;
+        /** Writes a control to the sockets this instance holds for a peer, with what each native call did. */
+        readonly liveDelivery: Pick<WsQueueBoxServerLiveDelivery, 'sendToResolvedPeerWithEvidence'>;
         /** The server's own outbound owner, which answers every control addressed to the server itself. */
         readonly acceptServerControl: (message: ALMessage) => Promise<ALOutboundControlAdmissionResult>;
         /**
@@ -211,7 +218,9 @@ export namespace WsQueueBoxServerReceiptAggregation {
 
 /**
  * The receipts of the `receiver` room messages the server admitted, counted in the receipt record every instance
- * shares and answered to the origin as one durable outbox row per phase. The terminal receipt is written by the
+ * shares and answered to the origin as one durable outbox row per phase. An `admitted` receipt with a head behind it,
+ * which a re-sent copy is answered again from, goes to the origin's sockets on this instance first, and is a row only
+ * when no socket here took it; every other receipt is always a row. The terminal receipt is written by the
  * record's ended work, on whichever instance claims it, and also settles the server's own pending row for the
  * message. The server's own logically receipted publications are counted in the same record, opened from the
  * server's pending row; their terminal receipt only settles that row, since the server is their origin. It is also
@@ -699,6 +708,9 @@ export class WsQueueBoxServerReceiptAggregation {
     private async writeReceipt(issued: WsQueueBoxServerIssuedReceipt): Promise<void> {
         const { receipt, opening } = issued;
         const message = toWsQueueBoxServerReceiptControlMessage(issued, this.#dependencies.serverPeerId);
+        if (this.writeLiveReceipt(issued, message)) {
+            return;
+        }
         const { receiptObserver, serverPeerId } = this.#dependencies;
         const enqueued = await this.#dependencies.enqueueOutbox(
             message,
@@ -711,12 +723,7 @@ export class WsQueueBoxServerReceiptAggregation {
                 serverPeerId,
                 receiptControlMsgId: issued.controlId,
                 traceId: opening.traceId,
-                receipt: Object.freeze({
-                    ...receipt,
-                    expectedRecipientPeerIds: Object.freeze([...receipt.expectedRecipientPeerIds]),
-                    confirmedRecipientPeerIds: Object.freeze([...receipt.confirmedRecipientPeerIds]),
-                    outsideAudienceRecipientPeerIds: Object.freeze([...receipt.outsideAudienceRecipientPeerIds])
-                }),
+                receipt: toImmutableWsQueueBoxServerReceipt(receipt),
                 deadlineAtMs: opening.deadlineAtMs,
                 verdict: toWsQueueBoxServerReceiptOutboxVerdict(enqueued.verdict),
                 entryCount: enqueued.entries.length,
@@ -733,6 +740,25 @@ export class WsQueueBoxServerReceiptAggregation {
                 recordWsQueueBoxServerReceiptObservation(receiptObserver, observation);
             }
         }
+    }
+
+    /**
+     * Writes a receipt its sender's resend recovers to the origin's sockets here and records one `receipt-transport`
+     * per connection it called; whether a socket took it. Any other receipt is not written here and answers false.
+     */
+    private writeLiveReceipt(issued: WsQueueBoxServerIssuedReceipt, message: ALMessage): boolean {
+        if (!isWsQueueBoxServerResendRecoveredReceipt(issued.receipt)) {
+            return false;
+        }
+        const { liveDelivery, receiptObserver, serverPeerId } = this.#dependencies;
+        const sent = liveDelivery.sendToResolvedPeerWithEvidence({ peerId: issued.receipt.originPeerId, message });
+        for (const write of sent.writes) {
+            recordWsQueueBoxServerReceiptObservation(
+                receiptObserver,
+                toWsQueueBoxServerLiveReceiptTransport(issued, write, serverPeerId)
+            );
+        }
+        return sent.sentCount > 0;
     }
 
     /** Two commits: a crash between them leaves the server row unsettled until the ended work delivers again. */

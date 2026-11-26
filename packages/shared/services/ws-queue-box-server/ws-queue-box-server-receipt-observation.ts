@@ -237,6 +237,15 @@ export function toImmutableWsQueueBoxServerReceiptAck(ack: ALAckPayload): ALAckP
     });
 }
 
+export function toImmutableWsQueueBoxServerReceipt(receipt: ALReceiptPayload): ALReceiptPayload {
+    return Object.freeze({
+        ...receipt,
+        expectedRecipientPeerIds: Object.freeze([...receipt.expectedRecipientPeerIds]),
+        confirmedRecipientPeerIds: Object.freeze([...receipt.confirmedRecipientPeerIds]),
+        outsideAudienceRecipientPeerIds: Object.freeze([...receipt.outsideAudienceRecipientPeerIds])
+    });
+}
+
 export function toImmutableWsQueueBoxServerReceiptAggregate(
     aggregate: WsQueueBoxServerReceiptAggregateFacts | undefined
 ): WsQueueBoxServerReceiptAggregateFacts | undefined {

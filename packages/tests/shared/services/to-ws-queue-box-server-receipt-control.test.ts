@@ -4,6 +4,7 @@ import { AL_RECEIPT_DEADLINE_GRACE_MS, decodeALControlMessage } from '@shared/al
 import type { ALReceiptRecordOpening } from '@shared/alm/receipt-record/al-receipt-record-rows.ts';
 import {
     isWsQueueBoxServerReceiptEncodable,
+    isWsQueueBoxServerResendRecoveredReceipt,
     toWsQueueBoxServerEndedReceiptControlId,
     toWsQueueBoxServerReceiptControlMessage,
     toWsQueueBoxServerReceiptPayload
@@ -55,5 +56,36 @@ describe('the receipt control', () => {
         });
         expect(control.constraints?.expiresAtMs).toBe(NOW + 9_000 + AL_RECEIPT_DEADLINE_GRACE_MS);
         expect(decodeALControlMessage(control).right).toEqual({ type: 'receipt', payload: receipt });
+    });
+});
+
+describe('which receipt a sender\'s resend recovers', () => {
+    const head = opening(2);
+    const receiptAt = (phase: 'admitted' | 'complete' | 'timed-out', expected: readonly string[]) => ({
+        ...toWsQueueBoxServerReceiptPayload(head, {
+            confirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: [],
+            phase,
+            observedAtEpochMs: NOW
+        }),
+        expectedRecipientPeerIds: expected
+    });
+
+    // Pins an `admitted` with a head behind it kept waiting for the outbound worker as a row.
+    it('is an admitted receipt that expects somebody', () => {
+        expect(isWsQueueBoxServerResendRecoveredReceipt(receiptAt('admitted', head.expectedRecipientPeerIds))).toBe(true);
+    });
+
+    // Pins the only answer of a send admitted to nobody, which no resend is answered again, losing its row.
+    it('is not an admitted receipt that expects nobody', () => {
+        expect(isWsQueueBoxServerResendRecoveredReceipt(receiptAt('admitted', []))).toBe(false);
+    });
+
+    // Pins a terminal receipt losing its durable row.
+    it('is not a complete or a timed-out receipt', () => {
+        expect([
+            isWsQueueBoxServerResendRecoveredReceipt(receiptAt('complete', head.expectedRecipientPeerIds)),
+            isWsQueueBoxServerResendRecoveredReceipt(receiptAt('timed-out', head.expectedRecipientPeerIds))
+        ]).toEqual([false, false]);
     });
 });

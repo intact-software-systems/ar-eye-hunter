@@ -369,6 +369,7 @@ export class WsQueueBoxServerService {
                 await inboundRuntime.volatileStores?.admissionStore.readIngressAudience(msgId, originPeerId) ??
                     await inboundRuntime.admissionStore.readIngressAudience(msgId, originPeerId),
             enqueueOutbox: (message, plan) => this.outboundRuntime.enqueueIfAbsent(message, plan),
+            liveDelivery: this.liveDelivery,
             acceptServerControl: (message) => this.outboundRuntime.acceptControlMessage(message, 'peer'),
             acceptServerReceipt: (control) => this.outboundRuntime.acceptReceipt(control),
             readOwnPendingReceipt: (msgId) => this.readOwnPendingReceipt(msgId),

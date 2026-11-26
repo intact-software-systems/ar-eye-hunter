@@ -185,25 +185,28 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         }).toEqual(['admitted', 'timed-out']);
     });
 
-    it('answers the origin with the admitted audience at once and the complete aggregate as one more row', async () => {
+    // The origin is connected to the admitting instance, so its admitted receipt is written to its socket and only the
+    // terminal receipt is a row.
+    it('answers the origin on its socket with the admitted audience at once and the complete aggregate as its one row', async () => {
         const fixture = await createReceiptFixture({ fanout: 'forward', origin: 'local' });
         await admitRoomMessage(fixture);
-        await expect.poll(() => readReceiptRows(fixture)).toEqual([
+        expect(readSentReceipts(fixture.sockets.a)).toEqual([
             expect.objectContaining({ phase: 'admitted', expectedRecipientPeerIds: ['b', 'c'], confirmedRecipientPeerIds: [] })
         ]);
-        expect((await readReceiptRows(fixture))[0]).toMatchObject({
+        expect(readSentReceipts(fixture.sockets.a)[0]).toMatchObject({
             msgId: 'room-message-1',
             originPeerId: 'a',
             snapshotVersion: SNAPSHOT_VERSION
         });
+        expect(await readReceiptRows(fixture)).toEqual([]);
 
         await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'b'), 'b');
-        expect((await readReceiptRows(fixture)).map((receipt) => receipt.phase)).toEqual(['admitted']);
+        expect(await readReceiptRows(fixture)).toEqual([]);
         await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'c'), 'c');
 
-        await expect.poll(async () => (await readReceiptRows(fixture)).map((receipt) => receipt.phase)).toEqual(['admitted', 'complete']);
+        await expect.poll(async () => (await readReceiptRows(fixture)).map((receipt) => receipt.phase)).toEqual(['complete']);
         const receipts = await readReceiptRows(fixture);
-        expect(receipts[1]).toMatchObject({
+        expect(receipts[0]).toMatchObject({
             expectedRecipientPeerIds: ['b', 'c'],
             confirmedRecipientPeerIds: ['b', 'c'],
             snapshotVersion: SNAPSHOT_VERSION
@@ -294,7 +297,8 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         await admitRoomMessage(fixture);
         await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'b'), 'b');
         await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'c'), 'c');
-        await expect.poll(async () => (await readReceiptRows(fixture)).length).toBe(2);
+        // The admitted receipt went to the origin's socket; the complete receipt is the one row.
+        await expect.poll(async () => (await readReceiptRows(fixture)).length).toBe(1);
         await settleQueueEngine(fixture.engine);
 
         const acknowledgementsToOrigin = fixture.sockets.a.sent
@@ -342,6 +346,7 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         expect(readSentReceipts(fixture.sockets.a)).toEqual([]);
     });
 
+    // No socket of the origin is on the admitting instance, so the admitted receipt is a row, as the complete one is.
     it('reaches an origin whose live session is on another instance with the admitted and the complete receipt', async () => {
         const fixture = await createReceiptFixture({ fanout: 'forward', origin: 'remote' });
         await admitRoomMessage(fixture);
@@ -364,9 +369,10 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'c'), 'c');
         await settleQueueEngine(fixture.engine);
 
+        // The origin is connected here: its admitted receipt went to its socket, and the complete receipt is the one row.
         const receipts = await readReceiptRows(fixture);
-        expect(receipts.filter((receipt) => receipt.phase === 'complete')).toHaveLength(1);
-        expect(receipts.map((receipt) => receipt.phase)).toEqual(['admitted', 'complete']);
+        expect(receipts.map((receipt) => receipt.phase)).toEqual(['complete']);
+        expect(readSentReceipts(fixture.sockets.a)[0]?.phase).toBe('admitted');
 
         // Past the ack timeout a server still expecting b and c would send them the message again.
         fixture.clock.nowMs += ROOM_MESSAGE_ACK_TIMEOUT_MS + 1_000;
@@ -660,7 +666,7 @@ describe('WS server receipt aggregation over the receipt record', () => {
     // record, so the one a copy reaches answers it, and opens nothing more.
     it('answers a duplicate on another instance from the record they share, and opens nothing more', async () => {
         const admitting = createAggregation();
-        const other = createAggregation({ ingressAudience: undefined, recordStores: admitting.recordStores });
+        const other = createAggregation({ ingressAudience: undefined, recordStores: admitting.recordStores, originSocket: 'elsewhere' });
         await admitting.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
 
         await other.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'duplicate' }));
@@ -669,9 +675,42 @@ describe('WS server receipt aggregation over the receipt record', () => {
         expect(readPhases(other)).toEqual(['admitted']);
         expect(readHeadKeys(admitting)).toHaveLength(1);
     });
+});
 
-    it('answers an empty audience admitted at once and opens nothing', async () => {
+describe('WS server receipt aggregation of the admitted receipt on the origin\'s socket', () => {
+    // Pins `admitted` waiting behind every other receipt on the outbound worker.
+    it('writes admitted to the origin\'s socket on the admitting instance and enqueues no row for it', async () => {
+        const fixture = createAggregation({ ingressAudience: undefined, recordStores: undefined, originSocket: 'here' });
+
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
+
+        expect(fixture.live.map(toReceipt)).toMatchObject([{ phase: 'admitted', originPeerId: 'a', expectedRecipientPeerIds: ['b', 'c'] }]);
+        expect(fixture.enqueued).toEqual([]);
+        expect((await fixture.record.read(RECORD_REF)).right?.head.phase).toBe('open');
+        const controlId = fixture.live[0]!.id.msgId;
+        expect(fixture.observations.filter((observation) => observation.kind === 'receipt-transport')).toMatchObject([
+            { receiptControlMsgId: controlId, transport: 'recipient', originIsHere: true, outcome: 'sent' }
+        ]);
+        expect(fixture.observations.filter((observation) => observation.kind === 'receipt-outbox')).toEqual([]);
+    });
+
+    // Pins an `admitted` lost when the origin's socket is on another instance.
+    it('enqueues the admitted row as before when the origin has no socket on this instance', async () => {
         const fixture = createAggregation();
+
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
+
+        expect(readPhases(fixture)).toEqual(['admitted']);
+        expect(fixture.observations.filter((observation) => observation.kind === 'receipt-outbox')).toMatchObject([
+            { receipt: { phase: 'admitted' }, verdict: { kind: 'admitted' } }
+        ]);
+        expect(fixture.observations.filter((observation) => observation.kind === 'receipt-transport')).toEqual([]);
+    });
+
+    // Pins the only answer of a send admitted to nobody, which no resend recovers, leaving its durable row. It also
+    // pins that answer opening a head.
+    it('keeps the row of an admitted that expects nobody', async () => {
+        const fixture = createAggregation({ ingressAudience: undefined, recordStores: undefined, originSocket: 'here' });
 
         await fixture.aggregation.writeAdmittedReceipt({
             ...admittedRoomMessage({ kind: 'admitted' }),
@@ -679,7 +718,24 @@ describe('WS server receipt aggregation over the receipt record', () => {
         });
 
         expect(readReceipts(fixture)).toMatchObject([{ phase: 'admitted', expectedRecipientPeerIds: [] }]);
+        expect(fixture.live).toEqual([]);
         expect((await fixture.record.read(RECORD_REF)).left).toEqual({ kind: 'head-absent' });
+    });
+
+    // Pins a terminal receipt, the ended work's or a re-sent copy's, losing its durable row to a live write.
+    it('keeps the row of every terminal receipt, the ended work\'s and a re-sent copy\'s', async () => {
+        const fixture = createAggregation({ ingressAudience: undefined, recordStores: undefined, originSocket: 'here' });
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
+        for (const recipient of ['b', 'c']) {
+            await fixture.aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: recipient, logicalRecipientPeerId: recipient })));
+        }
+        await runWorker(fixture);
+        expect((await fixture.record.read(RECORD_REF)).right?.head.phase).toBe('complete');
+
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'duplicate' }));
+
+        expect(readPhases(fixture)).toEqual(['complete', 'complete']);
+        expect(fixture.live.map((message) => toReceipt(message).phase)).toEqual(['admitted']);
     });
 });
 
@@ -734,7 +790,7 @@ describe('WS server receipt aggregation of recipients never sent the message (D7
 describe('WS server receipt aggregation of a re-sent copy whose admission opened no head', () => {
     // Pins a copy opening from its own room audience or never-sent list instead of the audience its admission row froze.
     it('opens the record for a copy whose admission row names recipients and whose head is absent', async () => {
-        const fixture = createAggregation({ ingressAudience: ['a', 'b', 'c'], recordStores: undefined });
+        const fixture = createAggregation({ ingressAudience: ['a', 'b', 'c'], recordStores: undefined, originSocket: 'elsewhere' });
 
         await fixture.aggregation.writeAdmittedReceipt({
             ...admittedRoomMessage({ kind: 'duplicate' }),
@@ -753,7 +809,7 @@ describe('WS server receipt aggregation of a re-sent copy whose admission opened
 
     // Pins a copy opening a head, or answering, for an admission whose audience leaves nobody to expect.
     it('opens nothing for a copy whose admission row freezes to nobody', async () => {
-        const fixture = createAggregation({ ingressAudience: ['a'], recordStores: undefined });
+        const fixture = createAggregation({ ingressAudience: ['a'], recordStores: undefined, originSocket: 'elsewhere' });
 
         await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'duplicate' }));
 
@@ -773,7 +829,7 @@ describe('WS server receipt aggregation of a re-sent copy whose admission opened
             toMessage: (message: ALMessage): ALMessage => ({ ...message, id: { ...message.id, ts: 1_000 - AL_RECEIPT_RECORD_WINDOW_MS } })
         }
     ])('opens nothing for a copy of a message that $name', async ({ toMessage }) => {
-        const fixture = createAggregation({ ingressAudience: ['a', 'b', 'c'], recordStores: undefined });
+        const fixture = createAggregation({ ingressAudience: ['a', 'b', 'c'], recordStores: undefined, originSocket: 'elsewhere' });
         const copy = admittedRoomMessage({ kind: 'duplicate' });
 
         await fixture.aggregation.writeAdmittedReceipt({ ...copy, message: toMessage(copy.message) });
@@ -788,9 +844,10 @@ describe('WS server receipt aggregation of a re-sent copy whose admission opened
         const recordStores = createInMemoryALReceiptRecordStores('server-ws-qbox:test', () => 1_000);
         const copying = createAggregation({
             ingressAudience: ['a', 'b', 'c'],
-            recordStores: { ...recordStores, backend: holdALAdmissionWrite(recordStores.backend, hold) }
+            recordStores: { ...recordStores, backend: holdALAdmissionWrite(recordStores.backend, hold) },
+            originSocket: 'elsewhere'
         });
-        const admitting = createAggregation({ ingressAudience: undefined, recordStores });
+        const admitting = createAggregation({ ingressAudience: undefined, recordStores, originSocket: 'elsewhere' });
 
         const answering = copying.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'duplicate' }));
         await hold.arrived;
@@ -809,6 +866,8 @@ interface AggregationFixture {
     readonly aggregation: WsQueueBoxServerReceiptAggregation;
     readonly engine: InboxOutboxEngine;
     readonly enqueued: ALMessage[];
+    /** The controls written to the origin's socket on this instance. */
+    readonly live: ALMessage[];
     /** The controls the aggregation handed to the server's own outbound owner. */
     readonly ownerControls: ALMessage[];
     readonly clock: { nowMs: number; };
@@ -824,14 +883,17 @@ interface AggregationFixtureOptions {
     readonly ingressAudience: readonly string[] | undefined;
     /** Stores another aggregation already counts in; `undefined`, a record of its own. */
     readonly recordStores: ALReceiptRecordStores | undefined;
+    /** `here`: the origin has one socket on this instance, which takes every control written to it. */
+    readonly originSocket: 'here' | 'elsewhere';
 }
 
 function createAggregation(
-    options: AggregationFixtureOptions = { ingressAudience: undefined, recordStores: undefined }
+    options: AggregationFixtureOptions = { ingressAudience: undefined, recordStores: undefined, originSocket: 'elsewhere' }
 ): AggregationFixture {
     const clock = { nowMs: 1_000 };
     const engine = new InboxOutboxEngine({ nowEpochMs: () => clock.nowMs, random: () => 0, reportTaskFailure: () => undefined });
     const enqueued: ALMessage[] = [];
+    const live: ALMessage[] = [];
     const ownerControls: ALMessage[] = [];
     const observations: WsQueueBoxServerReceiptObservation[] = [];
     const recordStores = options.recordStores ?? createInMemoryALReceiptRecordStores('server-ws-qbox:test', () => clock.nowMs);
@@ -840,7 +902,7 @@ function createAggregation(
         receiptObserver: (observation) => observations.push(observation),
         clock: { nowMs: () => clock.nowMs },
         random: () => 0,
-        newControlId: () => `receipt-${enqueued.length + 1}`,
+        newControlId: () => `receipt-${enqueued.length + live.length + 1}`,
         qosProvider: undefined,
         queueEngine: engine,
         recordStores,
@@ -848,6 +910,15 @@ function createAggregation(
         enqueueOutbox: async (message) => {
             enqueued.push(message);
             return { verdict: { kind: 'admitted', durable: true, queuedAttempts: 0 }, message, entries: [], trackedReceiptAlgo: 'receiver' };
+        },
+        liveDelivery: {
+            sendToResolvedPeerWithEvidence: ({ message }) => {
+                if (options.originSocket === 'elsewhere') {
+                    return { sentCount: 0, writes: [] };
+                }
+                live.push(message);
+                return { sentCount: 1, writes: [{ connectionId: 'a', nativeCall: 'returned', written: true }] };
+            }
         },
         acceptServerControl: async (message) => {
             ownerControls.push(message);
@@ -859,7 +930,7 @@ function createAggregation(
     });
     onTestFinished(() => aggregation.dispose());
     const record = new ALReceiptRecord({ ...recordStores, nowMs: () => clock.nowMs });
-    return { aggregation, engine, enqueued, ownerControls, clock, recordStores, record, observations };
+    return { aggregation, engine, enqueued, live, ownerControls, clock, recordStores, record, observations };
 }
 
 /** Drives the record's worker as its own tests do: `executeOnce` starts a batch it does not wait for. */
@@ -875,7 +946,11 @@ async function readRuntimeRejection(fixture: AggregationFixture, ack: ALAckPaylo
 }
 
 function readReceipts(fixture: AggregationFixture): readonly ALReceiptPayload[] {
-    return fixture.enqueued.map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource)));
+    return fixture.enqueued.map(toReceipt);
+}
+
+function toReceipt(message: ALMessage): ALReceiptPayload {
+    return decodeALReceiptPayload(JSON.parse(message.payload.resource));
 }
 
 function readPhases(fixture: AggregationFixture): readonly ALReceiptPayload['phase'][] {

@@ -46,6 +46,7 @@ import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-w
 
 import { commitCompetingOutboundMessageCommit } from '../alm/outbound-runtime-test-fixture.ts';
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
+import { readReceiptAggregationVerdicts } from './ws-queue-box-server-receipt-fixture.ts';
 
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
 import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
@@ -204,7 +205,8 @@ async function waitForReceiptCompletion(
     await expect.poll(async () => {
         const entries = await Promise.all((await service.outbox.getAllKeys()).map((key) => service.outbox.getItem(key)));
         const work = entries.filter((entry) => entry?.typeId === EnqueuedType.WS_OUTBOX || entry?.key.topicId === 'AL_OUTBOUND');
-        return work.length > 0 && work.every((entry) => entry?.status === EntityStatus.COMPLETED);
+        // An admitted receipt written to the origin's socket leaves no work; a terminal receipt's row is work.
+        return work.every((entry) => entry?.status === EntityStatus.COMPLETED);
     }).toBe(true);
 }
 
@@ -271,12 +273,19 @@ describe('private upstream receipt observation', () => {
         const admission = await service.acceptIncomingMessage(message, 'origin');
         expect(admission.left).toBeUndefined();
         expect(admission.right?.kind).toBe('admitted');
+        // The origin is connected here, so the admitted receipt went to its socket: it is observed as that control's
+        // transport, and no enqueue or dequeue of it exists.
+        const [admittedFrame] = readSentReceipts(service);
+        expect(decodeALControlMessage(admittedFrame!).right).toMatchObject({ payload: { phase: 'admitted', msgId: 'subject' } });
         expect(events).toContainEqual(expect.objectContaining({
-            kind: 'receipt-outbox',
+            kind: 'receipt-transport',
+            receiptControlMsgId: admittedFrame!.id.msgId,
             receipt: expect.objectContaining({ phase: 'admitted', msgId: 'subject', expectedRecipientPeerIds: ['recipient'] }),
-            verdict: expect.objectContaining({ kind: 'admitted', durable: true })
+            transport: 'recipient',
+            connectionId: 'origin',
+            outcome: 'sent'
         }));
-        // This case asserts uncontended admission; the admitted receipt's dequeue writes its own control's version alone.
+        expect(events.filter((event) => event.kind === 'receipt-outbox')).toEqual([]);
         await waitForReceiptCompletion(service, engine, ['admitted']);
         const accepted = await service.acceptIncomingMessage(createReceiverAcknowledgement(), 'recipient');
         expect(accepted.left).toBeUndefined();
@@ -344,27 +353,14 @@ describe('private upstream receipt observation', () => {
         const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
         const inboundStores = createObservedInboundStores();
         const service = await createObservedServer((event) => events.push(event), undefined, { inboundStores, outboundStores, queueEngine: engine });
-        const dequeueEntered = Promise.withResolvers<void>();
-        const releaseDequeue = Promise.withResolvers<void>();
-        const dequeueFinished = Promise.withResolvers<void>();
         const commits: ReceiptCommitOutcome[] = [];
         const commitBundle = outboundStores.admissionStore.commitBundle.bind(outboundStores.admissionStore);
         let completeAttempts = 0;
         const commitSpy = vi.spyOn(outboundStores.admissionStore, 'commitBundle').mockImplementation(async (bundle, observation) => {
             const control = bundle.canonicalEntry && decodeALControlMessage(decodePersistedALMessage(bundle.canonicalEntry.resource)).right;
             const phase = control?.type === 'receipt' ? control.payload.phase : undefined;
-            const admittedDequeue = phase === 'admitted' && bundle.durableEffects.some((effect) => effect.payload.kind === 'send-prepared');
-            if (admittedDequeue) {
-                dequeueEntered.resolve();
-                await releaseDequeue.promise;
-            }
             if (phase === 'complete' && bundle.pendingAdmission === undefined && bundle.durableEffects.length === 0) {
                 completeAttempts += 1;
-                if (completeAttempts === 1) {
-                    // The admitted receipt's dequeue commits in between, on its own control's version alone.
-                    releaseDequeue.resolve();
-                    await dequeueFinished.promise;
-                }
                 if (completeAttempts <= AL_OUTBOUND_COMMIT_ATTEMPTS) {
                     // Another commit of the complete receipt's own control lands before each of its attempts, so each
                     // loses that control's version and the receipt is retained.
@@ -376,14 +372,9 @@ describe('private upstream receipt observation', () => {
                 const sendsPrepared = bundle.durableEffects.some((effect) => effect.payload.kind === 'send-prepared');
                 commits.push({ phase, expectedVersion: bundle.expectedVersion, sendsPrepared, status });
             }
-            if (admittedDequeue) {
-                dequeueFinished.resolve();
-            }
             return status;
         });
         const closeReceiptContender = async () => {
-            releaseDequeue.resolve();
-            dequeueFinished.resolve();
             try {
                 await service.dispose();
             }
@@ -395,18 +386,16 @@ describe('private upstream receipt observation', () => {
         try {
             const message = createRoomSubjectMessage();
             expect((await service.acceptIncomingMessage(message, 'origin')).right?.kind).toBe('admitted');
-            await dequeueEntered.promise;
+            expect(readSentReceipts(service)).toHaveLength(1);
             expect((await service.acceptIncomingMessage(createReceiverAcknowledgement(), 'recipient')).right?.kind).toBe('control');
             await expect.poll(async () => {
                 await runEngine(engine);
                 return events.some((event) => event.kind === 'receipt-outbox' && event.receipt.phase === 'complete');
             }).toBe(true);
-            // No receipt reads a row its sender's other messages share, so none writes the server's version: the admitted
-            // control's enqueue and its dequeue each commit once, and the complete control loses its own version.
-            expect(commits.filter((commit) => commit.phase === 'admitted')).toEqual([
-                { phase: 'admitted', expectedVersion: undefined, sendsPrepared: false, status: 'committed' },
-                { phase: 'admitted', expectedVersion: undefined, sendsPrepared: true, status: 'committed' }
-            ]);
+            // No receipt reads a row its sender's other messages share, so none writes the server's version. The admitted
+            // receipt went to the origin's socket here, so no commit of it exists; the complete control loses its own
+            // version.
+            expect(commits.filter((commit) => commit.phase === 'admitted')).toEqual([]);
             expect(commits).toContainEqual({ phase: 'complete', expectedVersion: undefined, sendsPrepared: false, status: 'conflict' });
             const pending = events.find((event) => event.kind === 'receipt-outbox' && event.receipt.phase === 'complete');
             expect(pending).toMatchObject({ kind: 'receipt-outbox', verdict: { kind: 'pending' }, entryCount: 1, trackedReceiptAlgo: 'none' });
@@ -573,17 +562,49 @@ describe('private upstream receipt observation', () => {
         const service = await createObservedServer((event) => events.push(event));
         const message = createRoomSubjectMessage();
         expect((await service.acceptIncomingMessage(message, 'origin')).right?.kind).toBe('admitted');
-        const receipts = events.filter((event) => event.kind === 'receipt-outbox');
-        expect(receipts).toMatchObject([{ receipt: { msgId: 'subject', phase: 'admitted' } }]);
+        const receipts = events.filter((event) => event.kind === 'receipt-transport');
+        expect(receipts).toMatchObject([{ receipt: { msgId: 'subject', phase: 'admitted' }, connectionId: 'origin', outcome: 'sent' }]);
         expect((await service.acceptIncomingMessage(message, 'origin')).right?.kind).toBe('duplicate');
-        expect(events.filter((event) => event.kind === 'receipt-outbox')).toMatchObject([
+        // The duplicate is answered admitted again, under a control id of its own, on the origin's socket again; neither
+        // admitted receipt is enqueued.
+        const transports = events.filter((event) => event.kind === 'receipt-transport');
+        expect(transports).toMatchObject([
             ...receipts,
-            { receipt: { ...receipts[0].receipt, observedAtEpochMs: expect.any(Number) } }
+            { receipt: { ...receipts[0].receipt, observedAtEpochMs: expect.any(Number) }, connectionId: 'origin', outcome: 'sent' }
         ]);
+        expect(new Set(transports.map((event) => event.receiptControlMsgId)).size).toBe(2);
+        expect(readSentReceipts(service).map((frame) => frame.id.msgId)).toEqual(transports.map((event) => event.receiptControlMsgId));
+        expect(events.filter((event) => event.kind === 'receipt-outbox')).toEqual([]);
         expect(events.filter((event) => event.kind === 'business-socket-decision')).toMatchObject([
             { msgId: 'subject', outcome: 'admitted', scopeDisposition: 'authorized' },
             { msgId: 'subject', outcome: 'duplicate', scopeDisposition: 'authorized' }
         ]);
+    });
+
+    // Pins a live admitted recorded as an enqueue it never made, or recorded as nothing.
+    it('records a live admitted as its transport on the origin\'s socket and no receipt-outbox', async () => {
+        const events: WsQueueBoxServerReceiptObservation[] = [];
+        const engine = new InboxOutboxEngine();
+        const service = await createObservedServer((event) => events.push(event), undefined, {
+            inboundStores: createObservedInboundStores(),
+            queueEngine: engine
+        });
+        expect((await service.acceptIncomingMessage(createRoomSubjectMessage(), 'origin')).right?.kind).toBe('admitted');
+        expect((await service.acceptIncomingMessage(createReceiverAcknowledgement(), 'recipient')).right?.kind).toBe('control');
+
+        await waitForReceiptCompletion(service, engine, ['admitted', 'complete']);
+
+        const [admittedFrame] = readSentReceipts(service);
+        expect(events.filter((event) => event.kind === 'receipt-transport' && event.receipt.phase === 'admitted')).toMatchObject([{
+            receiptControlMsgId: admittedFrame!.id.msgId,
+            transport: 'recipient',
+            connectionId: 'origin',
+            nativeCall: 'returned',
+            publisherCall: 'absent',
+            originIsHere: true,
+            outcome: 'sent'
+        }]);
+        expect(readReceiptAggregationVerdicts(events, 'subject')).toEqual(['ack-count:complete', 'receipt-outbox:complete:admitted']);
     });
 
     it('observes missing connections and disposed ordinary submissions without inventing scope or business facts for controls', async () => {
@@ -795,6 +816,7 @@ async function createObservedAggregation(
         recordStores,
         readIngressAudience: async () => undefined,
         enqueueOutbox: enqueue,
+        liveDelivery: { sendToResolvedPeerWithEvidence: () => ({ sentCount: 0, writes: [] }) },
         acceptServerControl: async () => ({ kind: 'not-handled' }),
         acceptServerReceipt: effects.acceptServerReceipt ?? (async () => ({ kind: 'not-handled' })),
         readOwnPendingReceipt: async () => undefined,
@@ -1205,24 +1227,20 @@ describe('private evidence does not control delivery', () => {
         const service = await createObservedServer((event) => {
             events.push(event);
             if (event.kind === 'business-socket-decision') {
-                completedEffects.push(...events.filter((existing) => existing.kind === 'receipt-outbox'));
+                completedEffects.push(...events.filter((existing) => existing.kind === 'receipt-transport'));
                 clock.value = 90000;
             }
         });
         const accepted = await service.acceptIncomingMessage(createRoomSubjectMessage(), 'origin');
         expect(accepted.left).toBeUndefined();
         expect(accepted.right?.kind).toBe('admitted');
-        expect(events).toContainEqual(expect.objectContaining({
-            kind: 'receipt-outbox',
-            receipt: expect.objectContaining({ phase: 'admitted' }),
-            verdict: expect.objectContaining({ kind: 'admitted', durable: true })
-        }));
+        // The origin is connected here: the admitted receipt's effect is its write to the origin's socket.
         expect(events).toContainEqual(expect.objectContaining({ kind: 'business-socket-decision', outcome: 'admitted' }));
         expect(completedEffects).toMatchObject([{
-            kind: 'receipt-outbox',
-            deadlineAtMs: 31000,
+            kind: 'receipt-transport',
             receipt: { phase: 'admitted', observedAtEpochMs: 1000 },
-            verdict: { kind: 'admitted', durable: true }
+            connectionId: 'origin',
+            outcome: 'sent'
         }]);
         expect(clock.value).toBe(90000);
     });

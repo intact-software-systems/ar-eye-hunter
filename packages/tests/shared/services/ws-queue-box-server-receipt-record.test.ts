@@ -657,13 +657,16 @@ describe('the WS server counts a receipt through the record every instance share
         expect(
             cluster.observations.filter((observation) => observation.kind === 'receipt-outbox' && observation.receipt.phase === 'complete')
         ).toHaveLength(1);
-        // The losing `end` records no refusal, no further count and no failed receipt.
+        // The losing `end` records no refusal, no further count and no failed receipt. The origin is connected to the
+        // admitting instance, so its admitted receipt is observed as its transport on that socket and enqueued nowhere.
         expect(readReceiptAggregationVerdicts(cluster.observations, MSG_ID)).toEqual<readonly ReceiptAggregationVerdict[]>([
             'ack-count:complete',
             'ack-count:complete',
-            'receipt-outbox:admitted:admitted',
             'receipt-outbox:complete:admitted'
         ]);
+        expect(
+            cluster.observations.filter((observation) => observation.kind === 'receipt-transport' && observation.receipt.phase === 'admitted')
+        ).toMatchObject([{ transport: 'recipient', originIsHere: true, outcome: 'sent' }]);
     });
 
     // Pins a copy opening a record whose terminal receipt can never be delivered, so its ended work throws.

@@ -29,7 +29,8 @@ import {
     createBridgeBus,
     createClusterInstance,
     RECEIPT_SERVER_PEER_ID,
-    type ClusterInstance
+    type ClusterInstance,
+    type ReceiptRoomView
 } from '../../../../shared/services/ws-queue-box-server-receipt-fixture.ts';
 import {
     createRuntimeStatePostgresSql,
@@ -71,6 +72,8 @@ interface StartInstanceInput {
     /** When set, every statement of the instance's one client is recorded here. */
     readonly log: PostgresStatementLog | undefined;
     readonly starts: boolean;
+    /** Whether the instance's room authority admits a room message now, or keeps it for its replay. */
+    readonly roomView: ReceiptRoomView;
 }
 
 export interface ReceiptInstance extends ClusterInstance {
@@ -135,7 +138,7 @@ async function openClient(clients: TerminablePostgresSql[]): Promise<TerminableP
 }
 
 export function instanceInput(name: string, roomPeerIds: readonly string[]): StartInstanceInput {
-    return { name, roomPeerIds, toRecordSql: undefined, log: undefined, starts: true };
+    return { name, roomPeerIds, toRecordSql: undefined, log: undefined, starts: true, roomView: { inSync: true } };
 }
 
 /**
@@ -166,7 +169,7 @@ export async function startInstance(cluster: ReceiptCluster, input: StartInstanc
         inboundVolatileStores: undefined,
         receiptRecordStores,
         receiptObserver: (observation) => cluster.observations.push(observation),
-        roomView: { inSync: true },
+        roomView: input.roomView,
         bus: cluster.bus,
         publisherId: `${input.name}-${cluster.runId}`,
         engine: new InboxOutboxEngine(),
