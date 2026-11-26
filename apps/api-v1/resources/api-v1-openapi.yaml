@@ -1246,10 +1246,13 @@ paths:
       tags: [Group State]
       summary: Discover court-ready Web Push support
       security: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
       responses:
         '200':
           description: Public VAPID key, or null when the server has disabled delivery.
           headers:
+            x-request-id: { $ref: '#/components/headers/XRequestId' }
             Cache-Control: { $ref: '#/components/headers/NoStore' }
           content:
             application/json:
