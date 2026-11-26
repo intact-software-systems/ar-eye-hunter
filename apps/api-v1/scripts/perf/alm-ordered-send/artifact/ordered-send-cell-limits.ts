@@ -51,5 +51,6 @@ export const ORDERED_SEND_CELL_LIMITS: readonly string[] = [
     'shapes run here stay far below it.',
     'The database is local, on the disk and the processor of the machine that runs the cell: its own time and its ' +
     'fsync are that machine\'s, and other work on the machine shows in the load average the artifact records.',
-    'The artifact holds the report and not the observations it was computed from.'
+    'The artifact holds the report, the short observation lists and the counts of the long ones: the first offers, ' +
+    'the ACKs, the arrivals and the hand-offs themselves are not in it, but for the offers that threw.'
 ];

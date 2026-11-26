@@ -41,8 +41,8 @@ describe('decodeOrderedSendCellOptions', () => {
             '--sender-recovery=client-stand-in',
             '--application-pool=5',
             `--database-url=${DATABASE_URL}`
-        ])).toEqual(reference);
-        expect(readOptions([`--database-url=${DATABASE_URL}`])).toEqual(reference);
+        ])).toMatchObject(reference);
+        expect(readOptions([`--database-url=${DATABASE_URL}`])).toMatchObject(reference);
         expect(ORDERED_SEND_REFERENCE_SHAPE).toEqual(reference.shape);
     });
 
@@ -78,8 +78,25 @@ describe('decodeOrderedSendCellOptions', () => {
                 applicationPoolMaxConnections: 10
             },
             databaseUrl: DATABASE_URL,
-            artifactDestination: { kind: 'file', path: 'tmp/perf/alm-ordered-send/one-track.json' }
+            artifactDestination: { kind: 'file', path: 'tmp/perf/alm-ordered-send/one-track.json' },
+            givenOptions: {
+                out: 'tmp/perf/alm-ordered-send/one-track.json',
+                'delay-ms': '5',
+                'duration-s': '45',
+                'sends-per-second': '10',
+                'sender-recovery': 'none',
+                'application-pool': '10',
+                publishers: '1'
+            }
         });
+    });
+
+    it('keeps the options as the command line gave them, in its order, without the database URL and without a default', () => {
+        const options = readOptions([`--database-url=${DATABASE_URL}`, '--delay-ms=05', '--publishers=5']);
+
+        expect(options?.givenOptions).toEqual({ 'delay-ms': '05', publishers: '5' });
+        expect(Object.keys(options?.givenOptions ?? {})).toEqual(['delay-ms', 'publishers']);
+        expect(readOptions([`--database-url=${DATABASE_URL}`])?.givenOptions).toEqual({});
     });
 
     it('refuses an invocation that names no database, with no default to fall back on', () => {

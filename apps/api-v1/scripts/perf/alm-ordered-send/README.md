@@ -112,13 +112,25 @@ and the tail are fixed for every run and recorded in the artifact as its constan
 ## The artifact
 
 A run writes one JSON file, schema `rallar.alm.ordered-send-cell.v1`, under the git-ignored `tmp/`
-unless `--out` names another place. It holds the commit and whether the tree was dirty; the host's
-processor, core count and memory, the operating system, and the Bun and PostgreSQL server versions;
-the shape and the constants; the application pool the instances ran with beside the API's default;
-which round trips the latency was added to and which not; the limits listed below; the load average
-when the run started and when it ended; the run's wall time, when observation ended, and the event
-loop's lag and the process's processor time over the send window; and the full report. It holds no
-database URL, and it holds the report without the observations the report was computed from.
+unless `--out` names another place. It holds:
+
+- the commit, the branch and whether the tree was dirty; the options as the command line gave them,
+  without the database URL;
+- the host's processor, core count and memory, the operating system, and the Bun and PostgreSQL
+  server versions; the load average when the run started and when it ended;
+- the shape and the constants; the application pool the instances ran with beside the API's default;
+  which round trips the latency was added to and which not; the limits listed below;
+- the run's wall time and when observation ended; over the send window and over the tail, each
+  apart, the event loop's lag and the processor time of the whole process, every thread;
+- the full report;
+- of the observations, the count of each list, and in full, with their instants, the lists a run
+  keeps short: the later offers (`resends`), the receipts, the NACKs and repair requests
+  (`controls`), the sends the stand-in ended (`sendEnds`), the repairs it declined
+  (`declinedRepairs`), and the first offers and the ACKs that threw. The first offers, the ACKs, the
+  arrivals and the hand-offs are counted and otherwise left out: a reference run reads 2,800 copies.
+
+It holds no database URL: the options are kept without it, and the message of an error is cut at 240
+characters and cleared of anything URL-shaped when it is recorded.
 
 The summary printed after the run is a reading of the same artifact. The product logs to stdout
 while a run lasts, so nothing is to be parsed from the terminal: read the artifact.

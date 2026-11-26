@@ -5,6 +5,8 @@ import {
     toOrderedSendArtifact,
     type ToOrderedSendArtifactInput
 } from '../../../../../../apps/api-v1/scripts/perf/alm-ordered-send/artifact/to-ordered-send-artifact.ts';
+import { decodeOrderedSendCellOptions } from '../../../../../../apps/api-v1/scripts/perf/alm-ordered-send/decode-ordered-send-cell-options.ts';
+import { toOrderedSendThrownAnswer } from '../../../../../../apps/api-v1/scripts/perf/alm-ordered-send/to-ordered-send-cell-answer.ts';
 
 const API_V1_DEFAULTS = JSON.parse(
     readFileSync(
@@ -16,13 +18,22 @@ const API_V1_DEFAULTS = JSON.parse(
 const SEND_WINDOW = {
     wallMs: 500,
     loopLag: { ticks: 50, p50Ms: 0.1, p95Ms: 0.4, p99Ms: 0.9, maxMs: 1.5, shareOfTicksOverOneMsLate: 0.02 },
-    cpu: { userMs: 200, systemMs: 50, coresBusy: 0.5 }
-};
+    cpu: { scope: 'whole process, every thread', userMs: 200, systemMs: 50, coresBusy: 0.5 }
+} as const;
+
+const TAIL = {
+    wallMs: 75_000,
+    loopLag: { ticks: 7_400, p50Ms: 0.1, p95Ms: 0.3, p99Ms: 0.6, maxMs: 2.5, shareOfTicksOverOneMsLate: 0.001 },
+    cpu: { scope: 'whole process, every thread', userMs: 15_000, systemMs: 3_750, coresBusy: 0.25 }
+} as const;
+
+const DATABASE_URL = 'postgres://app:s3cret-pw@db.internal:5432/alm_cell_run?sslmode=require';
 
 /** Two sends of one publisher to one recipient: the first was written to its socket, the second never was. */
 const INPUT: ToOrderedSendArtifactInput = {
     createdAt: '2026-11-26T19:24:04.123Z',
-    source: { commit: 'abc1234def5678900000000000000000000000ff', dirty: true },
+    source: { commit: 'abc1234def5678900000000000000000000000ff', branch: 'claude/alm-ordered-send-measurement', dirty: true },
+    givenOptions: { publishers: '1', 'duration-s': '1', 'delay-ms': '5', 'sender-recovery': 'none', 'application-pool': '10' },
     environment: {
         host: { cpuModel: 'Test CPU', cpuCount: 4, totalMemoryBytes: 16_000_000_000 },
         os: { platform: 'linux', release: '6.18.0', architecture: 'x64' },
@@ -75,7 +86,7 @@ const INPUT: ToOrderedSendArtifactInput = {
             declinedRepairs: [],
             observationEndedAtMs: 76_500.25
         },
-        runtime: { sendWindow: SEND_WINDOW, applicationPoolMaxConnections: 10 }
+        runtime: { sendWindow: SEND_WINDOW, tail: TAIL, applicationPoolMaxConnections: 10 }
     }
 };
 
@@ -87,7 +98,9 @@ describe('toOrderedSendArtifact', () => {
             schema: 'rallar.alm.ordered-send-cell.v1',
             createdAt: '2026-11-26T19:24:04.123Z',
             commit: 'abc1234def5678900000000000000000000000ff',
+            branch: 'claude/alm-ordered-send-measurement',
             dirty: true,
+            invocation: { givenOptions: INPUT.givenOptions },
             environment: INPUT.environment,
             loadAverage: { atStart: [0.5, 0.6, 0.7], atEnd: [1.5, 0.9, 0.8] },
             shape: INPUT.shape,
@@ -97,7 +110,7 @@ describe('toOrderedSendArtifact', () => {
                 apiV1DefaultMaxConnections: API_V1_DEFAULTS.database.applicationPool.maxConnections
             },
             observation: { tailMs: 75_000, firstOfferAtMs: 1_000.5, lastOfferAtMs: 1_500.25, endedAtMs: 76_500.25 },
-            run: { wallMs: 77_250, sendWindow: SEND_WINDOW }
+            run: { wallMs: 77_250, sendWindow: SEND_WINDOW, tail: TAIL }
         });
     });
 
@@ -125,22 +138,104 @@ describe('toOrderedSendArtifact', () => {
         expect(artifact.limits.join(' ')).toContain('room authorizer');
     });
 
-    it('holds the keys of its schema and nothing else: no observation list and no database URL', () => {
+    it('holds the keys of its schema and nothing else', () => {
         expect(Object.keys(toOrderedSendArtifact(INPUT)).toSorted()).toEqual([
             'applicationPool',
+            'branch',
             'commit',
             'constants',
             'createdAt',
             'databaseLatency',
             'dirty',
             'environment',
+            'invocation',
             'limits',
             'loadAverage',
             'observation',
+            'observations',
             'report',
             'run',
             'schema',
             'shape'
         ]);
+    });
+
+    it('keeps the small observation lists with their instants, the offers that threw, and only the counts of the large lists', () => {
+        const threw = toOrderedSendThrownAnswer(new Error('Buffered inbound ordering slot lost its canonical message'), 1_520);
+        const [admitted, pending] = INPUT.run.observations.sends;
+        const thrownSend = { ...pending, ...threw };
+        const resend = { msgId: admitted.msgId, cause: 'first-hop', attempt: 1, sentAtMs: 3_000.5, ...threw } as const;
+        const ack = { msgId: admitted.msgId, recipientPeerId: 'session-02-b', sentAtMs: 1_050 };
+        const observations = {
+            ...INPUT.run.observations,
+            sends: [admitted, thrownSend],
+            resends: [resend],
+            acks: [
+                { ...ack, acceptance: 'control', answeredAtMs: 1_060, handled: true } as const,
+                { ...ack, ...threw }
+            ],
+            handOffs: [{ msgId: admitted.msgId, instanceIndex: 1, atMs: 1_030 }],
+            receipts: [{ msgId: admitted.msgId, phase: 'admitted', atMs: 1_025 } as const],
+            controls: [{ type: 'nack', msgId: admitted.msgId, reason: 'gap', atMs: 1_700 } as const],
+            unclassifiedControls: [{ typeId: 'al.control.ack.v3', atMs: 1_800 }],
+            sendEnds: [{ msgId: admitted.msgId, cause: 'first-hop-exhausted', atMs: 9_010 } as const],
+            declinedRepairs: [{ msgId: admitted.msgId, reason: 'send-ended', atMs: 9_500 } as const]
+        };
+
+        const artifact = toOrderedSendArtifact({ ...INPUT, run: { ...INPUT.run, observations } });
+
+        expect(artifact.observations).toEqual({
+            counts: {
+                sends: 2,
+                resends: 1,
+                acks: 2,
+                arrivals: 1,
+                handOffs: 1,
+                receipts: 1,
+                controls: 1,
+                unclassifiedControls: 1,
+                sendEnds: 1,
+                declinedRepairs: 1
+            },
+            thrownSends: [thrownSend],
+            resends: [resend],
+            thrownAcks: [{ ...ack, ...threw }],
+            receipts: observations.receipts,
+            controls: observations.controls,
+            unclassifiedControls: observations.unclassifiedControls,
+            sendEnds: observations.sendEnds,
+            declinedRepairs: observations.declinedRepairs
+        });
+    });
+
+    it('holds nothing URL-shaped anywhere, built from an invocation that named its database and a run whose offer threw a URL', () => {
+        const options = decodeOrderedSendCellOptions([
+            `--database-url=${DATABASE_URL}`,
+            '--publishers=1',
+            '--duration-s=1',
+            '--out=tmp/perf/alm-ordered-send/one.json'
+        ]).right!;
+        const threw = toOrderedSendThrownAnswer(new Error(`connect ${DATABASE_URL} refused`), 1_520);
+        const [admitted, pending] = INPUT.run.observations.sends;
+        const observations = {
+            ...INPUT.run.observations,
+            sends: [admitted, { ...pending, ...threw }],
+            resends: [{ msgId: admitted.msgId, cause: 'repair', attempt: 1, sentAtMs: 3_000, ...threw } as const],
+            acks: [{ msgId: admitted.msgId, recipientPeerId: 'session-02-b', sentAtMs: 1_050, ...threw }]
+        };
+
+        const text = JSON.stringify(toOrderedSendArtifact({
+            ...INPUT,
+            shape: options.shape,
+            givenOptions: options.givenOptions,
+            run: { ...INPUT.run, observations }
+        }));
+
+        expect(text).toContain('connect <url removed> refused');
+        expect(text).toContain('tmp/perf/alm-ordered-send/one.json');
+        expect(text).not.toMatch(/[a-z][a-z0-9+.-]*:\/\//i);
+        for (const secret of ['s3cret-pw', 'db.internal', 'alm_cell_run', 'sslmode', 'database-url']) {
+            expect(text).not.toContain(secret);
+        }
     });
 });

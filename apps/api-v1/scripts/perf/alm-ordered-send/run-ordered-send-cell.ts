@@ -6,16 +6,16 @@ import type { ConnectionContext } from '@shared/websocket/json-web-socket-server
 
 import { OrderedSendClientStandIn } from './client-stand-in/ordered-send-client-stand-in.ts';
 import {
+    computeOrderedSendProcessFigures,
+    type OrderedSendCpuUsage,
+    type OrderedSendProcessFigures
+} from './compute-ordered-send-process-figures.ts';
+import {
     computeOrderedSendSchedule,
     type OrderedSendSchedule,
     type OrderedSendScheduledSend,
     type OrderedSendScheduledSession
 } from './compute-ordered-send-schedule.ts';
-import {
-    computeOrderedSendSendWindowFigures,
-    type OrderedSendCpuUsage,
-    type OrderedSendSendWindowFigures
-} from './compute-ordered-send-send-window-figures.ts';
 import { createDefaultOrderedSendInstance, type OrderedSendInstance } from './instance/create-ordered-send-instance.ts';
 import { createOrderedSendRoomAuthorizer } from './instance/create-ordered-send-room-authorizer.ts';
 import { ORDERED_SEND_SERVER_PEER_ID } from './instance/create-ordered-send-ws-server.ts';
@@ -50,9 +50,9 @@ export interface RunOrderedSendCellInput {
      */
     readonly runId: string;
     /**
-     * How long the run observes after its last offer, in milliseconds. It observes for exactly this long whatever it
-     * has read by then, and never stops at the last terminal receipt: two runs with one tail count what they read
-     * again, and what they read late, over the same time.
+     * How long the run observes after its last offer, in milliseconds. It observes for this long whatever it has read
+     * by then, and for at most one tick of its loop-lag timer more, and never stops at the last terminal receipt: two
+     * runs with one tail count what they read again, and what they read late, over the same time.
      */
     readonly observationTailMs: number;
 }
@@ -65,7 +65,10 @@ export interface OrderedSendCellRunDependencies {
 
 /** What a run read of the process it ran in. It is for the artifact, and no part of what the report computes. */
 export interface OrderedSendCellRuntime {
-    readonly sendWindow: OrderedSendSendWindowFigures;
+    /** From the window's opening to its last offer. */
+    readonly sendWindow: OrderedSendProcessFigures;
+    /** From the last offer to the end of observation: the work the offers started goes on through it. */
+    readonly tail: OrderedSendProcessFigures;
     /** The most connections each instance's application pool opened: the shape's. */
     readonly applicationPoolMaxConnections: number;
 }
@@ -110,7 +113,7 @@ const ORDERED_SEND_SCOPE = { applicationId: 'ordered-send-cell', workspaceId: 'd
  */
 const FIRST_HOP_POLL_MS = 10;
 
-/** The timer whose lateness is sampled over the send window. */
+/** The timer whose lateness is sampled over the send window and over the tail. */
 const LOOP_LAG_TICK_MS = 10;
 
 /** A room presence outlasts any run by far. */
@@ -144,7 +147,8 @@ const ROOM_PRESENCE_LIFETIME_MS = 24 * 60 * 60 * 1_000;
  * - one event loop runs the three instances and the load, where a deployment gives each instance a process. With no
  *   added latency that loop is busy most of the time, and two runs of one shape have differed several times over in
  *   how long an `admitted` receipt took: an absolute delay there measures the harness as much as the server. The
- *   result carries the loop's lag and the process's processor time over the send window to judge a run by;
+ *   result carries the loop's lag over the send window and over the tail to judge a run by, and the processor time
+ *   of the whole process beside each;
  * - a frame enters at `acceptIncomingMessage`, below the socket bridge, so its size check and its JSON parse are no
  *   part of a run, and a session is a socket object the server writes to, with no WebSocket;
  * - a recipient has no client runtime: its socket takes every frame the server writes, a repeated copy and a copy
@@ -274,8 +278,13 @@ async function observeOrderedSends(
     const firstHopResends = run.clientStandIn === undefined
         ? Promise.resolve()
         : offerFirstHopResendsWhenDue(run.clientStandIn, run);
-    const sendWindow = await offerOrderedSendsOverWindow(run, windowStartedAtMs);
-    await observeOrderedSendTail(run, (run.ledger.getLastOfferAtMs() ?? windowStartedAtMs) + observationTailMs);
+    const sendWindow = await readProcessFiguresOver(
+        run,
+        windowStartedAtMs,
+        () => offerOrderedSendsOverWindow(run, windowStartedAtMs)
+    );
+    const tailEndsAtMs = (run.ledger.getLastOfferAtMs() ?? windowStartedAtMs) + observationTailMs;
+    const tail = await readProcessFiguresOver(run, run.clock.nowMs(), () => observeOrderedSendTail(run, tailEndsAtMs));
 
     const reads = run.log.endObservation();
     const offers = run.ledger.close();
@@ -286,31 +295,27 @@ async function observeOrderedSends(
     await Promise.all([...run.answersInFlight, firstHopResends]);
     return {
         observations: { ...offers, ...reads, ...standInRecord },
-        runtime: { sendWindow, applicationPoolMaxConnections: run.instances[0].applicationPoolMaxConnections }
+        runtime: {
+            sendWindow,
+            tail,
+            applicationPoolMaxConnections: run.instances[0].applicationPoolMaxConnections
+        }
     };
 }
 
 /**
- * The send window: every send offered at its due instant, and what the process read of itself from the window's
- * opening to its last offer. The work the last offers start goes on after it, in the tail.
+ * What the process read of itself while `work` lasted, from `startedAtMs`: its processor time, and the lateness of a
+ * timer armed again as each tick fired.
  */
-async function offerOrderedSendsOverWindow(
+async function readProcessFiguresOver(
     run: OrderedSendRun,
-    windowStartedAtMs: number
-): Promise<OrderedSendSendWindowFigures> {
+    startedAtMs: number,
+    work: () => Promise<void>
+): Promise<OrderedSendProcessFigures> {
     const cpuAtStart = run.readCpuUsage();
     const loopLagSampling = startOrderedSendLoopLagSampling(run.clock, LOOP_LAG_TICK_MS);
     try {
-        await offerOrderedSendsWhenDue({
-            sends: run.schedule.sends.map((send): DueOrderedSend => ({
-                send,
-                publisherInstance: run.instances[send.publisherInstanceIndex],
-                dueAtMs: windowStartedAtMs + send.dueOffsetMs
-            })),
-            nowMs: run.clock.nowMs,
-            sleep: run.clock.sleep,
-            offer: (due) => offerOrderedSend(due, run)
-        });
+        await work();
     }
     catch (error) {
         await loopLagSampling.stop();
@@ -318,12 +323,29 @@ async function offerOrderedSendsOverWindow(
     }
     const endedAtMs = run.clock.nowMs();
     const cpuAtEnd = run.readCpuUsage();
-    return computeOrderedSendSendWindowFigures({
-        startedAtMs: windowStartedAtMs,
+    return computeOrderedSendProcessFigures({
+        startedAtMs,
         endedAtMs,
         cpuAtStart,
         cpuAtEnd,
         loopLagsMs: await loopLagSampling.stop()
+    });
+}
+
+/**
+ * The send window: every send offered at its due instant. It ends with the last offer; the work the last offers
+ * start goes on after it, in the tail.
+ */
+async function offerOrderedSendsOverWindow(run: OrderedSendRun, windowStartedAtMs: number): Promise<void> {
+    await offerOrderedSendsWhenDue({
+        sends: run.schedule.sends.map((send): DueOrderedSend => ({
+            send,
+            publisherInstance: run.instances[send.publisherInstanceIndex],
+            dueAtMs: windowStartedAtMs + send.dueOffsetMs
+        })),
+        nowMs: run.clock.nowMs,
+        sleep: run.clock.sleep,
+        offer: (due) => offerOrderedSend(due, run)
     });
 }
 

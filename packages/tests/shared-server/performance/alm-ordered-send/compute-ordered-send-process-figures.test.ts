@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { computeOrderedSendSendWindowFigures } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/compute-ordered-send-send-window-figures.ts';
+import { computeOrderedSendProcessFigures } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/compute-ordered-send-process-figures.ts';
 
-describe('computeOrderedSendSendWindowFigures', () => {
+describe('computeOrderedSendProcessFigures', () => {
     it('ranks the lags of the timer\'s ticks by nearest rank and gives the share of ticks more than 1 ms late', () => {
-        const figures = computeOrderedSendSendWindowFigures({
+        const figures = computeOrderedSendProcessFigures({
             startedAtMs: 1_000,
             endedAtMs: 1_100.5,
             cpuAtStart: { userMicros: 0, systemMicros: 0 },
@@ -24,8 +24,8 @@ describe('computeOrderedSendSendWindowFigures', () => {
         expect(figures.wallMs).toBe(100.5);
     });
 
-    it('gives the processor time the process used over the window, and how many cores that kept busy', () => {
-        const figures = computeOrderedSendSendWindowFigures({
+    it('gives the processor time the whole process used over the span, says so, and how many cores that kept busy', () => {
+        const figures = computeOrderedSendProcessFigures({
             startedAtMs: 500,
             endedAtMs: 20_500,
             cpuAtStart: { userMicros: 3_000_000, systemMicros: 400_000 },
@@ -33,11 +33,16 @@ describe('computeOrderedSendSendWindowFigures', () => {
             loopLagsMs: [0]
         });
 
-        expect(figures.cpu).toEqual({ userMs: 8_000, systemMs: 2_000, coresBusy: 0.5 });
+        expect(figures.cpu).toEqual({
+            scope: 'whole process, every thread',
+            userMs: 8_000,
+            systemMs: 2_000,
+            coresBusy: 0.5
+        });
     });
 
-    it('gives no lag figure over no tick and no busy cores over a window of no length', () => {
-        const figures = computeOrderedSendSendWindowFigures({
+    it('gives no lag figure over no tick and no busy cores over a span of no length', () => {
+        const figures = computeOrderedSendProcessFigures({
             startedAtMs: 700,
             endedAtMs: 700,
             cpuAtStart: { userMicros: 5, systemMicros: 5 },
@@ -48,7 +53,7 @@ describe('computeOrderedSendSendWindowFigures', () => {
         expect(figures).toEqual({
             wallMs: 0,
             loopLag: { ticks: 0, p50Ms: null, p95Ms: null, p99Ms: null, maxMs: null, shareOfTicksOverOneMsLate: null },
-            cpu: { userMs: 0, systemMs: 0, coresBusy: null }
+            cpu: { scope: 'whole process, every thread', userMs: 0, systemMs: 0, coresBusy: null }
         });
     });
 });

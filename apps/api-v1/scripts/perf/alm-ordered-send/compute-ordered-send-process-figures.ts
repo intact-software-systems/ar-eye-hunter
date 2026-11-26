@@ -7,8 +7,8 @@ export interface OrderedSendCpuUsage {
     readonly systemMicros: number;
 }
 
-/** What a run read of its own process over its send window, from the window's opening to its last offer. */
-export interface OrderedSendSendWindowSample {
+/** What a run read of its own process over one span of its time: its send window, or its tail. */
+export interface OrderedSendProcessSample {
     readonly startedAtMs: number;
     readonly endedAtMs: number;
     readonly cpuAtStart: OrderedSendCpuUsage;
@@ -32,32 +32,45 @@ export interface OrderedSendLoopLagFigures {
     readonly shareOfTicksOverOneMsLate: number | null;
 }
 
-/** The processor time of the whole process, every thread of it, over the window. */
+/**
+ * The processor time of the whole process over the span: `process.cpuUsage()` adds up every thread, the event loop's
+ * and the runtime's own alike, garbage collection and I/O threads among them. It says how much of the machine the
+ * process took, and nothing of whether the one event loop was saturated: read `loopLag` for that.
+ */
 export interface OrderedSendCpuFigures {
+    readonly scope: typeof ORDERED_SEND_CPU_SCOPE;
     readonly userMs: number;
     readonly systemMs: number;
-    /** User and system time over the window's length: 1 is one core busy throughout. Null over no length. */
+    /** User and system time over the span's length: 1 is one core's worth busy throughout. Null over no length. */
     readonly coresBusy: number | null;
 }
 
-/** How loaded the process that ran the cell was while it offered: what tells a slow server from a slow harness. */
-export interface OrderedSendSendWindowFigures {
+/** How loaded the process that ran the cell was over one span: what tells a slow server from a slow harness. */
+export interface OrderedSendProcessFigures {
     readonly wallMs: number;
     readonly loopLag: OrderedSendLoopLagFigures;
     readonly cpu: OrderedSendCpuFigures;
 }
 
+/** The label every processor figure carries, in the artifact and in the summary. */
+export const ORDERED_SEND_CPU_SCOPE = 'whole process, every thread';
+
 const MICROS_PER_MS = 1_000;
 const LATE_TICK_MS = 1;
 
-export function computeOrderedSendSendWindowFigures(sample: OrderedSendSendWindowSample): OrderedSendSendWindowFigures {
+export function computeOrderedSendProcessFigures(sample: OrderedSendProcessSample): OrderedSendProcessFigures {
     const wallMs = sample.endedAtMs - sample.startedAtMs;
     const userMs = (sample.cpuAtEnd.userMicros - sample.cpuAtStart.userMicros) / MICROS_PER_MS;
     const systemMs = (sample.cpuAtEnd.systemMicros - sample.cpuAtStart.systemMicros) / MICROS_PER_MS;
     return {
         wallMs,
         loopLag: computeLoopLagFigures(sample.loopLagsMs),
-        cpu: { userMs, systemMs, coresBusy: wallMs > 0 ? (userMs + systemMs) / wallMs : null }
+        cpu: {
+            scope: ORDERED_SEND_CPU_SCOPE,
+            userMs,
+            systemMs,
+            coresBusy: wallMs > 0 ? (userMs + systemMs) / wallMs : null
+        }
     };
 }
 

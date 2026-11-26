@@ -1,3 +1,4 @@
+import type { OrderedSendProcessFigures } from '../compute-ordered-send-process-figures.ts';
 import type { OrderedSendAnswerFigures } from '../report/compute-ordered-send-answer-figures.ts';
 import type { OrderedSendDelaySummary } from '../report/compute-ordered-send-delay-summary.ts';
 import type { OrderedSendReport } from '../report/compute-ordered-send-report.ts';
@@ -31,7 +32,8 @@ export function toOrderedSendSummary(source: OrderedSendSummarySource): readonly
         ...toCopyLines(source.report),
         ...toReceiptLines(source.report),
         ...toRecoveryLines(source),
-        toSendWindowLine(source.run.sendWindow),
+        toProcessLine('send window', source.run.sendWindow),
+        toProcessLine('tail', source.run.tail),
         ...toStrayLines(source.report)
     ];
 }
@@ -145,15 +147,18 @@ function toRecoveryLines(source: OrderedSendSummarySource): readonly string[] {
     ];
 }
 
-function toSendWindowLine(sendWindow: OrderedSendSummarySource['run']['sendWindow']): string {
-    const { loopLag, cpu } = sendWindow;
+/** How loaded the run's process was over one span. The loop's lag says whether its one event loop kept up. */
+function toProcessLine(span: string, figures: OrderedSendProcessFigures): string {
+    const { loopLag, cpu } = figures;
     const lateTicks = loopLag.shareOfTicksOverOneMsLate === null
         ? NO_SAMPLE
         : `${(loopLag.shareOfTicksOverOneMsLate * 100).toFixed(1)}%`;
-    return `send window: ${toSeconds(sendWindow.wallMs)}; event-loop lag p50 ${toDelay(loopLag.p50Ms, NO_SAMPLE)}, ` +
+    return `${span}: ${toSeconds(figures.wallMs)}; event-loop lag p50 ${toDelay(loopLag.p50Ms, NO_SAMPLE)}, ` +
         `p95 ${toDelay(loopLag.p95Ms, NO_SAMPLE)}, p99 ${toDelay(loopLag.p99Ms, NO_SAMPLE)}, ` +
         `max ${toDelay(loopLag.maxMs, NO_SAMPLE)}, ${lateTicks} of ticks over 1 ms late; ` +
-        `processor ${cpu.coresBusy === null ? NO_SAMPLE : cpu.coresBusy.toFixed(2)} cores busy`;
+        `processor time of the ${cpu.scope}: ${
+            cpu.coresBusy === null ? NO_SAMPLE : cpu.coresBusy.toFixed(2)
+        } cores busy`;
 }
 
 /** What a run of the cell leaves at zero: each line is printed only when a count of it is above zero. */

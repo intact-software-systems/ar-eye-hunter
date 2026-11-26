@@ -20,6 +20,11 @@ export interface OrderedSendCellOptions {
     /** A credential: it goes to the database lifecycle and nowhere else, and is never printed or recorded. */
     readonly databaseUrl: string;
     readonly artifactDestination: OrderedSendArtifactDestination;
+    /**
+     * Each option the command line gave, under its name and as the text it was given, in the order given, without
+     * `--database-url`: what tells a value the invocation chose from one the reference shape supplied.
+     */
+    readonly givenOptions: Readonly<Record<string, string>>;
 }
 
 /** An issue names an option of the command or the place of an argument, and never repeats a text it was given. */
@@ -106,7 +111,8 @@ export function decodeOrderedSendCellOptions(
     return Either.ofRight({
         shape: decoded.shape,
         databaseUrl,
-        artifactDestination: out === undefined ? { kind: 'named-by-run' } : { kind: 'file', path: out }
+        artifactDestination: out === undefined ? { kind: 'named-by-run' } : { kind: 'file', path: out },
+        givenOptions: Object.fromEntries([...read.values].filter(([name]) => name !== 'database-url'))
     });
 }
 

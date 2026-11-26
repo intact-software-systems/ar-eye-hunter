@@ -50,7 +50,12 @@ const STALLED_RUN: OrderedSendSummarySource = {
         sendWindow: {
             wallMs: 19_900.4,
             loopLag: { ticks: 1_800, p50Ms: 0.1, p95Ms: 2.04, p99Ms: 10.7, maxMs: 31, shareOfTicksOverOneMsLate: 0.12 },
-            cpu: { userMs: 18_000, systemMs: 1_721, coresBusy: 0.991 }
+            cpu: { scope: 'whole process, every thread', userMs: 18_000, systemMs: 1_721, coresBusy: 0.991 }
+        },
+        tail: {
+            wallMs: 75_000.2,
+            loopLag: { ticks: 7_100, p50Ms: 0.2, p95Ms: 4.96, p99Ms: 12.34, maxMs: 1_250, shareOfTicksOverOneMsLate: 0.305 },
+            cpu: { scope: 'whole process, every thread', userMs: 40_000, systemMs: 8_000, coresBusy: 0.64 }
         }
     },
     report: {
@@ -177,7 +182,9 @@ describe('toOrderedSendSummary', () => {
             'before each track\'s first control (5 of 5 tracks drew one): 37 sends, 434 of 518 copies written; ' +
             'due time to first write over expected copies p50 45.0 ms, p95 not reached',
             'send window: 19.9 s; event-loop lag p50 0.1 ms, p95 2.0 ms, p99 10.7 ms, max 31.0 ms, ' +
-            '12.0% of ticks over 1 ms late; processor 0.99 cores busy'
+            '12.0% of ticks over 1 ms late; processor time of the whole process, every thread: 0.99 cores busy',
+            'tail: 75.0 s; event-loop lag p50 0.2 ms, p95 5.0 ms, p99 12.3 ms, max 1.25 s, ' +
+            '30.5% of ticks over 1 ms late; processor time of the whole process, every thread: 0.64 cores busy'
         ]);
     });
 
@@ -220,7 +227,7 @@ describe('toOrderedSendSummary', () => {
 
         const lines = toOrderedSendSummary(keptUp);
 
-        expect(lines).toHaveLength(17);
+        expect(lines).toHaveLength(18);
         expect(lines[0]).toBe(
             'ALM ordered-send cell: 5 publishers x 2 sends/s for 20 s; +0 ms on each database round trip; ' +
                 'sender recovery none; application pool 10 (API default 5)'
@@ -261,7 +268,7 @@ describe('toOrderedSendSummary', () => {
             }
         };
 
-        expect(toOrderedSendSummary(withStrays).slice(18)).toEqual([
+        expect(toOrderedSendSummary(withStrays).slice(19)).toEqual([
             'recorded beside the sends the cell knows: arrivalsOfUnknownMessage 2, unclassifiedControls 1',
             'delays below zero, in no figure: sends.latenessMs 1, receipts.offerToCompleteMs 2',
             'copies written before their send\'s offer was read, in no delay figure: 3'

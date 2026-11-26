@@ -99,6 +99,7 @@ async function writeOrderedSendRun(
         environment: start.environment,
         loadAverage: { atStart: start.loadAverageAtStart, atEnd: readOrderedSendLoadAverage() },
         shape: options.shape,
+        givenOptions: options.givenOptions,
         observationTailMs: ORDERED_SEND_REFERENCE_OBSERVATION_TAIL_MS,
         wallMs: performance.now() - start.startedAtMs,
         run

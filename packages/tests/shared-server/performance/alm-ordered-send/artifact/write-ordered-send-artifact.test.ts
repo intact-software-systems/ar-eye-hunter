@@ -21,10 +21,17 @@ const RUN = {
     }
 } as const;
 
+const NO_PROCESS_FIGURES = {
+    wallMs: 0,
+    loopLag: { ticks: 0, p50Ms: null, p95Ms: null, p99Ms: null, maxMs: null, shareOfTicksOverOneMsLate: null },
+    cpu: { scope: 'whole process, every thread', userMs: 0, systemMs: 0, coresBusy: null }
+} as const;
+
 /** The artifact of a run of that shape that offered nothing. */
 const ARTIFACT = toOrderedSendArtifact({
     ...RUN,
-    source: { commit: 'abc1234def5678900000000000000000000000ff', dirty: false },
+    source: { commit: 'abc1234def5678900000000000000000000000ff', branch: 'main', dirty: false },
+    givenOptions: { 'delay-ms': '5' },
     environment: {
         host: { cpuModel: 'Test CPU', cpuCount: 4, totalMemoryBytes: 16_000_000_000 },
         os: { platform: 'linux', release: '6.18.0', architecture: 'x64' },
@@ -48,14 +55,7 @@ const ARTIFACT = toOrderedSendArtifact({
             declinedRepairs: [],
             observationEndedAtMs: 0
         },
-        runtime: {
-            sendWindow: {
-                wallMs: 0,
-                loopLag: { ticks: 0, p50Ms: null, p95Ms: null, p99Ms: null, maxMs: null, shareOfTicksOverOneMsLate: null },
-                cpu: { userMs: 0, systemMs: 0, coresBusy: null }
-            },
-            applicationPoolMaxConnections: 10
-        }
+        runtime: { sendWindow: NO_PROCESS_FIGURES, tail: NO_PROCESS_FIGURES, applicationPoolMaxConnections: 10 }
     }
 });
 

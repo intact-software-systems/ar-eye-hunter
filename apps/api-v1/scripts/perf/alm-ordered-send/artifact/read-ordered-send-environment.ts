@@ -15,10 +15,14 @@ interface PostgresServerVersionRow {
     readonly version: string;
 }
 
-/** The commit this file is checked out at, and whether the working tree around it differs from that commit. */
+/**
+ * The commit this file is checked out at, the branch that commit is checked out on (`HEAD` when it is on none), and
+ * whether the working tree around it differs from that commit.
+ */
 export function readOrderedSendSource(): OrderedSendArtifactSource {
     return {
         commit: readGitOutput(['rev-parse', 'HEAD']),
+        branch: readGitOutput(['rev-parse', '--abbrev-ref', 'HEAD']),
         dirty: readGitOutput(['status', '--porcelain']).length > 0
     };
 }
