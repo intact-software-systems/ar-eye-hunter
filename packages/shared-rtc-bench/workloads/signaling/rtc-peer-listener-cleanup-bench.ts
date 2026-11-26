@@ -170,7 +170,7 @@ function runListenerCleanup(peers: number, runtime: RtcBenchmarkNativeRuntime): 
                 peerSessionId: `peer-${index}`,
                 iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
                 isPolite: true,
-                offerGeneration: 1
+                connectionGeneration: 1
             },
             { createOfferId: () => crypto.randomUUID() }
         );

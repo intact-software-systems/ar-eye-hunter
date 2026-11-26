@@ -55,6 +55,7 @@ const ISSUERS = [
     'explicit-remove',
     'disconnect-peer',
     'native-closed',
+    'superseded-answer',
     'lane-wait-cleanup',
     'unusable-peer-replacement',
     'establishment-timeout',

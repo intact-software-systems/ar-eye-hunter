@@ -196,7 +196,7 @@ function toSignalEnvelope(senderId: string, msgId: string): ALMessage {
         token: 'test-token',
         signalType: 'Offer',
         offerId: msgId,
-        offerGeneration: 1,
+        connectionGeneration: 1,
         payload: { description: { type: 'offer', sdp: `${msgId}-sdp` }, candidate: null }
     };
     const message = newALUnicastMessage({

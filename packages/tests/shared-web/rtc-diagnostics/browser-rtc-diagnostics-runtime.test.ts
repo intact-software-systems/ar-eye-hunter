@@ -194,7 +194,11 @@ describe('Rallar RTC diagnostics', () => {
                 disconnectTimer: undefined,
                 makingOffer: false,
                 ignoreOffer: false,
-                iceCandidateQueue: [{ candidate: 'queued-candidate' }],
+                iceCandidateQueue: [{
+                    signalType: 'IceCandidate',
+                    connectionGeneration: 1,
+                    payload: { description: null, candidate: { candidate: 'queued-candidate' } }
+                }],
                 localStream: new EmptyMediaStream('local-stream'),
                 remoteStreams: new Map([
                     ['remote-stream', new EmptyMediaStream('remote-stream')]

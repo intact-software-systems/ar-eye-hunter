@@ -307,7 +307,7 @@ function createSignalingPayload(): QRtcSignalingMessage {
         token: 'token-1',
         signalType: QRtcSignalingType.Offer,
         offerId: 'offer-1',
-        offerGeneration: 1,
+        connectionGeneration: 1,
         payload: { description: { type: 'offer', sdp: 'offer' }, candidate: null }
     };
 }

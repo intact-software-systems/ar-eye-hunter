@@ -71,7 +71,7 @@ export function runWebRtcHeartbeatCallbackChurn(
             peerSessionId,
             iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
             isPolite: true,
-            offerGeneration: 1
+            connectionGeneration: 1
         }, { createOfferId: () => crypto.randomUUID() });
         return new QRtcDataChannel(peer, {
             faultPort: createPassThroughTransportFaultPort(),

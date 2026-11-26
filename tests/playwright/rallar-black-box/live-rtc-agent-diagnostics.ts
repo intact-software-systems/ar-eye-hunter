@@ -14,6 +14,7 @@ import { AppTopics } from '../../../packages/shared/api/api-config.ts';
 import { isGroupLayoutIdentity } from '../../../packages/shared/api/group-lifecycle/group-layout-identity.ts';
 import { GROUP_LIFECYCLE_STATES } from '../../../packages/shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import {
+    RTC_GENERATION_REFUSALS,
     RTC_NATIVE_SIGNAL_DISPOSITIONS,
     RTC_SERVICE_SIGNAL_DISPOSITIONS,
     RTC_SIGNAL_CALLER_RELEASES
@@ -728,12 +729,7 @@ function toRtcSignalingObservation(event: LiveRtcJsonRecord): LiveRtcJsonRecord 
             currentPeerConnection: toLifecycleBoolean(event.currentPeerConnection),
             offerMatches: toLifecycleBoolean(event.offerMatches),
             signalingState: toAllowedLifecycleState(event.signalingState, RTC_SIGNALING_STATES),
-            ...(disposition === 'offer-superseded'
-                ? {
-                    offerGeneration: toFiniteNonnegativeObservation(event.offerGeneration),
-                    appliedOfferGeneration: toFiniteNonnegativeObservation(event.appliedOfferGeneration)
-                }
-                : {})
+            ...toRtcGenerationRefusalObservation(disposition, event)
         };
     }
     if (event.kind === 'signal-caller-release') {
@@ -747,6 +743,16 @@ function toRtcSignalingObservation(event: LiveRtcJsonRecord): LiveRtcJsonRecord 
         };
     }
     return null;
+}
+
+/** The two connection generations a refusal compared; other dispositions carry none. */
+function toRtcGenerationRefusalObservation(disposition: string, event: LiveRtcJsonRecord): LiveRtcJsonRecord {
+    return toAllowedLifecycleState(disposition, RTC_GENERATION_REFUSALS) !== null
+        ? {
+            connectionGeneration: toFiniteNonnegativeObservation(event.connectionGeneration),
+            appliedRemoteGeneration: toFiniteNonnegativeObservation(event.appliedRemoteGeneration)
+        }
+        : {};
 }
 
 function toHttpRequestFailureObservation(event: LiveRtcJsonRecord): LiveRtcJsonRecord {

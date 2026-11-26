@@ -102,6 +102,7 @@ it.each([
                     sessionId: 'self',
                     token: 'test-token',
                     signalType: QRtcSignalingType.IceCandidate,
+                    connectionGeneration: 1,
                     payload: { description: null, candidate: { candidate: `test-candidate-${index}` } }
                 }
             }
@@ -115,6 +116,7 @@ it.each([
             sessionId: 'self',
             token: 'test-token',
             signalType: QRtcSignalingType.IceCandidate,
+            connectionGeneration: 1,
             payload: { description: null, candidate: { candidate: `test-candidate-${index}` } }
         }));
     incoming.forEach((message) => socket.receive(JSON.stringify(message)));

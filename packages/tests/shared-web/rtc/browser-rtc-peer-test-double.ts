@@ -18,7 +18,7 @@ export function createBrowserRtcPeerTestDouble(input: BrowserRtcPeerTestInput): 
         peerSessionId: input.peerId,
         token: 'fixture-token',
         isPolite: false,
-        offerGeneration: 1,
+        connectionGeneration: 1,
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 }
     }, new DeterministicRtcOfferIds());
     Object.assign(connection.status, input.status);

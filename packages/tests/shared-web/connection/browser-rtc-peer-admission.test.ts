@@ -620,7 +620,7 @@ function offer(peerId: string): QRtcSignalingMessage {
         token: 'fixture-token',
         signalType: QRtcSignalingType.Offer,
         offerId: 'offer-1',
-        offerGeneration: 1,
+        connectionGeneration: 1,
         payload: { description: { type: 'offer', sdp: `${peerId}-offer` }, candidate: null }
     };
 }

@@ -72,7 +72,7 @@ function offer(peerId = 'z-peer'): QRtcSignalingMessage {
         token: 'private-peer-token',
         signalType: QRtcSignalingType.Offer,
         offerId: 'offer-1',
-        offerGeneration: 1,
+        connectionGeneration: 1,
         payload: { description: { type: 'offer', sdp: 'private-offer-sdp' }, candidate: null }
     };
 }
@@ -108,6 +108,7 @@ describe('WebRtcConnectionService signaling and creation', () => {
             sessionId: 'z-peer',
             token: 'private-peer-token',
             signalType: QRtcSignalingType.IceCandidate,
+            connectionGeneration: 1,
             payload: { description: null, candidate: { candidate: 'private-candidate', sdpMid: '0', sdpMLineIndex: 0 } }
         });
         expect(fixture.nativePeer('z-peer').receivedDescriptions).toEqual([{ type: 'offer', sdp: 'private-offer-sdp' }]);
@@ -162,10 +163,31 @@ describe('WebRtcConnectionService signaling and creation', () => {
             sessionId: 'z-peer',
             token: 'test-token',
             signalType: 'Answer',
+            connectionGeneration: 1,
             payload: { description: { type: 'answer', sdp: 'old-answer' }, candidate: null }
         }))).rejects.toThrow('Invalid RTC signaling message');
         expect(native.receivedDescriptions).toEqual([]);
         expect(native.signalingState).toBe('have-local-offer');
+    });
+
+    it('removes a still-establishing peer at once when an older remote connection answers its offer', async () => {
+        const fixture = createFixture(budgetInput());
+        await fixture.service.connectSignaler();
+        await fixture.receive({ ...offer(), connectionGeneration: 5 });
+        const native = fixture.nativePeer('z-peer');
+        await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+        const localOffer = fixture.sentSignals.find((signal) => signal.signalType === QRtcSignalingType.Offer);
+        await fixture.receive({
+            ...offer(),
+            signalType: QRtcSignalingType.Answer,
+            offerId: localOffer?.signalType === QRtcSignalingType.Offer ? localOffer.offerId : 'missing-offer',
+            connectionGeneration: 4,
+            payload: { description: { type: 'answer', sdp: 'older-answer' }, candidate: null }
+        });
+
+        expect(fixture.service.readPeer('z-peer')).toBeUndefined();
+        expect(native.connectionState).toBe('closed');
+        expect(native.receivedDescriptions).toEqual([{ type: 'offer', sdp: 'private-offer-sdp' }]);
     });
 
     it('validates direct accepted-peer signaling before allocating native resources', async () => {
@@ -192,6 +214,7 @@ describe('WebRtcConnectionService signaling and creation', () => {
             sessionId: 'z-peer',
             token: 'private-peer-token',
             signalType: 'Answer',
+            connectionGeneration: 1,
             offerId: 'offer-1',
             payload: { description: { type: 'answer', sdp: 'answer' }, candidate: null }
         });
@@ -209,6 +232,7 @@ describe('WebRtcConnectionService signaling and creation', () => {
             sessionId: 'z-peer',
             token: 'private-peer-token',
             signalType: 'IceCandidate',
+            connectionGeneration: 1,
             payload: { description: null, candidate: { candidate: 'ice' } }
         });
         expect(fixture.nativePeer('z-peer').receivedCandidates).toEqual([]);
@@ -1114,7 +1138,7 @@ describe('WebRtcConnectionService injected epoch clock', () => {
         );
     });
 
-    it('stamps each new connection to a peer with a rising offer generation, even when the clock steps back', async () => {
+    it('stamps each new connection to a peer with a rising connection generation, even when the clock steps back', async () => {
         let selectedEpochMs = 0;
         await withClockService(createInput(), () => selectedEpochMs, async (service, sentSignals) => {
             for (const epochMs of [5_000, 4_000, 4_000, 6_000.5]) {
@@ -1128,13 +1152,14 @@ describe('WebRtcConnectionService injected epoch clock', () => {
             const lastOfferId = sentOffers(sentSignals).at(-1)?.offerId ?? 'missing-offer';
             await service.readPeer('z-peer')?.connection.handleSignal({
                 signalType: QRtcSignalingType.Answer,
+                connectionGeneration: 1,
                 offerId: lastOfferId,
                 payload: { description: { type: 'answer', sdp: 'answer-sdp' }, candidate: null }
             });
             current.restartIce();
             await current.onnegotiationneeded?.call(current, new Event('negotiationneeded'));
 
-            expect(sentOffers(sentSignals).map((sent) => [sent.offerId, sent.offerGeneration])).toEqual([
+            expect(sentOffers(sentSignals).map((sent) => [sent.offerId, sent.connectionGeneration])).toEqual([
                 ['offer-1', 5_000],
                 ['offer-2', 5_001],
                 ['offer-3', 5_002],
