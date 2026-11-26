@@ -5,6 +5,9 @@ counts every receipt it answers for in it: a client's `receiver` or `leader` roo
 receipted publications. Every instance of a server reads and writes the same record, so any instance counts any ACK,
 ends any receipt and answers any re-sent copy, and a receipt stays exact when the instance that admitted the send
 crashes or restarts. A receipt after such a loss is exact: it keeps every ACK counted before the crash.
+Two other builds were weighed: the server's durable `receiver` pending row, correct but too slow at hosted latency
+(D779), and a checkpointed memory count a survivor adopts, dropped because it needs instance liveness and ownership
+transfer and still loses the ACKs inside the checkpoint window.
 
 The record is one more AL runtime store (D770). It is written directly at WS ingress, guard first and in one
 transaction, as the AL runtime's inbound and outbound stores are; it does not pass through AppInbox. Its only caller
@@ -334,10 +337,11 @@ five publishers in a room, so the rate at which the receipts stop keeping up; `m
 group-state deltas themselves, which the measurement stood in for with one sequenced publication every 500 ms, and a
 higher server publication rate; whether the ordered delivery's completion keeps to two attempts where ordered tracks
 keep up for longer than 20 s, since at five publishers over 45 s and on one fast track they stall first; whether a
-sender's resend unblocks a stalled track (the harness resends nothing); the sustained cost of an ACK that finds no head;
-how a cluster resolves a group leader (the group-leader case pins the cross-instance count); a survivor taking over a
-work row whose lease a killed process held (a "lost" instance in the PostgreSQL cluster cases is a disposed one; the
-black-box cluster recipe kills a process); the dequeue's and the ACK's latency under sustained load.
+sender's resend unblocks a stalled track (the harness resends nothing); the recovery of a lost live `admitted` by the
+first-hop resend under load or across instances (it is pinned with one origin and one server); the sustained cost of an
+ACK that finds no head; how a cluster resolves a group leader (the group-leader case pins the cross-instance count); a
+survivor taking over a work row whose lease a killed process held (a "lost" instance in the PostgreSQL cluster cases is
+a disposed one; the black-box cluster recipe kills a process); the dequeue's and the ACK's latency under sustained load.
 
 ## Navigation probes
 

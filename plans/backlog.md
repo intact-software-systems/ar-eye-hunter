@@ -1169,11 +1169,14 @@ and it has no status list.
   So one retry can be scheduled for a message that just ended; its dispatch
   answers `message-ended`, writes nothing, and the retry record expires.
   Accepted; the lever is the schedule fenced on the message's version.
-- Two levers for the receipts' delivery measured or weighed and set aside:
+- Three levers for the receipts' delivery measured or weighed and set aside:
   delivering receipts from the receipt record's own work rows, which needs a
   cluster notice and an at-least-once rule of its own for the ended work row;
-  and more claims at once on the outbound worker, which with four turned
-  queueing on the server's version row into conflicts on it (126 of 200).
+  more claims at once on the outbound worker, which with four turned queueing
+  on the server's version row into conflicts on it (126 of 200); and every
+  receipt written live when the origin's socket is local (200 of 200 in the
+  prototype), which leaves a lost live terminal receipt redelivered by
+  nothing, since the client resends no message it holds `admitted` for.
 - Two cheap economies of the receipt record, not taken: the runtime refusal
   hook lists a head's confirmations it does not use (a head-only read would
   make a client's ACK 7 round trips instead of 8), and a completed receipt's
