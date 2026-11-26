@@ -1,3 +1,4 @@
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { authorizationDenied } from '@shared-server/http/request-auth-service.ts';
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
 import { toRoomGuestCredential } from '@shared-server/rallar-system/auth/credentials/room-guest-credential.ts';
@@ -37,7 +38,7 @@ export function registerGuestBookingRoutes(app: Hono, dependencies: GroupStateRo
         try {
             const roomRef = { ...toGroupStateRouteScope(context), groupId: context.req.param('groupId')! };
             requireGuestBookingApplication(dependencies, roomRef.applicationId);
-            const body = await readGroupStateRouteRequest<{ requestId?: string; [key: string]: unknown }>(context);
+            const body = await readGroupStateRouteRequest<ApiJsonObject & { requestId?: string }>(context);
             requireExactKeys(body, ['requestId', 'action', 'expectedScheduleRevision', 'guestSecret'], 'Guest booking request');
             requireString(body.guestSecret, 'Guest secret');
             requirePositiveInteger(body.expectedScheduleRevision, 'Expected schedule revision');

@@ -1,3 +1,4 @@
+import { assertGuestBookingCommand } from '../../schedule/guest-booking-command.ts';
 import { assertTemporaryGroupCreation } from '../membership/temporary-group-creation.ts';
 import { assertGuestAdmissionAuthority, assertGuestAdmissionCommand, assertGuestExpiryCommand } from '../membership/group-guest-admission.ts';
 import type { GroupMutationCommand, GroupMutationIngressFacts } from '../group-mutation-contracts.ts';
@@ -46,11 +47,7 @@ function assertInternalMutationAuthority(
         throw new TypeError('Internal group mutation cannot use authenticated authority facts');
     }
     if (facts.internalAuthority === 'guest-booking') {
-        if (command.operation !== 'changeGroupSession' || command.input.actorSessionId !== null ||
-            !/^guest-[a-f0-9]{64}$/.test(command.input.actorPrincipalId ?? '') ||
-            (command.input.action !== 'reserve' && command.input.action !== 'withdraw')) {
-            throw new TypeError('A guest booking requires a scoped identity and reservation decision.');
-        }
+        assertGuestBookingCommand(command);
         return;
     }
     if (command.input.actorPrincipalId !== null || command.input.actorSessionId !== null) {

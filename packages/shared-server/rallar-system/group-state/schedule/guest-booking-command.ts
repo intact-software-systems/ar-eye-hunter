@@ -22,3 +22,11 @@ export function toGuestBookingCommand(booking: GuestBookingCommand): GroupMutati
     return { ...identity, operation: 'changeGroupSession', input: { ...actor, action: booking.action, startsAtEpochMs: null,
         expectedScheduleRevision: booking.expectedScheduleRevision, actorPrincipalId: booking.principalId } };
 }
+
+export function assertGuestBookingCommand(command: GroupMutationCommand): void {
+    if (command.operation !== 'changeGroupSession' || command.input.actorSessionId !== null ||
+        !/^guest-[a-f0-9]{64}$/.test(command.input.actorPrincipalId ?? '') ||
+        (command.input.action !== 'reserve' && command.input.action !== 'withdraw')) {
+        throw new TypeError('A guest booking requires a scoped identity and reservation decision.');
+    }
+}
