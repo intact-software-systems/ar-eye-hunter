@@ -670,6 +670,17 @@ describe('EdgeOrderReceiver: streams that go quiet', () => {
         expect(fixture.receiver.getCounts()).toMatchObject({ streams: 1, heldMessages: 1 });
     });
 
+    it('forgets the quiet streams whenever a new stream is heard, with no read of its counts', async () => {
+        const fixture = createReceiverFixture();
+        accept(fixture, stamp(1, { stream: 'A' }), { message: 'a1', expiresAtMs: 2_000 });
+        accept(fixture, stamp(1, { stream: 'B' }), { message: 'b1', expiresAtMs: 2_000 });
+        await fixture.timers.advanceTo(2_000);
+
+        accept(fixture, stamp(1, { stream: 'C' }), { message: 'c1' });
+
+        expect(fixture.receiver.getCounts().streams).toBe(1);
+    });
+
     it('forgets the quiet streams before the stream cap pushes a live one out', async () => {
         const fixture = createReceiverFixture({ maxStreams: 2 });
         accept(fixture, stamp(1, { stream: 'A' }), { message: 'a1', expiresAtMs: 2_000 });

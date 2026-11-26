@@ -182,13 +182,10 @@ export class EdgeOrderReceiver<Message> {
     }
 
     /**
-     * At the stream cap, once the quiet streams are gone: the least recently heard stream that holds nothing, or
-     * else the least recently heard.
+     * A new stream is heard: the quiet streams go first. If the page still follows as many as it may, the least
+     * recently heard stream that holds nothing is taken out, or else the least recently heard.
      */
     private takeStreamToForget(): EdgeOrderReceivedStream<Message> | undefined {
-        if (this.streams.size() < this.limits.maxStreams) {
-            return undefined;
-        }
         this.forgetQuietStreams();
         if (this.streams.size() < this.limits.maxStreams) {
             return undefined;
