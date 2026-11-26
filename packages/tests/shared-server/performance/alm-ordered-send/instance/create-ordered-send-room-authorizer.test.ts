@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 import type { RallarServerWsRoomAuthorizationInput } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
-import { createOrderedSendRoomAuthorizer } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/create-ordered-send-room-authorizer.ts';
-import { toOrderedSendMessage } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/to-ordered-send-message.ts';
+import { createOrderedSendRoomAuthorizer } from '../../../../../../apps/api-v1/scripts/perf/alm-ordered-send/instance/create-ordered-send-room-authorizer.ts';
+import { toOrderedSendMessage } from '../../../../../../apps/api-v1/scripts/perf/alm-ordered-send/to-ordered-send-message.ts';
 
 const ROOM = { applicationId: 'ordered-send-cell', workspaceId: 'default', groupId: 'room-run-1' };
 const SESSION_PEER_IDS = ['session-01-a', 'session-02-b', 'session-03-c'];

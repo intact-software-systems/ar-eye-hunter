@@ -1,4 +1,4 @@
-import type { ApiV1DatabaseNotificationPort } from '../../../src/db/api-v1-database-lifecycle.ts';
+import type { ApiV1DatabaseNotificationPort } from '../../../../src/db/api-v1-database-lifecycle.ts';
 
 export interface CreateDelayedDatabaseNotificationPortInput {
     readonly notification: ApiV1DatabaseNotificationPort;

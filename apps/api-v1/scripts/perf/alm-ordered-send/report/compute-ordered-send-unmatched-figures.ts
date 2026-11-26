@@ -1,5 +1,5 @@
+import type { OrderedSendCellObservations } from '../ordered-send-cell-observations.ts';
 import { isOrderedSendReceiptExpected } from './compute-ordered-send-receipt-figures.ts';
-import type { OrderedSendCellObservations } from './ordered-send-cell-observations.ts';
 import { toOrderedSendByMsgId } from './to-observed-ordered-sends.ts';
 
 /**

@@ -6,9 +6,9 @@ import {
     createOrderedSendInstance,
     type OrderedSendInstanceConfig,
     type OrderedSendInstanceInput
-} from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/create-ordered-send-instance.ts';
-import type { OrderedSendClock } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/ordered-send-clock.ts';
-import type { ApiV1DatabaseLifecycle } from '../../../../../apps/api-v1/src/db/api-v1-database-lifecycle.ts';
+} from '../../../../../../apps/api-v1/scripts/perf/alm-ordered-send/instance/create-ordered-send-instance.ts';
+import type { OrderedSendClock } from '../../../../../../apps/api-v1/scripts/perf/alm-ordered-send/ordered-send-clock.ts';
+import type { ApiV1DatabaseLifecycle } from '../../../../../../apps/api-v1/src/db/api-v1-database-lifecycle.ts';
 
 const INPUT: OrderedSendInstanceInput = {
     instanceIndex: 1,

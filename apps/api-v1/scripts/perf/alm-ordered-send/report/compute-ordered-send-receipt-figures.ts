@@ -1,7 +1,7 @@
 import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 
+import type { OrderedSendCellReceipt, OrderedSendCellSend } from '../ordered-send-cell-observations.ts';
 import { computeOrderedSendDelaySummary, type OrderedSendDelaySummary } from './compute-ordered-send-delay-summary.ts';
-import type { OrderedSendCellReceipt, OrderedSendCellSend } from './ordered-send-cell-observations.ts';
 import type { ObservedOrderedSend } from './to-observed-ordered-sends.ts';
 
 /**

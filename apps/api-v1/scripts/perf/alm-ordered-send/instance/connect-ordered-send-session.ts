@@ -5,7 +5,7 @@ import { ConnectionContext, type JsonWebSocketServer } from '@shared/websocket/j
 import {
     releaseAuthorisedWsCloseFacts,
     rememberAuthorisedWsConnection
-} from '../../../src/runtime/rtc-topology/authorised-ws-connection-registry.ts';
+} from '../../../../src/runtime/rtc-topology/authorised-ws-connection-registry.ts';
 
 export interface ConnectOrderedSendSessionInput {
     readonly socketServer: JsonWebSocketServer;

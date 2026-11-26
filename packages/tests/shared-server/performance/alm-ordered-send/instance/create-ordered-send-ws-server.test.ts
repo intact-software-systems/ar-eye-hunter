@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { toOrderedSendStoreNamespace } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/create-ordered-send-ws-server.ts';
+import { toOrderedSendStoreNamespace } from '../../../../../../apps/api-v1/scripts/perf/alm-ordered-send/instance/create-ordered-send-ws-server.ts';
 
 describe('toOrderedSendStoreNamespace', () => {
     it('names the run\'s stores by the API\'s store id of its WS runtime and the run\'s id', () => {

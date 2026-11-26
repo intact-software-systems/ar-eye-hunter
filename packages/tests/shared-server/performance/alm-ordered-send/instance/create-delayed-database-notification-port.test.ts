@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { createDelayedDatabaseNotificationPort } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/create-delayed-database-notification-port.ts';
-import type { ApiV1DatabaseNotificationPort } from '../../../../../apps/api-v1/src/db/api-v1-database-lifecycle.ts';
+import { createDelayedDatabaseNotificationPort } from '../../../../../../apps/api-v1/scripts/perf/alm-ordered-send/instance/create-delayed-database-notification-port.ts';
+import type { ApiV1DatabaseNotificationPort } from '../../../../../../apps/api-v1/src/db/api-v1-database-lifecycle.ts';
 
 /** What the recording port was asked to subscribe: the callbacks it was handed, as it was handed them. */
 interface RecordedSubscription {

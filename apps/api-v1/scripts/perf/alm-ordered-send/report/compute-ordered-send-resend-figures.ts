@@ -1,8 +1,8 @@
 import { computeNumberExtrema } from '@shared/measurement/compute-number-extrema.ts';
 
+import type { OrderedSendCellResend } from '../ordered-send-cell-observations.ts';
 import { computeOrderedSendCountByKey } from './compute-ordered-send-count-by-key.ts';
 import { NO_ORDERED_SEND_OFFERS_BY_ACCEPTANCE } from './compute-ordered-send-send-figures.ts';
-import type { OrderedSendCellResend } from './ordered-send-cell-observations.ts';
 import type { ObservedOrderedSend } from './to-observed-ordered-sends.ts';
 
 /** Some later offers of sends: how many, how the entry answered them, and how many sends they were of. */

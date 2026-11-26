@@ -6,7 +6,7 @@ import type {
     OrderedSendCellReceipt,
     OrderedSendCellResend,
     OrderedSendCellSend
-} from './ordered-send-cell-observations.ts';
+} from '../ordered-send-cell-observations.ts';
 
 /** One write of a copy to its recipient's socket, as the cell read it there: its instant and its place in `arrivals`. */
 export interface ObservedOrderedSendRead {

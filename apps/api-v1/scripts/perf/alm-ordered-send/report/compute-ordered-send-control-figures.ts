@@ -1,7 +1,7 @@
 import type { ALNackReason, ALRepairReason } from '@shared/al-contracts/al-control.ts';
 
+import type { OrderedSendCellControl } from '../ordered-send-cell-observations.ts';
 import { computeOrderedSendCountByKey } from './compute-ordered-send-count-by-key.ts';
-import type { OrderedSendCellControl } from './ordered-send-cell-observations.ts';
 import type { ObservedOrderedSend } from './to-observed-ordered-sends.ts';
 
 /**

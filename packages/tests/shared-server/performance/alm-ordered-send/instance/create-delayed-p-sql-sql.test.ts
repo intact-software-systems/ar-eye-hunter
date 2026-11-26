@@ -7,7 +7,7 @@ import type {
     PSqlTransactionWrite
 } from '@shared-server/postgres/p-sql-sql.ts';
 
-import { createDelayedPSqlSql } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/create-delayed-p-sql-sql.ts';
+import { createDelayedPSqlSql } from '../../../../../../apps/api-v1/scripts/perf/alm-ordered-send/instance/create-delayed-p-sql-sql.ts';
 
 /** What a recording handle answers a statement with: the text it was sent and the values bound to it. */
 interface RecordedStatement {

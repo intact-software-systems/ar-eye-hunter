@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { computeOrderedSendReport } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/compute-ordered-send-report.ts';
 import type {
     OrderedSendCellAnswer,
     OrderedSendCellControl,
     OrderedSendCellObservations,
     OrderedSendCellOffer
-} from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/ordered-send-cell-observations.ts';
+} from '../../../../../../apps/api-v1/scripts/perf/alm-ordered-send/ordered-send-cell-observations.ts';
+import { computeOrderedSendReport } from '../../../../../../apps/api-v1/scripts/perf/alm-ordered-send/report/compute-ordered-send-report.ts';
 
 const NO_OBSERVATIONS: OrderedSendCellObservations = {
     sends: [],

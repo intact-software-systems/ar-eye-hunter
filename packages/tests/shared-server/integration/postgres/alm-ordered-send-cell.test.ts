@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
-import { computeOrderedSendReport } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/compute-ordered-send-report.ts';
 import type { OrderedSendCellObservations } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/ordered-send-cell-observations.ts';
+import { computeOrderedSendReport } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/report/compute-ordered-send-report.ts';
 import {
     createDefaultOrderedSendCellRunDependencies,
     runOrderedSendCell

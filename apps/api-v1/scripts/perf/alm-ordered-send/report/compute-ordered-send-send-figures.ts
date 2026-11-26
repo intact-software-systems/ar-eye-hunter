@@ -1,8 +1,8 @@
 import type { ALMessageRejection } from '@shared/al-contracts/al-message-persistence-validation.ts';
 
+import type { OrderedSendCellSend } from '../ordered-send-cell-observations.ts';
 import { computeOrderedSendCountByKey } from './compute-ordered-send-count-by-key.ts';
 import { computeOrderedSendDelaySummary, type OrderedSendDelaySummary } from './compute-ordered-send-delay-summary.ts';
-import type { OrderedSendCellSend } from './ordered-send-cell-observations.ts';
 
 /**
  * How the sends left their publishers and how the entry answered them. Every count is over every send, and a send is

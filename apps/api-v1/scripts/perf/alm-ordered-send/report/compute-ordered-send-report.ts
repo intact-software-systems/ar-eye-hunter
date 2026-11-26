@@ -1,3 +1,4 @@
+import type { OrderedSendCellObservations } from '../ordered-send-cell-observations.ts';
 import {
     computeOrderedSendBeforeFirstControlFigures,
     type OrderedSendBeforeFirstControlFigures
@@ -30,7 +31,6 @@ import {
     computeOrderedSendUnmatchedFigures,
     type OrderedSendUnmatchedFigures
 } from './compute-ordered-send-unmatched-figures.ts';
-import type { OrderedSendCellObservations } from './ordered-send-cell-observations.ts';
 import { toObservedOrderedSends } from './to-observed-ordered-sends.ts';
 
 /**

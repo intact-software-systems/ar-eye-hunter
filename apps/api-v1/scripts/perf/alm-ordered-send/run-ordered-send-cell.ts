@@ -16,9 +16,9 @@ import {
     type OrderedSendCpuUsage,
     type OrderedSendSendWindowFigures
 } from './compute-ordered-send-send-window-figures.ts';
-import { createDefaultOrderedSendInstance, type OrderedSendInstance } from './create-ordered-send-instance.ts';
-import { createOrderedSendRoomAuthorizer } from './create-ordered-send-room-authorizer.ts';
-import { ORDERED_SEND_SERVER_PEER_ID } from './create-ordered-send-ws-server.ts';
+import { createDefaultOrderedSendInstance, type OrderedSendInstance } from './instance/create-ordered-send-instance.ts';
+import { createOrderedSendRoomAuthorizer } from './instance/create-ordered-send-room-authorizer.ts';
+import { ORDERED_SEND_SERVER_PEER_ID } from './instance/create-ordered-send-ws-server.ts';
 import { offerOrderedSendsWhenDue } from './offer-ordered-sends-when-due.ts';
 import { ORDERED_SEND_CELL_CONSTANTS } from './ordered-send-cell-constants.ts';
 import type { OrderedSendCellObservations } from './ordered-send-cell-observations.ts';
