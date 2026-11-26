@@ -180,7 +180,9 @@ export interface OrderedSendCellSendEnd {
  * would not have: `send-ended`, the send `msgId` was asked for and had ended; `send-expired`, it was asked for and its
  * lifetime was over; `named-send-expired`, the request named `msgId`, whose lifetime was over, so the request raised
  * no repair hint at all and nothing it asked for was looked at. The first two are one for each send and execution of
- * a request, the third one for each request.
+ * a request, the third one for each request. A re-offer leaves a turn of the event loop after its request was served:
+ * a send that ended or expired in that turn is declined then, under the same two reasons, at the instant it would
+ * have left.
  */
 export interface OrderedSendCellDeclinedRepair {
     readonly msgId: string;

@@ -12,6 +12,10 @@ import { computeOrderedSendReport, type OrderedSendReport } from '../report/comp
 import type { OrderedSendCellRunResult } from '../run-ordered-send-cell.ts';
 import type { OrderedSendShape } from '../validate-ordered-send-shape.ts';
 import {
+    computeOrderedSendDeclinedRepairSummary,
+    type OrderedSendDeclinedRepairSummary
+} from './compute-ordered-send-declined-repair-summary.ts';
+import {
     ORDERED_SEND_CELL_LIMITS,
     ORDERED_SEND_DELAYED_ROUND_TRIPS,
     ORDERED_SEND_UNDELAYED_ROUND_TRIPS
@@ -62,9 +66,11 @@ export interface ToOrderedSendArtifactInput {
 }
 
 /**
- * What an artifact keeps of a run's observations: how many of each there were, and in full the lists a reference run
- * keeps short, each with its instants. The first offers, the ACKs, the arrivals and the hand-offs are counted only,
- * but for the first offers and the ACKs that threw; a later offer that threw is in `resends` with the others.
+ * What an artifact keeps of a run's observations: how many of each there were; in full, each with its instants, the
+ * later offers, the receipts, the controls, the unclassified controls and the sends the stand-in ended, each under a
+ * thousand entries in every reference run; and of the repairs the stand-in declined, 7,111 in one reference run, a
+ * summary. The first offers, the ACKs, the arrivals and the hand-offs are counted only, but for the first offers and
+ * the ACKs that threw; a later offer that threw is in `resends` with the others.
  */
 export interface OrderedSendArtifactObservations {
     readonly counts: Readonly<Record<Exclude<keyof OrderedSendCellObservations, 'observationEndedAtMs'>, number>>;
@@ -75,7 +81,7 @@ export interface OrderedSendArtifactObservations {
     readonly controls: OrderedSendCellObservations['controls'];
     readonly unclassifiedControls: OrderedSendCellObservations['unclassifiedControls'];
     readonly sendEnds: OrderedSendCellObservations['sendEnds'];
-    readonly declinedRepairs: OrderedSendCellObservations['declinedRepairs'];
+    readonly declinedRepairs: OrderedSendDeclinedRepairSummary;
 }
 
 /**
@@ -185,6 +191,6 @@ function toArtifactObservations(observations: OrderedSendCellObservations): Orde
         controls: observations.controls,
         unclassifiedControls: observations.unclassifiedControls,
         sendEnds: observations.sendEnds,
-        declinedRepairs: observations.declinedRepairs
+        declinedRepairs: computeOrderedSendDeclinedRepairSummary(observations.declinedRepairs)
     };
 }

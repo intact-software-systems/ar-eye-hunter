@@ -19,6 +19,7 @@ import type { OrderedSendSocketRead } from '../to-ordered-send-socket-read.ts';
 import {
     computeOrderedSendRepairReoffers,
     isOrderedSendExpired,
+    resolveOrderedSendRepairDeclineReason,
     type OrderedSendRepairReoffer,
     type OrderedSendSentMessage
 } from './compute-ordered-send-repair-reoffers.ts';
@@ -74,7 +75,9 @@ const NO_REPAIR_ANSWER: OrderedSendClientStandIn.RepairAnswer = { reoffers: [], 
  * - Repair. A gap NACK or a repair request its publisher's socket read raises the product's repair hint
  *   (`toOrderedSendRepairHint`), and the hint is served as `computeOrderedSendRepairReoffers` states: the missing
  *   sequences of the track that the publisher has offered, 32 to an execution, once for each request number, with the
- *   repairs the product plans for the send (`repairTracking.maxAttempts`: 4 for this envelope).
+ *   repairs the product plans for the send (`repairTracking.maxAttempts`: 4 for this envelope). The run offers what
+ *   an execution decided a turn of its event loop later, and asks then whether each send may still be offered
+ *   (`confirmRepairReoffer`): one that ended or expired in that turn is declined.
  * - First hop. A send holds the wait the product plans for it (`firstHopTracking`: a 2 s timeout and 3 retries for
  *   this envelope) from its first offer, and is offered again at each deadline (`computeOrderedSendFirstHopTurn`). A
  *   receipt of the send its publisher read, in any phase, ends the wait, and so does a NACK that may end the send
@@ -198,6 +201,22 @@ export class OrderedSendClientStandIn {
             reoffers: repair.reoffers.flatMap((reoffer) => this.spendRepair(reoffer)),
             followUp: repair.followUpHint === undefined ? undefined : { ...followUp, hint: repair.followUpHint }
         };
+    }
+
+    /**
+     * Whether a repair re-offer decided earlier is still owed at `nowMs`, the instant it is to leave at. The run
+     * offers it a turn of its event loop after the request was served; a send whose lifetime ended, or that ended,
+     * in that turn is not offered, and its repair is recorded as declined at `nowMs` with the reason a request served
+     * then would give. The repair stays spent. A send its publisher never offered is not offered either.
+     */
+    confirmRepairReoffer(reoffer: OrderedSendClientStandIn.Reoffer, nowMs: number): boolean {
+        const { msgId } = reoffer.send;
+        const sent = this.getSentMessagesOf(msgId).find((held) => held.msgId === msgId);
+        const declineReason = sent === undefined ? undefined : resolveOrderedSendRepairDeclineReason(sent, nowMs);
+        if (declineReason !== undefined) {
+            this.declinedRepairs.push({ msgId, reason: declineReason, atMs: nowMs });
+        }
+        return sent !== undefined && declineReason === undefined;
     }
 
     /**

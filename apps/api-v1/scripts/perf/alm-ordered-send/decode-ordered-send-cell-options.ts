@@ -89,12 +89,17 @@ const OPTION_LIST = '--publishers, --sends-per-second, --duration-s, --delay-ms,
     '--application-pool, --database-url and --out';
 const ONE_TOKEN_OPTION = /^--([^=]+)=(.*)$/s;
 const DATABASE_URL_PROTOCOLS = ['postgres:', 'postgresql:'];
+/**
+ * What a URL must percent-encode and the URL parser takes as it is. The text removed from an error's message as a URL
+ * ends at the first of them (`toOrderedSendThrownError`), so the rest of a password that held one would be printed.
+ */
+const UNENCODED_URL_CHARACTER = /[\s"'`<>]/;
 const DECIMAL_NUMBER = /^-?\d+(\.\d+)?$/;
 
 /**
  * The options of one invocation, from the arguments after the script's name, or every issue of them at once. Each
- * option is one `--name=value` token. `--database-url` has no default and must be a `postgres:` or `postgresql:` URL.
- * `--out` may be left out.
+ * option is one `--name=value` token. `--database-url` has no default and must be a `postgres:` or `postgresql:` URL
+ * with its whitespace, quotes, backticks and angle brackets percent-encoded. `--out` may be left out.
  */
 export function decodeOrderedSendCellOptions(
     argv: readonly string[]
@@ -217,13 +222,23 @@ function validateTextOptions(values: ReadonlyMap<string, string>): readonly Orde
         }
     }
     const databaseUrl = values.get('database-url');
-    if (databaseUrl !== undefined && databaseUrl !== '' && !isPostgresUrl(databaseUrl)) {
-        issues.push({
-            code: 'invalid-database-url',
-            message: '--database-url must be a postgres:// or postgresql:// URL'
-        });
+    if (databaseUrl !== undefined && databaseUrl !== '') {
+        issues.push(...validateDatabaseUrl(databaseUrl));
     }
     return issues;
+}
+
+/** A text that is no PostgreSQL URL has that one issue: what it fails to encode is read only of a URL. */
+function validateDatabaseUrl(databaseUrl: string): readonly OrderedSendCellOptionIssue[] {
+    if (!isPostgresUrl(databaseUrl)) {
+        return [{ code: 'invalid-database-url', message: '--database-url must be a postgres:// or postgresql:// URL' }];
+    }
+    return UNENCODED_URL_CHARACTER.test(databaseUrl)
+        ? [{
+            code: 'invalid-database-url',
+            message: '--database-url must hold no whitespace, quote, backtick or angle bracket: percent-encode each'
+        }]
+        : [];
 }
 
 /**

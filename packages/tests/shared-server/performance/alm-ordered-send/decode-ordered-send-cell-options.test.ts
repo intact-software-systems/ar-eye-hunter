@@ -166,6 +166,30 @@ describe('decodeOrderedSendCellOptions', () => {
         ]);
     });
 
+    it('refuses a database URL that holds whitespace, a quote, a backtick or an angle bracket unencoded, and repeats nothing of it', () => {
+        const unencoded = [
+            'postgres://app:s3cr et@db.internal:5432/alm_cell_run',
+            'postgres://app:s3cr\tet@db.internal:5432/alm_cell_run',
+            'postgres://app:s3cr"et@db.internal:5432/alm_cell_run',
+            'postgres://app:s3cr\'et@db.internal:5432/alm_cell_run',
+            'postgres://app:s3cr`et@db.internal:5432/alm_cell_run',
+            'postgres://app:s3cr<et@db.internal:5432/alm_cell_run',
+            'postgresql://app:s3cr>et@db.internal:5432/alm_cell_run',
+            'postgresql://app:s3cret@db.internal:5432/alm_cell_run?options=-c search_path=cell'
+        ];
+
+        for (const databaseUrl of unencoded) {
+            expect(readIssues([`--database-url=${databaseUrl}`])).toEqual([
+                {
+                    code: 'invalid-database-url',
+                    message: '--database-url must hold no whitespace, quote, backtick or angle bracket: percent-encode each'
+                }
+            ]);
+        }
+        const encoded = 'postgres://app:s3cr%20%22%27%60%3C%3Eet@db.internal:5432/alm_cell_run';
+        expect(readOptions([`--database-url=${encoded}`])?.databaseUrl).toBe(encoded);
+    });
+
     it('takes a database URL of either PostgreSQL scheme as it is', () => {
         const postgresql = 'postgresql://app:s3cret-pw@db.internal:5432/alm_cell_run';
 

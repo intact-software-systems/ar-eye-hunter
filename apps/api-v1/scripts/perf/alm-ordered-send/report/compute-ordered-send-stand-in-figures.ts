@@ -17,18 +17,19 @@ export interface OrderedSendStandInFigures {
     readonly repairsDeclinedByReason: Readonly<Record<OrderedSendCellDeclinedRepair['reason'], number>>;
 }
 
+/** No repair declined, under every reason there is: what a count of declined repairs by reason starts from. */
+export const ORDERED_SEND_NO_REPAIRS_DECLINED_BY_REASON: OrderedSendStandInFigures['repairsDeclinedByReason'] = {
+    'send-ended': 0,
+    'send-expired': 0,
+    'named-send-expired': 0
+};
+
 const NO_ENDS_BY_CAUSE: OrderedSendStandInFigures['endsByCause'] = {
     'first-hop-exhausted': 0,
     'terminal-receipt': 0,
     'terminal-nack': 0,
     'repair-budget-spent': 0,
     expired: 0
-};
-
-const NO_REPAIRS_DECLINED_BY_REASON: OrderedSendStandInFigures['repairsDeclinedByReason'] = {
-    'send-ended': 0,
-    'send-expired': 0,
-    'named-send-expired': 0
 };
 
 export function computeOrderedSendStandInFigures(
@@ -44,7 +45,7 @@ export function computeOrderedSendStandInFigures(
         repairsDeclined: declinedRepairs.length,
         repairsDeclinedByReason: computeOrderedSendCountByKey(
             declinedRepairs.map((declined) => declined.reason),
-            NO_REPAIRS_DECLINED_BY_REASON
+            ORDERED_SEND_NO_REPAIRS_DECLINED_BY_REASON
         )
     };
 }

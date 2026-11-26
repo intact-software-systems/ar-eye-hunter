@@ -436,7 +436,8 @@ function reofferOrderedSend(reoffer: OrderedSendClientStandIn.Reoffer, run: Orde
 /**
  * Offers what a repair request asked for, while observation lasts: one turn of the event loop after its publisher
  * read the request, as a client that took it from a socket would, and each later execution of the request a turn
- * after the one before it.
+ * after the one before it. A send may end or expire in that turn, so each re-offer is asked of the stand-in again at
+ * the instant it leaves, and one the stand-in then declines is not offered.
  */
 async function offerRepairAnswer(
     firstAnswer: OrderedSendClientStandIn.RepairAnswer,
@@ -449,7 +450,11 @@ async function offerRepairAnswer(
         if (!run.log.isObserving()) {
             return;
         }
-        answer.reoffers.forEach((reoffer) => reofferOrderedSend(reoffer, run));
+        for (const reoffer of answer.reoffers) {
+            if (clientStandIn.confirmRepairReoffer(reoffer, run.clock.nowMs())) {
+                reofferOrderedSend(reoffer, run);
+            }
+        }
         answer = answer.followUp === undefined
             ? undefined
             : clientStandIn.serveRepairFollowUp(answer.followUp, run.clock.nowMs());

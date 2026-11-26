@@ -53,7 +53,7 @@ export interface OrderedSendProcessFigures {
 }
 
 /** The label every processor figure carries, in the artifact and in the summary. */
-export const ORDERED_SEND_CPU_SCOPE = 'whole process, every thread';
+const ORDERED_SEND_CPU_SCOPE = 'whole process, every thread';
 
 const MICROS_PER_MS = 1_000;
 const LATE_TICK_MS = 1;

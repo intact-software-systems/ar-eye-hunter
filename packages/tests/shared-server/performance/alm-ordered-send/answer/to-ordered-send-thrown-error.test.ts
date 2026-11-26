@@ -43,6 +43,14 @@ describe('toOrderedSendThrownError', () => {
         expect(toOrderedSendThrownError(withoutScheme).errorMessage).toBe('cannot parse <url removed> as a URL');
     });
 
+    // The limit the options guard: `decodeOrderedSendCellOptions` refuses a database URL that holds such a character.
+    it('removes a URL only up to its first space, so the rest of a password that holds one unencoded stays', () => {
+        const error = new Error('connect to postgres://app:s3cr et@db.internal:5432/alm_cell_run failed');
+
+        expect(toOrderedSendThrownError(error).errorMessage)
+            .toBe('connect to <url removed> et@db.internal:5432/alm_cell_run failed');
+    });
+
     it('bounds a message at 240 characters, the last of them an ellipsis, and removes a URL before it cuts', () => {
         const long = new Error(`${'a'.repeat(230)} postgres://user:pw@host/db ${'b'.repeat(300)}`);
 

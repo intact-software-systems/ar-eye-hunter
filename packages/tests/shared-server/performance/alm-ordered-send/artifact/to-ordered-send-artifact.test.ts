@@ -160,7 +160,7 @@ describe('toOrderedSendArtifact', () => {
         ]);
     });
 
-    it('keeps the small observation lists with their instants, the offers that threw, and only the counts of the large lists', () => {
+    it('keeps the small observation lists with their instants, the offers that threw, a summary of the declined repairs, and only the counts of the large lists', () => {
         const threw = toOrderedSendThrownAnswer(new Error('Buffered inbound ordering slot lost its canonical message'), 1_520);
         const [admitted, pending] = INPUT.run.observations.sends;
         const thrownSend = { ...pending, ...threw };
@@ -204,7 +204,13 @@ describe('toOrderedSendArtifact', () => {
             controls: observations.controls,
             unclassifiedControls: observations.unclassifiedControls,
             sendEnds: observations.sendEnds,
-            declinedRepairs: observations.declinedRepairs
+            declinedRepairs: {
+                countByReason: { 'send-ended': 1, 'send-expired': 0, 'named-send-expired': 0 },
+                firstDeclined: [{ msgId: 'session-01-a-send-1', reason: 'send-ended', atMs: 9_500 }],
+                bySendAndReason: [
+                    { msgId: 'session-01-a-send-1', reason: 'send-ended', count: 1, firstAtMs: 9_500, lastAtMs: 9_500 }
+                ]
+            }
         });
     });
 
@@ -221,7 +227,8 @@ describe('toOrderedSendArtifact', () => {
             ...INPUT.run.observations,
             sends: [admitted, { ...pending, ...threw }],
             resends: [{ msgId: admitted.msgId, cause: 'repair', attempt: 1, sentAtMs: 3_000, ...threw } as const],
-            acks: [{ msgId: admitted.msgId, recipientPeerId: 'session-02-b', sentAtMs: 1_050, ...threw }]
+            acks: [{ msgId: admitted.msgId, recipientPeerId: 'session-02-b', sentAtMs: 1_050, ...threw }],
+            declinedRepairs: [{ msgId: admitted.msgId, reason: 'send-expired', atMs: 31_500 } as const]
         };
 
         const text = JSON.stringify(toOrderedSendArtifact({
@@ -233,6 +240,7 @@ describe('toOrderedSendArtifact', () => {
 
         expect(text).toContain('connect <url removed> refused');
         expect(text).toContain('tmp/perf/alm-ordered-send/one.json');
+        expect(text).toContain('"bySendAndReason":[{"msgId":"session-01-a-send-1","reason":"send-expired"');
         expect(text).not.toMatch(/[a-z][a-z0-9+.-]*:\/\//i);
         for (const secret of ['s3cret-pw', 'db.internal', 'alm_cell_run', 'sslmode', 'database-url']) {
             expect(text).not.toContain(secret);

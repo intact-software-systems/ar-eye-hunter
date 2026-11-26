@@ -336,4 +336,74 @@ describe('OrderedSendClientStandIn', () => {
             }))
         );
     });
+
+    it('still offers, at the instant it leaves, a repair of a send nothing has ended since it was decided', () => {
+        const standIn = createStandInAfterOffers(3);
+        const decided = standIn.acceptSocketRead(PUBLISHER, toGapNackRead(3, [{ from: 1, to: 2 }], 1));
+        standIn.acceptSocketRead(PUBLISHER, readAt(toReceiptRead(1, 'admitted'), 1_200.5));
+
+        const offered = decided.reoffers.filter((reoffer) => standIn.confirmRepairReoffer(reoffer, 1_201));
+
+        expect(offered).toEqual([
+            { send: toSend(1), frame: toFrame(1), cause: 'repair', attempt: 1 },
+            { send: toSend(2), frame: toFrame(2), cause: 'repair', attempt: 1 }
+        ]);
+        expect(standIn.getDeclinedRepairs()).toEqual([]);
+    });
+
+    it('offers no repair of a send whose terminal receipt its publisher read after the repair was decided, and records it declined', () => {
+        const standIn = createStandInAfterOffers(2);
+        const decided = standIn.acceptSocketRead(PUBLISHER, toGapNackRead(2, [{ from: 1, to: 1 }], 1));
+        standIn.acceptSocketRead(PUBLISHER, readAt(toReceiptRead(1, 'complete'), 1_200.5));
+
+        const offered = decided.reoffers.filter((reoffer) => standIn.confirmRepairReoffer(reoffer, 1_201));
+
+        expect(decided.reoffers.map(({ send }) => send.seq)).toEqual([1]);
+        expect(offered).toEqual([]);
+        expect(standIn.getDeclinedRepairs()).toEqual([
+            { msgId: 'session-01-a-send-1', reason: 'send-ended', atMs: 1_201 }
+        ]);
+    });
+
+    it('offers no repair of a send whose first-hop retries ran out after the repair was decided, and records it declined', () => {
+        const standIn = createStandInAfterOffers(2);
+        [3_000, 5_000, 7_000].forEach((nowMs) => standIn.takeFirstHopResendsDue(nowMs));
+        const decided = standIn.acceptSocketRead(PUBLISHER, readAt(toGapNackRead(2, [{ from: 1, to: 1 }], 1), 8_999.5));
+        standIn.takeFirstHopResendsDue(9_000);
+
+        const offered = decided.reoffers.filter((reoffer) => standIn.confirmRepairReoffer(reoffer, 9_000.5));
+
+        expect(decided.reoffers.map(({ send }) => send.seq)).toEqual([1]);
+        expect(offered).toEqual([]);
+        expect(standIn.getDeclinedRepairs()).toEqual([
+            { msgId: 'session-01-a-send-1', reason: 'send-ended', atMs: 9_000.5 }
+        ]);
+    });
+
+    it('offers no repair of a send whose lifetime ended after the repair was decided, before a poll has ended it and after', () => {
+        const standIn = createStandInAfterOffers(3);
+        [1, 2, 3].forEach((seq) => standIn.acceptSocketRead(PUBLISHER, toReceiptRead(seq, 'admitted')));
+        const decided = standIn.acceptSocketRead(PUBLISHER, readAt(toGapNackRead(3, [{ from: 1, to: 2 }], 1), 30_999.5));
+        const [repairOfFirst, repairOfSecond] = decided.reoffers;
+
+        const firstOffered = standIn.confirmRepairReoffer(repairOfFirst, 31_000);
+        standIn.endExpiredSends(31_000);
+        const secondOffered = standIn.confirmRepairReoffer(repairOfSecond, 31_000.5);
+
+        expect(decided.reoffers.map(({ send }) => send.seq)).toEqual([1, 2]);
+        expect([firstOffered, secondOffered]).toEqual([false, false]);
+        expect(standIn.getDeclinedRepairs()).toEqual([
+            { msgId: 'session-01-a-send-1', reason: 'send-expired', atMs: 31_000 },
+            { msgId: 'session-01-a-send-2', reason: 'send-expired', atMs: 31_000.5 }
+        ]);
+    });
+
+    it('offers no repair of a send its publisher never offered, and records nothing of it', () => {
+        const standIn = createStandInAfterOffers(1);
+
+        const offered = standIn.confirmRepairReoffer({ send: toSend(2), frame: toFrame(2), cause: 'repair', attempt: 1 }, 1_201);
+
+        expect(offered).toBe(false);
+        expect(standIn.getDeclinedRepairs()).toEqual([]);
+    });
 });

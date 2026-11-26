@@ -27,10 +27,11 @@ const COPIES = 112;
 
 /**
  * How long a run observes after its last offer. A reference run observes for the send's lifetime and the receipt's
- * grace, 75 s, so that a receipt that times out is still read. These sends complete their receipts a few hundred
- * milliseconds after their offer on an idle machine; 4 s is ten times that and twice the 2 s first-hop wait, so a
- * runner that is slow by an order of magnitude still reads every receipt, and a first-hop resend it provokes is
- * answered before observation ends. Three runs of a 2 s window and this tail keep the file under 20 s.
+ * grace, 75 s, so that a receipt that times out is still read. On an idle machine the median send here completes its
+ * receipt a few hundred milliseconds after its offer, and 4 s is about ten times that median. It is no such margin
+ * over the slow sends: at the reference load, five publishers and no added latency, the 99th percentile from offer
+ * to complete receipt reached about 2 s, so the tail is a small multiple of a slow receipt, and twice the 2 s
+ * first-hop wait. Three runs of a 2 s window and this tail keep the file under 20 s.
  */
 const OBSERVATION_TAIL_MS = 4_000;
 
@@ -67,16 +68,18 @@ describe('ALM ordered-send cell on PostgreSQL', () => {
         RUN_BUDGET_MS
     );
 
-    // A publisher that stands in for a client may offer a send again when its receipt is slow; the server has
-    // admitted the send by then, and its complete receipt ends the send at the stand-in.
+    // A publisher that stands in for a client may offer a send again: when its receipt is slow, by which time the
+    // server has usually admitted the send and answers `duplicate`; or for a repair the server asked for while the
+    // first offer was still on its way, which the entry may answer `admitted` or `pending-admission` in its place.
+    // The entry refuses no such offer, and the send's complete receipt ends it at the stand-in.
     postgresIt(
         'writes and receipts the same sends when its publishers stand in for a client, and ends each on its complete receipt',
         async () => {
             const run = await runSmallCell({ delayMs: 0, senderRecovery: 'client-stand-in' });
 
             expectEverySendWrittenAndReceipted(run);
-            expect(run.resends.filter((resend) => resend.acceptance !== 'unanswered').map((resend) => resend.acceptance))
-                .toEqual(run.resends.filter((resend) => resend.acceptance !== 'unanswered').map(() => 'duplicate'));
+            expect(run.resends.filter((resend) => ['rejected', 'threw', 'not-admitted'].includes(resend.acceptance)))
+                .toEqual([]);
             expect(run.sendEnds.map((end) => end.cause)).toEqual(Array.from({ length: SENDS }, () => 'terminal-receipt'));
             expect(run.declinedRepairs.filter((declined) => declined.reason !== 'send-ended')).toEqual([]);
         },

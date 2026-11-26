@@ -7,7 +7,7 @@ export interface OrderedSendThrownError {
 }
 
 /** The most characters of an error's message the cell prints or records. */
-export const ORDERED_SEND_THROWN_MESSAGE_MAX_LENGTH = 240;
+const ORDERED_SEND_THROWN_MESSAGE_MAX_LENGTH = 240;
 
 /** The most characters of an error's name the cell prints or records. */
 const THROWN_NAME_MAX_LENGTH = 80;

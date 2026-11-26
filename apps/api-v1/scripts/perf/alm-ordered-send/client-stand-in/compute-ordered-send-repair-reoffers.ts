@@ -114,6 +114,20 @@ export function isOrderedSendExpired(sent: OrderedSendSentMessage, nowMs: number
     return sent.expiresAtMs !== undefined && sent.expiresAtMs <= nowMs;
 }
 
+/**
+ * Why a publisher does not offer a send again for a repair at `nowMs`, or undefined when it may: the send's lifetime
+ * is over, or the send has ended, read in that order as the product reads them.
+ */
+export function resolveOrderedSendRepairDeclineReason(
+    sent: OrderedSendSentMessage,
+    nowMs: number
+): OrderedSendRepairDecline['reason'] | undefined {
+    if (isOrderedSendExpired(sent, nowMs)) {
+        return 'send-expired';
+    }
+    return sent.ended ? 'send-ended' : undefined;
+}
+
 function computeRepairDecision(
     candidate: OrderedSendRepairCandidate,
     read: OrderedSendRepairHintRead
@@ -122,11 +136,9 @@ function computeRepairDecision(
     if (sent === undefined || sent.maxRepairs === undefined) {
         return { kind: 'nothing' };
     }
-    if (isOrderedSendExpired(sent, read.nowMs)) {
-        return { kind: 'declined', decline: { msgId: sent.msgId, reason: 'send-expired' } };
-    }
-    if (sent.ended) {
-        return { kind: 'declined', decline: { msgId: sent.msgId, reason: 'send-ended' } };
+    const declineReason = resolveOrderedSendRepairDeclineReason(sent, read.nowMs);
+    if (declineReason !== undefined) {
+        return { kind: 'declined', decline: { msgId: sent.msgId, reason: declineReason } };
     }
     if (read.servedAttemptIdentities.has(attemptIdentity)) {
         return { kind: 'nothing' };
