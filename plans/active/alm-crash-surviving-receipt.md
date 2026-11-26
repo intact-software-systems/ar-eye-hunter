@@ -896,6 +896,71 @@ receipt the publisher had not read when the sends stopped.
 - At +5 ms the last ACKs of almost every message overlap: 183 to 192 losing `end`s for 200 messages at five
   publishers, 34 to 44 for 40 at one. No losing `end` delivered a second terminal receipt.
 
+### Again, with the receipts' fence split and `admitted` on the socket
+
+Same shape as above, at the branch's head (built) and at the commit before the fence split and the live `admitted`
+(control). Every built run ran directly after a control run of the same cell and latency, on one machine whose
+1-minute load stayed between 1.0 and 3.7 throughout, far below the 8 to 33 of the investigation's runs. A third cell,
+five publishers with the server's own: the five publishers as they are, and instance a publishing a receipted room
+publication of the server's own every 500 ms (40 in the 20 s), each on one track (`ordering: { orderingKey, epoch:
+0, seq }`, ACK `receiver`), every one of the 15 sessions acknowledging it on its own instance. That publication fences
+on the server's version, so the outbound worker's batches mix it with receipt controls that do not.
+
+`admitted` is timed from the send to its read on the publisher's socket, whether it came there from the socket write
+on the admitting instance or from an outbox row; `complete` from the message's last ACK offered to its read. Seconds,
+p50 / p95; the ratio is the last ten's p50 over the first ten's. Read/s counts the receipts the publishers read while
+the sends ran, against the receipts offered in that window. Conflicts are the receipt controls' replay and dequeue
+commits that ended `conflict`, of all such commits. Ranges are over the runs of a row.
+
+| Cell, latency, sends                    | Tree    | Runs | Complete by deadline | `admitted` first / last 10 | Ratio     | `complete` first / last 10 | Ratio     | `admitted` > 8 s | Read/s of offered | Statements a message | Enqueues retained | Replay / dequeue conflicts |
+| --------------------------------------- | ------- | ---- | -------------------- | -------------------------- | --------- | -------------------------- | --------- | ---------------- | ----------------- | -------------------- | ----------------- | -------------------------- |
+| One, +0 ms, 20 s                        | control | 3    | 40 of 40 each        | 0.08 / 0.07                | 0.85-0.94 | 0.04-0.05 / 0.04           | 0.84-0.92 | 0                | 4.0 of 4.1        | 376-417              | 0 of 80           | 0 / 0                      |
+|                                         | built   | 3    | 40 of 40 each        | 0.02 / 0.01-0.02           | 0.68-0.80 | 0.05 / 0.04                | 0.82-0.87 | 0                | 4.0 of 4.1        | 326-354              | 0 of 40           | 0 / 0                      |
+| One, +5 ms, 20 s                        | control | 3    | 40 of 40 each        | 0.41-0.48 / 0.41-0.48      | 0.95-1.01 | 0.43-0.47 / 0.36-0.42      | 0.84-0.88 | 0                | 3.9 of 4.1        | 375-382              | 0 of 80           | 0 / 0                      |
+|                                         | built   | 3    | 40 of 40 each        | 0.15 / 0.14-0.15           | 0.97-0.99 | 0.38-0.44 / 0.43-0.44      | 0.97-1.15 | 0                | 3.9 of 4.1        | 287-311              | 0 of 40           | 0 / 0                      |
+| Five, +0 ms, 20 s                       | control | 3    | 200 of 200 each      | 0.04-0.08 / 0.03           | 0.41-0.87 | 0.02-0.06 / 0.02-0.03      | 0.41-0.97 | 0                | 19.9-20.0 of 20.1 | 347-354              | 0 of 400          | 0 / 0-1                    |
+|                                         | built   | 3    | 200 of 200 each      | 0.01 / 0.01                | 0.70-0.95 | 0.02-0.04 / 0.02           | 0.61-0.91 | 0                | 19.9-20.0 of 20.1 | 310-314              | 0 of 200          | 0 / 0                      |
+| Five, +5 ms, 20 s                       | control | 3    | 111-124 of 200       | 0.98-1.44 / 18.4-18.9      | 12.9-18.7 | 3.7-4.7 / 18.4-19.6        | 3.9-5.3   | 166-173          | 3.6-3.7 of 20.1   | 343-351              | 225-231 of 400    | 39-40 % / 19-21 %          |
+|                                         | built   | 3    | 200 of 200 each      | 0.15-0.17 / 0.13-0.14      | 0.82-0.88 | 0.51-0.56 / 0.42-0.47      | 0.79-0.92 | 0                | 19.5 of 20.1      | 223-225              | 0 of 200          | 0 / 0                      |
+| Five, +5 ms, 45 s                       | control | 1    | 66 of 450            | 1.36 / 36.8                | 27.1      | 6.8 / 36.4                 | 5.3       | 416              | 3.6 of 20.0       | 321                  | 536 of 900        | 45 % / 19 %                |
+|                                         | built   | 1    | 450 of 450           | 0.17 / 0.13                | 0.78      | 0.54 / 0.45                | 0.84      | 0                | 19.8 of 20.0      | 226                  | 0 of 450          | 0 / 0                      |
+| Five with the server's own, +5 ms, 20 s | control | 3    | 80-99 of 200         | 1.33-1.85 / 19.3-28.2      | 13.8-15.3 | 4.0-7.7 / 20.0-27.0        | 3.5-5.1   | 175-179          | 2.7-3.1 of 20.1   | 414-416              | 224-243 of 400    | 34-36 % / 16-18 %          |
+|                                         | built   | 3    | 200 of 200 each      | 0.16-0.17 / 0.13-0.14      | 0.77-0.87 | 0.54-0.61 / 0.46-0.57      | 0.84-1.01 | 0                | 19.4-19.5 of 20.1 | 243-245              | 0 of 200          | 0 / 0                      |
+
+No run of either tree ended a message `timed-out` or read a second terminal receipt for one. The built tree's
+enqueues are the terminal receipts alone: every `admitted` in every built run (40, 200 or 450 a run) was written to
+the publisher's socket on the admitting instance and none became an outbox row.
+
+The server's own publications:
+
+| Tree    | Run       | Receipts `complete`                                          | Enqueues retained  | Dequeue commits `conflict`     | Dequeue batches written as two groups                                                      |
+| ------- | --------- | ------------------------------------------------------------ | ------------------ | ------------------------------ | ------------------------------------------------------------------------------------------ |
+| control | 1 / 2 / 3 | 0 / 2 / 0 of 40 (2 and 1 `timed-out`, the rest never opened) | 33 / 36 / 35 of 40 | 53 of 72 / 46 of 77 / 37 of 63 | none (no dispatch fences only its message)                                                 |
+| built   | 1 / 2 / 3 | 40 / 40 / 40 of 40                                           | 0 of 40 each       | 0 of 40 each                   | 25 / 22 / 28, each its publication's group beside receipt controls; no group's write threw |
+
+- **The built tree keeps up in every cell measured.** All 16 built runs meet the rule: the last ten's p50 within 1.5
+  times the first ten's for `admitted` (ratios 0.68 to 0.99) and for `complete` (0.61 to 1.15), every `admitted`
+  read within 8 s (the slowest 0.38 s), every message `complete` before its deadline, and the receipts read at 95 to
+  99 % of the offered rate (one publisher 3.9 of 4.1, the closest to the line). The ratios are of small figures: at +0 ms the p50s are 10 to 50 ms, so one scheduling
+  pause moves them, and the largest built ratio (1.15, one publisher at +5 ms) is 0.44 s over 0.38 s.
+- **The control backlogs as before**, on this quiet machine too: five publishers at +5 ms read `admitted` 18 to 19 s
+  late over the last ten and 111 to 124 of 200 messages `complete` by their deadline; over 45 s only 66 of 450, the
+  last ten 37 s late. The built tree ran the same 45 s at its 20 s figures (`admitted` 0.13 s, `complete` 0.45 s over
+  the last ten), so the deadline rows that come due in a longer run cost it nothing visible.
+- **The split is exercised and holds.** With the server's own sequenced publications in the cell, 22 to 28 of about
+  306 dequeue batches a run held both kinds and were written as two groups, the publication's on the server's version
+  and the receipt controls' on their own; none of those writes threw, and no publication's dequeue conflicted. Under
+  the control the same publications lost their fence in 59 to 74 % of their dequeue commits and at most 2 of 40
+  receipts completed. The added publications cost the built five-publisher figures nothing beyond about 20
+  statements a message.
+- **What a receipt now costs**: 223 to 226 statements a message at five publishers and +5 ms, against 343 to 351
+  for the control and 234 for the investigation's prototype of the fence alone, with no receipt enqueue retained and
+  no receipt commit conflicting.
+- The harness also counted, on the built tree, the messages the server's in-process subscriber was handed more than
+  once (none of 40 to 450 a run) and the inbound ordered completions; no message arriving in these cells carries an
+  ordering (the publishers' room messages have none, and the server's own publications go out, not in), so no
+  ordered delivery or completion took place and the cell says nothing about the completion's retries.
+
 ## Established in slice 1
 
 - **Unfenced rows neither conflict nor wait.** Through `PSqlAdmissionWorkBackend`, 30 concurrent writes to
@@ -1004,18 +1069,28 @@ receipt the publisher had not read when the sends stopped.
   claims within or near it.
 - The remainder between undoing the four changes of #869 together (187 of 200) and the commit before them (200) is
   not attributed.
-- Higher latencies (+10 ms or more), longer runs (45 s, where deadline rows come due) and +0 ms were not run with
-  either fix, nor the hosted cell.
+- Higher latencies (+10 ms or more) and the hosted cell were not run with either fix; +0 ms and one 45 s run at
+  +5 ms were, with both ("Measured through the WS server").
 - That a receipt dispatch reads no row its sender's messages share is read from the code; no test pinned it when it
-  was measured. A dequeue batch that mixes receipts and sequenced server publications was not exercised: the cell
-  held only receipts under the server's identity.
+  was measured. A dequeue batch that mixes receipts and sequenced server publications was exercised only on the
+  built split (22 to 28 such batches a run, "Measured through the WS server"), not on the prototype.
 - The recovery of a lost live `admitted` by the first-hop resend is argued from the code, not run.
 - `main` was not run in that cell; its code delivers every receipt the same way, through the outbox on the server's
   one sender version.
-- The server's own receipted publications (group-state deltas), whose receipt rows also live under the server's
-  sender, were not part of the cell.
+- The server's own receipted publications entered the cell only as one sequenced publication every 500 ms from one
+  instance; group-state deltas themselves, which carry no ordering, and a higher publication rate were not run.
 - More than five publishers in a room: not run, so whether the receipts keep up with ten publishers even at
   +0 ms is not shown.
+- The hosted statement latency is still read from one attributed run, about 5 ms; the measurement with the fence split
+  and `admitted` on the socket ran at +0 and +5 ms locally, not on the hosted database.
+- More than five publishers were not run with the fence split and `admitted` on the socket either, so the rate at
+  which the built receipts stop keeping up is not known.
+- Latencies above +5 ms were not run with the fence split and `admitted` on the socket, so whether the built tree's
+  sub-second last ten holds at +10 ms is not shown.
+- `main` was not run in the five-publisher cell with or without the server's own publications, so its figures
+  beside the built tree's are not shown.
+- No inbound ordered delivery took place in the cells measured through the WS server, so the completion's retries
+  under load are not measured.
 - The sustained cost of an ACK that finds no head: the measurement through the WS server offers each ACK only
   after its recipient reads the message, and does not count how many found no head.
 - Leader resolution in a cluster: the group-leader case pins the cross-instance count, not how the leader is
