@@ -118,7 +118,7 @@ export class EdgeOrderReceiver<Message> {
             return;
         }
         const [oldestKey] = this.streams.keys();
-        const oldest = oldestKey === undefined ? undefined : this.streams.take(oldestKey);
+        const oldest = this.streams.take(oldestKey);
         if (oldest !== undefined) {
             oldest.forgotten = true;
             this.release(oldest);
