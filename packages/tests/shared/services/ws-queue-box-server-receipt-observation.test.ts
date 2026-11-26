@@ -46,7 +46,7 @@ import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-w
 
 import { commitCompetingOutboundMessageCommit } from '../alm/outbound-runtime-test-fixture.ts';
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
-import { readReceiptAggregationVerdicts } from './ws-queue-box-server-receipt-fixture.ts';
+import { readReceiptAggregationVerdicts, refuseNextNativeSend } from './ws-queue-box-server-receipt-fixture.ts';
 
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
 import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
@@ -183,11 +183,15 @@ async function readCompleteReceipts(service: WsQueueBoxServerService): Promise<r
 }
 
 function readSentReceipts(service: WsQueueBoxServerService): readonly ALMessage[] {
+    return readOriginSocket(service).sent.map(decodePersistedALMessage).filter((message) => decodeALControlMessage(message).right?.type === 'receipt');
+}
+
+function readOriginSocket(service: WsQueueBoxServerService): SimulatedWebSocket {
     const socket = service.socket.connections.get('origin')?.socket;
     if (!(socket instanceof SimulatedWebSocket)) {
         throw new Error('Expected the observed origin socket');
     }
-    return socket.sent.map(decodePersistedALMessage).filter((message) => decodeALControlMessage(message).right?.type === 'receipt');
+    return socket;
 }
 
 async function waitForReceiptCompletion(
@@ -353,14 +357,27 @@ describe('private upstream receipt observation', () => {
         const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
         const inboundStores = createObservedInboundStores();
         const service = await createObservedServer((event) => events.push(event), undefined, { inboundStores, outboundStores, queueEngine: engine });
+        const dequeueEntered = Promise.withResolvers<void>();
+        const releaseDequeue = Promise.withResolvers<void>();
+        const dequeueFinished = Promise.withResolvers<void>();
         const commits: ReceiptCommitOutcome[] = [];
         const commitBundle = outboundStores.admissionStore.commitBundle.bind(outboundStores.admissionStore);
         let completeAttempts = 0;
         const commitSpy = vi.spyOn(outboundStores.admissionStore, 'commitBundle').mockImplementation(async (bundle, observation) => {
             const control = bundle.canonicalEntry && decodeALControlMessage(decodePersistedALMessage(bundle.canonicalEntry.resource)).right;
             const phase = control?.type === 'receipt' ? control.payload.phase : undefined;
+            const admittedDequeue = phase === 'admitted' && bundle.durableEffects.some((effect) => effect.payload.kind === 'send-prepared');
+            if (admittedDequeue) {
+                dequeueEntered.resolve();
+                await releaseDequeue.promise;
+            }
             if (phase === 'complete' && bundle.pendingAdmission === undefined && bundle.durableEffects.length === 0) {
                 completeAttempts += 1;
+                if (completeAttempts === 1) {
+                    // The admitted receipt's dequeue commits in between, on its own control's version alone.
+                    releaseDequeue.resolve();
+                    await dequeueFinished.promise;
+                }
                 if (completeAttempts <= AL_OUTBOUND_COMMIT_ATTEMPTS) {
                     // Another commit of the complete receipt's own control lands before each of its attempts, so each
                     // loses that control's version and the receipt is retained.
@@ -372,9 +389,14 @@ describe('private upstream receipt observation', () => {
                 const sendsPrepared = bundle.durableEffects.some((effect) => effect.payload.kind === 'send-prepared');
                 commits.push({ phase, expectedVersion: bundle.expectedVersion, sendsPrepared, status });
             }
+            if (admittedDequeue) {
+                dequeueFinished.resolve();
+            }
             return status;
         });
         const closeReceiptContender = async () => {
+            releaseDequeue.resolve();
+            dequeueFinished.resolve();
             try {
                 await service.dispose();
             }
@@ -385,17 +407,22 @@ describe('private upstream receipt observation', () => {
         onTestFinished(closeReceiptContender);
         try {
             const message = createRoomSubjectMessage();
+            // The origin's socket refuses the live admitted once, so the admitted receipt is the row whose dequeue
+            // commits between the complete control's attempts.
+            refuseNextNativeSend(readOriginSocket(service));
             expect((await service.acceptIncomingMessage(message, 'origin')).right?.kind).toBe('admitted');
-            expect(readSentReceipts(service)).toHaveLength(1);
+            await dequeueEntered.promise;
             expect((await service.acceptIncomingMessage(createReceiverAcknowledgement(), 'recipient')).right?.kind).toBe('control');
             await expect.poll(async () => {
                 await runEngine(engine);
                 return events.some((event) => event.kind === 'receipt-outbox' && event.receipt.phase === 'complete');
             }).toBe(true);
-            // No receipt reads a row its sender's other messages share, so none writes the server's version. The admitted
-            // receipt went to the origin's socket here, so no commit of it exists; the complete control loses its own
-            // version.
-            expect(commits.filter((commit) => commit.phase === 'admitted')).toEqual([]);
+            // No receipt reads a row its sender's other messages share, so none writes the server's version: the admitted
+            // control's enqueue and its dequeue each commit once, and the complete control loses its own version.
+            expect(commits.filter((commit) => commit.phase === 'admitted')).toEqual([
+                { phase: 'admitted', expectedVersion: undefined, sendsPrepared: false, status: 'committed' },
+                { phase: 'admitted', expectedVersion: undefined, sendsPrepared: true, status: 'committed' }
+            ]);
             expect(commits).toContainEqual({ phase: 'complete', expectedVersion: undefined, sendsPrepared: false, status: 'conflict' });
             const pending = events.find((event) => event.kind === 'receipt-outbox' && event.receipt.phase === 'complete');
             expect(pending).toMatchObject({ kind: 'receipt-outbox', verdict: { kind: 'pending' }, entryCount: 1, trackedReceiptAlgo: 'none' });

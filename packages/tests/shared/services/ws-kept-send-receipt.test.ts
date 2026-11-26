@@ -319,11 +319,11 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
 
     it('characterization: a copy of a send kept after a lost race, written before its replay ran: one admitted for it', async () => {
         const link = await createWsReceiptedSendLink('in-sync');
+        const releaseClaims = link.holdServerWorkClaims();
         const [first, second] = await sendTwoOrderedSideBySide(link);
-        // The server's started engine claims the kept row's replay as soon as the race retains it, and nothing else is
-        // queued now that the first send's admitted receipt went to the origin's socket: the copy meets that replay's
-        // write and joins the kept row.
-        expect(await link.writeCopy(second)).toBe('pending-admission');
+        // The kept row's replay is not claimed until the copy is written, so the copy is admitted on its own.
+        expect(await link.writeCopy(second)).toBe('admitted');
+        releaseClaims();
         expect(await link.writeCopy(first)).toBe('duplicate');
         await link.advance(0);
         await link.advance(200);
@@ -332,6 +332,42 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
 
         expect(toControlsOf(link, second)).toEqual([
             { control: 'receipt:admitted', admission: 'committed' },
+            { control: 'receipt:timed-out', admission: 'committed' }
+        ]);
+        expect(toControlsOf(link, first)).toEqual([
+            { control: 'receipt:admitted', admission: 'committed' },
+            { control: 'receipt:admitted', admission: 'rejected' },
+            { control: 'receipt:timed-out', admission: 'committed' }
+        ]);
+        expect(link.deliveredToPeer(first)).toBe(1);
+        expect(link.deliveredToPeer(second)).toBe(1);
+    });
+
+    it('characterization: a copy of a send kept after a lost race, whose replay commits between its reads and its write: it joins the kept row and is answered from its head, one admitted for it', async () => {
+        const link = await createWsReceiptedSendLink('in-sync');
+        const releaseClaims = link.holdServerWorkClaims();
+        const [first, second] = await sendTwoOrderedSideBySide(link);
+        const copyWrite = link.holdServerNextAdmissionWrite();
+        const keptRowRelease = link.holdServerKeptRowRelease(second);
+        const copy = link.writeCopy(second);
+        await copyWrite.arrived;
+        releaseClaims();
+        await keptRowRelease.arrived;
+        // The replay admitted the kept row while the copy's write waited after its reads; the row is still claimed.
+        expect(link.readReceiptsToOrigin(second).map((receipt) => receipt.phase)).toEqual(['admitted']);
+        copyWrite.release();
+        expect(await copy).toBe('pending-admission');
+        keptRowRelease.release();
+        expect(await link.writeCopy(first)).toBe('duplicate');
+        await link.advance(0);
+        await link.advance(200);
+        await link.advance(200);
+        await advanceInSecondsTo(link, LINK_MESSAGE_TTL_MS + 31_000);
+
+        // The copy finds the head the replay opened and is answered from it again; the origin refuses the repeat.
+        expect(toControlsOf(link, second)).toEqual([
+            { control: 'receipt:admitted', admission: 'committed' },
+            { control: 'receipt:admitted', admission: 'rejected' },
             { control: 'receipt:timed-out', admission: 'committed' }
         ]);
         expect(toControlsOf(link, first)).toEqual([

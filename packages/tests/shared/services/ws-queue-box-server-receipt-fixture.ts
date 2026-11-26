@@ -563,13 +563,23 @@ export async function runReceiptWorkerHandoff(input: ReceiptWorkerHandoffInput):
     return { receipts: readSentReceipts(alice), wrongFrames: wrong.sent, claims };
 }
 
-/** The socket's next native send throws, as a socket closing under it would; its later sends are its own. */
-function refuseNextNativeSend(socket: SimulatedWebSocket): void {
+/**
+ * The socket's next native send throws, as a socket closing under it would; its later sends are its own. Only the
+ * line the server prints for that refusal is silenced, and only until the case ends.
+ */
+export function refuseNextNativeSend(socket: SimulatedWebSocket): void {
     const send = socket.send.bind(socket);
-    vi.spyOn(console, 'error').mockImplementationOnce(() => undefined);
+    const refusal = new Error('Native WebSocket refused the frame');
+    const printError = console.error.bind(console);
+    const silenced = vi.spyOn(console, 'error').mockImplementation((...lines) => {
+        if (!lines.includes(refusal)) {
+            printError(...lines);
+        }
+    });
+    onTestFinished(() => silenced.mockRestore());
     socket.send = () => {
         socket.send = send;
-        throw new Error('Native WebSocket refused the frame');
+        throw refusal;
     };
 }
 

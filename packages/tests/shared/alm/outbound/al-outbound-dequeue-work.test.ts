@@ -895,15 +895,15 @@ describe('AL outbound dequeue work', () => {
         const batch = await createMixedFenceBatch();
         onTestFinished(async () => await batch.runtime.dispose());
 
-        await runMixedFenceBatch(batch);
+        await runDequeuedFenceBatch(batch);
 
         for (const message of batch.messages) {
             expect(await batch.stores.admissionStore.readStoredMessage(message.id.msgId), message.id.msgId).toBeDefined();
             expect(await readMixedBatchMessageVersion(batch.stores, message), message.id.msgId).toBe(1);
         }
-        expect(await readMixedBatchSenderVersion(batch.stores)).toBe(1);
+        expect(await readDequeuedFenceBatchSenderVersion(batch.stores)).toBe(1);
         expectEachRowDispatchedAndSentOnce(batch);
-        expect(toMixedBatchGroupOutcomes(batch)).toEqual(expect.arrayContaining([
+        expect(toDequeuedFenceBatchGroupOutcomes(batch)).toEqual(expect.arrayContaining([
             { memberCount: 1, outcome: 'committed' },
             { memberCount: 3, outcome: 'committed' }
         ]));
@@ -936,9 +936,9 @@ describe('AL outbound dequeue work', () => {
             return await commitBundles(bundles);
         });
 
-        await runMixedFenceBatch(batch);
+        await runDequeuedFenceBatch(batch);
 
-        expect(toMixedBatchGroupOutcomes(batch)).toEqual(expect.arrayContaining([
+        expect(toDequeuedFenceBatchGroupOutcomes(batch)).toEqual(expect.arrayContaining([
             { memberCount: 1, outcome: 'conflict' },
             { memberCount: 3, outcome: 'committed' }
         ]));
@@ -949,7 +949,7 @@ describe('AL outbound dequeue work', () => {
         }
         expectEachRowDispatchedAndSentOnce(batch);
         // The interleaved frame's commit and the sequenced row's own single commit after it.
-        expect(await readMixedBatchSenderVersion(batch.stores)).toBe(2);
+        expect(await readDequeuedFenceBatchSenderVersion(batch.stores)).toBe(2);
     });
 
     it('when a receipt of a mixed batch loses its own fence, the sequenced row\'s write stands and only the receipts commit alone', async () => {
@@ -969,9 +969,9 @@ describe('AL outbound dequeue work', () => {
             return await commitBundles(bundles);
         });
 
-        await runMixedFenceBatch(batch);
+        await runDequeuedFenceBatch(batch);
 
-        expect(toMixedBatchGroupOutcomes(batch)).toEqual(expect.arrayContaining([
+        expect(toDequeuedFenceBatchGroupOutcomes(batch)).toEqual(expect.arrayContaining([
             { memberCount: 1, outcome: 'committed' },
             { memberCount: 3, outcome: 'conflict' }
         ]));
@@ -979,7 +979,7 @@ describe('AL outbound dequeue work', () => {
         // The competitor and the receipt's own commit alone; every other row moved its version once.
         const versions = await Promise.all(batch.messages.map((message) => readMixedBatchMessageVersion(batch.stores, message)));
         expect(versions).toEqual([2, 1, 1, 1]);
-        expect(await readMixedBatchSenderVersion(batch.stores)).toBe(1);
+        expect(await readDequeuedFenceBatchSenderVersion(batch.stores)).toBe(1);
         expectEachRowDispatchedAndSentOnce(batch);
     });
 
@@ -998,35 +998,36 @@ describe('AL outbound dequeue work', () => {
             return commitBundles(bundles);
         });
 
-        await runMixedFenceBatch(batch);
+        await runDequeuedFenceBatch(batch);
 
         for (const message of batch.messages) {
             expect(await readMixedBatchMessageVersion(batch.stores, message), message.id.msgId).toBe(1);
         }
-        expect(toMixedBatchGroupOutcomes(batch)).toEqual(expect.arrayContaining([
+        expect(toDequeuedFenceBatchGroupOutcomes(batch)).toEqual(expect.arrayContaining([
             { memberCount: 1, outcome: 'committed' },
             { memberCount: 3, outcome: 'error' }
         ]));
         expect(batch.groups).toHaveLength(2);
-        expect(await readMixedBatchSenderVersion(batch.stores)).toBe(1);
+        expect(await readDequeuedFenceBatchSenderVersion(batch.stores)).toBe(1);
         expectEachRowDispatchedAndSentOnce(batch);
     });
 
     it('fences the sender for a follower dequeued in one batch with its predecessor', async () => {
         // Pins a follower's decision leaving the sender fence: a follower holds a place on its predecessor's track, so
         // it joins its predecessor's fence group, and their one write moves the sender version once. A follower that
-        // fenced no sender would commit in a group of its own.
+        // fenced no sender either writes its tracked row outside the sender fence, which the store refuses and the group
+        // reads `error`, or commits in a group of its own.
         const batch = await createDequeuedFenceBatch([1, 2].map((seq) => ({
             ...createDequeuedMessage(`track-${seq}`),
             ordering: { orderingKey: 'feed', epoch: 1, seq }
         })));
         onTestFinished(async () => await batch.runtime.dispose());
 
-        await runMixedFenceBatch(batch);
+        await runDequeuedFenceBatch(batch);
 
         expect(batch.groups).toHaveLength(1);
-        expect(toMixedBatchGroupOutcomes(batch)).toEqual([{ memberCount: 2, outcome: 'committed' }]);
-        expect(await readMixedBatchSenderVersion(batch.stores)).toBe(1);
+        expect(toDequeuedFenceBatchGroupOutcomes(batch)).toEqual([{ memberCount: 2, outcome: 'committed' }]);
+        expect(await readDequeuedFenceBatchSenderVersion(batch.stores)).toBe(1);
         expectEachRowDispatchedAndSentOnce(batch);
     });
 
@@ -1546,13 +1547,13 @@ async function createDequeuedFenceBatch(messages: readonly ALMessage[]): Promise
 }
 
 /** Runs the batch's dequeue, then the batch of sends its commits queued. */
-async function runMixedFenceBatch(batch: DequeuedFenceBatch): Promise<void> {
+async function runDequeuedFenceBatch(batch: DequeuedFenceBatch): Promise<void> {
     await runOutboundWorkTask(batch.runtime);
     await runOutboundWorkTask(batch.runtime);
 }
 
 /** The batch's `admission-group` observations as member count and outcome. */
-function toMixedBatchGroupOutcomes(batch: DequeuedFenceBatch): readonly Readonly<{ memberCount: number; outcome: string; }>[] {
+function toDequeuedFenceBatchGroupOutcomes(batch: DequeuedFenceBatch): readonly Readonly<{ memberCount: number; outcome: string; }>[] {
     return batch.groups.map(({ memberCount, outcome }) => ({ memberCount, outcome }));
 }
 
@@ -1566,7 +1567,7 @@ function expectEachRowDispatchedAndSentOnce(batch: DequeuedFenceBatch): void {
     expect([...batch.sent].sort()).toEqual(batch.messages.map((message) => message.id.msgId).sort());
 }
 
-async function readMixedBatchSenderVersion(stores: OutboundTestStores): Promise<number | undefined> {
+async function readDequeuedFenceBatchSenderVersion(stores: OutboundTestStores): Promise<number | undefined> {
     return await stores.backend.read(
         toALOutboundVersionKey(stores.admissionStore.namespace, 'server'),
         (value) => decodeALAdmissionClientRecord(value, 'server').version

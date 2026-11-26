@@ -1,15 +1,17 @@
-import { expect, vi } from 'vitest';
+import { expect, onTestFinished, vi } from 'vitest';
 
 import { newALBroadcastMessage, newALRoute, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage, type ALMessageRejection } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/read-al-outbound-recipient-proof.ts';
 import { toALOutboundFirstHopTimeoutEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { acceptWsQueueBoxClientControlMessage } from '@shared/services/ws-queue-box-client/ws-queue-box-client-receipt-tracking.ts';
 import type { WsServerInboundAuthorization } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
@@ -22,6 +24,7 @@ import {
     toWsDeliveredAckMessage,
     type ControlFrameLabel
 } from '../../ws-receipted-send-test-controls.ts';
+import { createWorkerHold, type WorkerHold } from '../alm/create-worker-hold.ts';
 import {
     createWsClientCarrierStores,
     createWsClientMintingPlanner,
@@ -77,6 +80,12 @@ export interface WsReceiptedSendLink {
     writeCopy(msg: ALMessage): Promise<string>;
     /** The next `count` frames the server writes the origin, counted from this call, are lost on the wire. */
     loseFramesToOrigin(count: number): void;
+    /** Each claim the server makes of its inbound work from now claims nothing, until the returned release. */
+    holdServerWorkClaims(): () => void;
+    /** The server's next admission write waits at the returned hold, after its reads and before it enters the backend. */
+    holdServerNextAdmissionWrite(): WorkerHold;
+    /** The server's release of `msg`'s kept row, once its replay ran, waits at the returned hold; the row stays claimed. */
+    holdServerKeptRowRelease(msg: ALMessage): WorkerHold;
     /** The recipient's `delivered` ACK through the server's ingress, as its socket would send it. */
     acknowledge(msg: ALMessage): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>>;
     /** Moves the one clock, then `LINK_PASSES_PER_STEP` times: the server's engine, its answers to the client, the client's due work. */
@@ -126,6 +135,7 @@ export async function createWsReceiptedSendLink(startView: WsReceiptedSendRoomVi
         writeHeldFramesSideBySide: client.writeHeldFramesSideBySide,
         writeCopy: client.writeCopy,
         loseFramesToOrigin: exchange.loseFrames,
+        ...createServerWorkHolds(server),
         acknowledge: async (msg) => await server.service.acceptIncomingMessage(toWireCopy(toPeerAck(msg)), LINK_PEER_ID),
         advance: async (ms) => {
             vi.setSystemTime(Date.now() + ms);
@@ -230,6 +240,51 @@ function createLinkExchange(server: ServerIngressFixture, client: LinkClient): L
         }
     };
     return { serverControls, run, loseFrames };
+}
+
+function createServerWorkHolds(
+    server: ServerIngressFixture
+): Pick<WsReceiptedSendLink, 'holdServerWorkClaims' | 'holdServerNextAdmissionWrite' | 'holdServerKeptRowRelease'> {
+    const { workQueue } = server.admission;
+    return {
+        holdServerWorkClaims: () => {
+            const reserveEntries = workQueue.reserveEntries.bind(workQueue);
+            let held = true;
+            vi.spyOn(workQueue, 'reserveEntries').mockImplementation(async (request) => held ? new Map() : await reserveEntries(request));
+            return () => {
+                held = false;
+                server.engine.wake();
+            };
+        },
+        holdServerKeptRowRelease: (msg) => {
+            const hold = createWorkerHold();
+            onTestFinished(() => hold.release());
+            const releaseEntries = workQueue.releaseEntries.bind(workQueue);
+            vi.spyOn(workQueue, 'releaseEntries').mockImplementation(async (releases) => {
+                if (releases.some(({ entry }) => isKeptRowOf(entry, msg, server.admissionStore.namespace))) {
+                    await hold.arrive();
+                }
+                return await releaseEntries(releases);
+            });
+            return hold;
+        },
+        holdServerNextAdmissionWrite: () => {
+            const hold = createWorkerHold();
+            onTestFinished(() => hold.release());
+            const { backend } = server;
+            const write = backend.write.bind(backend);
+            vi.spyOn(backend, 'write').mockImplementationOnce(async (operation, executionExpiresAtMs) => {
+                await hold.arrive();
+                return await write(operation, executionExpiresAtMs);
+            });
+            return hold;
+        }
+    };
+}
+
+function isKeptRowOf(entry: ResourceEntry, msg: ALMessage, namespace: string): boolean {
+    const { payload } = decodeALInboundWorkEntry(entry, namespace);
+    return payload.kind === 'admit-message' && payload.msg.id.msgId === msg.id.msgId;
 }
 
 function createLinkSenderReads(

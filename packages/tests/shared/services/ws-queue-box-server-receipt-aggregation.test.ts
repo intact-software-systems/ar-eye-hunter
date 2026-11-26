@@ -35,6 +35,7 @@ import { EnqueuedType } from '@shared/api/api-config.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import type { WsQueueBoxServerLiveDelivery } from '@shared/services/ws-queue-box-server/ws-queue-box-server-live-delivery.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import { WsQueueBoxServerReceiptAggregation } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts';
 import type { WsQueueBoxServerReceiptObservation } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
@@ -707,6 +708,36 @@ describe('WS server receipt aggregation of the admitted receipt on the origin\'s
         expect(fixture.observations.filter((observation) => observation.kind === 'receipt-transport')).toEqual([]);
     });
 
+    // Pins a write the origin's socket refused going unobserved, or leaving the `admitted` on neither a socket nor a row.
+    it('records a refused write as a failed transport and enqueues the admitted row', async () => {
+        const fixture = createAggregation({ ingressAudience: undefined, recordStores: undefined, originSocket: 'refused' });
+
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
+
+        expect(readPhases(fixture)).toEqual(['admitted']);
+        expect(fixture.observations.filter((observation) => observation.kind === 'receipt-outbox')).toMatchObject([
+            { receipt: { phase: 'admitted' }, verdict: { kind: 'admitted' } }
+        ]);
+        expect(fixture.observations.filter((observation) => observation.kind === 'receipt-transport')).toMatchObject([
+            { receiptControlMsgId: fixture.enqueued[0]!.id.msgId, connectionId: 'a', nativeCall: 'invoked', outcome: 'failed' }
+        ]);
+    });
+
+    // Pins an `admitted` written to two origin sockets here observed as fewer transports than connections it called.
+    it('records one transport per origin socket it wrote', async () => {
+        const fixture = createAggregation({ ingressAudience: undefined, recordStores: undefined, originSocket: 'two-here' });
+
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
+
+        expect(fixture.live.map(toReceipt)).toMatchObject([{ phase: 'admitted' }]);
+        const controlId = fixture.live[0]!.id.msgId;
+        expect(fixture.observations.filter((observation) => observation.kind === 'receipt-transport')).toMatchObject([
+            { receiptControlMsgId: controlId, connectionId: 'a-1', outcome: 'sent' },
+            { receiptControlMsgId: controlId, connectionId: 'a-2', outcome: 'sent' }
+        ]);
+        expect(fixture.enqueued).toEqual([]);
+    });
+
     // Pins the only answer of a send admitted to nobody, which no resend recovers, leaving its durable row. It also
     // pins that answer opening a head.
     it('keeps the row of an admitted that expects nobody', async () => {
@@ -883,9 +914,22 @@ interface AggregationFixtureOptions {
     readonly ingressAudience: readonly string[] | undefined;
     /** Stores another aggregation already counts in; `undefined`, a record of its own. */
     readonly recordStores: ALReceiptRecordStores | undefined;
-    /** `here`: the origin has one socket on this instance, which takes every control written to it. */
-    readonly originSocket: 'here' | 'elsewhere';
+    /**
+     * `here`: the origin has one socket on this instance, which takes every control written to it; `two-here`: two
+     * such sockets; `refused`: one socket whose native call throws.
+     */
+    readonly originSocket: 'here' | 'two-here' | 'refused' | 'elsewhere';
 }
+
+const ORIGIN_SOCKET_SENDS: Readonly<Record<AggregationFixtureOptions['originSocket'], WsQueueBoxServerLiveDelivery.EvidencedPeerSend>> = {
+    here: { sentCount: 1, writes: [{ connectionId: 'a', nativeCall: 'returned', written: true }] },
+    'two-here': {
+        sentCount: 2,
+        writes: [{ connectionId: 'a-1', nativeCall: 'returned', written: true }, { connectionId: 'a-2', nativeCall: 'returned', written: true }]
+    },
+    refused: { sentCount: 0, writes: [{ connectionId: 'a', nativeCall: 'invoked', written: false }] },
+    elsewhere: { sentCount: 0, writes: [] }
+};
 
 function createAggregation(
     options: AggregationFixtureOptions = { ingressAudience: undefined, recordStores: undefined, originSocket: 'elsewhere' }
@@ -913,11 +957,11 @@ function createAggregation(
         },
         liveDelivery: {
             sendToResolvedPeerWithEvidence: ({ message }) => {
-                if (options.originSocket === 'elsewhere') {
-                    return { sentCount: 0, writes: [] };
+                const sent = ORIGIN_SOCKET_SENDS[options.originSocket];
+                if (sent.sentCount > 0) {
+                    live.push(message);
                 }
-                live.push(message);
-                return { sentCount: 1, writes: [{ connectionId: 'a', nativeCall: 'returned', written: true }] };
+                return sent;
             }
         },
         acceptServerControl: async (message) => {

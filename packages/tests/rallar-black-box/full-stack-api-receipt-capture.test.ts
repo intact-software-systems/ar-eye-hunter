@@ -61,6 +61,7 @@ interface PendingReceiptCaptureEffectsDto extends ApiJsonObject {
     readonly nativeCalls: number;
     readonly publications: number;
     readonly clockReads: number;
+    readonly enginePasses: number;
     readonly releases: number;
     readonly lastReceiptReleaseAtMs: number;
     readonly receiptReleaseStatuses: readonly string[];
@@ -328,6 +329,7 @@ async function readPendingReceiptCaptureEffects(evidencePath: string): Promise<P
         nativeCalls: expect.any(Number),
         publications: expect.any(Number),
         clockReads: expect.any(Number),
+        enginePasses: expect.any(Number),
         releases: expect.any(Number),
         lastReceiptReleaseAtMs: expect.any(Number)
     });
@@ -948,6 +950,7 @@ describe('full-stack private upstream receipt capture', () => {
                 nativeCalls: baseline.effects.nativeCalls,
                 publications: baseline.effects.publications,
                 clockReads: baseline.effects.clockReads,
+                enginePasses: baseline.effects.enginePasses,
                 releases: baseline.effects.releases,
                 receiptReleaseStatuses: baseline.effects.receiptReleaseStatuses,
                 conflicted: true

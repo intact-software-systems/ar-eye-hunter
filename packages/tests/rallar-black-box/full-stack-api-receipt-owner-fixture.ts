@@ -22,7 +22,12 @@ import { toALOutboundEffectId } from '../../shared/alm/outbound/to-al-outbound-e
 import { createInMemoryALReceiptRecordStores } from '../../shared/alm/receipt-record/al-receipt-record-stores.ts';
 import { decodeALReceiptRecordWorkEntry } from '../../shared/alm/receipt-record/al-receipt-record-work-entry.ts';
 import { EnqueuedType } from '../../shared/api/api-config.ts';
-import type { ResourceEntry } from '../../shared/queuebox/ResourceEntry.ts';
+import type {
+    ResourceInboxReservationObservationRequest,
+    ResourceInboxReservationObservationResult,
+    ResourceInboxReservationRequest
+} from '../../shared/queuebox/queue-box-types.ts';
+import type { Key, ResourceEntry } from '../../shared/queuebox/ResourceEntry.ts';
 import { Either } from '../../shared/resilience/Either.ts';
 import { createDefaultBackgroundTimers } from '../../shared/resilience/timers.ts';
 import { toError } from '../../shared/resilience/to-error.ts';
@@ -56,6 +61,8 @@ interface ReceiptOwnerSocket {
 const scope = { applicationId: 'app', workspaceId: 'workspace' };
 /** Each wait is inside the child's 15 s spawn limit, and so are the two drains' waits together. */
 const AWAITED_FACT_TIMEOUT_MS = 5_000;
+/** A pass that claims nothing returns at once, so a dequeue no pass hands out within this many fails the run. */
+const MAX_DEQUEUE_PASSES = 1_000;
 
 export async function writePendingReceiptOwnerEvidence(
     evidencePath: string,
@@ -106,6 +113,8 @@ namespace ReceiptOwnerFixture {
         publications: number;
         receiptKey: string;
         clockReads: number;
+        /** The engine passes the run made after the restore, the last of them the one that claimed the dequeue. */
+        enginePasses: number;
         releases: number;
         lastReceiptReleaseAtMs: number;
         readonly receiptReleaseStatuses: string[];
@@ -132,6 +141,7 @@ class ReceiptOwnerFixture {
         publications: 0,
         receiptKey: '',
         clockReads: 0,
+        enginePasses: 0,
         releases: 0,
         lastReceiptReleaseAtMs: 0,
         receiptReleaseStatuses: [],
@@ -153,7 +163,11 @@ class ReceiptOwnerFixture {
     readonly origin: SimulatedWebSocket;
     readonly clock: ReceiptOwnerFixture.Clock;
     readonly sink: ReceiptOwnerSink;
-    readonly reserve = this.backend.workQueue.reserveEntries.bind(this.backend.workQueue);
+    readonly reserve = toObservedReserveEntries(this.backend, (entries) => this.observeReservation(entries));
+    /** Set by the first release of the complete receipt's work after the restore, as `receiptAdmissionReleased` resolves. */
+    receiptAdmissionWasReleased = false;
+    /** Set when a claim hands out the complete receipt's work after its retained admission was released: its dequeue. */
+    receiptDequeueClaimed = false;
     readonly recover = this.backend.workQueue.reserveTimeoutEntries.bind(this.backend.workQueue);
     readonly observer: WsQueueBoxServerReceiptObserver | undefined;
     readonly observe: ((event: WsQueueBoxServerReceiptObservation) => void) | undefined;
@@ -251,15 +265,13 @@ class ReceiptOwnerFixture {
         // The clock stands still, so the retained receipt is ready and the first engine pass after the restore claims its
         // admission work, alone: the admitted receipt went to the origin's socket and left no row. The dequeue that
         // admission makes claimable waits for a pass, and the engine runs none of its own here, so the fixture awaits
-        // the admission's release, lets its batch end (a running batch answers no work to a pass; it ends on the
-        // in-memory stores' own continuations), and runs a second pass. The send follows in a batch the dequeue starts,
-        // which the pass does not await. The fixture awaits the send's transport and release and runs no further pass,
-        // so the number of passes, and of the clock reads they make, is the same for every sink however long the work
-        // takes.
+        // the admission's release and then runs passes until one hands out the dequeue (a pass while the admission's
+        // batch still runs answers no work). The send follows in a batch the dequeue starts, which the pass does not
+        // await. The fixture awaits the send's transport and release and runs no further pass; it states the number of
+        // passes, which every sink's run must match, as it does the clock reads they make.
         await this.engine.executeOnce();
         await awaitFact(this.receiptAdmissionReleased.promise, 'The complete receipt\'s retained admission was never released');
-        await new Promise((resolve) => setImmediate(resolve));
-        await this.engine.executeOnce();
+        this.effects.enginePasses = 1 + await this.runPassesUntilDequeueClaimed();
         await Promise.all([
             awaitFact(this.receiptTransported.promise, 'The actual generated complete receipt did not reach its transport owner'),
             awaitFact(this.receiptSendReleased.promise, 'The complete receipt\'s send work was never released')
@@ -299,10 +311,28 @@ class ReceiptOwnerFixture {
                 this.receiptSendReleased.resolve();
             }
             if (releasesReceipt && this.backend.workQueue.reserveEntries === this.reserve) {
+                this.receiptAdmissionWasReleased = true;
                 this.receiptAdmissionReleased.resolve();
             }
             return result;
         };
+    }
+
+    /** The passes run until one hands out the complete receipt's dequeue; a bound that passes fails the run loudly. */
+    private async runPassesUntilDequeueClaimed(): Promise<number> {
+        for (let passes = 1; passes <= MAX_DEQUEUE_PASSES; passes += 1) {
+            await this.engine.executeOnce();
+            if (this.receiptDequeueClaimed) {
+                return passes;
+            }
+        }
+        throw new Error(`No engine pass of ${MAX_DEQUEUE_PASSES} claimed the complete receipt's dequeue`);
+    }
+
+    private observeReservation(entries: readonly ResourceEntry[]): void {
+        if (this.receiptAdmissionWasReleased && entries.some((entry) => entry.resource.includes(this.effects.receiptControlMsgId))) {
+            this.receiptDequeueClaimed = true;
+        }
     }
 
     private observeEndedWorkRelease(): void {
@@ -481,6 +511,29 @@ function toReceiptPhase(frame: string): string | undefined {
 }
 
 /** A work row names its effect, a send's beginning with the message it sends; a canonical message row names none. */
+/** The backend's own claim, which hands every entry it reserves to `onReserved` before it answers. */
+function toObservedReserveEntries(
+    backend: InMemoryAdmissionBackend,
+    onReserved: (entries: readonly ResourceEntry[]) => void
+): InMemoryAdmissionBackend['workQueue']['reserveEntries'] {
+    const reserve = backend.workQueue.reserveEntries.bind(backend.workQueue);
+    function observed(request: ResourceInboxReservationObservationRequest): Promise<ResourceInboxReservationObservationResult>;
+    function observed(request: ResourceInboxReservationRequest): Promise<Map<Key, ResourceEntry>>;
+    async function observed(
+        request: ResourceInboxReservationRequest | ResourceInboxReservationObservationRequest
+    ): Promise<Map<Key, ResourceEntry> | ResourceInboxReservationObservationResult> {
+        if ('reservationObservation' in request) {
+            const result = await reserve(request);
+            onReserved([...result.entries.values()]);
+            return result;
+        }
+        const reserved = await reserve(request);
+        onReserved([...reserved.values()]);
+        return reserved;
+    }
+    return observed;
+}
+
 function isSendWorkOf(entry: ResourceEntry, msgId: string): boolean {
     return decodeWorkEffectId(JSON.parse(entry.resource))?.startsWith(`${toALOutboundEffectId(['send', msgId])}:`) === true;
 }
