@@ -130,14 +130,55 @@ function validateBoundedHistogramExtremes(record: ApiJsonObject, path: string): 
         return issues;
     }
     for (const [name, extreme] of [['min', min], ['max', max]] as const) {
-        if (typeof extreme !== 'number' || !Number.isFinite(extreme)) {
-            issues.push(`${path}.${name} must be a finite number when ${path}.count is above 0`);
+        if (!isFiniteNonNegative(extreme)) {
+            issues.push(`${path}.${name} must be a finite number of at least 0 when ${path}.count is above 0`);
         }
     }
     if (typeof min === 'number' && typeof max === 'number' && min > max) {
         issues.push(`${path}.min must not be above ${path}.max`);
     }
+    return [...issues, ...validateBoundedHistogramExtremeBuckets(record, path)];
+}
+
+/**
+ * Recording counts a sample in the first bucket whose bound it does not exceed, so the smallest sample lies in the
+ * first bucket that counts one and the largest in the last. Read only where the bounds and the counts hold their own
+ * rules, and for an extreme that is itself a sample a histogram records.
+ */
+function validateBoundedHistogramExtremeBuckets(record: ApiJsonObject, path: string): string[] {
+    const { bucketCounts, min, max } = record;
+    const upperBounds = decodeBoundedHistogramBounds(record.upperBounds, `${path}.upperBounds`).right;
+    if (
+        upperBounds === undefined || !Array.isArray(bucketCounts) || bucketCounts.length !== upperBounds.length + 1 ||
+        !bucketCounts.every(isWholeCount)
+    ) {
+        return [];
+    }
+    const first = bucketCounts.findIndex((bucketCount) => bucketCount > 0);
+    const last = bucketCounts.findLastIndex((bucketCount) => bucketCount > 0);
+    const issues: string[] = [];
+    for (const [name, extreme, bucket, place] of [['min', min, first, 'first'], ['max', max, last, 'last']] as const) {
+        if (
+            bucket !== -1 && isFiniteNonNegative(extreme) && !isInBoundedHistogramBucket(extreme, upperBounds, bucket)
+        ) {
+            issues.push(
+                `${path}.${name} must be ${toBoundedHistogramBucketRange(upperBounds, bucket)}: ` +
+                    `${path}.bucketCounts[${bucket}] is the ${place} bucket that counts a sample`
+            );
+        }
+    }
     return issues;
+}
+
+/** A sample of at least 0 is in a bucket when it is above the bound before it and at most the bucket's own bound. */
+function isInBoundedHistogramBucket(sample: number, upperBounds: readonly number[], bucket: number): boolean {
+    return (bucket === 0 || sample > upperBounds[bucket - 1]) &&
+        (bucket === upperBounds.length || sample <= upperBounds[bucket]);
+}
+
+function toBoundedHistogramBucketRange(upperBounds: readonly number[], bucket: number): string {
+    const above = bucket === 0 ? 'at least 0' : `above ${upperBounds[bucket - 1]}`;
+    return bucket === upperBounds.length ? above : `${above} and at most ${upperBounds[bucket]}`;
 }
 
 export function decodeBoundedHistogram(value: unknown, path: string): Either<readonly string[], BoundedHistogram> {

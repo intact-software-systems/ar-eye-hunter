@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { computeNearestRank } from '@shared/measurement/compute-nearest-rank.ts';
+import { computeNearestRank, computeNearestRankIndex } from '@shared/measurement/compute-nearest-rank.ts';
 
 describe('computeNearestRank', () => {
     it('reads the value at rank ceil(p·n) of the sorted values', () => {
@@ -37,5 +37,12 @@ describe('computeNearestRank', () => {
         for (const fraction of [0, 0.25, 0.5, 0.99, 1]) {
             expect(computeNearestRank([42], fraction)).toBe(42);
         }
+    });
+
+    it('has no rank among a count that is below one or not a number', () => {
+        for (const count of [0, -3, 0.5, Number.NaN]) {
+            expect(computeNearestRankIndex(count, 0.5)).toBeUndefined();
+        }
+        expect(computeNearestRankIndex(1, 0.5)).toBe(0);
     });
 });

@@ -7,9 +7,12 @@ export function computeNearestRank(values: readonly number[], fraction: number):
     return index === undefined ? undefined : [...values].sort((left, right) => left - right)[index];
 }
 
-/** The place of that rank among `count` ascending values, counted from 0, for a reader that holds no list of them. */
+/**
+ * The place of that rank among `count` ascending values, counted from 0, for a reader that holds no list of them. A
+ * count below 1, or one that is not a number, is no values.
+ */
 export function computeNearestRankIndex(count: number, fraction: number): number | undefined {
-    if (count <= 0 || !Number.isFinite(fraction)) {
+    if (!(count >= 1) || !Number.isFinite(fraction)) {
         return undefined;
     }
     return Math.min(count - 1, Math.max(0, Math.ceil(fraction * count) - 1));

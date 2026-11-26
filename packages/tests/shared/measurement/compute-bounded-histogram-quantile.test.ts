@@ -27,9 +27,14 @@ interface RankedBucket {
     readonly bucket: BoundedHistogramQuantile;
 }
 
-/** Rank 10 is 42, rank 19 is 950 and rank 20 is 2500, in the second, the third and the overflow bucket. */
+/**
+ * Rank 6 is 10, the last sample of the first bucket, which starts at the smallest sample, 1. Rank 10 is 42 and rank 15
+ * is 100, the last sample of the second bucket. Rank 19 is 950 and rank 20 is 2500, in the third and the overflow bucket.
+ */
 const RANKED_BUCKETS: readonly RankedBucket[] = [
+    { fraction: 0.3, bucket: { atLeast: 1, atMost: 10 } },
     { fraction: 0.5, bucket: { atLeast: 10, atMost: 100 } },
+    { fraction: 0.75, bucket: { atLeast: 10, atMost: 100 } },
     { fraction: 0.95, bucket: { atLeast: 100, atMost: 1000 } },
     { fraction: 0.99, bucket: { atLeast: 1000, atMost: 2500 } }
 ];

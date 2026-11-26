@@ -1,7 +1,10 @@
 import type { BoundedHistogram } from './bounded-histogram.ts';
 import { computeNearestRankIndex } from './compute-nearest-rank.ts';
 
-/** The range a ranked sample lies in, both ends included. */
+/**
+ * The range a ranked sample lies in: the sample is at least `atLeast` and at most `atMost`; where `atLeast` is a
+ * bucket's lower bound the sample is above it.
+ */
 export interface BoundedHistogramQuantile {
     readonly atLeast: number;
     readonly atMost: number;
