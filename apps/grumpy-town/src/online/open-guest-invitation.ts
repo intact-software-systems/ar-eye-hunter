@@ -3,20 +3,10 @@ import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import { isGuestInvitationVerifier } from '@shared/api/room-guests/invitation.ts';
 
 import { forgetGuestVisit, readGuestVisit, type GuestVisit } from './guest-visit.ts';
+import { chooseTownNickname } from './choose-town-nickname.ts';
 import { enterTownInvitation } from './enter-town-invitation.ts';
 import { previewTownInvitation } from './preview-town-invitation.ts';
 import { townApiBaseUrl } from './town-server.ts';
-
-const nicknames = [
-    'Captain Cabbage',
-    'Count Crumb',
-    'Dizzy Dumpling',
-    'Doctor Drip',
-    'Pickle Boots',
-    'Professor Puddle',
-    'Soggy Biscuit',
-    'Wobbly Turnip'
-];
 
 export async function openGuestInvitation(root: HTMLElement, signal: AbortSignal): Promise<void> {
     configureApiClient({ apiBaseUrl: townApiBaseUrl });
@@ -50,17 +40,11 @@ export async function openGuestInvitation(root: HTMLElement, signal: AbortSignal
         message.textContent = 'Allow browser storage and reopen the invitation to keep your guest seat.';
         return;
     }
-    let index = visit ? nicknames.indexOf(visit.nickname) : -1;
-    if (index < 0) {
-        index = randomNicknameIndex(nicknames.length);
-    }
-    output.value = nicknames[index];
+    output.value = visit?.nickname ?? chooseTownNickname();
     panel.hidden = false;
     shuffle.disabled = hasPendingGuestVisit(visit);
     shuffle.addEventListener('click', () => {
-        const offset = 1 + randomNicknameIndex(nicknames.length - 1);
-        index = (index + offset) % nicknames.length;
-        output.value = nicknames[index];
+        output.value = chooseTownNickname(output.value);
     }, { signal });
 
     join.addEventListener('click', () => void enter(), { signal });
@@ -116,8 +100,4 @@ function describeGuestEntryFailure(error: ApiHttpError | undefined, validInvitat
 
 function hasPendingGuestVisit(visit: GuestVisit | undefined): boolean {
     return visit !== undefined && 'guestSecret' in visit;
-}
-
-function randomNicknameIndex(count: number): number {
-    return crypto.getRandomValues(new Uint32Array(1))[0] % count;
 }
