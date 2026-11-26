@@ -1,7 +1,7 @@
 # Edge order: ordered room sends, sorted at the two ends
 
 Status: a plan to decide on. Nothing is built. The verdict so far is **viable, with one measurement still owed**
-(section 2.5) and the maintainer's rulings in section 4. It builds on the unordered path, which keeps up under load
+(section 2.5) and the maintainer's rulings in section 4: ruling 1 is made, rulings 2 to 6 are open. It builds on the unordered path, which keeps up under load
 only on the tree of PR 885, so it follows that pull request and does not replace it.
 
 Working name: **edge order**. Today's ordered mode (`orderingKey`) is called **hop order** in this document, because
@@ -105,7 +105,7 @@ That last function is where a receive-side sorter sits, and the channel's `send`
 - Proposed rule: a receiver waits for a missing earlier message only while it can still arrive (until `w`, never past
   the held message's own deadline), then skips forward and reports the gap. For sends nothing retries, `w` is empty,
   so the receiver never waits: newest wins and a late one is dropped.
-- The spike in section 2.3 runs this rule. The choice between this rule and a fixed short wait is ruling 1.
+- The spike in section 2.3 runs this rule, and ruling 1 chose it over a fixed short wait.
 - What this costs against hop order: there is no NACK, so a lost message comes back at the sender's retry (2 s), not
   at a receiver's request. Messages behind it wait that long. Hop order asks at once and again after about 1, 3 and
   7 s (`shared/al-contracts/al-message-resource-limits.ts:31`).
@@ -360,16 +360,21 @@ Each slice is one pull request and leaves the product working. The riskiest ques
 
 Asked one at a time, when the plan reaches them. Each stands on its own. The recommended option is first.
 
-**1. The gap rule (before slice 2).** A receiver holds message 7 and message 6 has not arrived. How long does it
-wait?
+**1. The gap rule (before slice 2). Ruled on 2026-11-26: wait while the missing message can still arrive.** A
+receiver holds message 7 and message 6 has not arrived. How long does it wait?
 
-- _Wait while 6 can still arrive_ (recommended). The sender states how long that is; the receiver skips and reports
-  when it has passed. A channel may set a shorter cap. A reliable message that arrives is never dropped for order.
-  The worst case is a message that is truly lost: the stream waits until that message's deadline, 30 s by default.
-- _A fixed short wait_, such as 2 s, then skip and report. Bounded delay, but a retried message slower than the wait
-  is acknowledged to the sender and then dropped at the receiver.
-- _Never skip_: stall and tell the app to resynchronize, as hop order does. The strongest promise, and the one that
-  stalls.
+- _Wait while 6 can still arrive_ (chosen). The sender states how long that is; the receiver skips and reports when
+  it has passed. A channel may set a shorter cap. A reliable message that arrives is never dropped for order. The
+  worst case is a message that is truly lost: the stream waits until that message's deadline, 30 s by default.
+- _A fixed short wait_, such as 2 s, then skip and report (not chosen). Bounded delay, but a retried message slower
+  than the wait is acknowledged to the sender and then dropped at the receiver.
+- _Never skip_: stall and tell the app to resynchronize, as hop order does (not chosen). The strongest promise, and
+  the one that stalls.
+
+What follows from the ruling: every stamp carries the sender's statement of how long earlier messages can still
+arrive (`f` and `w` in section 2.2), so the sender keeps one entry per open send; a send that nothing retries is
+never waited for; and a channel's optional cap is the only way a message that arrives in time can be dropped for
+order.
 
 **2. The entry rule (before slice 2).** A receiver's first message from a stream is number 57.
 
