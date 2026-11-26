@@ -14,7 +14,6 @@ class ALInboundLostWrite<TAnswer> extends RetryableConflictError {
 
     constructor(answer: TAnswer) {
         super('Inbound write lost to a concurrent write');
-        this.name = 'ALInboundLostWrite';
         this.answer = answer;
     }
 }

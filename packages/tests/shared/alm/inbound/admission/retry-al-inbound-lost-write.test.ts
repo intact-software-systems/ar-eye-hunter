@@ -10,7 +10,10 @@ type Answer = 'completed' | 'conflict';
 /** An attempt function that answers `answers` in turn and appends each answer it gives to `made`. */
 function createAttempts(answers: readonly Answer[], made: Answer[]): () => Promise<Answer> {
     return async () => {
-        const answer = answers[made.length]!;
+        const answer = answers[made.length];
+        if (answer === undefined) {
+            throw new Error(`unexpected attempt ${made.length + 1}: the case scripted ${answers.length} answers`);
+        }
         made.push(answer);
         return answer;
     };
