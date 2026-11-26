@@ -103,7 +103,7 @@ export function validateMutationRouteInventory(
         checkAstMarker({
             issues,
             filePath: item.typeOwnerSourcePath,
-            marker: `AppInboxType.${item.type}`,
+            marker: item.type.startsWith('app:') ? `'${item.type}'` : `AppInboxType.${item.type}`,
             label: 'type ownership',
             item,
             sources
@@ -349,6 +349,7 @@ function readMemberPath(node: MutationRoutingAstNode | undefined): string {
     if (!node) {
         return '';
     }
+    if (node.type === 'ThisExpression') return 'this';
     if (node.type === 'Identifier') {
         return readIdentifier(node);
     }

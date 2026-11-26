@@ -11,6 +11,7 @@ import { fnv1a64 } from '../../queuebox/AppQueueIdentity.ts';
 import {
     EntityStatus,
     isKeysEqual,
+    NOT_COMPLETED_RETRYABLE_STATUSES,
     type Key,
     type ResourceEntry
 } from '../../queuebox/ResourceEntry.ts';
@@ -23,6 +24,7 @@ import {
     decodeALAdmissionString
 } from '../al-admission-value-validation.ts';
 import { decodeALAdmissionResourceEntryKey } from '../decode-al-admission-resource-entry-key.ts';
+import type { ALOutboundMessageReadDto } from './admission/al-outbound-admission-store.ts';
 import { toALOutboundRequestComparableMessage } from './admission/to-al-outbound-request-comparable-message.ts';
 
 export interface ALOutboundMessageReference {
@@ -204,6 +206,19 @@ export function isALOutboundCanonicalReplacement(
     const requested = decodeALOutboundRetainedMessage(expected);
     return (freezes && isALFreezeOfMessage(requested, candidate)) ||
         (admits && jsonEquals(requested, toALOutboundRequestComparableMessage(requested, candidate)));
+}
+
+/**
+ * Whether this read's signer signed an unsigned request whose canonical row is unsigned too, still awaits its first
+ * dispatch and has not ended. A row a dispatch completed keeps what that dispatch stored, and an ended row stays
+ * ended: storing over it would send a message whose terminal settlement was already stated.
+ */
+export function isALOutboundReadSignedHeldRow<TPrepared>(read: ALOutboundMessageReadDto<TPrepared>): boolean {
+    const signedByRead = read.originalMsg.proof === undefined && read.msg.proof !== undefined;
+    const storedUnsigned = read.sentSnapshot !== undefined && read.sentSnapshot.msg.proof === undefined;
+    const awaitsDispatch = read.canonicalEntry !== undefined &&
+        NOT_COMPLETED_RETRYABLE_STATUSES.has(read.canonicalEntry.status);
+    return signedByRead && storedUnsigned && awaitsDispatch && read.storedMessage?.ended !== true;
 }
 
 function decodeALOutboundRetainedMessage(retained: ResourceEntry): ALMessage {

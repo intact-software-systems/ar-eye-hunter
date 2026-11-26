@@ -73,8 +73,27 @@ describe('Mutation route owner analysis contracts', () => {
         const inventory = routingContract.MUTATION_ROUTE_INVENTORY;
         const validate = routingContract.validateMutationRouteInventory;
 
-        expect(new Set(inventory.map((entry) => entry.type))).toEqual(new Set(Object.values(AppInboxType)));
+        expect(new Set(inventory.map((entry) => entry.type))).toEqual(new Set([...Object.values(AppInboxType), 'app:rallar-events:mutate', 'app:rallar-events:deadline']));
         expect(validate(inventory)).toEqual([]);
+    });
+
+    it.each([
+        { type: 'app:rallar-events:mutate', field: 'sourcePath', before: 'events.mutate.submit(', after: 'events.other.submit(' },
+        { type: 'app:rallar-events:mutate', field: 'dispatchSourcePath', before: 'this.execute(command, context)', after: 'this.settle(command, context)' },
+        { type: 'app:rallar-events:deadline', field: 'sourcePath', before: 'this.expire.enqueue(', after: 'this.mutate.enqueue(' },
+        { type: 'GROUP_GUEST_ADMIT', field: 'sourcePath', before: 'dependencies.processTemporaryRoomCreation(', after: 'dependencies.other(' }
+    ] as const)('rejects a disconnected $before handoff', change => {
+        const route = routingContract.MUTATION_ROUTE_INVENTORY.find(entry =>
+            entry.type === change.type && (change.type !== 'GROUP_GUEST_ADMIT' || entry.entrypoint.includes('temporary-rooms')));
+        if (!route) throw new Error('Missing event or guest route');
+        const path = route[change.field];
+        const original = read(path);
+        const disconnected = original.replace(change.before, change.after);
+        expect(disconnected).not.toBe(original);
+        const issues = routingContract.validateMutationRouteInventory([route], {
+            sourceOverrides: new Map([[path, disconnected]])
+        });
+        expect(issues.some(issue => issue.includes(route.entrypoint) && issue.includes(route.type))).toBe(true);
     });
 
     it('rejects a CRDT reservation builder disconnected from command materialization', () => {

@@ -829,12 +829,15 @@ RTC receivers add two waits on `rallar.browser.alm.storage` for the one `recover
 `recovery-owner-invoked` matches the event's kind and the cell's ordering key, `recovery-owner-cursor`
 the cursor it handed the owner (`lastContiguousSeq: 1`, `expectedSeq: 2`, `observedSeq: 300`, carrier
 `rtc`); the sender's peer id sits between them in the emitted order, so one `contains` cannot span both.
-Over `ws` the relay refuses the gapped send before the receiver sees it, so no owner is invoked there.
+Over `ws` the relay refuses the gapped send before the receiver sees it, so no owner is invoked there: the
+`ws` receiver ends on `no-recovery-owner-invoked`, an `absent: true` wait for the same kind and ordering
+key. It follows the receiver's absence window and reads the cell's history from its first event, so the
+page stated no invocation in that window or in the wait's own 5 s.
 The hosted combined recipe shares one connect across its cells and names no owner, so manifest 18 carries
 neither the field nor the waits.
 
 The `ordering-gap-repair` conformance scenario runs over the single-hop carriers `ws` and `rtc`
-(`ALM_CONFORMANCE_SINGLE_HOP_CARRIERS`) and repairs an in-window gap by range. The sender sends seq 1 and
+(the `ordered-gap-repair` capability of `ALM_CARRIER_MATRIX` names it there) and repairs an in-window gap by range. The sender sends seq 1 and
 proves it left (`observe-transport-accepted-1`, asserted `transport-accepted` or `acknowledged`; a room of two pages
 gives the sender one next hop, so the carrier's acceptance orders seq 1 first), arms the native hold of its type on each carrier the cell can hold,
 sends seq 2, then holds that one message by the id its send returned (`hold-message-2-<carrier>`, a
@@ -988,7 +991,7 @@ sender's 30 s connect readiness and its 10 s send), since a message that arrives
 subscribed its channel is acknowledged unseen (over `ws` the receiver's reconnect can finish first); the repeats and its
 own send stay under the share. The sender then sends 20 at-least-once room sends with `ack: 'none'` and a 30 s `ttlMs`
 in a `loop` with `intervalMs: 75` (at most about 13 a second, under the RTC lane's 20 a second limiter, which the
-receiver's own ACKs share) whose budget is that of 20 loop sends (1,500 ms each), each naming its own handle by
+receiver's own ACKs share) whose budget is the 30 s an arrival counts, each naming its own handle by
 `{loop.index}`; they ask for no receipt, so all 20 arrive within the arrivals' own 30 s counted lifetime instead of each
 waiting out an ACK. The budget is that lifetime: a flood that outlasts it could not hold all 20 counted at once.
 Arrivals alone then hold the receiver's total at the bound, so its own room send, which asks for a receiver receipt, is
@@ -998,7 +1001,7 @@ arrivals, reads `rallar.alm.inbound.admissions` `gte` 20, `rallar.alm.own.admiss
 1 on one ordering key and observes it `transport-accepted`, so it opens the receiver's track; it then holds seq 2 by the
 message id its send returned (the type's hold covers it until that id is known), sends seq 3 to 66 as 64 literal bare
 send commands (a loop index counts from 0 and a sequence is not substituted), each followed by a 75 ms absence wait as
-the pause, all in one iteration of a `loop` whose budget is that of 64 loop sends (1,500 ms each), and releases seq 2,
+the pause, all in one iteration of a `loop` whose budget is that of 64 loop sends (2,000 ms each), and releases seq 2,
 which alone is observed admitted; it then cues `released-2`. The sends leave in sequence order, since a stated sequence
 at or below the track's head is refused `unsupported`; the hold reorders their arrival. Seq 1 goes first so the
 receiver opens the track with no gap and the cell exercises the buffered drain alone: holding seq 1 instead would make
@@ -1020,11 +1023,16 @@ attempt per requester, charged once (D573), so the held seq 2 does not settle `r
 delivers it. `churn-bounded-tracks` (`rtc`, where the receiver is the one hop that orders a track) closes the sender and
 reconnects it with the production count and byte limits and `maxTracks: 560`, since each of its tracks counts in its own
 ledger, sends seq 1 on 280 ordering keys of its own (`alm-rtc-churn-bounded-tracks-{loop.index}`: the cap of 256 and a
-margin) in a `loop` with `intervalMs: 75` whose budget is that of 280 loop sends (1,500 ms each), observes the last one
-`transport-accepted`, cues `tracks-sent` and closes; the receiver waits for that cue, with a wait that covers the
-sender's body up to the cue, its storage baseline included (each role's recipe runs that much longer than an ordinary
-one), then counts the 280 in a verdict's window, which reads the arrivals logged before the count started too, waits in
-its cell's history for the memory store's `ordering-tracks` statement of 256 (the eviction pass a newly opened track
+margin) in a `loop` with `intervalMs: 75`, observes the last one `acknowledged`, within its 30 s lifetime, and closes: over `rtc`
+`transport-accepted` is the frame leaving the data channel, and the receiver, the track's one hop, acknowledges it
+once admitted, so a close right after `transport-accepted` could lose the last frame. The loop's pace is
+the runner's storage latency, so both roles are bounded by progress, not by a budget per send: each send's own 10 s
+timeout bounds its iteration and the loop's 600 s timeout is only a ceiling, and the receiver counts the 280 as they
+arrive with a `messages.received` whose window covers the sender's body up to its last track, its storage baseline
+included (each role's recipe runs that much longer than an ordinary one), and whose `stallMs` is the time the sender
+may take to reach its first track: its baseline, its reconnect and one send. The count reads the arrivals logged
+before it started too, and needs no cue from the sender, which leaves once its last track is acknowledged. The receiver then
+waits in its cell's history for the memory store's `ordering-tracks` statement of 256 (the eviction pass a newly opened track
 runs after its admission commit states it, not the delivery the arrivals count), and its `stats` reads
 `rallar.alm.orderingTracks` both `lte` and
 `gte` 256 (D191): the sum of every store that stated a count since the receiver's last `close`, where the 280 volatile
@@ -1253,6 +1261,17 @@ failed ends `RALLAR_BLACK_BOX_ALM_MESSAGES_NOT_ASCENDING`. The result and the
 diagnostic then carry `ascending`, a boolean, and neither is present when no
 order was claimed. An absence claim has no order: command validation refuses
 `ascendingBy` beside `absent: true`.
+
+`stallMs`, a positive integer of milliseconds, bounds a presence claim by its progress
+as well as by its window: the count also fails once `stallMs` passes with no new copy
+since the command started or since its latest copy. A new copy is a matching event the
+page logged after the newest one the count saw, so a `recent` event history that evicts
+older copies does not read as a stall. The result and the `rallar.bb.messages.received`
+diagnostic then carry `stall: { stallMs, stalled }`, `stalled` saying whether the stall
+window ended the count, and a stalled count's failure message names the window. A count
+whose copies keep arriving may then take its whole `windowMs`, so a slow runner lengthens the count without failing it while a stopped sender still fails
+it within `stallMs`. An absence claim holds its whole window: command validation refuses
+`stallMs` beside `absent: true`.
 
 `fault.inject` schedules a scripted `drop` for the next `remaining` matching
 frames on the `ws` or `rtc` carrier; `{ delayMs }` and `not-ready` are `ws` only

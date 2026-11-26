@@ -6,8 +6,7 @@ import {
 
 import {
     ALM_CONFORMANCE_CARRIERS,
-    ALM_CONFORMANCE_SINGLE_HOP_CARRIERS,
-    ALM_CONFORMANCE_WORLD_SEND_CARRIERS
+    ALM_CONFORMANCE_SINGLE_HOP_CARRIERS
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import {
     ALM_CONFORMANCE_LANE_FAMILIES,
@@ -194,7 +193,8 @@ describe('ALM conformance hosted lane families', () => {
         const withheldEverywhere = ['checkpoint-recovery', 'checkpoint-lag', 'capacity-age'];
         const withheld = [
             ...ALM_CONFORMANCE_CARRIERS.flatMap((carrier) => withheldEverywhere.map((key) => `alm-${carrier}-${key}`)),
-            ...ALM_CONFORMANCE_WORLD_SEND_CARRIERS.map((carrier) => `alm-${carrier}-capacity-tracks`),
+            'alm-ws-capacity-tracks',
+            'alm-rtc-with-ws-fallback-capacity-tracks',
             ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.map((carrier) => `alm-${carrier}-ordering-gap-repair`),
             // The fault stream cells' evidence is the local full lane's: no hosted manifest is changed for them.
             ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.map((carrier) => `alm-${carrier}-seeded-loss-stream`),

@@ -62,3 +62,29 @@ test('a seated guest leaves through the self-service member route and nothing el
     assert.equal((await put(`room-1/members/${credential.clientId}`, 'guest-leave-request-1')).status, 403);
     assert.equal(enqueued.length, 1);
 });
+
+test('temporary room management commands use the seated guest credential and stay inside its room', async () => {
+    const ref = { ...TEST_GROUP_SCOPE, groupId: 'room-1' };
+    const credential = await toRoomGuestCredential(ref, 'ab'.repeat(32));
+    const original = createGroupStateRouteSnapshotWithMember(ref.groupId, credential.clientId, 'active');
+    const snapshot = {
+        ...original,
+        group: { ...original.group, temporaryPlayerRoom: true as const, ownerPrincipalId: credential.clientId },
+        members: original.members.map(member => ({ ...member, role: 'owner' as const,
+            guestLease: { admittedAtEpochMs: 100, expiresAtEpochMs: 14_400_100, temporaryManager: true as const } }))
+    };
+    const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
+    const { app } = createGroupStateRouteTestRuntime({ installStateAuthentication: false, nowEpochMs: () => 120, isTemporaryGroupAvailable: async () => true,
+        requireApiAuthSession: async () => { throw authenticationRequired('Account sign-in required'); },
+        processGroupAppInbox: captureGroupStateRouteWrite(enqueued, snapshot),
+        readGroupSnapshot: async () => ({ source: 'durable', status: 'found', snapshot })
+    });
+    const post = (path: string, body: object) => app.request('/api/state/apps/app-1/workspaces/workspace-1/groups/' + path, {
+        method: 'POST', headers: { authorization: 'Bearer ' + credential.accessToken, 'x-client-id': credential.clientId, 'content-type': 'application/json' },
+        body: JSON.stringify(body)
+    });
+    assert.equal((await post('room-1/owner/transfer/requests/transfer-ownership-0001', { newOwnerPrincipalId: 'player' })).status, 200);
+    assert.equal((await post('room-1/members/player/remove/requests/remove-temporary-guest-0001', {})).status, 200);
+    assert.equal((await post('room-2/owner/transfer/requests/transfer-ownership-0002', { newOwnerPrincipalId: 'player' })).status, 403);
+    assert.deepEqual(enqueued.map(command => command.senderId), [credential.clientId, credential.clientId]);
+});

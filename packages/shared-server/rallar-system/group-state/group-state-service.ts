@@ -1,6 +1,5 @@
-import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { readGroupSessionSchedule } from '@shared/api/group-sessions/group-session-schedule.ts';
-import { closesGuestPlayOccurrence, roomGuestAccessMode } from '@shared/api/room-guests/access.ts';
+import { assertGroupGuestPermission } from './mutation/membership/assert-group-guest-permission.ts';
 import { AuthSessionPersistence } from '../auth/persistence/auth-session-persistence.ts';
 import { PartyRepository } from '../parties/persistence/party-repository.ts';
 import { computeSha256CanonicalJson } from '../protocol/compute-sha256-canonical-json.ts';
@@ -246,7 +245,7 @@ function createIngressCaptureOperations(
         captureGuestMembershipMutationIngress: async (command, atEpochMs) =>
             captureInternalMutationIngress(
                 command,
-                command.operation === 'removeGroupMember' ? 'guest-expiry' : 'guest-redemption',
+                command.operation === 'createGroup' ? 'temporary-room-creation' : command.operation === 'removeGroupMember' ? 'guest-expiry' : 'guest-redemption',
                 atEpochMs
             ),
         captureTimelineDeadlineMutationIngress: async (command, atEpochMs) =>
@@ -402,62 +401,7 @@ async function verifyGroupMutationAttemptSession(
         : authSession.session;
     const now = ingress.facts.attemptAtEpochMs;
     verifyLiveGroupMutationSession(proof, session, now);
-    if (!session?.guestRoom) {
-        return;
-    }
-    const command = ingress.command;
-    if (!isSameGroupRef(command.aggregateRef, session.guestRoom)) {
-        throw new GroupMutationAuthorizationError('Guest credentials are limited to the admitted room.');
-    }
-    const member = read.actorMember?.principalId === session.clientId ? read.actorMember : read.targetMember;
-    const mode = member?.principalId === session.clientId && read.group
-        ? roomGuestAccessMode(read.group.value, member, now)
-        : 'expired';
-    if (mode === 'expired') {
-        throw new GroupMutationAuthorizationError('Guest room admission ended.');
-    }
-    switch (command.operation) {
-        case 'connectPresence':
-        case 'heartbeatPresence':
-        case 'disconnectPresence':
-        case 'subscribeGroupTopic':
-        case 'unsubscribeGroupTopic':
-            if (command.sessionId === session.sessionId) {
-                return;
-            }
-            break;
-        case 'upsertMember':
-            // Leaving frees the guest's own seat; readmission needs a fresh identity and invitation.
-            if (command.targetPrincipalId === session.clientId && command.input.status === 'left') {
-                return;
-            }
-            break;
-        case 'appointDirector':
-            if (
-                mode === 'room' && (command.input.succession?.operation === 'claim-player' ||
-                    command.input.succession?.operation === 'claim-deputy')
-            ) {
-                return;
-            }
-            break;
-        case 'updateGroup':
-            if (
-                mode === 'finish-round' && closesGuestPlayOccurrence(command.input.roomClock) &&
-                command.input.roomDeadline === undefined
-            ) {
-                return;
-            }
-            // The director fence independently checks the current appointment, epoch and absence of unrelated edits.
-            if (
-                mode === 'room' &&
-                (command.input.roomClock?.expectedDirectorEpoch !== undefined ||
-                    command.input.roomDeadline?.expectedDirectorEpoch !== undefined)
-            ) {
-                return;
-            }
-            break;
-    }
-    throw new GroupMutationAuthorizationError('Guest room operation is unavailable.');
+    assertGroupGuestPermission({ command: ingress.command, read, session, now });
 }
 
 async function readGroupMutationFences(

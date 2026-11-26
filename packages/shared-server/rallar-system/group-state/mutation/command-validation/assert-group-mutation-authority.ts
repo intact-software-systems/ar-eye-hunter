@@ -1,3 +1,4 @@
+import { assertTemporaryGroupCreation } from '../membership/temporary-group-creation.ts';
 import { assertGuestAdmissionAuthority, assertGuestAdmissionCommand, assertGuestExpiryCommand } from '../membership/group-guest-admission.ts';
 import type { GroupMutationCommand, GroupMutationIngressFacts } from '../group-mutation-contracts.ts';
 import { assertGroupMutationJoinCodeFacts } from './assert-group-mutation-join-code-facts.ts';
@@ -8,6 +9,9 @@ export function assertGroupMutationAuthority(
 ): void {
     assertGroupMutationJoinCodeFacts(command, facts);
     assertGuestAdmissionAuthority(command, facts);
+    if (command.operation === 'createGroup' && command.input.temporaryCreator && facts.internalAuthority !== 'temporary-room-creation') {
+        throw new TypeError('A temporary creator requires verified guest creation authority.');
+    }
     const authority = facts.authenticatedAuthority;
     if (facts.internalAuthority === 'none' && authority === null) {
         throw new TypeError('User group mutation requires authenticated authority facts');
@@ -45,6 +49,8 @@ function assertInternalMutationAuthority(
         throw new TypeError('Internal group maintenance cannot claim semantic actor authority');
     }
     switch (facts.internalAuthority) {
+        case 'temporary-room-creation':
+            return assertTemporaryGroupCreation(command);
         case 'guest-expiry':
             assertGuestExpiryCommand(command);
             return;
@@ -66,12 +72,14 @@ function assertInternalMutationAuthority(
         case 'formation-automation':
             return assertFormationAutomationAuthority(command);
         case 'topology-publication':
-            return assertTopologyPublicationAuthority(command);
+            if (command.operation !== 'applyPlannedLayout') throw new TypeError('Topology-publication authority is limited to applyPlannedLayout');
+            return assertLayoutPublicationFences(command);
         case 'timeline-deadline':
             if (command.operation !== 'settleTimeline') throw new TypeError('Timeline deadline authority requires a settlement');
             return;
         case 'activation-status':
-            return assertActivationStatusAuthority(command);
+            if (command.operation !== 'updateGroupActivationStatus') throw new TypeError('Activation-status authority is limited to updateGroupActivationStatus');
+            return assertLayoutPublicationFences(command);
         case 'none':
             throw new TypeError('Internal group mutation cannot carry the none authority mode');
         default: {
@@ -124,30 +132,8 @@ function assertFormationAutomationAuthority(command: GroupMutationCommand): void
     }
 }
 
-function assertActivationStatusAuthority(command: GroupMutationCommand): void {
-    if (command.operation !== 'updateGroupActivationStatus') {
-        throw new TypeError('Activation-status authority is limited to updateGroupActivationStatus');
-    }
-    // The contract types the fences non-null; the wire defense still rejects
-    // an absent or null value a hand-built payload could carry.
-    if (command.input.expectedFormationEpoch === null || command.input.expectedFormationEpoch === undefined) {
-        throw new TypeError('Activation status must carry the expected formation epoch fence');
-    }
-    if (command.input.expectedLayout === null || command.input.expectedLayout === undefined) {
-        throw new TypeError('Activation status must carry the coverage basis layout fence');
-    }
-}
-
-function assertTopologyPublicationAuthority(command: GroupMutationCommand): void {
-    if (command.operation !== 'applyPlannedLayout') {
-        throw new TypeError('Topology-publication authority is limited to applyPlannedLayout');
-    }
-    // The contract types the fences non-null; the wire defense still rejects
-    // an absent or null value a hand-built payload could carry.
-    if (command.input.expectedFormationEpoch === null || command.input.expectedFormationEpoch === undefined) {
-        throw new TypeError('Planned layout promotion must carry the expected formation epoch fence');
-    }
-    if (command.input.expectedLayout === null || command.input.expectedLayout === undefined) {
-        throw new TypeError('Planned layout promotion must carry the expected layout fence');
-    }
+function assertLayoutPublicationFences(command: Extract<GroupMutationCommand, { operation: 'applyPlannedLayout' | 'updateGroupActivationStatus' }>): void {
+    const label = command.operation === 'applyPlannedLayout' ? 'Planned layout promotion' : 'Activation status';
+    if (command.input.expectedFormationEpoch == null) throw new TypeError(label + ' must carry the expected formation epoch fence');
+    if (command.input.expectedLayout == null) throw new TypeError(label + ' must carry the layout fence');
 }

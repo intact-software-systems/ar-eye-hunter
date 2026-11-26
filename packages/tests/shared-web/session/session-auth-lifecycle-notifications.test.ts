@@ -57,6 +57,14 @@ describe('Rallar auth state notifications', () => {
         });
     });
 
+    it('activates a room guest without writing its bearer to persistent account storage', async () => {
+        const fixture = createDefaultAuthFixture(() => {});
+        const session = { ...fixture.middleware.session, guestRoom: { applicationId: 'event', workspaceId: 'park', groupId: 'court' } };
+        await fixture.lifecycle.activateLoginSession(session);
+        expect(fixture.lifecycle.requireSession()).toEqual(session);
+        expect(localStorage.getItem('auth.session')).toBeNull();
+    });
+
     it('preserves a replacement when an old connection later reports unauthorized', async () => {
         const fixture = createDefaultAuthFixture(() => {});
         const initialSession = fixture.middleware.session;

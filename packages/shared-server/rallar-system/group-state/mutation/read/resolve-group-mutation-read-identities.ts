@@ -28,7 +28,12 @@ export function resolveGroupMutationReadIdentities(
 }
 
 /** A managed appointment reads the acting session's admission; ordinary appointments test owner presence. */
-export function directorAuthorityAdmissionPrincipal(command: GroupMutationCommand, ownerPrincipalId: string | null | undefined): string | null {
+export function isTemporaryManagementTransfer(command: GroupMutationCommand): boolean {
+    return command.operation === 'transferGroupOwnership' && command.input.actorPrincipalId?.startsWith('guest-') === true;
+}
+
+export function groupAuthorityAdmissionPrincipal(command: GroupMutationCommand, ownerPrincipalId: string | null | undefined): string | null {
+    if (command.operation === 'transferGroupOwnership' && isTemporaryManagementTransfer(command)) return command.targetPrincipalId;
     if (command.operation !== 'appointDirector') return null;
     return command.input.succession ? command.input.actorPrincipalId : (ownerPrincipalId ?? null);
 }

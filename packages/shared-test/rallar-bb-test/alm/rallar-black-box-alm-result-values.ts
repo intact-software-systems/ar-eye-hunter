@@ -111,8 +111,15 @@ export interface RallarBlackBoxTestMessagesReceivedResultValue {
      * copy and strictly ascends in arrival order.
      */
     readonly ascending?: boolean;
+    /** Present only when the command named `stallMs`: that window, and whether it ended the count before its window. */
+    readonly stall?: AlmReceivedStall;
     /** Every matched copy in arrival order. */
     readonly received: readonly AlmReceivedMessageIdentity[];
+}
+
+export interface AlmReceivedStall {
+    readonly stallMs: number;
+    readonly stalled: boolean;
 }
 
 /**

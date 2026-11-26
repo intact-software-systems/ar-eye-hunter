@@ -203,7 +203,7 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
             await this.deleteReplacedSessionALRuntimeEntries(previousSession, session);
         }
         this.input.sessionDeliveries.beginSession(session);
-        writeSession(session);
+        writeSession(session, session.guestRoom ? 'memory' : undefined);
         this.loginGeneration += 1;
         this.input.authRuntime.endedAuthSessionKeys().delete(toAuthSessionKey(session));
         this.scheduleAuthExpiry(session);

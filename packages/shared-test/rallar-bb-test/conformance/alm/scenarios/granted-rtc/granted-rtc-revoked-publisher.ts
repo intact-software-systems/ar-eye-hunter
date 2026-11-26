@@ -5,6 +5,8 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
+import { ALM_CARRIER_MATRIX } from '../../carrier-matrix/alm-carrier-matrix.ts';
+import { resolveAlmCarrierMatrixCellCarriers } from '../../carrier-matrix/resolve-alm-carrier-matrix-cell-carriers.ts';
 import { toGrantAppliedHeadCommands } from '../../granted-topic/to-grant-applied-head-commands.ts';
 import { toTopicGrantCommand } from '../../granted-topic/to-topic-grant-command.ts';
 import {
@@ -32,7 +34,7 @@ export const grantedRtcRevokedPublisher: AlmConformanceScenarioDefinition = {
     scenarioId: 'granted-rtc-revoked-publisher',
     scenarioKey: 'granted-rtc-revoked-publisher',
     tags: FULL_TAGS,
-    carriers: ['rtc', 'rtc-with-ws-fallback'],
+    carriers: resolveAlmCarrierMatrixCellCarriers('granted-rtc-revoked-publisher'),
     roles: ['sender', 'receiver'],
     laneFamily: 'two-agent',
     principalRoles: ['receiver', 'sender'],
@@ -54,7 +56,11 @@ function toRevokedPublisherCommands(sender: AlmConformanceStepInput): readonly R
         }),
         toCueWait(sender, 'revoked'),
         ...toGrantAppliedHeadCommands(sender, 'revoke-head'),
-        ...toRejectedPublishCommands(sender, 'publication-2', 'no-publish-grant')
+        ...toRejectedPublishCommands(
+            sender,
+            'publication-2',
+            ALM_CARRIER_MATRIX['revoked-publish-known-to-sender'].cells[sender.input.carrier].outcome.reason
+        )
     ];
 }
 

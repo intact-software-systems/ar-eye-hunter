@@ -1,7 +1,6 @@
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
 import { NON_EXPIRING_SEND_TIMEOUT_MS } from '../../alm-conformance-budgets.ts';
-import { ALM_CONFORMANCE_RTC_ALONE_CARRIERS } from '../../alm-conformance-carriers.ts';
 import {
     ALM_OUTBOUND_DIAGNOSTICS_TOPIC,
     toDiagnosticWait,
@@ -20,6 +19,8 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
+import { ALM_CARRIER_MATRIX } from '../../carrier-matrix/alm-carrier-matrix.ts';
+import { resolveAlmCarrierMatrixCellCarriers } from '../../carrier-matrix/resolve-alm-carrier-matrix-cell-carriers.ts';
 import { toCueStep } from '../receipted-audience.ts';
 import {
     toCueListenCommands,
@@ -28,6 +29,9 @@ import {
 } from '../topic-subscription/topic-subscription-publications.ts';
 
 const ONE_REPAIR: AlmConformanceOrderedSendOptions = { maxRepairs: 1 };
+
+/** The failure the held second send's handle ends with once a requester's budget is spent, as the matrix states it. */
+const EXHAUSTED_FAILURE = ALM_CARRIER_MATRIX['repair-budget-exhausted'].cells.rtc.outcome.failure;
 
 /**
  * A repair budget that runs out ends on the handle: every send states a budget of one retransmit per receiver, the
@@ -46,7 +50,7 @@ export const repairExhausted: AlmConformanceScenarioDefinition = {
     scenarioId: 'repair-exhausted',
     scenarioKey: 'repair-exhausted',
     tags: FULL_TAGS,
-    carriers: ALM_CONFORMANCE_RTC_ALONE_CARRIERS,
+    carriers: resolveAlmCarrierMatrixCellCarriers('repair-exhausted'),
     roles: ALM_CONFORMANCE_THREE_AGENT_ROLES,
     laneFamily: 'three-agent',
     toSenderCommands: toRepairExhaustedSenderCommands,
@@ -65,6 +69,7 @@ function toRepairExhaustedSenderCommands(
 ): readonly RallarBlackBoxTestCommand[] {
     const cue = toCueStep(sender);
     const observation = 'observe-failed-2';
+    const failure = [['failure.kind', EXHAUSTED_FAILURE.kind], ['failure.reason', EXHAUSTED_FAILURE.reason]] as const;
     return [
         ...toCueListenCommands(cue),
         ...toOrderedSendCommands(sender, 1, ONE_REPAIR),
@@ -72,22 +77,16 @@ function toRepairExhaustedSenderCommands(
         ...toHeldGapCommands(sender, ONE_REPAIR),
         ...toOrderedSendCommands(sender, 4, ONE_REPAIR),
         toObserveCommand({ ...sender, index: 2, state: 'failed', budgetMs: NON_EXPIRING_SEND_TIMEOUT_MS }),
-        toResultAssertion({
-            step: sender,
-            name: 'assert-skipped-2',
-            resultName: observation,
-            field: 'failure.kind',
-            operator: 'equals',
-            expected: 'skipped'
-        }),
-        toResultAssertion({
-            step: sender,
-            name: 'assert-repair-exhausted-2',
-            resultName: observation,
-            field: 'failure.reason',
-            operator: 'equals',
-            expected: 'repair-exhausted'
-        }),
+        ...failure.map(([field, expected]) =>
+            toResultAssertion({
+                step: sender,
+                name: `assert-${expected}-2`,
+                resultName: observation,
+                field,
+                operator: 'equals',
+                expected
+            })
+        ),
         toNoRepairCommitAfterFailedWait(sender)
     ];
 }

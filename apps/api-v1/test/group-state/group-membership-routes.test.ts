@@ -261,28 +261,28 @@ async function verifyGroupGovernanceRoutes(): Promise<void> {
 async function requestGovernanceRoutes(
     app: ReturnType<typeof createRejectingGroupStateRouteTestRuntime>['app']
 ): Promise<Response[]> {
-    return await Promise.all([
-        postGroupStateMutationWithHeaders(app, `${API_BASE}/members/bob/remove`, {
+    return [
+        await postGroupStateMutationWithHeaders(app, `${API_BASE}/members/bob/remove`, {
             headers: AUTHENTICATED_HEADERS,
             body: { requestId: 'group-route-remove-bob' }
         }),
-        postGroupStateMutationWithHeaders(app, `${API_BASE}/members/bob/ban`, {
+        await postGroupStateMutationWithHeaders(app, `${API_BASE}/members/bob/ban`, {
             headers: AUTHENTICATED_HEADERS,
             body: { requestId: 'group-route-ban-bob-1' }
         }),
-        postGroupStateMutationWithHeaders(app, `${API_BASE}/members/bob/unban`, {
+        await postGroupStateMutationWithHeaders(app, `${API_BASE}/members/bob/unban`, {
             headers: AUTHENTICATED_HEADERS,
             body: { requestId: 'group-route-unban-bob' }
         }),
-        putGroupStateMutation(app, `${API_BASE}/members/bob/role`, {
+        await putGroupStateMutation(app, `${API_BASE}/members/bob/role`, {
             role: 'admin',
             requestId: 'group-route-role-bob'
         }),
-        postGroupStateMutationWithHeaders(app, `${API_BASE}/owner/transfer`, {
+        await postGroupStateMutationWithHeaders(app, `${API_BASE}/owner/transfer`, {
             headers: AUTHENTICATED_HEADERS,
             body: { newOwnerPrincipalId: 'bob', requestId: 'group-route-transfer-owner' }
         })
-    ]);
+    ];
 }
 
 function assertMemberRestrictionEnvelopes(enqueued: AuthenticatedGroupMutationEnqueue[]): void {
