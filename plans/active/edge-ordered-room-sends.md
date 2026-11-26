@@ -339,6 +339,34 @@ Each slice is one pull request and leaves the product working. The riskiest ques
 | 6. A real consumer                  | One app stream moved to edge order; the product description, the browser README and the realtime skill updated; the measurement of slice 1 run again with the product code.                                                                | The hosted lane and the app's own tests.                                                                                                                                                     |                                                                                        | Which stream                           |
 | 7. Hop order's future               | Whatever ruling 6 says.                                                                                                                                                                                                                    |                                                                                                                                                                                              |                                                                                        | 6                                      |
 
+**What the slices found.** Each line is the slice's own report in its draft pull request; the sections above are
+as they were written before the slices ran.
+
+- **Slice 1, PR 915 (stacked on PR 885).** Unordered sends sorted at the receiver keep up at 5 and 10 messages a
+  second from one sender and for five senders at 2 a second each: every message before its deadline, sorted p95 at
+  most 0.50 s, at most 2 messages held. At 30 a second, above the session budget, the path keeps up at +0 ms and
+  falls behind at +5 ms. The reordering is the server's: every session on one instance read the same order. That
+  pull request carries the updated sections 2.3 and 2.5.
+- **Slice 2, PR 916.** The stamp and the sorter as unwired code with 31 tests. The stamp's fields are `stream`,
+  `position`, the lowest open position and the latest deadline of earlier open sends.
+- **Slice 3, PR 924 (stacked on PR 916).** `order: 'edge'` works end to end on a room channel, with two-page tests
+  and the lane cells `edge-order-stream` (three carriers) and `edge-order-jitter-stream`. Where it differs from the
+  plan:
+  - Refused beyond the plan's list: a `granted` channel (its audience changes while a stream runs; it waits for the
+    late joiner in slice 4), a stored channel or send, the `ws-then-rtc` strategy, and any receipt other than
+    `receiver`.
+  - The position is taken at the call, but the stamp is stated when the message is built, because a send's deadline
+    is not known at the call.
+  - A `failed` send stays open until its deadline, since a copy can still arrive.
+  - A declared channel listens on both carriers whatever handlers the application registered, and hand-overs run
+    one at a time for the whole page.
+  - The declaration is per topic and type on a page, for every room.
+  - A refused send in the middle of a burst is waited for until the sends before it end. Closing that hole at once
+    is added to slice 4.
+  - Bundle cost: `browser/rallar.ts` 332.379 to 335.296 KiB (+2.92, above the 1.5 to 2.5 estimate) against a budget
+    of 332, which `main` already passes since PR 911; the headless agent 433.602 to 436.714 KiB against 434. Neither
+    budget is raised; that is the maintainer's decision.
+
 **Where the work can stop and still be useful.**
 
 - After slice 1: the figures say what the unordered path carries, which PR 885 also needs.
