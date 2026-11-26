@@ -37,9 +37,10 @@ export interface OrderedSendShapeIssue {
 export const ORDERED_SEND_SENDER_RECOVERIES: readonly OrderedSendSenderRecovery[] = ['none', 'client-stand-in'];
 
 /**
- * Every issue of a shape; none means the cell can run it. Each field is a whole number, so every publisher offers a
- * whole number of sends, the rate times the duration, and nothing is rounded. All the sessions of the room may
- * publish: a send still has every other session as its audience.
+ * Every issue of a shape; none means the cell can run it. Each number is whole, so every publisher offers a whole
+ * number of sends, the rate times the duration, and nothing is rounded. All the sessions of the room may publish: a
+ * send still has every other session as its audience. The sender recovery is one of the two the cell knows, which a
+ * shape decoded from JSON or from a command line may fail to be.
  */
 export function validateOrderedSendShape(shape: OrderedSendShape): readonly OrderedSendShapeIssue[] {
     const { sessionCount } = ORDERED_SEND_CELL_CONSTANTS;

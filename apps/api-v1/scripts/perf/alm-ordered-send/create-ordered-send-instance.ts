@@ -140,22 +140,9 @@ function wireOrderedSendInstance(
     dependencies: OrderedSendInstanceDependencies
 ): OrderedSendInstance {
     const { lifecycle } = dependencies;
-    const { sleep, nowEpochMs } = dependencies.clock;
-    const { instanceIndex, delayMs } = input;
-    const server = createOrderedSendWsServer({
-        sql: createDelayedPSqlSql({ sql: lifecycle.database, delayMs, sleep }),
-        notification: createDelayedDatabaseNotificationPort({
-            notification: requireNotificationPort(lifecycle),
-            delayMs,
-            sleep
-        }),
-        runId: input.runId,
-        publisherId: `ordered-send-${input.runId}-instance-${instanceIndex}`,
-        authorizeRoomMessage: input.authorizeRoomMessage,
-        recordHandOff: (message) => input.recordHandOff(message, instanceIndex),
-        queueResilience: config.queueResilience,
-        nowEpochMs
-    });
+    const { nowEpochMs } = dependencies.clock;
+    const { instanceIndex } = input;
+    const server = createDelayedOrderedSendWsServer(input, config, dependencies);
     const disconnects: OrderedSendSessionDisconnect[] = [];
     return {
         instanceIndex,
@@ -176,6 +163,31 @@ function wireOrderedSendInstance(
         stop: () => stopOrderedSendWsServer(server, disconnects, nowEpochMs),
         close: () => lifecycle.close()
     };
+}
+
+/** The instance's WS server over the delayed handle and the delayed port of its lifecycle. */
+function createDelayedOrderedSendWsServer(
+    input: OrderedSendInstanceInput,
+    config: OrderedSendInstanceConfig,
+    dependencies: OrderedSendInstanceDependencies
+): OrderedSendWsServer {
+    const { lifecycle } = dependencies;
+    const { sleep, nowEpochMs } = dependencies.clock;
+    const { instanceIndex, delayMs } = input;
+    return createOrderedSendWsServer({
+        sql: createDelayedPSqlSql({ sql: lifecycle.database, delayMs, sleep }),
+        notification: createDelayedDatabaseNotificationPort({
+            notification: requireNotificationPort(lifecycle),
+            delayMs,
+            sleep
+        }),
+        runId: input.runId,
+        publisherId: `ordered-send-${input.runId}-instance-${instanceIndex}`,
+        authorizeRoomMessage: input.authorizeRoomMessage,
+        recordHandOff: (message) => input.recordHandOff(message, instanceIndex),
+        queueResilience: config.queueResilience,
+        nowEpochMs
+    });
 }
 
 function requireNotificationPort(lifecycle: ApiV1DatabaseLifecycle): ApiV1DatabaseNotificationPort {

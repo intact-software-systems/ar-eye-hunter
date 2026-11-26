@@ -174,12 +174,7 @@ export async function runOrderedSendCell(
     if (issues.length > 0) {
         return Either.ofLeft(issues);
     }
-    if (!RUN_ID.test(input.runId)) {
-        throw new TypeError('runId must be a lower-case UUID.');
-    }
-    if (!Number.isFinite(input.observationTailMs) || input.observationTailMs < 0) {
-        throw new TypeError('observationTailMs must be a finite number of at least 0.');
-    }
+    assertOrderedSendRunInput(input);
     const { clock, readCpuUsage } = dependencies;
     const schedule = computeOrderedSendSchedule(input.shape);
     const roomRef = { ...ORDERED_SEND_SCOPE, groupId: `room-${input.runId}` };
@@ -206,6 +201,16 @@ export async function runOrderedSendCell(
         // A phase that threw left observation open: ending it here stops whatever still offers for the run.
         log.endObservation();
         await stopOrderedSendInstances(instances);
+    }
+}
+
+/** What only a caller's mistake gets wrong: the run's id and its tail are the caller's to make, never an operator's. */
+function assertOrderedSendRunInput(input: RunOrderedSendCellInput): void {
+    if (!RUN_ID.test(input.runId)) {
+        throw new TypeError('runId must be a lower-case UUID.');
+    }
+    if (!Number.isFinite(input.observationTailMs) || input.observationTailMs < 0) {
+        throw new TypeError('observationTailMs must be a finite number of at least 0.');
     }
 }
 
