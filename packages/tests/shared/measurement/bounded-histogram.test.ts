@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
     computeBoundedHistogramAfter,
+    computeBoundedHistogramRecorded,
     createBoundedHistogram,
     decodeBoundedHistogram,
     MAX_BOUNDED_HISTOGRAM_BOUNDS,
@@ -45,6 +46,19 @@ describe('BoundedHistogram', () => {
             expect(computeBoundedHistogramAfter(histogram, value).left).toEqual(expect.any(String));
         }
         expect(histogram).toEqual(createRecorded([10, 100], [5]));
+    });
+
+    it('records a list of values onto what a histogram already holds, and counts each refused value instead', () => {
+        const before = createRecorded([10, 100], [7]);
+
+        const recorded = computeBoundedHistogramRecorded(before, [5, -1, 50, Number.NaN, 500]);
+
+        expect(recorded).toEqual({
+            histogram: { upperBounds: [10, 100], bucketCounts: [2, 1, 1], count: 4, sum: 562, min: 5, max: 500 },
+            unrecordedSamples: 2
+        });
+        expect(before.count).toBe(1);
+        expect(computeBoundedHistogramRecorded(before, [])).toEqual({ histogram: before, unrecordedSamples: 0 });
     });
 
     it('does not change the histogram it records into', () => {

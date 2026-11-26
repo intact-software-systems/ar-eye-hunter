@@ -10,6 +10,12 @@ export interface BoundedHistogram {
     readonly max: number | null;
 }
 
+/** A histogram after a list of samples, and how many of them it refused. */
+export interface BoundedHistogramRecorded {
+    readonly histogram: BoundedHistogram;
+    readonly unrecordedSamples: number;
+}
+
 export const MAX_BOUNDED_HISTOGRAM_BOUNDS = 32;
 
 function isFiniteNonNegative(value: unknown): value is number {
@@ -71,6 +77,19 @@ export function computeBoundedHistogramAfter(
         min: histogram.min === null ? value : Math.min(histogram.min, value),
         max: histogram.max === null ? value : Math.max(histogram.max, value)
     });
+}
+
+/** A value the histogram refuses is counted and leaves the histogram as it was; none is clamped into a bucket. */
+export function computeBoundedHistogramRecorded(
+    histogram: BoundedHistogram,
+    values: readonly number[]
+): BoundedHistogramRecorded {
+    return values.reduce<BoundedHistogramRecorded>((recorded, value) => {
+        const after = computeBoundedHistogramAfter(recorded.histogram, value);
+        return after.right === undefined
+            ? { histogram: recorded.histogram, unrecordedSamples: recorded.unrecordedSamples + 1 }
+            : { histogram: after.right, unrecordedSamples: recorded.unrecordedSamples };
+    }, { histogram, unrecordedSamples: 0 });
 }
 
 function validateBoundedHistogramBuckets(record: ApiJsonObject, path: string): string[] {

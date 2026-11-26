@@ -3,12 +3,12 @@
 Import the owning module directly. This folder has no local barrel; it holds the four measurement primitives that
 runtime code, the harness and the reports share, so that no feature carries its own copy (D642, D650).
 
-| Owner                                                            | What it answers                                                                                                                         |
-| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| [computeNearestRank](compute-nearest-rank.ts)                    | The nearest-rank percentile of a list of values.                                                                                        |
-| [computeNumberExtrema](compute-number-extrema.ts)                | The smallest and the largest of a list of values, absent for no values.                                                                 |
-| [BoundedHistogram](bounded-histogram.ts)                         | A fixed-bound histogram of non-negative numbers: its creation, one more sample, and the decoding of one read from outside.              |
-| [computeSameRegimeComparison](compute-same-regime-comparison.ts) | Whether two sides of runs measured under the same regime differ in a figure by more than a declared band, or cannot be compared at all. |
+| Owner                                                            | What it answers                                                                                                                              |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| [computeNearestRank](compute-nearest-rank.ts)                    | The nearest-rank percentile of a list of values.                                                                                             |
+| [computeNumberExtrema](compute-number-extrema.ts)                | The smallest and the largest of a list of values, absent for no values.                                                                      |
+| [BoundedHistogram](bounded-histogram.ts)                         | A fixed-bound histogram of non-negative numbers: its creation, one more sample or a list of them, and the decoding of one read from outside. |
+| [computeSameRegimeComparison](compute-same-regime-comparison.ts) | Whether two sides of runs measured under the same regime differ in a figure by more than a declared band, or cannot be compared at all.      |
 
 ## Nearest rank
 
@@ -24,6 +24,9 @@ ascending), one more `bucketCounts` entry than bounds, `count`, `sum`, and `min`
 A sample lands in the first bucket whose bound it does not exceed; a sample above the last bound lands in the final
 overflow bucket. `createBoundedHistogram` and `computeBoundedHistogramAfter` return an `Either`: a sample that is not a
 finite number of at least 0 is refused as a value, never clamped and never thrown, and the caller counts the refusal.
+`computeBoundedHistogramRecorded(histogram, values)` is that count for a list: it records each value in order and
+returns the histogram beside `unrecordedSamples`, the number of values it refused. The publication figures and the
+harness's `messages.received` sample age both record through it.
 `decodeBoundedHistogram` reads a histogram from `unknown` and names every field that is wrong, including a bucket total
 that differs from `count`. `decodeBoundedHistogramOnBounds` also refuses a histogram on other bounds than the ones its
 owner declares, so two reads stay comparable bucket by bucket. [assertBoundedHistogram](assert-bounded-histogram.ts)
