@@ -1,7 +1,7 @@
 # Edge order: ordered room sends, sorted at the two ends
 
 Status: a plan to decide on. Nothing is built. The verdict so far is **viable, with one measurement still owed**
-(section 2.5) and the maintainer's rulings in section 4: rulings 1 to 4 are made, rulings 5 and 6 are open. It
+(section 2.5) and the maintainer's rulings in section 4: rulings 1 to 5 are made, ruling 6 is open. It
 builds on the unordered path, which keeps up under load only on the tree of PR 885, so it follows that pull request
 and does not replace it.
 
@@ -122,7 +122,7 @@ That last function is where a receive-side sorter sits, and the channel's `send`
 - Consequence: a reload or a second tab is a new stream. Order holds inside one page's stream. Hop order holds across
   a reload because its head is in IndexedDB and is shared by the session's tabs
   (`to-al-outbound-minting-plan.ts:16-22`).
-- What a receiver does with the old stream when a new one appears is ruling 5.
+- Ruling 5: the receiver keeps the old stream and the new one independent.
 
 **A receiver that joins mid-stream.**
 
@@ -445,13 +445,22 @@ What follows from the ruling: the channel definition gains `order: 'edge'`; a re
 `message.order` with the stream and the position; the channel's gap report is `onOrderGap`. Slice 3 adds the first
 two to the public surface and its API snapshot, and slice 4 adds the gap report.
 
-**5. A sender reload, as receivers see it (before slice 4).**
+**5. A sender reload, as receivers see it (before slice 4). Ruled on 2026-11-26: the streams are independent.**
 
-- _The new stream closes the old one_ (recommended): what the receiver holds from the old stream is handed over in
-  order, and anything of the old stream that arrives later is dropped. Order then also holds across the reload, at
-  the price of messages that were in flight during it.
-- _The two streams are independent._ Nothing is dropped, and a message from before the reload can be handed over
-  after one from after it.
+The recommendation changed before the ruling. Every tab of one login shares the sender id (section 2.2), so a
+receiver cannot tell a reload from a second tab, and "the new stream closes the old one" would let two open tabs
+close each other's streams.
+
+- _The streams are independent_ (chosen). Each keeps its own order and neither affects the other. Nothing is dropped
+  and two tabs work. Around a reload, a message sent just before it can be handed over after one sent just after it.
+- _A reload closes the old stream_ (not chosen): the page keeps its stream id in `sessionStorage` and the new stream
+  names the one it replaces. Order would hold across a reload, but the mode would no longer be memory-only, messages
+  in flight during the reload would be dropped, and a duplicated tab would close the original tab's stream.
+- _Any new stream closes the old one_ (not chosen): not safe with two tabs.
+
+What follows from the ruling: slice 4 adds no stream-to-stream rule. The old stream of a reloaded page is forgotten
+by the receiver's idle-stream cap like any other, and the documents say plainly that order holds within one page's
+stream and not across a reload.
 
 **6. Hop order's future (slice 7).** Keep as it is, or keep it for server-authored streams only. See section 3. The
 recommendation is to decide after slice 6, with a consumer and figures in hand.
