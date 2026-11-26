@@ -38,6 +38,10 @@ the overflow bucket every sample above the last bound. `decodeBoundedHistogramOn
 other bounds than the ones its owner declares, so two reads stay comparable bucket by bucket.
 [assertBoundedHistogram](assert-bounded-histogram.ts) creates the empty histogram of a declared set of bounds and throws
 on a set that is not valid, a programmer's error. There is no merge; the first reader that needs one adds it.
+The decoder's rules for `sum`, `min` and `max` are
+[validateBoundedHistogramExtremes](validate-bounded-histogram-extremes.ts), and the two number tests every rule of the
+histogram shares are in [bounded-histogram-number-guards.ts](bounded-histogram-number-guards.ts); both belong to this
+primitive and are not primitives of their own.
 
 ## Bounded histogram quantile
 
