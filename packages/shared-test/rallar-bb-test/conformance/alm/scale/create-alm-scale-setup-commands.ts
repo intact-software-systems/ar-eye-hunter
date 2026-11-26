@@ -1,126 +1,65 @@
-import {
-    createStableRtcLayoutWait,
-    toStableRtcLayoutWaitTimeoutMs
-} from '../../../fixtures/create-stable-rtc-layout-wait.ts';
-import {
-    computeRtcConnectOwnTimeoutMs,
-    createRallarBlackBoxEnsureGroupCommands
-} from '../../../fixtures/live-rtc-setup.ts';
-import type {
-    RallarBlackBoxTestCommand,
-    RallarBlackBoxTestRtcConnectReadiness
-} from '../../../rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
 
-import { RESTORED_SESSION_RALLAR } from '../alm-conformance-session-commands.ts';
-import { computeCommandsTimeoutMs } from '../cell/compute-commands-timeout-ms.ts';
+import { createAlmCohortBarrier } from '../cohort/create-alm-cohort-barrier.ts';
+import {
+    computeAlmCohortGroupRequestTimeoutMs,
+    createAlmCohortSetupCommands,
+    type AlmCohortSetupInput
+} from '../cohort/create-alm-cohort-setup-commands.ts';
 import type { AlmScaleRecipeInput } from './create-alm-scale-recipes.ts';
 
-/** A readiness whose layout is replaced is read again this soon, since its quiet window may already have elapsed. */
-const LAYOUT_RECHECK_INTERVAL_MS = 500;
-/** A promotion still in flight lands within this; a setup with no accepted layout by then fails instead of looping. */
-const ACCEPTED_LAYOUT_GATE_MS = 5_000;
-const LAYOUT_READINESS_TIMEOUT_MS = 5_000;
-/**
- * The API serves a cohort's group joins one at a time, so the director's group requests and every agent's single
- * ready-status read get an allowance that grows with the cohort; a player's join runs inside its connect.
- */
-const GROUP_REQUEST_BASE_TIMEOUT_MS = 5_000;
-const GROUP_REQUEST_TIMEOUT_PER_PARTICIPANT_MS = 250;
-/**
- * The hosted lane serves about 1.5 joining players per second at 50 members, and a player's readiness waits for peers
- * whose joins queue on that same lane, so it grows with the cohort.
- */
-const PLAYER_READINESS_TIMEOUT_PER_PARTICIPANT_MS = 650;
+const SCOPE = 'alm-scale';
+const DIRECTOR_TOPIC_ID = 'room.ar-eye-hunter.director';
+const DIRECTOR_INTENT_TYPE_ID = 'room.ar-eye-hunter.director.intent.v1';
+const DIRECTOR_EVENT_TYPE_ID = 'room.ar-eye-hunter.director.event.v1';
 
+/** The cohort setup with the director's steps: its appointment before any player joins, and every role's wait for it. */
 export function createAlmScaleSetupCommands(
     input: AlmScaleRecipeInput,
     role: 'director' | 'player'
 ): readonly RallarBlackBoxTestCommand[] {
-    const prefix = `alm-scale-${role}`;
-    const created = createSetupBarrier(prefix, 'group-created', input.readyTimeoutMs);
-    // Every role's connected barrier waits for the players' connects.
-    const playerConnect = createPlayerConnectCommand(input, 'alm-scale-player');
+    const prefix = `${SCOPE}-${role}`;
+    const cohort = toAlmScaleCohort(input);
+    const setup = createAlmCohortSetupCommands(cohort, role === 'director' ? 'owner' : 'member');
     return [
-        createSignInCommand(input, prefix),
-        ...(role === 'director'
-            ? [
-                ...createDirectorEnsureGroupCommands(input, prefix),
-                createConnectCommand(input, prefix, undefined),
-                createAppointCommand(input, prefix),
-                created
-            ]
-            : [created, playerConnect]),
-        createSetupBarrier(prefix, 'connected', computeCommandsTimeoutMs([playerConnect], 'the connected barrier')),
-        createAudienceWait(input, prefix),
-        createSetupBarrier(prefix, 'appointed', input.readyTimeoutMs),
+        ...setup.entry,
+        ...(role === 'director' ? [createAppointCommand(input, prefix)] : []),
+        ...setup.gathering,
+        createAlmCohortBarrier({ scope: SCOPE, roleName: role, phase: 'appointed', timeoutMs: input.readyTimeoutMs }),
         createDirectorWait(input, prefix),
         {
             kind: 'director.status',
             commandId: `${prefix}-ready-status`,
             roomRef: { ...input.group },
             refresh: 'when-absent',
-            timeoutMs: computeGroupRequestTimeoutMs(input)
+            timeoutMs: computeAlmCohortGroupRequestTimeoutMs(cohort)
         },
-        createAcceptedLayoutGate(input, prefix),
-        createStableRtcLayoutWait({ group: input.group, prefix, settleTimeoutMs: input.readyTimeoutMs }),
-        // The setup-complete barrier shares the stable wait's limit: its window opens at the first arrival, and one
-        // agent can wait out a hold another did not see.
-        createSetupBarrier(prefix, 'setup-complete', toStableRtcLayoutWaitTimeoutMs(input.readyTimeoutMs)),
+        ...setup.settling,
         { kind: 'storage.counters', commandId: `${prefix}-storage-reset`, reset: true },
-        createSetupBarrier(prefix, 'traffic-ready', input.readyTimeoutMs)
+        createAlmCohortBarrier({
+            scope: SCOPE,
+            roleName: role,
+            phase: 'traffic-ready',
+            timeoutMs: input.readyTimeoutMs
+        })
     ];
 }
 
-/**
- * Only the director writes the group: a player's room join admits it to the open group. Its capacity is the cohort,
- * the director and every player, so the join that completes the roster replans at once (D288).
- */
-function createDirectorEnsureGroupCommands(
-    input: AlmScaleRecipeInput,
-    prefix: string
-): readonly RallarBlackBoxTestCommand[] {
-    return createRallarBlackBoxEnsureGroupCommands({
-        commandPrefix: prefix,
-        requestPrefix: prefix,
+/** The director owns the group; every page hears the director topic for the players' intents and its own events. */
+function toAlmScaleCohort(input: AlmScaleRecipeInput): AlmCohortSetupInput {
+    return {
         group: input.group,
-        actor: '{auth.clientId}',
-        maxMembers: input.participantCount,
-        timeoutMs: computeGroupRequestTimeoutMs(input)
-    });
-}
-
-function computeGroupRequestTimeoutMs(input: AlmScaleRecipeInput): number {
-    return Math.min(
-        GROUP_REQUEST_BASE_TIMEOUT_MS + GROUP_REQUEST_TIMEOUT_PER_PARTICIPANT_MS * input.participantCount,
-        input.readyTimeoutMs
-    );
-}
-
-function createSignInCommand(input: AlmScaleRecipeInput, prefix: string): RallarBlackBoxTestCommand {
-    return {
-        kind: 'http.request',
-        commandId: `${prefix}-sign-in`,
-        metadata: {
-            purpose: 'Sign in under the setup allowance: a cohort registers serially on the API, ' +
-                'so the lazy sign-in must not spend the group requests\' allowance. ' +
-                'Under strict state reads the read is the session\'s own client snapshot, one point read.'
-        },
-        request: {
-            method: 'GET',
-            path: `/api/state/apps/${encodeURIComponent(input.group.applicationId)}` +
-                `/workspaces/${encodeURIComponent(input.group.workspaceId)}/clients`
-        },
-        response: { body: 'json', acceptedStatusCodes: [200] },
-        timeoutMs: input.readyTimeoutMs
-    };
-}
-
-function createSetupBarrier(prefix: string, phase: string, timeoutMs: number): RallarBlackBoxTestCommand {
-    return {
-        kind: 'barrier',
-        commandId: `${prefix}-${phase}`,
-        barrierId: `alm-scale-${phase}`,
-        timeoutMs
+        participantCount: input.participantCount,
+        readyTimeoutMs: input.readyTimeoutMs,
+        almDiagnostics: input.almDiagnostics,
+        scope: SCOPE,
+        roleNames: { owner: 'director', member: 'player' },
+        channel: {
+            typeId: DIRECTOR_INTENT_TYPE_ID,
+            topicId: DIRECTOR_TOPIC_ID,
+            messageSelector: { topicId: DIRECTOR_TOPIC_ID },
+            messageTypeIds: [DIRECTOR_INTENT_TYPE_ID, DIRECTOR_EVENT_TYPE_ID]
+        }
     };
 }
 
@@ -131,70 +70,6 @@ function createAppointCommand(input: AlmScaleRecipeInput, prefix: string): Ralla
         commandId: `${prefix}-appoint`,
         roomRef: { ...input.group },
         timeoutMs: 5_000
-    };
-}
-
-/**
- * Only a player connects after a peer exists: the director's readiness would wait on players the barrier still holds.
- * The runtime connects under the connect's own timeout and only then waits for readiness under the readiness's, so the
- * connected barrier, which waits for every player's connect, covers both, one after the other.
- */
-function createPlayerConnectCommand(input: AlmScaleRecipeInput, prefix: string): RallarBlackBoxTestCommand {
-    const readinessTimeoutMs = input.readyTimeoutMs +
-        PLAYER_READINESS_TIMEOUT_PER_PARTICIPANT_MS * input.participantCount;
-    return createConnectCommand(input, prefix, { minReadyPeers: 1, timeoutMs: readinessTimeoutMs, intervalMs: 100 });
-}
-
-/** Every connect joins the room, each under the SDK timeout, so a slow join reports the SDK's own outcome. */
-function createConnectCommand(
-    input: AlmScaleRecipeInput,
-    prefix: string,
-    readiness: RallarBlackBoxTestRtcConnectReadiness | undefined
-): RallarBlackBoxTestCommand {
-    return {
-        kind: 'rtc.connect',
-        commandId: `${prefix}-connect`,
-        connection: prefix,
-        actor: '{auth.clientId}',
-        roomId: input.group.groupId,
-        applicationId: input.group.applicationId,
-        workspaceId: input.group.workspaceId,
-        roomRef: { ...input.group },
-        transport: 'messages.rtc',
-        timeoutMs: computeRtcConnectOwnTimeoutMs({ sdkTimeoutMs: input.readyTimeoutMs, joinsRoom: true }),
-        ...(readiness === undefined ? {} : { readiness }),
-        rallar: {
-            ...RESTORED_SESSION_RALLAR,
-            almDiagnostics: input.almDiagnostics,
-            username: '{auth.username}',
-            timeoutMs: input.readyTimeoutMs,
-            typeId: 'room.ar-eye-hunter.director.intent.v1',
-            topicId: 'room.ar-eye-hunter.director',
-            messageSelector: { topicId: 'room.ar-eye-hunter.director' },
-            messageTypeIds: ['room.ar-eye-hunter.director.intent.v1', 'room.ar-eye-hunter.director.event.v1']
-        }
-    };
-}
-
-/**
- * The page's own room snapshot, kept current over its WS state stream, must hold every cohort session; each change
- * to it is forwarded as a formation change carrying its active session count, so the wait reads nothing from the API.
- */
-function createAudienceWait(input: AlmScaleRecipeInput, prefix: string): RallarBlackBoxTestCommand {
-    return {
-        kind: 'wait',
-        commandId: `${prefix}-audience-ready`,
-        timeoutMs: input.readyTimeoutMs,
-        match: {
-            kind: 'diagnostic',
-            topic: 'rallar.browser.formation.changed',
-            payloadFields: {
-                'data.roomRef.applicationId': input.group.applicationId,
-                'data.roomRef.workspaceId': input.group.workspaceId,
-                'data.roomRef.groupId': input.group.groupId,
-                'data.activeSessionCount': input.participantCount
-            }
-        }
     };
 }
 
@@ -221,32 +96,6 @@ function createDirectorWait(input: AlmScaleRecipeInput, prefix: string): RallarB
                 expected: true,
                 source:
                     `resultCache.${prefix}-director-ready:i{loop.iteration}:c1:${prefix}-director-status.value.directorStatus.active`
-            }
-        ]
-    };
-}
-
-function createAcceptedLayoutGate(input: AlmScaleRecipeInput, prefix: string): RallarBlackBoxTestCommand {
-    return {
-        kind: 'loop',
-        commandId: `${prefix}-layout-accepted`,
-        count: Math.ceil(ACCEPTED_LAYOUT_GATE_MS / LAYOUT_RECHECK_INTERVAL_MS),
-        intervalMs: LAYOUT_RECHECK_INTERVAL_MS,
-        timeoutMs: ACCEPTED_LAYOUT_GATE_MS + LAYOUT_READINESS_TIMEOUT_MS,
-        until: 'first-success',
-        commands: [
-            {
-                kind: 'formation.readiness',
-                commandId: `${prefix}-layout-accepted-readiness`,
-                roomRef: { ...input.group },
-                timeoutMs: LAYOUT_READINESS_TIMEOUT_MS
-            },
-            {
-                kind: 'assert',
-                commandId: `${prefix}-assert-layout-accepted`,
-                operator: 'exists',
-                source: `resultCache.${prefix}-layout-accepted:i{loop.iteration}:c1:` +
-                    `${prefix}-layout-accepted-readiness.value.acceptedHeldSinceEpochMs`
             }
         ]
     };
