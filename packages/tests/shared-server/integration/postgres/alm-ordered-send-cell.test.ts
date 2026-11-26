@@ -79,7 +79,12 @@ async function runSmallCell(
     }, createDefaultOrderedSendCellRunDependencies());
 
     expect(run.left).toBeUndefined();
-    return run.right!;
+    // The process is read from the window's opening to its last offer, which is due 1,750 ms in and never early.
+    const { sendWindow } = run.right!.runtime;
+    expect(sendWindow.wallMs).toBeGreaterThanOrEqual(1_750);
+    expect(sendWindow.loopLag.ticks).toBeGreaterThan(0);
+    expect(sendWindow.cpu.coresBusy).toBeGreaterThan(0);
+    return run.right!.observations;
 }
 
 function expectEverySendDeliveredAndReceipted(observations: OrderedSendCellObservations): void {

@@ -11,6 +11,11 @@ import {
     type OrderedSendScheduledSend,
     type OrderedSendScheduledSession
 } from './compute-ordered-send-schedule.ts';
+import {
+    computeOrderedSendSendWindowFigures,
+    type OrderedSendCpuUsage,
+    type OrderedSendSendWindowFigures
+} from './compute-ordered-send-send-window-figures.ts';
 import { createDefaultOrderedSendInstance, type OrderedSendInstance } from './create-ordered-send-instance.ts';
 import { createOrderedSendRoomAuthorizer } from './create-ordered-send-room-authorizer.ts';
 import { ORDERED_SEND_SERVER_PEER_ID } from './create-ordered-send-ws-server.ts';
@@ -20,6 +25,7 @@ import type { OrderedSendCellObservations } from './ordered-send-cell-observatio
 import { createDefaultOrderedSendClock, type OrderedSendClock } from './ordered-send-clock.ts';
 import { OrderedSendObservationLog } from './ordered-send-observation-log.ts';
 import { OrderedSendOfferLedger } from './ordered-send-offer-ledger.ts';
+import { startOrderedSendLoopLagSampling } from './start-ordered-send-loop-lag-sampling.ts';
 import { toOrderedSendAck } from './to-ordered-send-ack.ts';
 import { toOrderedSendCellAnswer } from './to-ordered-send-cell-answer.ts';
 import { toOrderedSendMessage } from './to-ordered-send-message.ts';
@@ -53,6 +59,19 @@ export interface RunOrderedSendCellInput {
 
 export interface OrderedSendCellRunDependencies {
     readonly clock: OrderedSendClock;
+    /** Reads the processor time the process has used so far, as `process.cpuUsage()` does. */
+    readonly readCpuUsage: () => OrderedSendCpuUsage;
+}
+
+/** What a run read of the process it ran in. It is for the artifact, and no part of what the report computes. */
+export interface OrderedSendCellRuntime {
+    readonly sendWindow: OrderedSendSendWindowFigures;
+}
+
+export interface OrderedSendCellRunResult {
+    /** What the sessions' sockets read, what the instances handed off and what the entry answered. */
+    readonly observations: OrderedSendCellObservations;
+    readonly runtime: OrderedSendCellRuntime;
 }
 
 /** One run in progress: `ledger` and `log` take what it offers and observes. */
@@ -63,6 +82,7 @@ interface OrderedSendRun {
     readonly ledger: OrderedSendOfferLedger;
     readonly log: OrderedSendObservationLog;
     readonly clock: OrderedSendClock;
+    readonly readCpuUsage: () => OrderedSendCpuUsage;
     /** What a publisher does to recover a send; undefined under the sender recovery `none`. */
     readonly clientStandIn: OrderedSendClientStandIn | undefined;
     /** It grows with each ACK and each answer to a repair request: the run waits for them all before it returns. */
@@ -90,13 +110,16 @@ const TAIL_POLL_MS = 25;
  */
 const FIRST_HOP_POLL_MS = 10;
 
+/** The timer whose lateness is sampled over the send window. */
+const LOOP_LAG_TICK_MS = 10;
+
 /** A room presence outlasts any run by far. */
 const ROOM_PRESENCE_LIFETIME_MS = 24 * 60 * 60 * 1_000;
 
 /**
  * One run of the cell: three API instances in this process on one PostgreSQL database, fifteen sessions in one room,
  * and the shape's publishers each offering an ordered, receipted room send at its due instant. Returns everything
- * the run observed, or every issue of the shape and nothing run.
+ * the run observed and what it read of its own process, or every issue of the shape and nothing run.
  *
  * What each thing takes on its way, as the API's own router decides it for a topic it has no definition of:
  * - a copy: the publisher's instance admits the send to the shared inbound store; whichever instance's worker takes
@@ -140,7 +163,7 @@ const ROOM_PRESENCE_LIFETIME_MS = 24 * 60 * 60 * 1_000;
 export async function runOrderedSendCell(
     input: RunOrderedSendCellInput,
     dependencies: OrderedSendCellRunDependencies
-): Promise<Either<readonly OrderedSendShapeIssue[], OrderedSendCellObservations>> {
+): Promise<Either<readonly OrderedSendShapeIssue[], OrderedSendCellRunResult>> {
     const issues = validateOrderedSendShape(input.shape);
     if (issues.length > 0) {
         return Either.ofLeft(issues);
@@ -151,7 +174,7 @@ export async function runOrderedSendCell(
     if (!Number.isFinite(input.observationTailMs) || input.observationTailMs < 0) {
         throw new TypeError('observationTailMs must be a finite number of at least 0.');
     }
-    const { clock } = dependencies;
+    const { clock, readCpuUsage } = dependencies;
     const schedule = computeOrderedSendSchedule(input.shape);
     const roomRef = { ...ORDERED_SEND_SCOPE, groupId: `room-${input.runId}` };
     const log = new OrderedSendObservationLog(clock.nowMs);
@@ -165,6 +188,7 @@ export async function runOrderedSendCell(
                 ledger: new OrderedSendOfferLedger(),
                 log,
                 clock,
+                readCpuUsage,
                 clientStandIn: input.shape.senderRecovery === 'client-stand-in'
                     ? new OrderedSendClientStandIn(ORDERED_SEND_SERVER_PEER_ID)
                     : undefined,
@@ -180,7 +204,13 @@ export async function runOrderedSendCell(
 }
 
 export function createDefaultOrderedSendCellRunDependencies(): OrderedSendCellRunDependencies {
-    return { clock: createDefaultOrderedSendClock() };
+    return {
+        clock: createDefaultOrderedSendClock(),
+        readCpuUsage: () => {
+            const { user, system } = process.cpuUsage();
+            return { userMicros: user, systemMicros: system };
+        }
+    };
 }
 
 /** The three instances, each on pools of its own. One that cannot be created closes those created before it. */
@@ -226,23 +256,14 @@ async function createOrderedSendInstances(
 async function observeOrderedSends(
     run: OrderedSendRun,
     observationTailMs: number
-): Promise<OrderedSendCellObservations> {
+): Promise<OrderedSendCellRunResult> {
     await openOrderedSendRoom(run);
 
     const windowStartedAtMs = run.clock.nowMs();
     const firstHopResends = run.clientStandIn === undefined
         ? Promise.resolve()
         : offerFirstHopResendsWhenDue(run.clientStandIn, run);
-    await offerOrderedSendsWhenDue({
-        sends: run.schedule.sends.map((send): DueOrderedSend => ({
-            send,
-            publisherInstance: run.instances[send.publisherInstanceIndex],
-            dueAtMs: windowStartedAtMs + send.dueOffsetMs
-        })),
-        nowMs: run.clock.nowMs,
-        sleep: run.clock.sleep,
-        offer: (due) => offerOrderedSend(due, run)
-    });
+    const sendWindow = await offerOrderedSendsOverWindow(run, windowStartedAtMs);
     await observeOrderedSendTail(run, (run.ledger.getLastOfferAtMs() ?? windowStartedAtMs) + observationTailMs);
 
     const reads = run.log.endObservation();
@@ -251,7 +272,44 @@ async function observeOrderedSends(
     if (run.ledger.getFailures().length > 0) {
         throw new AggregateError(run.ledger.getFailures(), 'An offer of the ordered-send cell threw.');
     }
-    return { ...offers, ...reads };
+    return { observations: { ...offers, ...reads }, runtime: { sendWindow } };
+}
+
+/**
+ * The send window: every send offered at its due instant, and what the process read of itself from the window's
+ * opening to its last offer. The work the last offers start goes on after it, in the tail.
+ */
+async function offerOrderedSendsOverWindow(
+    run: OrderedSendRun,
+    windowStartedAtMs: number
+): Promise<OrderedSendSendWindowFigures> {
+    const cpuAtStart = run.readCpuUsage();
+    const loopLagSampling = startOrderedSendLoopLagSampling(run.clock, LOOP_LAG_TICK_MS);
+    try {
+        await offerOrderedSendsWhenDue({
+            sends: run.schedule.sends.map((send): DueOrderedSend => ({
+                send,
+                publisherInstance: run.instances[send.publisherInstanceIndex],
+                dueAtMs: windowStartedAtMs + send.dueOffsetMs
+            })),
+            nowMs: run.clock.nowMs,
+            sleep: run.clock.sleep,
+            offer: (due) => offerOrderedSend(due, run)
+        });
+    }
+    catch (error) {
+        await loopLagSampling.stop();
+        throw error;
+    }
+    const endedAtMs = run.clock.nowMs();
+    const cpuAtEnd = run.readCpuUsage();
+    return computeOrderedSendSendWindowFigures({
+        startedAtMs: windowStartedAtMs,
+        endedAtMs,
+        cpuAtStart,
+        cpuAtEnd,
+        loopLagsMs: await loopLagSampling.stop()
+    });
 }
 
 /** Every instance subscribed and working, every application pool fully open, every session connected. */
