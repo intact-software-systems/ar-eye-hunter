@@ -466,13 +466,21 @@ export class ALOutboundDispatchAdmission<TPrepared> {
 
     /**
      * A send whose every attempt lost the fence retains its request for the durable worker to replay; a replay, a
-     * control hand-off whose retention failed, and every other intent leave the retry to their caller.
+     * control hand-off whose retention failed, and every other intent leave the retry to their caller. A duplicate
+     * that lost the write of the proof it signed answers with its row as stored and retains nothing: the row's own
+     * dequeue still signs it.
      */
     private async settleCommitConflict(
         dispatch: ALOutboundDispatchAdmission.Input<TPrepared>,
         { input, computed }: ALOutboundCommitDecision<TPrepared>,
         phases: ALOutboundCommitPhases
     ): Promise<ALOutboundDispatchAdmission.Result<TPrepared>> {
+        if (computed.verdict.kind === 'duplicate') {
+            return await this.toStoredDuplicateResult({
+                computed: { ...computed, bundle: undefined },
+                committed: false
+            });
+        }
         if (dispatch.intent === 'enqueue' && !dispatch.options.pendingAdmission) {
             const retained = await this.retainPendingDispatch(input, computed, phases);
             if (this.isInitialControlHandoff(dispatch) && retained.computed.verdict.kind === 'failed') {
@@ -487,9 +495,9 @@ export class ALOutboundDispatchAdmission<TPrepared> {
     }
 
     /**
-     * A duplicate answers with its canonical row as stored now, never with the message its read planned and signed.
-     * Nothing orders a replay behind another commit of its sender (ruling 22): it may have read the row before a
-     * freezing dequeue stored the row's proof, and its own sign then lost to that one.
+     * A duplicate that stored nothing answers with its canonical row as stored now, never with the message its read
+     * planned and signed. Nothing orders a replay behind another commit of its sender (ruling 22): it may have read
+     * the row before a freezing dequeue stored the row's proof, and its own sign then lost to that one.
      */
     private async toStoredDuplicateResult(
         result: ALOutboundDispatchAdmission.Result<TPrepared>
