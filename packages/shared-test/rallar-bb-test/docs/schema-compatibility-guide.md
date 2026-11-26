@@ -1340,3 +1340,46 @@ ai-recipe-prompt-guide.md lists it for paced send loops.
 Verification:
 npx vitest run packages/tests/shared-test/rallar-bb-runtime/loop-epoch-placeholder.test.ts
 ```
+
+```text
+Title: messages.received may read the age of the copies it matched
+Date: 2026-11-26
+Owner: ALM publication workload family
+
+Change type:
+- Compatible optional addition
+
+Affected schemas:
+- RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA (messages.received branch)
+- validateRallarBlackBoxTestCommand messages.received
+- RallarBlackBoxTestMessagesReceivedResultValue
+
+Old shape:
+messages.received named connection, typeId, msgId, count, absent, ascendingBy, stallMs and windowMs. Its result named
+each matched copy's identity and dropped the instant the agent recorded it, so no recipe could read how old a copy was
+when it arrived.
+
+New shape:
+messages.received may also name ageFrom, a top-level field of each copy's payload that holds the epoch in milliseconds
+at which the copy was sent. Its result and diagnostic then carry sampleAge: { from, ageMs, unrecordedSamples }. ageMs
+is a bounded histogram on AL_PUBLICATION_FIGURE_AGE_BOUNDS_MS with one sample per matched copy, the agent's clock when
+its event log recorded the copy less the number at that field. A copy with no finite number there, or stamped after it
+arrived, counts in unrecordedSamples and is never clamped, so ageMs.count + unrecordedSamples equals observed. The
+reading fails no count. A blank ageFrom is refused by the schema and by command validation; ageFrom beside
+absent: true by command validation.
+
+Migration:
+None: a command that names no ageFrom validates, runs and reports as before, with no sampleAge. A recipe that names
+ageFrom dispatched to an agent built before this change is refused at command validation as an unsupported field. A
+sender built before {loop.atEpochMs} leaves that text in the payload, which this reading counts as unrecorded.
+
+Golden corpus updates:
+None.
+
+Prompt/documentation updates:
+schema-and-capabilities.md describes the reading, its two clocks and what it leaves unrecorded; the messages.received
+capability description names ageFrom and sampleAge.
+
+Verification:
+npx vitest run packages/tests/shared-test/alm-received-sample-age-contract.test.ts packages/tests/shared-test/alm-received-sample-age.test.ts packages/tests/shared-test/rallar-bb-test-alm-commands.test.ts
+```

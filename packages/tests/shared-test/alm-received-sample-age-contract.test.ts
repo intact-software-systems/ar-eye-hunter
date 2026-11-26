@@ -1,0 +1,57 @@
+import { describe, expect, it } from 'vitest';
+
+import { validateAlmControlCommand } from '@shared-test/rallar-bb-test/alm/validate-alm-control-command.ts';
+import { RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
+import { validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { RALLAR_BLACK_BOX_COMMAND_CAPABILITIES } from '@shared-test/rallar-bb-test/schema/rallar-black-box-command-capabilities.ts';
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
+
+const command = { kind: 'messages.received', typeId: 'chat', count: 20, windowMs: 5_000 };
+
+/** The two boundaries a `messages.received` command crosses before an agent runs it. */
+function readBoundaries(candidate: ApiJsonObject) {
+    return {
+        schema: validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, candidate).ok,
+        command: validateAlmControlCommand(candidate, 'messages.received').length === 0
+    };
+}
+
+describe('a sample-age reading in a messages.received command', () => {
+    it.each([
+        ['an age reading', { ageFrom: 'sentAtEpochMs' }],
+        ['an age reading beside a presence claim', { ageFrom: 'sentAtEpochMs', absent: false }],
+        ['an age reading beside an order claim and a stall window', {
+            ageFrom: 'sentAtEpochMs',
+            ascendingBy: 'seq',
+            stallMs: 1_000
+        }]
+    ])('admits %s through schema and command validation', (_label, fields) => {
+        expect(readBoundaries({ ...command, ...fields })).toEqual({ schema: true, command: true });
+    });
+
+    it.each([
+        ['an empty field name', { ageFrom: '' }],
+        ['a blank field name', { ageFrom: '  ' }],
+        ['a field name that is no string', { ageFrom: 3 }]
+    ])('refuses %s at both boundaries', (_label, fields) => {
+        expect(readBoundaries({ ...command, ...fields })).toEqual({ schema: false, command: false });
+    });
+
+    it('refuses an age reading beside an absence claim, which asks for no copy, and says why', () => {
+        const absence = { ...command, ageFrom: 'sentAtEpochMs', absent: true };
+
+        expect(readBoundaries(absence)).toEqual({ schema: true, command: false });
+        expect(validateAlmControlCommand(absence, 'messages.received').map((issue) => issue.message)).toEqual([
+            'messages.received.ageFrom reads the age of the copies a count asks for, which an absence claim ' +
+            '(absent: true) asks for none of.'
+        ]);
+    });
+
+    it('names ageFrom in the capability an author reads: among its optional fields and in its description', () => {
+        const capability = RALLAR_BLACK_BOX_COMMAND_CAPABILITIES.find(({ kind }) => kind === 'messages.received');
+
+        expect(capability?.optionalFields).toContain('ageFrom');
+        expect(capability?.description).toContain('ageFrom');
+        expect(capability?.description).toContain('sampleAge');
+    });
+});
