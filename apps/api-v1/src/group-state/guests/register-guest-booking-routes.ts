@@ -11,8 +11,8 @@ import { toGroupMutationErrorResponse } from '../group-state-route-errors.ts';
 import { readGroupStateRouteRequest } from '../read-group-state-route-request.ts';
 import { readAdmittedGuestAccess } from './read-admitted-guest-access.ts';
 
-export function requireGuestBookingApplication(dependencies: GroupStateRouteDependencies, app: string): void {
-    if (!Object.hasOwn(dependencies.guestBookingByApplication, app) || dependencies.guestBookingByApplication[app] !== true) {
+export function requireGuestBookingApplication(dependencies: GroupStateRouteDependencies, app: string, requested = true): void {
+    if (requested && (!Object.hasOwn(dependencies.guestBookingByApplication, app) || dependencies.guestBookingByApplication[app] !== true)) {
         throw authorizationDenied('Guest booking is disabled for this application.');
     }
 }

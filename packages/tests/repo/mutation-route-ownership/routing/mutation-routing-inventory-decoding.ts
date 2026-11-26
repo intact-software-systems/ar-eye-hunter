@@ -12,6 +12,7 @@ const PATHS = {
     eventInbox: 'packages/shared-server/rallar-system/room-events/temporary-event-service.ts',
     eventRoutes: 'apps/api-v1/src/room-events/register-room-event-routes.ts',
     temporaryCreation: 'apps/api-v1/src/group-state/guests/register-temporary-room-routes.ts',
+    guestBooking: 'apps/api-v1/src/group-state/guests/register-guest-booking-routes.ts',
     guestRedemption: 'apps/api-v1/src/group-state/guests/register-room-guest-redemption-route.ts',
     groupAdmission: 'apps/api-v1/src/group-state/register-group-admission-routes.ts',
     groupMembership: 'apps/api-v1/src/group-state/register-group-membership-routes.ts',
