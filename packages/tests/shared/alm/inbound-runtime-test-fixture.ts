@@ -419,17 +419,30 @@ export function createInboundTestAdmission(stores: ALInboundRuntimeStores): ALIn
     return admission;
 }
 
-/** The ordered delivery the runtime composes, over the caller's own store, so a pin can complete a delivery directly. */
-export function createInboundTestOrderedDelivery(admissionStore: ALInboundAdmissionStore): ALInboundOrderedDelivery {
+export interface CreateInboundTestOrderedDeliveryInput {
+    /** Absent plans with the fixture's own planner. */
+    readonly planIncomingMessage?: ALInboundPlanner;
+    /** Absent never aborts, as a runtime that is not disposed. */
+    readonly signal?: AbortSignal;
+}
+
+/**
+ * The ordered delivery the runtime composes, over the caller's own store, so a pin can release or complete a delivery
+ * directly.
+ */
+export function createInboundTestOrderedDelivery(
+    admissionStore: ALInboundAdmissionStore,
+    input: CreateInboundTestOrderedDeliveryInput = {}
+): ALInboundOrderedDelivery {
     return new ALInboundOrderedDelivery({
         admissionStore,
-        planIncomingMessage: planInboundTestMessage,
+        planIncomingMessage: input.planIncomingMessage ?? planInboundTestMessage,
         clock: { nowMs: Date.now },
         effectPreparation: INBOUND_TEST_EFFECT_PREPARATION,
         readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
         receiptProofs: CARRIER_AUTHENTICATED_RECEIPT_PROOFS,
         diagnostics: undefined,
-        signal: new AbortController().signal
+        signal: input.signal ?? new AbortController().signal
     });
 }
 

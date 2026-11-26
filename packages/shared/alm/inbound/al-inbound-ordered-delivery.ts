@@ -28,6 +28,9 @@ import { signALInboundReceiptControls } from './receipt-proof/sign-al-inbound-re
 /** One completion attempt: `conflict` when its write lost, so the next attempt reads and decides again. */
 type ALInboundCompletionAttempt = 'completed' | 'retry' | 'conflict';
 
+/** One release attempt's answer: `conflict` when its write lost, so the next attempt reads and decides again. */
+type ALInboundReleaseAttempt = ALInboundOrderedDelivery.ReleaseResult | 'conflict';
+
 export namespace ALInboundOrderedDelivery {
     export type Readiness =
         | { readonly kind: 'ready' | 'waiting' | 'completed'; }
@@ -66,14 +69,25 @@ export class ALInboundOrderedDelivery {
         this.dependencies = dependencies;
     }
 
+    /**
+     * A release whose write lost reads and decides again at once, rather than send the work back to wait out a retry
+     * delay that can outlast its message: a completion, another release or an admission on the track committed, and
+     * the next read sees it.
+     *
+     * Hands the work back (`retry`) when every attempt's write lost or the shutdown signal aborted it, and when the
+     * plan asks for a retry or the predecessor has not completed, which a second read would find the same. Nothing has
+     * been dispatched then: the caller dispatches only the delivery a committed release answers.
+     */
     async release(input: ALInboundOrderedDelivery.ReleaseInput): Promise<ALInboundOrderedDelivery.ReleaseResult> {
-        return await this.releaseOnce(input);
+        const released = await retryALInboundLostWrite({
+            attempt: () => this.releaseOnce(input),
+            isLostWrite: (attempt) => attempt === 'conflict'
+        });
+        return released === 'conflict' ? 'retry' : released;
     }
 
     /** One fresh read of the slot and the track's progress, the decision, and the write when the release needs one. */
-    private async releaseOnce(
-        input: ALInboundOrderedDelivery.ReleaseInput
-    ): Promise<ALInboundOrderedDelivery.ReleaseResult> {
+    private async releaseOnce(input: ALInboundOrderedDelivery.ReleaseInput): Promise<ALInboundReleaseAttempt> {
         const { trackKey, seq, effectId } = input;
         const read = await this.dependencies.admissionStore.readBufferedRelease({
             trackKey,
@@ -125,7 +139,7 @@ export class ALInboundOrderedDelivery {
     private async commitRelease(
         read: ALInboundBufferedReleaseReadDto,
         plan: ALMessageHandlingPlan
-    ): Promise<ALInboundOrderedDelivery.ReleaseResult> {
+    ): Promise<ALInboundReleaseAttempt> {
         const facts = readALInboundEffectFacts(
             read.nowMs,
             this.dependencies.effectPreparation,
@@ -141,8 +155,11 @@ export class ALInboundOrderedDelivery {
             return 'retry';
         }
         const status = await this.dependencies.admissionStore.commitBundle(signed);
-        if (status === 'conflict' || this.dependencies.signal.aborted) {
+        if (this.dependencies.signal.aborted) {
             return 'retry';
+        }
+        if (status === 'conflict') {
+            return 'conflict';
         }
         const delivery = computed.localDelivery;
         if (delivery === undefined) {

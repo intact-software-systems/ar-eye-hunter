@@ -3,8 +3,9 @@ import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
-import type { ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import type { ALInboundAdmissionStore, ALInboundPlanner } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundOrderedDelivery } from '@shared/alm/inbound/al-inbound-ordered-delivery.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 
 import {
@@ -14,6 +15,7 @@ import {
     createInboundTestStores,
     INBOUND_TEST_SENDER_PEER_ID,
     INBOUND_TEST_SOURCE,
+    planInboundTestMessage,
     readInboundTestAdmission,
     readInboundTestWorkRows,
     runInboundWorkDueNow
@@ -181,6 +183,229 @@ it('answers a copy on another carrier that arrives during a released message\'s 
         { carrier: 'ws', toPeerId: INBOUND_TEST_SENDER_PEER_ID, status: 'delivered' },
         { carrier: 'rtc', toPeerId: INBOUND_TEST_SENDER_PEER_ID, status: 'delivered' }
     ]);
+});
+
+const SECOND = createInboundTestMessage({ msgId: 'message-2', seq: 2 });
+const SECOND_DELIVERY = { kind: 'dispatch-local', message: { senderId: INBOUND_TEST_SENDER_PEER_ID, msgId: 'message-2' } };
+/** The ACK a committed release of message 2 writes, which its admission behind the gap did not. */
+const SECOND_DELIVERED_ACK = { carrier: 'ws', toPeerId: INBOUND_TEST_SENDER_PEER_ID, status: 'delivered' };
+
+interface ReleasableStore {
+    readonly stores: ALInboundRuntimeStores;
+    readonly admissionStore: ALInboundAdmissionStore;
+    readonly release: ALInboundOrderedDelivery.ReleaseInput;
+}
+
+/**
+ * Memory stores holding acknowledged message 2 held behind the gap at 1 and released by message 1's admission, with
+ * message 1's delivery `completed` or still `pending`.
+ */
+async function createReleasableStore(predecessor: 'completed' | 'pending'): Promise<ReleasableStore> {
+    const stores = createInboundTestStores({
+        namespace: 'inbound-ordered-release',
+        storage: 'memory',
+        observer: createPassThroughIndexedDbOperationObserver()
+    });
+    const { admissionStore } = stores;
+    const first = createAcknowledgedMessage(1);
+    for (const msg of [createAcknowledgedMessage(2), first]) {
+        expect(await admissionStore.commitBundle(await readInboundTestAdmission(admissionStore, msg))).toBe('committed');
+    }
+    if (predecessor === 'completed') {
+        expect(await createInboundTestOrderedDelivery(admissionStore).complete(first)).toBe('completed');
+    }
+    const effectId = (await readReleaseSlot(admissionStore))!.snapshot.delivery!.effectId;
+    return { stores, admissionStore, release: { trackKey: TRACK_KEY, seq: 2, effectId } };
+}
+
+async function readReleaseSlot(admissionStore: ALInboundAdmissionStore) {
+    return await admissionStore.readBufferedRelease({ trackKey: TRACK_KEY, seq: 2, nowMs: Date.now() });
+}
+
+/** What a release writes or leaves: message 2's slot, its owner and the track's progress, and its stored ACKs. */
+async function readReleaseFacts(stores: ALInboundRuntimeStores) {
+    const slot = await readReleaseSlot(stores.admissionStore);
+    return {
+        snapshot: slot?.snapshot,
+        observations: slot?.observations,
+        acks: await readStoredAcks(stores, 'message-2')
+    };
+}
+
+/** The store's next `count` writes lose, as a write whose observed rows moved does; the rest are its own. */
+function loseNextReleaseWrites(admissionStore: ALInboundAdmissionStore, count: number): void {
+    const spy = vi.spyOn(admissionStore, 'commitBundle');
+    for (let lost = 0; lost < count; lost += 1) {
+        spy.mockResolvedValueOnce('conflict');
+    }
+}
+
+/** A planner that appends to `plans` each time it plans, so the attempts of a release are counted in a list. */
+function createRecordingPlanner(plans: string[]): ALInboundPlanner {
+    return (msg, source, observations) => {
+        plans.push(`plan ${msg.id.msgId}`);
+        return planInboundTestMessage(msg, source, observations);
+    };
+}
+
+// A release whose write lost to an admission on its track went back as RETRY and waited out a retry delay past its
+// message's lifetime; a fresh attempt reads the moved progress and releases the message in the same call.
+it('releases a held message whose first write lost to an admission on its track, in the same call', async () => {
+    const { stores, admissionStore, release } = await createReleasableStore('completed');
+    const third = createInboundTestMessage({ msgId: 'message-3', seq: 3 });
+    const laterThird: ALMessage = { ...third, constraints: { ...third.constraints, expiresAtMs: Date.now() + 120_000 } };
+    const readBufferedRelease = admissionStore.readBufferedRelease.bind(admissionStore);
+    vi.spyOn(admissionStore, 'readBufferedRelease').mockImplementationOnce(async (input) => {
+        const read = (await readBufferedRelease(input))!;
+        expect(await admissionStore.commitBundle(await readInboundTestAdmission(admissionStore, laterThird))).toBe(
+            'committed'
+        );
+        const moved = (await readBufferedRelease(input))!.observations.deliveryProgress!.value!;
+        expect(moved.expireAtTimestamp).toBeGreaterThan(read.observations.deliveryProgress!.value!.expireAtTimestamp);
+        return read;
+    });
+    expect(await readStoredAcks(stores, 'message-2')).toEqual([]);
+
+    expect(await createInboundTestOrderedDelivery(admissionStore).release(release)).toEqual(SECOND_DELIVERY);
+
+    expect(await readStoredAcks(stores, 'message-2')).toEqual([SECOND_DELIVERED_ACK]);
+    expect((await admissionStore.readOrderedDelivery(TRACK_KEY, 2)).completedThrough).toBe(1);
+});
+
+// The bound of a release's fresh attempts: when each loses, the work goes back and nothing is written. A fourth
+// attempt would reach the store and commit.
+it('hands a release back when every attempt of its write is lost', async () => {
+    const { stores, admissionStore, release } = await createReleasableStore('completed');
+    const before = await readReleaseFacts(stores);
+    loseNextReleaseWrites(admissionStore, 3);
+
+    expect(await createInboundTestOrderedDelivery(admissionStore).release(release)).toBe('retry');
+
+    expect(await readReleaseFacts(stores)).toEqual(before);
+});
+
+// The last of the bounded attempts still reads, decides and writes.
+it('releases a held message on the last attempt after two lost writes', async () => {
+    const { stores, admissionStore, release } = await createReleasableStore('completed');
+    loseNextReleaseWrites(admissionStore, 2);
+
+    expect(await createInboundTestOrderedDelivery(admissionStore).release(release)).toEqual(SECOND_DELIVERY);
+
+    expect(await readStoredAcks(stores, 'message-2')).toEqual([SECOND_DELIVERED_ACK]);
+});
+
+// Only a lost write is attempted again: a predecessor that has not completed writes nothing, and a second read finds
+// the same. The planner's list is the only record of the attempts, since the waiting release writes nothing.
+it('answers retry at once for a release whose predecessor has not completed', async () => {
+    const { stores, admissionStore, release } = await createReleasableStore('pending');
+    const before = await readReleaseFacts(stores);
+    const plans: string[] = [];
+    const delivery = createInboundTestOrderedDelivery(admissionStore, { planIncomingMessage: createRecordingPlanner(plans) });
+
+    expect(await delivery.release(release)).toBe('retry');
+
+    expect(plans).toEqual(['plan message-2']);
+    expect(await readReleaseFacts(stores)).toEqual(before);
+});
+
+// A disposed owner must not keep attempting: a release whose write lost while its shutdown signal aborted answers
+// retry and plans no second attempt.
+it('makes no further attempt once its shutdown signal aborted during a lost write', async () => {
+    const { stores, admissionStore, release } = await createReleasableStore('completed');
+    const before = await readReleaseFacts(stores);
+    const plans: string[] = [];
+    const shutdown = new AbortController();
+    vi.spyOn(admissionStore, 'commitBundle').mockImplementationOnce(async () => {
+        shutdown.abort();
+        return 'conflict';
+    });
+    const delivery = createInboundTestOrderedDelivery(admissionStore, {
+        planIncomingMessage: createRecordingPlanner(plans),
+        signal: shutdown.signal
+    });
+
+    expect(await delivery.release(release)).toBe('retry');
+
+    expect(plans).toEqual(['plan message-2']);
+    expect(await readReleaseFacts(stores)).toEqual(before);
+});
+
+// A fresh attempt reads what the winner left: a slot another release took and completed during this release's lost
+// write reads as completed, so this release hands nothing to the application a second time.
+it('answers completed for a release whose slot another release took and completed during its lost write', async () => {
+    const { stores, admissionStore, release } = await createReleasableStore('completed');
+    const commitBundle = admissionStore.commitBundle.bind(admissionStore);
+    vi.spyOn(admissionStore, 'commitBundle').mockImplementationOnce(async (bundle) => {
+        expect(await commitBundle(bundle)).toBe('committed');
+        const competing = (await readReleaseSlot(admissionStore))!;
+        expect(
+            await admissionStore.commitDeliveryCompletion({
+                trackKey: TRACK_KEY,
+                seq: 2,
+                observedSlot: competing.snapshot,
+                observedProgress: competing.observations.deliveryProgress!.value!
+            })
+        ).toBe('committed');
+        const stale = await commitBundle(bundle);
+        expect(stale).toBe('conflict');
+        return stale;
+    });
+
+    expect(await createInboundTestOrderedDelivery(admissionStore).release(release)).toBe('completed');
+
+    expect(await readReleaseSlot(admissionStore)).toBeUndefined();
+    expect((await admissionStore.readOrderedDelivery(TRACK_KEY, 3)).completedThrough).toBe(2);
+});
+
+// A release's dispatch follows its committed write: a fresh attempt that dispatched as well as the committed one would
+// hand message 2 twice. A lost first write that went back as RETRY took a second claim of the release's work; here a
+// RETRY row is due at once, so its claims, not the delivery, tell the two apart.
+it('delivers a held message once when its release\'s first write is lost', async () => {
+    const fixture = createInboundTestRuntime({
+        carrier: 'ws',
+        stores: createInboundTestStores({
+            namespace: 'inbound-ordered-release-runtime',
+            storage: 'memory',
+            observer: createPassThroughIndexedDbOperationObserver()
+        }),
+        effectWorkerId: 'inbound-ordered-release-runtime'
+    });
+    const { admissionStore } = fixture.stores;
+    expect((await fixture.runtime.admitIncomingMessage(SECOND, INBOUND_TEST_SOURCE)).right?.kind).toBe('admitted');
+    expect((await fixture.runtime.admitIncomingMessage(FIRST, INBOUND_TEST_SOURCE)).right?.kind).toBe('admitted');
+    // After both admissions, the release is the run's only bundle write: each completion has its own.
+    loseNextReleaseWrites(admissionStore, 1);
+
+    await runInboundWorkDueNow(fixture);
+
+    expect(fixture.deliveredMessages.map((delivered) => delivered.id.msgId)).toEqual(['message-1', 'message-2']);
+    expect((await admissionStore.readOrderedDelivery(TRACK_KEY, 3)).completedThrough).toBe(2);
+    expect(
+        (await readInboundTestWorkRows(fixture.stores)).flatMap((row) =>
+            row.payload.kind === 'release-buffered'
+                ? [{ status: row.entry.status, attempts: row.entry.dequeueAudit.attempts }]
+                : []
+        )
+    ).toEqual([{ status: 'COMPLETED', attempts: 1 }]);
+});
+
+// Only a lost write is attempted again: a store that fails otherwise fails the release from any attempt, as the very
+// error it threw, and nothing is written.
+it('lets a store failure that is no conflict out of the release, from the first attempt and from the third', async () => {
+    const { stores, admissionStore, release } = await createReleasableStore('completed');
+    const before = await readReleaseFacts(stores);
+    const failure = new Error('admission storage unavailable');
+    const delivery = createInboundTestOrderedDelivery(admissionStore);
+    vi.spyOn(admissionStore, 'commitBundle').mockRejectedValueOnce(failure);
+
+    await expect(delivery.release(release)).rejects.toBe(failure);
+    expect(await readReleaseFacts(stores)).toEqual(before);
+
+    vi.spyOn(admissionStore, 'commitBundle').mockResolvedValueOnce('conflict').mockResolvedValueOnce('conflict')
+        .mockRejectedValueOnce(failure);
+
+    await expect(delivery.release(release)).rejects.toBe(failure);
+    expect(await readReleaseFacts(stores)).toEqual(before);
 });
 
 /** Each ACK of `msgId` the store holds a `send-control` row for: its carrier, recipient and status. */
