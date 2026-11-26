@@ -1,14 +1,15 @@
 # Measurement
 
-Import the owning module directly. This folder has no local barrel; it holds the four measurement primitives that
+Import the owning module directly. This folder has no local barrel; it holds the five measurement primitives that
 runtime code, the harness and the reports share, so that no feature carries its own copy (D642, D650).
 
-| Owner                                                            | What it answers                                                                                                                              |
-| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| [computeNearestRank](compute-nearest-rank.ts)                    | The nearest-rank percentile of a list of values.                                                                                             |
-| [computeNumberExtrema](compute-number-extrema.ts)                | The smallest and the largest of a list of values, absent for no values.                                                                      |
-| [BoundedHistogram](bounded-histogram.ts)                         | A fixed-bound histogram of non-negative numbers: its creation, one more sample or a list of them, and the decoding of one read from outside. |
-| [computeSameRegimeComparison](compute-same-regime-comparison.ts) | Whether two sides of runs measured under the same regime differ in a figure by more than a declared band, or cannot be compared at all.      |
+| Owner                                                                    | What it answers                                                                                                                              |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| [computeNearestRank](compute-nearest-rank.ts)                            | The nearest-rank percentile of a list of values.                                                                                             |
+| [computeNumberExtrema](compute-number-extrema.ts)                        | The smallest and the largest of a list of values, absent for no values.                                                                      |
+| [BoundedHistogram](bounded-histogram.ts)                                 | A fixed-bound histogram of non-negative numbers: its creation, one more sample or a list of them, and the decoding of one read from outside. |
+| [computeBoundedHistogramQuantile](compute-bounded-histogram-quantile.ts) | The bucket that holds the nearest-rank sample of a bounded histogram, narrowed by its smallest and largest sample.                           |
+| [computeSameRegimeComparison](compute-same-regime-comparison.ts)         | Whether two sides of runs measured under the same regime differ in a figure by more than a declared band, or cannot be compared at all.      |
 
 ## Nearest rank
 
@@ -16,6 +17,8 @@ runtime code, the harness and the reports share, so that no feature carries its 
 fraction at or below 0 reads the smallest value and a fraction at or above 1 the largest. It has two edge answers:
 no values, and a fraction that is not finite, both return `undefined`. Each caller states its own answer for no
 samples (a zero, an omitted figure, a refusal); the primitive does not choose one (D650).
+`computeNearestRankIndex(count, fraction)` is the place of that rank among `count` ascending values, counted from 0,
+with the same two edge answers: the one rank rule for a reader that holds a count and no list of values.
 
 ## Bounded histogram
 
@@ -31,7 +34,21 @@ harness's `messages.received` sample age both record through it.
 that differs from `count`. `decodeBoundedHistogramOnBounds` also refuses a histogram on other bounds than the ones its
 owner declares, so two reads stay comparable bucket by bucket. [assertBoundedHistogram](assert-bounded-histogram.ts)
 creates the empty histogram of a declared set of bounds and throws on a set that is not valid, a programmer's error.
-There is no quantile reader and no merge; the first reader that needs one adds it.
+There is no merge; the first reader that needs one adds it.
+
+## Bounded histogram quantile
+
+A histogram keeps no sample, so it cannot state a percentile as one value.
+`computeBoundedHistogramQuantile(histogram, fraction)` returns `{ atLeast, atMost }`, both ends included: the bucket
+that holds the sample at the rank `computeNearestRankIndex` reads, narrowed by the histogram's `min` and `max`. The
+nearest-rank value of the samples the histogram recorded always lies in that range. `atLeast` is the bound under the
+bucket, which the sample itself exceeds, or `min` where that is higher, so the first bucket starts at `min`; `atMost`
+is the bucket's own bound, or `max` where that is lower, so the overflow bucket ends at `max` and a histogram of one
+sample reads as that sample. A sample exactly on a bound is read in the bucket that bound closes, as it was recorded.
+The fraction has the edge answers of `computeNearestRank`: at or below 0 it reads the bucket of the smallest sample, at
+or above 1 that of the largest, and a fraction that is not finite returns `undefined`, as does a histogram with no
+sample; neither is an error. A histogram whose buckets count fewer samples than its `count`, which neither creation
+nor decoding produces, throws: a programmer's error.
 
 ## Same-regime comparison
 

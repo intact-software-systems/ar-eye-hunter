@@ -3,10 +3,14 @@
  * below 0 reads the smallest and at or above 1 the largest. No values, or a fraction that is not finite, has no answer.
  */
 export function computeNearestRank(values: readonly number[], fraction: number): number | undefined {
-    if (values.length === 0 || !Number.isFinite(fraction)) {
+    const index = computeNearestRankIndex(values.length, fraction);
+    return index === undefined ? undefined : [...values].sort((left, right) => left - right)[index];
+}
+
+/** The place of that rank among `count` ascending values, counted from 0, for a reader that holds no list of them. */
+export function computeNearestRankIndex(count: number, fraction: number): number | undefined {
+    if (count <= 0 || !Number.isFinite(fraction)) {
         return undefined;
     }
-    const ascending = [...values].sort((left, right) => left - right);
-    const index = Math.min(ascending.length - 1, Math.max(0, Math.ceil(fraction * ascending.length) - 1));
-    return ascending[index];
+    return Math.min(count - 1, Math.max(0, Math.ceil(fraction * count) - 1));
 }

@@ -705,8 +705,10 @@ and it has no status list.
 - A lane cell cannot assert a difference of two stats reads (no delta
   operator), so the paced cells assert connect-wide invariants; per-cell figure
   counts need one (D652).
-- The bounded histogram has no quantile reader and no merge; the workload
-  family adds them with its first reader (D650).
+- The bounded histogram has no merge (D650): `computeBoundedHistogramQuantile`
+  reads one histogram, so the publication workload family reports each
+  subscriber's delivered sample age on its own. A figure across subscribers or
+  across runs needs the merge; its first reader adds it.
 - The local baseline's median command time is not a regression figure, even as the median of several runs per
   side (D664): of five comparisons of one commit with itself, three read outside the band (five runs per side: 77
   against 89 ms and 80 against 89 ms; ten per side: 83 against 71 ms), on a machine that ran other work: one of the
