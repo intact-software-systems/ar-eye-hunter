@@ -64,6 +64,14 @@ test('route installers mount representative API and websocket behavior in order'
         401
     );
     assert.equal((await app.request('/api/crdt/catch-up', { method: 'POST' })).status, 401);
+    const eventPath = '/api/state/apps/app/workspaces/workspace/groups/lobby/event';
+    assert.equal((await app.request(eventPath)).status, 401);
+    assert.equal((await app.request(eventPath + '/requests/event-authority-01', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'leave-queue' })
+    })).status, 401);
+    assert.equal((await app.request('/api/state/apps/app/workspaces/workspace/temporary-rooms/requests/temporary-authority-01', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
+    })).status, 403);
     const movePath = '/api/state/apps/app/workspaces/workspace/group-moves';
     assert.equal((await app.request(movePath)).status, 401);
     assert.equal((await app.request(`${movePath}/requests/request-1`, { method: 'POST' })).status, 401);
@@ -127,6 +135,7 @@ function createInput(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRunti
             mutation: { submit: rejectUnusedOperation },
             mutationQuota: { timebasedFilterMs: 60000, maxNumberToAllow: 60 }
         },
+        roomEvents: { read: rejectUnusedOperation, mutate: { submit: rejectUnusedOperation } },
         tournaments: {
             catalog: { read: rejectUnusedOperation },
             reader: { read: rejectUnusedOperation },
@@ -208,7 +217,7 @@ function createRuntime(): ApiV1RouteInstallerRuntime {
         },
         groupStateInboxService: {
             processAuthenticatedGroupEntryUntilCompletion: rejectUnusedOperation,
-            processTemporaryRoomCreationUntilCompletion: rejectUnusedOperation,
+            processTemporaryGroupCreationUntilCompletion: rejectUnusedOperation,
             processGuestAdmissionUntilCompletion: rejectUnusedOperation,
             processQuickJoinUntilCompletion: rejectUnusedOperation,
             processGroupMoveUntilCompletion: rejectUnusedOperation
@@ -313,6 +322,7 @@ function createTopology(): ApiV1RouteInstallerTopology {
         adminClientIds: ['admin'],
         readPlannedLayoutFingerprint: () => Promise.resolve(null),
         groupStateRepository: {
+            isEventRoomAvailable: rejectUnusedOperation,
             readLobbyOccupancy: rejectUnusedOperation,
             findLobbyCommitmentEntry: async () => undefined,
             readLifecyclePolicy: () => Promise.resolve({ status: 'absent' as const })

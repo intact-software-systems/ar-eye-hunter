@@ -51,3 +51,16 @@ test('the anonymous creation route treats an excessive seat count as an invalid 
     });
     assert.equal(response.status, 400);
 });
+
+test('a valid invitation to a retired event stays unavailable while its room cleanup is pending', async () => {
+    const snapshot = createGroupStateRouteSnapshotWithMember('park', 'owner', 'active');
+    const guestInvitation = { verifier: await hashRoomInvitationSecret(invitationSecret), expiresAtEpochMs: 500 };
+    const runtime = createGroupStateRouteTestRuntime({ installStateAuthentication: false, nowEpochMs: () => 100,
+        isEventRoomAvailable: async () => false,
+        groupService: { readCurrentSnapshot: async () => ({ ...snapshot, group: { ...snapshot.group, guestInvitation,
+            eventRoom: { lobbyGroupId: 'park', organizerPlaying: false, emptyReturnWindowMs: 45_000 } } }) } });
+    const response = await runtime.app.request(scopePath + '/groups/park/guests/preview', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invitationSecret })
+    });
+    assert.equal(response.status, 404);
+});

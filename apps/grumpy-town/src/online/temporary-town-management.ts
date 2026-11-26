@@ -41,10 +41,12 @@ export class TemporaryTownManagement {
             return;
         }
         if (!snapshot.group.guestInvitation) this.dropSecret();
-        root.innerHTML = '<div class="invitation"></div><ul></ul><p role="alert"></p>';
+        if (!root.firstElementChild) root.innerHTML = '<div class="invitation"></div><ul></ul><p role="alert"></p>';
         const link = this.secret ? guestInvitationUrl(visit.room, this.secret) : null;
         renderGuestSharing(root.querySelector('.invitation')!, link, this.busy);
         root.querySelector('[role=alert]')!.textContent = this.error;
+        const roster = root.querySelector('ul')!;
+        roster.replaceChildren();
         for (const player of snapshot.members) {
             if (player.status !== 'active' || player.principalId === visit.access.clientId) continue;
             const row = document.createElement('li');
@@ -53,7 +55,7 @@ export class TemporaryTownManagement {
             if (snapshot.activeSessions.some(session => session.principalId === player.principalId)) {
                 row.append(this.button('Hand over management', 'handover', player.principalId));
             }
-            root.querySelector('ul')!.append(row);
+            roster.append(row);
         }
     }
 

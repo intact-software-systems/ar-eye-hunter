@@ -107,3 +107,18 @@ the returned room, room-scoped guest access and invitation secret before calling
 `previewRoomGuestInvitation(room, secret, signal)` reads the room name and seat
 availability without admitting the visitor. An uncapped room returns null for
 both seat counts. The visitor explicitly redeems the invitation to join.
+
+`RallarRoomEvent` from `rooms/events/rallar-room-event.ts` follows a specific
+event lobby. Construct it with the browser facade and lobby reference. Call
+`start()` on mount, subscribe with `onChange`, and call `stop()` on unmount.
+The initial read, a private WebSocket notice, reconnect or foreground return
+recovers the player's current event view. An idle watcher sends no timer reads.
+
+Send organizer and queue commands with `act(command)`. A proposed party enters
+the queue once every invited player consents. `enterCourt()` claims the current
+offer and enters the matching court. Its saved request recovers a committed
+claim after transport loss or reload. `returnToLobby()` reselects the event
+lobby without surrendering its membership. A temporary player uses distinct
+room credentials for those two connections under the same player identity.
+Start a guest visit with `auth.activateGuest({room, access, username})` using
+the admission Rallar returned for that room.

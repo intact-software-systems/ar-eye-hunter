@@ -1,3 +1,5 @@
+import { availableGuestSnapshot } from '@shared-server/http/available-guest-snapshot.ts';
+import { authorizationDenied } from '@shared-server/http/request-auth-service.ts';
 import { readRoomGuestRequest, assertRoomGuestSeat } from '@shared-server/http/room-guest-request.ts';
 import { readRoomLobbyPolicy } from '@shared/api/room-lobbies/room-lobby-policy.ts';
 import {
@@ -226,6 +228,9 @@ async function readGroupSnapshot(
             return context.json({ error: `Group not found: ${groupId}` }, 404);
         }
         if (guest) {
+            if (!await availableGuestSnapshot(result.snapshot, dependencies.nowEpochMs(), dependencies.isEventRoomAvailable)) {
+                throw authorizationDenied('Event access has ended.');
+            }
             assertRoomGuestSeat(guest, result.snapshot, dependencies.nowEpochMs());
         } else {
             authorization.assertAuthenticatedCanReadGroupState(authSession, result.snapshot);

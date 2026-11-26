@@ -1,4 +1,4 @@
-import { proveTemporaryRoomCreation } from './prove-temporary-room-creation.mts';
+import { proveTemporaryRoomCreation } from './room-events/prove-temporary-room-creation.mts';
 import { proveGuestCutoffRestart } from './prove-guest-cutoff-restart.mts';
 import { proveRoomGuestRedemption } from './prove-room-guest-redemption.mts';
 import assert from 'node:assert/strict';

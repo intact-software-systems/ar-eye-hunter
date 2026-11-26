@@ -10,7 +10,11 @@ export default defineConfig({
         browserName: 'chromium',
         viewport: { width: 390, height: 844 },
         hasTouch: true,
-        launchOptions: { args: ['--enable-unsafe-swiftshader'] },
+        channel: process.platform === 'darwin' ? 'chromium' : undefined,
+        launchOptions: { args: [
+            '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding',
+            ...(process.platform === 'darwin' ? ['--use-angle=metal', '--ignore-gpu-blocklist'] : ['--enable-unsafe-swiftshader'])
+        ] },
         screenshot: 'only-on-failure'
     },
     webServer: [{
@@ -20,7 +24,7 @@ export default defineConfig({
         reuseExistingServer: !process.env.CI,
         timeout: 60000
     }, {
-        command: 'npm run dev -- --host 127.0.0.1 --port 5182',
+        command: 'npm run dev -- --mode test --host 127.0.0.1 --port 5182',
         url: 'http://127.0.0.1:5182',
         env: { VITE_RALLAR_API_BASE_URL: 'http://localhost:18084' },
         reuseExistingServer: !process.env.CI

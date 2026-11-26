@@ -17,7 +17,7 @@ export type ViewInvalidationPublicationInput =
             & (
                 | Pick<ViewInvalidation.ScopedAccount, 'resource' | 'scope'>
                 | Pick<ViewInvalidation.Account, 'resource' | 'scope'>
-                | Pick<ViewInvalidation.RoomAccess, 'resource' | 'scope' | 'groupId'>
+                | Pick<ViewInvalidation.RoomAccess | ViewInvalidation.RoomEvent, 'resource' | 'scope' | 'groupId'>
                 | Pick<ViewInvalidation.RoomProgram, 'resource' | 'scope' | 'groupId' | 'name'>
             )
             & { readonly principalIds: readonly string[]; }

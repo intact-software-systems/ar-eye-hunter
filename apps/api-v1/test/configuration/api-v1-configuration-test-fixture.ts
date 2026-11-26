@@ -104,6 +104,7 @@ const CONFIGURATION_DEFAULTS_SOURCE = {
     group: {
         roomOwnedAppDataBindings: [],
         roomLobbyPoliciesByApplication: {},
+        eventOrganizerIdsByApplication: {},
         temporaryRoomPoliciesByApplication: {},
         defaultMaxMembers: 256,
         currentSnapshotCacheMaxEntries: 512,

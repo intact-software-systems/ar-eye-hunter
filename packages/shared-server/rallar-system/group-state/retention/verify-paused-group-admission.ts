@@ -9,10 +9,15 @@ export async function verifyPausedGroupAdmission(
     repository: GroupStateRepository, ingress: GroupStateMutationCommand, read: GroupMutationRead
 ): Promise<void> {
     const operation = ingress.command.operation;
-    if (operation !== 'connectPresence' && operation !== 'heartbeatPresence' &&
-        operation !== 'joinGroup' && operation !== 'acceptGroupInvite') return;
     if (!read.group || read.idempotency) return;
     const now = ingress.facts.attemptAtEpochMs;
+    const playerOperation = ingress.facts.internalAuthority === 'none' || ingress.facts.internalAuthority === 'guest-redemption';
+    if (read.group.value.eventRoom && playerOperation && operation !== 'disconnectPresence' &&
+        !await repository.isEventRoomAvailable(read.group.value, now)) {
+        throw new GroupMutationRejectedError('This event is no longer available.');
+    }
+    if (operation !== 'connectPresence' && operation !== 'heartbeatPresence' &&
+        operation !== 'joinGroup' && operation !== 'acceptGroupInvite') return;
     const target = read.targetPresence?.value;
     if (target?.status === 'active' && target.expiresAtEpochMs > now && read.targetMember?.status === 'active' &&
         isExactlyAdmitted(read.targetAdmission?.value, target)) return;

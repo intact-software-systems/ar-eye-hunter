@@ -25,6 +25,9 @@ import { GroupStateRepositoryReads } from './group-state-repository-reads.ts';
 import { GroupMembershipRepository } from './membership/group-membership-repository.ts';
 import { GroupPresenceRepository } from './presence/group-presence-repository.ts';
 
+import { RoomEventRepository } from '../../room-events/room-event-repository.ts';
+import { readRoomEventLifetime } from '../../room-events/room-event-lifetime.ts';
+
 export function createTransactionBoundGroupStateRepository(
     transaction: PSqlSql
 ): GroupStateRepository {
@@ -44,6 +47,16 @@ export class GroupStateRepository extends GroupStateRepositoryReads {
         this.aggregate = new GroupAggregateRepository(repository, events);
         this.membership = new GroupMembershipRepository(repository);
         this.presence = new GroupPresenceRepository(repository);
+    }
+
+    async isEventRoomAvailable(group: Group, now: number): Promise<boolean> {
+        if (!group.eventRoom) return true;
+        const lobby = { applicationId: group.applicationId, workspaceId: group.workspaceId, groupId: group.eventRoom.lobbyGroupId };
+        const event = (await new RoomEventRepository(this.repository).read(lobby))?.value;
+        if (!event || event.closed || event.closesAt <= now || group.status !== 'active' ||
+            (group.groupId !== lobby.groupId && !event.courts.some(court => court.groupId === group.groupId))) return false;
+        if (now - event.createdAt < event.emptyReturnWindowMs) return true;
+        return now < (await readRoomEventLifetime(this, event)).dueAt;
     }
 
     async readLifecyclePolicy(ref: GroupRef): Promise<GroupLifecyclePolicyRead> {

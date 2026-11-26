@@ -1,3 +1,4 @@
+import { hasOffCourtOrganizer } from './room-events/room-event-binding.ts';
 import type { ApiJsonObject } from './api-json-value.ts';
 import { isLiveRoomSession } from './group-presence/is-live-room-session.ts';
 import type { GroupMember, GroupRole, GroupSnapshot } from './group-types.ts';
@@ -16,7 +17,9 @@ export function isGroupSpectator(member: GroupMember | null | undefined): boolea
 }
 
 export function countGroupPlayers(snapshot: GroupSnapshot): number {
-    return snapshot.group.activeMemberCount - snapshot.members.filter(isGroupSpectator).length;
+    const group = snapshot.group;
+    const offCourtOrganizer = hasOffCourtOrganizer(group);
+    return group.activeMemberCount - snapshot.members.filter(isGroupSpectator).length - Number(offCourtOrganizer);
 }
 
 export function countOnlineGroupPlayers(snapshot: GroupSnapshot): number {

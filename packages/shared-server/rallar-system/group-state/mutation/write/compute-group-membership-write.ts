@@ -5,6 +5,7 @@ import type {
     GroupMutationCommand,
     GroupMutationComputed,
     GroupMutationFacts,
+    GroupMutationDomainWrite,
     GroupMutationRead,
     GroupPublicationGrantEffect,
     GroupTopicSubscriptionDeleteEffect
@@ -14,6 +15,8 @@ import { auditStamp, computeGroupMutationWriteResult, requireGroup } from '../gr
 import { computeMemberPresenceAdmission } from '../presence/compute-group-presence-admission.ts';
 
 export interface ComputeGroupMembershipWriteInput {
+    /** Only issued after the enclosing event has accepted the assignment or departure. */
+    readonly eventMembership?: { readonly transport?: GroupMutationDomainWrite['guestTransportSession'] };
     readonly command: GroupMutationCommand;
     readonly read: GroupMutationRead;
     readonly facts: GroupMutationFacts;
@@ -25,6 +28,7 @@ export interface ComputeGroupMembershipWriteInput {
 
 export function computeGroupMembershipWrite({
     command,
+    eventMembership,
     read,
     facts,
     members,
@@ -61,10 +65,10 @@ export function computeGroupMembershipWrite({
         if (!appointedManager && (member.role === 'admin' || member.role === 'owner')) {
             throw new GroupMutationRejectedError('Guest members cannot govern the room.');
         }
-        if ((member.status === 'active' && previous.status !== 'active') || !member.guestLease) {
+        if ((!eventMembership && member.status === 'active' && previous.status !== 'active') || !member.guestLease) {
             throw new GroupMutationRejectedError('A guest identity may be admitted only by redeeming an invitation.');
         }
-        if (previous.status === member.status || facts.internalAuthority === 'guest-expiry') {
+        if (eventMembership || previous.status === member.status || facts.internalAuthority === 'guest-expiry') {
             continue;
         }
         // A guest giving up its own seat leaves the room's invitation link to the owner.
@@ -83,6 +87,7 @@ export function computeGroupMembershipWrite({
         }
     }
     return computeGroupMutationWriteResult({
+        eventGuestTransportSession: eventMembership?.transport,
         command,
         read,
         facts,

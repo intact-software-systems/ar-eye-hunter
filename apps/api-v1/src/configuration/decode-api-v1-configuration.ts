@@ -450,6 +450,12 @@ function decodeGroup(
     const defaultMaxMembers = decoder.integer('group.defaultMaxMembers', 0);
     return {
         roomLobbyPoliciesByApplication: decodeApplicationPolicies(decoder, 'group.roomLobbyPoliciesByApplication', decodeRoomLobbyPolicy),
+        eventOrganizerIdsByApplication: decodeApplicationPolicies(decoder, 'group.eventOrganizerIdsByApplication', value => {
+            if (!Array.isArray(value) || !value.every(id => typeof id === 'string') || new Set(value).size !== value.length) {
+                throw new Error('Event organizer IDs must be a list of distinct principal IDs.');
+            }
+            return value.map(id => assertValidRallarRouteId(id));
+        }),
         temporaryRoomPoliciesByApplication: decodeApplicationPolicies(decoder, 'group.temporaryRoomPoliciesByApplication', value => {
             const policy = decodeTemporaryRoomPolicy(value);
             return { ...policy, creationLimit: computeApiReplicaLimitShare(policy.creationLimit, decoder.replicaCount()) };

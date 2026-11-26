@@ -1,11 +1,12 @@
+import { jsonEquals } from '@shared/repository/state-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { isGuestInvitationVerifier, isRoomGuestDisplayName } from '@shared/api/room-guests/invitation.ts';
-import { GROUP_RETENTION_METADATA_KEY, toInitialGroupRetentionState } from '@shared/api/group-retention.ts';
+import { isGuestInvitationVerifier, isRoomGuestDisplayName, ROOM_GUEST_LIFETIME_MS } from '@shared/api/room-guests/invitation.ts';
+import { GROUP_RETENTION_METADATA_KEY, readGroupRetentionState, toInitialGroupRetentionState } from '@shared/api/group-retention.ts';
 import { computeSha256CanonicalJson } from '../../../protocol/compute-sha256-canonical-json.ts';
 import type { GroupMutationCommand } from '../group-mutation-contracts.ts';
 import { assertGuestTransport, type GroupGuestAdmission } from './group-guest-admission.ts';
 
-export interface TemporaryRoomCreation {
+export interface TemporaryGroupCreation {
     readonly roomRef: GroupRef;
     readonly principalId: string;
     readonly requestId: string;
@@ -17,7 +18,7 @@ export interface TemporaryRoomCreation {
     readonly displayName?: string;
 }
 
-export function toTemporaryRoomCreationCommand(creation: TemporaryRoomCreation): GroupMutationCommand {
+export function toTemporaryGroupCreationCommand(creation: TemporaryGroupCreation): GroupMutationCommand {
     const retention = toInitialGroupRetentionState({ mode: 'temporary', reconnectGraceMs: creation.emptyReturnWindowMs, pausedTimelineRetentionMs: creation.emptyReturnWindowMs });
     return {
         operation: 'createGroup',
@@ -36,8 +37,8 @@ export function toTemporaryRoomCreationCommand(creation: TemporaryRoomCreation):
     };
 }
 
-export function assertTemporaryRoomCreation(command: GroupMutationCommand): void {
-    if (command.operation !== 'createGroup' || !command.input.temporaryCreator ||
+export function assertTemporaryGroupCreation(command: GroupMutationCommand): void {
+    if (command.operation !== 'createGroup' || !command.requestId || !command.input.temporaryCreator ||
         !/^guest-[a-f0-9]{64}$/.test(command.input.createdByPrincipalId) ||
         !isGuestInvitationVerifier(command.input.temporaryCreator.invitationVerifier) ||
         !isRoomGuestDisplayName(command.input.displayName) ||
@@ -45,5 +46,15 @@ export function assertTemporaryRoomCreation(command: GroupMutationCommand): void
         command.input.kind !== 'room' || command.input.joinMode !== 'invite-only' || command.input.directoryListing !== 'unlisted') {
         throw new TypeError('Temporary guest creation requires a scoped creator and a bounded private room.');
     }
-    assertGuestTransport(command.input.temporaryCreator.guestTransport);
+    const { temporaryCreator, maxMembers } = command.input;
+    const retention = readGroupRetentionState(command.input.metadata);
+    if (maxMembers === null || !Number.isSafeInteger(maxMembers) || maxMembers < 1 || !retention ||
+        retention.reconnectGraceMs > temporaryCreator.lifetimeMs || temporaryCreator.lifetimeMs > ROOM_GUEST_LIFETIME_MS) {
+        throw new TypeError('Guest creation exceeds the supported capacity or lifetime.');
+    }
+    assertGuestTransport(temporaryCreator.guestTransport);
+    const canonical = toTemporaryGroupCreationCommand({ roomRef: command.aggregateRef, principalId: command.input.createdByPrincipalId,
+        requestId: command.requestId, capacity: maxMembers, displayName: command.input.displayName, emptyReturnWindowMs: retention.reconnectGraceMs,
+        lifetimeMs: temporaryCreator.lifetimeMs, invitationVerifier: temporaryCreator.invitationVerifier, guestTransport: temporaryCreator.guestTransport });
+    if (!jsonEquals(command, canonical)) throw new TypeError('Guest creation must use the private player group configuration.');
 }

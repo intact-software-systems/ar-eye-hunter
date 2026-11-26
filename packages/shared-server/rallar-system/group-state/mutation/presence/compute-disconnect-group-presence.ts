@@ -41,7 +41,7 @@ export function computeDisconnectGroupPresence(
     if (disconnectedAt < existing.value.lastHeartbeatAtEpochMs) {
         return noOp(command, read, facts);
     }
-    if (facts.internalAuthority === 'expiry' && readArrivalRetention(group) === null) {
+    if (facts.internalAuthority === 'expiry' && !group.eventRoom && readArrivalRetention(group) === null) {
         return computeGroupPresenceWrite({
             command,
             read,

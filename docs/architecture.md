@@ -477,3 +477,11 @@ The entry-to-result map is:
 
 Shared response decoders serve both durable server results and browser transport. No compatibility
 exports, migration readers or game-owned save payloads are added to operator evidence.
+
+## Temporary multiplayer rooms and events
+
+API-v1 reads temporary-game limits from the application's configuration and issues a room-scoped guest credential on creation. A request replay derives the same room and checks the current admission before returning access. Invitation preview is a read. Joining or transferring management goes through the group mutation service. A management transfer keeps the director appointment independent.
+
+An event uses its lobby's scoped group identity. The room-event AppInbox handler reads the event predecessor, checks the actor, applies the shared queue and court rules, then commits the new event and affected room grants together. The durable deadline worker uses the same transition to expire unclaimed seats and close empty or expired events. Event availability reads include presence in the lobby and its courts.
+
+The browser watches a private event view over the current WebSocket session. On a notice or reconnect it reads the player's authorized snapshot. Entering a court grants a separate room credential to the same player. Removing a player fences both lobby and court access.

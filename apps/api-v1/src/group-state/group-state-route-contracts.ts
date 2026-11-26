@@ -371,6 +371,7 @@ export interface GroupStateRouteScopeContext {
 }
 
 export interface GroupStateRouteDependencies {
+    readonly isEventRoomAvailable: GroupStateRepository['isEventRoomAvailable'];
     readonly readLobbyOccupancy: GroupStateRepository['readLobbyOccupancy'];
     readonly sessionDirectory: Pick<GroupSessionDirectory, 'read' | 'listForPrincipal'>;
     readonly groupStateService: GroupStateRouteService;
@@ -380,7 +381,7 @@ export interface GroupStateRouteDependencies {
     ) => Promise<GroupStateRouteAuthSession>;
     readonly processGroupAppInbox: ProcessGroupAppInbox;
     readonly temporaryRoomPolicies: Readonly<Record<string, TemporaryRoomPolicy>>;
-    readonly processTemporaryRoomCreation: GroupStateInboxService['processTemporaryRoomCreationUntilCompletion'];
+    readonly processTemporaryRoomCreation: GroupStateInboxService['processTemporaryGroupCreationUntilCompletion'];
     readonly processGuestAdmission: GroupStateInboxService['processGuestAdmissionUntilCompletion'];
     readonly processQuickJoin: GroupStateInboxService['processQuickJoinUntilCompletion'];
     readonly processGroupMove: GroupStateInboxService['processGroupMoveUntilCompletion'];

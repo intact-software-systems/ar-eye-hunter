@@ -55,7 +55,7 @@ export function computeEmptyGroupLifetime(
         (holdReleasedAtEpochMs !== null && group.emptySinceEpochMs < holdReleasedAtEpochMs);
     let emptySinceEpochMs = group.emptySinceEpochMs ?? nowEpochMs;
     if (group.temporaryPlayerRoom || paused.length > 0) {
-        emptySinceEpochMs = Math.max(lastPresenceEnd(authority, group, nowEpochMs), holdReleasedAtEpochMs ?? 0);
+        emptySinceEpochMs = Math.max(lastGroupPresenceEnd(authority, group.created.atEpochMs, nowEpochMs), holdReleasedAtEpochMs ?? 0);
     }
     else if (changedObservation) {
         emptySinceEpochMs = Math.max(nowEpochMs, emptySinceEpochMs);
@@ -75,14 +75,18 @@ export function computeEmptyGroupLifetime(
 
 /** Use a recorded disconnect or its admission fence, bounded by the original lease.
  * Presence rows outlive the maximum paused window, so a purged row can no longer hold the room. */
-function lastPresenceEnd(authority: GroupPresenceSummaryStoredRead, group: Group, nowEpochMs: number): number {
+export function lastGroupPresenceEnd(authority: GroupPresenceSummaryStoredRead, since: number, upperBound: number): number {
     const admissions = new Map(authority.admissions.map(({ value }) => [value.principalId, value]));
+    const members = new Map(authority.members.map(({ value }) => [value.principalId, value]));
     return authority.presenceSessions.reduce((last, { value: session }) => {
         const admission = admissions.get(session.principalId);
+        const member = members.get(session.principalId);
+        const membershipEnd = member?.removed?.atEpochMs ?? member?.left?.atEpochMs ?? member?.banned?.atEpochMs;
         const revokedAt = isExactlyAdmitted(admission, session) ? null : admission?.updatedAtEpochMs;
-        const departedAt = session.disconnectedAtEpochMs ?? revokedAt ?? session.expiresAtEpochMs;
-        return Math.max(last, Math.min(session.expiresAtEpochMs, departedAt, nowEpochMs));
-    }, group.created.atEpochMs);
+        const departedAt = Math.min(session.disconnectedAtEpochMs ?? upperBound, revokedAt ?? upperBound, membershipEnd ?? upperBound,
+            member?.guestLease?.expiresAtEpochMs ?? upperBound);
+        return Math.max(last, Math.min(session.expiresAtEpochMs, departedAt, upperBound));
+    }, since);
 }
 
 function computePresenceFingerprint(authority: GroupPresenceSummaryStoredRead): string {

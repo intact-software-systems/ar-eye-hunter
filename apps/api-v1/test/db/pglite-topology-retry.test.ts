@@ -137,6 +137,7 @@ test(
             const createRouteApp = (service: TopologyInboxService) => {
                 const app = createTracedApiTestApp();
                 graphTopologyRoutes.registerGraphTopologyRoutes(app, {
+        isEventRoomAvailable: async () => { throw new Error('Unexpected event availability read'); },
                     strictReadAuthorization: false,
                     groupStateService: {
                         readCurrentSnapshot: (ref) => groupRepository.readSnapshot(ref)

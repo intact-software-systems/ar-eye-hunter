@@ -38,6 +38,7 @@ export const TEST_GROUP_SCOPE: StateScope = {
 };
 
 export interface GroupStateRouteTestRuntimeInput {
+    readonly isEventRoomAvailable?: GroupStateRouteDependencies['isEventRoomAvailable'];
     readonly readLobbyOccupancy?: GroupStateRouteDependencies['readLobbyOccupancy'];
     readonly session?: AuthSession & GroupStateRouteAuthSession;
     readonly groupDefaultMaxMembers?: number | null;
@@ -108,6 +109,7 @@ export function createGroupStateRouteTestDependencies(
     const session = input.session ?? createGroupStateRouteAuthSession('alice');
     const requireApiAuthSession = input.requireApiAuthSession ?? (() => Promise.resolve(session));
     return {
+        isEventRoomAvailable: input.isEventRoomAvailable ?? (() => Promise.reject(new Error('Unexpected event availability read'))),
         readLobbyOccupancy: input.readLobbyOccupancy ?? (() => Promise.reject(new Error('Unexpected lobby occupancy read'))),
         groupStateService: createGroupStateRouteService(input.groupService),
         sessionDirectory: {

@@ -1,3 +1,5 @@
+import { authorizationDenied } from '@shared-server/http/request-auth-service.ts';
+import { availableGuestSnapshot } from '@shared-server/http/available-guest-snapshot.ts';
 import { readRoomGuestRequest, assertRoomGuestSeat } from '@shared-server/http/room-guest-request.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type {
@@ -89,6 +91,7 @@ export interface GraphTopologyRoutePlanning {
 }
 
 export interface GraphTopologyRouteDependencies {
+    readonly isEventRoomAvailable: import('../group-state/group-state-route-contracts.ts').GroupStateRouteDependencies['isEventRoomAvailable'];
     readonly groupStateService: GraphTopologyGroupStateService;
     readonly graphDiagnostics: GraphTopologyRouteGraphDiagnostics;
     readonly topologyQuery: GraphTopologyRouteQuery;
@@ -160,7 +163,10 @@ export function registerGraphTopologyRoutes(
                 const groupRef = toGroupRef(c);
                 const guest = await readRoomGuestRequest(c.req, groupRef);
                 const snapshot = await readCurrentGroupSnapshot(groupRef, deps);
-                if (guest) assertRoomGuestSeat(guest, snapshot, deps.now());
+                if (guest) {
+                    if (!await availableGuestSnapshot(snapshot, deps.now(), deps.isEventRoomAvailable)) throw authorizationDenied('Event access has ended.');
+                    assertRoomGuestSeat(guest, snapshot, deps.now());
+                }
                 else await assertCanReadGroupSnapshot(c.req, deps, snapshot);
                 return c.json(await deps.topologyQuery.readTopologyView(groupRef));
             }

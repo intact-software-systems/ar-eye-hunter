@@ -1,3 +1,4 @@
+import type { ApiV1ConfigurationSourceValue } from '../../src/configuration/decode-api-v1-configuration-source.ts';
 import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import { decodeApiV1Configuration } from '../../src/configuration/decode-api-v1-configuration.ts';
@@ -19,5 +20,15 @@ test('temporary rooms require an application opt-in and resolve bounded per-app 
         assert.throws(() => decodeApiV1Configuration({ ...input, environmentSource: {
             group: { temporaryRoomPoliciesByApplication: { league: invalid } }
         } }));
+    }
+});
+
+test('event organizers can be granted authority per application', () => {
+    const input = validDecodeApiV1ConfigurationInput();
+    const decode = (grants: ApiV1ConfigurationSourceValue) => decodeApiV1Configuration({ ...input,
+        environmentSource: { group: { eventOrganizerIdsByApplication: grants } } }).group;
+    assert.deepEqual(decode({ league: ['official'] }).eventOrganizerIdsByApplication, { league: ['official'] });
+    for (const invalid of [{ league: 'official' }, { league: ['invalid/id'] }, { league: ['official', 'official'] }]) {
+        assert.throws(() => decode(invalid));
     }
 });

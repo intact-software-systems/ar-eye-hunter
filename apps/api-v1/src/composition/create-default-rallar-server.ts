@@ -1,3 +1,5 @@
+import { TemporaryEventService } from '@shared-server/rallar-system/room-events/temporary-event-service.ts';
+import { EventRoomAccessEffects } from '@shared-server/rallar-system/room-events/event-room-access-effects.ts';
 import type { Hono } from 'hono';
 import type { FriendsRouteDependencies } from '../friends/register-friends-routes.ts';
 import type { MatchmakingRouteDependencies } from '../matchmaking/register-matchmaking-routes.ts';
@@ -351,6 +353,16 @@ function createDefaultApiV1RestServices(rest: DefaultApiV1RestInput) {
         serviceId: myServerId,
         timing: toTimingOnSink(configuration.observability, timing)
     });
+    const eventGroups = runtime.topologyServices.groupStateRepository;
+    const eventConfig = { serviceId: myServerId, finishedRetentionMs: configuration.appInbox.finishedRetentionMs,
+        organizerIdsByApplication: configuration.group.eventOrganizerIdsByApplication,
+        organizerIds: configuration.authentication.adminClientIds };
+    const roomEvents = new TemporaryEventService({
+        appInbox: runtime.appInbox, runtime: runtimeStateRepository, groups: eventGroups, authSessions: runtime.authSessionRepository,
+        roomAccess: new EventRoomAccessEffects({ ...eventConfig, groups: eventGroups, sessions: runtime.authSessionRepository }),
+        nowEpochMs
+    }, eventConfig);
+    roomEvents.listen({ database: input.databaseLifecycle.database, outboxQueueReader: runtime.outboxQueueReader });
     const tournaments = createApiV1TournamentServices({
         configuration,
         runtime,
@@ -374,6 +386,7 @@ function createDefaultApiV1RestServices(rest: DefaultApiV1RestInput) {
         crdtAdminMutations,
         friends,
         matchmaking,
+        roomEvents,
         tournaments,
         parties,
         authUserRepository,
@@ -390,6 +403,7 @@ interface DefaultApiV1RouteInstallersInput {
     readonly authUserRepository: AuthUserRepository;
     readonly friends: Omit<FriendsRouteDependencies, 'requireSession'>;
     readonly matchmaking: Omit<MatchmakingRouteDependencies, 'requireSession'>;
+    readonly roomEvents: TemporaryEventService;
     readonly tournaments: Omit<TournamentRouteDependencies, 'requireSession'>;
     readonly parties: Omit<PartyRouteDependencies, 'requireSession'>;
     readonly nowEpochMs: () => number;
@@ -403,6 +417,7 @@ function createDefaultApiV1RouteInstallers({
     crdtAdminMutations,
     friends,
     matchmaking,
+    roomEvents,
     tournaments,
     parties,
     authUserRepository,
@@ -417,6 +432,7 @@ function createDefaultApiV1RouteInstallers({
         crdtMutations: crdtAdminMutations,
         friends,
         matchmaking,
+        roomEvents,
         tournaments,
         parties,
         authUserRepository,

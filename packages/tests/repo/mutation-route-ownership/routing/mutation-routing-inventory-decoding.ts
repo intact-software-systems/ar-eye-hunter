@@ -1,4 +1,4 @@
-import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { isAppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 
 import type { MutationRouteInventoryEntry } from './mutation-routing-inventory.ts';
 import { MUTATION_ROUTE_OWNER_DISPATCH_PATHS, MUTATION_ROUTE_OWNER_PATHS, type MutationRouteInventoryRow } from './mutation-routing-owner-inventory.ts';
@@ -9,7 +9,10 @@ const PATHS = {
     groupMove: 'apps/api-v1/src/group-state/register-group-move-routes.ts',
     groupMoveDeadline: 'packages/shared-server/rallar-system/group-state/move/group-move-inbox.ts',
     clientMutations: 'apps/api-v1/src/routes/client-state-mutation-routes.ts',
-    guestRedemption: 'apps/api-v1/src/group-state/register-room-guest-redemption-route.ts',
+    eventInbox: 'packages/shared-server/rallar-system/room-events/temporary-event-service.ts',
+    eventRoutes: 'apps/api-v1/src/room-events/register-room-event-routes.ts',
+    temporaryCreation: 'apps/api-v1/src/group-state/guests/register-temporary-room-routes.ts',
+    guestRedemption: 'apps/api-v1/src/group-state/guests/register-room-guest-redemption-route.ts',
     groupAdmission: 'apps/api-v1/src/group-state/register-group-admission-routes.ts',
     groupMembership: 'apps/api-v1/src/group-state/register-group-membership-routes.ts',
     groupPresence: 'apps/api-v1/src/group-state/register-group-presence-routes.ts',
@@ -75,7 +78,7 @@ function toMutationRouteInventoryEntry(
         ownerSource: row.ownerSource,
         typeOwnerSource: row.typeOwnerSource
     });
-    const appInboxType = Object.values(AppInboxType).find((candidate) => candidate === row.type);
+    const appInboxType = isAppInboxType(row.type) ? row.type : undefined;
     if (
         !sourcePath ||
         !enqueueSourcePath ||

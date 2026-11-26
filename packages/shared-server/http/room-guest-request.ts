@@ -9,6 +9,7 @@ import type { IssuedAuthSession } from '../rallar-system/auth/persistence/auth-s
 import { authenticationRequired, authorizationDenied } from './request-auth-service.ts';
 
 export interface RoomGuestRequest {
+    readonly courtClaim?: true;
     readonly roomRef: GroupRef;
     readonly clientId: string;
     readonly sessionId: string;
@@ -40,6 +41,8 @@ export function resolveRoomGuestSeat(
     nowEpochMs: number
 ): 'room' | 'finish-round' | 'expired' {
     const member = snapshot.members.find((candidate) => candidate.principalId === guest.clientId);
+    const courtSessionId = member?.guestLease?.courtSessionId;
+    if ((guest.courtClaim || courtSessionId !== undefined) && guest.sessionId !== courtSessionId) return 'expired';
     return member && isSameGroupRef(snapshot.group, guest.roomRef) && isSameGroupRef(member, guest.roomRef)
         ? roomGuestAccessMode(snapshot.group, member, nowEpochMs)
         : 'expired';

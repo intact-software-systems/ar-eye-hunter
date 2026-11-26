@@ -380,7 +380,7 @@ export function computeUpsertMember(
 }
 
 /** A departure deletes the target's grant row in its own batch, so a rejoin never finds it again (D485). */
-function computeDepartureGrantEffects(
+export function computeDepartureGrantEffects(
     read: GroupMutationRead,
     member: GroupMember
 ): readonly GroupPublicationGrantEffect[] {
@@ -394,7 +394,7 @@ function computeDepartureGrantEffects(
  * The target's rows survive only while it stays an active member across the write: a departure deletes them, and an
  * activation deletes any orphan a cross-server race left, so a rejoin never revives an old subscription.
  */
-function computeMembershipSubscriptionEffects(
+export function computeMembershipSubscriptionEffects(
     ref: GroupRef,
     read: GroupMutationRead,
     member: GroupMember

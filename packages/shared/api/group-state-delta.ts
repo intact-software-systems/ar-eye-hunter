@@ -1,3 +1,4 @@
+import { validatedRoomEventFields } from './room-events/room-event-binding.ts';
 import { assertRoomGuestManager, validatedRoomGuestFields, hasValidRoomGuestLease } from './room-guests/invitation.ts';
 import {
     validateAuthoritativeActiveGroupSession,
@@ -180,7 +181,7 @@ function validateDeltaGroup(
 ): Readonly<{ activeMemberCount: number; status: string; temporaryPlayerRoom: boolean; }> {
     const label = 'GroupStateDeltaEnvelope.group';
     const group = decodeRecord(value, label);
-    exact(group, [...GROUP_KEYS, ...validatedRoomGuestFields(group)], label);
+    exact(group, [...GROUP_KEYS, ...validatedRoomGuestFields(group), ...validatedRoomEventFields(group)], label);
     sameGroupRef(group, ref, label);
     nullableString(group.slug, `${label}.slug`);
     nonEmptyString(group.displayName, `${label}.displayName`);

@@ -183,6 +183,12 @@ function findMaintenanceHandlers({
     item,
     program
 }: Pick<FindRegisteredHandlersInput, 'item' | 'program'>): readonly MutationRoutingAstNode[] {
+    if (item.registrationMarker === 'installDurableDeadline') {
+        const delivery = findCall(program, item.registrationMarker, () => true);
+        const options = delivery && decodeAstNodes(delivery.arguments)[0];
+        const enqueue = options && readObjectCallback(options, 'enqueue');
+        return enqueue ? [enqueue] : [];
+    }
     const named = findFunctionLikes(program, item.registrationMarker);
     if (named.length > 0) {
         return named;
@@ -303,10 +309,12 @@ function hasOwnerDispatch({
     matchesMarker,
     loadProgram
 }: HasOwnerDispatchInput): boolean {
-    const calls = findAll(
-        program,
-        (node) => node.type === 'CallExpression' && readMemberName(decodeAstNode(node.callee)) === 'registerHandler'
-    );
+    const application = type.startsWith('app:');
+    const calls = findAll(program, node => {
+        if (node.type !== 'CallExpression') return false;
+        const callee = decodeAstNode(node.callee);
+        return application ? readMemberPath(callee).endsWith('.appInbox.register') : readMemberName(callee) === 'registerHandler';
+    });
     return calls.some((call) => {
         const registration = decodeAstNodes(call.arguments)[0];
         if (registration?.type !== 'ObjectExpression') {
@@ -314,8 +322,8 @@ function hasOwnerDispatch({
         }
         const typeArgument = readObjectPropertyValue(registration, 'type');
         const handler = readObjectCallback(registration, 'handle');
-        const exactType = matchesMarker(typeArgument ?? call, `AppInboxType.${type}`);
-        const loopType = !!typeArgument &&
+        const exactType = matchesMarker(typeArgument ?? call, application ? `'${type}'` : `AppInboxType.${type}`);
+        const loopType = !application && !!typeArgument &&
             hasLiveAppInboxRegistration(program, filePath, call, typeArgument, type, loadProgram);
         if (!handler || (!exactType && !loopType)) {
             return false;

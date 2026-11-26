@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { fileURLToPath } from 'node:url';
 
 test('retrying a lost private game creation recovers its room and working invitation', async ({ page, browser }) => {
     let committedRoom: string | undefined;
@@ -31,9 +32,9 @@ test('retrying a lost private game creation recovers its room and working invita
     }
 });
 
-test('four fresh browsers play a private round and rematch without an account', async ({ browser }) => {
+test('four fresh browsers play a private round, replace a disconnected director and rematch without an account', async ({ browser }) => {
     test.setTimeout(420_000);
-    const contexts = await Promise.all(Array.from({ length: 4 }, () => browser.newContext()));
+    const contexts = await Promise.all(Array.from({ length: 4 }, () => browser.newContext({ viewport: { width: 390, height: 844 } })));
     try {
         const [creator, ...friends] = await Promise.all(contexts.map(context => context.newPage()));
         const accountCalls: string[] = [];
@@ -53,20 +54,48 @@ test('four fresh browsers play a private round and rematch without an account', 
             await friend.getByRole('button', { name: 'Join this town' }).click();
             await expect(friend.getByRole('button', { name: 'Ready', exact: true })).toBeEnabled({ timeout: 25_000 });
         }
-        const players = [creator, ...friends];
+        let players = [creator, ...friends];
+        let director = creator;
         let previousRound: string | null = null;
         for (let round = 0; round < 2; round++) {
             for (const player of players) await player.getByRole('button', { name: 'Ready', exact: true }).click();
-            await creator.getByRole('button', { name: 'Start round' }).click();
+            await director.getByRole('button', { name: 'Start round' }).click();
             for (const player of players) {
                 await expect(player.locator('#online-game')).toHaveAttribute('data-phase', 'playing', { timeout: 25_000 });
             }
-            const matchId = await creator.locator('#online-game').getAttribute('data-match-id');
+            const matchId = await director.locator('#online-game').getAttribute('data-match-id');
             expect(matchId).toBeTruthy();
             for (const friend of friends) await expect(friend.locator('#online-game')).toHaveAttribute('data-match-id', matchId!);
             if (round === 0) {
                 previousRound = matchId;
-                await creator.getByRole('button', { name: 'New round' }).click({ timeout: 240_000 });
+                const managerTarget = await creator.locator('#sharing [data-action=handover]').first().getAttribute('data-principal');
+                const groupId = new URLSearchParams(new URL(invitation).hash.slice(1)).get('room');
+                expect(managerTarget && groupId).toBeTruthy();
+                await creator.evaluate(async ({ sdk, managerTarget, groupId }) => {
+                    const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(sdk);
+                    await rallar.rooms.transferOwnership({ applicationId: 'grumpy-town', workspaceId: 'default', groupId }, managerTarget);
+                }, { sdk: '/@fs' + fileURLToPath(new URL('../../../packages/shared-web/browser/rallar.ts', import.meta.url)),
+                    managerTarget: managerTarget!, groupId: groupId! });
+                await expect(creator.locator('#sharing [data-action=handover]')).toHaveCount(0);
+                const savedVisitUrl = creator.url();
+                await creator.close();
+                await expect.poll(async () => {
+                    for (const friend of friends) {
+                        if (await friend.locator('#online-game').getAttribute('data-director') === 'true') {
+                            director = friend;
+                            return true;
+                        }
+                    }
+                    return false;
+                }, { timeout: 40_000 }).toBe(true);
+                const returning = await contexts[0].newPage();
+                await returning.goto(savedVisitUrl);
+                await expect(returning.locator('#online-game')).toHaveAttribute('data-phase', 'playing', { timeout: 40_000 });
+                await expect(returning.locator('#online-game')).toHaveAttribute('data-director', 'false');
+                await expect(returning.locator('#online-game')).toHaveAttribute('data-match-id', matchId!);
+                await expect(returning.locator('#sharing [data-action=handover]')).toHaveCount(0);
+                players = [returning, ...friends];
+                await director.getByRole('button', { name: 'New round' }).click({ timeout: 300_000 });
             } else {
                 expect(matchId).not.toBe(previousRound);
             }

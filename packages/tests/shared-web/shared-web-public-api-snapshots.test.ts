@@ -920,6 +920,10 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
         }
     },
     {
+        filePath: 'packages/shared-web/browser/rooms/events/rallar-room-event.ts',
+        expected: { values: ['RallarRoomEvent'], types: [], starExports: [], namespaceExports: [] }
+    },
+    {
         filePath: 'packages/shared-web/browser/rooms/entry/temporary-room-creation.ts',
         expected: { values: ['TemporaryRoomCreation', 'previewRoomGuestInvitation'], types: [], starExports: [], namespaceExports: [] }
     },

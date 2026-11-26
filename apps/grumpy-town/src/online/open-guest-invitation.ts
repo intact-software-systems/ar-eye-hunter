@@ -1,12 +1,11 @@
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
-import { createRoomGuestSecret, redeemRoomGuestInvitation } from '@shared-web/browser/rooms/entry/redeem-guest-invitation.ts';
-import { previewRoomGuestInvitation } from '@shared-web/browser/rooms/entry/temporary-room-creation.ts';
-import { findStateGroup } from '@shared-web/browser/state-read/state-snapshot-http-api.ts';
-import { hashRoomInvitationSecret, isGuestInvitationVerifier } from '@shared/api/room-guests/invitation.ts';
+import { isGuestInvitationVerifier } from '@shared/api/room-guests/invitation.ts';
 
-import { forgetGuestVisit, guestVisitUrl, readGuestVisit, saveGuestVisit, type GuestVisit } from './guest-visit.ts';
-import { GRUMPY_TOWN_SCOPE, townApiBaseUrl } from './town-server.ts';
+import { forgetGuestVisit, readGuestVisit, type GuestVisit } from './guest-visit.ts';
+import { enterTownInvitation } from './enter-town-invitation.ts';
+import { previewTownInvitation } from './preview-town-invitation.ts';
+import { townApiBaseUrl } from './town-server.ts';
 
 const nicknames = [
     'Captain Cabbage',
@@ -64,20 +63,8 @@ export function openGuestInvitation(root: HTMLElement, signal: AbortSignal): voi
         void enter();
     }
     else if (valid && room && invitationSecret) {
-        void previewRoomGuestInvitation({ ...GRUMPY_TOWN_SCOPE, groupId: room }, invitationSecret, signal)
-            .then(preview => {
-                if (signal.aborted) return;
-                root.querySelector('#availability')!.textContent = preview.availableSeats === null
-                    ? 'Seats available' : preview.availableSeats === 0
-                    ? 'Town is full. Try again when a seat opens.' : `${preview.availableSeats} of ${preview.capacity} seats available`;
-                join.hidden = false;
-            })
-            .catch(error => {
-                if (signal.aborted) return;
-                const denied = error instanceof ApiHttpError && [400, 401, 403, 404].includes(error.status);
-                message.textContent = denied ? 'Ask the owner for a fresh invitation.' : 'Could not check availability. Try joining.';
-                join.hidden = denied;
-            });
+        void previewTownInvitation({ room, invitationSecret, signal, join, message,
+            availability: root.querySelector<HTMLElement>('#availability')! });
     }
     else {
         message.textContent = 'Ask the town owner for a fresh invitation.';
@@ -88,47 +75,15 @@ export function openGuestInvitation(root: HTMLElement, signal: AbortSignal): voi
         shuffle.disabled = true;
         message.textContent = '';
         try {
-            if ((!visit || !('access' in visit)) && room && invitationSecret && valid) {
-                const invitationVerifier = await hashRoomInvitationSecret(invitationSecret);
-                const previous = visit && 'guestSecret' in visit ? visit : undefined;
-                const pending = previous?.invitationVerifier === invitationVerifier ? previous : {
-                    room, invitationVerifier, nickname: output.value,
-                    requestId: crypto.randomUUID(), guestSecret: previous?.guestSecret ?? createRoomGuestSecret()
-                };
-                saveGuestVisit(pending);
-                visit = pending;
-                const access = await redeemRoomGuestInvitation({ ...GRUMPY_TOWN_SCOPE, groupId: room }, {
-                    invitationSecret, guestSecret: pending.guestSecret, displayName: pending.nickname
-                }, { requestId: pending.requestId, signal });
-                if (signal.aborted) {
-                    return;
-                }
-                visit = { room, nickname: pending.nickname, access };
-                saveGuestVisit(visit);
-            }
-            if (!visit || !('access' in visit)) {
-                return;
-            }
-            const snapshot = await findStateGroup(visit.room, GRUMPY_TOWN_SCOPE, {
-                authSession: { ...visit.access, username: visit.nickname }, signal
-            });
-            if (signal.aborted) {
-                return;
-            }
-            const diagnostics = new URLSearchParams(location.search).get('diagnostics') === '1';
-            const returnUrl = guestVisitUrl(visit.room);
-            if (diagnostics) returnUrl.searchParams.set('diagnostics', '1');
-            history.replaceState(history.state, '', returnUrl);
-            const { openGuestMatch } = await import('./open-guest-match.ts');
-            if (!signal.aborted) {
-                openGuestMatch({ root, visit, snapshot, pageSignal: signal });
-            }
+            if (room) await enterTownInvitation({ room, invitationSecret: valid ? invitationSecret : null,
+                nickname: output.value, visit, root, signal });
         }
         catch (error) {
             if (signal.aborted) {
                 return;
             }
             const failure = describeGuestEntryFailure(error instanceof ApiHttpError ? error : undefined, valid);
+            if (room) visit = readGuestVisit(room);
             if (failure.clearVisit) {
                 visit = undefined;
                 if (room) forgetGuestVisit(room);

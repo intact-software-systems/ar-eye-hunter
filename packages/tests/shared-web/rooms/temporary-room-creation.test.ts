@@ -20,7 +20,7 @@ it('recovers the original invitation, identity proof and creation request after 
             original = { url, body: String(init.body) };
             throw new TypeError('response lost');
         }
-        expect({ url, body: init.body }).toEqual(original);
+        expect(url === original.url && init.body === original.body).toBe(true);
         return Response.json({ room, access });
     });
     await expect(new TemporaryRoomCreation(room, browserStorage).start({ displayName: 'Guest', capacity: 6 })).rejects.toThrow('response lost');
@@ -30,9 +30,9 @@ it('recovers the original invitation, identity proof and creation request after 
     const proof = JSON.parse(original!.body);
     expect(proof.invitationVerifier).toBe(await hashRoomInvitationSecret(created.invitationSecret));
     expect(proof.capacity).toBe(6);
-    expect(proof.guestSecret).not.toBe(created.invitationSecret);
-    expect(original!.url).not.toContain(proof.guestSecret);
-    expect(original!.body).not.toContain(created.invitationSecret);
+    expect(proof.guestSecret === created.invitationSecret).toBe(false);
+    expect(original!.url.includes(proof.guestSecret)).toBe(false);
+    expect(original!.body.includes(created.invitationSecret)).toBe(false);
 });
 
 it('refuses a creation response from a different workspace', async () => {
@@ -64,4 +64,33 @@ it('allows a new creation after the server definitively denies recovery of an ex
     const creation = new TemporaryRoomCreation(room, browserStorage);
     await expect(creation.start({})).rejects.toThrow();
     await expect(creation.start({})).resolves.toMatchObject({ room });
+});
+
+it('a late denial from another tab does not discard the proof for a newer pending game', async () => {
+    let rejectOld: (() => void) | undefined;
+    let calls = 0;
+    let latestPath: string | undefined;
+    vi.stubGlobal('fetch', async (url: string) => {
+        calls++;
+        if (calls === 1) return await new Promise<Response>(resolve => {
+            rejectOld = () => resolve(new Response(null, { status: 403 }));
+        });
+        if (calls === 2) return Response.json({ room, access });
+        if (calls === 3) {
+            latestPath = url;
+            throw new TypeError('response lost');
+        }
+        expect(url === latestPath).toBe(true);
+        return Response.json({ room, access });
+    });
+    const firstTab = new TemporaryRoomCreation(room, browserStorage);
+    const secondTab = new TemporaryRoomCreation(room, browserStorage);
+    const old = firstTab.start({});
+    await vi.waitFor(() => expect(rejectOld).toBeDefined());
+    await secondTab.start({});
+    secondTab.clear();
+    await expect(secondTab.start({})).rejects.toThrow('response lost');
+    rejectOld!();
+    await expect(old).rejects.toThrow();
+    await expect(secondTab.start({})).resolves.toMatchObject({ room });
 });

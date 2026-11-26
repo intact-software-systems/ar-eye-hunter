@@ -2,11 +2,11 @@ import type { toRoomGuestCredential } from '@shared-server/rallar-system/auth/cr
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { roomGuestAccessMode } from '@shared/api/room-guests/access.ts';
 import type { RoomGuestAccess } from '@shared/api/room-guests/invitation.ts';
-import { ApiMutationRouteFailure, createApiMutationFailure } from '../routes/api-mutation-route-failure.ts';
-import type { GroupStateRouteDependencies } from './group-state-route-contracts.ts';
+import { ApiMutationRouteFailure, createApiMutationFailure } from '../../routes/api-mutation-route-failure.ts';
+import type { GroupStateRouteDependencies } from '../group-state-route-contracts.ts';
 
 export async function readAdmittedGuestAccess(
-    dependencies: Pick<GroupStateRouteDependencies, 'groupStateService' | 'nowEpochMs'>,
+    dependencies: Pick<GroupStateRouteDependencies, 'groupStateService' | 'isEventRoomAvailable' | 'nowEpochMs'>,
     roomRef: GroupRef,
     credential: Awaited<ReturnType<typeof toRoomGuestCredential>>
 ): Promise<RoomGuestAccess> {
@@ -14,7 +14,8 @@ export async function readAdmittedGuestAccess(
     const current = await dependencies.groupStateService.readCurrentSnapshot(roomRef);
     const now = dependencies.nowEpochMs();
     const member = current?.members.find(candidate => candidate.principalId === credential.clientId);
-    if (!current || !member?.guestLease || roomGuestAccessMode(current.group, member, now) === 'expired') {
+    if (!current || !member?.guestLease ||
+        (current.group.eventRoom && !await dependencies.isEventRoomAvailable(current.group, now)) || roomGuestAccessMode(current.group, member, now) === 'expired') {
         throw new ApiMutationRouteFailure(createApiMutationFailure({
             code: 'guest-access-ended', status: 403, message: 'Guest access to this room has ended.'
         }));

@@ -38,7 +38,7 @@ import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { GroupMutationAuthorizationError } from '../group-mutation-authority.ts';
 import type { AuthorizedGroupMutation, GroupStateService, GroupStateWritten } from '../group-state-service-contracts.ts';
 import type { GroupMutationCommand } from '../mutation/group-mutation-contracts.ts';
-import { toTemporaryRoomCreationCommand, type TemporaryRoomCreation } from '../mutation/membership/temporary-room-creation.ts';
+import { toTemporaryGroupCreationCommand, type TemporaryGroupCreation } from '../mutation/membership/temporary-group-creation.ts';
 import { toGroupGuestAdmissionCommand, type GroupGuestAdmission } from '../mutation/membership/group-guest-admission.ts';
 import type { GroupMoveDeadline } from '../move/group-move-deadline.ts';
 import {
@@ -287,10 +287,10 @@ export class GroupStateInboxService {
         return await this.processGuestCommand(toGroupGuestAdmissionCommand(input), input.traceId);
     }
 
-    async processTemporaryRoomCreationUntilCompletion(
-        input: TemporaryRoomCreation & Readonly<{ traceId: string }>
+    async processTemporaryGroupCreationUntilCompletion(
+        input: TemporaryGroupCreation & Readonly<{ traceId: string }>
     ): Promise<Either<AppInboxFailure, GroupStateWritten>> {
-        return await this.processGuestCommand(toTemporaryRoomCreationCommand(input), input.traceId);
+        return await this.processGuestCommand(toTemporaryGroupCreationCommand(input), input.traceId);
     }
 
     private async processGuestCommand(command: GroupMutationCommand, traceId: string): Promise<Either<AppInboxFailure, GroupStateWritten>> {

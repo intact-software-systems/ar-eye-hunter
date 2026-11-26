@@ -1,3 +1,4 @@
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
@@ -21,11 +22,11 @@ export async function proveTemporaryRoomCreation(first: string, second: string):
     };
     const firstResponse = await postGuestRequest(first, path, body);
     assert.equal(firstResponse.status, 200, 'Fresh browser creates a room without account authentication');
-    const original: unknown = await firstResponse.json();
+    const original: ApiJsonValue = await firstResponse.json();
     assert.ok(isTemporaryRoomAdmission(original));
     const retry = await postGuestRequest(second, path, body);
     assert.equal(retry.status, 200);
-    const replay: unknown = await retry.json();
+    const replay: ApiJsonValue = await retry.json();
     assert.ok(isTemporaryRoomAdmission(replay));
     assert.equal(replay.room.groupId, original.room.groupId);
     assert.equal(replay.access.clientId, original.access.clientId);

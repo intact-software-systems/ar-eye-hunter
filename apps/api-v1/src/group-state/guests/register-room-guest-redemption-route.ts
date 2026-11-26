@@ -3,11 +3,11 @@ import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/ha
 import { toRoomGuestCredential } from '@shared-server/rallar-system/auth/credentials/room-guest-credential.ts';
 import { readAdmittedGuestAccess } from './read-admitted-guest-access.ts';
 import { hashRoomInvitationSecret, isGuestInvitationVerifier, isRoomGuestDisplayName, type RoomGuestRedemption } from '@shared/api/room-guests/invitation.ts';
-import { toApiMutationRouteFailure } from '../routes/api-mutation-route-failure.ts';
-import { readApiRequestTraceId } from '../services/read-api-request-trace-id.ts';
-import { toGroupStateRouteScope, type GroupStateRouteDependencies } from './group-state-route-contracts.ts';
-import { toGroupMutationErrorResponse } from './group-state-route-errors.ts';
-import { readGroupStateRouteRequest, type GroupStateRouteRequestContext } from './read-group-state-route-request.ts';
+import { toApiMutationRouteFailure } from '../../routes/api-mutation-route-failure.ts';
+import { readApiRequestTraceId } from '../../services/read-api-request-trace-id.ts';
+import { toGroupStateRouteScope, type GroupStateRouteDependencies } from '../group-state-route-contracts.ts';
+import { toGroupMutationErrorResponse } from '../group-state-route-errors.ts';
+import { readGroupStateRouteRequest, type GroupStateRouteRequestContext } from '../read-group-state-route-request.ts';
 
 export function registerRoomGuestRedemptionRoute(app: Hono, dependencies: GroupStateRouteDependencies): void {
     app.post('/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/guests/requests/:requestId', async context => {

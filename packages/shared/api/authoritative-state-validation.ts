@@ -1,3 +1,4 @@
+import { hasOffCourtOrganizer, validatedRoomEventFields } from './room-events/room-event-binding.ts';
 import { assertRoomGuestManager, validatedRoomGuestFields, hasValidRoomGuestLease } from './room-guests/invitation.ts';
 import { decodeRoomLobbyPolicy, ROOM_LOBBY_METADATA_KEY } from './room-lobbies/room-lobby-policy.ts';
 import type { ApiJsonValue } from './api-json-value.ts';
@@ -416,7 +417,7 @@ export function validateAuthoritativeGroupSnapshot(
     const causal = causalRevision(snapshot.causalRevision, 'GroupSnapshot.causalRevision');
     positiveInteger(causal.groupRevision, 'GroupSnapshot.causalRevision.groupRevision');
     const group = decodeRecord(snapshot.group, 'GroupSnapshot.group');
-    exact(group, [...GROUP_KEYS, ...validatedRoomGuestFields(group)], 'GroupSnapshot.group');
+    exact(group, [...GROUP_KEYS, ...validatedRoomGuestFields(group), ...validatedRoomEventFields(group)], 'GroupSnapshot.group');
     const ref = groupRef(group, 'GroupSnapshot.group', scope);
     enumValue(group.status, ['active', 'archived', 'deleted'], 'GroupSnapshot.group.status');
     enumValue(group.kind, ['party', 'room', 'team', 'custom'], 'GroupSnapshot.group.kind');
@@ -524,7 +525,7 @@ export function validateAuthoritativeGroupSnapshot(
     const memberIds = new Set<string>();
     const activeMemberIds = new Set<string>();
     const activeOwnerIds = new Set<string>();
-    let playerCount = 0;
+    let playerCount = -Number(hasOffCourtOrganizer(group));
     for (const item of members) {
         validateGroupMember(item, ref);
         const member = decodeRecord(item, 'GroupSnapshot.member');

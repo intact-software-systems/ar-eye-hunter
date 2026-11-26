@@ -4,7 +4,7 @@ import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/ha
 import { toRoomGuestCredential } from '@shared-server/rallar-system/auth/credentials/room-guest-credential.ts';
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import { toGroupGuestAdmissionCommand } from '@shared-server/rallar-system/group-state/mutation/membership/group-guest-admission.ts';
-import { toTemporaryRoomCreationCommand } from '@shared-server/rallar-system/group-state/mutation/membership/temporary-room-creation.ts';
+import { toTemporaryGroupCreationCommand } from '@shared-server/rallar-system/group-state/mutation/membership/temporary-group-creation.ts';
 import { commitMutation, createRetentionDatabaseFixture, requireMutationWrite, RETENTION_REF, retryMutation } from '../retention/group-retention-database-fixture.ts';
 
 const invitationVerifier = '1'.repeat(64);
@@ -24,7 +24,7 @@ it('transfers room management to a present guest exactly once and rejects the fo
         for (const player of [owner, successor]) {
             const common = { roomRef: RETENTION_REF, principalId: player.clientId, requestId: player.clientId, invitationVerifier,
                 guestTransport: { sessionId: player.sessionId, accessTokenDigest: await hashAuthSecret(player.accessToken) } };
-            const command = player === owner ? toTemporaryRoomCreationCommand({ ...common, capacity: 2, lifetimeMs: 3_600_000, emptyReturnWindowMs: 30_000 })
+            const command = player === owner ? toTemporaryGroupCreationCommand({ ...common, capacity: 2, lifetimeMs: 3_600_000, emptyReturnWindowMs: 30_000 })
                 : toGroupGuestAdmissionCommand(common);
             const ingress = await fixture.mutations.captureGuestMembershipMutationIngress(command, now);
             await commitMutation(fixture, requireMutationWrite(await retryMutation(fixture, ingress)));

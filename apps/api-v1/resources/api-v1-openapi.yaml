@@ -1241,6 +1241,62 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/event:
+    get:
+      tags: [Group State]
+      summary: Recover this player's event queue and court assignment
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/XRequestId'
+      responses:
+        '200':
+          description: Actor-specific view, or null when this lobby has no event.
+          headers:
+            x-request-id: { $ref: '#/components/headers/XRequestId' }
+            Cache-Control: { $ref: '#/components/headers/NoStore' }
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: '#/components/schemas/RoomEventView' }
+                  - { type: 'null' }
+        '403': { $ref: '#/components/responses/ApiMutationFailure' }
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/event/requests/{requestId}:
+    post:
+      tags: [Group State]
+      summary: Create an event, manage a party or act on a specific court occurrence
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RoomEventCommand' }
+      responses:
+        '200':
+          description: Event revision. A court claim includes the assigned room and, for guests, its scoped credential.
+          headers:
+            x-request-id: { $ref: '#/components/headers/XRequestId' }
+            Cache-Control: { $ref: '#/components/headers/NoStore' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [revision]
+                properties:
+                  revision: { type: integer, minimum: 1 }
+                  room: { $ref: '#/components/schemas/GroupRef' }
+                  access: { $ref: '#/components/schemas/RoomGuestAccess' }
+        '400': { $ref: '#/components/responses/ApiMutationFailure' }
+        '401': { $ref: '#/components/responses/ApiMutationFailure' }
+        '403': { $ref: '#/components/responses/ApiMutationFailure' }
+        '409': { $ref: '#/components/responses/ApiMutationFailure' }
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/temporary-rooms/requests/{requestId}:
     post:
       tags: [Group State]
@@ -1292,6 +1348,7 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -1306,6 +1363,7 @@ paths:
         '200':
           description: Current seat availability. Null counts indicate an uncapped room.
           headers:
+            x-request-id: { $ref: '#/components/headers/XRequestId' }
             Cache-Control: { $ref: '#/components/headers/NoStore' }
           content:
             application/json:
@@ -1314,10 +1372,13 @@ paths:
                 required: [displayName, capacity, availableSeats]
                 properties:
                   displayName: { type: string }
-                  capacity: { type: integer, nullable: true }
-                  availableSeats: { type: integer, nullable: true }
+                  capacity: { type: [integer, 'null'] }
+                  availableSeats: { type: [integer, 'null'] }
         '400': { $ref: '#/components/responses/ApiMutationFailure' }
-        '404': { description: Invitation unavailable }
+        '404':
+          description: Invitation unavailable
+          headers:
+            x-request-id: { $ref: '#/components/headers/XRequestId' }
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/guests/requests/{requestId}:
     post:
       tags: [Group State]
@@ -9934,6 +9995,125 @@ components:
       additionalProperties: true
       description: Graphology export object for a serialized weighted graph.
 
+    EventCourtSetup:
+      type: object
+      required: [groupId, capacity]
+      properties:
+        groupId: { type: string }
+        capacity: { type: integer, minimum: 1 }
+    EventParty:
+      type: object
+      required: [id, players]
+      properties:
+        id: { type: string }
+        players: { type: array, items: { type: string }, uniqueItems: true }
+    RoomEventView:
+      type: object
+      required: [lobby, principalId, revision, closesAt, closed, courts, queue, proposals, offer]
+      properties:
+        lobby: { $ref: '#/components/schemas/GroupRef' }
+        principalId: { type: string }
+        revision: { type: integer, minimum: 1 }
+        closesAt: { type: integer }
+        closed: { type: boolean }
+        courts:
+          type: array
+          items:
+            allOf:
+              - { $ref: '#/components/schemas/EventCourtSetup' }
+              - type: object
+                required: [occurrence, availableSeats]
+                properties:
+                  occurrence: { type: integer, minimum: 1 }
+                  availableSeats: { type: integer, minimum: 0 }
+        queue:
+          oneOf: [{ $ref: '#/components/schemas/EventParty' }, { type: 'null' }]
+        proposals:
+          type: array
+          items:
+            allOf:
+              - { $ref: '#/components/schemas/EventParty' }
+              - type: object
+                required: [accepted]
+                properties:
+                  accepted: { type: array, items: { type: string }, uniqueItems: true }
+        offer:
+          type: [object, 'null']
+          required: [groupId, occurrence, offerRevision, partyId, deadline]
+          properties:
+            groupId: { type: string }
+            occurrence: { type: integer, minimum: 1 }
+            offerRevision: { type: integer, minimum: 1 }
+            partyId: { type: string }
+            deadline: { type: [integer, 'null'] }
+    RoomEventCommand:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [action, closesAt, courts]
+          properties:
+            action: { const: create }
+            closesAt: { type: integer }
+            courts: { type: array, minItems: 1, items: { $ref: '#/components/schemas/EventCourtSetup' } }
+            claimWindowMs: { type: integer, minimum: 1, default: 120000 }
+            emptyReturnWindowMs: { type: integer, minimum: 1, maximum: 86400000, default: 900000 }
+        - type: object
+          additionalProperties: false
+          required: [action, partyId, players]
+          properties:
+            action: { const: propose }
+            partyId: { type: string }
+            players: { type: array, minItems: 1, uniqueItems: true, items: { type: string } }
+        - type: object
+          additionalProperties: false
+          required: [action, partyId]
+          properties:
+            action: { const: accept }
+            partyId: { type: string }
+        - type: object
+          additionalProperties: false
+          required: [action]
+          properties:
+            action: { const: leave-queue }
+        - type: object
+          additionalProperties: false
+          required: [action, groupId, occurrence, offerRevision, partyId]
+          properties:
+            action: { const: claim }
+            groupId: { type: string }
+            occurrence: { type: integer, minimum: 1 }
+            offerRevision: { type: integer, minimum: 1 }
+            partyId: { type: string }
+            courtSecret: { type: string, pattern: '^[0-9a-f]{64}$', writeOnly: true }
+        - type: object
+          additionalProperties: false
+          required: [action, groupId, occurrence, offerRevision, partyId]
+          properties:
+            action: { const: decline-offer }
+            groupId: { type: string }
+            occurrence: { type: integer, minimum: 1 }
+            offerRevision: { type: integer, minimum: 1 }
+            partyId: { type: string }
+        - type: object
+          additionalProperties: false
+          required: [action, groupId, occurrence]
+          properties:
+            action: { const: release }
+            groupId: { type: string }
+            occurrence: { type: integer, minimum: 1 }
+            requeue: { type: boolean, default: true }
+        - type: object
+          additionalProperties: false
+          required: [action, targetId]
+          properties:
+            action: { const: remove }
+            targetId: { type: string }
+            rotateVerifier: { type: string, pattern: '^[0-9a-f]{64}$' }
+        - type: object
+          additionalProperties: false
+          required: [action]
+          properties:
+            action: { const: close }
     RoomGuestAccess:
       type: object
       required: [clientId, sessionId, accessToken, issuedAtEpochMs, expiresAtEpochMs]

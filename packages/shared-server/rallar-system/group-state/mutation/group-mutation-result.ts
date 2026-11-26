@@ -64,6 +64,7 @@ import { toGroupMutationActor, toGroupMutationEvent } from './to-group-mutation-
 const DEFAULT_GROUP_JOIN_CODE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 
 export interface GroupMutationWriteInput {
+    readonly eventGuestTransportSession?: GroupMutationDomainWrite['guestTransportSession'];
     readonly directorPresenceGroup?: Group;
     readonly revisedLobby?: RoomLobby;
     readonly sessionIntentEffect?: RuntimeStateGuardedBatchEffect;
@@ -183,6 +184,7 @@ export function computeGroupMutationWriteResult(
     const guestTransport = command.operation === 'joinGroup' ? command.input.guestTransport
         : command.operation === 'createGroup' ? command.input.temporaryCreator?.guestTransport : undefined;
     const computed: GroupMutationDomainWrite = {
+        ...(input.eventGuestTransportSession && { guestTransportSession: input.eventGuestTransportSession }),
         ...(admittedGuest?.guestLease && guestTransport && {
             guestTransportSession: {
                 ...guestTransport,

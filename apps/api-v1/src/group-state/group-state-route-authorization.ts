@@ -1,3 +1,4 @@
+import { availableGuestSnapshot } from '@shared-server/http/available-guest-snapshot.ts';
 import { authorizationDenied } from '@shared-server/http/request-auth-service.ts';
 import { readRoomGuestSession } from '@shared-server/http/room-guest-request.ts';
 import { canUpdateGroupSnapshot } from '@shared-server/rallar-system/group-state/policy/group-governance-policy.ts';
@@ -16,17 +17,21 @@ import type {
     GroupStateRouteService
 } from './group-state-route-contracts.ts';
 
+interface RequireRoomParticipantSessionInput {
+    readonly request: GroupStateRouteRequest;
+    readonly roomRef: GroupRef;
+    readonly dependencies: GroupStateRouteDependencies;
+    readonly guestScope?: 'temporary-room';
+}
+
 export async function requireRoomParticipantSession(
-    request: GroupStateRouteRequest,
-    roomRef: GroupRef,
-    dependencies: GroupStateRouteDependencies,
-    guestScope?: 'temporary-room'
+    { request, roomRef, dependencies, guestScope }: RequireRoomParticipantSessionInput
 ): Promise<GroupStateRouteAuthSession> {
     const guest = await readRoomGuestSession({
         request,
         readSnapshot: async (room) => {
             const result = await dependencies.readGroupSnapshot(room, { strictMode: true });
-            return result.status === 'found' ? result.snapshot : undefined;
+            return result.status === 'found' ? await availableGuestSnapshot(result.snapshot, dependencies.nowEpochMs(), dependencies.isEventRoomAvailable) : undefined;
         },
         nowEpochMs: dependencies.nowEpochMs,
         temporaryRoomOnly: guestScope === 'temporary-room',

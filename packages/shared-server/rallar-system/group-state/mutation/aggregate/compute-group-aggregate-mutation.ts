@@ -38,6 +38,7 @@ import type {
     GroupMutationRead
 } from '../group-mutation-contracts.ts';
 import {
+    type GroupMutationWriteInput,
     auditStamp,
     computeGroupMutationWriteResult,
     materializedRotateJoinCode,
@@ -59,6 +60,7 @@ interface GroupWriteInput {
     readonly group: Group;
     readonly eventType: GroupEventType | null;
     readonly revisedLobby?: RoomLobby;
+    readonly departure?: Pick<GroupMutationWriteInput, 'presenceAdmission' | 'publicationGrantEffects' | 'subscriptionEffects'>;
 }
 
 export function computeUpdate(
@@ -367,6 +369,7 @@ export function groupWrite(input: GroupWriteInput): GroupMutationComputed {
         publicationGrantEffects: [],
         subscriptionEffects: [],
         subscriptionOutcome: null,
+        ...input.departure,
         ...(input.revisedLobby ? { revisedLobby: input.revisedLobby } : {}),
         presenceSummaryWork: eventType === null ? 'none' : 'enqueue'
     });

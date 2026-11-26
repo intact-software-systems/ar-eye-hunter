@@ -90,10 +90,17 @@ Verify a release by opening an invitation in a separate browser session, readyin
 
 The Rallar application ID is `grumpy-town`. When switching from the prototype build, reload all devices and create a fresh town and invitation.
 
-To host, choose **Play with friends**, sign in and **Create town**. Choose
+To start a private four-player game without an account, tap **Start a game**
+on the landing page. Opening its link shows free seats. Tapping **Join this
+town** claims one. **Return to game** on the landing page restores the most
+recent seat in the same browser while the room is available. The current room
+manager can invite, remove a guest, or hand management to a present player.
+Handing over management leaves the game director in place.
+
+To host from a registered account, choose **Play with friends**, sign in and **Create town**. Choose
 **Invite guests** to show a QR code and a shareable link. A friend can scan or
 open the link, shuffle their nickname and tap **Join this town** without an
-account. Reloading in the same tab restores their seat. **Replace invitation**
+account. Reopening the town on the same browser restores their seat. **Replace invitation**
 issues a new link. **Remove guest** ends that guest's access and cancels the
 current link.
 

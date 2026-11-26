@@ -1,17 +1,20 @@
+import { isApiJsonObject, type ApiJsonObject } from './api-json-value.ts';
 import { Either } from '../resilience/Either.ts';
 
-export function decodePlainRecord(value: unknown): Either<string, object> {
-    return !!value && typeof value === 'object' && !Array.isArray(value) &&
+export function decodePlainRecord(value: unknown): Either<string, ApiJsonObject> {
+    return isApiJsonObject(value) &&
             Object.getPrototypeOf(value) === Object.prototype
         ? Either.ofRight(value)
         : Either.ofLeft('Expected an exact object');
 }
 
-export function requireRecord(value: unknown, label: string): Record<string, unknown> {
-    if (decodePlainRecord(value).right === undefined) {
+/** Decodes the object boundary. Each consumer validates the values of the fields it reads. */
+export function requireRecord(value: unknown, label: string): ApiJsonObject {
+    const record = decodePlainRecord(value).right;
+    if (record === undefined) {
         throw new TypeError(`${label} must be an exact object`);
     }
-    return value as Record<string, unknown>;
+    return record;
 }
 
 export function hasExactKeys(value: object, keys: readonly string[]): boolean {

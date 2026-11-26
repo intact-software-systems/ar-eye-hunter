@@ -175,11 +175,14 @@ export function resolveCreateGroupLifecyclePolicy(
     return command.input.lifecyclePolicy ?? createDefaultGroupLifecyclePolicy();
 }
 
-export function computeCreate(
-    command: Extract<GroupMutationCommand, { operation: 'createGroup'; }>,
-    read: GroupMutationRead,
-    facts: GroupMutationFacts
-): GroupMutationComputed {
+interface ComputeCreateInput {
+    readonly command: Extract<GroupMutationCommand, { operation: 'createGroup' }>;
+    readonly read: GroupMutationRead;
+    readonly facts: GroupMutationFacts;
+    readonly eventBinding?: Group['eventRoom'];
+}
+
+export function computeCreate({ command, read, facts, eventBinding }: ComputeCreateInput): GroupMutationComputed {
     const denial = toCreateDenial(command, read, facts);
     if (denial !== null) {
         return rejected({ command, read, facts, ...denial });
@@ -189,7 +192,7 @@ export function computeCreate(
         read.expiredGroupEntry,
         read.presenceSummary
     );
-    const initial = createInitialGroup({ command, audit, snapshotVersion });
+    const initial = { ...createInitialGroup({ command, audit, snapshotVersion }), ...(eventBinding && { eventRoom: eventBinding }) };
     const capacity = initial.maxMembers ?? facts.capacity.defaultMaxMembers;
     const eligible = initial.kind === 'room' && capacity !== null && capacity > 0;
     const policy = command.input.roomLobby === undefined && eligible ? facts.lobbyDefault : command.input.roomLobby;
