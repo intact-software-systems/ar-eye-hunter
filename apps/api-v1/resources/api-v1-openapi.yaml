@@ -10165,9 +10165,18 @@ components:
                         deadline:
                           type: [integer, 'null']
                           description: Claim deadline in Unix epoch milliseconds, or null for a claimed seat.
+    EventCourtOffer:
+      type: object
+      required: [groupId, occurrence, offerRevision, partyId, deadline]
+      properties:
+        groupId: { type: string }
+        occurrence: { type: integer, minimum: 1 }
+        offerRevision: { type: integer, minimum: 1 }
+        partyId: { type: string }
+        deadline: { type: [integer, 'null'] }
     RoomEventView:
       type: object
-      required: [lobby, principalId, revision, closesAt, closed, courts, queue, proposals, offer, handover]
+      required: [lobby, principalId, revision, closesAt, closed, courts, queue, proposals, offer, handover, lastExpiredOffer]
       properties:
         lobby: { $ref: '#/components/schemas/GroupRef' }
         principalId: { type: string }
@@ -10197,14 +10206,18 @@ components:
                   proposalRevision: { type: integer, minimum: 1 }
                   accepted: { type: array, items: { type: string }, uniqueItems: true }
         offer:
-          type: [object, 'null']
-          required: [groupId, occurrence, offerRevision, partyId, deadline]
-          properties:
-            groupId: { type: string }
-            occurrence: { type: integer, minimum: 1 }
-            offerRevision: { type: integer, minimum: 1 }
-            partyId: { type: string }
-            deadline: { type: [integer, 'null'] }
+          oneOf:
+            - { $ref: '#/components/schemas/EventCourtOffer' }
+            - { type: 'null' }
+        lastExpiredOffer:
+          description: This player's most recent expired court offer, cleared when the player rejoins the queue.
+          oneOf:
+            - allOf:
+                - { $ref: '#/components/schemas/EventCourtOffer' }
+                - type: object
+                  properties:
+                    deadline: { type: integer }
+            - { type: 'null' }
         handover:
           description: Current organizer handover visible to its sender and recipient until the server deadline.
           type: [object, 'null']

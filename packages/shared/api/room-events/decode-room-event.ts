@@ -14,6 +14,23 @@ export function decodeEventRecord(input: unknown, label: string): PlainJsonRecor
     return row;
 }
 
+export function decodeEventOffer(value: PlainJsonValue | undefined): RoomEvent.Offer {
+    const row = requireRecord(value, 'Court offer');
+    requireExactKeys(row, ['groupId', 'partyId', 'occurrence', 'offerRevision', 'deadline'], 'Court offer');
+    requireEpoch(row.occurrence, 'Court occurrence');
+    requireEpoch(row.offerRevision, 'Offer revision');
+    if (!row.occurrence || !row.offerRevision) throw new TypeError('Invalid offer revision.');
+    if (row.deadline !== null) requireEpoch(row.deadline, 'Claim deadline');
+    return { groupId: assertValidRallarRouteId(row.groupId), partyId: assertValidRallarRouteId(row.partyId),
+        occurrence: row.occurrence, offerRevision: row.offerRevision, deadline: row.deadline };
+}
+
+export function decodeExpiredEventOffer(value: PlainJsonValue | undefined): RoomEvent.ExpiredOffer {
+    const offer = decodeEventOffer(value);
+    if (offer.deadline === null) throw new TypeError('An expired court offer must have a deadline.');
+    return { ...offer, deadline: offer.deadline };
+}
+
 function positive(value: PlainJsonValue | undefined, label: string): number {
     requireEpoch(value, label);
     if (!value) throw new TypeError(label + ' must be positive.');
@@ -126,13 +143,18 @@ export function decodeEventCourt(value: PlainJsonValue): RoomEvent.Court {
 
 export function decodeRoomEvent(value: unknown): RoomEvent {
     const e = decodeEventRecord(value, 'Room event');
-    requireExactOptionalKeys({ value: e, required: ['lobby','organizerId','createdAt','emptyReturnWindowMs','revision','closesAt','claimWindowMs','closed','courts','queue','proposals','removed'], optional: ['handover', 'alerts'], label: 'Room event' });
+    requireExactOptionalKeys({ value: e, required: ['lobby','organizerId','createdAt','emptyReturnWindowMs','revision','closesAt','claimWindowMs','closed','courts','queue','proposals','removed'], optional: ['handover', 'alerts', 'expiredOffers'], label: 'Room event' });
     requireEpoch(e.createdAt, 'Event creation time');
     const event = { ...(e.handover === undefined ? {} : { handover: decodeEventHandover(e.handover) }), createdAt: e.createdAt, emptyReturnWindowMs: positive(e.emptyReturnWindowMs, 'Event return window'),
         lobby: decodeExactGroupRef(e.lobby, 'Event lobby'), organizerId: assertValidRallarRouteId(e.organizerId),
         revision: positive(e.revision, 'Event revision'), closesAt: positive(e.closesAt, 'Event closing time'),
         claimWindowMs: positive(e.claimWindowMs, 'Court claim window'), closed: boolean(e.closed),
         ...(e.alerts !== undefined && { alerts: rows(e.alerts, decodeEventAlertConsent) }),
+        ...(e.expiredOffers !== undefined && { expiredOffers: rows(e.expiredOffers, value => {
+            const row = decodeEventRecord(value, 'Expired player offer');
+            requireExactKeys(row, ['principalId', 'offer'], 'Expired player offer');
+            return { principalId: assertValidRallarRouteId(row.principalId), offer: decodeExpiredEventOffer(row.offer) };
+        }) }),
         courts: rows(e.courts, decodeEventCourt), queue: rows(e.queue, decodeEventParty), proposals: rows(e.proposals, decodeEventProposal), removed: ids(e.removed) };
     if (event.alerts && (event.closed || !event.alerts.length ||
         new Set(event.alerts.map(consent => consent.subscription.endpoint)).size !== event.alerts.length ||
@@ -143,8 +165,12 @@ export function decodeRoomEvent(value: unknown): RoomEvent {
         event.removed.includes(event.handover.recipientId))) throw new TypeError('Inconsistent stored handover.');
     if (!event.courts.length) throw new TypeError('Stored event has no courts.');
     ids([event.lobby.groupId, ...event.courts.map(c => c.groupId)]);
-    ids([...event.queue.flatMap(p => p.players), ...event.courts.flatMap(c => c.seats.map(s => s.principalId)), ...event.removed]);
+    ids([...(event.expiredOffers ?? []).map(row => row.principalId), ...event.queue.flatMap(p => p.players), ...event.courts.flatMap(c => c.seats.map(s => s.principalId)), ...event.removed]);
     ids([...event.queue, ...event.proposals].map(p => p.id));
+    if (event.expiredOffers?.length === 0 || event.expiredOffers?.some(({ offer }) => event.closed || offer.offerRevision > event.revision || offer.deadline > event.closesAt ||
+        !event.courts.some(court => court.groupId === offer.groupId && court.occurrence >= offer.occurrence))) {
+        throw new TypeError('Inconsistent expired court offer.');
+    }
     if (event.removed.includes(event.organizerId) || event.proposals.some(p => p.proposalRevision > event.revision || p.players.some(id => event.removed.includes(id))) ||
         event.courts.some(c => c.seats.some(s => s.offerRevision > event.revision || (s.deadline !== null && s.deadline > event.closesAt))) ||
         (event.closed && (event.queue.length || event.proposals.length || event.courts.some(c => c.seats.length)))) {
