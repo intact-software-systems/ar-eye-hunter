@@ -24,8 +24,10 @@ import {
     installClock,
     MEMORY_POLL_TIMEOUT_MS,
     pollRowEnded,
+    readOriginReceipts,
     readOriginTerminalReceipt,
     receiverAck,
+    refuseNextNativeSend,
     roomMessage,
     type ReceiptClock,
     type ReceiptServerInstance,
@@ -215,6 +217,33 @@ describe('a receipt retry of a client\'s outbox-fanned send', () => {
 
         expect((await server.record.read(REF)).right?.head).toMatchObject({ confirmedRecipientPeerIds: ['r1', 'r2'] });
         expect([countCopies(server.sockets.r1, MSG), countCopies(server.sockets.r2, MSG)]).toEqual([1, 1]);
+    });
+});
+
+describe('an admitted of a client\'s outbox-fanned send', () => {
+    it('is enqueued and sent as a row when the origin\'s socket refuses it, and leaves the server\'s pending row unsettled', async () => {
+        // Pins an `admitted` reaching the server's own pending row, which only the ended work's terminal receipt
+        // settles: the copy's `admitted` names r1 confirmed, which the row learns only from the terminal receipt.
+        const clock = installClock();
+        const server = await createRetransmissionServer(clock, {
+            outboundBackend: undefined,
+            recordBackend: undefined,
+            capturedRecipientEligibilityFilters: undefined
+        });
+        const sentAtMs = clock.nowMs;
+        await admitRoomMessage(server, clock, { lifetimeMs: LIFETIME_MS, dequeueDelayMs: 0 });
+        await server.service.acceptIncomingMessage(receiverAck({ msgId: MSG, originPeerId: ORIGIN, recipient: 'r1', nowMs: clock.nowMs }), 'r1');
+
+        refuseNextNativeSend(server.sockets.o);
+        const copy = roomMessage({ msgId: MSG, originPeerId: ORIGIN, nowMs: sentAtMs, lifetimeMs: LIFETIME_MS });
+        expect((await server.service.acceptIncomingMessage(copy, ORIGIN)).right?.kind).toBe('duplicate');
+        await expect.poll(async () => {
+            await server.engine.executeOnce();
+            return readOriginReceipts([server.sockets.o], MSG).map(({ receipt }) => receipt.confirmedRecipientPeerIds);
+        }).toEqual([[], ['r1']]);
+
+        expect(await server.store.readPendingAck(REF)).toMatchObject({ expectedPeerIds: ['r1', 'r2'], ackedPeerIds: [] });
+        expect((await server.record.read(REF)).right?.head.phase).toBe('open');
     });
 });
 

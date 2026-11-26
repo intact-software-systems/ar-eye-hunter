@@ -522,9 +522,9 @@ The commits that are not dispatches fence as the version-row paragraph of
 [the admission directory](#the-admission-directory) states: a message end, an ACK window, a repair hint's follow-up
 and a first-hop wait's own commits on both versions, a peer control on its message's alone, a server receipt on its
 message's and on the sender's too only when it read the track positions, and the not-yet-in-sync retry schedule on the
-sender's alone. Of these only a server receipt retries at once, the same three attempts, before it retains its
-control; a peer control that loses is retained as work the outbound worker replays, and the others throw a retryable
-conflict to their work's retry.
+sender's alone. Of these only a server receipt retries at once, in a loop of its own: three attempts with no pause
+between them (not the dispatch policy above), before it retains its control; a peer control that loses is retained as
+work the outbound worker replays, and the others throw a retryable conflict to their work's retry.
 
 Past the bound a send retains its request: the canonical payload, immutable identity and compact
 `admit-message` work, atomically, through

@@ -66,20 +66,16 @@ export function isWsQueueBoxServerHeadBackedAdmittedReceipt(receipt: ALReceiptPa
  * Whether the control's own codec carries the largest receipt this opening can need. That is a `timed-out` receipt
  * naming every expected recipient outside: a terminal receipt lists each recipient once across its two sets, both
  * keys are always written, one list costs one comma more than a split, and only `timed-out`, one character longer than
- * `complete`, can name every recipient without a confirmation. It is built by the same function as every receipt.
+ * `complete`, can name every recipient without a confirmation. It is built as the ended work builds its receipt.
  */
 export function isWsQueueBoxServerReceiptEncodable(opening: ALReceiptRecordOpening, serverPeerId: string): boolean {
-    const largest: WsQueueBoxServerIssuedReceipt = {
-        receipt: toWsQueueBoxServerReceiptPayload(opening, {
-            confirmedRecipientPeerIds: [],
-            outsideAudienceRecipientPeerIds: opening.expectedRecipientPeerIds,
-            phase: 'timed-out',
-            observedAtEpochMs: opening.deadlineAtMs
-        }),
+    const largest = toWsQueueBoxServerEndedReceipt({
+        phase: 'timed-out',
         opening,
-        controlId: toWsQueueBoxServerEndedReceiptControlId(opening),
-        settlesServerRow: true
-    };
+        confirmedRecipientPeerIds: [],
+        outsideAudienceRecipientPeerIds: opening.expectedRecipientPeerIds,
+        endedAtEpochMs: opening.deadlineAtMs
+    });
     try {
         toWsQueueBoxServerReceiptControlMessage(largest, serverPeerId);
         return true;

@@ -92,8 +92,9 @@ describe('which receipt is an admitted with a head behind it', () => {
 });
 
 describe('the ended work\'s receipt', () => {
-    // Pins a receipt that settles the server's row being written to a socket, which returns before the settlement.
-    it('settles the server\'s row and is never an admitted with a head behind it, at either end', () => {
+    // Pins a terminal receipt that leaves the server's row unsettled, or a repeat of the ended work's delivery issued
+    // under a control id of its own, which the outbox would not take as the duplicate it is.
+    it('carries the ended work\'s control id and its end time, and settles the server\'s row, at either end', () => {
         const head = opening(2);
         const issued = (['complete', 'timed-out'] as const).map((phase) =>
             toWsQueueBoxServerEndedReceipt({
@@ -109,14 +110,12 @@ describe('the ended work\'s receipt', () => {
             phase: receipt.phase,
             observedAtEpochMs: receipt.observedAtEpochMs,
             controlId,
-            settlesServerRow,
-            live: isWsQueueBoxServerHeadBackedAdmittedReceipt(receipt)
+            settlesServerRow
         }))).toEqual(['complete', 'timed-out'].map((phase) => ({
             phase,
             observedAtEpochMs: NOW + 9_000,
             controlId: toWsQueueBoxServerEndedReceiptControlId(head),
-            settlesServerRow: true,
-            live: false
+            settlesServerRow: true
         })));
     });
 });

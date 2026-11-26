@@ -8,7 +8,8 @@ type ALOutboundAdmissionGroupObservation = Extract<
 
 /**
  * One group commit as its `admission-group` timing states it, before its durations are computed. Each fence group of
- * one batch carries the whole batch's read window, so a sum of a mixed batch's durations counts that read twice.
+ * one batch carries the whole batch's read window, so a sum of a mixed batch's durations counts that read twice. The
+ * sender-fenced members left out because their versions disagree commit alone and appear in no group's timing.
  */
 export interface ALOutboundAdmissionGroupTiming {
     readonly lane: ALOutboundAdmissionGroupObservation['lane'];
