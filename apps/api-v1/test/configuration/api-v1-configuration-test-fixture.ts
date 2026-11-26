@@ -104,6 +104,7 @@ const CONFIGURATION_DEFAULTS_SOURCE = {
     group: {
         roomOwnedAppDataBindings: [],
         roomLobbyPoliciesByApplication: {},
+        eventHandoverWindowMs: 600_000,
         eventOrganizerIdsByApplication: {},
         guestBookingByApplication: {},
         temporaryRoomPoliciesByApplication: {},

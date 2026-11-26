@@ -1,3 +1,4 @@
+import { decodeEventHandover } from './room-event-handover.ts';
 import type { PlainJsonValue } from '../../repository/compare-plain-json.ts';
 import { decodeExactGroupRef } from '../../encoding/decode-exact-group-ref.ts';
 import { requireEpoch, requireExactKeys, requireRecord } from '../exact-object-decoding.ts';
@@ -29,7 +30,7 @@ function decodeCourt(value: PlainJsonValue): RoomEvent.View['courts'][number] {
 
 export function decodeRoomEventView(value: unknown): RoomEvent.View {
     const row = decodeEventRecord(value, 'Private event view');
-    requireExactKeys(row, ['principalId', 'lobby', 'revision', 'closesAt', 'closed', 'courts', 'queue', 'proposals', 'offer'], 'Private event view');
+    requireExactKeys(row, ['principalId', 'lobby', 'revision', 'closesAt', 'closed', 'courts', 'queue', 'proposals', 'offer', 'handover'], 'Private event view');
     const lobby = decodeExactGroupRef(row.lobby, 'Event lobby');
     const principalId = assertValidRallarRouteId(row.principalId);
     requireEpoch(row.revision, 'Event revision');
@@ -41,6 +42,10 @@ export function decodeRoomEventView(value: unknown): RoomEvent.View {
     const proposals = row.proposals.map(decodeEventProposal);
     const queue = row.queue === null ? null : decodeEventParty(row.queue);
     const offer = row.offer === null ? null : decodeOffer(row.offer);
+    const handover = row.handover === null ? null : decodeEventHandover(row.handover);
+    if (handover && (row.closed || handover.expiresAt > row.closesAt || (handover.offeredBy !== principalId && handover.recipientId !== principalId))) {
+        throw new TypeError('Handover belongs to a different player or event.');
+    }
     if (!courts.length || new Set([lobby.groupId, ...courts.map(c => c.groupId)]).size !== courts.length + 1 ||
         (queue && !queue.players.includes(principalId)) || proposals.some(p => !p.players.includes(principalId)) ||
         (offer && (offer.offerRevision > row.revision || queue || !courts.some(c => c.groupId === offer.groupId && c.occurrence === offer.occurrence) ||
@@ -48,5 +53,5 @@ export function decodeRoomEventView(value: unknown): RoomEvent.View {
         (row.closed && (offer || queue || proposals.length || courts.some(c => c.availableSeats > 0)))) {
         throw new TypeError('Inconsistent private event view.');
     }
-    return { principalId, lobby, courts, proposals, queue, offer, closed: row.closed, revision: row.revision, closesAt: row.closesAt };
+    return { principalId, handover, lobby, courts, proposals, queue, offer, closed: row.closed, revision: row.revision, closesAt: row.closesAt };
 }

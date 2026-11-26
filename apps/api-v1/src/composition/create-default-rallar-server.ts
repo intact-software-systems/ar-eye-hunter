@@ -355,6 +355,7 @@ function createDefaultApiV1RestServices(rest: DefaultApiV1RestInput) {
     });
     const eventGroups = runtime.topologyServices.groupStateRepository;
     const eventConfig = { serviceId: myServerId, finishedRetentionMs: configuration.appInbox.finishedRetentionMs,
+        handoverWindowMs: configuration.group.eventHandoverWindowMs,
         organizerIdsByApplication: configuration.group.eventOrganizerIdsByApplication,
         organizerIds: configuration.authentication.adminClientIds };
     const roomEvents = new TemporaryEventService({

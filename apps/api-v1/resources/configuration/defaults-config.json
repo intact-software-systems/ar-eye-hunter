@@ -66,6 +66,7 @@
   "group": {
     "roomOwnedAppDataBindings": [],
     "roomLobbyPoliciesByApplication": {},
+    "eventHandoverWindowMs": 600000,
     "eventOrganizerIdsByApplication": {},
     "guestBookingByApplication": { "ar-eye-hunter": true, "rallar-server": true },
     "temporaryRoomPoliciesByApplication": { "grumpy-town": {} },
