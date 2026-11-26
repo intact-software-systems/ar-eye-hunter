@@ -4,7 +4,7 @@ import type { ALMessageRejection } from '@shared/al-contracts/al-message-persist
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
-import { readOrderedSendCellAnswer } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/read-ordered-send-cell-answer.ts';
+import { readOrderedSendCellAnswer } from '../../../../../../apps/api-v1/scripts/perf/alm-ordered-send/answer/read-ordered-send-cell-answer.ts';
 
 type EntryAnswer = Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>;
 

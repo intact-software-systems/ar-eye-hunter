@@ -1,3 +1,4 @@
+import type { OrderedSendCellEntryAnswer } from './answer/to-ordered-send-cell-answer.ts';
 import type {
     OrderedSendCellAck,
     OrderedSendCellAckOffer,
@@ -6,7 +7,6 @@ import type {
     OrderedSendCellResendOffer,
     OrderedSendCellSend
 } from './ordered-send-cell-observations.ts';
-import type { OrderedSendCellEntryAnswer } from './to-ordered-send-cell-answer.ts';
 
 /** Everything a run offered, each offer with what came of it or as unanswered, in the order offered. */
 export interface OrderedSendOffersClosed {

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
     toOrderedSendFailureLines,
     toOrderedSendThrownError
-} from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/to-ordered-send-thrown-error.ts';
+} from '../../../../../../apps/api-v1/scripts/perf/alm-ordered-send/answer/to-ordered-send-thrown-error.ts';
 
 class NamedError extends Error {
     constructor(name: string, message: string) {

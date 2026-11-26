@@ -334,7 +334,7 @@ outside a transaction holds no connection while it waits.
 | `alm-ordered-send-cell.ts`            | The entry: decodes the options, runs, writes the artifact, prints the summary.                                               |
 | `decode-ordered-send-cell-options.ts` | The command line; `validate-ordered-send-shape.ts` the shape; `compute-ordered-send-schedule.ts` who sends what when.        |
 | `run-ordered-send-cell.ts`            | One run: the phases, the sessions' sockets, the offers, the ACKs and the tail.                                               |
-| `read-ordered-send-cell-answer.ts`    | What came of one offer: the entry's answer, or that it threw; `to-ordered-send-thrown-error.ts` keeps URLs out of it.        |
+| `answer/`                             | What came of one offer: the entry's answer, or that it threw, with the error's name and a bounded message free of URLs.      |
 | `ordered-send-cell-observations.ts`   | The contract of what a run records; the observation log and the offer ledger fill it.                                        |
 | `instance/`                           | One API instance: its database lifecycle, the delayed database handle and notification port, its WS server and its sessions. |
 | `client-stand-in/`                    | What a publisher does under `client-stand-in`.                                                                               |

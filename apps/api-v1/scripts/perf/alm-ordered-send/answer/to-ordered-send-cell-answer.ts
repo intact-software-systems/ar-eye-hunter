@@ -2,7 +2,7 @@ import type { ALMessageRejection } from '@shared/al-contracts/al-message-persist
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 
-import type { OrderedSendCellAnswer } from './ordered-send-cell-observations.ts';
+import type { OrderedSendCellAnswer } from '../ordered-send-cell-observations.ts';
 import { toOrderedSendThrownError } from './to-ordered-send-thrown-error.ts';
 
 /** What came of an offer the entry answered or that threw; `unanswered` is the run's to say, when its observation ends. */

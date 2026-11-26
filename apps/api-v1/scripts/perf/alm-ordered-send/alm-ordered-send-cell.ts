@@ -1,6 +1,7 @@
 import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
+import { toOrderedSendFailureLines } from './answer/to-ordered-send-thrown-error.ts';
 import {
     readOrderedSendEnvironment,
     readOrderedSendLoadAverage,
@@ -24,7 +25,6 @@ import {
     runOrderedSendCell,
     type OrderedSendCellRunResult
 } from './run-ordered-send-cell.ts';
-import { toOrderedSendFailureLines } from './to-ordered-send-thrown-error.ts';
 
 /** A run that completed: where its artifact is, and the lines to print of it. */
 export interface AlmOrderedSendCellCompletion {

@@ -7,7 +7,7 @@ import { Either } from '@shared/resilience/Either.ts';
 import {
     toOrderedSendCellAnswer,
     toOrderedSendThrownAnswer
-} from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/to-ordered-send-cell-answer.ts';
+} from '../../../../../../apps/api-v1/scripts/perf/alm-ordered-send/answer/to-ordered-send-cell-answer.ts';
 
 const ANSWERED_AT_MS = 1_234.5625;
 
