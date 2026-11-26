@@ -18,6 +18,15 @@ import type { Timers } from '@shared/resilience/timers.ts';
 
 type EdgeOrderCarrier = Extract<RallarMessageTransport, 'rtc' | 'ws'>;
 
+/** An arrival that was not handed over at once: held for its turn, or dropped. */
+interface UnhandedEdgeOrderArrival {
+    readonly carrier: EdgeOrderCarrier;
+    readonly message: ALMessage;
+    readonly outcome: Exclude<EdgeOrderReceiver.Outcome, 'handed-over'> | 'unwrapped';
+    /** Absent exactly for `unwrapped`. */
+    readonly order: RallarMessageOrder | undefined;
+}
+
 export namespace EdgeOrderArrivals {
     /** A message whose turn has come: the envelope as it arrived, the application's payload and its place. */
     export interface HandOver {
@@ -48,7 +57,7 @@ export namespace EdgeOrderArrivals {
 /**
  * The receive side of the page's edge-ordered channels. One sorter serves both carriers, because one sender's
  * stream can arrive over both: each arrival is unwrapped, put in its stream's order, and handed over when its
- * turn comes, one message at a time. Everything it does not hand over is stated in the inbound diagnostics.
+ * turn comes, one message at a time. Everything it holds or does not hand over is stated in the inbound diagnostics.
  */
 export class EdgeOrderArrivals {
     private readonly declaredRoutes = new Set<string>();
@@ -84,7 +93,7 @@ export class EdgeOrderArrivals {
     async accept(carrier: EdgeOrderCarrier, message: ALMessage): Promise<void> {
         const wire = decodeEdgeOrderWirePayload(message.payload.resource);
         if (wire === undefined) {
-            this.recordDrop(carrier, message, 'unwrapped', undefined);
+            this.recordArrival({ carrier, message, outcome: 'unwrapped', order: undefined });
             return;
         }
         const order: RallarMessageOrder = { stream: wire.stamp.stream, position: wire.stamp.position };
@@ -97,10 +106,9 @@ export class EdgeOrderArrivals {
         });
         if (outcome === 'handed-over') {
             await this.handedOver;
+            return;
         }
-        else if (outcome !== 'held') {
-            this.recordDrop(carrier, message, outcome, order);
-        }
+        this.recordArrival({ carrier, message, outcome, order });
     }
 
     /** The connect is gone, and with it the clock every held message was judged by. */
@@ -128,19 +136,15 @@ export class EdgeOrderArrivals {
         recordALInboundDiagnostic(this.dependencies.readInboundDiagnostics(), { kind: 'edge-order-gap', ...gap });
     }
 
-    private recordDrop(
-        carrier: EdgeOrderCarrier,
-        message: ALMessage,
-        cause: 'unwrapped' | 'late' | 'duplicate' | 'expired',
-        order: RallarMessageOrder | undefined
-    ): void {
+    private recordArrival(arrival: UnhandedEdgeOrderArrival): void {
+        const { message, order } = arrival;
         recordALInboundDiagnostic(this.dependencies.readInboundDiagnostics(), {
-            kind: 'edge-order-drop',
+            kind: 'edge-order-arrival',
             msgId: message.id.msgId,
             typeId: message.payload.typeId,
             senderId: message.id.senderId,
-            carrier,
-            cause,
+            carrier: arrival.carrier,
+            outcome: arrival.outcome,
             stream: order?.stream ?? null,
             position: order?.position ?? null,
             ...toALMessageTrace(message)

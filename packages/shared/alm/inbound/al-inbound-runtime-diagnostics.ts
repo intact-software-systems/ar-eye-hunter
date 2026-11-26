@@ -190,17 +190,18 @@ export type ALInboundRuntimeDiagnosticsEvent =
     | (
         & Readonly<{
             /**
-             * An admitted arrival on a channel its receiver declared edge-ordered that was not handed over:
-             * `unwrapped`, it carried no valid stamp, so its sender's channel was not declared edge-ordered; `late`,
-             * its stream had already passed its position; `duplicate`, its position was already held; `expired`, it
-             * arrived past its own deadline. The stream and position are null for `unwrapped`.
+             * An admitted arrival on a channel its receiver declared edge-ordered that was not handed over at once.
+             * `held`, an earlier position of its stream is still missing, so it waits its turn. The others are
+             * dropped: `unwrapped`, it carried no valid stamp, so its sender's channel was not declared edge-ordered;
+             * `late`, its stream had already passed its position; `duplicate`, its position was already held;
+             * `expired`, it arrived past its own deadline. The stream and position are null for `unwrapped`.
              */
-            kind: 'edge-order-drop';
+            kind: 'edge-order-arrival';
             msgId: string;
             typeId: string;
             senderId: string;
             carrier: ALDeliveryCarrier;
-            cause: 'unwrapped' | 'late' | 'duplicate' | 'expired';
+            outcome: 'held' | 'unwrapped' | 'late' | 'duplicate' | 'expired';
             stream: string | null;
             position: number | null;
         }>

@@ -70,6 +70,8 @@ export type AlmConformanceScenarioId =
     | 'delivery-reload'
     | 'durable-opt-in'
     | 'durable-takeover'
+    | 'edge-order-jitter-stream'
+    | 'edge-order-stream'
     | 'fallback-within-deadline'
     | 'fenced-catch-up'
     | 'fenced-delivery'
@@ -187,17 +189,21 @@ export interface AlmConformanceStartGrant {
  * every connect subscribes its lanes to that topic instead, so its pages hear the server's own publications there.
  * Exactly when the topic is granted, the cell also declares the permissions it starts from. A cell that does not grant
  * its topic may declare that its typed channel publishes and listens on the world topic; absent, it uses the room topic.
+ * It may also declare its typed channel edge-ordered: every connect of the cell then opens its channels with
+ * `order: 'edge'`, so each page numbers its sends and sorts each sender's stream before it records an arrival.
  */
 export type AlmConformanceMessages =
     | {
         readonly messageSelector?: AlmConformanceMessageSelector & { readonly access?: undefined; };
         readonly startGrants?: undefined;
         readonly topic?: 'world';
+        readonly order?: 'edge';
     }
     | {
         readonly messageSelector: AlmConformanceMessageSelector & { readonly access: 'granted'; };
         readonly startGrants: readonly AlmConformanceStartGrant[];
         readonly topic?: undefined;
+        readonly order?: undefined;
     };
 
 /** How a scenario's waiting connect judges readiness: the count of its ready RTC peers that settles the connect. */

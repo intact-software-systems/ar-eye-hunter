@@ -60,8 +60,14 @@ async function sendMoves(pages: TwoPages, carrier: 'ws' | 'rtc', count: number):
     return pages.alice.sent[carrier];
 }
 
+/** What the page stated it did not hand over: gaps, dropped arrivals and held messages it gave up. */
 function edgeOrderDiagnostics(page: EdgeOrderPage): object[] {
-    return page.diagnostics.filter((event) => event.kind.startsWith('edge-order-'));
+    return page.diagnostics.filter((event) => event.kind.startsWith('edge-order-') && !(event.kind === 'edge-order-arrival' && event.outcome === 'held'));
+}
+
+/** The positions the page stated it held for their turn, in arrival order. */
+function heldPositions(page: EdgeOrderPage): Array<number | null> {
+    return page.diagnostics.flatMap((event) => event.kind === 'edge-order-arrival' && event.outcome === 'held' ? [event.position] : []);
 }
 
 beforeEach(() => {
@@ -101,6 +107,7 @@ describe('an edge-ordered room channel: order', () => {
 
         await pages.bob.deliver(carrier, second);
         expect(pages.seen.map((move) => move.n)).toEqual([1, 2, 3]);
+        expect(heldPositions(pages.bob)).toEqual([3]);
         expect(edgeOrderDiagnostics(pages.bob)).toEqual([]);
     });
 
@@ -137,8 +144,8 @@ describe('an edge-ordered room channel: order', () => {
             { n: 2, transport: 'ws', position: 2 }
         ]);
         expect(edgeOrderDiagnostics(pages.bob)).toEqual([
-            expect.objectContaining({ kind: 'edge-order-drop', cause: 'late', carrier: 'ws', position: 1 }),
-            expect.objectContaining({ kind: 'edge-order-drop', cause: 'late', carrier: 'rtc', position: 2 })
+            expect.objectContaining({ kind: 'edge-order-arrival', outcome: 'late', carrier: 'ws', position: 1 }),
+            expect.objectContaining({ kind: 'edge-order-arrival', outcome: 'late', carrier: 'rtc', position: 2 })
         ]);
     });
 
@@ -350,8 +357,8 @@ describe('an edge-ordered room channel: gaps and drops', () => {
         expect(edgeOrderDiagnostics(pages.bob)).toEqual([
             { kind: 'edge-order-gap', senderId: 'alice-session', stream, fromPosition: 2, toPosition: 2, reason: 'cannot-arrive' },
             {
-                kind: 'edge-order-drop',
-                cause: 'late',
+                kind: 'edge-order-arrival',
+                outcome: 'late',
                 msgId: second.id.msgId,
                 typeId: 'game.move',
                 senderId: 'alice-session',
@@ -394,8 +401,8 @@ describe('an edge-ordered room channel: declared on one end only', () => {
 
         expect(pages.seen).toEqual([]);
         expect(edgeOrderDiagnostics(pages.bob)).toEqual([{
-            kind: 'edge-order-drop',
-            cause: 'unwrapped',
+            kind: 'edge-order-arrival',
+            outcome: 'unwrapped',
             msgId: plain.id.msgId,
             typeId: 'game.move',
             senderId: 'alice-session',

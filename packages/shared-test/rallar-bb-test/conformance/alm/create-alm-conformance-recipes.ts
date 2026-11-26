@@ -62,6 +62,7 @@ import { deliveryLifecycle } from './scenarios/delivery-lifecycle.ts';
 import { deliveryReload } from './scenarios/delivery-reload.ts';
 import { durableOptIn } from './scenarios/durable-opt-in.ts';
 import { durableTakeover } from './scenarios/durable-takeover.ts';
+import { edgeOrderJitterStream, edgeOrderStream } from './scenarios/edge-order/edge-order-stream.ts';
 import { bufferedTrackDrains } from './scenarios/fairness/buffered-track-drains.ts';
 import { churnBoundedTracks } from './scenarios/fairness/churn-bounded-tracks.ts';
 import { ownShareUnderInbound } from './scenarios/fairness/own-share-under-inbound.ts';
@@ -244,6 +245,8 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     lostStreamStart,
     lostStreamStartBounded,
     seededJitterStream,
+    edgeOrderStream,
+    edgeOrderJitterStream,
     ...crossCarrierDuplicate,
     notYetInSync,
     fallbackWithinDeadline,
@@ -435,7 +438,7 @@ function toStepInput(
 
 function toDefinitionMessages(definition: AlmConformanceScenarioDefinition): AlmConformanceMessages {
     return definition.startGrants === undefined
-        ? { messageSelector: definition.messageSelector, topic: definition.topic }
+        ? { messageSelector: definition.messageSelector, topic: definition.topic, order: definition.order }
         : { messageSelector: definition.messageSelector, startGrants: definition.startGrants };
 }
 

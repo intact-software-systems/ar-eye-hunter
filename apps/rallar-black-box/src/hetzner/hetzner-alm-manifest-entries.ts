@@ -27,6 +27,10 @@ import { claimRefusedOnRtc } from '@shared-test/rallar-bb-test/conformance/alm/s
 import { backpressureDeferred } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/congestion/backpressure-deferred.ts';
 import { backpressureHandsOver } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/congestion/backpressure-hands-over.ts';
 import { backpressureRefused } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/congestion/backpressure-refused.ts';
+import {
+    edgeOrderJitterStream,
+    edgeOrderStream
+} from '@shared-test/rallar-bb-test/conformance/alm/scenarios/edge-order/edge-order-stream.ts';
 import { bufferedTrackDrains } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/fairness/buffered-track-drains.ts';
 import { churnBoundedTracks } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/fairness/churn-bounded-tracks.ts';
 import { ownShareUnderInbound } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/fairness/own-share-under-inbound.ts';
@@ -119,6 +123,9 @@ const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
     { scenarioKey: 'lost-stream-start', carriers: lostStreamStart.carriers },
     { scenarioKey: 'lost-stream-start-bounded', carriers: lostStreamStartBounded.carriers },
     { scenarioKey: 'seeded-jitter-stream', carriers: seededJitterStream.carriers },
+    // The edge order cells' lane evidence is local too: a combined recipe shares one connect, which declares no order.
+    { scenarioKey: 'edge-order-stream', carriers: edgeOrderStream.carriers },
+    { scenarioKey: 'edge-order-jitter-stream', carriers: edgeOrderJitterStream.carriers },
     // The membership fence cells' lane evidence is local and the hosted full read's; manifest 22 stays as recorded.
     { scenarioKey: 'fenced-delivery', carriers: ALM_CONFORMANCE_SINGLE_HOP_CARRIERS },
     // A combined recipe keeps only its first prologue, so the recipient that leaves here would miss every later cell.
