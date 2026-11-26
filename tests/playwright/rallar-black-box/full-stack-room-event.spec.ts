@@ -142,10 +142,12 @@ test('a guest opening a court alert sees the current allocation and can requeue 
         const alert = { type:'rallar-court-ready', lobby, offerRevision:2, tag:'a'.repeat(32) };
         const launch = exampleUrl + '#' + new URLSearchParams({courtAlert:JSON.stringify(alert)});
         await guest.goto(launch);
-        await guest.reload();
+        // An installed app can reuse its open window and only change the fragment.
         await expect(guest.getByRole('status')).toHaveText('Your court is ready: east');
         await expect(guest.getByRole('button', { name: 'Enter east' })).toBeVisible();
         await operator.evaluate(({ event }) => event.act({action:'release',groupId:'east',occurrence:1,requeue:false}));
+        await expect(guest.getByRole('status')).toContainText('Your earlier offer has expired.', { timeout: 3000 });
+        await guest.reload();
         await expect(guest.getByRole('status')).toContainText('Your earlier offer has expired.');
         await guest.getByRole('button', {name:'Join queue'}).click();
         await expect(guest.getByRole('button', {name:'Enter east'})).toBeVisible();

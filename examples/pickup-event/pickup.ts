@@ -37,7 +37,6 @@ async function open(): Promise<void> {
     const lobby = decodeExactGroupRef(settings.lobby, 'Invited event');
     const apiBaseUrl = settings.apiBaseUrl ?? location.origin;
     const key = 'pickup-event.' + JSON.stringify([apiBaseUrl, lobby.applicationId, lobby.workspaceId, lobby.groupId]);
-    const launch = readCourtAlertLaunch(new URL(location.href));
     rallar.configure({ apiBaseUrl });
     rallar.setDefaults({ applicationId: lobby.applicationId, workspaceId: lobby.workspaceId });
     const isIphoneBrowser = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -72,7 +71,8 @@ async function open(): Promise<void> {
         event = resource;
         join.hidden = true;
         let inCourt = false;
-        resource.onChange(({view, busy: working, error: failure}) => {
+        function render(): void {
+            const { view, busy: working, error: failure } = resource.getState();
             if (failure) error.textContent = failure;
             if (!view || view.closed) {
                 queue.hidden = leave.hidden = enter.hidden = notify.hidden = disable.hidden = true;
@@ -80,6 +80,7 @@ async function open(): Promise<void> {
                 return;
             }
             const offered = view.offer;
+            const launch = readCourtAlertLaunch(new URL(location.href));
             const alertStatus = courtAlertStatus(launch, view, rallar.deadlineAfter(0));
             const current = offered ? (offered.deadline === null ? 'Court assigned: ' : 'Your court is ready: ') + offered.groupId :
                 view.queue ? 'Waiting for a court.' : 'Ready to join the queue.';
@@ -91,7 +92,9 @@ async function open(): Promise<void> {
             notify.hidden = !registered || !publicKey;
             disable.hidden = !registered || Notification.permission !== 'granted';
             for (const control of [queue, leave, enter, notify, disable]) control.disabled = working;
-        });
+        }
+        resource.onChange(render);
+        window.addEventListener('hashchange', render, { signal: lifetime.signal });
         await resource.start();
         bind(queue, async () => {
             await resource.act({ action:'propose', partyId:crypto.randomUUID(), players:[access.clientId] });
