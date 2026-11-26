@@ -1268,9 +1268,11 @@ owner. The ACK records are these:
   observed with its view's outcome, not refused.
 - `receipt-outbox`: the enqueue of an issued receipt. A server publication's terminal
   receipt is enqueued nowhere and records none. An `admitted` receipt that expects
-  somebody is first written to the origin's sockets on the admitting instance; one a
-  socket there took is enqueued nowhere and records none, and only one no socket there
-  took is enqueued and recorded here.
+  somebody has a head behind it, which a re-sent copy is answered from, and is first
+  written to the origin's sockets on the instance that answers it; one a socket there
+  took is enqueued nowhere and records none, and only one no socket there took is
+  enqueued and recorded here. A sender that resends nothing reads only its terminal
+  receipt when that live copy is lost on the wire.
 
 An admission whose largest terminal receipt no receipt control could carry opens no
 receipt and records nothing here: it writes one `receipt-not-encodable` warning.
@@ -1285,9 +1287,10 @@ receipt's control id, subject/origin, phase and exact audience snapshot:
   state, publisher call state and wrapper result. Native `returned` proves only
   submission. A native call may have happened before an enclosing throw; a generic
   failure settlement's `submissionAttempted: false` cannot prove otherwise. An
-  `admitted` written live on the admitting instance records one per connection it
-  called: `transport: 'recipient'`, `publisherCall: 'absent'`, `originIsHere: true`,
-  `outcome` `sent` for a returned write and `failed` for one that threw.
+  `admitted` written live on the instance that answers it records one per
+  connection it called: `transport: 'recipient'`, `publisherCall: 'absent'`,
+  `originIsHere: true`, `outcome` `sent` for a returned write and `failed` for one
+  that threw.
 - `receipt-publication`: actual publish/direct call states, returned direct status
   (`sent-live`, `no-recipients`, `expired`, `partial-failure`, `failed`) and counts,
   plus publisher return/throw. A returned publication can coexist with wrapper

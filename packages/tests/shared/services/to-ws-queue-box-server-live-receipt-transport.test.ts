@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { toWsQueueBoxServerLiveReceiptTransport } from '@shared/services/ws-queue-box-server/receipt/to-ws-queue-box-server-live-receipt-transport.ts';
+import {
+    toWsQueueBoxServerLiveReceiptTransport,
+    toWsQueueBoxServerLiveReceiptTransports
+} from '@shared/services/ws-queue-box-server/receipt/to-ws-queue-box-server-live-receipt-transport.ts';
 import type { WsQueueBoxServerIssuedReceipt } from '@shared/services/ws-queue-box-server/receipt/to-ws-queue-box-server-receipt-control.ts';
 
 const ISSUED: WsQueueBoxServerIssuedReceipt = {
@@ -65,5 +68,18 @@ describe('the observation of a live receipt on one connection', () => {
             expect(receipt[set], set).not.toBe(ISSUED.receipt[set]);
             expect(Object.isFrozen(receipt[set]), set).toBe(true);
         }
+    });
+
+    // Pins a live receipt's connections observed as fewer than were called, or out of the order written.
+    it('states one observation per connection written, in the order written', () => {
+        const transports = toWsQueueBoxServerLiveReceiptTransports(ISSUED, [
+            { connectionId: 'origin-1', nativeCall: 'returned', written: true },
+            { connectionId: 'origin-2', nativeCall: 'invoked', written: false }
+        ], 'server');
+
+        expect(transports.map(({ connectionId, outcome }) => ({ connectionId, outcome }))).toEqual([
+            { connectionId: 'origin-1', outcome: 'sent' },
+            { connectionId: 'origin-2', outcome: 'failed' }
+        ]);
     });
 });

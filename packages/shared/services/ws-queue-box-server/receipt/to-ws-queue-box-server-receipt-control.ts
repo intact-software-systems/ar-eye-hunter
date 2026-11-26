@@ -38,10 +38,11 @@ export function toWsQueueBoxServerEndedReceiptControlId(ref: ALReceiptRecordRef)
 }
 
 /**
- * Whether a lost copy of this receipt is recovered by its sender's resend: an `admitted` receipt with a head behind
- * it, which a re-sent copy is answered from. One that expects nobody has no head and is the send's only answer.
+ * Whether this is an `admitted` receipt with a head behind it, which a re-sent copy is answered from. A sender that
+ * resends nothing reads only its terminal receipt when this copy is lost on the wire. One that expects nobody has no
+ * head and is the send's only answer.
  */
-export function isWsQueueBoxServerResendRecoveredReceipt(receipt: ALReceiptPayload): boolean {
+export function isWsQueueBoxServerHeadBackedAdmittedReceipt(receipt: ALReceiptPayload): boolean {
     return receipt.phase === 'admitted' && receipt.expectedRecipientPeerIds.length > 0;
 }
 

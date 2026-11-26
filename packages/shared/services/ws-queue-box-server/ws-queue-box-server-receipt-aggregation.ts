@@ -52,7 +52,7 @@ import {
     WS_QUEUE_BOX_SERVER_REJECTED_COUNT,
     type WsQueueBoxServerCountedAck
 } from './receipt/to-ws-queue-box-server-counted-ack.ts';
-import { toWsQueueBoxServerLiveReceiptTransport } from './receipt/to-ws-queue-box-server-live-receipt-transport.ts';
+import { toWsQueueBoxServerLiveReceiptTransports } from './receipt/to-ws-queue-box-server-live-receipt-transport.ts';
 import {
     isWsQueueBoxServerOwnOutsideAudienceNack,
     toWsQueueBoxServerOutsideAudienceConfirmation,
@@ -63,8 +63,8 @@ import {
     type WsQueueBoxServerOwnPendingReceipt
 } from './receipt/to-ws-queue-box-server-own-receipt-opening.ts';
 import {
+    isWsQueueBoxServerHeadBackedAdmittedReceipt,
     isWsQueueBoxServerReceiptEncodable,
-    isWsQueueBoxServerResendRecoveredReceipt,
     toWsQueueBoxServerEndedReceiptControlId,
     toWsQueueBoxServerReceiptControlMessage,
     toWsQueueBoxServerReceiptPayload,
@@ -707,17 +707,13 @@ export class WsQueueBoxServerReceiptAggregation {
      */
     private async writeReceipt(issued: WsQueueBoxServerIssuedReceipt): Promise<void> {
         const { receipt, opening } = issued;
-        const message = toWsQueueBoxServerReceiptControlMessage(issued, this.#dependencies.serverPeerId);
-        if (this.writeLiveReceipt(issued, message)) {
-            return;
-        }
         const { receiptObserver, serverPeerId } = this.#dependencies;
-        const enqueued = await this.#dependencies.enqueueOutbox(
-            message,
-            toWsQueueBoxServerReceiptDispatchPlan(message)
-        );
+        const message = toWsQueueBoxServerReceiptControlMessage(issued, serverPeerId);
+        const enqueued = this.writeLiveReceipt(issued, message)
+            ? undefined
+            : await this.#dependencies.enqueueOutbox(message, toWsQueueBoxServerReceiptDispatchPlan(message));
         // The enqueue facts are copied before the settlement, which may change the verdict object it returned.
-        const observation = receiptObserver === undefined ? undefined : Object.freeze(
+        const observation = receiptObserver === undefined || enqueued === undefined ? undefined : Object.freeze(
             {
                 kind: 'receipt-outbox',
                 serverPeerId,
@@ -743,27 +739,32 @@ export class WsQueueBoxServerReceiptAggregation {
     }
 
     /**
-     * Writes a receipt its sender's resend recovers to the origin's sockets here and records one `receipt-transport`
-     * per connection it called; whether a socket took it. Any other receipt is not written here and answers false.
+     * Writes an `admitted` receipt with a head behind it, which a re-sent copy is answered from, to the origin's
+     * sockets here, and records one `receipt-transport` per connection it called; whether a socket took it. A sender
+     * that resends nothing reads only its terminal receipt when this copy is lost on the wire. Any other receipt is
+     * not written here and answers false.
      */
     private writeLiveReceipt(issued: WsQueueBoxServerIssuedReceipt, message: ALMessage): boolean {
-        if (!isWsQueueBoxServerResendRecoveredReceipt(issued.receipt)) {
+        if (!isWsQueueBoxServerHeadBackedAdmittedReceipt(issued.receipt)) {
             return false;
         }
         const { liveDelivery, receiptObserver, serverPeerId } = this.#dependencies;
         const sent = liveDelivery.sendToResolvedPeerWithEvidence({ peerId: issued.receipt.originPeerId, message });
-        for (const write of sent.writes) {
-            recordWsQueueBoxServerReceiptObservation(
-                receiptObserver,
-                toWsQueueBoxServerLiveReceiptTransport(issued, write, serverPeerId)
-            );
+        const transports = receiptObserver === undefined
+            ? []
+            : toWsQueueBoxServerLiveReceiptTransports(issued, sent.writes, serverPeerId);
+        for (const transport of transports) {
+            recordWsQueueBoxServerReceiptObservation(receiptObserver, transport);
         }
         return sent.sentCount > 0;
     }
 
-    /** Two commits: a crash between them leaves the server row unsettled until the ended work delivers again. */
-    private async settleServerRow(message: ALMessage, enqueued: ALOutboundEnqueueResult): Promise<void> {
-        const { kind } = enqueued.verdict;
+    /**
+     * Two commits: a crash between them leaves the server row unsettled until the ended work delivers again. A
+     * receipt a socket here took has no enqueue to refuse it.
+     */
+    private async settleServerRow(message: ALMessage, enqueued: ALOutboundEnqueueResult | undefined): Promise<void> {
+        const kind = enqueued?.verdict.kind;
         if (kind === 'storage-unavailable' || kind === 'failed') {
             throw new Error(`AL terminal receipt ${message.id.msgId} was not stored: ${kind}`);
         }

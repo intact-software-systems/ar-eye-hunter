@@ -31,3 +31,12 @@ export function toWsQueueBoxServerLiveReceiptTransport(
         retryAfterMs: undefined
     });
 }
+
+/** The `receipt-transport` observations of a live receipt's writes, one per connection, in the order written. */
+export function toWsQueueBoxServerLiveReceiptTransports(
+    issued: WsQueueBoxServerIssuedReceipt,
+    writes: readonly WsQueueBoxServerLiveDelivery.ConnectionWrite[],
+    serverPeerId: string
+): readonly WsQueueBoxServerReceiptTransportObservation[] {
+    return writes.map((write) => toWsQueueBoxServerLiveReceiptTransport(issued, write, serverPeerId));
+}

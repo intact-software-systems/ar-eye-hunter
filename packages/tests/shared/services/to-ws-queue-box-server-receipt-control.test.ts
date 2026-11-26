@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { AL_RECEIPT_DEADLINE_GRACE_MS, decodeALControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALReceiptRecordOpening } from '@shared/alm/receipt-record/al-receipt-record-rows.ts';
 import {
+    isWsQueueBoxServerHeadBackedAdmittedReceipt,
     isWsQueueBoxServerReceiptEncodable,
-    isWsQueueBoxServerResendRecoveredReceipt,
     toWsQueueBoxServerEndedReceiptControlId,
     toWsQueueBoxServerReceiptControlMessage,
     toWsQueueBoxServerReceiptPayload
@@ -59,7 +59,7 @@ describe('the receipt control', () => {
     });
 });
 
-describe('which receipt a sender\'s resend recovers', () => {
+describe('which receipt is an admitted with a head behind it', () => {
     const head = opening(2);
     const receiptAt = (phase: 'admitted' | 'complete' | 'timed-out', expected: readonly string[]) => ({
         ...toWsQueueBoxServerReceiptPayload(head, {
@@ -73,19 +73,19 @@ describe('which receipt a sender\'s resend recovers', () => {
 
     // Pins an `admitted` with a head behind it kept waiting for the outbound worker as a row.
     it('is an admitted receipt that expects somebody', () => {
-        expect(isWsQueueBoxServerResendRecoveredReceipt(receiptAt('admitted', head.expectedRecipientPeerIds))).toBe(true);
+        expect(isWsQueueBoxServerHeadBackedAdmittedReceipt(receiptAt('admitted', head.expectedRecipientPeerIds))).toBe(true);
     });
 
     // Pins the only answer of a send admitted to nobody, which no resend is answered again, losing its row.
     it('is not an admitted receipt that expects nobody', () => {
-        expect(isWsQueueBoxServerResendRecoveredReceipt(receiptAt('admitted', []))).toBe(false);
+        expect(isWsQueueBoxServerHeadBackedAdmittedReceipt(receiptAt('admitted', []))).toBe(false);
     });
 
     // Pins a terminal receipt losing its durable row.
     it('is not a complete or a timed-out receipt', () => {
         expect([
-            isWsQueueBoxServerResendRecoveredReceipt(receiptAt('complete', head.expectedRecipientPeerIds)),
-            isWsQueueBoxServerResendRecoveredReceipt(receiptAt('timed-out', head.expectedRecipientPeerIds))
+            isWsQueueBoxServerHeadBackedAdmittedReceipt(receiptAt('complete', head.expectedRecipientPeerIds)),
+            isWsQueueBoxServerHeadBackedAdmittedReceipt(receiptAt('timed-out', head.expectedRecipientPeerIds))
         ]).toEqual([false, false]);
     });
 });
