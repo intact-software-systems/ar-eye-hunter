@@ -1,7 +1,3 @@
-import {
-    AL_WS_CLIENT_CAPABILITIES,
-    toALCarrierQosInputProvider
-} from '@shared/al-contracts/al-carrier-capabilities.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALPeerRepairControlMessage } from '@shared/al-contracts/al-control.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
@@ -13,6 +9,7 @@ import { toWsQueueBoxClientDispatchPlan } from '@shared/services/ws-queue-box-cl
 
 import type { OrderedSendScheduledSend } from '../compute-ordered-send-schedule.ts';
 import type { OrderedSendCellResendOffer } from '../ordered-send-cell-observations.ts';
+import { ORDERED_SEND_WS_CLIENT_QOS_PROVIDER } from '../to-ordered-send-message.ts';
 import type { OrderedSendSocketRead } from '../to-ordered-send-socket-read.ts';
 import {
     computeOrderedSendRepairReoffers,
@@ -77,8 +74,8 @@ const NO_REPAIR_ANSWER: OrderedSendClientStandIn.RepairAnswer = { reoffers: [], 
  *   receipt of the send its publisher read, in any phase, ends the wait, and so does a NACK that may end the send
  *   (`mayALOutboundControlEndSend`).
  *
- * Both limits come from `toWsQueueBoxClientDispatchPlan` over the send's own envelope, with the capabilities and the
- * empty QoS provider a browser composes its WS client with.
+ * Both limits come from `toWsQueueBoxClientDispatchPlan` over the send's own message, with the QoS provider the
+ * message was planned with (`ORDERED_SEND_WS_CLIENT_QOS_PROVIDER`).
  *
  * What it does not model: the client's outbound commits, their conflicts and its engine's timing, so a re-offer
  * leaves as soon as the run asks for it; the client's `ack-timeout` schedule once the server has answered; the end
@@ -192,7 +189,7 @@ export class OrderedSendClientStandIn {
             socketOpen: true,
             nowMs: message.id.ts,
             backpressured: false,
-            qosProvider: toALCarrierQosInputProvider(AL_WS_CLIENT_CAPABILITIES, {})
+            qosProvider: ORDERED_SEND_WS_CLIENT_QOS_PROVIDER
         });
     }
 
