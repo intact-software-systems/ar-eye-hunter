@@ -61,6 +61,8 @@ export function computeGroupSessionMutation(
     const schedule = readGroupSessionSchedule(stored.value.metadata);
     const rejection = schedule === null
         ? 'This room is not scheduled.'
+        : facts.internalAuthority === 'guest-booking' && !schedule.guestBooking
+        ? 'Guest booking is disabled for this session.'
         : command.input.actorPrincipalId === null
         ? 'An authenticated account is required.'
         : command.input.expectedScheduleRevision !== schedule.revision
@@ -107,6 +109,7 @@ function computeOrganizerScheduleChange(mutation: GroupSessionMutation): GroupMu
         return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: rejection });
     }
     const nextSchedule = {
+        ...schedule,
         revision: schedule.revision + 1,
         startsAtEpochMs: command.input.startsAtEpochMs ?? schedule.startsAtEpochMs,
         cancelledAtEpochMs: action === 'cancel' ? facts.attemptAtEpochMs : null
@@ -141,6 +144,7 @@ function computeAccountReservationChange(mutation: GroupSessionMutation): GroupM
         const credentials = canUseGroupAdmissionCredentials({
             snapshot: toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs),
             actor: { principalId, sessionId: command.input.actorSessionId ?? undefined },
+            guestBooking: facts.internalAuthority === 'guest-booking',
             nowEpochMs: facts.attemptAtEpochMs
         });
         if (!credentials.allowed) {

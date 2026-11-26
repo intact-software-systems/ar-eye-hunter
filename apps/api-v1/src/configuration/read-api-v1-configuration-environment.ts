@@ -289,6 +289,11 @@ const ENVIRONMENT_SETTINGS: readonly EnvironmentSetting[] = [
         apply: (source, value) => source.stateApi.strictReadAuthorization = value
     },
     {
+        name: 'RALLAR_EVENT_HANDOVER_WINDOW_MS',
+        decode: decodeNumber,
+        apply: (source, value) => source.group.eventHandoverWindowMs = value
+    },
+    {
         name: 'RALLAR_GROUP_DEFAULT_MAX_MEMBERS',
         decode: decodeNumber,
         apply: (source, value) => source.group.defaultMaxMembers = value

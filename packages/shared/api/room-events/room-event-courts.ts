@@ -1,4 +1,5 @@
 import { withoutEventAlerts } from './room-event-alerts.ts';
+import { clearEventHandover } from './room-event-handover.ts';
 import type { RoomEvent } from './room-event.ts';
 import { requirePositiveInteger } from '../exact-object-decoding.ts';
 
@@ -50,7 +51,7 @@ function afterSeatRemoval(court: RoomEvent.Court, seats: readonly RoomEvent.Seat
 }
 
 export function closeEvent(event: RoomEvent): RoomEvent {
-    return { ...withoutEventAlerts(event, () => true), closed: true, proposals: [], queue: [], courts: event.courts.map(court => ({ ...court, seats: [] })) };
+    return { ...withoutEventAlerts(clearEventHandover(event), () => true), closed: true, proposals: [], queue: [], courts: event.courts.map(court => ({ ...court, seats: [] })) };
 }
 
 export function changeCourt(event: RoomEvent, command: Extract<RoomEvent.Command, {groupId: string}>, player: string): RoomEvent {

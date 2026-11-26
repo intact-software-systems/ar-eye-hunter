@@ -19,6 +19,16 @@ const groupId = 'scheduled-session';
 const ref = { ...SCOPE, groupId };
 
 describe('scheduled session commands through AppInbox', () => {
+    it('preserves the organizer’s guest booking choice across a reschedule', async () => {
+        const harness = await createSession(3_600_000, true);
+        expect((await harness.groupStateService.sessionDirectory.read(ref, 'alice'))?.schedule.guestBooking).toBe(true);
+        requireGroupStateResult(await change(harness, 'owner', {
+            requestId: 'reschedule-guests', action: 'reschedule', expectedScheduleRevision: 1,
+            startsAtEpochMs: harness.nowEpochMs + 7_200_000
+        }));
+        expect((await harness.groupStateService.sessionDirectory.read(ref, 'alice'))?.schedule.guestBooking).toBe(true);
+    });
+
     it('reserves once per account, replays exactly, and does not publish reservation identities', async () => {
         const harness = await createSession();
         const request: ChangeGroupSessionRequest = {
@@ -350,7 +360,7 @@ describe('scheduled session commands through AppInbox', () => {
     });
 });
 
-async function createSession(startOffsetMs = 3_600_000): Promise<AuthorityHarness> {
+async function createSession(startOffsetMs = 3_600_000, guestBooking = false): Promise<AuthorityHarness> {
     const harness = await createAuthorityHarness(['owner', 'alice', 'bob']);
     requireGroupStateResult(
         await processAuthenticated({
@@ -373,7 +383,8 @@ async function createSession(startOffsetMs = 3_600_000): Promise<AuthorityHarnes
                         maxMembers: 2,
                         retention: { mode: 'temporary' },
                         createdByPrincipalId: 'owner',
-                        scheduledStartAtEpochMs: harness.nowEpochMs + startOffsetMs
+                        scheduledStartAtEpochMs: harness.nowEpochMs + startOffsetMs,
+                        ...(guestBooking && { guestBooking: true })
                     }
                 }
             }

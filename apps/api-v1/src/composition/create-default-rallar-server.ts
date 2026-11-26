@@ -356,6 +356,7 @@ function createDefaultApiV1RestServices(rest: DefaultApiV1RestInput) {
     });
     const eventGroups = runtime.topologyServices.groupStateRepository;
     const eventConfig = { serviceId: myServerId, finishedRetentionMs: configuration.appInbox.finishedRetentionMs,
+        handoverWindowMs: configuration.group.eventHandoverWindowMs,
         organizerIdsByApplication: configuration.group.eventOrganizerIdsByApplication,
         organizerIds: configuration.authentication.adminClientIds };
     const roomEvents = new TemporaryEventService({
@@ -453,6 +454,7 @@ function createDefaultApiV1RouteInstallers({
             serverPeerId: runtime.wsQBoxServerService.name
         },
         ice: configuration.ice,
+        guestBookingByApplication: configuration.group.guestBookingByApplication,
         temporaryRoomPolicies: configuration.group.temporaryRoomPoliciesByApplication,
         groupAdmission: configuration.group.admission,
         groupDefaultMaxMembers: configuration.group.defaultMaxMembers,

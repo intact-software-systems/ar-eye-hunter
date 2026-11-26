@@ -457,11 +457,16 @@ function decodeGroup(
     const defaultMaxMembers = decoder.integer('group.defaultMaxMembers', 0);
     return {
         roomLobbyPoliciesByApplication: decodeApplicationPolicies(decoder, 'group.roomLobbyPoliciesByApplication', decodeRoomLobbyPolicy),
+        eventHandoverWindowMs: decoder.integer('group.eventHandoverWindowMs', 1),
         eventOrganizerIdsByApplication: decodeApplicationPolicies(decoder, 'group.eventOrganizerIdsByApplication', value => {
             if (!Array.isArray(value) || !value.every(id => typeof id === 'string') || new Set(value).size !== value.length) {
                 throw new Error('Event organizer IDs must be a list of distinct principal IDs.');
             }
             return value.map(id => assertValidRallarRouteId(id));
+        }),
+        guestBookingByApplication: decodeApplicationPolicies(decoder, 'group.guestBookingByApplication', value => {
+            if (typeof value !== 'boolean') throw new TypeError('Guest booking app policy must be a boolean.');
+            return value;
         }),
         temporaryRoomPoliciesByApplication: decodeApplicationPolicies(decoder, 'group.temporaryRoomPoliciesByApplication', value => {
             const policy = decodeTemporaryRoomPolicy(value);

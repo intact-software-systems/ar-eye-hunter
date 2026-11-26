@@ -1,3 +1,4 @@
+import { toGuestBookingCommand } from '@shared-server/rallar-system/group-state/schedule/guest-booking-command.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import type { GroupMutationDescriptor } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
@@ -17,7 +18,7 @@ import {
 
 const ref = { applicationId: 'scheduled-tests', workspaceId: 'default', groupId: 'last-seat' };
 
-async function createScheduledFixture(startOffsetMs = 3_600_000, managed = false) {
+async function createScheduledFixture(startOffsetMs = 3_600_000, managed = false, guestBooking = false, joinMode: 'open' | 'invite-only' = 'open') {
     const fixture = await createRetentionDatabaseFixture();
     const create = await prepareMutation(
         fixture,
@@ -30,13 +31,14 @@ async function createScheduledFixture(startOffsetMs = 3_600_000, managed = false
                 groupId: ref.groupId,
                 displayName: 'Last seat',
                 kind: 'room',
-                joinMode: 'open',
+                joinMode,
                 maxMembers: 2,
                 ...(managed ? { roomLobby: { returnWindowMs: 5000, claimWindowMs: 10000 } } : {}),
                 createdByPrincipalId: 'owner',
                 actorPrincipalId: 'owner',
                 retention: { mode: 'temporary' },
-                scheduledStartAtEpochMs: fixture.nowEpochMs + startOffsetMs
+                scheduledStartAtEpochMs: fixture.nowEpochMs + startOffsetMs,
+                ...(guestBooking && { guestBooking: true })
             }
         })
     );
@@ -61,6 +63,52 @@ function reservation(principalId: string, requestId: string) {
 }
 
 describe('scheduled-session SQL concurrency and rollback', () => {
+    it('fences the last guest booking with account reservations and issues a room session only on timely claim', async () => {
+        const advance = 21 * 86_400_000;
+        const fixture = await createScheduledFixture(advance, false, true);
+        try {
+            const principalId = 'guest-' + 'a'.repeat(64);
+            const scope = { roomRef: ref, principalId, expectedScheduleRevision: 1 };
+            const book = toGuestBookingCommand({ ...scope, requestId: 'book', action: 'reserve' });
+            const booking = await fixture.mutations.captureGuestMembershipMutationIngress(book, fixture.nowEpochMs);
+            const account = await prepareForAccount(fixture, 'alice', reservation('alice', 'last-account'));
+            await commitMutation(fixture, requireMutationWrite(await retryMutation(fixture, booking)));
+            expect((await retryMutation(fixture, booking)).outcome).toBe('replay');
+            await expect(commitMutation(fixture, requireMutationWrite(account.computed))).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
+            expect((await retryMutation(fixture, account.ingress)).outcome).toBe('rejected');
+            expect((await fixture.repository.readSnapshot(ref))?.members.map(member => member.principalId)).toEqual(['owner']);
+            const transport = { sessionId: 'guest-session-' + 'b'.repeat(64), accessTokenDigest: 'A'.repeat(43) };
+            const claim = (requestId: string) => fixture.mutations.captureGuestMembershipMutationIngress(
+                toGuestBookingCommand({ ...scope, action: 'claim', requestId, guestTransport: transport }), fixture.nowEpochMs);
+            await expect(retryMutation(fixture, await claim('early'))).rejects.toThrow();
+            fixture.nowEpochMs += advance;
+            const timely = await claim('arrive');
+            await commitMutation(fixture, requireMutationWrite(await retryMutation(fixture, timely)));
+            expect((await retryMutation(fixture, timely)).outcome).toBe('replay');
+            expect((await fixture.repository.findSessionReservationsEntry(ref))?.value.principalIds).toEqual([]);
+            expect((await fixture.repository.findMember({ ...ref, principalId }))?.guestLease?.admittedAtEpochMs).toBe(fixture.nowEpochMs);
+        } finally { await fixture.storage.close(); }
+    });
+
+    it('admits a booked guest to an enabled invite-only lobby and rejects a delayed claim at expiry', async () => {
+        const fixture = await createScheduledFixture(1_200_000, true, true, 'invite-only');
+        try {
+            const principalId = 'guest-' + 'c'.repeat(64);
+            const scope = { roomRef: ref, principalId, expectedScheduleRevision: 1 };
+            const booking = await fixture.mutations.captureGuestMembershipMutationIngress(
+                toGuestBookingCommand({ ...scope, requestId: 'reserve', action: 'reserve' }), fixture.nowEpochMs);
+            await commitMutation(fixture, requireMutationWrite(await retryMutation(fixture, booking)));
+            const guestTransport = { sessionId: 'guest-session-' + 'd'.repeat(64), accessTokenDigest: 'A'.repeat(43) };
+            fixture.nowEpochMs += 1_799_999;
+            const ingress = await fixture.mutations.captureGuestMembershipMutationIngress(
+                toGuestBookingCommand({ ...scope, requestId: 'arrive', action: 'claim', guestTransport }), fixture.nowEpochMs);
+            expect((await retryMutation(fixture, ingress)).outcome).toBe('write');
+            fixture.nowEpochMs += 1;
+            await expect(retryMutation(fixture, ingress)).rejects.toThrow('Claim requires an open lobby and a current guest reservation.');
+            expect(await fixture.repository.findMember({ ...ref, principalId })).toBeUndefined();
+        } finally { await fixture.storage.close(); }
+    });
+
     it('fails direct and paginated private reads on SQL-backed identity corruption', async () => {
         const fixture = await createScheduledFixture();
         try {

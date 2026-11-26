@@ -40,8 +40,7 @@ export function computeGroupObservationPublication(
     if (!principalIds.length) {
         return { outbox: [], provenance: [] };
     }
-    return computeViewInvalidationPublication({
-        ...(program && !groupAccessChanged ? { resource: 'room-program', name: program.name } : { resource: 'room-access' }),
+    const publication = {
         groupId: group.groupId,
         scope: { applicationId: group.applicationId, workspaceId: group.workspaceId },
         principalIds,
@@ -50,5 +49,13 @@ export function computeGroupObservationPublication(
         retentionMs: facts.expireAtEpochMs - facts.nowEpochMs,
         serviceId: facts.serviceId,
         traceId: facts.traceId
+    };
+    const notice = computeViewInvalidationPublication({
+        ...publication, ...(program && !groupAccessChanged ? { resource: 'room-program', name: program.name } : { resource: 'room-access' })
     });
+    if (group.eventRoom?.lobbyGroupId !== group.groupId || !members.length) return notice;
+    const organizer = computeViewInvalidationPublication({
+        ...publication, resource: 'room-event-organizer', principalIds: [group.ownerPrincipalId]
+    });
+    return { outbox: [...notice.outbox, ...organizer.outbox], provenance: [...notice.provenance, ...organizer.provenance] };
 }

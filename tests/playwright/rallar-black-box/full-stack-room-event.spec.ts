@@ -1,3 +1,4 @@
+import { controlRoomConnection } from './control-room-connection.ts';
 import { expect, test, type Page } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -7,7 +8,7 @@ const config = readFullStackConfig();
 const sharedWeb = '/@fs' + fileURLToPath(new URL('../../../packages/shared-web/browser/', import.meta.url));
 const pageUrl = '/@fs' + fileURLToPath(new URL('../../../examples/room-scoreboard/index.html', import.meta.url));
 
-async function openEvent(page: Page, lobby: GroupRef, entry: 'create' | 'return' | { invitationSecret: string }) {
+async function openEvent(page: Page, lobby: GroupRef, entry: 'create' | 'return' | { invitationSecret: string } | { username: string; password: string }) {
     await page.goto(pageUrl);
     return page.evaluateHandle(async ({ lobby, entry, sharedWeb, apiBaseUrl }) => {
         const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(sharedWeb + 'rallar.ts');
@@ -17,17 +18,18 @@ async function openEvent(page: Page, lobby: GroupRef, entry: 'create' | 'return'
             await import(sharedWeb + 'rooms/entry/redeem-guest-invitation.ts');
         rallar.configure({ apiBaseUrl });
         rallar.setDefaults({ applicationId: lobby.applicationId, workspaceId: lobby.workspaceId });
-        if (typeof entry === 'object') {
+        if (typeof entry === 'object' && 'invitationSecret' in entry) {
             const access = await redeemRoomGuestInvitation(lobby, { guestSecret: createRoomGuestSecret(), invitationSecret: entry.invitationSecret }, { requestId: crypto.randomUUID() });
             await rallar.auth.activateGuest({ room: lobby, access, username: 'Guest' });
             await rallar.connect();
             await rallar.rooms.join(lobby, { presenceOnly: true });
         } else {
-            await rallar.auth.login({ username: 'admin', password: 'admin' });
+            await rallar.auth.login(typeof entry === 'object' ? entry : { username: 'admin', password: 'admin' });
             await rallar.connect();
             if (entry === 'create') {
                 await rallar.rooms.createAndSwitch({ ...lobby, displayName: 'Pickup event', joinMode: 'invite-only', directoryListing: 'unlisted' });
             } else {
+                if (typeof entry === 'object') await rallar.rooms.acceptInvite(lobby);
                 await rallar.rooms.join(lobby, { presenceOnly: true });
             }
         }
@@ -145,4 +147,101 @@ test('a guest opening a court alert sees the current allocation and can requeue 
         await guest.getByRole('button', {name:'Join queue'}).click();
         await expect(guest.getByRole('button', {name:'Enter east'})).toBeVisible();
     } finally { await guest.close(); }
+});
+
+test('organizer follows the other court from their own court and recovers a missed expiry', async ({ page, browser, baseURL }) => {
+    test.skip(!config.enabled, config.skipReason);
+    const lobby = { applicationId: 'club', workspaceId: crypto.randomUUID(), groupId: 'pickup' };
+    const connection = await controlRoomConnection(page, config.apiBaseUrl);
+    const host = await openEvent(page, lobby, 'create');
+    const invitation = await host.evaluate(async ({ event, rallar, createRoomGuestSecret }, { lobby, invitationModule }) => {
+        const { hashRoomInvitationSecret }: typeof import('@shared/api/room-guests/invitation.ts') = await import(invitationModule);
+        const secret = createRoomGuestSecret();
+        await rallar.rooms.update({ roomRef: lobby, guestInvitationVerifier: await hashRoomInvitationSecret(secret) });
+        await event.act({ action: 'create', courts: [{ groupId: 'north', capacity: 1 }, { groupId: 'south', capacity: 2 }],
+            closesAt: Date.now() + 120_000, claimWindowMs: 12_000 });
+        await event.act({ action: 'propose', partyId: 'operator', players: [rallar.session()!.clientId] });
+        await event.enterCourt();
+        return secret;
+    }, { lobby, invitationModule: '/@fs' + fileURLToPath(new URL('../../../packages/shared/api/room-guests/invitation.ts', import.meta.url)) });
+    const playerPage = await browser.newPage({ baseURL });
+    const waitingPage = await browser.newPage({ baseURL });
+    try {
+        const player = await openEvent(playerPage, lobby, { invitationSecret: invitation });
+        const waiting = await openEvent(waitingPage, lobby, { invitationSecret: invitation });
+        await page.getByLabel('Event lobby').fill(lobby.groupId);
+        await page.getByRole('button', { name: 'Watch event' }).click();
+        const roster = page.getByRole('region', { name: 'Organizer roster' });
+        await expect(roster).toContainText('north');
+        await player.evaluate(async ({ event, rallar }) => {
+            await event.act({ action: 'propose', partyId: 'runners', players: [rallar.session()!.clientId] });
+            await event.enterCourt();
+        });
+        await expect(roster).toContainText('runners');
+        await waiting.evaluate(({ event, rallar }) => event.act({ action: 'propose', partyId: 'waiting-player', players: [rallar.session()!.clientId] }));
+        await expect(roster).toContainText('waiting-player');
+        await connection.disconnect();
+        await expect.poll(() => waiting.evaluate(({ event }) => event.getState().view?.offer), { timeout: 25_000 }).toBeNull();
+        await connection.reconnect();
+        await expect(roster).not.toContainText('waiting-player');
+        await expect(roster).toContainText('runners');
+        expect(await host.evaluate(({ rallar }) => rallar.rooms.selected()?.groupId)).toBe('north');
+    } finally {
+        await Promise.all([playerPage.close(), waitingPage.close()]);
+    }
+});
+
+test('accepting handover on a second court recovers control after the original organizer disconnects', async ({ page, browser, baseURL }) => {
+    test.skip(!config.enabled, config.skipReason);
+    const lobby = { applicationId: 'club', workspaceId: crypto.randomUUID(), groupId: 'pickup' };
+    const connection = await controlRoomConnection(page, config.apiBaseUrl);
+    const original = await openEvent(page, lobby, 'create');
+    const recipientPage = await browser.newPage({ baseURL });
+    try {
+        await original.evaluate(({ rallar }, { lobby, recipient }) => rallar.rooms.invite(lobby, recipient), { lobby, recipient: config.userB.clientId });
+        const recipient = await openEvent(recipientPage, lobby, { username: config.userB.username, password: config.userB.password });
+        await original.evaluate(({ event }) => event.act({ action: 'create', courts: [
+            { groupId: 'north', capacity: 1 }, { groupId: 'south', capacity: 1 }
+        ], closesAt: Date.now() + 180_000 }));
+        for (const player of [original, recipient]) {
+            await player.evaluate(async ({ event, rallar }) => {
+                const id = rallar.session()!.clientId;
+                await event.act({ action: 'propose', partyId: id, players: [id] });
+                await event.enterCourt();
+            });
+        }
+        const court = { ...lobby, groupId: 'north' };
+        const clock = await original.evaluate(async ({ rallar }, court) => {
+            const director = await rallar.director.appoint(court);
+            await rallar.rooms.changeClock(court, { operation: 'start', expectedDirectorEpoch: director.appointment!.epoch,
+                expectedRevision: 0, name: 'match', durationMs: 120_000 }, crypto.randomUUID());
+            return rallar.rooms.readClock(court, 'match');
+        }, court);
+        expect(clock).toMatchObject({ revision: 1, status: 'running' });
+        for (const client of [page, recipientPage]) {
+            await client.getByLabel('Event lobby').fill(lobby.groupId);
+            await client.getByRole('button', { name: 'Watch event' }).click();
+        }
+        const roster = page.getByRole('region', { name: 'Organizer roster' });
+        await expect(roster).toContainText('south');
+        await page.getByLabel('Next organizer').selectOption(config.userB.clientId);
+        await page.getByRole('button', { name: 'Offer handover' }).click();
+        const accept = recipientPage.getByRole('button', { name: 'Accept handover' });
+        await expect(accept).toBeVisible();
+        await connection.disconnect();
+        await accept.click();
+        const nextRoster = recipientPage.getByRole('region', { name: 'Organizer roster' });
+        await expect(nextRoster).toContainText('north');
+        await expect(nextRoster).toContainText('south');
+        expect(await recipient.evaluate(({ rallar }) => rallar.rooms.selected()?.groupId)).toBe('south');
+        await connection.reconnect();
+        await expect(roster).not.toContainText('south');
+        expect(await original.evaluate(({ rallar }, court) => rallar.rooms.readClock(court, 'match'), court)).toEqual(clock);
+        await original.evaluate(({ event }) => event.act({ action: 'close' }));
+        await expect.poll(() => original.evaluate(({ event }) => event.getState().error)).toBeTruthy();
+        expect(await recipient.evaluate(async ({ event }) => {
+            await event.refresh();
+            return event.getState().view?.closed;
+        })).toBe(false);
+    } finally { await recipientPage.close(); }
 });

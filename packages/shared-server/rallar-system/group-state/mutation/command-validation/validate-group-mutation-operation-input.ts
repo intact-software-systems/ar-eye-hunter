@@ -66,6 +66,7 @@ const INPUT_FIELDS: Partial<Record<GroupMutationCommand['operation'], readonly G
         GROUP_JOIN_MODE,
         { key: 'directoryListing', kind: 'enum', allowed: ['listed', 'unlisted'] },
         { key: 'scheduledStartAtEpochMs', kind: 'positive-integer' },
+        { key: 'guestBooking', kind: 'boolean' },
         { key: 'maxMembers', kind: 'positive-integer' },
         { key: 'maxSpectators', kind: 'nonnegative-integer' },
         { key: 'maxSessionsPerMember', kind: 'positive-integer' },
@@ -221,7 +222,7 @@ export function validateCreationPublicationGrants(value: JsonWireValue | undefin
 
 function validateScheduledCreationInput(input: JsonWireObject): readonly TypeError[] {
     if (input.scheduledStartAtEpochMs === undefined) {
-        return [];
+        return input.guestBooking === undefined ? [] : [new TypeError('Guest booking requires a scheduled room.')];
     }
     return input.kind === 'room' && typeof input.maxMembers === 'number' &&
             Number.isSafeInteger(input.maxMembers) && input.maxMembers >= 1 && input.maxMembers <= 64 &&
