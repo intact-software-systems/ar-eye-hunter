@@ -197,6 +197,13 @@ An organizer can watch the whole event while playing on one court. The private r
 
 An event organizer can offer control to another authorized organizer present in the event. The recipient accepts from the lobby or a claimed court. Offers expire after the configurable `group.eventHandoverWindowMs`, ten minutes by default. The sender can cancel. Disconnecting leaves an offered handover available until expiry; without an offer, the original organizer retains control.
 
+A guest or signed-in player can opt a device into court-ready notifications for an event.
+An installed app receives a generic Web Push alert when the server offers that player a court.
+Reopening the app retrieves their current allocation. If they missed a claim deadline, their
+private event view remembers the expired offer until they requeue or receive a new offer.
+The next player's seat remains theirs. On iPhone, open the Home Screen app before joining.
+
+
 ## Sharing rooms
 
 AR Eye Hunter and Relic Hunters let hosts create code-protected or invite-only

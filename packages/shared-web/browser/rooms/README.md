@@ -167,7 +167,9 @@ In the service worker, use `courtReadyNotification` to display the generic alert
 `openCourtAlertClick` to remember the tapped offer before focusing or opening the app.
 On startup, foreground return or the `COURT_ALERT_OPENED` worker message, read
 `readCourtAlertClick` for this exact event and refresh the player's private view.
-Use `courtAlertStatus` to compare the clicked offer against current authority, and
-`clearCourtAlertClick` when the player successfully claims or rejoins the queue.
+Use `courtAlertStatus` to compare the clicked offer against current authority. The player's
+private `view.lastExpiredOffer` also reports an unclaimed deadline after a bare app launch,
+even when the OS supplies no notification data. Rallar clears the missed offer on
+requeue or reassignment. Call `clearCourtAlertClick` after their successful action.
 The installable [pickup example](../../../../examples/pickup-event/README.md) shows the
 full journey.

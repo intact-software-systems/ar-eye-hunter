@@ -1,6 +1,6 @@
 import { readCourtAlertPublicKey } from '@shared-web/browser/rooms/events/court-ready-notifications.ts';
 
-export async function preparePickupAlerts(notice: HTMLElement, signal: AbortSignal) {
+export async function preparePickupAlerts(notice: Pick<HTMLElement, 'textContent'>, signal: AbortSignal) {
     const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
         (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     if (ios && !matchMedia('(display-mode: standalone)').matches) {
@@ -13,8 +13,26 @@ export async function preparePickupAlerts(notice: HTMLElement, signal: AbortSign
         if (!publicKey) return null;
         const installed = await navigator.serviceWorker.register('./worker.js', { type: 'module', scope: './', updateViaCache: 'none' });
         await installed.update();
-        const registration = await navigator.serviceWorker.ready;
-        return { publicKey, registration };
+        const worker = installed.active ?? installed.waiting ?? installed.installing;
+        if (!worker) throw new Error('The court alert worker did not install.');
+        if (worker.state !== 'activated') {
+            await new Promise<void>((resolve, reject) => {
+                const stop = new AbortController();
+                const done = () => {
+                    if (signal.aborted || worker.state === 'redundant') {
+                        stop.abort();
+                        reject(new Error('The court alert worker did not activate.'));
+                    } else if (worker.state === 'activated') {
+                        stop.abort();
+                        resolve();
+                    }
+                };
+                worker.addEventListener('statechange', done, { signal: stop.signal });
+                signal.addEventListener('abort', done, { signal: stop.signal });
+                done();
+            });
+        }
+        return { publicKey, registration: installed };
     } catch {
         notice.textContent = 'Alerts are unavailable in this browser. You can still join the queue.';
         return null;
