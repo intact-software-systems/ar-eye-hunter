@@ -5,5 +5,5 @@ export function pickupStatus(view: RoomEvent.View, expired: boolean): string {
     if (view.offer) {
         current = (view.offer.deadline === null ? 'Court assigned: ' : 'Your court is ready: ') + view.offer.groupId;
     }
-    return expired ? 'Your earlier offer has expired. ' + current : current;
+    return expired || view.lastExpiredOffer !== null ? 'Your earlier offer has expired. ' + current : current;
 }

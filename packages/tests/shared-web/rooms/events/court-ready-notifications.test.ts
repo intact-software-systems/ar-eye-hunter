@@ -42,3 +42,30 @@ it('opens only the app scope and reports an old alert when the current court has
     const injected = { ...push, url: 'https://unrelated.example' };
     expect(() => courtAlertLaunchUrl('https://example.com/app/', injected)).toThrow();
 });
+
+it('keeps a newer click received during dismissal of an older click', async () => {
+    const { openCourtAlertClick, readCourtAlertClick, clearCourtAlertClick } = await import('@shared-web/browser/rooms/events/court-alert-click.ts');
+    const scope = 'https://example.com/courts/';
+    const lobby = { applicationId: 'club', workspaceId: 'event', groupId: 'lobby' };
+    const first = { type: 'rallar-court-ready' as const, lobby, offerRevision: 1, tag: 'a'.repeat(32) };
+    const second = { ...first, offerRevision: 2, tag: 'b'.repeat(32) };
+    const rows = new Map<string, Response>();
+    let beforeDelete: (() => Promise<void>) | null = null;
+    const keyText = (key: RequestInfo | URL) => key instanceof Request ? key.url : String(key);
+    const cache: Pick<Cache, 'match' | 'put' | 'delete'> = {
+        match: async key => rows.get(keyText(key))?.clone(),
+        put: async (key, value) => { rows.set(keyText(key), value); },
+        delete: async key => {
+            const next = beforeDelete;
+            beforeDelete = null;
+            await next?.();
+            return rows.delete(keyText(key));
+        }
+    };
+    const storage = { open: async () => cache };
+    const click = (message: typeof first) => openCourtAlertClick({ scope, storage, message, windows: async () => [], openWindow: async () => null });
+    await click(first);
+    beforeDelete = () => click(second);
+    await clearCourtAlertClick(storage, scope, first);
+    expect(await readCourtAlertClick(storage, scope, lobby)).toEqual(second);
+});

@@ -90,6 +90,25 @@ async function runEventNight({ plans, controls }: ManagedClusterProof.ScenarioIn
     const replacementOffer = requireRecord(replacement, 'replacement offer');
     assert.equal(replacementOffer.groupId, 'east');
     assert.equal(replacementOffer.occurrence, Number(east.occurrence) + 1);
+    await command(second.baseUrl, c.headers, { body: { action: 'claim', groupId: replacementOffer.groupId,
+        occurrence: replacementOffer.occurrence, offerRevision: replacementOffer.offerRevision, partyId: replacementOffer.partyId,
+        courtSecret: randomBytes(32).toString('hex') } });
+    for (const origin of [first.baseUrl, second.baseUrl]) {
+        const missed = await view(origin, a.headers);
+        assert.equal(missed.offer, null);
+        assert.deepEqual(missed.lastExpiredOffer, east);
+        assert.equal((await view(origin, b.headers)).lastExpiredOffer, null);
+        const successor = await view(origin, c.headers);
+        assert.equal(successor.lastExpiredOffer, null);
+        assert.deepEqual(successor.offer, { ...replacementOffer, deadline: null });
+    }
+    await command(first.baseUrl, a.headers, { body: { action: 'propose', partyId: 'back-after-expiry', players: [a.id] } });
+    for (const origin of [first.baseUrl, second.baseUrl]) {
+        const requeued = await view(origin, a.headers);
+        assert.equal(requeued.lastExpiredOffer, null);
+        assert.ok(requeued.queue);
+        assert.deepEqual((await view(origin, c.headers)).offer, { ...replacementOffer, deadline: null });
+    }
     assert.equal(requireRecord((await view(first.baseUrl,b.headers)).offer,'retained west seat').deadline,null);
     const release = { action:'release', groupId:'west', occurrence:west.occurrence, requeue:false };
     const requestId = crypto.randomUUID();

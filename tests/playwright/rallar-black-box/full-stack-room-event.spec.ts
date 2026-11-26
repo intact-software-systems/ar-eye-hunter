@@ -171,6 +171,43 @@ test('a guest opening a court alert sees the current allocation and can requeue 
     } finally { await guest.close(); }
 });
 
+test('a bare Home Screen launch recovers an expired personal offer after another player claims', async ({ page, browser, baseURL }) => {
+    test.skip(!config.enabled, config.skipReason);
+    const lobby = { applicationId: 'club', workspaceId: crypto.randomUUID(), groupId: 'pickup' };
+    const host = await openEvent(page, lobby, 'create');
+    const invitationSecret = await host.evaluate(async ({ event, rallar, createRoomGuestSecret }, { lobby, invitationModule }) => {
+        const { hashRoomInvitationSecret }: typeof import('@shared/api/room-guests/invitation.ts') = await import(invitationModule);
+        const secret = createRoomGuestSecret();
+        await rallar.rooms.update({ roomRef: lobby, guestInvitationVerifier: await hashRoomInvitationSecret(secret) });
+        await event.act({ action: 'create', courts: [{ groupId: 'east', capacity: 1 }], claimWindowMs: 4000, closesAt: Date.now() + 120_000 });
+        await event.act({ action: 'propose', partyId: 'host', players: [rallar.session()!.clientId] });
+        await event.enterCourt();
+        return secret;
+    }, { lobby, invitationModule: '/@fs' + fileURLToPath(new URL('../../../packages/shared/api/room-guests/invitation.ts', import.meta.url)) });
+    const guest = await browser.newContext({ baseURL });
+    const exampleUrl = '/@fs' + fileURLToPath(new URL('../../../examples/pickup-event/index.html', import.meta.url));
+    try {
+        await guest.route('**/event.json', route => route.fulfill({ json: { lobby, invitationSecret, apiBaseUrl: config.apiBaseUrl } }));
+        const first = await guest.newPage();
+        await first.goto(exampleUrl);
+        await first.getByRole('button', { name: 'Join event' }).click();
+        await first.getByRole('button', { name: 'Join queue' }).click();
+        await expect(first.getByRole('status')).toHaveText('Waiting for a court.');
+        await first.close();
+        await host.evaluate(({ event }) => event.act({ action: 'release', groupId: 'east', occurrence: 1, requeue: true }));
+        await expect.poll(() => host.evaluate(({ event }) => event.getState().view?.offer?.occurrence), { timeout: 15000 }).toBe(3);
+        await host.evaluate(({ event }) => event.enterCourt());
+        const successor = await host.evaluate(({ event }) => event.getState().view?.offer);
+        expect(successor).toMatchObject({ occurrence: 3, deadline: null });
+        const restored = await guest.newPage();
+        await restored.goto(exampleUrl);
+        await expect(restored.getByRole('status')).toHaveText('Your earlier offer has expired. Ready to join the queue.', { timeout: 5000 });
+        await restored.getByRole('button', { name: 'Join queue' }).click();
+        await expect(restored.getByRole('status')).toHaveText('Waiting for a court.');
+        expect(await host.evaluate(async ({ event }) => { await event.refresh(); return event.getState().view?.offer; })).toEqual(successor);
+    } finally { await guest.close(); }
+});
+
 test('organizer follows the other court from their own court and recovers a missed expiry', async ({ page, browser, baseURL }) => {
     test.skip(!config.enabled, config.skipReason);
     const lobby = { applicationId: 'club', workspaceId: crypto.randomUUID(), groupId: 'pickup' };

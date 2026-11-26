@@ -1,5 +1,5 @@
 import { pickupStatus } from './pickup-status.ts';
-import { followPickupAlert } from './pickup-alert-recovery.ts';
+import { followPickupAlert } from './follow-pickup-alert.ts';
 import { openPickupInvitation, joinPickupLobby } from './pickup-invitation.ts';
 import { preparePickupAlerts, showInstalledAlertSupport } from './pickup-alerts.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
