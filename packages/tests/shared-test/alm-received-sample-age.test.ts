@@ -43,6 +43,9 @@ describe('the sample age of the copies a messages.received count matched', () =>
         ['holds the text of an unresolved placeholder there', { sentAtEpochMs: '{loop.atEpochMs}' }],
         ['holds a numeric text there', { sentAtEpochMs: String(SENT_AT_EPOCH_MS) }],
         ['holds null there', { sentAtEpochMs: null }],
+        ['holds NaN there', { sentAtEpochMs: Number.NaN }],
+        ['holds positive infinity there', { sentAtEpochMs: Number.POSITIVE_INFINITY }],
+        ['holds negative infinity there', { sentAtEpochMs: Number.NEGATIVE_INFINITY }],
         ['was stamped after it arrived', { sentAtEpochMs: SENT_AT_EPOCH_MS + 21 }],
         ['carries a payload that is no record', 'sentAtEpochMs']
     ])('counts a copy that %s as unrecorded, never as an age', (_label, payload) => {
