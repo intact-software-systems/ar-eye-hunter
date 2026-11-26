@@ -9,6 +9,8 @@ export type {
     RallarMessageHandler,
     RallarMessageLane,
     RallarMessageOrder,
+    RallarMessageOrderGap,
+    RallarMessageOrderGapReason,
     RallarMessagePayload,
     RallarMessageReplyOptions,
     RallarMessageReplyOutcome,
@@ -33,6 +35,7 @@ export type {
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 
 export type {
+    RallarEdgeOrderUsage,
     RallarMessagesOperations,
     RallarMessagesUsage,
     RallarRtcMessageLane,

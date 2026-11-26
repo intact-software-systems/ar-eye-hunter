@@ -127,8 +127,8 @@ function validateRallarChannelPublication(definition: RallarTypedChannelPolicyIn
 
 /**
  * Edge order lives in memory at the two ends and waits only for a send that is retried, so its channel is a
- * volatile command or notification channel. A granted topic's audience is the sessions that elected to receive
- * it, which changes while a stream runs: it is refused until a stream can start at a late subscriber.
+ * volatile command or notification channel. A granted topic is refused until its wrapped payload is proven through
+ * the publisher proof and the `subscribe` election; a session that elects late is a late joiner like any other.
  */
 function validateRallarChannelOrder(definition: RallarTypedChannelPolicyInput): readonly RallarValidationIssue[] {
     if (definition.order === undefined) {
@@ -155,7 +155,7 @@ function resolveRallarEdgeOrderRefusal(definition: RallarTypedChannelPolicyInput
         return 'A live channel is not edge-ordered: nothing retries its sends.';
     }
     if (definition.access === 'granted') {
-        return 'A granted channel is not edge-ordered: its audience changes while a stream runs.';
+        return 'A granted channel is not edge-ordered yet: its signed payload is not proven with the order wrapper.';
     }
     return definition.durability !== undefined && definition.durability !== 'volatile'
         ? 'An edge-ordered channel is volatile: its order lives in memory only.'
