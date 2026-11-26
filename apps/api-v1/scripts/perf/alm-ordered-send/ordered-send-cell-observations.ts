@@ -38,21 +38,37 @@ export type OrderedSendCellAnswer =
 
 export type OrderedSendCellSend = OrderedSendCellOffer & OrderedSendCellAnswer;
 
-/** A recipient's socket read a copy. */
+/**
+ * A session's socket read a copy; every read is recorded, at whichever session. On `main` the copy of a send on a
+ * topic the router has no definition of is a live notice, never a row of the WS outbox: the instance that hands the
+ * send to its router publishes one `ws-live-notice` NOTIFY that carries the message, writes the copies of its own
+ * sessions once the publish returned, and each other instance writes its sessions' copies as the NOTIFY reaches it.
+ */
 export interface OrderedSendCellArrival {
     readonly msgId: string;
     readonly recipientPeerId: string;
     readonly atMs: number;
 }
 
-/** A server instance handed the message to its application subscriber. */
+/**
+ * A server instance handed the message to its application: the cell's observer on the service's
+ * `onAnyInboxMessageDo`, registered ahead of the topic router's own, was called, so the instant is read before the
+ * router publishes anything.
+ */
 export interface OrderedSendCellHandOff {
     readonly msgId: string;
     readonly instanceIndex: number;
     readonly atMs: number;
 }
 
-/** The publisher's socket read a receipt for its send. */
+/**
+ * A session's socket read a receipt of a send. On `main` a receipt is a row the instance that admitted the send
+ * writes to the shared WS outbox. The instance whose worker takes the row writes it to the origin's socket when that
+ * socket is its own; otherwise it announces the row's key by a `ws-channel` NOTIFY for the origin's instance to
+ * write, and announces it again until the row expires, so the origin may read one receipt more than once. A
+ * recipient's ACK reaches the instance that counts it directly, or by a `ws-relayed-ack` NOTIFY from the instance
+ * its socket is on.
+ */
 export interface OrderedSendCellReceipt {
     readonly msgId: string;
     readonly phase: ALReceiptPayload['phase'];
@@ -62,7 +78,8 @@ export interface OrderedSendCellReceipt {
 /**
  * What one run of the cell recorded. Every instant is an unrounded `performance.now()` reading of one clock.
  * `arrivals`, `handOffs` and `receipts` are each in the order observed, appended as it happened, and the report takes
- * "first" and "before" from that order, never from comparing instants.
+ * "first" and "before" from that order, never from comparing instants. A NACK or a repair request the server wrote
+ * to a publisher's socket is in no list, and neither is what the entry answered a recipient's ACK.
  */
 export interface OrderedSendCellObservations {
     readonly sends: readonly OrderedSendCellSend[];

@@ -163,7 +163,9 @@ describe('ORDERED_SEND_CELL_CONSTANTS', () => {
             instanceCount: 3,
             applicationPoolMaxConnections: 10,
             listenerPoolMaxConnections: 1,
+            poolIdleTimeoutSeconds: 0,
             sendLifetimeMs: 30_000,
+            receiptGraceMs: 30_000,
             ackSpreadMs: 100
         });
     });
