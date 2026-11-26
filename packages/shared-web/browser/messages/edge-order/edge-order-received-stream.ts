@@ -10,8 +10,7 @@ export interface EdgeOrderHeldMessage<Message> {
 
 /** One sender's stream as its receiver keeps it. `EdgeOrderReceiver` owns every write. */
 export interface EdgeOrderReceivedStream<Message> {
-    readonly senderId: string;
-    readonly streamId: string;
+    readonly origin: { readonly senderId: string; readonly stream: string; };
     readonly firstSeenAtMs: number;
     /** Absent while the stream is entering: nothing is handed over yet and earlier messages may still arrive. */
     nextPosition: number | undefined;
@@ -21,4 +20,20 @@ export interface EdgeOrderReceivedStream<Message> {
     forgotten: boolean;
     cancelWake: (() => void) | undefined;
     readonly held: Map<number, EdgeOrderHeldMessage<Message>>;
+}
+
+export function createEdgeOrderReceivedStream<Message>(
+    origin: EdgeOrderReceivedStream<Message>['origin'],
+    firstSeenAtMs: number
+): EdgeOrderReceivedStream<Message> {
+    return {
+        origin,
+        firstSeenAtMs,
+        nextPosition: undefined,
+        endedBelowPosition: 0,
+        heldBytes: 0,
+        forgotten: false,
+        cancelWake: undefined,
+        held: new Map()
+    };
 }

@@ -8,18 +8,14 @@ export namespace EdgeOrderSender {
     }
 }
 
-/**
- * The send side of one edge-ordered stream. The stream id is minted in memory once per page and stream, never from
- * the session id, which a reload keeps and every tab of a login shares.
- */
 export class EdgeOrderSender {
-    private readonly streamId: string;
+    private readonly stream: string;
     private lastPosition = 0;
     /** Positions are inserted in rising order, so the first key is the lowest open position. */
     private readonly openSends = new Map<number, EdgeOrderSender.SendDto>();
 
-    constructor(streamId: string) {
-        this.streamId = streamId;
+    constructor(stream: string) {
+        this.stream = stream;
     }
 
     stampSend(send: EdgeOrderSender.SendDto): EdgeOrderStamp {
@@ -27,7 +23,7 @@ export class EdgeOrderSender {
         this.lastPosition += 1;
         this.openSends.set(this.lastPosition, send);
         return {
-            streamId: this.streamId,
+            stream: this.stream,
             position: this.lastPosition,
             lowestOpenPosition: this.openSends.keys().next().value ?? this.lastPosition,
             earlierCanArriveUntilMs

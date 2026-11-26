@@ -10,7 +10,7 @@ export type EdgeOrderGapReason =
 /** The positions `fromPosition` to `toPosition` of one stream, both included, that its receiver stopped waiting for. */
 export interface EdgeOrderGap {
     readonly senderId: string;
-    readonly streamId: string;
+    readonly stream: string;
     readonly fromPosition: number;
     readonly toPosition: number;
     readonly reason: EdgeOrderGapReason;

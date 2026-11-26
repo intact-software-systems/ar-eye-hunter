@@ -13,27 +13,27 @@ describe('EdgeOrderSender', () => {
         const stamps = [10_000, 10_000, 10_000].map((expiresAtMs) => sender.stampSend(RETRIED_UNTIL(expiresAtMs)));
 
         expect(stamps.map((stamp) => stamp.position)).toEqual([1, 2, 3]);
-        expect(stamps.map((stamp) => stamp.streamId)).toEqual(['stream-a', 'stream-a', 'stream-a']);
+        expect(stamps.map((stamp) => stamp.stream)).toEqual(['stream-a', 'stream-a', 'stream-a']);
     });
 
     it('states the latest deadline among earlier open sends, and none once they have ended', () => {
         const sender = new EdgeOrderSender('stream-a');
 
         expect(sender.stampSend(RETRIED_UNTIL(10_000))).toEqual({
-            streamId: 'stream-a',
+            stream: 'stream-a',
             position: 1,
             lowestOpenPosition: 1,
             earlierCanArriveUntilMs: undefined
         });
         expect(sender.stampSend(RETRIED_UNTIL(12_000))).toEqual({
-            streamId: 'stream-a',
+            stream: 'stream-a',
             position: 2,
             lowestOpenPosition: 1,
             earlierCanArriveUntilMs: 10_000
         });
         // The latest, not the most recent: send 2 outlives send 3.
         expect(sender.stampSend(RETRIED_UNTIL(11_000))).toEqual({
-            streamId: 'stream-a',
+            stream: 'stream-a',
             position: 3,
             lowestOpenPosition: 1,
             earlierCanArriveUntilMs: 12_000
@@ -42,7 +42,7 @@ describe('EdgeOrderSender', () => {
         sender.endSend(1);
         sender.endSend(2);
         expect(sender.stampSend(RETRIED_UNTIL(13_000))).toEqual({
-            streamId: 'stream-a',
+            stream: 'stream-a',
             position: 4,
             lowestOpenPosition: 3,
             earlierCanArriveUntilMs: 11_000
@@ -51,7 +51,7 @@ describe('EdgeOrderSender', () => {
         sender.endSend(3);
         sender.endSend(4);
         expect(sender.stampSend(RETRIED_UNTIL(14_000))).toEqual({
-            streamId: 'stream-a',
+            stream: 'stream-a',
             position: 5,
             lowestOpenPosition: 5,
             earlierCanArriveUntilMs: undefined

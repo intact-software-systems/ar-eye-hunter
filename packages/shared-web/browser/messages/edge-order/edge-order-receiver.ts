@@ -4,9 +4,10 @@ import { scheduleAtDeadline } from '@shared/resilience/timing/schedule-at-deadli
 
 import { computeEdgeOrderStreamStep } from '@shared-web/browser/messages/edge-order/compute-edge-order-stream-step.ts';
 import type { EdgeOrderGap } from '@shared-web/browser/messages/edge-order/edge-order-gap.ts';
-import type {
-    EdgeOrderHeldMessage,
-    EdgeOrderReceivedStream
+import {
+    createEdgeOrderReceivedStream,
+    type EdgeOrderHeldMessage,
+    type EdgeOrderReceivedStream
 } from '@shared-web/browser/messages/edge-order/edge-order-received-stream.ts';
 import type { EdgeOrderReceiverLimits } from '@shared-web/browser/messages/edge-order/edge-order-receiver-limits.ts';
 import type { EdgeOrderStamp } from '@shared-web/browser/messages/edge-order/edge-order-stamp.ts';
@@ -54,8 +55,35 @@ export class EdgeOrderReceiver<Message> {
 
     accept(arrival: EdgeOrderReceiver.Arrival<Message>): EdgeOrderReceiver.Outcome {
         const nowMs = this.dependencies.timers.nowMs();
+        const origin = { senderId: arrival.senderId, stream: arrival.stamp.stream };
+        const key = JSON.stringify([origin.senderId, origin.stream]);
+        const known = this.streams.take(key);
+        const forgotten = known === undefined ? this.takeStreamToForget() : undefined;
+        const stream = known ?? createEdgeOrderReceivedStream<Message>(origin, nowMs);
+        this.streams.acceptAt({ key, value: stream, nowEpochMs: nowMs });
+        // The arrival's stream is in the table first: a hand-over can bring that stream's next arrival in the same turn.
+        if (forgotten !== undefined) {
+            forgotten.forgotten = true;
+            this.release(forgotten);
+        }
+        return this.holdArrival(stream, arrival, nowMs);
+    }
+
+    getCounts(): EdgeOrderReceiver.Counts {
+        return {
+            streams: this.streams.size(),
+            heldMessages: this.heldMessages,
+            lateMessages: this.lateMessages,
+            duplicateMessages: this.duplicateMessages
+        };
+    }
+
+    private holdArrival(
+        stream: EdgeOrderReceivedStream<Message>,
+        arrival: EdgeOrderReceiver.Arrival<Message>,
+        nowMs: number
+    ): EdgeOrderReceiver.Outcome {
         const { stamp } = arrival;
-        const stream = this.touchStream(arrival, nowMs);
         stream.endedBelowPosition = Math.max(stream.endedBelowPosition, stamp.lowestOpenPosition);
         if (stream.nextPosition !== undefined && stamp.position < stream.nextPosition) {
             this.lateMessages += 1;
@@ -79,50 +107,18 @@ export class EdgeOrderReceiver<Message> {
         return stream.held.has(stamp.position) ? 'held' : 'handed-over';
     }
 
-    getCounts(): EdgeOrderReceiver.Counts {
-        return {
-            streams: this.streams.size(),
-            heldMessages: this.heldMessages,
-            lateMessages: this.lateMessages,
-            duplicateMessages: this.duplicateMessages
-        };
-    }
-
-    private touchStream(
-        arrival: EdgeOrderReceiver.Arrival<Message>,
-        nowMs: number
-    ): EdgeOrderReceivedStream<Message> {
-        const key = JSON.stringify([arrival.senderId, arrival.stamp.streamId]);
-        const stream = this.streams.take(key) ?? this.enterStream(arrival, nowMs);
-        this.streams.acceptAt({ key, value: stream, nowEpochMs: nowMs });
-        return stream;
-    }
-
-    private enterStream(arrival: EdgeOrderReceiver.Arrival<Message>, nowMs: number): EdgeOrderReceivedStream<Message> {
-        this.forgetOldestStreamAtCap();
-        return {
-            senderId: arrival.senderId,
-            streamId: arrival.stamp.streamId,
-            firstSeenAtMs: nowMs,
-            nextPosition: undefined,
-            endedBelowPosition: 0,
-            heldBytes: 0,
-            forgotten: false,
-            cancelWake: undefined,
-            held: new Map()
-        };
-    }
-
-    private forgetOldestStreamAtCap(): void {
+    /** At the stream cap: the least recently heard stream that holds nothing, or else the least recently heard. */
+    private takeStreamToForget(): EdgeOrderReceivedStream<Message> | undefined {
         if (this.streams.size() < this.limits.maxStreams) {
-            return;
+            return undefined;
         }
-        const [oldestKey] = this.streams.keys();
-        const oldest = this.streams.take(oldestKey);
-        if (oldest !== undefined) {
-            oldest.forgotten = true;
-            this.release(oldest);
+        for (const key of this.streams.keys()) {
+            if (this.streams.peek(key)?.held.size === 0) {
+                return this.streams.take(key);
+            }
         }
+        const [leastRecentKey] = this.streams.keys();
+        return this.streams.take(leastRecentKey);
     }
 
     private release(stream: EdgeOrderReceivedStream<Message>): void {
@@ -136,8 +132,7 @@ export class EdgeOrderReceiver<Message> {
             }
             if (step.kind === 'skip') {
                 this.dependencies.reportGap({
-                    senderId: stream.senderId,
-                    streamId: stream.streamId,
+                    ...stream.origin,
                     fromPosition: step.fromPosition,
                     toPosition: step.nextPosition - 1,
                     reason: step.reason

@@ -103,7 +103,7 @@ function computeHeldRelease<Message>(
     }
     let earliest: EdgeOrderHeldRelease = { atMs: Number.POSITIVE_INFINITY, reason: 'held-message-deadline' };
     for (const held of stream.held.values()) {
-        const release = toHeldMessageRelease(held, limits.gapWaitCapMs);
+        const release = computeHeldMessageRelease(held, limits.gapWaitCapMs);
         if (release.atMs < earliest.atMs) {
             earliest = release;
         }
@@ -111,7 +111,7 @@ function computeHeldRelease<Message>(
     return earliest;
 }
 
-function toHeldMessageRelease<Message>(
+function computeHeldMessageRelease<Message>(
     held: EdgeOrderHeldMessage<Message>,
     gapWaitCapMs: number | undefined
 ): EdgeOrderHeldRelease {
