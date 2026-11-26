@@ -26,6 +26,7 @@ import {
     type ControlFrameLabel
 } from '../../ws-receipted-send-test-controls.ts';
 import { createWorkerHold, type WorkerHold } from '../alm/create-worker-hold.ts';
+import { loseInboundWritesFromNowOn } from '../alm/inbound-runtime-test-fixture.ts';
 import {
     createWsClientCarrierStores,
     createWsClientMintingPlanner,
@@ -95,6 +96,13 @@ export interface WsReceiptedSendLink {
     holdServerNextAdmissionWrite(msg: ALMessage, stage: ServerAdmissionWriteStage): WorkerHold;
     /** The server's release of `msg`'s kept row, once its replay ran, waits at the returned hold; the row stays claimed. */
     holdServerKeptRowRelease(msg: ALMessage): WorkerHold;
+    /**
+     * The server's next admission write commits as its store's own; every later one is lost, however many attempts its
+     * owner makes, until the returned restore.
+     */
+    loseServerAdmissionWritesAfterNextCommit(): () => void;
+    /** Every admission write the server starts from now on is lost, until the returned restore; one already held is not. */
+    loseServerAdmissionWritesFromNowOn(): () => void;
     /** The recipient's `delivered` ACK through the server's ingress, as its socket would send it. */
     acknowledge(msg: ALMessage): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>>;
     /** Moves the one clock, then `LINK_PASSES_PER_STEP` times: the server's engine, its answers to the client, the client's due work. */
@@ -253,7 +261,14 @@ function createLinkExchange(server: ServerIngressFixture, client: LinkClient): L
 
 function createServerWorkHolds(
     server: ServerIngressFixture
-): Pick<WsReceiptedSendLink, 'holdServerWorkClaims' | 'holdServerNextAdmissionWrite' | 'holdServerKeptRowRelease'> {
+): Pick<
+    WsReceiptedSendLink,
+    | 'holdServerWorkClaims'
+    | 'holdServerNextAdmissionWrite'
+    | 'holdServerKeptRowRelease'
+    | 'loseServerAdmissionWritesAfterNextCommit'
+    | 'loseServerAdmissionWritesFromNowOn'
+> {
     const { workQueue } = server.admission;
     const { admissionStore } = server;
     const reserveEntries = workQueue.reserveEntries.bind(workQueue);
@@ -283,6 +298,11 @@ function createServerWorkHolds(
             });
             return hold;
         },
+        loseServerAdmissionWritesAfterNextCommit: () => {
+            vi.spyOn(admissionStore, 'commitBundle').mockImplementationOnce(commitBundle);
+            return loseInboundWritesFromNowOn(admissionStore);
+        },
+        loseServerAdmissionWritesFromNowOn: () => loseInboundWritesFromNowOn(admissionStore),
         holdServerNextAdmissionWrite: (msg, stage) => {
             const hold = createWorkerHold();
             const refused = Promise.withResolvers<never>();

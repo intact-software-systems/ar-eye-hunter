@@ -38,6 +38,7 @@ import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { createPSqlAdmissionTestStorage, type PSqlAdmissionTestStorage } from '../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
+import { loseInboundWritesFromNowOn } from '../shared/alm/inbound-runtime-test-fixture.ts';
 
 const AUTHENTICATED_SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
 
@@ -137,6 +138,10 @@ describe('PSql admission optimistic retry', () => {
         });
         const msg = createInboundMessage('inbound-runtime-retry');
         conflictNextInboundCommit({ storage, namespace: store.namespace, msg, nowMs: Date.now });
+        // The first write meets that CAS loss in the store's own transaction; every later attempt's write is lost too,
+        // so the admission is retained however often its owner looks again.
+        vi.spyOn(store, 'commitBundle').mockImplementationOnce(store.commitBundle.bind(store));
+        const restoreWrites = loseInboundWritesFromNowOn(store);
         const source = { kind: 'ws-client' as const, peerId: 'peer-1', authenticatedScope: AUTHENTICATED_SCOPE };
 
         const conflicted = await runtime.admitIncomingMessage(msg, source);
@@ -158,6 +163,7 @@ describe('PSql admission optimistic retry', () => {
         const pending = decodeALInboundWorkEntry(page.entries[0], store.namespace);
         expect(pending.payload).toMatchObject({ kind: 'admit-message', msg: { id: msg.id }, source });
         expect(pending.expireAtTimestamp).toBe(msg.constraints?.expiresAtMs);
+        restoreWrites();
         retention.mockRestore();
 
         const restartedStores = createDefaultPSqlALInboundRuntimeStores(options);

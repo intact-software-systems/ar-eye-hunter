@@ -18,6 +18,7 @@ import { readALInboundMessageOwner } from '@shared/alm/inbound/al-inbound-source
 import { Either } from '@shared/resilience/Either.ts';
 import { ConnectionContext } from '@shared/websocket/json-web-socket-server.ts';
 
+import { loseInboundWritesFromNowOn } from '../alm/inbound-runtime-test-fixture.ts';
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 import { createIncomingMessage, createRoomMessage, createServerIngressFixture } from './ws-queue-box-server-ingress-fixture.ts';
 import { settleQueueEngine } from './ws-queue-box-server-receipt-fixture.ts';
@@ -250,10 +251,14 @@ describe('WS server bounded and authorized admission', () => {
                 expect(status).toBe('conflict');
                 return status;
             });
+            // Every later attempt's write is lost too, so the send is retained however often its owner looks again;
+            // the store commits again once the row is retained, before the replay that rechecks authority.
+            const restoreWrites = loseInboundWritesFromNowOn(fixture.admissionStore);
             const enqueue = fixture.admission.workQueue.enqueueIfAbsent.bind(fixture.admission.workQueue);
             let observedMetadata: ALAdmissionMemoryState['data'] | undefined;
             vi.spyOn(fixture.admission.workQueue, 'enqueueIfAbsent').mockImplementationOnce(async (entry) => {
                 const retained = await enqueue(entry);
+                restoreWrites();
                 observedMetadata = new Map(fixture.admission.data);
                 pending = true;
                 return retained;

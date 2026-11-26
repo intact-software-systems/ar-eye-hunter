@@ -61,6 +61,7 @@ import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/ws-rtc-signal
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import '../../setup-browser-indexeddb.ts';
+import { loseInboundWritesFromNowOn } from '../alm/inbound-runtime-test-fixture.ts';
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
@@ -248,7 +249,7 @@ class RtcControlHandoffFixture {
         const commit = this.dependencies.inboundStores.admissionStore.commitBundle.bind(
             this.dependencies.inboundStores.admissionStore
         );
-        const conflict = vi.spyOn(
+        vi.spyOn(
             this.dependencies.inboundStores.admissionStore,
             'commitBundle'
         ).mockImplementationOnce(async (bundle) => {
@@ -262,13 +263,15 @@ class RtcControlHandoffFixture {
             }
             return 'conflict';
         });
+        // Every later attempt's write is lost too, so the signal is retained however often its owner looks again.
+        const restoreWrites = loseInboundWritesFromNowOn(this.dependencies.inboundStores.admissionStore);
         const receiverClock = {
             signalEpochMs: Date.now(),
             startedAtMonotonicMs: performance.now()
         };
         this.dependencies.observations.receiverClock = receiverClock;
         const pending = await this.dependencies.service.acceptIncomingMessage(signal);
-        conflict.mockRestore();
+        restoreWrites();
         expect(pending.right).toEqual({ kind: 'pending-admission' });
         return {
             signal,

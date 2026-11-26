@@ -18,7 +18,7 @@ import { createPassThroughTransportFaultPort } from '@shared/transport-faults/tr
 import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/ws-rtc-signaling-transport-using-ws-q-box.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
-import { setNextInboundCommitConflicted } from '../alm/inbound-runtime-test-fixture.ts';
+import { setNextInboundAdmissionParked } from '../alm/inbound-runtime-test-fixture.ts';
 import { installNativeRtcRuntime } from '../native-rtc-connection-fixture.ts';
 import { UNGATED_TEST_PEER_ADMISSION } from '../ungated-test-peer-admission.ts';
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
@@ -105,7 +105,8 @@ it('settles an answer delayed by admission conflict without applying it to a rep
         resource: null
     })));
     await blockerStarted.promise;
-    setNextInboundCommitConflicted(inboundStores.admissionStore);
+    // Every attempt's write of the answer is lost, so it is retained until the blocker releases its replay.
+    const restoreWrites = setNextInboundAdmissionParked(inboundStores.admissionStore);
     socket.receive(toAnswerEnvelope('delayed-answer', 'old-answer', 'offer-1'));
     await vi.waitFor(() =>
         expect(diagnostics).toContainEqual(expect.objectContaining({
@@ -115,6 +116,7 @@ it('settles an answer delayed by admission conflict without applying it to a rep
             reason: 'pending-admission'
         }))
     );
+    restoreWrites();
     expect(oldNative.receivedDescriptions).toEqual([]);
     connectionService.removePeerIfPresent('sender', { resetAttemptBudget: false });
     connectionService.ensurePeerConnectionStarted('sender', true);

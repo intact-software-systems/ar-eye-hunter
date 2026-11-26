@@ -47,7 +47,7 @@ import {
     createInboundTestRuntime,
     createInboundTestStores,
     INBOUND_TEST_SOURCE,
-    setNextInboundCommitConflicted
+    setNextInboundAdmissionParked
 } from './inbound-runtime-test-fixture.ts';
 import { ALWorkBatchTestObserver } from './work/al-work-batch-test-observer.ts';
 
@@ -896,7 +896,8 @@ describe('inbound durable effect worker lifecycle', () => {
             effectWorkerId: 'al-inbound:replayed-dispatch'
         });
         await fixture.runtime.ready();
-        setNextInboundCommitConflicted(fixture.stores.admissionStore);
+        // Every attempt's write of the arrival is lost, so the dispatch is the retained admission's replay's.
+        const restoreWrites = setNextInboundAdmissionParked(fixture.stores.admissionStore);
 
         const acceptance = await fixture.runtime.admitIncomingMessage(
             createInboundTestMessage({ msgId: 'replayed-dispatch' }),
@@ -904,6 +905,7 @@ describe('inbound durable effect worker lifecycle', () => {
         );
 
         expect(acceptance.right).toEqual({ kind: 'pending-admission' });
+        restoreWrites();
         // The replay runs inside a claim of the page that batch already read, so the dispatch it
         // commits is behind that page. The engine is never started and no round is ever executed
         // here: a batch this commit schedules is the only thing that can have claimed the dispatch.

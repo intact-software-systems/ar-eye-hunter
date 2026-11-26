@@ -13,7 +13,7 @@ import {
     createInboundTestRuntime,
     createInboundTestStores,
     INBOUND_TEST_SENDER_PEER_ID,
-    setNextInboundCommitConflicted,
+    setNextInboundAdmissionParked,
     type InboundTestRuntime,
     type InboundTestStorage
 } from './inbound-runtime-test-fixture.ts';
@@ -287,13 +287,15 @@ it.each(
         const message = createInboundTestMessage({ msgId: `retained-${outcome}`, traceId: `trace-retained-${outcome}` });
 
         await runtime.ready();
-        setNextInboundCommitConflicted(stores.admissionStore);
+        // Every attempt's write of the arrival is lost, so the claim settled is the retained admission's replay.
+        const restoreWrites = setNextInboundAdmissionParked(stores.admissionStore);
         const admitted = await runtime.admitIncomingMessage(
             message,
             { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID }
         );
 
         expect(admitted.right).toEqual({ kind: 'pending-admission' });
+        restoreWrites();
         await expect.poll(() => claimsOf(diagnostics).length).toBeGreaterThanOrEqual(1);
 
         // A retained admission keeps the message itself, so this claim names both halves of its identity.
@@ -330,10 +332,12 @@ it('an expired retained admission states rejected / expired once', async () => {
     const message = createInboundTestMessage({ msgId: 'retained-expired', traceId: 'trace-retained-expired' });
 
     await runtime.ready();
-    setNextInboundCommitConflicted(stores.admissionStore);
+    // Every attempt's write of the arrival is lost, so the expiry is met by the retained admission's replay.
+    const restoreWrites = setNextInboundAdmissionParked(stores.admissionStore);
     const admitted = await runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID });
 
     expect(admitted.right).toEqual({ kind: 'pending-admission' });
+    restoreWrites();
     await expect.poll(() => claimsOf(diagnostics).length).toBeGreaterThanOrEqual(1);
     expect(admissionOutcomesOf(diagnostics).map(({ workerId, msgId, outcome, reason, traceId }) => ({ workerId, msgId, outcome, reason, traceId })))
         .toEqual([

@@ -25,7 +25,7 @@ import {
     INBOUND_TEST_SOURCE,
     planInboundTestMessage,
     readInboundTestAdmission,
-    setNextInboundCommitConflicted
+    setNextInboundAdmissionParked
 } from '../inbound-runtime-test-fixture.ts';
 
 afterEach(() => vi.restoreAllMocks());
@@ -160,9 +160,8 @@ it.each(['committed', 'retained', 'failed'] as const)('announces only durable wo
     });
     await fixture.runtime.ready();
     const wake = vi.spyOn(fixture.queueEngine, 'wake');
-    if (outcome === 'retained') {
-        setNextInboundCommitConflicted(fixture.stores.admissionStore);
-    }
+    // A retained arrival loses every attempt's write, so it is parked however often its owner looks again.
+    const restoreWrites = outcome === 'retained' ? setNextInboundAdmissionParked(fixture.stores.admissionStore) : () => undefined;
     if (outcome === 'failed') {
         vi.spyOn(fixture.stores.admissionStore, 'commitBundle').mockRejectedValueOnce(new Error('write aborted'));
         await expect(fixture.runtime.admitIncomingMessage(createInboundTestMessage({ msgId: outcome }), INBOUND_TEST_SOURCE)).rejects.toThrow('write aborted');
@@ -172,6 +171,7 @@ it.each(['committed', 'retained', 'failed'] as const)('announces only durable wo
     }
     const acceptance = await fixture.runtime.admitIncomingMessage(createInboundTestMessage({ msgId: outcome }), INBOUND_TEST_SOURCE);
     expect(acceptance.right).toEqual({ kind: outcome === 'retained' ? 'pending-admission' : 'admitted' });
+    restoreWrites();
     // Wake is the owned scheduler port: a durable write must request scheduling before returning.
     expect(wake).toHaveBeenCalled();
     fixture.queueEngine.start();

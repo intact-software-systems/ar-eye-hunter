@@ -524,10 +524,17 @@ describe('inbound admission preparation boundary', () => {
         const statuses: ('committed' | 'conflict' | 'expired')[] = [];
         const commitBundle = stores.admissionStore.commitBundle.bind(stores.admissionStore);
         let injectConflict = true;
+        // Until the arrival answers, every attempt's write is lost: the first to a real competing commit of its
+        // provenance row, every later one without a write, so the arrival is retained however often it looks again.
+        let arrivalWritesLost = true;
         vi.spyOn(stores.admissionStore, 'commitBundle').mockImplementation(async (bundle) => {
             const admissionCandidate = bundle.durableEffects.some((effect) => effect.payload.kind === 'send-control');
             if (admissionCandidate) {
                 candidates.push(bundle);
+            }
+            if (admissionCandidate && arrivalWritesLost && !injectConflict) {
+                statuses.push('conflict');
+                return 'conflict';
             }
             if (admissionCandidate && injectConflict) {
                 injectConflict = false;
@@ -558,12 +565,13 @@ describe('inbound admission preparation boundary', () => {
                 authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' }
             });
             expect(first.right).toEqual({ kind: 'pending-admission' });
+            arrivalWritesLost = false;
             expect(controls).toEqual([]);
 
             await expect.poll(() => controls.length).toBeGreaterThan(0);
-            expect(statuses).toEqual(['conflict', 'committed']);
-            expect(candidates).toHaveLength(2);
-            const committedControls = candidates[1]!.durableEffects.flatMap((effect) => effect.payload.kind === 'send-control' ? [effect.payload.msg] : []);
+            // The arrival's attempts all lost; the one fresh QueueBox attempt committed the last candidate.
+            expect(statuses).toEqual([...candidates.slice(0, -1).map(() => 'conflict'), 'committed']);
+            const committedControls = candidates.at(-1)!.durableEffects.flatMap((effect) => effect.payload.kind === 'send-control' ? [effect.payload.msg] : []);
             expect(controls).toEqual(committedControls);
             expect(controls).not.toEqual(candidates[0]!.durableEffects);
         }

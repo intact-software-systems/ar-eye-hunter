@@ -455,6 +455,27 @@ export function setNextInboundCommitConflicted(admissionStore: ALInboundAdmissio
 }
 
 /**
+ * From now on every write of `admissionStore` is lost: `commitBundle` answers `conflict` and writes nothing, after
+ * any once-answers a seam queued before this call. However many attempts an owner makes, each loses, so an
+ * admission ends parked and a replay or a release ends retried. Answers the function that restores the store's
+ * own commit; call it before the step that must commit.
+ */
+export function loseInboundWritesFromNowOn(admissionStore: ALInboundAdmissionStore): () => void {
+    const commitBundle = vi.spyOn(admissionStore, 'commitBundle').mockImplementation(async () => 'conflict');
+    return () => commitBundle.mockRestore();
+}
+
+/**
+ * The next admission is parked: its first write loses to a real competing commit of its own provenance row
+ * (`setNextInboundCommitConflicted`) and every later one to the same fence. Answers the restore function. The
+ * competing commit is the store's commit as it stands, so a seam still armed on it must be restored first.
+ */
+export function setNextInboundAdmissionParked(admissionStore: ALInboundAdmissionStore): () => void {
+    setNextInboundCommitConflicted(admissionStore);
+    return loseInboundWritesFromNowOn(admissionStore);
+}
+
+/**
  * Lands a complete second write between the next write phase's fence snapshot and its
  * conditional write: the callback has computed its mutations and nothing has committed yet,
  * which is the exact window a store-global revision turns into a false conflict.

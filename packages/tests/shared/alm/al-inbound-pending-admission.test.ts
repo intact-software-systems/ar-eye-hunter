@@ -34,7 +34,8 @@ import {
     createInboundTestMessage,
     createInboundTestRuntime,
     INBOUND_TEST_SOURCE,
-    setNextInboundCommitConflicted,
+    loseInboundWritesFromNowOn,
+    setNextInboundAdmissionParked,
     type CreateInboundTestRuntimeInput,
     type InboundTestRuntime
 } from './inbound-runtime-test-fixture.ts';
@@ -559,10 +560,12 @@ it('replays a retained conflict in the batch an idle owner runs on its own commi
     onTestFinished(() => runtime.dispose());
     await runtime.ready();
 
-    setNextInboundCommitConflicted(stores.admissionStore);
+    // Every attempt's write is lost, so the arrival is parked whatever number of attempts its owner makes.
+    const restoreWrites = setNextInboundAdmissionParked(stores.admissionStore);
     const acceptance = await runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'idle-owner' }), PENDING_SOURCE);
 
     expect(acceptance.right).toEqual({ kind: 'pending-admission' });
+    restoreWrites();
     // The engine is never started and no round is ever executed here, so the batch the commit itself
     // runs is the only thing that can have claimed the retained row.
     await expect.poll(() => readRetainedAdmissionStatus(stores)).toBe(EntityStatus.COMPLETED);
@@ -591,10 +594,12 @@ it('replays a retained conflict in a batch the handler runs after the one alread
         .toEqual({ kind: 'admitted' });
     await expect.poll(() => dispatchStarted).toBe(true);
 
-    setNextInboundCommitConflicted(stores.admissionStore);
+    // Every attempt's write is lost, so the arrival is parked whatever number of attempts its owner makes.
+    const restoreWrites = setNextInboundAdmissionParked(stores.admissionStore);
     const acceptance = await runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'running-conflict' }), PENDING_SOURCE);
 
     expect(acceptance.right).toEqual({ kind: 'pending-admission' });
+    restoreWrites();
     // The running batch claimed its page before this row existed, so nothing has claimed it yet.
     expect(await readRetainedAdmissionStatus(stores)).toBe(EntityStatus.NEW);
 
@@ -619,16 +624,20 @@ it('retains a resync-required drop whose commit conflicted, and its replay commi
         return delivered.length;
     }).toBe(1);
 
-    // The next send of the track commits between the gapped send's read and its write, as two frames of one socket do.
+    // The next send of the track commits between the gapped send's read and its write, as two frames of one socket do;
+    // every later attempt's write of the gapped send is lost too, so it is parked however often its owner looks again.
     const commitBundle = stores.admissionStore.commitBundle.bind(stores.admissionStore);
+    let restoreWrites = (): void => undefined;
     vi.spyOn(stores.admissionStore, 'commitBundle').mockImplementationOnce(async (bundle) => {
         expect((await runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'track-next', seq: 2 }), PENDING_SOURCE)).right)
             .toEqual({ kind: 'admitted' });
+        restoreWrites = loseInboundWritesFromNowOn(stores.admissionStore);
         return await commitBundle(bundle);
     });
     const gapped = await runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'track-gapped', seq: 300 }), PENDING_SOURCE);
 
     expect(gapped.right).toEqual({ kind: 'pending-admission' });
+    restoreWrites();
     await expect.poll(async () => {
         await dependencies.queueEngine.executeOnce();
         return toSentNackResources(controls).length;
@@ -680,14 +689,19 @@ it('a drop retained on a commit conflict states pending first and its replay\'s 
     await runtime.ready();
     expect((await runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'track-first', seq: 1 }), PENDING_SOURCE)).right)
         .toEqual({ kind: 'admitted' });
+    // The next send of the track commits inside the gapped send's write, and every later attempt's write of the gapped
+    // send is lost, so it is retained however often its owner looks again.
     const commitBundle = stores.admissionStore.commitBundle.bind(stores.admissionStore);
+    let restoreWrites = (): void => undefined;
     vi.spyOn(stores.admissionStore, 'commitBundle').mockImplementationOnce(async (bundle) => {
         await runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'track-next', seq: 2 }), PENDING_SOURCE);
+        restoreWrites = loseInboundWritesFromNowOn(stores.admissionStore);
         return await commitBundle(bundle);
     });
     const gapped = createInboundTestMessage({ msgId: 'track-gapped', seq: 300, traceId: 'trace-track-gapped' });
 
     expect((await runtime.admitIncomingMessage(gapped, PENDING_SOURCE)).right).toEqual({ kind: 'pending-admission' });
+    restoreWrites();
     await expect.poll(async () => {
         await dependencies.queueEngine.executeOnce();
         return toSentNackResources(controls).length;
@@ -707,9 +721,11 @@ it('a replay that admits states committed / admitted', async () => {
     });
     await runtime.ready();
     const message = createInboundTestMessage({ msgId: 'replay-admits', traceId: 'trace-replay-admits' });
-    setNextInboundCommitConflicted(stores.admissionStore);
+    // Every attempt's write of the arrival is lost, so it is retained and only its replay can admit it.
+    const restoreWrites = setNextInboundAdmissionParked(stores.admissionStore);
 
     expect((await runtime.admitIncomingMessage(message, PENDING_SOURCE)).right).toEqual({ kind: 'pending-admission' });
+    restoreWrites();
     await expect.poll(() => delivered).toEqual(['dispatched']);
 
     expect(toAdmissionOutcomes(diagnostics, message)).toEqual([
@@ -727,9 +743,11 @@ it('a diagnostics sink that throws leaves a replay\'s delivery and its claim unc
         onTestFinished(() => runtime.dispose());
         await runtime.ready();
         const message = createInboundTestMessage({ msgId: 'replay-sink-throws' });
-        setNextInboundCommitConflicted(stores.admissionStore);
+        // Every attempt's write of the arrival is lost, so only its replay delivers it.
+        const restoreWrites = setNextInboundAdmissionParked(stores.admissionStore);
 
         expect((await runtime.admitIncomingMessage(message, PENDING_SOURCE)).right).toEqual({ kind: 'pending-admission' });
+        restoreWrites();
         await expect.poll(async () => {
             await dependencies.queueEngine.executeOnce();
             return delivered.length;
@@ -777,9 +795,11 @@ it('a replay on the volatile lane states the runtime\'s worker id and the retain
     await runtime.ready();
     // No declared durability keeps the message in the memory pair, whose lane works as `…/volatile`.
     const message = createInboundTestMessage({ msgId: 'volatile-replay' });
-    setNextInboundCommitConflicted(volatileStores.admissionStore);
+    // Every attempt's write of the arrival is lost, so the volatile lane retains it and replays it.
+    const restoreWrites = setNextInboundAdmissionParked(volatileStores.admissionStore);
 
     expect((await runtime.admitIncomingMessage(message, PENDING_SOURCE)).right).toEqual({ kind: 'pending-admission' });
+    restoreWrites();
     await expect.poll(async () => {
         await queueEngine.executeOnce();
         return delivered;
@@ -808,9 +828,11 @@ it('a replay its stored WS client scope no longer authorizes states unauthorized
         ...unscoped,
         targets: { mode: 'unicast', toPeerId: 'receiver', groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room' } }
     };
-    setNextInboundCommitConflicted(stores.admissionStore);
+    // Every attempt's write of the arrival is lost, so the stored scope is judged by its replay.
+    const restoreWrites = setNextInboundAdmissionParked(stores.admissionStore);
 
     expect((await runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE)).right).toEqual({ kind: 'pending-admission' });
+    restoreWrites();
     await expect.poll(async () => {
         await queueEngine.executeOnce();
         return toAdmissionOutcomes(diagnostics, message).length;
@@ -847,11 +869,13 @@ async function startReplayThatConflictsAgain(input: ReplayArrangementInput): Pro
     });
     await fixture.runtime.ready();
     const message = createInboundTestMessage({ msgId: 'replay-conflicts' });
-    setNextInboundCommitConflicted(fixture.stores.admissionStore);
-    // The replay's own write meets the fence again, as when another arrival moved the surface once more.
-    vi.spyOn(fixture.stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
+    // Every attempt's write of the arrival is lost, so it is retained however often its owner looks again.
+    const restoreWrites = setNextInboundAdmissionParked(fixture.stores.admissionStore);
 
     expect((await fixture.runtime.admitIncomingMessage(message, PENDING_SOURCE)).right).toEqual({ kind: 'pending-admission' });
+    restoreWrites();
+    // The replay's own write meets the fence again, as when another arrival moved the surface once more.
+    vi.spyOn(fixture.stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
     return { fixture, message };
 }
 
@@ -874,9 +898,11 @@ async function runReplayThatShutdownCutsShort(
     });
     await fixture.runtime.ready();
     const message = createInboundTestMessage({ msgId: 'shutdown-replay' });
-    setNextInboundCommitConflicted(fixture.stores.admissionStore);
+    // Every attempt's write of the arrival is lost, so it is retained for the replay the shutdown cuts short.
+    const restoreWrites = setNextInboundAdmissionParked(fixture.stores.admissionStore);
 
     expect((await fixture.runtime.admitIncomingMessage(message, PENDING_SOURCE)).right).toEqual({ kind: 'pending-admission' });
+    restoreWrites();
     await authorityAsked.promise;
     const disposed = fixture.runtime.dispose();
     authorityAnswer.resolve();
@@ -964,7 +990,7 @@ async function retainConflictedAdmission(stores: ALInboundRuntimeStores): Promis
     });
     onTestFinished(() => runtime.dispose());
     const commit = stores.admissionStore.commitBundle.bind(stores.admissionStore);
-    const conflict = vi.spyOn(stores.admissionStore, 'commitBundle').mockImplementationOnce(async (bundle) => {
+    vi.spyOn(stores.admissionStore, 'commitBundle').mockImplementationOnce(async (bundle) => {
         // A genuine prior observation changes at the existing conditional write boundary.
         expect(await commit({ ...bundle, mutations: bundle.mutations.filter((mutation) => mutation.kind === 'set-msg-owner'), durableEffects: [] })).toBe(
             'committed'
@@ -973,6 +999,8 @@ async function retainConflictedAdmission(stores: ALInboundRuntimeStores): Promis
         expect(result).toBe('conflict');
         return result;
     });
+    // Every later attempt's write is lost too, so the admission is retained however often its owner looks again.
+    const restoreWrites = loseInboundWritesFromNowOn(stores.admissionStore);
     const enqueue = stores.workQueue.enqueueIfAbsent.bind(stores.workQueue);
     let disposing: Promise<void> | undefined;
     const retained = vi.spyOn(stores.workQueue, 'enqueueIfAbsent').mockImplementationOnce(async (entry) => {
@@ -1001,7 +1029,7 @@ async function retainConflictedAdmission(stores: ALInboundRuntimeStores): Promis
     expect(keys).toHaveLength(1);
     const entry = await stores.workQueue.getItem(keys[0]);
     expect(entry).toBeDefined();
-    conflict.mockRestore();
+    restoreWrites();
     retained.mockRestore();
     return { message, work: decodeALInboundWorkEntry(entry!, stores.admissionStore.namespace) };
 }
