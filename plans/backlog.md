@@ -733,6 +733,18 @@ and it has no status list.
   publication workload family takes the smallest count whose share reaches
   the ratio (`computePublicationWorkloadPlan`). The multicast manifests are
   built from this plan; it waits on the next change to those recipes.
+- The scale family still writes a role's command prefix itself in four files
+  under `packages/shared-test/rallar-bb-test/conformance/alm/`, where
+  `toAlmCohortCommandPrefix` (`cohort/to-alm-cohort-command-prefix.ts`) now
+  owns the formula: as the literal `` `alm-scale-${role}` `` in
+  `scale/create-alm-scale-recipes.ts`, `scale/create-alm-scale-acceptance.ts`
+  and `scale/create-alm-scale-workload-commands.ts`, and as its two results
+  written out, `'alm-scale-director'` and `'alm-scale-player'`, in the last
+  two of those and in `scale/create-alm-scale-arrival-commands.ts`. Only
+  `scale/create-alm-scale-setup-commands.ts` calls the owner. Calling it in
+  the others changes no command id, which
+  `apps/rallar-black-box/scripts/write-hetzner-distributed-manifests.ts --check`
+  shows; it waits on the next change to those files.
 - The local baseline's median command time is not a regression figure, even as the median of several runs per
   side (D664): of five comparisons of one commit with itself, three read outside the band (five runs per side: 77
   against 89 ms and 80 against 89 ms; ten per side: 83 against 71 ms), on a machine that ran other work: one of the

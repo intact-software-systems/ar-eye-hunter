@@ -34,13 +34,16 @@ rounded. A threshold is the smallest whole count whose share of the frames reach
 Each frame's payload is `{ seq, sentAtEpochMs, pad }`. `payloadBytes` is its serialised size at the
 last sequence number; an earlier frame is smaller by the digits its sequence number lacks.
 `payloadBytes <= publication.drain.bytes` is necessary, not sufficient: the stage charges the whole
-message envelope against the drain budget. The local run charges about 1.5 KiB for a 256-byte
-payload (`drainBytesPercent` of 2.27 on a 65,536-byte budget).
+message envelope against the drain budget. One run of the local point charged about 1.5 KiB for a
+256-byte payload (`drainBytesPercent` of 2.27 on a 65,536-byte budget). That is an observation of
+that run, not a contract: no test pins it.
 
 ## What a run does
 
 `createPublicationWorkloadRecipes(parameters)` returns one recipe per role, or every validation issue
-as its left (`RallarValidationIssue[]`). The first agent of the run publishes.
+as its left (`RallarValidationIssue[]`). Which agent publishes is not the family's to say, since it
+holds no manifest: the caller's role-map manifest gives the publisher's recipe to one agent. In the
+local point's manifest that is the first agent of the run.
 
 Both roles first run the cohort setup the scale family also uses (`conformance/alm/cohort/`): sign
 in, the publisher's group, the connects, the audience wait, an accepted RTC layout that stays stable,
@@ -79,11 +82,13 @@ npm run test:rallar:full-stack:memory:publication-workload
 `tests/playwright/rallar-black-box/full-stack-publication-workload.spec.ts` runs one point as a
 distributed run on three headless agents against the in-memory API: one publisher and two
 subscribers, 60 frames 500 ms apart on `rtc`, 256-byte payloads, a 5 s lifetime, both ratios 0.95. It
-takes about a minute. Playwright starts the API, the headless SPA and the control server. The API
-must be new to the run: every launch gives the same three users, `controller-01` to `controller-03`,
-a new password. The control server keeps whole results only in recorder storage, which the script
-puts under `tmp/publication-workload/recorder` unless `RALLAR_BLACK_BOX_STORAGE_DIR` names another
-directory.
+takes about a minute. Playwright always starts the in-memory API itself and refuses to run while
+its port already answers. It starts the headless SPA and the control server only when nothing
+answers on their ports; with `CI` set it starts those two itself as well. The API must be new to the
+run: every launch gives the same three users, `controller-01` to `controller-03`, a new password.
+The control server keeps whole results only in recorder storage, which the script puts under
+`tmp/publication-workload/recorder` unless `RALLAR_BLACK_BOX_STORAGE_DIR` names another directory.
+The default directory is reused from run to run and grows with each.
 
 The test asserts that the run passed and that the figures record could be read, then on the record:
 the stage admitted at least `minAcceptedSends`; each subscriber observed at least
@@ -94,7 +99,8 @@ test as `publication-workload-figures.json`, beside the operator's native eviden
 
 No CI lane runs the test. The app browser lane's `npm run test:rallar` lists the file, as it lists
 every full-stack spec, and skips the test because it does not set the opt-in environment. Only the
-`rtc` point has a committed run.
+`rtc` point has a test that runs it. A `ws` and an `rtc-with-ws-fallback` point are checked against
+the recipe schema, the control validation and the distributed preflight only.
 
 ## The figures record
 

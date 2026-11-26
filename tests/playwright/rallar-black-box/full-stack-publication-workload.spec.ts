@@ -34,6 +34,7 @@ import {
     startOwnedHeadlessWorker,
     stopOwnedHeadlessWorker,
     waitForOwnedWorkerAgents,
+    type OwnedHeadlessWorkerCleanup,
     type OwnedHeadlessWorkerLaunch
 } from './owned-headless-worker.ts';
 import { readNativeDistributedRun, runOwnedWorkerManifest } from './run-owned-worker-manifest.ts';
@@ -105,6 +106,7 @@ test('runs the publication workload local point on three agents and records its 
     const harnessTimer = setTimeout(() => harnessAbort.abort(), deadlines.harnessTimeoutMs);
     const worker = startOwnedHeadlessWorker(launch);
     worker.on('error', () => harnessAbort.abort());
+    let cleanup: OwnedHeadlessWorkerCleanup | undefined;
 
     try {
         await waitForOwnedWorkerAgents(worker, launch, harnessAbort.signal);
@@ -117,9 +119,8 @@ test('runs the publication workload local point on three agents and records its 
             terminalTimeoutMs: deadlines.terminalTimeoutMs,
             signal: harnessAbort.signal,
             prepareEvidenceExport: async () => {
-                expect(await stopOwnedHeadlessWorker(worker), 'The worker ends before its evidence is read').toBe(
-                    'reaped'
-                );
+                cleanup = await stopOwnedHeadlessWorker(worker);
+                expect(cleanup, 'The worker ends before its evidence is read').toBe('reaped');
             }
         });
         expect(operation.left, 'The distributed run passes and exports its evidence').toBeUndefined();
@@ -131,11 +132,17 @@ test('runs the publication workload local point on three agents and records its 
             distributed.commandLinks.filter((link) => link.phase === 'start')
         );
         const publisherRun = agentRuns.find((run) => run.recipeId === recipes.publisher.recipe.recipeId);
+        expect(
+            publisherRun,
+            `One agent ran the publisher's recipe ${recipes.publisher.recipe.recipeId}; the agents ran ${
+                agentRuns.map((run) => `${run.agentId}: ${run.recipeId}`).join(', ')
+            }`
+        ).toBeDefined();
         const figures = toPublicationWorkloadFigures({
             parameters: LOCAL_POINT,
             publisher: {
-                loop: readResultValue(publisherRun, RESULT_COMMAND_IDS.publisherFrames),
-                stats: readResultValue(publisherRun, RESULT_COMMAND_IDS.publisherStats)
+                loop: readResultValue(publisherRun!, RESULT_COMMAND_IDS.publisherFrames),
+                stats: readResultValue(publisherRun!, RESULT_COMMAND_IDS.publisherStats)
             },
             subscribers: agentRuns.filter((run) => run.recipeId === recipes.subscriber.recipe.recipeId).map((run) => ({
                 agentId: run.agentId,
@@ -184,7 +191,13 @@ test('runs the publication workload local point on three agents and records its 
     finally {
         clearTimeout(harnessTimer);
         harnessAbort.abort();
-        await stopOwnedHeadlessWorker(worker);
+        // A worker already reaped is not stopped again: the stop signals its process group, and that id may by now
+        // name another group.
+        if (cleanup !== 'reaped') {
+            cleanup = await stopOwnedHeadlessWorker(worker);
+        }
+        // Soft: a throw from here would replace the failure the test ended on.
+        expect.soft(cleanup, 'The test leaves no worker running').not.toBe('unreaped');
     }
 });
 
@@ -232,6 +245,9 @@ async function readAgentRecipeRuns(
         .map((row) => decodeRecord(JSON.parse(row)));
     return starts.map((start) => {
         const row = rows.findLast((entry) => entry.agentId === start.agentId && entry.commandId === start.commandId);
+        const startRow = `the row of ${start.agentId} for its start command ${start.commandId}`;
+        expect(row, `results.jsonl holds ${startRow}`).toBeDefined();
+        expect(row?.fullResult, `A fullResult is on ${startRow}`).toBeTruthy();
         const recipeRun = decodeRecord(decodeRecord(row?.fullResult).value);
         return {
             agentId: start.agentId,
@@ -245,6 +261,6 @@ async function readAgentRecipeRuns(
 }
 
 /** Absent when the agent's recipe ran no such command, or its result holds no value. */
-function readResultValue(run: AgentRecipeRun | undefined, commandId: string): ApiJsonValue | undefined {
-    return decodeJsonValue(run?.results.find((result) => result.commandId === commandId)?.value);
+function readResultValue(run: AgentRecipeRun, commandId: string): ApiJsonValue | undefined {
+    return decodeJsonValue(run.results.find((result) => result.commandId === commandId)?.value);
 }

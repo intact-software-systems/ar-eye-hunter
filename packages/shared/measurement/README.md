@@ -34,10 +34,10 @@ harness's `messages.received` sample age both record through it.
 `decodeBoundedHistogram` reads a histogram from `unknown` and names every field that is wrong, including a bucket total
 that differs from `count`, a negative `min` or `max`, a `min` outside the first bucket that counts a sample and a `max`
 outside the last: a bucket holds the samples above the bound before it, from 0 for the first, up to its own bound, and
-the overflow bucket every sample above the last bound. `decodeBoundedHistogramOnBounds` also refuses a histogram on other bounds than the ones its
-owner declares, so two reads stay comparable bucket by bucket. [assertBoundedHistogram](assert-bounded-histogram.ts)
-creates the empty histogram of a declared set of bounds and throws on a set that is not valid, a programmer's error.
-There is no merge; the first reader that needs one adds it.
+the overflow bucket every sample above the last bound. `decodeBoundedHistogramOnBounds` also refuses a histogram on
+other bounds than the ones its owner declares, so two reads stay comparable bucket by bucket.
+[assertBoundedHistogram](assert-bounded-histogram.ts) creates the empty histogram of a declared set of bounds and throws
+on a set that is not valid, a programmer's error. There is no merge; the first reader that needs one adds it.
 
 ## Bounded histogram quantile
 
@@ -45,14 +45,13 @@ A histogram keeps no sample, so it cannot state a percentile as one value.
 `computeBoundedHistogramQuantile(histogram, fraction)` returns `{ atLeast, atMost }`: the bucket that holds the sample
 at the rank `computeNearestRankIndex` reads, narrowed by the histogram's `min` and `max`. The nearest-rank value of the
 samples the histogram recorded is at least `atLeast` and at most `atMost`; where `atLeast` is a bucket's lower bound it
-is above it. `atLeast` is the bound under the
-bucket, which the sample itself exceeds, or `min` where that is higher, so the first bucket starts at `min`; `atMost`
-is the bucket's own bound, or `max` where that is lower, so the overflow bucket ends at `max` and a histogram of one
-sample reads as that sample. A sample exactly on a bound is read in the bucket that bound closes, as it was recorded.
-The fraction has the edge answers of `computeNearestRank`: at or below 0 it reads the bucket of the smallest sample, at
-or above 1 that of the largest, and a fraction that is not finite returns `undefined`, as does a histogram with no
-sample; neither is an error. A histogram whose buckets count fewer samples than its `count`, which neither creation
-nor decoding produces, throws: a programmer's error.
+is above it. `atLeast` is the bound under the bucket, which the sample itself exceeds, or `min` where that is higher, so
+the first bucket starts at `min`; `atMost` is the bucket's own bound, or `max` where that is lower, so the overflow
+bucket ends at `max` and a histogram of one sample reads as that sample. A sample exactly on a bound is read in the
+bucket that bound closes, as it was recorded. The fraction has the edge answers of `computeNearestRank`: at or below 0
+it reads the bucket of the smallest sample, at or above 1 that of the largest, and a fraction that is not finite returns
+`undefined`, as does a histogram with no sample; neither is an error. A histogram whose buckets count fewer samples than
+its `count`, which neither creation nor decoding produces, throws: a programmer's error.
 
 ## Same-regime comparison
 
