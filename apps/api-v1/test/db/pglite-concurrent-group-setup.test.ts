@@ -241,6 +241,8 @@ function createGroupSetupApp(mutation: ApiV1MutationRuntime, groupInbox: GroupSt
         },
         processGroupMove: (input, authority) => groupInbox.processGroupMoveUntilCompletion(input, authority),
         listGroupMoves: (scope, principalId) => mutation.groupStateService.move.listForPrincipal(scope, principalId),
+        temporaryRoomPolicies: {},
+        processTemporaryRoomCreation: input => groupInbox.processTemporaryRoomCreationUntilCompletion(input),
         processGuestAdmission: input => groupInbox.processGuestAdmissionUntilCompletion(input),
         processQuickJoin: (input, authority) => groupInbox.processQuickJoinUntilCompletion(input, authority),
         groupAdmissionQuota: createGroupAdmissionQuota(defaults.group.admission),

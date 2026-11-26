@@ -60,13 +60,14 @@ export function assertRoomGuestSeat(
 export interface RoomGuestSessionInput {
     readonly request: { header(name: string): string | undefined; };
     readonly readSnapshot: (ref: GroupRef) => Promise<GroupSnapshot | undefined>;
+    readonly temporaryRoomOnly?: boolean;
     readonly nowEpochMs: () => number;
     /** Present at a room-scoped route, where the credential must belong to that room. */
     readonly roomRef?: GroupRef;
 }
 
 export async function readRoomGuestSession(
-    { request, readSnapshot, nowEpochMs, roomRef }: RoomGuestSessionInput
+    { request, readSnapshot, nowEpochMs, roomRef, temporaryRoomOnly }: RoomGuestSessionInput
 ): Promise<IssuedAuthSession | undefined> {
     const guest = await readRoomGuestRequest(request, roomRef);
     if (!guest) {
@@ -75,6 +76,9 @@ export async function readRoomGuestSession(
     const snapshot = await readSnapshot(guest.roomRef);
     if (!snapshot) {
         throw authorizationDenied('Guest room is unavailable.');
+    }
+    if (temporaryRoomOnly && !snapshot.group.temporaryPlayerRoom) {
+        throw authenticationRequired('This room requires a registered account for management.');
     }
     assertRoomGuestSeat(guest, snapshot, nowEpochMs());
     const member = snapshot.members.find((member) => member.principalId === guest.clientId);

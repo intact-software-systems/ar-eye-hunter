@@ -13,10 +13,10 @@ import { isExactlyAdmitted } from '../mutation/aggregate/group-aggregate-mutatio
 import { computeGroupPresenceSummaryContent } from '../presence/compute-group-presence-summary.ts';
 import type { GroupPresenceSummaryStoredRead } from '../persistence/group-state-repository-reads.ts';
 
-export function readPausedTimelineRetention(group: Group): GroupRetentionState | null {
+export function readArrivalRetention(group: Group): GroupRetentionState | null {
     if (group.status !== 'active') return null;
     const policy = readGroupRetentionState(group.metadata);
-    return policy && readRoomClocks(group.metadata).some((clock) => 'phase' in clock && clock.status === 'paused')
+    return policy && (group.temporaryPlayerRoom || readRoomClocks(group.metadata).some((clock) => 'phase' in clock && clock.status === 'paused'))
         ? policy : null;
 }
 
@@ -32,6 +32,7 @@ export function computeEmptyGroupLifetime(
     const stored = authority.group;
     if (!stored) throw new TypeError('Temporary room lifetime requires the room predecessor');
     const group = stored.value;
+    if (group.expiresAtEpochMs !== null && nowEpochMs >= group.expiresAtEpochMs) return 'expired';
     const live = computeGroupPresenceSummaryContent({
         ...authority,
         group: stored,
@@ -53,13 +54,16 @@ export function computeEmptyGroupLifetime(
     const changedObservation = group.emptySinceEpochMs === null || policy.emptyPresenceFingerprint !== fingerprint ||
         (holdReleasedAtEpochMs !== null && group.emptySinceEpochMs < holdReleasedAtEpochMs);
     let emptySinceEpochMs = group.emptySinceEpochMs ?? nowEpochMs;
-    if (paused.length > 0) {
+    if (group.temporaryPlayerRoom || paused.length > 0) {
         emptySinceEpochMs = Math.max(lastPresenceEnd(authority, group, nowEpochMs), holdReleasedAtEpochMs ?? 0);
     }
     else if (changedObservation) {
         emptySinceEpochMs = Math.max(nowEpochMs, emptySinceEpochMs);
     }
     const pausedRetentionMs = policy.pausedTimelineRetentionMs ?? DEFAULT_PAUSED_TIMELINE_RETENTION_MS;
+    if (group.temporaryPlayerRoom) {
+        return nowEpochMs - emptySinceEpochMs < policy.reconnectGraceMs ? { atEpochMs: emptySinceEpochMs, fingerprint } : 'expired';
+    }
     const withinGrace = paused.length > 0
         ? paused.some((timeline) => nowEpochMs - Math.max(timeline.pausedAtEpochMs ?? emptySinceEpochMs, emptySinceEpochMs) < pausedRetentionMs)
         : nowEpochMs - emptySinceEpochMs < policy.reconnectGraceMs;

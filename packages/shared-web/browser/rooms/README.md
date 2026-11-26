@@ -95,3 +95,15 @@ named revision triggers a durable read. Unchanged deadlines generate no periodic
 requests. Reconnect and page resume reread current authority. Transient transport failures retry while the watcher is active, with delays capped at 30 seconds.
 Other read failures have three retries per wakeup. An authoritative denial ends the retry cycle. Display countdowns locally using the calibrated
 clock and enforce time-sensitive actions at their receiving authority.
+
+An app enabled for temporary games can start a room before account sign-in.
+Configure the API client first, then construct `TemporaryRoomCreation` from
+`rooms/entry/temporary-room-creation.ts` with the application/workspace scope
+and browser storage. Its `start({ capacity, displayName }, signal)` saves the
+request ID and private creation proof before sending. Both options may be omitted.
+Retry with the same scope and storage after a lost response or a reload. Save
+the returned room, room-scoped guest access and invitation secret before calling
+`clear()`. Only the invitation secret belongs in the shared link.
+`previewRoomGuestInvitation(room, secret, signal)` reads the room name and seat
+availability without admitting the visitor. An uncapped room returns null for
+both seat counts. The visitor explicitly redeems the invitation to join.

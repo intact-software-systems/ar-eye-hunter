@@ -1,10 +1,11 @@
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import { createRoomGuestSecret, redeemRoomGuestInvitation } from '@shared-web/browser/rooms/entry/redeem-guest-invitation.ts';
+import { previewRoomGuestInvitation } from '@shared-web/browser/rooms/entry/temporary-room-creation.ts';
 import { findStateGroup } from '@shared-web/browser/state-read/state-snapshot-http-api.ts';
 import { hashRoomInvitationSecret, isGuestInvitationVerifier } from '@shared/api/room-guests/invitation.ts';
 
-import { readGuestVisit, saveGuestVisit, type GuestVisit } from './guest-visit.ts';
+import { forgetGuestVisit, guestVisitUrl, readGuestVisit, saveGuestVisit, type GuestVisit } from './guest-visit.ts';
 import { GRUMPY_TOWN_SCOPE, townApiBaseUrl } from './town-server.ts';
 
 const nicknames = [
@@ -21,14 +22,14 @@ const nicknames = [
 export function openGuestInvitation(root: HTMLElement, signal: AbortSignal): void {
     configureApiClient({ apiBaseUrl: townApiBaseUrl });
     const fragment = new URLSearchParams(location.hash.slice(1));
-    const room = fragment.get('room');
+    const room = fragment.get('room') ?? new URLSearchParams(location.search).get('room');
     const invitationSecret = fragment.get('invite');
     const valid = Boolean(room && room.trim().length && room.length <= 256 && isGuestInvitationVerifier(invitationSecret));
     root.innerHTML = `<main class="loading">
         <h1>Town invitation</h1>
         <p>Your town nickname is <output aria-label="Your nickname"></output>.</p>
         <button type="button" id="shuffle">Shuffle nickname</button>
-        <p role="alert"></p>
+        <p id="availability" role="status"></p><p role="alert"></p>
         <button type="button" class="primary" id="join" hidden>Join this town</button>
         <p><a>Play solo</a></p>
     </main>`;
@@ -40,13 +41,12 @@ export function openGuestInvitation(root: HTMLElement, signal: AbortSignal): voi
 
     let visit: GuestVisit | undefined;
     try {
-        visit = readGuestVisit();
+        visit = room ? readGuestVisit(room) : undefined;
     }
     catch {
-        message.textContent = 'Allow tab storage and reopen the invitation to keep your guest seat.';
+        message.textContent = 'Allow browser storage and reopen the invitation to keep your guest seat.';
         return;
     }
-    if (room !== null && room !== visit?.room) visit = undefined;
     let index = visit ? nicknames.indexOf(visit.nickname) : -1;
     if (index < 0) {
         index = Math.floor(Math.random() * nicknames.length);
@@ -63,8 +63,21 @@ export function openGuestInvitation(root: HTMLElement, signal: AbortSignal): voi
     if (visit && 'access' in visit) {
         void enter();
     }
-    else if (valid) {
-        join.hidden = false;
+    else if (valid && room && invitationSecret) {
+        void previewRoomGuestInvitation({ ...GRUMPY_TOWN_SCOPE, groupId: room }, invitationSecret, signal)
+            .then(preview => {
+                if (signal.aborted) return;
+                root.querySelector('#availability')!.textContent = preview.availableSeats === null
+                    ? 'Seats available' : preview.availableSeats === 0
+                    ? 'Town is full. Try again when a seat opens.' : `${preview.availableSeats} of ${preview.capacity} seats available`;
+                join.hidden = false;
+            })
+            .catch(error => {
+                if (signal.aborted) return;
+                const denied = error instanceof ApiHttpError && [400, 401, 403, 404].includes(error.status);
+                message.textContent = denied ? 'Ask the owner for a fresh invitation.' : 'Could not check availability. Try joining.';
+                join.hidden = denied;
+            });
     }
     else {
         message.textContent = 'Ask the town owner for a fresh invitation.';
@@ -103,7 +116,9 @@ export function openGuestInvitation(root: HTMLElement, signal: AbortSignal): voi
                 return;
             }
             const diagnostics = new URLSearchParams(location.search).get('diagnostics') === '1';
-            history.replaceState(history.state, '', location.pathname + (diagnostics ? '?diagnostics=1' : ''));
+            const returnUrl = guestVisitUrl(visit.room);
+            if (diagnostics) returnUrl.searchParams.set('diagnostics', '1');
+            history.replaceState(history.state, '', returnUrl);
             const { openGuestMatch } = await import('./open-guest-match.ts');
             if (!signal.aborted) {
                 openGuestMatch({ root, visit, snapshot, pageSignal: signal });
@@ -116,7 +131,7 @@ export function openGuestInvitation(root: HTMLElement, signal: AbortSignal): voi
             const failure = describeGuestEntryFailure(error instanceof ApiHttpError ? error : undefined, valid);
             if (failure.clearVisit) {
                 visit = undefined;
-                saveGuestVisit(undefined);
+                if (room) forgetGuestVisit(room);
             }
             message.textContent = failure.message;
             join.hidden = !failure.retry;

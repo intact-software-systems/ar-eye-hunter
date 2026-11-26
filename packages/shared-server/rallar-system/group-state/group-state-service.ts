@@ -246,7 +246,7 @@ function createIngressCaptureOperations(
         captureGuestMembershipMutationIngress: async (command, atEpochMs) =>
             captureInternalMutationIngress(
                 command,
-                command.operation === 'removeGroupMember' ? 'guest-expiry' : 'guest-redemption',
+                command.operation === 'createGroup' ? 'temporary-room-creation' : command.operation === 'removeGroupMember' ? 'guest-expiry' : 'guest-redemption',
                 atEpochMs
             ),
         captureTimelineDeadlineMutationIngress: async (command, atEpochMs) =>
@@ -416,7 +416,16 @@ async function verifyGroupMutationAttemptSession(
     if (mode === 'expired') {
         throw new GroupMutationAuthorizationError('Guest room admission ended.');
     }
+    const temporaryManager = mode === 'room' && read.group?.value.temporaryPlayerRoom === true &&
+        read.group.value.ownerPrincipalId === member?.principalId && member?.guestLease?.temporaryManager === true;
     switch (command.operation) {
+        case 'transferGroupOwnership':
+            // A completed transfer may be replayed by its original actor after giving up management.
+            if (temporaryManager || (mode === 'room' && read.group?.value.temporaryPlayerRoom && read.idempotency)) return;
+            break;
+        case 'removeGroupMember':
+            if (temporaryManager) return;
+            break;
         case 'connectPresence':
         case 'heartbeatPresence':
         case 'disconnectPresence':
@@ -433,6 +442,7 @@ async function verifyGroupMutationAttemptSession(
             }
             break;
         case 'appointDirector':
+            if (temporaryManager && (command.input.succession?.operation === 'configure' || command.input.succession?.operation === 'appoint')) return;
             if (
                 mode === 'room' && (command.input.succession?.operation === 'claim-player' ||
                     command.input.succession?.operation === 'claim-deputy')
@@ -441,6 +451,7 @@ async function verifyGroupMutationAttemptSession(
             }
             break;
         case 'updateGroup':
+            if (temporaryManager && command.input.guestInvitationVerifier !== undefined) return;
             if (
                 mode === 'finish-round' && closesGuestPlayOccurrence(command.input.roomClock) &&
                 command.input.roomDeadline === undefined

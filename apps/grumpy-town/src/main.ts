@@ -33,7 +33,7 @@ async function openMode(element: HTMLElement, mode: 'solo' | 'online'): Promise<
         if (mode === 'solo') {
             const { PracticeApp } = await import('./practice-app.ts');
             if (!lifetime.signal.aborted && revision === generation) {
-                current = new PracticeApp(element, () => void openMode(element, 'online'));
+                current = new PracticeApp(element, () => void openMode(element, 'online'), () => void startPrivateGame(element));
             }
         }
         else {
@@ -68,6 +68,27 @@ async function openMode(element: HTMLElement, mode: 'solo' | 'online'): Promise<
         if (message) {
             message.textContent = error instanceof Error ? error.message : 'Please use a browser with WebGL enabled.';
         }
+    }
+}
+
+async function startPrivateGame(element: HTMLElement): Promise<void> {
+    const revision = ++generation;
+    await current?.stop();
+    current = undefined;
+    element.innerHTML = '<main class="loading"><h1>Starting a private game…</h1><p role="alert"></p></main>';
+    try {
+        const { createPrivateGame } = await import('./online/create-private-game.ts');
+        if (lifetime.signal.aborted || revision !== generation) return;
+        const url = await createPrivateGame(lifetime.signal);
+        if (!lifetime.signal.aborted && revision === generation) location.replace(url);
+    }
+    catch {
+        if (lifetime.signal.aborted || revision !== generation) return;
+        element.querySelector('[role=alert]')!.textContent = 'Could not start the game. Try again.';
+        const retry = document.createElement('button');
+        retry.textContent = 'Start a game';
+        retry.addEventListener('click', () => void startPrivateGame(element), { once: true, signal: lifetime.signal });
+        element.querySelector('main')!.append(retry);
     }
 }
 

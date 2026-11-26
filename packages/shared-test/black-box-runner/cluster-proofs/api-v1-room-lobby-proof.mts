@@ -1,3 +1,4 @@
+import { proveTemporaryRoomCreation } from './prove-temporary-room-creation.mts';
 import { proveGuestCutoffRestart } from './prove-guest-cutoff-restart.mts';
 import { proveRoomGuestRedemption } from './prove-room-guest-redemption.mts';
 import assert from 'node:assert/strict';
@@ -12,6 +13,7 @@ import { proveProgramRegistrationBoundary } from './prove-program-registration-b
 async function proveLobbyCommitments({ plans, controls, databaseUrl }: ManagedClusterProof.ScenarioInput): Promise<void> {
     const [first, second, observer] = plans;
     assert.ok(first && second && observer);
+    await proveTemporaryRoomCreation(first.baseUrl, second.baseUrl);
     const users = new ApiV1RtcTopologyProofApi({
         alice: { username: 'alice', password: 'secret' }, bob: { username: 'bob', password: 'secret' },
         admin: { username: 'admin', password: 'admin' }

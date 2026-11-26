@@ -1,4 +1,4 @@
-import { isRoomGuestInvitation, hasValidRoomGuestLease } from './room-guests/invitation.ts';
+import { assertRoomGuestManager, validatedRoomGuestFields, hasValidRoomGuestLease } from './room-guests/invitation.ts';
 import {
     validateAuthoritativeActiveGroupSession,
     validateAuthoritativeGroupEvent,
@@ -155,7 +155,7 @@ export function validateGroupStateDeltaEnvelope(
         fail('GroupStateDeltaEnvelope resulting revision does not follow its predecessor');
     }
     const group = validateDeltaGroup(envelope.group, ref, resulting);
-    validateDeltaMembers(envelope, ref);
+    validateDeltaMembers(envelope, ref, group.temporaryPlayerRoom);
     validateDeltaPublicationGrants(envelope, ref);
     const activeSessionIds = validateDeltaSessionIdentitySets(envelope, ref);
     nonNegativeInteger(envelope.memberCount, 'GroupStateDeltaEnvelope.memberCount');
@@ -177,14 +177,10 @@ function validateDeltaGroup(
     value: WireValue,
     ref: Readonly<{ applicationId: string; workspaceId: string; groupId: string; }>,
     resulting: GroupStateCausalRevision
-): Readonly<{ activeMemberCount: number; status: string; }> {
+): Readonly<{ activeMemberCount: number; status: string; temporaryPlayerRoom: boolean; }> {
     const label = 'GroupStateDeltaEnvelope.group';
     const group = decodeRecord(value, label);
-    const hasGuestInvitation = Object.hasOwn(group, 'guestInvitation');
-    exact(group, hasGuestInvitation ? [...GROUP_KEYS, 'guestInvitation'] : GROUP_KEYS, label);
-    if (hasGuestInvitation && !isRoomGuestInvitation(group.guestInvitation)) {
-        fail('Room guest invitation is invalid.');
-    }
+    exact(group, [...GROUP_KEYS, ...validatedRoomGuestFields(group)], label);
     sameGroupRef(group, ref, label);
     nullableString(group.slug, `${label}.slug`);
     nonEmptyString(group.displayName, `${label}.displayName`);
@@ -273,7 +269,7 @@ function validateDeltaGroup(
             `${label}.activationStatus`
         );
     }
-    return { activeMemberCount: group.activeMemberCount, status: group.status };
+    return { activeMemberCount: group.activeMemberCount, status: group.status, temporaryPlayerRoom: group.temporaryPlayerRoom === true };
 }
 
 function validateDeltaGroupLayoutIdentity(identity: WireObject, label: string): void {
@@ -307,12 +303,14 @@ function validateGroupLifecycle(group: WireObject, label: string): void {
 
 function validateDeltaMembers(
     envelope: WireObject,
-    ref: Readonly<{ applicationId: string; workspaceId: string; groupId: string; }>
+    ref: Readonly<{ applicationId: string; workspaceId: string; groupId: string; }>,
+    temporaryPlayerRoom: boolean
 ): void {
     const members = decodeArray(envelope.members, 'GroupStateDeltaEnvelope.members');
     const memberPrincipalIds = new Set<string>();
     for (const item of members) {
         const principalId = validateDeltaMember(item, ref);
+        assertRoomGuestManager(decodeRecord(item, 'GroupStateDeltaEnvelope.member'), temporaryPlayerRoom);
         if (memberPrincipalIds.has(principalId)) {
             fail('GroupStateDeltaEnvelope has duplicate members');
         }

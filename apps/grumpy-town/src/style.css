@@ -9,7 +9,7 @@ button:active { transform: translateY(2px); box-shadow: 1px 1px 0 #31382f; }
 .practice { touch-action: none; position: relative; isolation: isolate; user-select: none; -webkit-user-select: none; }
 canvas { width: 100%; height: 100%; display: block; touch-action: none; outline: none; }
 .hud { position: absolute; inset: max(18px, env(safe-area-inset-top)) 20px auto; display: flex; justify-content: space-between; align-items: start; pointer-events: none; }
-.hud button { pointer-events: auto; font-size: 12px; }
+.hud button, .hud a { pointer-events: auto; font-size: 12px; }
 .brand { transform: rotate(-2deg); }
 .brand span { font-weight: 800; font-size: 9px; letter-spacing: 1.8px; }
 h1 { margin: 4px 0; font-size: clamp(23px, 5vw, 34px); line-height: 1; font-weight: 1000; letter-spacing: -1.7px; }
@@ -50,5 +50,6 @@ h2 { font-size: 28px; margin: 8px 0; letter-spacing: -1px; }
 
 @media (max-height: 500px) and (orientation: landscape) { .pause-overlay > div { width: min(600px, 85vw); padding: 14px 24px; } .pause-overlay p { font-size: 13px; margin: 8px 0; } .pause-overlay button { display: inline-block; width: auto; margin: 8px; } }
 
-.hud-actions { display: flex; gap: 6px; align-items: start; }
+.hud-actions { display: flex; flex-wrap: wrap; justify-content: end; gap: 6px; align-items: start; }
+.hud-actions a { padding: 8px; color: inherit; background: #fffbed; border-radius: 3px; font-size: 10px; }
 .hud-actions button { padding: 8px; font-size: 10px; }

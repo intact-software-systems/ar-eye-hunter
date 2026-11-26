@@ -19,7 +19,8 @@ import type {
 export async function requireRoomParticipantSession(
     request: GroupStateRouteRequest,
     roomRef: GroupRef,
-    dependencies: GroupStateRouteDependencies
+    dependencies: GroupStateRouteDependencies,
+    guestScope?: 'temporary-room'
 ): Promise<GroupStateRouteAuthSession> {
     const guest = await readRoomGuestSession({
         request,
@@ -28,6 +29,7 @@ export async function requireRoomParticipantSession(
             return result.status === 'found' ? result.snapshot : undefined;
         },
         nowEpochMs: dependencies.nowEpochMs,
+        temporaryRoomOnly: guestScope === 'temporary-room',
         roomRef
     });
     return guest ?? await dependencies.requireApiAuthSession(request);

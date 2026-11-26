@@ -27,6 +27,7 @@ import { registerAdminOperationsRoutes } from '../admin-operations/register-admi
 import { registerAdminRoomRoutes } from '../admin-operations/register-admin-room-routes.ts';
 import type {
     ApiV1GroupAdmissionConfiguration,
+    ApiV1GroupConfiguration,
     ApiV1IceConfiguration,
     ApiV1OperatorTokenConfiguration
 } from '../configuration/api-v1-configuration.ts';
@@ -123,6 +124,7 @@ export interface CreateApiV1RouteInstallersInput<
     readonly operatorToken: ApiV1OperatorTokenConfiguration;
     readonly publicConfiguration: ApiConfigResponse;
     readonly ice: ApiV1IceConfiguration;
+    readonly temporaryRoomPolicies: ApiV1GroupConfiguration['temporaryRoomPoliciesByApplication'];
     readonly groupAdmission: ApiV1GroupAdmissionConfiguration;
     readonly groupDefaultMaxMembers: number | null;
     readonly strictReadAuthorization: boolean;
@@ -220,6 +222,7 @@ function createApiV1RouteConstruction<
         readLobbyOccupancy: (rooms, now) => input.topology.groupStateRepository.readLobbyOccupancy(rooms, now),
         requireApiAuthSession: operations.requireApiAuthSession
     }, {
+        temporaryRoomPolicies: input.temporaryRoomPolicies,
         groupAdmission: input.groupAdmission,
         strictReadAuthorization: input.strictReadAuthorization,
         groupDefaultMaxMembers: input.groupDefaultMaxMembers,

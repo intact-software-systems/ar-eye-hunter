@@ -3,8 +3,33 @@ export interface RoomGuestInvitation {
     readonly expiresAtEpochMs: number;
 }
 
+export function toRoomGuestInvitation(verifier: string, issuedAtEpochMs: number): RoomGuestInvitation {
+    return { verifier, expiresAtEpochMs: issuedAtEpochMs + 15 * 60_000 };
+}
+
 export function isGuestInvitationVerifier(value: unknown): value is string {
     return typeof value === 'string' && value.length === 64 && /^[0-9a-f]+$/.test(value);
+}
+
+export function validatedRoomGuestFields(group: Readonly<Record<string, unknown>>): readonly string[] {
+    const fields: string[] = [];
+    if (Object.hasOwn(group, 'temporaryPlayerRoom')) {
+        if (group.temporaryPlayerRoom !== true || group.kind !== 'room' || !Number.isSafeInteger(group.expiresAtEpochMs)) {
+            throw new TypeError('Temporary player rooms require an absolute expiry.');
+        }
+        fields.push('temporaryPlayerRoom');
+    }
+    if (Object.hasOwn(group, 'guestInvitation')) {
+        if (!isRoomGuestInvitation(group.guestInvitation)) throw new TypeError('Room guest invitation is invalid.');
+        fields.push('guestInvitation');
+    }
+    return fields;
+}
+
+export function assertRoomGuestManager(member: Readonly<Record<string, unknown>>, temporaryPlayerRoom: boolean): void {
+    if (member.role === 'owner' && (member.guestLease !== undefined) !== temporaryPlayerRoom) {
+        throw new TypeError('A temporary guest manager can only own its temporary player room.');
+    }
 }
 
 export function isRoomGuestInvitation(value: unknown): value is RoomGuestInvitation {
@@ -27,6 +52,7 @@ export function isRoomGuestDisplayName(value: unknown): value is string {
 }
 
 export interface RoomGuestLease {
+    readonly temporaryManager?: true;
     readonly displayName?: string;
     readonly admittedAtEpochMs: number;
     readonly expiresAtEpochMs: number;
@@ -37,12 +63,15 @@ export const ROOM_GUEST_LIFETIME_MS = 4 * 60 * 60_000;
 export function hasValidRoomGuestLease(member: object): boolean {
     if (!('role' in member) || !('guestLease' in member)) return false;
     const value = member.guestLease;
-    return (member.role === 'member' || member.role === 'spectator') && typeof value === 'object' && value !== null &&
+    return typeof value === 'object' && value !== null &&
+        (('temporaryManager' in value && value.temporaryManager === true && member.role === 'owner') ||
+            (!('temporaryManager' in value) && (member.role === 'member' || member.role === 'spectator'))) &&
         'admittedAtEpochMs' in value && typeof value.admittedAtEpochMs === 'number' &&
         Number.isSafeInteger(value.admittedAtEpochMs) && value.admittedAtEpochMs >= 0 &&
         'expiresAtEpochMs' in value && Number.isSafeInteger(value.expiresAtEpochMs) &&
         value.expiresAtEpochMs === value.admittedAtEpochMs + ROOM_GUEST_LIFETIME_MS &&
-        ('displayName' in value ? isRoomGuestDisplayName(value.displayName) && Object.keys(value).length === 3 : Object.keys(value).length === 2);
+        (!('displayName' in value) || isRoomGuestDisplayName(value.displayName)) &&
+        Object.keys(value).every(key => ['temporaryManager', 'admittedAtEpochMs', 'expiresAtEpochMs', 'displayName'].includes(key));
 }
 
 /** Admission to one room, redeemable without issuing a registered-account session. */

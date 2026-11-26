@@ -1,4 +1,4 @@
-import { isRoomGuestInvitation, hasValidRoomGuestLease } from './room-guests/invitation.ts';
+import { assertRoomGuestManager, validatedRoomGuestFields, hasValidRoomGuestLease } from './room-guests/invitation.ts';
 import { decodeRoomLobbyPolicy, ROOM_LOBBY_METADATA_KEY } from './room-lobbies/room-lobby-policy.ts';
 import type { ApiJsonValue } from './api-json-value.ts';
 import { toScopedOverlayId } from './api-type-utils.ts';
@@ -416,11 +416,7 @@ export function validateAuthoritativeGroupSnapshot(
     const causal = causalRevision(snapshot.causalRevision, 'GroupSnapshot.causalRevision');
     positiveInteger(causal.groupRevision, 'GroupSnapshot.causalRevision.groupRevision');
     const group = decodeRecord(snapshot.group, 'GroupSnapshot.group');
-    const hasGuestInvitation = Object.hasOwn(group, 'guestInvitation');
-    exact(group, hasGuestInvitation ? [...GROUP_KEYS, 'guestInvitation'] : GROUP_KEYS, 'GroupSnapshot.group');
-    if (hasGuestInvitation && !isRoomGuestInvitation(group.guestInvitation)) {
-        fail('Room guest invitation is invalid.');
-    }
+    exact(group, [...GROUP_KEYS, ...validatedRoomGuestFields(group)], 'GroupSnapshot.group');
     const ref = groupRef(group, 'GroupSnapshot.group', scope);
     enumValue(group.status, ['active', 'archived', 'deleted'], 'GroupSnapshot.group.status');
     enumValue(group.kind, ['party', 'room', 'team', 'custom'], 'GroupSnapshot.group.kind');
@@ -537,6 +533,7 @@ export function validateAuthoritativeGroupSnapshot(
             fail('GroupSnapshot has duplicate members');
         }
         memberIds.add(member.principalId);
+        assertRoomGuestManager(member, group.temporaryPlayerRoom === true);
         if (member.status === 'active') {
             activeMemberIds.add(member.principalId);
             if (member.role !== 'spectator') {

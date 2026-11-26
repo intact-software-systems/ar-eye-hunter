@@ -81,7 +81,7 @@ test('a replaced invitation asks the visitor for a fresh link', async ({ page, b
     try {
         const visitor = await guest.newPage();
         await visitor.goto(previous);
-        await visitor.getByRole('button', { name: 'Join this town' }).click();
+        await expect(visitor.getByRole('button', { name: 'Join this town' })).toBeHidden();
         await expect(visitor.getByRole('alert')).toContainText('fresh invitation');
         await expect(page.locator('#roster li')).toHaveCount(1);
     }
@@ -269,11 +269,12 @@ test('a phone guest reloads into the same playing round and moves again', async 
         const matchId = await game.getAttribute('data-match-id');
         // An old local admission deadline requires Rallar to verify the unchanged seat on reload.
         const admissionDeadline = await phone.evaluate(() => {
-            const visit = JSON.parse(sessionStorage.getItem('grumpy-town.guest-visit')!);
+            const key = 'grumpy-town.guest-visit.' + encodeURIComponent(new URL(location.href).searchParams.get('room')!);
+            const visit = JSON.parse(localStorage.getItem(key)!);
             const lifetime = visit.access.expiresAtEpochMs - visit.access.issuedAtEpochMs;
             visit.access.expiresAtEpochMs = visit.access.issuedAtEpochMs;
             visit.access.issuedAtEpochMs -= lifetime;
-            sessionStorage.setItem('grumpy-town.guest-visit', JSON.stringify(visit));
+            localStorage.setItem(key, JSON.stringify(visit));
             return Number(visit.access.expiresAtEpochMs);
         });
         await phone.reload();

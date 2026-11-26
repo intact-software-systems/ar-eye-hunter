@@ -3,7 +3,7 @@ import type { GroupStateMutationCommand } from '../group-state-service-contracts
 import { isExactlyAdmitted } from '../mutation/aggregate/group-aggregate-mutation-policy.ts';
 import { GroupMutationRejectedError, type GroupMutationRead } from '../mutation/group-mutation-contracts.ts';
 import type { GroupStateRepository } from '../persistence/group-state-repository.ts';
-import { computeEmptyGroupLifetime, readPausedTimelineRetention } from './compute-empty-group-lifetime.ts';
+import { computeEmptyGroupLifetime, readArrivalRetention } from './compute-empty-group-lifetime.ts';
 
 export async function verifyPausedGroupAdmission(
     repository: GroupStateRepository, ingress: GroupStateMutationCommand, read: GroupMutationRead
@@ -16,7 +16,7 @@ export async function verifyPausedGroupAdmission(
     const target = read.targetPresence?.value;
     if (target?.status === 'active' && target.expiresAtEpochMs > now && read.targetMember?.status === 'active' &&
         isExactlyAdmitted(read.targetAdmission?.value, target)) return;
-    const policy = readPausedTimelineRetention(read.group.value);
+    const policy = readArrivalRetention(read.group.value);
     if (!policy) return;
     const authority = await repository.readPresenceSummaryEntries(ingress.command.aggregateRef);
     if (authority.group?.entry.revision !== read.group.entry.revision) {

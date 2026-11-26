@@ -56,7 +56,9 @@ export function computeGroupMembershipWrite({
         if (!previous?.guestLease) {
             continue;
         }
-        if (member.role === 'admin' || member.role === 'owner') {
+        const appointedManager = command.operation === 'transferGroupOwnership' && group.temporaryPlayerRoom &&
+            member.role === 'owner' && member.guestLease?.temporaryManager && member.principalId === group.ownerPrincipalId;
+        if (!appointedManager && (member.role === 'admin' || member.role === 'owner')) {
             throw new GroupMutationRejectedError('Guest members cannot govern the room.');
         }
         if ((member.status === 'active' && previous.status !== 'active') || !member.guestLease) {

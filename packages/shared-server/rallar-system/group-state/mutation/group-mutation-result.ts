@@ -179,8 +179,9 @@ export function computeGroupMutationWriteResult(
     });
     const admittedGuest = facts.internalAuthority === 'guest-redemption' && command.operation === 'joinGroup'
         ? input.members.find(member => member.principalId === command.targetPrincipalId)
-        : undefined;
-    const guestTransport = command.operation === 'joinGroup' ? command.input.guestTransport : undefined;
+        : command.operation === 'createGroup' && command.input.temporaryCreator ? input.members[0] : undefined;
+    const guestTransport = command.operation === 'joinGroup' ? command.input.guestTransport
+        : command.operation === 'createGroup' ? command.input.temporaryCreator?.guestTransport : undefined;
     const computed: GroupMutationDomainWrite = {
         ...(admittedGuest?.guestLease && guestTransport && {
             guestTransportSession: {

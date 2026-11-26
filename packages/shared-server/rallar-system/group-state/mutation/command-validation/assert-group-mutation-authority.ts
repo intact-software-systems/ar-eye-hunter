@@ -1,3 +1,4 @@
+import { assertTemporaryRoomCreation } from '../membership/temporary-room-creation.ts';
 import { assertGuestAdmissionAuthority, assertGuestAdmissionCommand, assertGuestExpiryCommand } from '../membership/group-guest-admission.ts';
 import type { GroupMutationCommand, GroupMutationIngressFacts } from '../group-mutation-contracts.ts';
 import { assertGroupMutationJoinCodeFacts } from './assert-group-mutation-join-code-facts.ts';
@@ -8,6 +9,9 @@ export function assertGroupMutationAuthority(
 ): void {
     assertGroupMutationJoinCodeFacts(command, facts);
     assertGuestAdmissionAuthority(command, facts);
+    if (command.operation === 'createGroup' && command.input.temporaryCreator && facts.internalAuthority !== 'temporary-room-creation') {
+        throw new TypeError('A temporary creator requires verified guest creation authority.');
+    }
     const authority = facts.authenticatedAuthority;
     if (facts.internalAuthority === 'none' && authority === null) {
         throw new TypeError('User group mutation requires authenticated authority facts');
@@ -45,6 +49,8 @@ function assertInternalMutationAuthority(
         throw new TypeError('Internal group maintenance cannot claim semantic actor authority');
     }
     switch (facts.internalAuthority) {
+        case 'temporary-room-creation':
+            return assertTemporaryRoomCreation(command);
         case 'guest-expiry':
             assertGuestExpiryCommand(command);
             return;

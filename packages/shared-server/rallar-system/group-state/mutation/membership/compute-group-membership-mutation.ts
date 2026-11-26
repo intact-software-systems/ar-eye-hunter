@@ -1,3 +1,4 @@
+import { isLiveGroupPresenceSession } from '../../policy/group-policy-primitives.ts';
 import { roomGuestAccessMode } from '@shared/api/room-guests/access.ts';
 import { ROOM_GUEST_LIFETIME_MS } from '@shared/api/room-guests/invitation.ts';
 import { canJoinGroup } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
@@ -275,7 +276,7 @@ export function computeTransfer(
     read: GroupMutationRead,
     facts: GroupMutationFacts
 ): GroupMutationComputed {
-    requireGroup(read, command.aggregateRef);
+    const group = requireGroup(read, command.aggregateRef).value;
     assertGovernance({ command, read, facts, action: 'transfer-ownership' });
     const actor = read.actorMember ?? undefined;
     const target = read.targetMember ?? undefined;
@@ -290,14 +291,26 @@ export function computeTransfer(
     }
     assertGovernedParticipationChange({ command, read, facts, role: 'owner' });
     const audit = auditStamp(command, facts, actor.principalId);
+    const members: GroupMember[] = [
+        { ...actor, role: 'admin', updated: audit },
+        { ...target, role: 'owner', updated: audit }
+    ];
+    if (group.temporaryPlayerRoom) {
+        if (!actor.guestLease?.temporaryManager || !target.guestLease || target.role !== 'member' ||
+            roomGuestAccessMode(group, target, facts.attemptAtEpochMs) !== 'room' ||
+            !read.authorityPresenceSessions.some(session => session.principalId === target.principalId &&
+                isLiveGroupPresenceSession(session, facts.attemptAtEpochMs))) {
+            throw new GroupMutationRejectedError('Transfer requires a present guest player.');
+        }
+        const { temporaryManager: _previousManager, ...previousLease } = actor.guestLease;
+        members[0] = { ...actor, role: 'member', guestLease: previousLease, updated: audit };
+        members[1] = { ...target, role: 'owner', guestLease: { ...target.guestLease, temporaryManager: true }, updated: audit };
+    }
     return computeGroupMembershipWrite({
         command,
         read,
         facts,
-        members: [
-            { ...actor, role: 'admin', updated: audit },
-            { ...target, role: 'owner', updated: audit }
-        ],
+        members,
         eventType: 'ownership-transferred',
         publicationGrantEffects: [],
         subscriptionEffects: []

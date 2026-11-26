@@ -37,6 +37,8 @@ import { computeSha256CanonicalJson } from '../../protocol/compute-sha256-canoni
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { GroupMutationAuthorizationError } from '../group-mutation-authority.ts';
 import type { AuthorizedGroupMutation, GroupStateService, GroupStateWritten } from '../group-state-service-contracts.ts';
+import type { GroupMutationCommand } from '../mutation/group-mutation-contracts.ts';
+import { toTemporaryRoomCreationCommand, type TemporaryRoomCreation } from '../mutation/membership/temporary-room-creation.ts';
 import { toGroupGuestAdmissionCommand, type GroupGuestAdmission } from '../mutation/membership/group-guest-admission.ts';
 import type { GroupMoveDeadline } from '../move/group-move-deadline.ts';
 import {
@@ -282,7 +284,16 @@ export class GroupStateInboxService {
     async processGuestAdmissionUntilCompletion(
         input: GroupGuestAdmission & Readonly<{ traceId: string; }>
     ): Promise<Either<AppInboxFailure, GroupStateWritten>> {
-        const command = toGroupGuestAdmissionCommand(input);
+        return await this.processGuestCommand(toGroupGuestAdmissionCommand(input), input.traceId);
+    }
+
+    async processTemporaryRoomCreationUntilCompletion(
+        input: TemporaryRoomCreation & Readonly<{ traceId: string }>
+    ): Promise<Either<AppInboxFailure, GroupStateWritten>> {
+        return await this.processGuestCommand(toTemporaryRoomCreationCommand(input), input.traceId);
+    }
+
+    private async processGuestCommand(command: GroupMutationCommand, traceId: string): Promise<Either<AppInboxFailure, GroupStateWritten>> {
         const ingress = await this.groupStateService.captureGuestMembershipMutationIngress(command, this.nowEpochMs());
         const received = {
             ...toGroupSystemCommandEnqueue(AppInboxType.GROUP_GUEST_ADMIT, ingress),
@@ -291,7 +302,7 @@ export class GroupStateInboxService {
         };
         return await this.commandClient.reserveMaterializedAndWaitForResult({
             received,
-            placeholder: { ...received, data: null, authority: null, traceId: input.traceId },
+            placeholder: { ...received, data: null, authority: null, traceId },
             materialize: async () => received
         }, decodeGroupStateWritten);
     }

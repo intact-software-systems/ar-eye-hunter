@@ -136,6 +136,8 @@ type GroupBase =
         activationStatus: GroupActivationStatus | null;
         /** Present only for rooms for which the owner issued a guest invitation. */
         guestInvitation?: RoomGuestInvitation;
+        /** A room opened without an account, with one room-scoped guest acting as manager. */
+        temporaryPlayerRoom?: true;
     }>;
 
 export type Group =

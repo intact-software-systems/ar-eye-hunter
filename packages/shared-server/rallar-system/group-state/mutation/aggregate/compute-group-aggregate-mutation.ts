@@ -1,3 +1,4 @@
+import { toRoomGuestInvitation } from '@shared/api/room-guests/invitation.ts';
 import { ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
 import { ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
 import {
@@ -259,7 +260,7 @@ function rotateGuestInvitation({ command, read, facts, current, verifier }: Rota
     }
     const group: Group = {
         ...current,
-        guestInvitation: { verifier, expiresAtEpochMs: facts.attemptAtEpochMs + 15 * 60_000 },
+        guestInvitation: toRoomGuestInvitation(verifier, facts.attemptAtEpochMs),
         snapshotVersion: current.snapshotVersion + 1,
         metadataVersion: current.metadataVersion + 1,
         updated: auditStamp(command, facts, actor.principalId)

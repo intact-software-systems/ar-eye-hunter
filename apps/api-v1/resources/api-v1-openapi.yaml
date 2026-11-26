@@ -1241,6 +1241,83 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/temporary-rooms/requests/{requestId}:
+    post:
+      tags: [Group State]
+      summary: Start a private game with a temporary identity
+      description: Retain the guest secret, invitation secret and request ID to recover a lost response.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [guestSecret, invitationVerifier]
+              properties:
+                guestSecret: { type: string, pattern: '^[0-9a-f]{64}$', writeOnly: true }
+                invitationVerifier: { type: string, pattern: '^[0-9a-f]{64}$' }
+                displayName: { type: string, minLength: 1, maxLength: 64 }
+                capacity: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: The room and the seated creator's room-scoped credential
+          headers:
+            x-request-id: { $ref: '#/components/headers/XRequestId' }
+            Cache-Control: { $ref: '#/components/headers/NoStore' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [room, access]
+                properties:
+                  room: { $ref: '#/components/schemas/GroupRef' }
+                  access: { $ref: '#/components/schemas/RoomGuestAccess' }
+        '400': { $ref: '#/components/responses/ApiMutationFailure' }
+        '403': { $ref: '#/components/responses/ApiMutationFailure' }
+        '409': { $ref: '#/components/responses/ApiMutationFailure' }
+        '429': { $ref: '#/components/responses/RateLimitedApiMutationFailure' }
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/guests/preview:
+    post:
+      tags: [Group State]
+      summary: Preview an invitation without taking a seat
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [invitationSecret]
+              properties:
+                invitationSecret: { type: string, pattern: '^[0-9a-f]{64}$', writeOnly: true }
+      responses:
+        '200':
+          description: Current seat availability. Null counts indicate an uncapped room.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/NoStore' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [displayName, capacity, availableSeats]
+                properties:
+                  displayName: { type: string }
+                  capacity: { type: integer, nullable: true }
+                  availableSeats: { type: integer, nullable: true }
+        '400': { $ref: '#/components/responses/ApiMutationFailure' }
+        '404': { description: Invitation unavailable }
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/guests/requests/{requestId}:
     post:
       tags: [Group State]
@@ -1283,14 +1360,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required: [clientId, sessionId, accessToken, issuedAtEpochMs, expiresAtEpochMs]
-                properties:
-                  clientId: { type: string }
-                  sessionId: { type: string }
-                  accessToken: { type: string }
-                  issuedAtEpochMs: { type: integer }
-                  expiresAtEpochMs: { type: integer }
+                $ref: '#/components/schemas/RoomGuestAccess'
         '400':
           $ref: '#/components/responses/ApiMutationFailure'
         '403':
@@ -7966,6 +8036,10 @@ components:
             deleted:
               $ref: '#/components/schemas/AuditStamp'
       properties:
+        temporaryPlayerRoom:
+          description: Present on a private room created by a temporary player with a fixed expiry.
+          type: boolean
+          const: true
         guestInvitation:
           description: Current owner-issued guest invitation. Present after first issuance.
           type: object
@@ -8345,8 +8419,15 @@ components:
       allOf:
         - if: { required: [guestLease] }
           then:
-            properties:
-              role: { type: string, enum: [member, spectator] }
+            if:
+              properties:
+                guestLease: { required: [temporaryManager] }
+            then:
+              properties:
+                role: { const: owner }
+            else:
+              properties:
+                role: { type: string, enum: [member, spectator] }
       discriminator:
         propertyName: status
       oneOf:
@@ -8402,10 +8483,11 @@ components:
       properties:
         guestLease:
           type: object
-          description: Fixed lease of an invited guest, established on first admission.
+          description: Fixed room-scoped player lease, established on first admission or creation.
           required: [admittedAtEpochMs, expiresAtEpochMs]
           additionalProperties: false
           properties:
+            temporaryManager: { type: boolean, const: true }
             displayName: { type: string, minLength: 1, maxLength: 64 }
             admittedAtEpochMs: { type: integer, minimum: 0 }
             expiresAtEpochMs: { type: integer, minimum: 1 }
@@ -9852,6 +9934,15 @@ components:
       additionalProperties: true
       description: Graphology export object for a serialized weighted graph.
 
+    RoomGuestAccess:
+      type: object
+      required: [clientId, sessionId, accessToken, issuedAtEpochMs, expiresAtEpochMs]
+      properties:
+        clientId: { type: string }
+        sessionId: { type: string }
+        accessToken: { type: string }
+        issuedAtEpochMs: { type: integer }
+        expiresAtEpochMs: { type: integer }
     GroupRef:
       type: object
       required: [applicationId, workspaceId, groupId]

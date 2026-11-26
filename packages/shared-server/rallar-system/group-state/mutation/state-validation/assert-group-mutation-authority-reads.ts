@@ -1,4 +1,4 @@
-import { directorAuthorityAdmissionPrincipal } from '../read/resolve-group-mutation-read-identities.ts';
+import { groupAuthorityAdmissionPrincipal } from '../read/resolve-group-mutation-read-identities.ts';
 import { validateGroupPublicationGrant } from '@shared/api/group-publication/group-publication-grants.ts';
 import {
     validateGroupTopicSubscription,
@@ -154,7 +154,7 @@ function assertAdmissionReads({
     ref,
     identities
 }: AssertGroupMutationAuthorityReadsInput): void {
-    const authorityAdmissionPrincipalId = directorAuthorityAdmissionPrincipal(command, identities.ownerPrincipalId);
+    const authorityAdmissionPrincipalId = groupAuthorityAdmissionPrincipal(command, identities.ownerPrincipalId);
     const directorAdmissionPrincipalId = command.operation === 'appointDirector'
         ? identities.directorPrincipalId
         : null;

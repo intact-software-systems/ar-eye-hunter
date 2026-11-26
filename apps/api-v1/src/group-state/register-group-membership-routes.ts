@@ -42,9 +42,9 @@ function registerRemoveGroupMemberRoute(
         `${GROUP_MEMBER_PATH}/remove/requests/:requestId`,
         async (context) => {
             try {
-                const authSession = await dependencies.requireApiAuthSession(context.req);
                 const scope = toGroupStateRouteScope(context);
                 const groupId = context.req.param('groupId');
+                const authSession = await requireRoomParticipantSession(context.req, { ...scope, groupId }, dependencies, 'temporary-room');
                 const principalId = context.req.param('principalId');
                 const written = toGroupStateResponse({
                     kind: 'mutation',
@@ -190,9 +190,9 @@ function registerTransferGroupOwnershipRoute(
         `${GROUP_PATH}/owner/transfer/requests/:requestId`,
         async (context) => {
             try {
-                const authSession = await dependencies.requireApiAuthSession(context.req);
                 const scope = toGroupStateRouteScope(context);
                 const groupId = context.req.param('groupId');
+                const authSession = await requireRoomParticipantSession(context.req, { ...scope, groupId }, dependencies, 'temporary-room');
                 const written = toGroupStateResponse({
                     kind: 'mutation',
                     written: await dependencies.processGroupAppInbox(

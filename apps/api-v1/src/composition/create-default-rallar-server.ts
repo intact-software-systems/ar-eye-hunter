@@ -435,6 +435,7 @@ function createDefaultApiV1RouteInstallers({
             serverPeerId: runtime.wsQBoxServerService.name
         },
         ice: configuration.ice,
+        temporaryRoomPolicies: configuration.group.temporaryRoomPoliciesByApplication,
         groupAdmission: configuration.group.admission,
         groupDefaultMaxMembers: configuration.group.defaultMaxMembers,
         strictReadAuthorization: configuration.stateApi.strictReadAuthorization,

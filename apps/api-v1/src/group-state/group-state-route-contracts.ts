@@ -1,3 +1,4 @@
+import type { TemporaryRoomPolicy } from '@shared/api/room-guests/temporary-room-policy.ts';
 import type { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type {
@@ -378,6 +379,8 @@ export interface GroupStateRouteDependencies {
         request: GroupStateRouteRequest
     ) => Promise<GroupStateRouteAuthSession>;
     readonly processGroupAppInbox: ProcessGroupAppInbox;
+    readonly temporaryRoomPolicies: Readonly<Record<string, TemporaryRoomPolicy>>;
+    readonly processTemporaryRoomCreation: GroupStateInboxService['processTemporaryRoomCreationUntilCompletion'];
     readonly processGuestAdmission: GroupStateInboxService['processGuestAdmissionUntilCompletion'];
     readonly processQuickJoin: GroupStateInboxService['processQuickJoinUntilCompletion'];
     readonly processGroupMove: GroupStateInboxService['processGroupMoveUntilCompletion'];
