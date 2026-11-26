@@ -17,7 +17,7 @@ import type { ArenaConnection } from '../game/arena-runtime/arena-connection-con
 import { ArenaRoomSharing, isCurrentArenaSession } from './arena-room-sharing.tsx';
 
 interface ArenaRoomHostingProps {
-    readonly arena: Pick<ArenaConnection, 'session' | 'rooms' | 'roomId' | 'createArenaRoom'>;
+    readonly arena: Pick<ArenaConnection, 'connectionState' | 'session' | 'rooms' | 'roomId' | 'createArenaRoom'>;
 }
 
 interface ArenaHostingOperation
@@ -34,6 +34,7 @@ export function ArenaRoomHosting({ arena }: ArenaRoomHostingProps) {
         roomId: arena.roomId,
         snapshot
     });
+    const creationDisabled = busy || arena.connectionState !== 'connected';
     const actions = { arena, snapshot, pendingOperation, setPending, setError, setCode };
     const create = (joinMode: GroupJoinMode, directoryListing?: GroupDirectoryListing) =>
         createArena(actions, joinMode, directoryListing);
@@ -52,11 +53,11 @@ export function ArenaRoomHosting({ arena }: ArenaRoomHostingProps) {
                 />
             )}
             <div className="room-actions">
-                <button type="button" disabled={busy} onClick={() => void create('open', 'unlisted')}>
+                <button type="button" disabled={creationDisabled} onClick={() => void create('open', 'unlisted')}>
                     New unlisted arena
                 </button>
-                <button type="button" disabled={busy} onClick={() => void create('code')}>New code arena</button>
-                <button type="button" disabled={busy} onClick={() => void create('invite-only')}>
+                <button type="button" disabled={creationDisabled} onClick={() => void create('code')}>New code arena</button>
+                <button type="button" disabled={creationDisabled} onClick={() => void create('invite-only')}>
                     New invite-only arena
                 </button>
             </div>

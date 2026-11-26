@@ -217,7 +217,9 @@ function ArenaSessionPanel({ arena, localColor, matchRemainingMs }: ArenaOperati
             </label>
             <ArenaQuickJoin arena={arena} />
             <div className="room-actions">
-                <button type="button" onClick={() => void arena.createArenaRoom()}>New Arena</button>
+                <button type="button" disabled={arena.connectionState !== 'connected'} onClick={() => void arena.createArenaRoom()}>
+                    New Arena
+                </button>
                 <button type="button" onClick={arena.refreshRooms}>Refresh</button>
                 <button type="button" onClick={arena.logout}>Logout</button>
             </div>
