@@ -1,17 +1,26 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { isALControlTypeId } from '@shared/al-contracts/al-control-type-ids.ts';
-import { decodeALControlMessage, type ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
+import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 
 import type {
     OrderedSendCellArrival,
+    OrderedSendCellControl,
     OrderedSendCellHandOff,
     OrderedSendCellObservations,
-    OrderedSendCellReceipt
+    OrderedSendCellReceipt,
+    OrderedSendCellUnclassifiedControl
 } from './ordered-send-cell-observations.ts';
+import { toOrderedSendSocketRead } from './to-ordered-send-socket-read.ts';
 
 /** What a run observes beside its sends. */
 export type OrderedSendObservedReads = Omit<OrderedSendCellObservations, 'sends'>;
+
+/** A phase added to the receipt contract has no key here, and fails to compile. */
+const ORDERED_SEND_TERMINAL_RECEIPT_PHASES: Readonly<Record<ALReceiptPayload['phase'], boolean>> = {
+    admitted: false,
+    complete: true,
+    'timed-out': true
+};
 
 /**
  * What the sockets of the sessions read and what the instances handed to their application, each appended as it
@@ -22,6 +31,8 @@ export class OrderedSendObservationLog {
     private readonly arrivals: OrderedSendCellArrival[] = [];
     private readonly handOffs: OrderedSendCellHandOff[] = [];
     private readonly receipts: OrderedSendCellReceipt[] = [];
+    private readonly controls: OrderedSendCellControl[] = [];
+    private readonly unclassifiedControls: OrderedSendCellUnclassifiedControl[] = [];
     /** One entry for each copy a session read at least once. */
     private readonly copiesRead = new Set<string>();
     private readonly terminalMsgIds = new Set<string>();
@@ -32,27 +43,34 @@ export class OrderedSendObservationLog {
     }
 
     /**
-     * Records one frame a session's socket read: a receipt as a receipt, and every message that is no control as
-     * an arrival, whoever read it. Any other control, a NACK or a repair request, is not recorded: the lists the
-     * observations have for it stay empty. Returns the copy when the reader now owes its ACK: the session's first
-     * read of a message another session sent that asks for a receipt. Throws on a frame that is no AL envelope,
-     * which the server never writes to a session's socket.
+     * Records one frame a session's socket read in the one list `toOrderedSendSocketRead` puts it in, at the instant
+     * read here. Returns the copy when the reader now owes its ACK: the session's first read of a message another
+     * session sent that asks for a receipt. Throws on a frame that is no AL envelope, which the server never writes
+     * to a session's socket.
      */
     recordSocketFrame(readerPeerId: string, frame: string): ALMessage | undefined {
         const message = decodePersistedALMessage(frame);
         if (!this.observing) {
             return undefined;
         }
-        if (isALControlTypeId(message.payload.typeId)) {
-            this.recordControl(message);
-            return undefined;
+        const read = toOrderedSendSocketRead({ message, readerPeerId, atMs: this.nowMs() });
+        switch (read.kind) {
+            case 'arrival':
+                this.arrivals.push(read.arrival);
+                return this.recordCopyRead(readerPeerId, message) ? message : undefined;
+            case 'receipt':
+                this.receipts.push(read.receipt);
+                if (ORDERED_SEND_TERMINAL_RECEIPT_PHASES[read.receipt.phase]) {
+                    this.terminalMsgIds.add(read.receipt.msgId);
+                }
+                return undefined;
+            case 'control':
+                this.controls.push(read.control);
+                return undefined;
+            case 'unclassified-control':
+                this.unclassifiedControls.push(read.unclassifiedControl);
+                return undefined;
         }
-        this.arrivals.push({ msgId: message.id.msgId, recipientPeerId: readerPeerId, atMs: this.nowMs() });
-        const copyRead = JSON.stringify([readerPeerId, message.id.msgId]);
-        const isFirstRead = !this.copiesRead.has(copyRead);
-        this.copiesRead.add(copyRead);
-        const asksForReceipt = message.delivery !== undefined && message.delivery.ack !== 'none';
-        return isFirstRead && asksForReceipt && message.id.senderId !== readerPeerId ? message : undefined;
     }
 
     recordHandOff(msgId: string, instanceIndex: number): void {
@@ -77,28 +95,18 @@ export class OrderedSendObservationLog {
             arrivals: [...this.arrivals],
             handOffs: [...this.handOffs],
             receipts: [...this.receipts],
-            controls: [],
-            unclassifiedControls: [],
+            controls: [...this.controls],
+            unclassifiedControls: [...this.unclassifiedControls],
             observationEndedAtMs: this.nowMs()
         };
     }
 
-    private recordControl(message: ALMessage): void {
-        const control = decodeALControlMessage(message).right;
-        if (control?.type !== 'receipt') {
-            return;
-        }
-        const { msgId, phase } = control.payload;
-        this.receipts.push({ msgId, phase, atMs: this.nowMs() });
-        if (ORDERED_SEND_TERMINAL_RECEIPT_PHASES[phase]) {
-            this.terminalMsgIds.add(msgId);
-        }
+    /** Whether the read is the one its reader owes an ACK for: its first of the copy, when the copy asks for one. */
+    private recordCopyRead(readerPeerId: string, copy: ALMessage): boolean {
+        const copyRead = JSON.stringify([readerPeerId, copy.id.msgId]);
+        const isFirstRead = !this.copiesRead.has(copyRead);
+        this.copiesRead.add(copyRead);
+        const asksForReceipt = copy.delivery !== undefined && copy.delivery.ack !== 'none';
+        return isFirstRead && asksForReceipt && copy.id.senderId !== readerPeerId;
     }
 }
-
-/** A phase added to the receipt contract has no key here, and fails to compile. */
-const ORDERED_SEND_TERMINAL_RECEIPT_PHASES: Readonly<Record<ALReceiptPayload['phase'], boolean>> = {
-    admitted: false,
-    complete: true,
-    'timed-out': true
-};

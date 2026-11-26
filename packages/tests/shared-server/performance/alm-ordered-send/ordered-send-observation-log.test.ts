@@ -1,12 +1,29 @@
 import { describe, expect, it } from 'vitest';
 
-import { newALReceiptControlMessage, type ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALAckControlMessage,
+    newALNackControlMessage,
+    newALReceiptControlMessage,
+    newALRepairControlMessage,
+    type ALReceiptPayload
+} from '@shared/al-contracts/al-control.ts';
 
 import { OrderedSendObservationLog } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/ordered-send-observation-log.ts';
 import { toOrderedSendMessage } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/to-ordered-send-message.ts';
 
 const ROOM = { applicationId: 'ordered-send-cell', workspaceId: 'default', groupId: 'room-run-1' };
 const PUBLISHER = 'session-01-a';
+const SERVER = 'default-qbox-server';
+
+/** The envelope identity of a control the server sends about a send. */
+const CONTROL_ID: ALMessage['id'] = {
+    v: 4,
+    msgId: 'control-of-the-server-1',
+    senderId: SERVER,
+    ts: 1_800_000_000_100,
+    traceId: 'trace-1'
+};
 
 interface TestClock {
     nowMs: number;
@@ -40,6 +57,43 @@ function toReceiptFrame(seq: number, phase: ALReceiptPayload['phase']): string {
             observedAtEpochMs: 1_800_000_000_100
         }
     ));
+}
+
+function toNackFrame(seq: number): string {
+    return JSON.stringify(newALNackControlMessage(CONTROL_ID, {
+        msgId: `${PUBLISHER}-send-${seq}`,
+        fromPeerId: SERVER,
+        toPeerId: PUBLISHER,
+        logicalRecipientPeerId: SERVER,
+        originPeerId: PUBLISHER,
+        reason: 'expired',
+        observedAtEpochMs: 1_800_000_000_100,
+        proof: null
+    }));
+}
+
+function toRepairFrame(seq: number): string {
+    return JSON.stringify(newALRepairControlMessage(CONTROL_ID, {
+        msgId: `${PUBLISHER}-send-${seq}`,
+        fromPeerId: SERVER,
+        toPeerId: PUBLISHER,
+        reason: 'retransmit',
+        observedAtEpochMs: 1_800_000_000_100
+    }));
+}
+
+function toAckFrame(seq: number): string {
+    return JSON.stringify(newALAckControlMessage(CONTROL_ID, {
+        ackedMsgId: `${PUBLISHER}-send-${seq}`,
+        fromPeerId: SERVER,
+        toPeerId: PUBLISHER,
+        originPeerId: PUBLISHER,
+        logicalRecipientPeerId: 'session-02-b',
+        carrier: 'ws',
+        status: 'delivered',
+        observedAtEpochMs: 1_800_000_000_100,
+        proof: null
+    }));
 }
 
 describe('OrderedSendObservationLog', () => {
@@ -93,6 +147,30 @@ describe('OrderedSendObservationLog', () => {
         });
     });
 
+    it('records a NACK and a repair request as controls and any other control apart, each as read, and owes no ACK', () => {
+        const clock: TestClock = { nowMs: 70.125 };
+        const log = new OrderedSendObservationLog(() => clock.nowMs);
+
+        const nack = log.recordSocketFrame(PUBLISHER, toNackFrame(2));
+        clock.nowMs = 70.5;
+        const ack = log.recordSocketFrame(PUBLISHER, toAckFrame(1));
+        clock.nowMs = 71;
+        const repair = log.recordSocketFrame(PUBLISHER, toRepairFrame(1));
+
+        expect([nack, ack, repair]).toEqual([undefined, undefined, undefined]);
+        expect(log.endObservation()).toEqual({
+            arrivals: [],
+            handOffs: [],
+            receipts: [],
+            controls: [
+                { type: 'nack', msgId: 'session-01-a-send-2', reason: 'expired', atMs: 70.125 },
+                { type: 'repair', msgId: 'session-01-a-send-1', reason: 'retransmit', atMs: 71 }
+            ],
+            unclassifiedControls: [{ typeId: 'al.control.ack.v3', atMs: 70.5 }],
+            observationEndedAtMs: 71
+        });
+    });
+
     it('holds a send terminal once a complete or a timed-out receipt of it was read, and not on its admitted one', () => {
         const log = new OrderedSendObservationLog(() => 1);
 
@@ -130,18 +208,21 @@ describe('OrderedSendObservationLog', () => {
 
         const lateCopy = log.recordSocketFrame('session-03-c', toCopyFrame(1));
         log.recordSocketFrame(PUBLISHER, toReceiptFrame(1, 'complete'));
+        log.recordSocketFrame(PUBLISHER, toNackFrame(1));
+        log.recordSocketFrame(PUBLISHER, toAckFrame(1));
         log.recordHandOff('session-01-a-send-1', 1);
 
         expect([observingBeforeItsEnd, log.isObserving()]).toEqual([true, false]);
         expect(lateCopy).toBeUndefined();
-        expect(ended).toEqual({
+        const recordedWhileObserving = {
             arrivals: [{ msgId: 'session-01-a-send-1', recipientPeerId: 'session-02-b', atMs: 40 }],
             handOffs: [],
             receipts: [],
             controls: [],
-            unclassifiedControls: [],
-            observationEndedAtMs: 50
-        });
+            unclassifiedControls: []
+        };
+        expect(ended).toEqual({ ...recordedWhileObserving, observationEndedAtMs: 50 });
+        expect(log.endObservation()).toMatchObject(recordedWhileObserving);
         expect(log.hasTerminalReceipt('session-01-a-send-1')).toBe(false);
     });
 

@@ -84,6 +84,8 @@ async function expectEverySendDeliveredAndReceipted(delayMs: number): Promise<vo
         admittedWithoutTerminal: 0,
         noReceipt: 0
     });
+    // Offered in order and within its period, a track shows the server no gap and no send is refused.
+    expect(report.controls.byType).toEqual({ nack: 0, repair: 0 });
 }
 
 /**
