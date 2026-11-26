@@ -66,8 +66,10 @@ export type ViewInvalidation =
 /** A hint to read authority again, never a replacement snapshot or permission to access a resource. */
 export function decodeViewInvalidation(value: unknown): ViewInvalidation {
     const record = requireRecord(value, 'View invalidation');
+    const resource = record.resource;
+    const roomScoped = resource === 'room-access' || resource === 'room-event' || resource === 'room-event-organizer' || resource === 'room-program';
     const keys = ['version', 'resource', 'scope', 'principalId', 'changeId'];
-    if (record.resource === 'room-access' || record.resource === 'room-event' || record.resource === 'room-event-organizer' || record.resource === 'room-program') {
+    if (roomScoped) {
         keys.push('groupId');
     }
     if (record.resource === 'room-program') {
@@ -109,13 +111,13 @@ export function decodeViewInvalidation(value: unknown): ViewInvalidation {
         principalId: record.principalId,
         changeId: record.changeId
     };
-    if (record.resource === 'room-access' || record.resource === 'room-event' || record.resource === 'room-event-organizer' || record.resource === 'room-program') {
+    if (roomScoped) {
         requireString(record.groupId, 'View room');
-        if (record.resource !== 'room-program') {
-            return { ...account, resource: record.resource, groupId: record.groupId };
+        if (resource !== 'room-program') {
+            return { ...account, resource, groupId: record.groupId };
         }
         assertRoomDeadlineName(record.name);
-        return { ...account, resource: record.resource, groupId: record.groupId, name: record.name };
+        return { ...account, resource, groupId: record.groupId, name: record.name };
     }
     return {
         ...account,
