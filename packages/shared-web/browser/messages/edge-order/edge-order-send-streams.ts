@@ -103,7 +103,7 @@ export class EdgeOrderOpenSend {
      * still arrive. Any other end is `undelivered`. Every edge-ordered send is at-least-once and receipted, so each
      * is one a receiver waits for.
      */
-    observe(handle: RallarMessageHandle): void {
+    observe(handle: Pick<RallarMessageHandle, 'lifecycle'>): void {
         const submitted = handle.lifecycle();
         if (isALDeliveryTerminal(submitted)) {
             this.end();
