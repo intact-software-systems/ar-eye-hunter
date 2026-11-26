@@ -1,6 +1,7 @@
-import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
+import type { AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
 import type { AlmConformanceTag } from '../alm-conformance-scenario-definition.ts';
-import type { AlmCarrierMatrix, AlmCarrierMatrixCell } from './alm-carrier-matrix.ts';
+import type { AlmCarrierMatrix } from './alm-carrier-matrix.ts';
+import { toAlmCarrierMatrixCellProofs } from './to-alm-carrier-matrix-cell-proofs.ts';
 
 /** One scenario the catalogue creates over one carrier. */
 export interface AlmCarrierMatrixCatalogueCell {
@@ -56,20 +57,7 @@ function isSameCell(proof: AlmCarrierMatrixLaneProof, catalogueCell: AlmCarrierM
 }
 
 function toLaneProofs(matrix: AlmCarrierMatrix): readonly AlmCarrierMatrixLaneProof[] {
-    return Object.entries(matrix).flatMap(([capabilityId, capability]) =>
-        ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
-            toCellLaneProofs(capabilityId, carrier, capability.cells[carrier])
-        )
-    );
-}
-
-function toCellLaneProofs(
-    capabilityId: string,
-    carrier: AlmConformanceCarrier,
-    cell: AlmCarrierMatrixCell
-): readonly AlmCarrierMatrixLaneProof[] {
-    const proofs = cell.kind === 'stated' ? cell.proofs : [];
-    return proofs.flatMap((proof) =>
+    return toAlmCarrierMatrixCellProofs(matrix).flatMap(({ capabilityId, carrier, proof }) =>
         proof.kind === 'lane-cell' ? [{ capabilityId, carrier, scenarioKey: proof.scenarioKey }] : []
     );
 }

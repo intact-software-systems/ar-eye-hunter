@@ -1,16 +1,16 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import {
     ALM_CARRIER_MATRIX,
     type AlmCarrierMatrix,
-    type AlmCarrierMatrixCell,
-    type AlmCarrierProof
+    type AlmCarrierOutcome
 } from '@shared-test/rallar-bb-test/conformance/alm/carrier-matrix/alm-carrier-matrix.ts';
+import { toAlmCarrierMatrixCellProofs } from '@shared-test/rallar-bb-test/conformance/alm/carrier-matrix/to-alm-carrier-matrix-cell-proofs.ts';
 import {
     validateAlmCarrierMatrix,
     type AlmCarrierMatrixCatalogueCell
@@ -38,7 +38,7 @@ function toProbeMatrix(scenarioKey: string): AlmCarrierMatrix {
 }
 
 /** Every scenario the lane catalogue creates, over each carrier, with every lane family and principal resolved. */
-function readCatalogueCells(): readonly AlmCarrierMatrixCatalogueCell[] {
+function toCatalogueCells(): readonly AlmCarrierMatrixCatalogueCell[] {
     return ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
         createAlmConformanceRecipes(toConformanceInput(carrier)).map(({ scenarioKey, tags }) => ({
             carrier,
@@ -47,6 +47,37 @@ function readCatalogueCells(): readonly AlmCarrierMatrixCatalogueCell[] {
         }))
     );
 }
+
+describe('toAlmCarrierMatrixCellProofs', () => {
+    it('yields each proof of each stated cell under its capability and carrier, in the order written, and nothing for a cell that is not applicable', () => {
+        const matrix: AlmCarrierMatrix = {
+            first: {
+                statement: 'A first probe send.',
+                cells: {
+                    ws: {
+                        kind: 'stated',
+                        outcome: { kind: 'delivered' },
+                        proofs: [{ kind: 'lane-cell', scenarioKey: 'first-on-ws' }, { kind: 'unproven', closedBy: 'a second cell' }]
+                    },
+                    rtc: OUTSIDE_THE_PROBE,
+                    'rtc-with-ws-fallback': {
+                        kind: 'stated',
+                        outcome: { kind: 'delivered' },
+                        proofs: [{ kind: 'lane-cell', scenarioKey: 'first-on-fallback' }]
+                    }
+                }
+            },
+            ...toProbeMatrix('probe-cell')
+        };
+
+        expect(toAlmCarrierMatrixCellProofs(matrix)).toEqual([
+            { capabilityId: 'first', carrier: 'ws', proof: { kind: 'lane-cell', scenarioKey: 'first-on-ws' } },
+            { capabilityId: 'first', carrier: 'ws', proof: { kind: 'unproven', closedBy: 'a second cell' } },
+            { capabilityId: 'first', carrier: 'rtc-with-ws-fallback', proof: { kind: 'lane-cell', scenarioKey: 'first-on-fallback' } },
+            { capabilityId: 'probe', carrier: 'rtc', proof: { kind: 'lane-cell', scenarioKey: 'probe-cell' } }
+        ]);
+    });
+});
 
 describe('validateAlmCarrierMatrix', () => {
     it('reports a lane cell the catalogue does not run on the carrier the matrix names, and a carrier the catalogue runs it on that the matrix does not name', () => {
@@ -71,106 +102,143 @@ describe('validateAlmCarrierMatrix', () => {
     });
 
     it('accepts the lane catalogue against the matrix beside it', () => {
-        expect(validateAlmCarrierMatrix({ matrix: ALM_CARRIER_MATRIX, cells: readCatalogueCells() })).toEqual([]);
+        expect(validateAlmCarrierMatrix({ matrix: ALM_CARRIER_MATRIX, cells: toCatalogueCells() })).toEqual([]);
     });
 });
 
 const NOT_APPLICABLE = { kind: 'not-applicable' } as const;
 const DELIVERED = { kind: 'stated', outcome: { kind: 'delivered' } } as const;
-const REFUSED_BY_THE_RECEIVER = { kind: 'stated', outcome: { kind: 'refused', by: 'receiver' } } as const;
 const HANDED_TO_WS_AT_ROUTING = { kind: 'stated', outcome: { kind: 'handed-to-ws', at: 'routing' } } as const;
 const HANDED_TO_WS_NOT_READY = {
     kind: 'stated',
     outcome: { kind: 'handed-to-ws', at: 'after-admission', reason: 'not-ready' }
 } as const;
 
-function refusedBy(by: 'origin' | 'trusted-server' | 'peer', reason: string) {
+function toRefusedBy(by: 'origin' | 'trusted-server' | 'peer', reason: string) {
     return { kind: 'stated', outcome: { kind: 'refused', by, reason } } as const;
 }
 
-function refusedAtTheCall(issuePath: string, code: string) {
+function toRefusedAtTheCall(issuePath: string, code: string) {
     return { kind: 'stated', outcome: { kind: 'refused', by: 'call', path: issuePath, code } } as const;
 }
 
+function toRefusedByTheReceiver(of: 'frame' | 'receipt', code: string) {
+    return { kind: 'stated', outcome: { kind: 'refused', by: 'receiver', of, code } } as const;
+}
+
+function toHandedToWsAtAdmission(reason: string) {
+    return { kind: 'stated', outcome: { kind: 'handed-to-ws', at: 'admission', reason } } as const;
+}
+
+const UNDELIVERED_EXPIRED = { kind: 'stated', outcome: { kind: 'undelivered', failure: { kind: 'expired' } } } as const;
+
+function toUndelivered(kind: 'skipped' | 'unroutable', reason: string) {
+    return { kind: 'stated', outcome: { kind: 'undelivered', failure: { kind, reason } } } as const;
+}
+
 /**
- * Transcribed by hand from the by-design table of the carrier-parity section and the single-carrier cells of item G7
- * of the ALM 1.0 readiness plan, each cell read against the scenario or unit test that asserts it. Where the tree and
- * the plan disagree the tree is stated: a send to the server peer and an `all` broadcast are refused at the call, and
- * a granted audience over the room limit is handed to WS under the fallback strategy.
+ * Written by hand, cell by cell, from the production code and the test that each cell of the matrix cites, and never
+ * from the matrix: a cell that changes here without its code changing is a wrong cell.
  */
 const EXPECTED_OUTCOMES = {
     'exclusive-claim': {
         ws: DELIVERED,
-        rtc: refusedBy('origin', 'unsupported'),
+        rtc: toRefusedBy('origin', 'unsupported'),
         'rtc-with-ws-fallback': HANDED_TO_WS_AT_ROUTING
     },
     'world-broadcast': {
         ws: DELIVERED,
-        rtc: refusedBy('origin', 'unsupported'),
+        rtc: toRefusedBy('origin', 'unsupported'),
         'rtc-with-ws-fallback': HANDED_TO_WS_AT_ROUTING
     },
     'all-broadcast': {
-        ws: refusedAtTheCall('$.scope', 'invalid-scope'),
-        rtc: refusedAtTheCall('$.scope', 'invalid-scope'),
-        'rtc-with-ws-fallback': refusedAtTheCall('$.scope', 'invalid-scope')
+        ws: toRefusedAtTheCall('$.scope', 'invalid-scope'),
+        rtc: toRefusedAtTheCall('$.scope', 'invalid-scope'),
+        'rtc-with-ws-fallback': toRefusedAtTheCall('$.scope', 'invalid-scope')
     },
     'server-peer-unicast': {
         ws: DELIVERED,
-        rtc: refusedAtTheCall('$.peerId', 'unsupported'),
-        'rtc-with-ws-fallback': refusedAtTheCall('$.peerId', 'unsupported')
+        rtc: toRefusedAtTheCall('$.peerId', 'unsupported'),
+        'rtc-with-ws-fallback': toRefusedAtTheCall('$.peerId', 'unsupported')
     },
     'peer-unicast': { ws: DELIVERED, rtc: DELIVERED, 'rtc-with-ws-fallback': DELIVERED },
-    'peer-unicast-without-direct-route': {
+    'peer-unicast-to-unready-addressee': {
         ws: NOT_APPLICABLE,
-        rtc: { kind: 'stated', outcome: { kind: 'undelivered', failure: { kind: 'expired' } } },
+        rtc: toUndelivered('unroutable', 'no-route'),
+        'rtc-with-ws-fallback': toHandedToWsAtAdmission('no-route')
+    },
+    'peer-unicast-off-overlay-next-hop': {
+        ws: NOT_APPLICABLE,
+        rtc: UNDELIVERED_EXPIRED,
         'rtc-with-ws-fallback': HANDED_TO_WS_NOT_READY
     },
     'ordered-gap-repair': { ws: DELIVERED, rtc: DELIVERED, 'rtc-with-ws-fallback': DELIVERED },
     'repair-budget-exhausted': {
-        ws: NOT_APPLICABLE,
-        rtc: { kind: 'stated', outcome: { kind: 'undelivered', failure: { kind: 'skipped', reason: 'repair-exhausted' } } },
+        ws: toUndelivered('skipped', 'repair-exhausted'),
+        rtc: toUndelivered('skipped', 'repair-exhausted'),
         'rtc-with-ws-fallback': HANDED_TO_WS_NOT_READY
     },
-    'granted-audience-over-room-limit': {
+    'room-audience-over-frame-limit': {
         ws: DELIVERED,
-        rtc: refusedBy('origin', 'unsupported'),
-        'rtc-with-ws-fallback': {
-            kind: 'stated',
-            outcome: { kind: 'handed-to-ws', at: 'admission', reason: 'unsupported' }
-        }
+        rtc: toRefusedBy('origin', 'unsupported'),
+        'rtc-with-ws-fallback': toHandedToWsAtAdmission('unsupported')
     },
     'relay-payload-confidentiality': { ws: NOT_APPLICABLE, rtc: DELIVERED, 'rtc-with-ws-fallback': DELIVERED },
-    'publish-revocation': {
-        ws: refusedBy('trusted-server', 'no-publish-grant'),
-        rtc: refusedBy('origin', 'no-publish-grant'),
-        'rtc-with-ws-fallback': refusedBy('origin', 'no-publish-grant')
+    'revoked-publish-known-to-sender': {
+        ws: toRefusedBy('origin', 'no-publish-grant'),
+        rtc: toRefusedBy('origin', 'no-publish-grant'),
+        'rtc-with-ws-fallback': toRefusedBy('origin', 'no-publish-grant')
     },
-    'sender-authentication': {
+    'revoked-publish-unknown-to-sender': {
+        ws: toRefusedBy('trusted-server', 'no-publish-grant'),
+        rtc: toRefusedByTheReceiver('frame', 'no-publish-grant'),
+        'rtc-with-ws-fallback': toRefusedByTheReceiver('frame', 'no-publish-grant')
+    },
+    'frame-without-proof': {
         ws: NOT_APPLICABLE,
-        rtc: REFUSED_BY_THE_RECEIVER,
-        'rtc-with-ws-fallback': REFUSED_BY_THE_RECEIVER
+        rtc: toRefusedByTheReceiver('frame', 'missing-proof'),
+        'rtc-with-ws-fallback': toRefusedByTheReceiver('frame', 'missing-proof')
+    },
+    'frame-with-forged-sender': {
+        ws: NOT_APPLICABLE,
+        rtc: toRefusedByTheReceiver('frame', 'invalid-signature'),
+        'rtc-with-ws-fallback': toRefusedByTheReceiver('frame', 'invalid-signature')
+    },
+    'receipt-without-proof': {
+        ws: NOT_APPLICABLE,
+        rtc: toRefusedByTheReceiver('receipt', 'missing-proof'),
+        'rtc-with-ws-fallback': toRefusedByTheReceiver('receipt', 'missing-proof')
     },
     reply: { ws: DELIVERED, rtc: DELIVERED, 'rtc-with-ws-fallback': DELIVERED },
     'left-sender-send': {
-        ws: refusedBy('trusted-server', 'membership-fenced'),
-        rtc: refusedBy('origin', 'unauthorized'),
-        'rtc-with-ws-fallback': refusedBy('origin', 'unauthorized')
+        ws: toRefusedBy('trusted-server', 'membership-fenced'),
+        rtc: toRefusedBy('peer', 'membership-fenced'),
+        'rtc-with-ws-fallback': toRefusedBy('peer', 'membership-fenced')
     },
     'resync-recovery-owner': {
-        ws: refusedBy('trusted-server', 'resync-required'),
-        rtc: refusedBy('peer', 'resync-required'),
-        'rtc-with-ws-fallback': refusedBy('peer', 'resync-required')
+        ws: toRefusedBy('trusted-server', 'resync-required'),
+        rtc: toRefusedBy('peer', 'resync-required'),
+        'rtc-with-ws-fallback': toRefusedBy('peer', 'resync-required')
     },
     'snapshot-floor-catch-up': { ws: DELIVERED, rtc: DELIVERED, 'rtc-with-ws-fallback': DELIVERED }
 } as const;
 
+const LEFT_SENDER_CELL =
+    'a left-sender cell over this carrier; a page that has read its own leave holds the send `pending-authority`, and nothing pins how that ends';
+
 /** Every cell some part of whose outcome nothing proves yet, and what will prove it. */
 const UNPROVEN_CELLS = [
-    ['peer-unicast-without-direct-route', 'rtc', 'a unit pin of the kept unicast\'s handle at its deadline'],
+    ['all-broadcast', 'ws', 'a unit pin of the `$.scope` path of the issue that a WS send naming `all` throws'],
+    ['peer-unicast-off-overlay-next-hop', 'rtc', 'a unit pin of the kept unicast\'s handle at its deadline'],
     [
         'ordered-gap-repair',
         'rtc-with-ws-fallback',
-        'one ordering track across the hand-over to WS, then `ordering-gap-repair` over this carrier'
+        'a gap cell over this carrier whose track stays on RTC; a frame its sender holds is handed to WS, whose relay gates it as its own gap, until one ordering track spans the hand-over (product work)'
+    ],
+    [
+        'repair-budget-exhausted',
+        'ws',
+        '`repair-exhausted` over this carrier, where the server is the one requester and renews its own gap'
     ],
     [
         'repair-budget-exhausted',
@@ -178,13 +246,19 @@ const UNPROVEN_CELLS = [
         'one lifecycle across the hand-over to WS, then a held-gap cell over this carrier'
     ],
     [
-        'granted-audience-over-room-limit',
+        'room-audience-over-frame-limit',
         'ws',
         'a server test that delivers a granted publication to more than 256 subscribed sessions'
     ],
+    ['relay-payload-confidentiality', 'rtc-with-ws-fallback', '`granted-rtc-relay-only` over this carrier'],
+    [
+        'frame-with-forged-sender',
+        'rtc-with-ws-fallback',
+        '`granted-rtc-forged-sender` over this carrier; no unit test forges a sender together with its registered key id at a receiving hop'
+    ],
     ['reply', 'rtc', '`reply-correlated` over this carrier'],
-    ['left-sender-send', 'rtc', 'a left-sender cell over this carrier, beside `fenced-rejection`'],
-    ['left-sender-send', 'rtc-with-ws-fallback', 'a left-sender cell over this carrier'],
+    ['left-sender-send', 'rtc', LEFT_SENDER_CELL],
+    ['left-sender-send', 'rtc-with-ws-fallback', LEFT_SENDER_CELL],
     ['resync-recovery-owner', 'ws', 'an absent `recovery-owner-invoked` wait in `ordering-resync` over this carrier'],
     [
         'snapshot-floor-catch-up',
@@ -193,36 +267,35 @@ const UNPROVEN_CELLS = [
     ]
 ] as const;
 
-interface CarrierProof {
-    readonly capabilityId: string;
-    readonly carrier: AlmConformanceCarrier;
-    readonly proof: AlmCarrierProof;
-}
+/** What one cell states, without its proofs or its reason. */
+type StatedOutcome = Readonly<{ kind: 'stated'; outcome: AlmCarrierOutcome; }> | Readonly<{ kind: 'not-applicable'; }>;
 
-function readProofs(matrix: AlmCarrierMatrix): readonly CarrierProof[] {
-    return Object.entries(matrix).flatMap(([capabilityId, capability]) =>
-        ALM_CONFORMANCE_CARRIERS.flatMap((carrier) => readCellProofs(capabilityId, carrier, capability.cells[carrier]))
+function toStatedOutcomes(matrix: AlmCarrierMatrix): Readonly<Record<string, Readonly<Record<string, StatedOutcome>>>> {
+    return Object.fromEntries(
+        Object.entries(matrix).map(([capabilityId, capability]) => [
+            capabilityId,
+            Object.fromEntries(ALM_CONFORMANCE_CARRIERS.map((carrier) => {
+                const cell = capability.cells[carrier];
+                const stated: StatedOutcome = cell.kind === 'stated' ? { kind: cell.kind, outcome: cell.outcome } : { kind: cell.kind };
+                return [carrier, stated];
+            }))
+        ])
     );
 }
 
-function readCellProofs(
-    capabilityId: string,
-    carrier: AlmConformanceCarrier,
-    cell: AlmCarrierMatrixCell
-): readonly CarrierProof[] {
-    return cell.kind === 'stated' ? cell.proofs.map((proof) => ({ capabilityId, carrier, proof })) : [];
+/** The file's text with its whitespace runs collapsed, or nothing when the repository holds no such file. */
+function readRepositoryText(relativePath: string): string | undefined {
+    const absolutePath = path.join(repoRoot, relativePath);
+    return existsSync(absolutePath) ? readFileSync(absolutePath, 'utf8').replace(/\s+/g, ' ') : undefined;
 }
 
 describe('ALM_CARRIER_MATRIX', () => {
-    it('states the outcome section 5.7 and G7 give for every capability on every carrier', () => {
-        expect(Object.keys(ALM_CARRIER_MATRIX).sort()).toEqual(Object.keys(EXPECTED_OUTCOMES).sort());
-        expect(ALM_CARRIER_MATRIX).toMatchObject(
-            Object.fromEntries(Object.entries(EXPECTED_OUTCOMES).map(([capabilityId, cells]) => [capabilityId, { cells }]))
-        );
+    it('states what a send comes to for every capability on every carrier', () => {
+        expect(toStatedOutcomes(ALM_CARRIER_MATRIX)).toEqual(EXPECTED_OUTCOMES);
     });
 
     it('names every cell nothing proves yet and what will prove it', () => {
-        const unproven = readProofs(ALM_CARRIER_MATRIX).flatMap(({ capabilityId, carrier, proof }) =>
+        const unproven = toAlmCarrierMatrixCellProofs(ALM_CARRIER_MATRIX).flatMap(({ capabilityId, carrier, proof }) =>
             proof.kind === 'unproven' ? [[capabilityId, carrier, proof.closedBy]] : []
         );
 
@@ -230,11 +303,23 @@ describe('ALM_CARRIER_MATRIX', () => {
         expect(unproven).toEqual(expect.arrayContaining([...UNPROVEN_CELLS]));
     });
 
-    it('points every unit proof at a test file that exists', () => {
-        const testFiles = readProofs(ALM_CARRIER_MATRIX).flatMap(({ proof }) => proof.kind === 'unit-test' ? [proof.testFile] : []);
+    it('names for every unit proof a test title that its test file holds', () => {
+        const unitProofs = toAlmCarrierMatrixCellProofs(ALM_CARRIER_MATRIX).flatMap(({ proof }) => proof.kind === 'unit-test' ? [proof] : []);
+        // A title written with an escaped apostrophe is named as it reads.
+        const unpinned = unitProofs.filter(({ testFile, testName }) =>
+            !/\.test\.ts$/.test(testFile) || testName.trim() === '' ||
+            !readRepositoryText(testFile)?.replaceAll('\\\'', '\'').includes(testName)
+        );
 
-        expect(testFiles.length).toBeGreaterThan(0);
-        expect(testFiles.filter((testFile) => !/\.test\.ts$/.test(testFile) || !existsSync(path.join(repoRoot, testFile))))
-            .toEqual([]);
+        expect(unitProofs.length).toBeGreaterThan(0);
+        expect(unpinned.map(({ testFile, testName }) => [testFile, testName])).toEqual([]);
+    });
+
+    it('quotes for every documented limit a phrase that its document holds', () => {
+        const limits = toAlmCarrierMatrixCellProofs(ALM_CARRIER_MATRIX).flatMap(({ proof }) => proof.kind === 'documented-limit' ? [proof] : []);
+        const unquoted = limits.filter(({ document, limit }) => limit.trim() === '' || !readRepositoryText(document)?.includes(limit));
+
+        expect(limits.length).toBeGreaterThan(0);
+        expect(unquoted.map(({ document, limit }) => [document, limit])).toEqual([]);
     });
 });
