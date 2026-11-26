@@ -99,8 +99,8 @@ export type OrderedSendCellAck = OrderedSendCellAckOffer & OrderedSendCellAnswer
  *
  * An arrival at a session the send did not expect, its own publisher or a session outside its audience, is no copy
  * of any expected recipient: the report counts it in `unmatched.arrivalsAtUnexpectedRecipient` and in no delivery or
- * delay figure. On `main` the copy of a
- * send on a topic the router has no definition of is a live notice, never a row of the WS outbox: the instance that
+ * delay figure. The copy of a send on a topic the router has no definition of is a live notice, never a row of the
+ * WS outbox: the instance that
  * hands the send to its router publishes one `ws-live-notice` NOTIFY that carries the message, writes the copies of
  * its own sessions once the publish returned, and each other instance writes its sessions' copies as the NOTIFY
  * reaches it.
@@ -123,8 +123,8 @@ export interface OrderedSendCellHandOff {
 }
 
 /**
- * A session's socket read a receipt of a send. On `main` a receipt is a row the instance that admitted the send
- * writes to the shared WS outbox. The instance whose worker takes the row writes it to the origin's socket when that
+ * A session's socket read a receipt of a send. A receipt is a row the instance that admitted the send writes to the
+ * shared WS outbox. The instance whose worker takes the row writes it to the origin's socket when that
  * socket is its own; otherwise it announces the row's key by a `ws-channel` NOTIFY for the origin's instance to
  * write, and announces it again until the row expires, so the origin may read one receipt more than once. A
  * recipient's ACK reaches the instance that counts it directly, or by a `ws-relayed-ack` NOTIFY from the instance

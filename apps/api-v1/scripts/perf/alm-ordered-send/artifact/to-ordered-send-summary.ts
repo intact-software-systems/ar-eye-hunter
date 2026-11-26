@@ -19,8 +19,10 @@ const NOT_REACHED = 'not reached';
 const NO_SAMPLE = 'no sample';
 
 /**
- * The lines a run prints once it has ended, in the order to print them. A copy is "written to the recipient's
- * socket": a frame on the wire, which is no delivery to an application. A control a send drew is counted as drawn,
+ * The lines a run prints once it has ended, in the order to print them. The delay of the first line is nominal: it is
+ * what the shape asks for, added to the round trips the artifact lists as delayed and no others, and each wait is a
+ * timer that fires late. A copy is "written to the recipient's socket": a frame on the wire, which is no delivery to
+ * an application. A control a send drew is counted as drawn,
  * never as a send lost. An offer that threw is printed with the name of its error and the first message under that
  * name, which `toOrderedSendThrownError` bounded and cleared of URLs when it was recorded. The last three lines are
  * there only when a count of theirs is above zero.
@@ -43,7 +45,7 @@ function toRunLines(source: OrderedSendSummarySource): readonly string[] {
     const commit = source.commit.slice(0, SHORT_COMMIT_LENGTH) + (source.dirty ? ' with uncommitted changes' : '');
     return [
         `ALM ordered-send cell: ${shape.publishers} publishers x ${shape.sendsPerSecond} sends/s for ` +
-        `${shape.durationS} s; +${shape.delayMs} ms on each database round trip; ` +
+        `${shape.durationS} s; +${shape.delayMs} ms nominal on the delayed database round trips; ` +
         `sender recovery ${shape.senderRecovery}; application pool ${applicationPool.effectiveMaxConnections} ` +
         `(API default ${applicationPool.apiV1DefaultMaxConnections})`,
         `commit ${commit}; observed ${toSeconds(observation.tailMs)} past the last offer; ` +

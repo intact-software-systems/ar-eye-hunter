@@ -129,8 +129,10 @@ const ROOM_PRESENCE_LIFETIME_MS = 24 * 60 * 60 * 1_000;
  *   its work row hands it to the router, which publishes one NOTIFY that carries the message, sends the copies of
  *   the sessions on that instance once the publish returned, and the other instances send theirs as the NOTIFY
  *   reaches them. No copy is a row of the WS outbox: one an instance missed is written again only when the send is
- *   handed to a router again. Once the server has admitted a send, its publisher offering it again changes
- *   nothing: the entry answers `duplicate`, hands nothing off and publishes nothing;
+ *   handed to a router again. Once the server has admitted a send, its publisher offering it again brings no copy:
+ *   the entry answers `duplicate` and hands nothing off. It is not without effect: while the send's receipt is still
+ *   open on that instance, the instance writes the `admitted` receipt again, one more row of the WS outbox for each
+ *   such offer (`WsQueueBoxServerReceiptAggregation.writeAdmittedReceipt`);
  * - a receipt: a row the instance that admitted the send writes to the shared WS outbox. The instance whose worker
  *   takes the row writes it to the origin's socket when that socket is its own, and otherwise announces the row's
  *   key to the others by a NOTIFY, again and again until the row expires;

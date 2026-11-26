@@ -26,12 +26,6 @@ export interface ToOrderedSendMessageInput {
 }
 
 /**
- * The topic and the payload type of every send, as a browser names both alike when its send names no topic. It is an
- * implicit `room.` topic: the server's router has no definition of it, so its fan-out is the router's default.
- */
-export const ORDERED_SEND_TOPIC_ID = 'room.ordered-send';
-
-/**
  * The QoS provider a browser's WS client plans its sends with: the WS client's capabilities over the empty provider
  * a browser session is composed with. A browser also reads its session's volatile bound through it and plans a send
  * `overloaded` past that bound; a publisher of the cell has no such bound.
@@ -40,6 +34,12 @@ export const ORDERED_SEND_WS_CLIENT_QOS_PROVIDER: ALQosInputProvider = toALCarri
     AL_WS_CLIENT_CAPABILITIES,
     {}
 );
+
+/**
+ * The topic and the payload type of every send, as a browser names both alike when its send names no topic. It is an
+ * implicit `room.` topic: the server's router has no definition of it, so its fan-out is the router's default.
+ */
+const ORDERED_SEND_TOPIC_ID = 'room.ordered-send';
 
 /**
  * The message a browser's WS client writes to its socket for an ordered room send of its `notification` channel: a

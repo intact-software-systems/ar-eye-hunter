@@ -154,7 +154,7 @@ const STALLED_RUN: OrderedSendSummarySource = {
 describe('toOrderedSendSummary', () => {
     it('prints sends, copies written of expected, the due-to-first-read over expected copies with \'not reached\' for a null, receipts by state and messages handed more than once', () => {
         expect(toOrderedSendSummary(STALLED_RUN)).toEqual([
-            'ALM ordered-send cell: 5 publishers x 2 sends/s for 20 s; +5 ms on each database round trip; ' +
+            'ALM ordered-send cell: 5 publishers x 2 sends/s for 20 s; +5 ms nominal on the delayed database round trips; ' +
             'sender recovery client-stand-in; application pool 5 (API default 5)',
             'commit abc1234; observed 75.0 s past the last offer; run wall time 97.3 s; ' +
             'load average 1.20 at start, 2.10 at end',
@@ -229,7 +229,7 @@ describe('toOrderedSendSummary', () => {
 
         expect(lines).toHaveLength(18);
         expect(lines[0]).toBe(
-            'ALM ordered-send cell: 5 publishers x 2 sends/s for 20 s; +0 ms on each database round trip; ' +
+            'ALM ordered-send cell: 5 publishers x 2 sends/s for 20 s; +0 ms nominal on the delayed database round trips; ' +
                 'sender recovery none; application pool 10 (API default 5)'
         );
         expect(lines[1]).toBe(

@@ -30,7 +30,7 @@ export interface OrderedSendRecordedFrame {
 
 /**
  * What the sockets of the sessions read and what the instances handed to their application, each appended as it
- * happened and stamped by one clock. It records while observation lasts and nothing after it.
+ * happened and stamped by the run's clock. It records while observation lasts and nothing after it.
  */
 export class OrderedSendObservationLog {
     private readonly nowMs: () => number;

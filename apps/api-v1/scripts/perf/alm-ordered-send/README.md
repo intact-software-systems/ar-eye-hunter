@@ -65,6 +65,24 @@ read late or read again is counted over the same time.
 - **An ACK.** A recipient's ACK is counted on the instance its socket is on when that instance
   admitted the send; otherwise that instance relays it to the others by the relayed-ACK NOTIFY.
 
+### What a publisher hears of its own send
+
+The `admitted` receipt is the only thing the server writes to the origin when it admits a send
+(`writeAdmittedReceipt` in
+`packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts`), and it
+travels as the outbox row above, not as an answer on the socket: the entry's return value is
+discarded at the socket ingress (`registerSocketIngress` in
+`packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts`), and an admission
+answered `pending-admission` writes no receipt until its replay admits the send.
+
+A real client waits for that first answer: 2 s, then it writes the frame again, up to three times.
+Only a receipt of the send, in any phase, or a NACK that may end the send, ends the wait
+(`packages/shared/alm/outbound/first-hop/al-outbound-first-hop-wait.ts`). So when the receipt row
+is slow to reach the origin's socket, a client resends a send the server already holds, and after
+the third silent resend, about 8 s after the offer, it ends the message as `receipt-exhausted`.
+First-hop resends in a run are therefore the client's own behaviour under a slow receipt, not
+something the cell adds; the 8 s is read from the code and was not measured against a browser.
+
 ## Running it
 
 The cell needs a migrated PostgreSQL database that nothing else works while the run lasts, and a
@@ -94,7 +112,7 @@ included; `--silent` keeps it off the terminal. The cell itself never prints or 
 | `--publishers`       | `5`                     | How many of the fifteen sessions publish, each on a track of its own; 1 to 15.                                                                           |
 | `--sends-per-second` | `2`                     | The sends each publisher offers every second; a whole number of at least 1.                                                                              |
 | `--duration-s`       | `20`                    | The length of the send window in seconds; a whole number of at least 1.                                                                                  |
-| `--delay-ms`         | `0`                     | The latency added to each database round trip, in whole milliseconds. See [what is delayed](#what-the-added-latency-covers).                             |
+| `--delay-ms`         | `0`                     | The nominal latency added to each delayed database round trip, in whole milliseconds. See [what is delayed](#what-the-added-latency-covers).             |
 | `--sender-recovery`  | `client-stand-in`       | What a publisher does beyond offering each send once: `none` or `client-stand-in`. See [sender recovery](#sender-recovery).                              |
 | `--application-pool` | the API's default       | The most connections each instance's application pool opens. The default is read from `apps/api-v1/resources/configuration/defaults-config.json`.        |
 | `--out`              | a file named by the run | The artifact's file. Left out, the run writes `tmp/perf/alm-ordered-send/<start>-p<publishers>-<rate>hz-d<delay>ms-<duration>s-<recovery>-pool<n>.json`. |
@@ -140,9 +158,21 @@ while a run lasts, so nothing is to be parsed from the terminal: read the artifa
 Every delay is measured on one monotonic clock of the run's process. A send is counted once, by its
 first offer, however often its publisher offered it again.
 
+- **The first line.** The delay it states is nominal: what `--delay-ms` asked for, added to the
+  delayed round trips listed [below](#what-the-added-latency-covers) and to no others.
 - **Sends offered, and what the entry answered.** Over every send. `admitted` is an admission that
   committed. `pending-admission` is one whose commit lost its compare-and-set: the server kept the
-  message as work for a replay to admit, and a receipt is still expected of it.
+  message as work for a replay to admit, and a receipt is still expected of it. `threw` is an offer
+  whose call threw: the run records it and goes on.
+- **Offers that threw.** For first offers, later offers and ACKs apart: how many threw, by the name
+  of the error, with the first message under each name. An offer that threw says nothing of what
+  the server did with the frame, so such a send is not among the sends that expect a receipt, and a
+  receipt read of it is counted in the line of what was recorded beside the sends. One error a run
+  may record here is `ALAdmissionCorruptionError`, "Buffered inbound ordering slot lost its
+  canonical message" (`packages/shared/alm/inbound/al-inbound-ordering-validation.ts`): an
+  admission on an ordered track lists the track's buffered slots in one statement and reads each
+  slot's message in a later one, each read drops a row whose lifetime has ended, and a message that
+  expires between the two reads leaves a slot without its message. No stored record is invalid.
 - **Lateness.** From a send's due instant to its offer: how late the load generator itself was.
 - **Copies written to the recipient's socket, of expected.** A copy is one expected recipient's
   share of a send, fourteen a send. It is "written" when the server wrote its frame to that
@@ -166,20 +196,33 @@ first offer, however often its publisher offered it again.
   A send's state is its first terminal receipt: `complete`, or `timed out` when the server gave up
   after the send's lifetime. `admitted only` read an `admitted` receipt and no terminal one before
   observation ended; `none` read no receipt at all.
+- **ACKs.** Each recipient offers one ACK for its first read of a copy, and the entry answers it as
+  a `control`: handled by the instance offered when that instance holds the send, and not handled
+  when it relayed the ACK to the others. An ACK the entry rejected, or whose offer threw, counted
+  for nothing: it would explain a receipt that never completes.
 - **Controls.** The NACKs and repair requests the publishers' sockets read, by reason. A control
   about a gap names the send whose arrival showed the gap, never a missing one, so a send that
   "drew" a control is not a send that was lost.
 - **Resends.** Only under `client-stand-in`: the later offers by cause, `repair` or `first-hop`, and
-  what the entry answered each. The server answers `duplicate` to a send it has already admitted,
-  hands nothing off and publishes nothing for it.
+  what came of each. The server answers `duplicate` to a send it has already admitted and hands
+  nothing off for it, so a resend of an admitted send brings no copy. It is not without effect:
+  while the send's receipt is still open on that instance, each such offer makes the instance write
+  the `admitted` receipt again, one more outbox row.
+- **Sends the stand-in ended, and repairs it declined.** Only under `client-stand-in`: the sends
+  ended, by cause, and the re-offers a repair request asked for that the stand-in did not make
+  because the send had ended or expired. See [sender recovery](#sender-recovery).
 - **Before each track's first control.** The sends each publisher offered before it read the first
   NACK or repair request naming a send of its track, and their copies. Up to that instant a track
   has had only the server working for it, so this view is the one to compare between `none` and
   `client-stand-in` and between delays. A send in the view may still have been written only after,
   and because of, a later re-offer.
-- **Send window.** How loaded the run's own process was from the window's opening to its last
-  offer: the lateness of a 10 ms timer and the processor time used. Near one core busy, the single
-  event loop was saturated and the run is bound by the harness.
+- **Send window, and tail.** How loaded the run's own process was, over the send window (its
+  opening to its last offer) and over the tail, each apart: the lateness of a 10 ms timer and the
+  processor time used. **Judge whether the one event loop kept up by the loop's lag**: every
+  instance and the load wait whenever a tick is late. The processor figure is of the whole process,
+  every thread, the runtime's own among them, so it says how much of the machine the run took and
+  not whether the loop was saturated; a figure near one core does not show a saturated loop, and a
+  figure well below one does not rule out long stalls.
 
 Three more lines appear only when a count of theirs is above zero: what the run recorded beside the
 sends it knows, delays that came out below zero, and copies written before their send's offer was
@@ -207,6 +250,9 @@ own planner and limits.
 
   A repair request that names an expired send raises no repair hint at all. The summary and the
   artifact count the sends ended by cause, and the re-offers declined for an ended or expired send.
+
+A stand-in holds a send from its first offer whatever came of that offer, one that threw included:
+a client's frame has left its socket whatever the server then does with it.
 
 It does not model the client's outbound commits and engine timing, so a re-offer leaves as soon as
 the run asks for it and an end takes effect at once; nor the client's ack-timeout schedule once the
@@ -240,8 +286,15 @@ Not delayed:
 - the warm-up of the application pools before the send window;
 - the wait for a free connection of a pool, which is the pool's own time.
 
-The wait is a timer on a busy event loop, so it fires late: the latency added to a round trip is at
-least the option's value and often more.
+A transaction of `n` statements therefore waits `(n + 2) * d`: once after BEGIN, once before each
+statement and once before COMMIT. That is the count of round trips the driver makes: postgres.js
+awaits BEGIN before it runs the transaction's body and sends COMMIT as a query of its own
+(`node_modules/postgres/src/index.js`), and nothing is pipelined.
+
+The figure is nominal and a lower bound. Each wait is a timer on a busy event loop, so it fires
+late, by milliseconds in a loaded run. The wait is spent in the client, so on the server a
+transaction stays open one `d` longer than it would on a real link of that latency, and a statement
+outside a transaction holds no connection while it waits.
 
 ## Limits
 
@@ -249,7 +302,7 @@ least the option's value and often more.
   each instance a process. With no latency added the loop is busy most of the time, and two runs of
   one shape differ several times over in how long a receipt takes. **An absolute delay at +0 ms
   varies from run to run and measures the harness as much as the product.** Compare runs by the
-  send window's figures before comparing their delays.
+  loop's lag over the send window and over the tail before comparing their delays.
 - **No authorizer reads.** The API's room authorizer reads the room's snapshot for each of the
   three decisions a send takes, and once more for each replay and each second dispatch: at least
   three round trips a send that no run pays. The cell is optimistic by that much.
@@ -262,14 +315,17 @@ least the option's value and often more.
 - **Below the socket bridge.** A frame enters at the server's `acceptIncomingMessage`: the bridge's
   size check and JSON parse are no part of a run, and a session is a socket object with no
   WebSocket.
-- **Partly delayed.** NOTIFY delivery, LISTEN, connection opens and the second protocol round trip
-  of a call carry no added latency, as listed above.
+- **Partly delayed, and nominally.** NOTIFY delivery, LISTEN, connection opens and the second
+  protocol round trip of a call carry no added latency, and the latency that is added is a lower
+  bound, as stated above.
 - **A stand-in, not a client.** `client-stand-in` leaves out what the section above names, and
   neither recovery models what a browser does after `resync-required` or `receipt-exhausted`.
 - **Receipt aggregates.** An instance bounds its receipt aggregates at 4096; the shapes the options
   allow in a short window stay far below it, and a longer or faster run may not.
 - **A local database.** PostgreSQL shares the machine's disk and processor with the cell. Other
   work on the machine shows in the load average the artifact records.
+- **One clock, for the cell.** The cell reads and waits through one injected clock; the product's
+  own services, stores and workers read the wall clock themselves.
 
 ## Navigation
 
@@ -278,6 +334,7 @@ least the option's value and often more.
 | `alm-ordered-send-cell.ts`            | The entry: decodes the options, runs, writes the artifact, prints the summary.                                               |
 | `decode-ordered-send-cell-options.ts` | The command line; `validate-ordered-send-shape.ts` the shape; `compute-ordered-send-schedule.ts` who sends what when.        |
 | `run-ordered-send-cell.ts`            | One run: the phases, the sessions' sockets, the offers, the ACKs and the tail.                                               |
+| `read-ordered-send-cell-answer.ts`    | What came of one offer: the entry's answer, or that it threw; `to-ordered-send-thrown-error.ts` keeps URLs out of it.        |
 | `ordered-send-cell-observations.ts`   | The contract of what a run records; the observation log and the offer ledger fill it.                                        |
 | `instance/`                           | One API instance: its database lifecycle, the delayed database handle and notification port, its WS server and its sessions. |
 | `client-stand-in/`                    | What a publisher does under `client-stand-in`.                                                                               |
