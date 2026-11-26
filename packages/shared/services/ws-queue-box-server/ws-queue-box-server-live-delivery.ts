@@ -133,13 +133,9 @@ export class WsQueueBoxServerLiveDelivery {
         recipients: readonly WsServerResolvedRecipient[],
         expiresAtMs: number | undefined
     ): WsServerLiveSendResult {
-        const { message } = input;
+        const { message, sentPositions } = input;
         const provenScope = resolveWsQueueBoxServerProvenScope(message, input.inboundScope);
-        const { copies, belowPositionPeerIds } = toWsQueueBoxServerRecipientCopies(
-            message,
-            recipients,
-            input.sentPositions
-        );
+        const { copies, belowPositionPeerIds } = toWsQueueBoxServerRecipientCopies(message, recipients, sentPositions);
         const sent = copies.map((copy) => copy.recipient);
         // Read before encoding: a connection replaced while the frame encodes must not receive it.
         const generations = this.readGenerations(sent);
@@ -148,8 +144,7 @@ export class WsQueueBoxServerLiveDelivery {
             return encodingFailureResult(message, recipients, encoded.left);
         }
         const encodedByConnectionId = encoded.right!;
-        const eligible = sent.filter(recipient => this.#socket.connections.get(recipient.connectionId)?.socket
-            .acceptsOutbound?.(encodedByConnectionId.get(recipient.connectionId)!.text) !== false);
+        const eligible = this.resolveAcceptingRecipients(sent, encodedByConnectionId);
         const sendAttempt = this.sendEncodedToRecipients({
             encodedByConnectionId,
             invalidatedSessionId: input.sessionInvalidation?.sessionId,
@@ -191,6 +186,16 @@ export class WsQueueBoxServerLiveDelivery {
             byConnectionId.set(recipient.connectionId, byEntry.get(entryKey)!);
         }
         return Either.ofRight(byConnectionId);
+    }
+
+    private resolveAcceptingRecipients(
+        recipients: readonly WsServerResolvedRecipient[],
+        encodedByConnectionId: ReadonlyMap<string, EncodedJsonWebSocketMessage>
+    ): readonly WsServerResolvedRecipient[] {
+        return recipients.filter(({ connectionId }) => {
+            const socket = this.#socket.connections.get(connectionId)?.socket;
+            return socket?.acceptsOutbound?.(encodedByConnectionId.get(connectionId)!.text) !== false;
+        });
     }
 
     private readGenerations(recipients: readonly WsServerResolvedRecipient[]): ReadonlyMap<string, string | undefined> {
@@ -238,11 +243,11 @@ export class WsQueueBoxServerLiveDelivery {
         if (!encodedMessage) {
             return 0;
         }
+        const encodedByConnectionId = new Map(recipients.map((recipient) => [recipient.connectionId, encodedMessage]));
         return this.sendEncodedToRecipients({
-            encodedByConnectionId: new Map(recipients.map((recipient) => [recipient.connectionId, encodedMessage])),
+            encodedByConnectionId,
             invalidatedSessionId: undefined,
-            recipients: recipients.filter(recipient => this.#socket.connections.get(recipient.connectionId)?.socket
-                .acceptsOutbound?.(encodedMessage.text) !== false),
+            recipients: this.resolveAcceptingRecipients(recipients, encodedByConnectionId),
             expiresAtMs,
             scope: provenScope ?? undefined,
             principalId: undefined,

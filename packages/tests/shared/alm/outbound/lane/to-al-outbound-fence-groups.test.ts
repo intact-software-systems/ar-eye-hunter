@@ -68,9 +68,17 @@ describe('one sender\'s decided bundles as the groups one write each can commit'
         expect(new Set(groups!.flat())).toEqual(new Set(members));
     });
 
-    it('answers nothing when the sender-fenced bundles read different versions', () => {
-        // Pins a group whose reads disagree on the sender version committing alone, as no one write can fence both.
-        const members = [toUnfenced('receipt', 1), toFenced('event-1', 1), toFenced('event-2', 2)];
+    it('keeps the bundles that fence no sender as one group when the sender-fenced ones read different versions', () => {
+        // Pins the members that need no agreed sender version committing alone because the sender-fenced ones disagree,
+        // or a disagreeing sender-fenced member joining a group write, which no one write can fence for both versions.
+        const members = [toUnfenced('receipt-1', 1), toFenced('event-1', 1), toUnfenced('receipt-2', undefined), toFenced('event-2', 2)];
+
+        expect(toNames(toALOutboundFenceGroups(members))).toEqual([['receipt-1', 'receipt-2']]);
+    });
+
+    it('answers nothing when the sender-fenced bundles read different versions and none fences its message alone', () => {
+        // Pins a batch whose reads disagree on the sender version committing alone, as no one write can fence both.
+        const members = [toFenced('event-1', 1), toFenced('event-2', 2)];
 
         expect(toALOutboundFenceGroups(members)).toBeUndefined();
     });

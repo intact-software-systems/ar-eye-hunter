@@ -5,6 +5,7 @@ import type { ALReceiptRecordOpening } from '@shared/alm/receipt-record/al-recei
 import {
     isWsQueueBoxServerHeadBackedAdmittedReceipt,
     isWsQueueBoxServerReceiptEncodable,
+    toWsQueueBoxServerEndedReceipt,
     toWsQueueBoxServerEndedReceiptControlId,
     toWsQueueBoxServerReceiptControlMessage,
     toWsQueueBoxServerReceiptPayload
@@ -87,5 +88,35 @@ describe('which receipt is an admitted with a head behind it', () => {
             isWsQueueBoxServerHeadBackedAdmittedReceipt(receiptAt('complete', head.expectedRecipientPeerIds)),
             isWsQueueBoxServerHeadBackedAdmittedReceipt(receiptAt('timed-out', head.expectedRecipientPeerIds))
         ]).toEqual([false, false]);
+    });
+});
+
+describe('the ended work\'s receipt', () => {
+    // Pins a receipt that settles the server's row being written to a socket, which returns before the settlement.
+    it('settles the server\'s row and is never an admitted with a head behind it, at either end', () => {
+        const head = opening(2);
+        const issued = (['complete', 'timed-out'] as const).map((phase) =>
+            toWsQueueBoxServerEndedReceipt({
+                phase,
+                opening: head,
+                confirmedRecipientPeerIds: head.expectedRecipientPeerIds.slice(0, 1),
+                outsideAudienceRecipientPeerIds: [],
+                endedAtEpochMs: NOW + 9_000
+            })
+        );
+
+        expect(issued.map(({ receipt, controlId, settlesServerRow }) => ({
+            phase: receipt.phase,
+            observedAtEpochMs: receipt.observedAtEpochMs,
+            controlId,
+            settlesServerRow,
+            live: isWsQueueBoxServerHeadBackedAdmittedReceipt(receipt)
+        }))).toEqual(['complete', 'timed-out'].map((phase) => ({
+            phase,
+            observedAtEpochMs: NOW + 9_000,
+            controlId: toWsQueueBoxServerEndedReceiptControlId(head),
+            settlesServerRow: true,
+            live: false
+        })));
     });
 });

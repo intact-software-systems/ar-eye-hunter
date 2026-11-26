@@ -305,7 +305,10 @@ export class ALOutboundRepairAdmission<TPrepared> {
         }
     }
 
-    /** A receipt whose message is gone has nothing left to retry. */
+    /**
+     * A receipt whose payload or sent row is gone has nothing left to retry. The sent row names the sender whose
+     * versions fence the receipt's end, so the end is written only while that row is there; with it gone, nothing is.
+     */
     private async commitOrphanedReceiptCleanup(msgId: string, read: ALOutboundMessageEndRead): Promise<void> {
         const senderId = read.storedMessage?.reference.senderId;
         if (senderId === undefined) {

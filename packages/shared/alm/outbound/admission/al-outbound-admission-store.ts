@@ -562,7 +562,10 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
         observation?: ALOutboundCommitObservation<TPrepared>
     ) => Promise<'committed' | 'conflict' | 'expired'>;
 
-    /** Commits bundles decided against one read of the version of one sender under one version fence. */
+    /**
+     * Commits as one write bundles of one sender that take one fence: a group that fences the sender was decided against
+     * one read of its version, which the write fences once; a group that fences no sender writes no sender version.
+     */
     readonly commitBundles: (
         bundles: readonly ALOutboundCommitBundle<TPrepared>[]
     ) => Promise<'committed' | 'conflict' | 'expired'>;

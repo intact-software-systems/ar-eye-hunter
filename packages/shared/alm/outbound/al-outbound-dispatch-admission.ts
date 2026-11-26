@@ -340,12 +340,12 @@ export class ALOutboundDispatchAdmission<TPrepared> {
     }
 
     /**
-     * The results of the group in member order, `undefined` for a member whose fence group did not commit; `undefined`
-     * for the whole when no fence group was attempted. Reads every member in one turn, parts the decisions with
-     * `toALOutboundFenceGroups` and commits each part through `commitFenceGroup`, all at once. A part whose write or
-     * its settlement threw is warned and answers `undefined` for its members, which then commit alone, each through a
-     * fresh read, as a one-fence group always did: when the throw came after its transaction committed, they commit
-     * a second time. The other parts' results stand.
+     * The results of the group in member order, `undefined` for a member no fence group holds or whose fence group did
+     * not commit; `undefined` for the whole when no fence group was attempted. Reads every member in one turn, parts
+     * the decisions with `toALOutboundFenceGroups` and commits each part through `commitFenceGroup`, all at once. A
+     * part whose write or its settlement threw is warned and answers `undefined` for its members, which then commit
+     * alone, each through a fresh read, as a one-fence group always did: when the throw came after its transaction
+     * committed, they commit a second time. The other parts' results stand.
      */
     private async commitGroupOnce(
         members: readonly ALOutboundGroupMember<TPrepared>[]

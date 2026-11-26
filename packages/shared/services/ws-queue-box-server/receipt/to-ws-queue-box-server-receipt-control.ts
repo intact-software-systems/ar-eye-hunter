@@ -9,7 +9,10 @@ import {
     toALReceiptRecordRefToken,
     type ALReceiptRecordRef
 } from '../../../alm/receipt-record/al-receipt-record-keys.ts';
-import type { ALReceiptRecordOpening } from '../../../alm/receipt-record/al-receipt-record-rows.ts';
+import type {
+    ALReceiptRecordEndedHead,
+    ALReceiptRecordOpening
+} from '../../../alm/receipt-record/al-receipt-record-rows.ts';
 import type { ALReceiptRecordTally } from '../../../alm/receipt-record/compute-al-receipt-record-tally.ts';
 import { fnv1a64 } from '../../../queuebox/AppQueueIdentity.ts';
 
@@ -35,6 +38,19 @@ export interface WsQueueBoxServerIssuedReceipt {
 /** The control id of the terminal receipt the ended work of `ref` delivers, however often it delivers it. */
 export function toWsQueueBoxServerEndedReceiptControlId(ref: ALReceiptRecordRef): string {
     return `al-receipt-ended:${fnv1a64(toALReceiptRecordRefToken(ref))}`;
+}
+
+/**
+ * The terminal receipt the ended work delivers, the only receipt that settles the server's own row. The ended work
+ * delivers at least once: one control id per receipt makes each repeat the outbox's duplicate.
+ */
+export function toWsQueueBoxServerEndedReceipt(ended: ALReceiptRecordEndedHead): WsQueueBoxServerIssuedReceipt {
+    return {
+        receipt: toWsQueueBoxServerReceiptPayload(ended.opening, { ...ended, observedAtEpochMs: ended.endedAtEpochMs }),
+        opening: ended.opening,
+        controlId: toWsQueueBoxServerEndedReceiptControlId(ended.opening),
+        settlesServerRow: true
+    };
 }
 
 /**

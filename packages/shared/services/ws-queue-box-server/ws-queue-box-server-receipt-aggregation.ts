@@ -65,7 +65,7 @@ import {
 import {
     isWsQueueBoxServerHeadBackedAdmittedReceipt,
     isWsQueueBoxServerReceiptEncodable,
-    toWsQueueBoxServerEndedReceiptControlId,
+    toWsQueueBoxServerEndedReceipt,
     toWsQueueBoxServerReceiptControlMessage,
     toWsQueueBoxServerReceiptPayload,
     type WsQueueBoxServerIssuedReceipt,
@@ -682,20 +682,9 @@ export class WsQueueBoxServerReceiptAggregation {
         });
     }
 
-    /**
-     * The ended work delivers at least once: one control id per receipt makes each repeat the outbox's duplicate. A
-     * receipt of the server's own publication has no origin to reach: it only settles the server's row.
-     */
+    /** A receipt of the server's own publication has no origin to reach: it only settles the server's row. */
     private async writeEndedReceipt(ended: ALReceiptRecordEndedHead): Promise<void> {
-        const issued: WsQueueBoxServerIssuedReceipt = {
-            receipt: toWsQueueBoxServerReceiptPayload(ended.opening, {
-                ...ended,
-                observedAtEpochMs: ended.endedAtEpochMs
-            }),
-            opening: ended.opening,
-            controlId: toWsQueueBoxServerEndedReceiptControlId(ended.opening),
-            settlesServerRow: true
-        };
+        const issued = toWsQueueBoxServerEndedReceipt(ended);
         const { serverPeerId } = this.#dependencies;
         if (ended.opening.originPeerId === serverPeerId) {
             await this.admitServerReceipt(toWsQueueBoxServerReceiptControlMessage(issued, serverPeerId));
@@ -712,11 +701,16 @@ export class WsQueueBoxServerReceiptAggregation {
         const { receipt, opening } = issued;
         const { receiptObserver, serverPeerId } = this.#dependencies;
         const message = toWsQueueBoxServerReceiptControlMessage(issued, serverPeerId);
-        const enqueued = this.writeLiveReceipt(issued, message)
-            ? undefined
-            : await this.#dependencies.enqueueOutbox(message, toWsQueueBoxServerReceiptDispatchPlan(message));
+        // Only an `admitted` is written live, and only the ended work's terminal receipt settles the server's row.
+        if (this.writeLiveReceipt(issued, message)) {
+            return;
+        }
+        const enqueued = await this.#dependencies.enqueueOutbox(
+            message,
+            toWsQueueBoxServerReceiptDispatchPlan(message)
+        );
         // The enqueue facts are copied before the settlement, which may change the verdict object it returned.
-        const observation = receiptObserver === undefined || enqueued === undefined ? undefined : Object.freeze(
+        const observation = receiptObserver === undefined ? undefined : Object.freeze(
             {
                 kind: 'receipt-outbox',
                 serverPeerId,
@@ -763,12 +757,9 @@ export class WsQueueBoxServerReceiptAggregation {
         return sent.sentCount > 0;
     }
 
-    /**
-     * Two commits: a crash between them leaves the server row unsettled until the ended work delivers again. A
-     * receipt a socket here took has no enqueue to refuse it.
-     */
-    private async settleServerRow(message: ALMessage, enqueued: ALOutboundEnqueueResult | undefined): Promise<void> {
-        const kind = enqueued?.verdict.kind;
+    /** Two commits: a crash between them leaves the server row unsettled until the ended work delivers again. */
+    private async settleServerRow(message: ALMessage, enqueued: ALOutboundEnqueueResult): Promise<void> {
+        const kind = enqueued.verdict.kind;
         if (kind === 'storage-unavailable' || kind === 'failed') {
             throw new Error(`AL terminal receipt ${message.id.msgId} was not stored: ${kind}`);
         }

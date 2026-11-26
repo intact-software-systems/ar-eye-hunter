@@ -6,7 +6,10 @@ type ALOutboundAdmissionGroupObservation = Extract<
     { kind: 'admission-group'; }
 >;
 
-/** One group commit as its `admission-group` timing states it, before its durations are computed. */
+/**
+ * One group commit as its `admission-group` timing states it, before its durations are computed. Each fence group of
+ * one batch carries the whole batch's read window, so a sum of a mixed batch's durations counts that read twice.
+ */
 export interface ALOutboundAdmissionGroupTiming {
     readonly lane: ALOutboundAdmissionGroupObservation['lane'];
     /** The claimed row of the group's first member; a group with none records nothing. */

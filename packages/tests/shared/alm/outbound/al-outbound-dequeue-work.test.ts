@@ -1012,6 +1012,49 @@ describe('AL outbound dequeue work', () => {
         expectEachRowDispatchedAndSentOnce(batch);
     });
 
+    it('when the sequenced rows of a mixed batch read different sender versions, the receipts still commit as one write', async () => {
+        // Pins a disagreement among the sender-fenced reads sending the receipts, which fence no sender, to commit alone
+        // too.
+        const receipts = ['1', '2'].map((index) => createDequeuedReceipt(`receipt-${index}`, `subject-${index}`));
+        const [first, second] = ['a', 'b'].map((track): ALMessage => ({
+            ...createDequeuedMessage(`sequenced-${track}`),
+            ordering: { orderingKey: `feed-${track}`, epoch: 1, seq: 1 }
+        }));
+        const batch = await createDequeuedFenceBatch([receipts[0]!, first!, receipts[1]!, second!]);
+        onTestFinished(async () => await batch.runtime.dispose());
+        const store = batch.stores.admissionStore;
+        const readOutgoingMessage = store.readOutgoingMessage.bind(store);
+        const interleaved = Promise.withResolvers<void>();
+        vi.spyOn(store, 'readOutgoingMessage').mockImplementation(async (input) => {
+            if (input.msg.id.msgId === second!.id.msgId) {
+                await interleaved.promise;
+            }
+            const read = await readOutgoingMessage(input);
+            if (input.msg.id.msgId === first!.id.msgId) {
+                // Another frame of the sender, on a track of its own, commits between the two sequenced rows' reads.
+                const frame = await readOutboundTestAdmission({
+                    store,
+                    message: { ...createDequeuedMessage('interleaved'), ordering: { orderingKey: 'interleaved-feed', epoch: 1, seq: 1 } },
+                    creationNow: () => Temporal.Now.instant(),
+                    clock: { nowMs: () => Date.now() }
+                });
+                expect(await store.commitBundles([frame])).toBe('committed');
+                interleaved.resolve();
+            }
+            return read;
+        });
+
+        await runDequeuedFenceBatch(batch);
+
+        expect(toDequeuedFenceBatchGroupOutcomes(batch)).toEqual([{ memberCount: 2, outcome: 'committed' }]);
+        for (const message of batch.messages) {
+            expect(await readMixedBatchMessageVersion(batch.stores, message), message.id.msgId).toBe(1);
+        }
+        // The interleaved frame's commit, then each sequenced row's own commit alone.
+        expect(await readDequeuedFenceBatchSenderVersion(batch.stores)).toBe(3);
+        expectEachRowDispatchedAndSentOnce(batch);
+    });
+
     it('fences the sender for a follower dequeued in one batch with its predecessor', async () => {
         // Pins a follower's decision leaving the sender fence: a follower holds a place on its predecessor's track, so
         // it joins its predecessor's fence group, and their one write moves the sender version once. A follower that
