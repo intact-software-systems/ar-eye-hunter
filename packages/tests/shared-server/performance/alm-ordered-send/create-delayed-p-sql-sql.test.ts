@@ -64,12 +64,20 @@ function createRecordingSql(log: string[]): RecordingSql {
     });
 }
 
+/**
+ * A transaction handle as postgres.js gives one: a savepoint is one statement as it opens, nothing more when its write
+ * resolves, and a `rollback to` when its write rejects. A nested `begin` is that same savepoint.
+ */
 function createRecordingTransactionSql(log: string[]): RecordingTransactionSql {
     const savepoint = async <Result>(write: PSqlTransactionWrite<Result>): Promise<Result> => {
         log.push('savepoint');
-        const result = await write(createRecordingTransactionSql(log));
-        log.push('release');
-        return result;
+        try {
+            return await write(createRecordingTransactionSql(log));
+        }
+        catch (error) {
+            log.push('rollback to');
+            throw error;
+        }
     };
     return Object.assign(createRecordingQuery(log), {
         counters: { statements: 4, executorWaitMs: 9 },
@@ -91,8 +99,25 @@ function hasSavepoint(sql: PSqlSql): sql is PSqlSql & Pick<RecordingTransactionS
     return 'savepoint' in sql && typeof sql.savepoint === 'function';
 }
 
+/** The two ways a transaction handle opens a savepoint. */
+type SavepointOpener = 'savepoint' | 'begin';
+
+async function openSavepoint<Result>(
+    transaction: PSqlSql,
+    opener: SavepointOpener,
+    write: PSqlTransactionWrite<Result>
+): Promise<Result> {
+    if (opener === 'begin') {
+        return await transaction.begin(write);
+    }
+    if (!hasSavepoint(transaction)) {
+        throw new Error('The delayed transaction lost its savepoint');
+    }
+    return await transaction.savepoint(write);
+}
+
 describe('createDelayedPSqlSql', () => {
-    it('delays a transaction at BEGIN, before each of its statements, and after COMMIT', async () => {
+    it('delays a transaction inside it: after its BEGIN, before each of its statements, and before its COMMIT', async () => {
         const log: string[] = [];
         const delayed = createDelayedPSqlSql({
             sql: createRecordingSql(log),
@@ -106,14 +131,14 @@ describe('createDelayedPSqlSql', () => {
         ]);
 
         expect(log).toEqual([
-            'sleep 5',
             'begin',
             'sleep 5',
+            'sleep 5',
             'statement',
             'sleep 5',
             'statement',
-            'commit',
-            'sleep 5'
+            'sleep 5',
+            'commit'
         ]);
         expect(written).toEqual([{ text: 'select ?', values: [1] }, { text: 'select ?', values: [2] }]);
     });
@@ -139,7 +164,7 @@ describe('createDelayedPSqlSql', () => {
         expect(createDelayedPSqlSql({ sql, delayMs: 0, sleep: createRecordingSleep(log) })).toBe(sql);
     });
 
-    it('delays a failing transaction at its ROLLBACK, then rejects with the same error', async () => {
+    it('delays a failing transaction inside it, before its ROLLBACK, then rejects with the same error', async () => {
         const log: string[] = [];
         const failure = new Error('the write failed');
         const delayed = createDelayedPSqlSql({
@@ -153,7 +178,7 @@ describe('createDelayedPSqlSql', () => {
             throw failure;
         })).rejects.toBe(failure);
 
-        expect(log).toEqual(['sleep 5', 'begin', 'sleep 5', 'statement', 'rollback', 'sleep 5']);
+        expect(log).toEqual(['begin', 'sleep 5', 'sleep 5', 'statement', 'sleep 5', 'rollback']);
     });
 
     it('passes a values call through undelayed', () => {
@@ -169,7 +194,44 @@ describe('createDelayedPSqlSql', () => {
         expect(log).toEqual([]);
     });
 
-    it('keeps the counters of each wrapped handle and delays a savepoint as it delays a transaction', async () => {
+    it.each<SavepointOpener>(['savepoint', 'begin'])(
+        'delays a savepoint opened by %s once, before it opens, and not again when it resolves',
+        async (opener) => {
+            const log: string[] = [];
+            const delayed = createDelayedPSqlSql({
+                sql: createRecordingTransactionSql(log),
+                delayMs: DELAY_MS,
+                sleep: createRecordingSleep(log)
+            });
+
+            const answered = await openSavepoint(delayed, opener, async (nested) => await nested<RecordedStatement>`select ${1}`);
+
+            expect(log).toEqual(['sleep 5', 'savepoint', 'sleep 5', 'statement']);
+            expect(answered).toEqual({ text: 'select ?', values: [1] });
+        }
+    );
+
+    it.each<SavepointOpener>(['savepoint', 'begin'])(
+        'delays a failing savepoint opened by %s again after its ROLLBACK TO, then rejects with the same error',
+        async (opener) => {
+            const log: string[] = [];
+            const failure = new Error('the nested write failed');
+            const delayed = createDelayedPSqlSql({
+                sql: createRecordingTransactionSql(log),
+                delayMs: DELAY_MS,
+                sleep: createRecordingSleep(log)
+            });
+
+            await expect(openSavepoint(delayed, opener, async (nested) => {
+                await nested`select 1`;
+                throw failure;
+            })).rejects.toBe(failure);
+
+            expect(log).toEqual(['sleep 5', 'savepoint', 'sleep 5', 'statement', 'rollback to', 'sleep 5']);
+        }
+    );
+
+    it('keeps the counters of each wrapped handle, and the savepoint of a transaction it opens', async () => {
         const log: string[] = [];
         const delayed = createDelayedPSqlSql({
             sql: createRecordingSql(log),
@@ -178,27 +240,13 @@ describe('createDelayedPSqlSql', () => {
         });
 
         const transactionCounters = await delayed.begin(async (transaction) => {
-            if (!hasSavepoint(transaction)) {
-                throw new Error('The delayed transaction lost its savepoint');
-            }
-            await transaction.savepoint(async (nested) => await nested`select 1`);
+            await openSavepoint(transaction, 'savepoint', async (nested) => await nested`select 1`);
             return transaction.getExecutorCounters?.();
         });
 
         expect(delayed.getExecutorCounters?.()).toEqual({ statements: 3, executorWaitMs: 7 });
         expect(transactionCounters).toEqual({ statements: 4, executorWaitMs: 9 });
-        expect(log).toEqual([
-            'sleep 5',
-            'begin',
-            'sleep 5',
-            'savepoint',
-            'sleep 5',
-            'statement',
-            'release',
-            'sleep 5',
-            'commit',
-            'sleep 5'
-        ]);
+        expect(log).toEqual(['begin', 'sleep 5', 'sleep 5', 'savepoint', 'sleep 5', 'statement', 'sleep 5', 'commit']);
     });
 
     it('gives a handle that has no savepoint and no counters neither', () => {
