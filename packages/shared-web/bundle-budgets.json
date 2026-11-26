@@ -11,6 +11,7 @@
   "browser/rooms/events/rallar-room-event.ts": 13,
   "browser/rooms/events/court-ready-notifications.ts": 4,
   "browser/rooms/events/court-alert-notification.ts": 2,
+  "browser/rooms/events/court-alert-click.ts": 3,
   "browser/rooms/entry/temporary-room-creation.ts": 6,
   "browser/rooms/entry/rallar-room-entry.ts": 6,
   "browser/rooms/recent-rooms/rallar-recent-rooms.ts": 4,

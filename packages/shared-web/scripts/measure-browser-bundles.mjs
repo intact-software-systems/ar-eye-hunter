@@ -42,6 +42,12 @@ const entries = [
         brotliBudgetKiB: budgetsKiB['browser/rooms/events/court-ready-notifications.ts']
     },
     {
+        label: 'browser/rooms/events/court-alert-click.ts',
+        entry: 'packages/shared-web/browser/rooms/events/court-alert-click.ts',
+        output: 'court-alert-click.min.js',
+        brotliBudgetKiB: budgetsKiB['browser/rooms/events/court-alert-click.ts']
+    },
+    {
         label: 'browser/rooms/events/court-alert-notification.ts',
         entry: 'packages/shared-web/browser/rooms/events/court-alert-notification.ts',
         output: 'court-alert-notification.min.js',

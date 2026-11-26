@@ -2,14 +2,14 @@ import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { decodeCourtAlertMessage, type CourtAlertMessage } from '@shared/api/room-events/court-alert-message.ts';
 import type { RoomEvent } from '@shared/api/room-events/room-event.ts';
 
-export function courtReadyNotification(value: unknown) {
+export function courtReadyNotification(value: CourtAlertMessage) {
     const message = decodeCourtAlertMessage(value);
     return { title: 'Your court is ready', options: { body: 'Open the event to see your assignment.',
         tag: message.tag, data: message } satisfies NotificationOptions };
 }
 
 /** Always navigate within the worker registration. The payload has no user-supplied navigation URL. */
-export function courtAlertLaunchUrl(scope: string, value: unknown): URL {
+export function courtAlertLaunchUrl(scope: string, value: CourtAlertMessage): URL {
     const target = new URL('./', scope);
     target.hash = new URLSearchParams({ courtAlert: JSON.stringify(decodeCourtAlertMessage(value)) }).toString();
     return target;

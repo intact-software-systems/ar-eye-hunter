@@ -1,3 +1,4 @@
+import type { RoomEvent } from '@shared/api/room-events/room-event.ts';
 import type { CourtAlertMessage } from '@shared/api/room-events/court-alert-message.ts';
 import { createECDH, ECDH } from 'node:crypto';
 import { generateRequestDetails } from 'web-push';
@@ -24,6 +25,12 @@ export function decodeWebPushCredentials(text: string): EventWebPush.Credentials
     pair.setPrivateKey(Buffer.from(row.privateKey, 'base64url'));
     if (pair.getPublicKey().toString('base64url') !== row.publicKey) throw new TypeError('Invalid VAPID key pair.');
     return { subject: row.subject, publicKey: row.publicKey, privateKey: row.privateKey };
+}
+
+export function validateEventAlertConsent(command: RoomEvent.Command, provider: EventWebPush | undefined): void {
+    if (command.action !== 'enable-court-alerts') return;
+    if (!provider) throw new TypeError('Court alerts are unavailable on this server.');
+    assertSupportedPushDevice(command.subscription);
 }
 
 /** Browser-provided endpoints are untrusted. Never forward signed requests through redirects. */

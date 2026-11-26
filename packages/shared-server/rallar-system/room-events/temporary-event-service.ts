@@ -1,5 +1,5 @@
 import { EventAlertWorker } from './event-alert-worker.ts';
-import { assertSupportedPushDevice, type EventWebPush } from './event-web-push.ts';
+import { validateEventAlertConsent, type EventWebPush } from './event-web-push.ts';
 import { requireExactKeys, requirePositiveInteger, requireRecord } from '@shared/api/exact-object-decoding.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { projectRoomEventOrganizerView } from '@shared/api/room-events/room-event-organizer-view.ts';
@@ -140,14 +140,11 @@ export class TemporaryEventService {
         const before = await this.repository.read(input.lobby);
         const nowEpochMs = this.dependencies.nowEpochMs();
         const authority = await this.authority.read(input, before?.value ?? null, nowEpochMs);
-        if (input.command.action === 'enable-court-alerts') {
-            if (!this.alertWorker) throw new TypeError('Court alerts are unavailable on this server.');
-            assertSupportedPushDevice(input.command.subscription);
-        }
+        validateEventAlertConsent(input.command, this.dependencies.webPush);
         if (input.command.action === 'claim' && !!authority.guestLease !== !!input.courtTransport) {
             throw new TypeError('A guest claiming a court must bind its own court session.');
         }
-        const after = nextEventForPlayer(before?.value ?? null, input, nowEpochMs, this.config.handoverWindowMs);
+        const after = nextEventForPlayer({ before: before?.value ?? null, input, nowEpochMs, handoverWindowMs: this.config.handoverWindowMs });
         const result = { revision: after.revision };
         if (after === before?.value) return await this.dependencies.appInbox.commit(context, result, async () => {});
         return await this.commit({ before, after, actor: input, command: input.command, authority, requestId: input.requestId,
@@ -204,7 +201,14 @@ export class TemporaryEventService {
     }
 }
 
-function nextEventForPlayer(before: RoomEvent | null, input: RoomEventMutation, nowEpochMs: number, handoverWindowMs: number): RoomEvent {
+interface NextEventForPlayer {
+    readonly before: RoomEvent | null;
+    readonly input: RoomEventMutation;
+    readonly nowEpochMs: number;
+    readonly handoverWindowMs: number;
+}
+
+function nextEventForPlayer({ before, input, nowEpochMs, handoverWindowMs }: NextEventForPlayer): RoomEvent {
     if (input.command.action === 'create') {
         if (before) throw new TypeError('This lobby already has an event.');
         return createRoomEvent({ lobby: input.lobby, organizerId: input.principalId, command: input.command, nowEpochMs });

@@ -1,3 +1,4 @@
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { expect, it } from 'vitest';
 import { changeRoomEvent, createRoomEvent, projectRoomEvent } from '@shared/api/room-events/room-event.ts';
 import { decodeRoomEvent, decodeRoomEventCommand } from '@shared/api/room-events/decode-room-event.ts';
@@ -6,7 +7,7 @@ const lobby = { applicationId: 'pickup', workspaceId: 'park', groupId: 'lobby' }
 const subscription = { endpoint: 'https://web.push.apple.com/device-token', p256dh: 'B' + 'A'.repeat(86), auth: 'A'.repeat(22) };
 const initial = createRoomEvent({ lobby, organizerId: 'admin', nowEpochMs: 1,
     command: { action: 'create', courts: [{ groupId: 'east', capacity: 1 }], closesAt: 500_000 } });
-const update = (event: typeof initial, principalId: string, command: unknown) =>
+const update = (event: typeof initial, principalId: string, command: ApiJsonValue) =>
     changeRoomEvent({ event, principalId, command: decodeRoomEventCommand(command), nowEpochMs: 10 });
 
 it('binds court alerts to a player and device until opt-out, removal or event closure', () => {

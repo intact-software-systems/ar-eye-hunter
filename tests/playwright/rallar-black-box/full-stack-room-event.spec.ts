@@ -147,10 +147,27 @@ test('a guest opening a court alert sees the current allocation and can requeue 
         await expect(guest.getByRole('button', { name: 'Enter east' })).toBeVisible();
         await operator.evaluate(({ event }) => event.act({action:'release',groupId:'east',occurrence:1,requeue:false}));
         await expect(guest.getByRole('status')).toContainText('Your earlier offer has expired.', { timeout: 3000 });
+        const alertModule = sharedWeb + 'rooms/events/court-alert-click.ts';
+        const click = await guest.evaluate(async ({ alertModule, exampleUrl, alert }) => {
+            const { openCourtAlertClick, readCourtAlertClick }: typeof import('@shared-web/browser/rooms/events/court-alert-click.ts') = await import(alertModule);
+            const scope = new URL('./', new URL(exampleUrl, location.origin)).href;
+            const wake: string[] = [];
+            await openCourtAlertClick({
+                scope, storage: caches, message: alert,
+                openWindow: async () => { throw new Error('The installed window already exists.'); },
+                windows: async () => [{ url: scope, focus: async () => { wake.push('focused'); return {}; },
+                    postMessage: message => { wake.push(message); } }]
+            });
+            return { wake, otherEvent: await readCourtAlertClick(caches, scope, { ...alert.lobby, groupId: 'other' }) };
+        }, { alertModule, exampleUrl, alert: { ...alert, type: 'rallar-court-ready' as const } });
+        expect(click).toEqual({ wake: ['rallar:court-alert-opened', 'focused'], otherEvent: null });
+        await guest.goto(exampleUrl);
         await guest.reload();
         await expect(guest.getByRole('status')).toContainText('Your earlier offer has expired.');
         await guest.getByRole('button', {name:'Join queue'}).click();
         await expect(guest.getByRole('button', {name:'Enter east'})).toBeVisible();
+        await guest.reload();
+        await expect(guest.getByRole('status')).toHaveText('Your court is ready: east');
     } finally { await guest.close(); }
 });
 

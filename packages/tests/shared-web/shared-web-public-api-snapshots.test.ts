@@ -924,6 +924,10 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
         }
     },
     {
+        filePath: 'packages/shared-web/browser/rooms/events/court-alert-click.ts',
+        expected: { values: ['COURT_ALERT_OPENED', 'clearCourtAlertClick', 'openCourtAlertClick', 'readCourtAlertClick'], types: [], starExports: [], namespaceExports: [] }
+    },
+    {
         filePath: 'packages/shared-web/browser/rooms/events/court-ready-notifications.ts',
         expected: { values: ['disableCourtReadyNotifications', 'enableCourtReadyNotifications', 'readCourtAlertPublicKey'], types: [], starExports: [], namespaceExports: [] }
     },

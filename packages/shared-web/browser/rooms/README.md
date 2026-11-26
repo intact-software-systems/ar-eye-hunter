@@ -164,7 +164,10 @@ The same operations apply to an admitted guest and a signed-in player. Disabling
 withdraws consent for that device and event.
 
 In the service worker, use `courtReadyNotification` to display the generic alert and
-`courtAlertLaunchUrl` to open the original offer. When the app opens, compare
-`readCourtAlertLaunch` with the player's current event view using `courtAlertStatus`.
+`openCourtAlertClick` to remember the tapped offer before focusing or opening the app.
+On startup, foreground return or the `COURT_ALERT_OPENED` worker message, read
+`readCourtAlertClick` for this exact event and refresh the player's private view.
+Use `courtAlertStatus` to compare the clicked offer against current authority, and
+`clearCourtAlertClick` when the player successfully claims or rejoins the queue.
 The installable [pickup example](../../../../examples/pickup-event/README.md) shows the
 full journey.

@@ -28,7 +28,7 @@ it('opens only the app scope and reports an old alert when the current court has
     const { courtReadyNotification, courtAlertLaunchUrl, readCourtAlertLaunch, courtAlertStatus } =
         await import('@shared-web/browser/rooms/events/court-alert-notification.ts');
     const lobby = {applicationId:'club', workspaceId:'park', groupId:'secret-event'};
-    const push = { type:'rallar-court-ready', lobby, offerRevision:9, tag:'a'.repeat(32) };
+    const push = { type:'rallar-court-ready' as const, lobby, offerRevision:9, tag:'a'.repeat(32) };
     const notification = courtReadyNotification(push);
     expect(notification.title).toBe('Your court is ready');
     expect(notification.options.body).toBe('Open the event to see your assignment.');
@@ -39,5 +39,6 @@ it('opens only the app scope and reports an old alert when the current court has
     expect(courtAlertStatus(launch, {lobby, offer}, 199)).toBe('current');
     expect(courtAlertStatus(launch, {lobby, offer}, 200)).toBe('expired');
     expect(courtAlertStatus(launch, {lobby, offer: {...offer, offerRevision:11}}, 150)).toBe('expired');
-    expect(() => courtAlertLaunchUrl('https://example.com/app/', { ...push, url:'https://unrelated.example' })).toThrow();
+    const injected = { ...push, url: 'https://unrelated.example' };
+    expect(() => courtAlertLaunchUrl('https://example.com/app/', injected)).toThrow();
 });
