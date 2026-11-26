@@ -8,6 +8,7 @@ export type {
     RallarMessageHandle,
     RallarMessageHandler,
     RallarMessageLane,
+    RallarMessageOrder,
     RallarMessagePayload,
     RallarMessageReplyOptions,
     RallarMessageReplyOutcome,

@@ -365,6 +365,48 @@ Message ownership is concentrated under [`messages/`](./messages/):
   envelope, so they keep its trace. `RallarMessageHandle.traceId` is read from the envelope when the delivery
   registry opens the observation, and `RallarMessage.traceId` from the received envelope. `sendReply` copies the
   request's trace into the reply ([`to-browser-reply-send-input.ts`](./messages/reply/to-browser-reply-send-input.ts)).
+- Edge order is owned in [`messages/edge-order/`](./messages/edge-order/). A room channel declared
+  `order: 'edge'` hands one sender page's messages to this page's handlers in the order that page called `send`,
+  whichever carrier each came over. No hop orders them: the messages travel as unordered messages and the two ends
+  do the work, in memory.
+  - **Send.** [EdgeOrderSendStreams](./messages/edge-order/edge-order-send-streams.ts) keeps one stream per channel
+    (topic and type) and room, with an id minted in memory, never from the session id: a reload or another tab is a
+    new stream. `BrowserRallarMessageSender` takes the send's position in the application's own call, after the
+    send's options passed validation and before the connect is awaited, so a refused send takes none. When the
+    message is built, [EdgeOrderSender](./messages/edge-order/edge-order-sender.ts) states the stamp: the stream,
+    the position, the lowest position still open, and how long an earlier open send can still arrive. The payload
+    is wrapped as `{ "edgeOrder": <stamp>, "payload": <the application's payload> }`
+    ([`edge-order-wire-payload.ts`](./messages/edge-order/edge-order-wire-payload.ts)) before the message is
+    created, so a publisher proof would sign it, and the payload limit counts the wrapper. The stream reads each
+    open send's end from its handle: `acknowledged`, `rejected`, `cancelled`, `expired` and `superseded` end it; a
+    `failed` or `unobservable` one stays open until its deadline, because a copy can still be on its way. A send
+    that fails before it has a handle, or whose handle is refused at once, gives its position to the next send
+    when no later send has taken one, and otherwise closes it.
+  - **Receive.** `BrowserRallarMessageSubscriptions.dispatch` passes every message of a declared topic and type to
+    [EdgeOrderArrivals](./messages/edge-order/edge-order-arrivals.ts), which unwraps it and runs it through one
+    [EdgeOrderReceiver](./messages/edge-order/edge-order-receiver.ts) that both carriers share. The page listens
+    on both carriers for a declared channel, whichever the application handles, so a stream is sorted whole. A
+    released message goes to the listeners of the carrier it arrived on, one message at a time: an async handler
+    finishes a message before any handler is given the next. The handler's `payload` is the application's own;
+    `message.order` is `{ stream, position }`; `message.raw` is the envelope as it travelled, wrapper included.
+  - **What is not handed over** is stated in the connect's inbound diagnostics: `edge-order-arrival` for an
+    arrival that is `held` for its turn or dropped (`unwrapped`, `late`, `duplicate`, `expired`), `edge-order-gap`
+    for positions the receiver gave up, with its reason, and `edge-order-held-dropped` when the connect goes away
+    and the held messages with it (the `edge-order-held-messages` lifecycle participant). A stream keeps its
+    position across that, so a copy of a message already handed over stays late.
+  - **Refused as `unsupported`**, at the definition: a `live` channel, a `granted` channel (its audience changes
+    while a stream runs), a channel with a durability other than `volatile`, and `channel(...)` without a room. At
+    the send, before it takes a position: `reliability: 'best-effort'`, `ack: 'none'` or `'group-leader'`, a
+    `qos.delivery` other than at-least-once, a `qos.ack` other than `receiver`, `exceptPeerIds`,
+    `recipientPeerIds`, `principalId`, `peerId` (the server included), a `scope` other than `room`, `orderingKey`,
+    `seq`, `qos.supersedence`, a `qos.durability` other than `volatile`, and the `ws-then-rtc` strategy.
+  - **Limits.** Both ends must declare the channel: a receiver that did not is given the wrapped payload in
+    arrival order, and a receiver that did drops a message without a stamp. The declaration is per topic and type
+    on a page, for every room. A stamp says only that every send below one position has ended, so a refused send in
+    the middle of a burst is waited for until the sends before it end. A receiver holds at most 256 messages and
+    1 MiB per stream and knows 256 streams; a stream pushed out by that cap enters as new when it is heard again,
+    so a late copy of its messages can be handed over once more. The send side keeps 256 streams the same way.
+    Nothing is stored, so order restarts at a reload. A handler that never settles stops every later hand-over.
 - [`rallar-message-contracts.ts`](./messages/rallar-message-contracts.ts),
   [`rallar-message-selectors.ts`](./messages/rallar-message-selectors.ts), and
   [`to-rallar-message.ts`](./messages/to-rallar-message.ts) keep the public
