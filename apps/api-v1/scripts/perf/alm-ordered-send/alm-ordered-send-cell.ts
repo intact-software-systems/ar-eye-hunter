@@ -1,4 +1,5 @@
 import { Either } from '@shared/resilience/Either.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 
 import {
     readOrderedSendEnvironment,
@@ -23,6 +24,7 @@ import {
     runOrderedSendCell,
     type OrderedSendCellRunResult
 } from './run-ordered-send-cell.ts';
+import { toOrderedSendFailureLines } from './to-ordered-send-thrown-error.ts';
 
 /** A run that completed: where its artifact is, and the lines to print of it. */
 export interface AlmOrderedSendCellCompletion {
@@ -45,10 +47,14 @@ interface OrderedSendRunStart {
 /** Exit status 2: the invocation was refused for its options, and nothing ran. */
 const REFUSED_EXIT_STATUS = 2;
 
+/** Exit status 1: the run could not be carried out. */
+const FAILED_EXIT_STATUS = 1;
+
 /**
  * One invocation of the cell, from the arguments after the script's name: every issue of its options and nothing
  * run, or one reference run on the database the options name, its artifact written and its summary to print. A run
- * completes whatever its figures are; only a run that could not be carried out throws.
+ * completes whatever its figures are; only a run that could not be carried out throws, and what it throws may carry
+ * the database URL: print it through `toOrderedSendFailureLines` alone.
  */
 export async function runAlmOrderedSendCell(argv: readonly string[]): Promise<AlmOrderedSendCellOutcome> {
     return await decodeOrderedSendCellOptions(argv).fold<Promise<AlmOrderedSendCellOutcome>>(
@@ -103,17 +109,27 @@ async function writeOrderedSendRun(
 }
 
 if (import.meta.main) {
-    const outcome = await runAlmOrderedSendCell(process.argv.slice(2));
-    // The product logs to stdout while a run lasts, so the summary is printed after it and nothing is to parse it.
-    process.exit(outcome.fold(
-        (issues) => {
-            issues.forEach((issue) => console.error(`${issue.code}: ${issue.message}`));
-            return REFUSED_EXIT_STATUS;
-        },
-        (completion) => {
-            completion.summary.forEach((line) => console.log(line));
-            console.log(`artifact: ${completion.artifactPath}`);
-            return 0;
-        }
-    ));
+    process.exit(
+        await runAlmOrderedSendCell(process.argv.slice(2)).then(
+            // The product logs to stdout while a run lasts, so the summary is printed after it and nothing is to parse it.
+            (outcome) =>
+                outcome.fold(
+                    (issues) => {
+                        issues.forEach((issue) => console.error(`${issue.code}: ${issue.message}`));
+                        return REFUSED_EXIT_STATUS;
+                    },
+                    (completion) => {
+                        completion.summary.forEach((line) => console.log(line));
+                        console.log(`artifact: ${completion.artifactPath}`);
+                        return 0;
+                    }
+                ),
+            // An uncaught error is printed with every property it carries, and a driver's or a URL parser's may carry the
+            // database URL: only its name and a bounded message with nothing URL-shaped in it are printed here.
+            (thrown) => {
+                toOrderedSendFailureLines(toError(thrown)).forEach((line) => console.error(line));
+                return FAILED_EXIT_STATUS;
+            }
+        )
+    );
 }

@@ -136,6 +136,26 @@ describe('decodeOrderedSendCellOptions', () => {
         ]);
     });
 
+    it.each([
+        ['a text that is no URL', 'not a url s3cr3t'],
+        ['a URL that lost the colon of its scheme', 'postgres//user:pw@host/db'],
+        ['a URL of another scheme', 'https://user:pw@host/db'],
+        ['a path', '/var/run/postgresql/s3cr3t']
+    ])('refuses %s for the database URL, and repeats nothing of it', (_name, databaseUrl) => {
+        const issues = readIssues([`--database-url=${databaseUrl}`]);
+
+        expect(issues).toEqual([
+            { code: 'invalid-database-url', message: '--database-url must be a postgres:// or postgresql:// URL' }
+        ]);
+    });
+
+    it('takes a database URL of either PostgreSQL scheme as it is', () => {
+        const postgresql = 'postgresql://app:s3cret-pw@db.internal:5432/alm_cell_run';
+
+        expect(readOptions([`--database-url=${DATABASE_URL}`])?.databaseUrl).toBe(DATABASE_URL);
+        expect(readOptions([`--database-url=${postgresql}`])?.databaseUrl).toBe(postgresql);
+    });
+
     it('never repeats the database URL, or any other text of the command line, in an issue', () => {
         const issues = readIssues([
             DATABASE_URL,

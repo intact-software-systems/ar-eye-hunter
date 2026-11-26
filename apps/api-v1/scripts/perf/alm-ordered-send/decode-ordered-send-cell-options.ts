@@ -31,6 +31,7 @@ export interface OrderedSendCellOptionIssue {
         | 'invalid-number'
         | 'missing-option'
         | 'empty-option'
+        | 'invalid-database-url'
         | OrderedSendShapeIssue['code'];
     readonly message: string;
 }
@@ -82,11 +83,13 @@ const OPTION_NAMES = [
 const OPTION_LIST = '--publishers, --sends-per-second, --duration-s, --delay-ms, --sender-recovery, ' +
     '--application-pool, --database-url and --out';
 const ONE_TOKEN_OPTION = /^--([^=]+)=(.*)$/s;
+const DATABASE_URL_PROTOCOLS = ['postgres:', 'postgresql:'];
 const DECIMAL_NUMBER = /^-?\d+(\.\d+)?$/;
 
 /**
  * The options of one invocation, from the arguments after the script's name, or every issue of them at once. Each
- * option is one `--name=value` token. `--database-url` has no default. `--out` may be left out.
+ * option is one `--name=value` token. `--database-url` has no default and must be a `postgres:` or `postgresql:` URL.
+ * `--out` may be left out.
  */
 export function decodeOrderedSendCellOptions(
     argv: readonly string[]
@@ -207,5 +210,20 @@ function validateTextOptions(values: ReadonlyMap<string, string>): readonly Orde
             issues.push({ code: 'empty-option', message: `--${name} must not be empty` });
         }
     }
+    const databaseUrl = values.get('database-url');
+    if (databaseUrl !== undefined && databaseUrl !== '' && !isPostgresUrl(databaseUrl)) {
+        issues.push({
+            code: 'invalid-database-url',
+            message: '--database-url must be a postgres:// or postgresql:// URL'
+        });
+    }
     return issues;
+}
+
+/**
+ * A text the database lifecycle can parse. One it cannot would be thrown back by the URL parser with the text in the
+ * error, and the text may hold a password.
+ */
+function isPostgresUrl(text: string): boolean {
+    return URL.canParse(text) && DATABASE_URL_PROTOCOLS.includes(new URL(text).protocol);
 }

@@ -90,7 +90,7 @@ included; `--silent` keeps it off the terminal. The cell itself never prints or 
 
 | Option               | Default                 | Meaning                                                                                                                                                  |
 | -------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--database-url`     | none, required          | The migrated database of this run. A credential: it goes to the database lifecycles and nowhere else.                                                    |
+| `--database-url`     | none, required          | The migrated database of this run, as a `postgres://` or `postgresql://` URL. A credential: it goes to the database lifecycles and nowhere else.         |
 | `--publishers`       | `5`                     | How many of the fifteen sessions publish, each on a track of its own; 1 to 15.                                                                           |
 | `--sends-per-second` | `2`                     | The sends each publisher offers every second; a whole number of at least 1.                                                                              |
 | `--duration-s`       | `20`                    | The length of the send window in seconds; a whole number of at least 1.                                                                                  |
@@ -100,9 +100,11 @@ included; `--silent` keeps it off the terminal. The cell itself never prints or 
 | `--out`              | a file named by the run | The artifact's file. Left out, the run writes `tmp/perf/alm-ordered-send/<start>-p<publishers>-<rate>hz-d<delay>ms-<duration>s-<recovery>-pool<n>.json`. |
 
 Each option is one `--name=value` token. An invocation with an issue in its options prints every
-issue, runs nothing and exits with status 2. Status 0 means the run completed, whatever its figures.
-A run that could not be carried out, a database it cannot reach or an offer that threw, ends with
-the error and a status that is neither.
+issue, runs nothing and exits with status 2; no issue repeats a text of the command line, and a
+`--database-url` that is no `postgres://` or `postgresql://` URL is refused there, before anything
+could print it. Status 0 means the run completed, whatever its figures. A run that could not be
+carried out, such as a database it cannot reach, prints the name of the error and its message, cut
+at 240 characters with anything URL-shaped removed, and exits with status 1.
 
 The fifteen sessions, the three instances, the listener pool of one connection, the send's lifetime
 and the tail are fixed for every run and recorded in the artifact as its constants.
