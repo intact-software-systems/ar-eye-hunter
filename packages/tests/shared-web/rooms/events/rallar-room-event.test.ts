@@ -3,6 +3,8 @@ import { AppTopics, type AuthSession } from '@shared/api/api-config.ts';
 import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import type { RoomEvent } from '@shared/api/room-events/room-event.ts';
 import { RallarRoomEvent } from '@shared-web/browser/rooms/events/rallar-room-event.ts';
+import { decodeExactGroupRef } from '@shared/encoding/decode-exact-group-ref.ts';
+import { createGroupSnapshotFixture } from '../../authoritative-group-fixtures.ts';
 import { ViewPushBrowser } from '../../api/view-push-browser.ts';
 
 const lobby = { applicationId: 'games', workspaceId: 'park', groupId: 'lounge' };
@@ -24,7 +26,7 @@ function trial() {
     const rows = new Map<string, string>();
     const storage = { getItem: (key: string) => rows.get(key) ?? null, setItem: (key: string, value: string) => { rows.set(key, value); } };
     let active: AuthSession = grant;
-    const join = vi.fn<RallarRoomEvent.Browser['rooms']['join']>();
+    let selected = lobby;
     const session = () => active;
     const push = new ViewPushBrowser(session);
     const browser: RallarRoomEvent.Browser = {
@@ -32,9 +34,14 @@ function trial() {
             onChange: () => () => {},
             activateGuest: async ({ room, access, username }) => { active = { ...access, guestRoom: room, username }; }
         },
-        connect: vi.fn<RallarRoomEvent.Browser['connect']>(), rooms: { join }
+        connect: vi.fn<RallarRoomEvent.Browser['connect']>(), rooms: {
+            join: async target => {
+                selected = decodeExactGroupRef(target, 'Event room selection');
+                return createGroupSnapshotFixture({ ...selected, sessionIds: [active.sessionId] });
+            }
+        }
     };
-    return { browser, push, join, session, open: () => new RallarRoomEvent(browser, lobby, storage) };
+    return { push, selected: () => selected, session, open: () => new RallarRoomEvent(browser, lobby, storage) };
 }
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
@@ -60,13 +67,14 @@ it('recovers a court claim after a lost response, enters as the same player and 
     const retry = fixture.open();
     await retry.start();
     await retry.enterCourt();
+    expect(fixture.selected()).toEqual(court);
     expect(fixture.session()).toMatchObject({ clientId: 'alice', guestRoom: court, accessToken: 'court-proof' });
     retry.stop();
     const restored = fixture.open();
     try {
         await restored.start();
         await restored.returnToLobby();
-        expect(fixture.join.mock.calls.map(([selected]) => selected)).toEqual([court, lobby]);
+        expect(fixture.selected()).toEqual(lobby);
         expect(fixture.session()).toMatchObject(grant);
     } finally { restored.stop(); }
 });
@@ -100,7 +108,7 @@ it('refuses an admission for a different principal or a different assigned court
         await expect(event.enterCourt()).rejects.toThrow(/admission/i);
         returned = { room: { ...court, groupId: 'other' }, access: courtAccess };
         await expect(event.enterCourt()).rejects.toThrow(/admission/i);
-        expect(fixture.join).not.toHaveBeenCalled();
+        expect(fixture.selected()).toEqual(lobby);
     } finally { event.stop(); }
 });
 
@@ -176,7 +184,7 @@ it('discards a delayed claim response when a new offer has replaced the old gran
     try {
         await event.start();
         await expect(event.enterCourt()).rejects.toThrow(/assignment/i);
-        expect(fixture.join).not.toHaveBeenCalled();
+        expect(fixture.selected()).toEqual(lobby);
         expect(fixture.session()).toEqual(grant);
     } finally { event.stop(); }
 });
