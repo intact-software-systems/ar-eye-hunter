@@ -32,7 +32,7 @@ export namespace ViewInvalidation {
         readonly resource: 'room-access';
     }
     export interface RoomEvent extends RoomAccount {
-        readonly resource: 'room-event';
+        readonly resource: 'room-event' | 'room-event-organizer';
     }
     export interface RoomProgram extends RoomAccount {
         readonly resource: 'room-program';
@@ -67,7 +67,7 @@ export type ViewInvalidation =
 export function decodeViewInvalidation(value: unknown): ViewInvalidation {
     const record = requireRecord(value, 'View invalidation');
     const keys = ['version', 'resource', 'scope', 'principalId', 'changeId'];
-    if (record.resource === 'room-access' || record.resource === 'room-event' || record.resource === 'room-program') {
+    if (record.resource === 'room-access' || record.resource === 'room-event' || record.resource === 'room-event-organizer' || record.resource === 'room-program') {
         keys.push('groupId');
     }
     if (record.resource === 'room-program') {
@@ -109,7 +109,7 @@ export function decodeViewInvalidation(value: unknown): ViewInvalidation {
         principalId: record.principalId,
         changeId: record.changeId
     };
-    if (record.resource === 'room-access' || record.resource === 'room-event' || record.resource === 'room-program') {
+    if (record.resource === 'room-access' || record.resource === 'room-event' || record.resource === 'room-event-organizer' || record.resource === 'room-program') {
         requireString(record.groupId, 'View room');
         if (record.resource !== 'room-program') {
             return { ...account, resource: record.resource, groupId: record.groupId };

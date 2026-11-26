@@ -319,7 +319,7 @@ it('watches the organizer roster across reconnect, clears it on denial and stays
         expect(roster.getState().view?.players).toEqual([{ principalId: 'alice', displayName: 'Alice' }]);
         await vi.advanceTimersByTimeAsync(300_000);
         expect(requests).toHaveLength(1);
-        expect(new URL(requests[0]).pathname).toMatch(/\/event\/organizer$/);
+        expect(requests[0]).toMatch(/\/event\/organizer$/);
         vi.useRealTimers();
         denied = true;
         fixture.push.reopen();

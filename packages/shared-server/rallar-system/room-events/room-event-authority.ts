@@ -2,7 +2,7 @@ import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { readRallarGroupDirectorAppointment } from '@shared/api/group-director.ts';
 import type { RoomGuestLease } from '@shared/api/room-guests/invitation.ts';
 import { isRallarGroupDirectorSessionActive } from '@shared/api/group-director.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
+import type { GroupMember, GroupRef } from '@shared/api/group-types.ts';
 import type { RoomEvent } from '@shared/api/room-events/room-event.ts';
 import { roomGuestAccessMode } from '@shared/api/room-guests/access.ts';
 import type { RuntimeStateGuardedBatchEffect } from '../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
@@ -40,7 +40,7 @@ export class RoomEventAuthority {
         this.organizers = organizers;
     }
 
-    async read(input: RoomEventActor & {lobby: GroupRef; command?: RoomEvent.Command}, event: RoomEvent | null, now: number): Promise<RoomEventAuthority.Verified> {
+    async read(input: RoomEventActor & {lobby: GroupRef; command?: RoomEvent.Command}, event: RoomEvent | null, now: number): Promise<RoomEventAuthority.Verified & { readonly members: readonly GroupMember[] }> {
         const { groups, authSessions } = this.dependencies;
         const [lobby, session] = await Promise.all([
             groups.findGroupEntry(input.lobby), authSessions.findSessionBySessionIdEntry(input.sessionId)
@@ -80,7 +80,7 @@ export class RoomEventAuthority {
         else if (session.value.guestRoom && !isSameGroupRef(input.lobby, session.value.guestRoom)) {
             throw new GroupMutationAuthorizationError('This guest credential belongs to another room.');
         }
-        return { fences, audience, guestLease: actor.guestLease };
+        return { fences, audience, members: active, guestLease: actor.guestLease };
     }
 
     private async directorFences(court: GroupRef, actor: RoomEventActor, now: number): Promise<RuntimeStateGuardedBatchEffect[]> {
