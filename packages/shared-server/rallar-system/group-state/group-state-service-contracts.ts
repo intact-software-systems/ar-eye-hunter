@@ -261,6 +261,10 @@ export type GroupStateService =
             command: GroupMutationCommand,
             atEpochMs: number
         ): Promise<GroupMutationIngress>;
+        captureGuestMembershipMutationIngress(
+            command: GroupMutationCommand,
+            atEpochMs: number
+        ): Promise<GroupMutationIngress>;
         captureTimelineDeadlineMutationIngress(
             command: GroupMutationCommand,
             atEpochMs: number

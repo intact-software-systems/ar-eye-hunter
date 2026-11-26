@@ -1,7 +1,7 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { AL_CONTROL_ACK_TYPE_ID, isALControlTypeId } from '../../al-contracts/al-control-type-ids.ts';
 import { decodeALAckPayload } from '../../al-contracts/al-control-value-codec.ts';
-import type { ALAckPayload, ALReceiptPayload } from '../../al-contracts/al-control.ts';
+import type { ALAckPayload, ALNackReason, ALReceiptPayload } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { ALDeliveryAdmissionVerdict } from '../../alm/delivery/al-delivery-lifecycle.ts';
 import type { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
@@ -127,6 +127,8 @@ export type WsQueueBoxServerReceiptObservation =
     | WsQueueBoxServerReceiptPublicationObservation
     | (WsQueueBoxServerReceiptBusinessFacts & {
         readonly kind: 'business-socket-decision';
+        readonly roomNackReason?: ALNackReason;
+        readonly currentnessRejection?: WsQueueBoxServerInboundAuthority.CurrentnessRejection;
         readonly serverPeerId: string;
         readonly connectionId: string;
         readonly fromPeerId: string | undefined;

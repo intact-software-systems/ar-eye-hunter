@@ -8,12 +8,13 @@ import type {
 } from '../rallar-black-box-test-contracts.ts';
 import type { RallarBlackBoxLiveRecipeOptions } from './live-rtc-setup.ts';
 import {
-    computeRtcConnectCommandTimeoutMs,
     createRallarBlackBoxEnsureGroupCommands,
     defaultRallarBlackBoxGroup,
     groupRoomRef,
     RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS,
     RALLAR_BLACK_BOX_LIVE_API_BASE_URL,
+    RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS,
+    RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS,
     rtcConnectReadiness
 } from './live-rtc-setup.ts';
 
@@ -111,7 +112,8 @@ function toSmokeConnectCommand(context: LiveRecipeContext): RallarBlackBoxTestCo
         workspaceId: group.workspaceId,
         roomRef,
         transport: 'realtime',
-        timeoutMs: computeRtcConnectCommandTimeoutMs(options, 5_000),
+        timeoutMs: RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS,
+        rallar: { timeoutMs: RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS },
         readiness: rtcConnectReadiness(options)
     };
 }
@@ -174,10 +176,11 @@ function toScopedParityConnectCommand(
         applicationId: group.applicationId,
         workspaceId: group.workspaceId,
         roomRef,
-        timeoutMs: computeRtcConnectCommandTimeoutMs(options, command.timeoutMs ?? 5_000),
+        timeoutMs: RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS,
         rallar: {
             ...command.rallar,
-            ...toParityRallarScope({ group, roomRef, apiBaseUrl })
+            ...toParityRallarScope({ group, roomRef, apiBaseUrl }),
+            timeoutMs: RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS
         },
         readiness: rtcConnectReadiness(options)
     };

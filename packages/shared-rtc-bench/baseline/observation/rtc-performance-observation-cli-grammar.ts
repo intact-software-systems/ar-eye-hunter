@@ -13,7 +13,11 @@ import type { RtcBaselineResult } from '../contracts/rtc-baseline-contracts.ts';
 export type RtcPerformanceObservationParsedCommand =
     | ({ readonly kind: 'observe-browser'; } & RtcPerformanceObservationCommandInput)
     | (
-        & { readonly kind: 'observe-live-rtc'; readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode; }
+        & {
+            readonly kind: 'observe-live-rtc';
+            readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
+            readonly jobBudgetSeconds?: number;
+        }
         & RtcPerformanceObservationCommandInput
     )
     | ({
@@ -21,6 +25,7 @@ export type RtcPerformanceObservationParsedCommand =
         readonly environmentId: 'E3-memory' | 'E4-pg';
         readonly sourceRef: string;
         readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
+        readonly jobBudgetSeconds?: number;
     } & Omit<RtcPerformanceObservationCommandInput, 'sourceRef'>)
     | {
         readonly kind: 'verify-observation';
@@ -42,7 +47,8 @@ const allowed = {
         'github-run-attempt',
         'github-run-url',
         'output',
-        'rtc-capture-mode'
+        'rtc-capture-mode',
+        'job-budget-seconds'
     ],
     'capture-live-rtc': [
         'environment',
@@ -51,7 +57,8 @@ const allowed = {
         'github-run-attempt',
         'github-run-url',
         'output',
-        'rtc-capture-mode'
+        'rtc-capture-mode',
+        'job-budget-seconds'
     ],
     'verify-observation': ['archive', 'index-entry']
 } as const;
@@ -62,12 +69,21 @@ const required = {
     'capture-live-rtc': allowed['observe-browser']
 };
 
+/** A capture that names no environment captures in E3-memory. */
+const DEFAULT_CAPTURE_ENVIRONMENT_ID = 'E3-memory';
+
 interface RtcPerformanceObservationCommandInput {
     readonly sourceRef: 'main';
     readonly githubRunId: number;
     readonly githubRunAttempt: number;
     readonly githubRunUrl: string;
     readonly outputDirectory: string;
+}
+
+/** A run command's inputs once parsed, before its source ref is resolved. */
+interface RtcPerformanceObservationNormalizedInput extends Omit<RtcPerformanceObservationCommandInput, 'sourceRef'> {
+    readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
+    readonly jobBudgetSeconds?: number;
 }
 
 export function isRtcPerformanceObservationCommand(command: string | undefined) {
@@ -127,22 +143,51 @@ function parseVerificationPaths(
         };
 }
 
+type RtcPerformanceObservationRunCommand = 'observe-browser' | 'observe-live-rtc' | 'capture-live-rtc';
+
 function parseObservationInputs(
-    name: 'observe-browser' | 'observe-live-rtc' | 'capture-live-rtc',
+    name: RtcPerformanceObservationRunCommand,
     options: RtcBaselineCliOptions,
     issues: RtcBaselineCliIssue[]
 ): RtcBaselineResult<RtcPerformanceObservationParsedCommand> {
     const runId = parsePositiveInteger(options['github-run-id'] ?? '', 'github-run-id');
-    const runAttempt = parsePositiveInteger(
-        options['github-run-attempt'] ?? '',
-        'github-run-attempt'
-    );
-    if (!runId.ok) {
-        issues.push(...runId.issues);
+    const runAttempt = parsePositiveInteger(options['github-run-attempt'] ?? '', 'github-run-attempt');
+    for (const parsed of [runId, runAttempt]) {
+        if (!parsed.ok) {
+            issues.push(...parsed.issues);
+        }
     }
-    if (!runAttempt.ok) {
-        issues.push(...runAttempt.issues);
+    validateObservationSourceRef(name, options, issues);
+    validateObservationOptions(options, runId.ok ? runId.value : undefined, issues);
+    if (name === 'capture-live-rtc') {
+        issues.push(...validateCaptureEnvironment(toCaptureEnvironmentId(options)));
     }
+    const capture = parseRtcCaptureMode(name !== 'observe-browser' ? options['rtc-capture-mode'] : undefined);
+    for (const captureIssue of capture.left ?? []) {
+        issues.push(createRtcBaselineCliIssue('$.rtc-capture-mode', captureIssue.code, captureIssue.message));
+    }
+    const jobBudgetSeconds = parseJobBudgetSeconds(options, issues);
+    if (issues.length > 0 || !runId.ok || !runAttempt.ok) {
+        return { ok: false, issues };
+    }
+    return toParsedObservationCommand(name, options, {
+        githubRunId: runId.value,
+        githubRunAttempt: runAttempt.value,
+        githubRunUrl: options['github-run-url']!,
+        outputDirectory: options.output!,
+        ...(name !== 'observe-browser' && capture.right?.mode !== undefined
+            ? { rtcCaptureMode: capture.right.mode }
+            : {}),
+        ...(jobBudgetSeconds === undefined ? {} : { jobBudgetSeconds })
+    });
+}
+
+/** An observation records main; a governed capture records the nonempty branch it was asked to. */
+function validateObservationSourceRef(
+    name: RtcPerformanceObservationRunCommand,
+    options: RtcBaselineCliOptions,
+    issues: RtcBaselineCliIssue[]
+) {
     if (name !== 'capture-live-rtc' && options['source-ref'] !== undefined && options['source-ref'] !== 'main') {
         issues.push(
             createRtcBaselineCliIssue('$.source-ref', 'unsupported-source-ref', 'Observation source ref must be main.')
@@ -153,25 +198,13 @@ function parseObservationInputs(
             createRtcBaselineCliIssue('$.source-ref', 'empty-source-ref', 'Capture source ref must be nonempty.')
         );
     }
-    validateObservationOptions(options, runId.ok ? runId.value : undefined, issues);
-    const environmentId = options.environment ?? 'E3-memory';
-    issues.push(...validateCaptureEnvironment(name === 'capture-live-rtc' ? environmentId : 'E3-memory'));
-    const capture = parseRtcCaptureMode(name !== 'observe-browser' ? options['rtc-capture-mode'] : undefined);
-    for (const captureIssue of capture.left ?? []) {
-        issues.push(createRtcBaselineCliIssue('$.rtc-capture-mode', captureIssue.code, captureIssue.message));
-    }
-    if (issues.length > 0 || !runId.ok || !runAttempt.ok) {
-        return { ok: false, issues };
-    }
-    const normalized = {
-        githubRunId: runId.value,
-        githubRunAttempt: runAttempt.value,
-        githubRunUrl: options['github-run-url']!,
-        outputDirectory: options.output!,
-        ...(name !== 'observe-browser' && capture.right?.mode !== undefined
-            ? { rtcCaptureMode: capture.right.mode }
-            : {})
-    };
+}
+
+function toParsedObservationCommand(
+    name: RtcPerformanceObservationRunCommand,
+    options: RtcBaselineCliOptions,
+    normalized: RtcPerformanceObservationNormalizedInput
+): RtcBaselineResult<RtcPerformanceObservationParsedCommand> {
     return name === 'capture-live-rtc'
         ? {
             ok: true,
@@ -179,7 +212,7 @@ function parseObservationInputs(
                 ...normalized,
                 kind: name,
                 sourceRef: options['source-ref']!,
-                environmentId: environmentId as 'E3-memory' | 'E4-pg'
+                environmentId: toCaptureEnvironmentId(options) as 'E3-memory' | 'E4-pg'
             }
         }
         : { ok: true, value: { ...normalized, kind: name, sourceRef: 'main' } };
@@ -208,6 +241,20 @@ function validateObservationOptions(
     }
 }
 
+/** Absent, the capture has no job deadline and runs every declared attempt. */
+function parseJobBudgetSeconds(options: RtcBaselineCliOptions, issues: RtcBaselineCliIssue[]): number | undefined {
+    const value = options['job-budget-seconds'];
+    if (value === undefined) {
+        return undefined;
+    }
+    const parsed = parsePositiveInteger(value, 'job-budget-seconds');
+    if (!parsed.ok) {
+        issues.push(...parsed.issues);
+        return undefined;
+    }
+    return parsed.value;
+}
+
 function parsePositiveInteger(value: string, name: string) {
     return parseRtcBaselineBoundedInteger(value, name, 1, Number.MAX_SAFE_INTEGER);
 }
@@ -226,6 +273,10 @@ function validWorkflowUrl(value: string, runId: number) {
     catch {
         return false;
     }
+}
+
+function toCaptureEnvironmentId(options: RtcBaselineCliOptions): string {
+    return options.environment ?? DEFAULT_CAPTURE_ENVIRONMENT_ID;
 }
 
 function validateCaptureEnvironment(environmentId: string): RtcBaselineCliIssue[] {

@@ -9,6 +9,7 @@ const PATHS = {
     groupMove: 'apps/api-v1/src/group-state/register-group-move-routes.ts',
     groupMoveDeadline: 'packages/shared-server/rallar-system/group-state/move/group-move-inbox.ts',
     clientMutations: 'apps/api-v1/src/routes/client-state-mutation-routes.ts',
+    guestRedemption: 'apps/api-v1/src/group-state/register-room-guest-redemption-route.ts',
     groupAdmission: 'apps/api-v1/src/group-state/register-group-admission-routes.ts',
     groupMembership: 'apps/api-v1/src/group-state/register-group-membership-routes.ts',
     groupPresence: 'apps/api-v1/src/group-state/register-group-presence-routes.ts',

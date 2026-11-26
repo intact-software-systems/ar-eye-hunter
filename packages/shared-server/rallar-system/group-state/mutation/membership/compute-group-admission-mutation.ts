@@ -18,6 +18,7 @@ import { computeGroupMembershipWrite } from '../write/compute-group-membership-w
 import { transitionGroupMemberLifecycle } from './transition-group-member-lifecycle.ts';
 
 interface ResolveAdmittedMemberStatusInput {
+    readonly guestInvitation?: boolean;
     readonly read: GroupMutationRead;
     readonly facts: GroupMutationFacts;
     readonly existing: GroupMember | undefined;
@@ -43,7 +44,7 @@ export function resolveAdmittedMemberStatus(
         admission: policy.admission,
         lifecycleState: group.lifecycleState,
         activeMemberCount: countGroupPlayers(toPolicySnapshot(input.read, group, input.facts.attemptAtEpochMs)),
-        invited: isUnexpiredInvite(input.existing, input.facts.attemptAtEpochMs),
+        invited: input.guestInvitation === true || isUnexpiredInvite(input.existing, input.facts.attemptAtEpochMs),
         nowEpochMs: input.facts.attemptAtEpochMs
     });
     if (decision.kind === 'deny') {

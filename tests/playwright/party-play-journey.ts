@@ -49,6 +49,8 @@ async function formParty(host: Page, guest: Page, game: 'arena' | 'relic'): Prom
     await acceptWithLostResponse(guest);
     await expect(hostParty).toContainText('2 of 2 seats');
     await expect(guestParty).toContainText('2 of 2 seats');
+    // The roster can arrive by the server's notice first; the guest's own retried request and its read still follow.
+    await expect(guestParty.getByRole('button', { name: 'Refresh party', exact: true })).toBeEnabled();
     await assertIdleViewReads(guest, 'social');
     await guest.reload();
     if (game === 'arena') {

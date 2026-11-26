@@ -1,3 +1,6 @@
+import { assertRoomGuestSeat, readRoomGuestRequest } from '@shared-server/http/room-guest-request.ts';
+import { authorizationDenied } from '@shared-server/http/request-auth-service.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { Hono, type Context } from 'hono';
 
 import type { ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-types.ts';
@@ -14,7 +17,9 @@ export type ClientStatePointRead = (
     options: ClientStateSnapshotReadOptions & Readonly<{ strictMode?: boolean; }>
 ) => Promise<StateSnapshotReadResult<ClientSnapshot>>;
 
-interface ClientStatePointRouteDependencies {
+export interface ClientStatePointRouteDependencies {
+    readonly readGuestRoom?: (ref: GroupRef) => Promise<GroupSnapshot | undefined>;
+    readonly nowEpochMs?: () => number;
     readonly read: ClientStatePointRead;
     readonly requireAuthSession: (
         request: { header(name: string): string | undefined; }
@@ -40,7 +45,20 @@ async function readClientStatePoint(
 ): Promise<Response> {
     try {
         const principalId = context.req.param('principalId');
-        const strictMode = await assertSelfWhenStrict(context, dependencies, principalId);
+        const guest = await readRoomGuestRequest(context.req);
+        let strictMode: boolean;
+        if (guest) {
+            if (guest.clientId !== principalId || guest.roomRef.applicationId !== context.req.param('applicationId') ||
+                guest.roomRef.workspaceId !== context.req.param('workspaceId')) {
+                throw authorizationDenied('Guest credentials are limited to their own scoped client.');
+            }
+            const snapshot = await dependencies.readGuestRoom?.(guest.roomRef);
+            if (!snapshot) throw authorizationDenied('Guest room is unavailable.');
+            assertRoomGuestSeat(guest, snapshot, (dependencies.nowEpochMs ?? Date.now)());
+            strictMode = true;
+        } else {
+            strictMode = await assertSelfWhenStrict(context, dependencies, principalId);
+        }
         const result = await dependencies.read({
             applicationId: context.req.param('applicationId'),
             workspaceId: context.req.param('workspaceId'),

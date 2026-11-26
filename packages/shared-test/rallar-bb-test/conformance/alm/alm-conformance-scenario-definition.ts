@@ -348,7 +348,7 @@ interface AlmConformanceScenarioCore {
     readonly toRecipeRunExtensionMs?: (step: AlmConformanceStepInput) => number;
 }
 
-/** The origins of a relayed gap renewal and the request number each waits for from every other page of the cell. */
+/** The origins of a relayed gap renewal and the lowest request number each waits for from every other page of the cell. */
 export interface AlmConformanceRelayedGapRenewalOrigins {
     readonly roles: readonly AlmConformanceRole[];
     readonly requestNumber: number;

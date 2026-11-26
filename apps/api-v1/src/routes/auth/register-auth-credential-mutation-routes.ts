@@ -100,7 +100,7 @@ async function webSocketTicketResponse(
     rateLimit: RateLimiterPolicy
 ): Promise<Response> {
     try {
-        const authSession = await dependencies.requireApiAuthSession(context.req);
+        const authSession = await (dependencies.requireTransportSession ?? dependencies.requireApiAuthSession)(context.req);
         const { requestId, traceId } = await readAuthMutationRequest(context);
         return await RateLimiter.tryToExecuteOrDefault<Response>(
             readRateLimiter('auth-ws-ticket', authSession.sessionId, rateLimit),

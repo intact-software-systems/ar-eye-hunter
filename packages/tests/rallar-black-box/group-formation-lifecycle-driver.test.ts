@@ -4,10 +4,11 @@ import {
     it
 } from 'vitest';
 
-import type { RtcNativeAcquisitionProof, RtcNativeCapturedConnection } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
+import type { RtcNativeCapturedConnection } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
+import { computeEnqueuedCommandWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
+import { FORMATION_CONNECT_RESULT_WAIT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-formation-waits.ts';
 import type { RallarRtcCaptureUnverifiedError } from '@shared-web/browser/connection/rallar-rtc-capture-unverified-error.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
-import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
@@ -15,7 +16,10 @@ import {
     createGroupFormationLifecycleDriver,
     type LiveRtcControlPort
 } from '../../../tests/playwright/rallar-black-box/create-group-formation-lifecycle-driver.ts';
-import type { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
+import {
+    resolveLiveRtcResultPollTimeoutMs,
+    type LiveRtcControlClient
+} from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
 import { normalizeJson, type LiveRtcJsonRecord } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
 import type { LiveRtcFormationOperations } from '../../../tests/playwright/rallar-black-box/live-rtc-formation-operations.ts';
 
@@ -42,38 +46,6 @@ const capturedReplacement: RtcNativeCapturedConnection & { readonly almDiagnosti
     sessionId: 'replacement-session-c',
     requestedConfiguration: { mode: 'native' as const, origin: 'step' as const },
     receipt: appliedNativeCapture.value
-};
-const replacementNativeProof: RtcNativeAcquisitionProof = {
-    connection: capturedReplacement,
-    initialized: {
-        kind: 'native-observation-status',
-        stage: 'initialized',
-        localSessionId: 'replacement-session-c',
-        atEpochMs: 123,
-        availability: { status: 'observed', value: 'enabled' },
-        capture: {
-            scopeId: { status: 'observed', value: 'replacement-native-scope-c' },
-            scope: 'active',
-            ordinaryRowsSuppressed: false,
-            admissionLimited: false,
-            payloadLimited: false
-        }
-    },
-    source: {
-        endpoint: '/runs/retained-native-run/events.jsonl',
-        durableOrigin: 'unknown',
-        bytesRead: 987,
-        decodedRecords: 2,
-        malformedRows: 0,
-        oversizedRows: 0,
-        completeness: 'complete'
-    }
-};
-const missingReplacementNativeStatus = {
-    reason: 'initialized-status-unavailable' as const,
-    source: null,
-    connection: capturedReplacement,
-    cause: new Error('No initialized row for the replacement scope was received.')
 };
 const replacementCaptureConfig = {
     apiBaseUrl: 'http://api.test',
@@ -333,6 +305,25 @@ describe('group formation lifecycle driver', () => {
         expect(result.rtcCapture).toMatchObject({ almDiagnostics });
     });
 
+    // The driver waited 60 s for a Connect whose own timeout is a 135 s SDK connect and room join.
+    it('waits for a Connect result as long as the Connect may take, then the control client\'s poll', async () => {
+        const control = createReconnectControl(normalizeJson(appliedNativeCapture));
+        const executeOk = control.executeOk;
+        const connects: LiveRtcControlClient.ExecuteInput[] = [];
+        control.executeOk = async (input) => {
+            connects.push(input);
+            return await executeOk(input);
+        };
+        const driver = createGroupFormationLifecycleDriver(replacementCaptureConfig);
+        await driver.reconnectAndWaitForPeerReadiness({ ...replacementCaptureInput, control });
+
+        expect(connects).toHaveLength(1);
+        expect(connects[0].command).toMatchObject({ kind: 'rtc.connect', roomId: 'group', timeoutMs: 135_000 });
+        expect(connects[0].timeoutMs).toBeUndefined();
+        expect(resolveLiveRtcResultPollTimeoutMs(connects[0])).toBe(135_000 + 45_000);
+        expect(computeEnqueuedCommandWaitMs(resolveLiveRtcResultPollTimeoutMs(connects[0]))).toBe(FORMATION_CONNECT_RESULT_WAIT_MS);
+    });
+
     it.each(['missing', 'mismatch', 'foreign-command', 'foreign-agent'])('refuses %s ALM application before reconnect readiness', async (failure) => {
         const control = createReconnectControl(normalizeJson(appliedNativeCapture));
         const executeOk = control.executeOk;
@@ -438,212 +429,6 @@ describe('group formation lifecycle driver', () => {
         });
 
         expect(result).toMatchObject({ rtcCapture: capturedReplacement });
-    });
-
-    it('blocks replacement readiness until acquisition accepts the already-admitted connection', async () => {
-        const readinessAgents: string[] = [];
-        const acquisitions: Array<typeof capturedReplacement> = [];
-        const pendingAcquisition = Promise.withResolvers<Either<typeof missingReplacementNativeStatus, typeof replacementNativeProof>>();
-        const nativeAcquisition = {
-            readRtcNativeAcquisition: async (connection: typeof capturedReplacement) => {
-                acquisitions.push(connection);
-                return await pendingAcquisition.promise;
-            }
-        };
-        const reconnectInput = {
-            ...replacementCaptureInput,
-            control: createReconnectControl(normalizeJson(appliedNativeCapture)),
-            nativeAcquisition
-        };
-        const resultPromise = createGroupFormationLifecycleDriver({
-            ...replacementCaptureConfig,
-            formation: {
-                readiness: async (input: Parameters<LiveRtcFormationOperations['readiness']>[0]) => {
-                    readinessAgents.push(input.agent.agentId);
-                    return toReplacementFormationReadiness(input);
-                }
-            }
-        }).reconnectAndWaitForPeerReadiness(reconnectInput);
-
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        expect.soft(acquisitions).toEqual([capturedReplacement]);
-        expect.soft(readinessAgents).toEqual([]);
-        pendingAcquisition.resolve(Either.ofRight(replacementNativeProof));
-        const result = await resultPromise;
-
-        expect(readinessAgents).toEqual(['agent-a', 'agent-b', 'agent-c']);
-        expect(result).toMatchObject({
-            rtcCapture: capturedReplacement,
-            nativeAcquisition: replacementNativeProof
-        });
-    });
-
-    it('refuses replacement readiness and preserves the acquired failure with the completed Connect facts', async () => {
-        const readinessAgents: string[] = [];
-        const reconnectInput = {
-            ...replacementCaptureInput,
-            control: createReconnectControl(normalizeJson(appliedNativeCapture)),
-            nativeAcquisition: {
-                readRtcNativeAcquisition: async (_connection: typeof capturedReplacement) =>
-                    Either.ofLeft<typeof missingReplacementNativeStatus, typeof replacementNativeProof>(missingReplacementNativeStatus)
-            }
-        };
-        const outcome = await createGroupFormationLifecycleDriver({
-            ...replacementCaptureConfig,
-            formation: {
-                readiness: async (input: Parameters<LiveRtcFormationOperations['readiness']>[0]) => {
-                    readinessAgents.push(input.agent.agentId);
-                    return toReplacementFormationReadiness(input);
-                }
-            }
-        }).reconnectAndWaitForPeerReadiness(reconnectInput).then(() => undefined, toError);
-
-        expect.soft(outcome?.cause).toBe(missingReplacementNativeStatus.cause);
-        expect.soft(outcome).toMatchObject({
-            cause: missingReplacementNativeStatus.cause,
-            rtcConnectCaptures: [capturedReplacement],
-            nativeAcquisitions: [],
-            nativeAcquisitionFailure: missingReplacementNativeStatus
-        });
-        expect(readinessAgents).toEqual([]);
-    });
-
-    it('retains the admitted replacement when the acquisition invocation throws before returning a promise', async () => {
-        const acquisitionFailure = new Error('The native acquisition port threw during invocation.');
-        const effects: string[] = [];
-        const control = createReconnectControl(normalizeJson(appliedNativeCapture));
-        control.executeResult = async () => {
-            effects.push('presence');
-            throw new Error('No presence operation may follow the acquisition failure.');
-        };
-        const reconnectInput = {
-            ...replacementCaptureInput,
-            control,
-            nativeAcquisition: {
-                readRtcNativeAcquisition: (_connection: RtcNativeCapturedConnection) => {
-                    throw acquisitionFailure;
-                }
-            }
-        };
-        const outcome = await createGroupFormationLifecycleDriver({
-            ...replacementCaptureConfig,
-            formation: {
-                readiness: async (input: Parameters<LiveRtcFormationOperations['readiness']>[0]) => {
-                    effects.push('readiness');
-                    return toReplacementFormationReadiness(input);
-                }
-            }
-        }).reconnectAndWaitForPeerReadiness(reconnectInput).then(() => undefined, toError);
-
-        expect.soft(outcome?.cause).toBe(acquisitionFailure);
-        expect.soft(outcome).toMatchObject({
-            cause: acquisitionFailure,
-            rtcConnectCaptures: [capturedReplacement],
-            nativeAcquisitions: [],
-            nativeAcquisitionFailure: {
-                reason: 'acquisition-failed',
-                connection: capturedReplacement,
-                cause: acquisitionFailure
-            }
-        });
-        expect(effects).toEqual([]);
-    });
-
-    it('preserves a successful native acquisition when replacement readiness rejects with its original cause', async () => {
-        const readinessFailure = new Error('The surviving peer did not adopt the replacement.');
-        const reconnectInput = {
-            ...replacementCaptureInput,
-            control: createReconnectControl(normalizeJson(appliedNativeCapture)),
-            nativeAcquisition: {
-                readRtcNativeAcquisition: async (_connection: typeof capturedReplacement) =>
-                    Either.ofRight<typeof missingReplacementNativeStatus, typeof replacementNativeProof>(replacementNativeProof)
-            }
-        };
-        const outcome = await createGroupFormationLifecycleDriver({
-            ...replacementCaptureConfig,
-            formation: {
-                readiness: async () => {
-                    throw readinessFailure;
-                }
-            }
-        }).reconnectAndWaitForPeerReadiness(reconnectInput).then(() => undefined, toError);
-
-        expect.soft(outcome?.cause).toBe(readinessFailure);
-        expect(outcome).toMatchObject({
-            cause: readinessFailure,
-            rtcConnectCaptures: [capturedReplacement],
-            nativeAcquisitions: [replacementNativeProof],
-            nativeAcquisitionFailure: null
-        });
-    });
-
-    it('refuses strict acquisition of an unavailable native capture without calling the acquisition port or readiness', async () => {
-        const calls: string[] = [];
-        const receipt: RtcSignalingDiagnostics.CaptureReceipt = {
-            ...appliedNativeCapture.value,
-            nativeScopeId: { status: 'unavailable', reason: 'unsupported' },
-            nativeAvailability: { status: 'unavailable', reason: 'unsupported' },
-            nativeCoverage: 'unavailable'
-        };
-        const reconnectInput = {
-            ...replacementCaptureInput,
-            control: createReconnectControl(normalizeJson({ status: 'observed', value: receipt })),
-            nativeAcquisition: {
-                readRtcNativeAcquisition: async (_connection: typeof capturedReplacement) => {
-                    calls.push('acquisition');
-                    return Either.ofRight<typeof missingReplacementNativeStatus, typeof replacementNativeProof>(replacementNativeProof);
-                }
-            }
-        };
-        const outcome = await createGroupFormationLifecycleDriver({
-            ...replacementCaptureConfig,
-            formation: {
-                readiness: async (input: Parameters<LiveRtcFormationOperations['readiness']>[0]) => {
-                    calls.push('readiness');
-                    return toReplacementFormationReadiness(input);
-                }
-            }
-        }).reconnectAndWaitForPeerReadiness(reconnectInput).then(() => undefined, toError);
-
-        expect.soft(outcome).toMatchObject({
-            rtcConnectCaptures: [{ ...capturedReplacement, receipt }],
-            nativeAcquisitions: [],
-            nativeAcquisitionFailure: { reason: 'native-capture-unavailable', connection: { ...capturedReplacement, receipt }, source: null }
-        });
-        expect(calls).toEqual([]);
-    });
-
-    it('refuses a non-Native acquisition request before Connect or readiness effects', async () => {
-        const calls: string[] = [];
-        const control = createReconnectControl(normalizeJson(appliedNativeCapture));
-        const executeOk = control.executeOk;
-        control.executeOk = async (input) => {
-            calls.push('connect');
-            return await executeOk(input);
-        };
-        const reconnectInput = {
-            ...replacementCaptureInput,
-            control,
-            nativeAcquisition: {
-                readRtcNativeAcquisition: async (_connection: typeof capturedReplacement) => {
-                    calls.push('acquisition');
-                    return Either.ofRight<typeof missingReplacementNativeStatus, typeof replacementNativeProof>(replacementNativeProof);
-                }
-            }
-        };
-        const outcome = await createGroupFormationLifecycleDriver({
-            ...replacementCaptureConfig,
-            rtcCaptureMode: 'signaling',
-            formation: {
-                readiness: async (input: Parameters<LiveRtcFormationOperations['readiness']>[0]) => {
-                    calls.push('readiness');
-                    return toReplacementFormationReadiness(input);
-                }
-            }
-        }).reconnectAndWaitForPeerReadiness(reconnectInput).then(() => undefined, toError);
-
-        expect.soft(outcome?.message).toContain('Native acquisition requires an explicit Native capture request');
-        expect(calls).toEqual([]);
     });
 
     it('rejects an unverified explicit receipt before extracting its returned session or waiting for readiness', async () => {

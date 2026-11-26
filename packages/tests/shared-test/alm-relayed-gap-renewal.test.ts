@@ -12,9 +12,12 @@ import {
 import { assessAlmRelayedGapRenewal } from '@shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-relayed-gap-renewal.ts';
 import type {
     RallarBlackBoxTestCommand,
+    RallarBlackBoxTestEvent,
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestResult
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { resolveWaitMatchResultReferences } from '@shared-test/rallar-bb-test/wait/resolve-wait-match-result-references.ts';
+import { resolveLatestWaitEvent } from '@shared-test/rallar-bb-test/wait/wait-event-match.ts';
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
 
@@ -29,6 +32,12 @@ type RelayedGapRenewalKey = (typeof CELLS)[number]['key'];
 
 /** Who sent each request an origin admitted: every receiver itself, or a relay for its far receiver. */
 type OriginRoute = 'relayed' | 'direct';
+
+/** How an origin's gap request waits recorded: by whom each admitted request was sent, and its number. */
+interface OriginRecord {
+    readonly route: OriginRoute;
+    readonly requestNumber: number;
+}
 
 function toScenario(key: RelayedGapRenewalKey): AlmConformanceScenario & { readonly recipientB: RallarBlackBoxTestRecipe; } {
     const scenario = createAlmConformanceRecipes(toConformanceInput('rtc'))
@@ -68,16 +77,12 @@ function toGapRequestValue(commandId: string, requestNumber: number, route: Orig
 }
 
 /** Every command of the recipe recorded ok; a gap request wait recorded its admitted NACK by the origin's route. */
-function toParticipant(
-    role: string,
-    recipe: RallarBlackBoxTestRecipe,
-    { route, requestNumber }: { readonly route: OriginRoute; readonly requestNumber: number; }
-): AlmConformanceIdentityParticipant {
+function toParticipant(role: string, recipe: RallarBlackBoxTestRecipe, record: OriginRecord): AlmConformanceIdentityParticipant {
     const results = recipe.commands.map((command): RallarBlackBoxTestResult => ({
         commandId: command.commandId!,
         kind: command.kind,
-        value: command.commandId?.includes(`-gap-request-${requestNumber}-for-`)
-            ? toGapRequestValue(command.commandId, requestNumber, route)
+        value: command.commandId?.includes('-gap-request-')
+            ? toGapRequestValue(command.commandId, record.requestNumber, record.route)
             : {},
         ok: true,
         status: 'ok',
@@ -124,11 +129,13 @@ interface AssessRouteInput {
     readonly sender: OriginRoute;
     readonly owner: OriginRoute;
     readonly senderRecipe?: RallarBlackBoxTestRecipe;
+    /** Absent, the number each origin waits for. */
+    readonly admittedRequestNumber?: number;
 }
 
-function assessRoutes({ key, sender, owner, senderRecipe }: AssessRouteInput): readonly string[] {
+function assessRoutes({ key, sender, owner, senderRecipe, admittedRequestNumber }: AssessRouteInput): readonly string[] {
     const scenario = toScenario(key);
-    const requestNumber = CELLS.find((cell) => cell.key === key)!.requestNumber;
+    const requestNumber = admittedRequestNumber ?? CELLS.find((cell) => cell.key === key)!.requestNumber;
     return assessAlmConformanceIdentity({
         runId: RUN_ID,
         roles: ROLES,
@@ -138,6 +145,26 @@ function assessRoutes({ key, sender, owner, senderRecipe }: AssessRouteInput): r
             toParticipant('recipient-b', scenario.recipientB, { route: 'direct', requestNumber })
         ]
     });
+}
+
+/** The origin's outbound diagnostic of one committed gap NACK, the event a gap request wait matches. */
+function toGapRequestEvent(requestNumber: number, logicalRecipientPeerId: string): RallarBlackBoxTestEvent {
+    return {
+        eventId: `gap-request-${requestNumber}-${logicalRecipientPeerId}`,
+        kind: 'diagnostic',
+        topic: 'rallar.browser.alm.outbound_diagnostics',
+        atEpochMs: 1,
+        payload: {
+            data: {
+                kind: 'control-admission',
+                outcome: 'committed',
+                nackReason: 'gap',
+                nackGapRequestNumber: requestNumber,
+                nackLogicalRecipientPeerId: logicalRecipientPeerId,
+                nackFromPeerId: 'middle-session'
+            }
+        }
+    };
 }
 
 describe.each(CELLS)('the $key cell', ({ key, requestNumber, ack, handleState }) => {
@@ -183,7 +210,7 @@ describe.each(CELLS)('the $key cell', ({ key, requestNumber, ack, handleState })
         }
     });
 
-    it('matches a committed gap NACK of the request number that speaks for the receiver the cue named', () => {
+    it(`matches a committed gap NACK numbered ${requestNumber} or later that speaks for the receiver the cue named`, () => {
         const wait = toCommand(toScenario(key).sender, `${prefix}-sender-gap-request-${requestNumber}-for-recipient-b`);
 
         expect(wait).toMatchObject({
@@ -191,11 +218,41 @@ describe.each(CELLS)('the $key cell', ({ key, requestNumber, ack, handleState })
             match: {
                 kind: 'diagnostic',
                 topic: 'rallar.browser.alm.outbound_diagnostics',
-                contains: `"nackGapRequestNumber":${requestNumber},"nackLogicalRecipientPeerId":` +
+                contains: '"nackLogicalRecipientPeerId":' +
                     `"{resultCache.alm-rtc-${key}-cues-sender-cue-recipient-b-here-received.value.event.payload.senderId}"`,
-                payloadFields: { 'data.kind': 'control-admission', 'data.outcome': 'committed', 'data.nackReason': 'gap' }
+                payloadFields: { 'data.kind': 'control-admission', 'data.outcome': 'committed', 'data.nackReason': 'gap' },
+                payloadMinimums: { 'data.nackGapRequestNumber': requestNumber }
             }
         });
+    });
+
+    it(`admits request ${requestNumber} or a later one for that receiver, never an earlier one or another receiver's`, () => {
+        const wait = toCommand(toScenario(key).sender, `${prefix}-sender-gap-request-${requestNumber}-for-recipient-b`);
+        const cueId = `alm-rtc-${key}-cues-sender-cue-recipient-b-here-received`;
+        const resultCache = {
+            [cueId]: {
+                commandId: cueId,
+                kind: 'wait',
+                ok: true,
+                status: 'ok',
+                value: { event: { payload: { senderId: 'recipient-b-session' } } },
+                startedAtEpochMs: 1,
+                endedAtEpochMs: 2,
+                durationMs: 1
+            } satisfies RallarBlackBoxTestResult
+        };
+        if (wait?.kind !== 'wait') {
+            throw new Error('The gap request step must be a wait.');
+        }
+        const match = resolveWaitMatchResultReferences(wait.match, resultCache).fold(({ reference }) => {
+            throw new Error(`Unresolved reference: ${reference}`);
+        }, (resolved) => resolved);
+        const admits = (number: number, peer: string) => resolveLatestWaitEvent([toGapRequestEvent(number, peer)], match) !== undefined;
+
+        expect(admits(requestNumber, 'recipient-b-session')).toBe(true);
+        expect(admits(requestNumber + 1, 'recipient-b-session')).toBe(true);
+        expect(admits(requestNumber - 1, 'recipient-b-session')).toBe(false);
+        expect(admits(requestNumber + 1, 'peer-session')).toBe(false);
     });
 
     it(`sends each origin's track with ack ${ack} on a key of its own and reads every handle ${handleState}`, () => {
@@ -216,8 +273,17 @@ describe.each(CELLS)('the $key cell', ({ key, requestNumber, ack, handleState })
 
     it('fails the cell when every origin admitted the request from the receiver itself: no renewal was relayed', () => {
         expect(assessRoutes({ key, sender: 'direct', owner: 'direct' })).toEqual([
-            `${key}: no origin admitted a gap request numbered ${requestNumber} through a relay, so no renewal was relayed.`
+            `${key}: no origin admitted a gap request numbered ${requestNumber} or later through a relay, so no renewal was relayed.`
         ]);
+    });
+
+    it(`passes the cell on a relayed request later than ${requestNumber} and fails it on an earlier one`, () => {
+        expect(assessRoutes({ key, sender: 'relayed', owner: 'direct', admittedRequestNumber: requestNumber + 1 }))
+            .toEqual([]);
+        expect(assessRoutes({ key, sender: 'relayed', owner: 'relayed', admittedRequestNumber: requestNumber - 1 }))
+            .toEqual([
+                `${key}: no origin admitted a gap request numbered ${requestNumber} or later through a relay, so no renewal was relayed.`
+            ]);
     });
 
     it('passes the cell when one origin admitted the request through a relay, whichever origin it is', () => {

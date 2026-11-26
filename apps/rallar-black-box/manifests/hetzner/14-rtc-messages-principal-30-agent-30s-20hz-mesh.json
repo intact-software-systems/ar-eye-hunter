@@ -109,7 +109,7 @@
               "topicId": "black-box.group.multicast.position",
               "timeoutMs": 65000
             },
-            "timeoutMs": 115000,
+            "timeoutMs": 135000,
             "readiness": {
               "minReadyPeers": 1,
               "timeoutMs": 45000,
@@ -362,7 +362,7 @@
               "topicId": "black-box.group.multicast.position",
               "timeoutMs": 65000
             },
-            "timeoutMs": 115000,
+            "timeoutMs": 135000,
             "readiness": {
               "minReadyPeers": 1,
               "timeoutMs": 45000,
@@ -387,9 +387,9 @@
           {
             "kind": "loop",
             "commandId": "rtc-messages-principal-receiver-delivery-poll",
-            "count": 32,
+            "count": 45,
             "intervalMs": 5000,
-            "maxCommands": 64,
+            "maxCommands": 90,
             "until": "first-success",
             "metadata": {
               "profile": "rtc-messages-principal-multicast-receiver",
@@ -406,7 +406,7 @@
               "minReceiveRatio": 0.95,
               "logicalFanoutMessages": 17400,
               "purpose": "delivery-poll",
-              "pollWindowMs": 155000
+              "pollWindowMs": 220000
             },
             "commands": [
               {
@@ -788,7 +788,7 @@
       "streamFrames": 600,
       "logicalFanoutMessages": 17400
     },
-    "recommendedTerminalTimeoutSeconds": 392
+    "recommendedTerminalTimeoutSeconds": 522
   },
   "description": "One principal headless sender multicasts RTC messages at 20 Hz to 29 receivers through the default mesh topology."
 }

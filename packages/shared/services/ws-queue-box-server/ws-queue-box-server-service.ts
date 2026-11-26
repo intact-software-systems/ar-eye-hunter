@@ -192,6 +192,7 @@ export namespace WsQueueBoxServerService {
         readonly result: Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>;
         readonly socketFacts: WsQueueBoxServerReceiptSocketFacts | undefined;
         readonly currentnessRejection?: WsQueueBoxServerInboundAuthority.CurrentnessRejection;
+        readonly roomNackReason?: WsQueueBoxServerInboundAuthority.FinishedDecision['roomNackReason'];
     }
 
     export interface HeldRowSend {
@@ -711,7 +712,8 @@ export class WsQueueBoxServerService {
                 ...subject,
                 result: decision.result,
                 socketFacts: decision.socketFacts,
-                currentnessRejection: decision.currentnessRejection
+                currentnessRejection: decision.currentnessRejection,
+                roomNackReason: decision.roomNackReason
             });
         }
         if (decision.kind === 'retain') {
@@ -767,6 +769,8 @@ export class WsQueueBoxServerService {
             recordWsQueueBoxServerReceiptObservation(this.receiptObserver, {
                 ...observation.businessFacts,
                 kind: 'business-socket-decision',
+                ...(observation.roomNackReason && { roomNackReason: observation.roomNackReason }),
+                ...(observation.currentnessRejection && { currentnessRejection: observation.currentnessRejection }),
                 serverPeerId: this.name,
                 connectionId: observation.connectionId,
                 fromPeerId: observation.socketFacts?.fromPeerId,
@@ -1043,6 +1047,9 @@ export class WsQueueBoxServerService {
                 (prepared.connectionId !== prepared.sessionInvalidation.sessionId ||
                     this.socket.connections.get(prepared.connectionId)?.generationId !== prepared.generationId)
             ) {
+                return { status: 'no-targets', submissionAttempted: false };
+            }
+            if (this.socket.connections.get(prepared.connectionId)?.socket.acceptsOutbound?.(encoded.text) === false) {
                 return { status: 'no-targets', submissionAttempted: false };
             }
             this.socket.sendEncoded(prepared.connectionId, encoded, transport);

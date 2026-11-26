@@ -22,6 +22,7 @@ import {
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import type { AgentPrefix } from './live-rtc-delivery-operations.ts';
 import { loadLiveRtcPerformanceAttempt } from './live-rtc-performance-evidence.ts';
+import { RESTORED_SESSION_LIFETIME_MS } from './restored-session-lifetime-ms.ts';
 
 export interface OpenAgentTrioInput {
     readonly runId: string;
@@ -195,7 +196,7 @@ export function readLiveRtcBrowserAgentAuth(prefix: AgentPrefix): LiveRtcBrowser
             sessionId,
             expiresAtEpochMs: numberEnv(`VITE_RALLAR_AGENT_${prefix}_EXPIRES_AT_EPOCH_MS`) ??
                 numberEnv(`VITE_RALLAR_${prefix}_EXPIRES_AT_EPOCH_MS`) ??
-                Date.now() + 30 * 60 * 1000
+                Date.now() + RESTORED_SESSION_LIFETIME_MS
         }
     };
 }

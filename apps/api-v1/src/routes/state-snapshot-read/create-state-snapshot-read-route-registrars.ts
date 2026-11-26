@@ -35,6 +35,7 @@ export interface ApiV1StateSnapshotRouteRuntime {
     readonly groupStateInboxService: Pick<
         ApiV1Runtime['groupStateInboxService'],
         | 'processAuthenticatedGroupEntryUntilCompletion'
+        | 'processGuestAdmissionUntilCompletion'
         | 'processQuickJoinUntilCompletion'
         | 'processGroupMoveUntilCompletion'
     >;
@@ -97,6 +98,8 @@ export function createStateSnapshotReadRouteRegistrars<Runtime extends ApiV1Stat
         client: (app: Hono) =>
             clientStateRoutes.registerClientStateRoutes(app, {
                 clientStateService: runtime.clientStateService,
+                readGuestRoom: ref => runtime.groupStateService.readCurrentSnapshot(ref),
+                nowEpochMs: policy.nowEpochMs,
                 strictReadAuthorization: policy.strictReadAuthorization,
                 requireApiAuthSession: (request) =>
                     operations.requireApiAuthSession(request, runtime.authSessionRepository),
@@ -125,6 +128,7 @@ export function createStateSnapshotReadRouteRegistrars<Runtime extends ApiV1Stat
                     runtime.groupStateInboxService.processGroupMoveUntilCompletion(input, authority),
                 listGroupMoves: (scope, principalId) =>
                     runtime.groupStateService.move.listForPrincipal(scope, principalId),
+                processGuestAdmission: input => runtime.groupStateInboxService.processGuestAdmissionUntilCompletion(input),
                 processQuickJoin: (input, authority) =>
                     runtime.groupStateInboxService.processQuickJoinUntilCompletion(input, authority),
                 processGroupAppInbox: (authority, enqueue) => processGroupMutation(runtime, authority, enqueue),

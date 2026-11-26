@@ -1,3 +1,4 @@
+import { requireRoomParticipantSession } from './group-state-route-authorization.ts';
 import type { Context, Hono } from 'hono';
 
 import type {
@@ -65,7 +66,7 @@ async function handleConnectGroupPresenceRoute(
     authorization: GroupStateRouteAuthorization
 ): Promise<Response> {
     try {
-        const authSession = await dependencies.requireApiAuthSession(context.req);
+        const authSession = await requireRoomParticipantSession(context.req, { ...toGroupStateRouteScope(context), groupId: context.req.param('groupId') }, dependencies);
         const scope = toGroupStateRouteScope(context);
         const groupId = context.req.param('groupId');
         const sessionId = context.req.param('sessionId');
@@ -107,7 +108,7 @@ async function handleHeartbeatGroupPresenceRoute(
     authorization: GroupStateRouteAuthorization
 ): Promise<Response> {
     try {
-        const authSession = await dependencies.requireApiAuthSession(context.req);
+        const authSession = await requireRoomParticipantSession(context.req, { ...toGroupStateRouteScope(context), groupId: context.req.param('groupId') }, dependencies);
         const scope = toGroupStateRouteScope(context);
         const groupId = context.req.param('groupId');
         const sessionId = context.req.param('sessionId');
@@ -144,7 +145,7 @@ async function handleDisconnectGroupPresenceRoute(
     authorization: GroupStateRouteAuthorization
 ): Promise<Response> {
     try {
-        const authSession = await dependencies.requireApiAuthSession(context.req);
+        const authSession = await requireRoomParticipantSession(context.req, { ...toGroupStateRouteScope(context), groupId: context.req.param('groupId') }, dependencies);
         const scope = toGroupStateRouteScope(context);
         const groupId = context.req.param('groupId');
         const sessionId = context.req.param('sessionId');

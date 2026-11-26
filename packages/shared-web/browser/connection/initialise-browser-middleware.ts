@@ -883,7 +883,7 @@ async function initialiseBrowserStateTransport(
         rereadGroupSnapshots: async () =>
             (await refreshStateSnapshots(input.options.scope, {
                 command: toCommandOptions(input.options)
-            })).groups,
+            }, input.session)).groups,
         groupFormation: { bootstrapDegree: input.bootstrapDegree }
     };
     browserStateCacheLifecycle.initialise({
@@ -895,7 +895,7 @@ async function initialiseBrowserStateTransport(
     });
     const snapshots = await refreshStateSnapshots(input.options.scope, {
         command: toCommandOptions(input.options)
-    });
+    }, input.session);
     await hydrateBrowserStateCaches(input, stateCacheOptions, snapshots);
     await hydrateBrowserGroupTopologies(input, snapshots.groups);
     installBrowserStateResync(input, stateCacheOptions);
@@ -950,7 +950,7 @@ async function resyncBrowserStateSnapshots(
 ): Promise<readonly GroupSnapshot[]> {
     const refreshed = await refreshStateSnapshots(input.options.scope, {
         command: toCommandOptions(input.options)
-    });
+    }, input.session);
     await hydrateBrowserStateCaches(input, stateCacheOptions, refreshed);
     return refreshed.groups;
 }

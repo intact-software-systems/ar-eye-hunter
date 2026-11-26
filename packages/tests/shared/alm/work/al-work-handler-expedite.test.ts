@@ -1,7 +1,11 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { expect, it, onTestFinished } from 'vitest';
 
-import { AL_WORK_READINESS_MEMORY_MS, ALWorkHandler } from '@shared/alm/work/al-work-handler.ts';
+import {
+    AL_WORK_READINESS_MEMORY_MS,
+    ALWorkHandler,
+    type ALWorkBatchDiagnostics
+} from '@shared/alm/work/al-work-handler.ts';
 import { createALWorkQueuePort, type ALWorkOutcome, type ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import { AL_WORK_UNDESCRIBED_COMMIT } from '@shared/alm/work/al-work-readiness-memory.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
@@ -24,6 +28,8 @@ interface ExpediteHarness {
     readonly log: string[];
     /** Each claim run as the handler states it to the run: `<id>` with whether it is expedited, and its run number. */
     readonly claimRuns: string[];
+    /** Each batch's end as the handler states it. */
+    readonly batches: ALWorkBatchDiagnostics[];
     /** Holds the claim of a row until the returned gate opens. */
     hold(effectId: string): () => void;
 }
@@ -32,6 +38,7 @@ function createExpediteHarness(pageSize: number): ExpediteHarness {
     const queue = new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(NOW_MS));
     const log: string[] = [];
     const claimRuns: string[] = [];
+    const batches: ALWorkBatchDiagnostics[] = [];
     const gates = new Map<string, Promise<void>>();
     const answers = new Map<string, () => ALWorkOutcome>();
     const queuePort = createALWorkQueuePort({
@@ -64,12 +71,16 @@ function createExpediteHarness(pageSize: number): ExpediteHarness {
         claimSuccessor: undefined,
         runClaim: async (claim) => {
             log.push(`run:${claim.entry.key.contextId}`);
-            const { expedited, run } = handler.getClaimRun(claim);
+            const { expedited, run } = handler.getClaimRun(claim.entry.key);
             claimRuns.push(`${claim.entry.key.contextId}:${expedited ? 'expedited' : 'claimed'}:${run}`);
             await gates.get(claim.entry.key.contextId);
             return answers.get(claim.entry.key.contextId)?.() ?? { status: 'completed' };
         },
-        diagnostics: undefined
+        diagnostics: (event) => {
+            if (event.kind === 'work-batch') {
+                batches.push(event);
+            }
+        }
     });
     onTestFinished(() => handler.dispose());
     return {
@@ -79,6 +90,7 @@ function createExpediteHarness(pageSize: number): ExpediteHarness {
         answers,
         log,
         claimRuns,
+        batches,
         hold: (effectId) => {
             const gate = Promise.withResolvers<void>();
             gates.set(effectId, gate.promise);
@@ -128,6 +140,21 @@ it('reads at most a page of expedited rows before the batch\'s next claim', asyn
     await expect.poll(() => harness.log).toHaveLength(7);
     await harness.handler.dispose();
     expect(harness.log).toEqual(['run:in-flight', 'read:a', 'read:b', 'run:a', 'read:c', 'run:c', 'run:b']);
+});
+
+it('counts each row that joined the batch after its selection as expedited, and the claims it selected as not', async () => {
+    const harness = createExpediteHarness(2);
+    const open = await startBatchHeldOn(harness, 'in-flight');
+
+    await retainExpedited(harness, ['a', 'b', 'c']);
+    open();
+
+    await expect.poll(() => harness.batches.find((batch) => batch.claimedCount > 1)).toMatchObject({
+        claimedCount: 4,
+        completedCount: 4,
+        expeditedCount: 3,
+        end: 'drained'
+    });
 });
 
 it('reads nothing for a row named while no batch runs: the batch its commit starts claims it as a due row', async () => {

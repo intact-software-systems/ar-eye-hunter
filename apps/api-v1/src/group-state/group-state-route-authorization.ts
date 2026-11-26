@@ -1,4 +1,5 @@
 import { authorizationDenied } from '@shared-server/http/request-auth-service.ts';
+import { readRoomGuestSession } from '@shared-server/http/room-guest-request.ts';
 import { canUpdateGroupSnapshot } from '@shared-server/rallar-system/group-state/policy/group-governance-policy.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import {
@@ -14,6 +15,23 @@ import type {
     GroupStateRouteRequest,
     GroupStateRouteService
 } from './group-state-route-contracts.ts';
+
+export async function requireRoomParticipantSession(
+    request: GroupStateRouteRequest,
+    roomRef: GroupRef,
+    dependencies: GroupStateRouteDependencies
+): Promise<GroupStateRouteAuthSession> {
+    const guest = await readRoomGuestSession({
+        request,
+        readSnapshot: async (room) => {
+            const result = await dependencies.readGroupSnapshot(room, { strictMode: true });
+            return result.status === 'found' ? result.snapshot : undefined;
+        },
+        nowEpochMs: dependencies.nowEpochMs,
+        roomRef
+    });
+    return guest ?? await dependencies.requireApiAuthSession(request);
+}
 
 export interface GroupStateRouteAuthorization {
     readStrictAuthSession(
@@ -81,7 +99,10 @@ export function createGroupStateRouteAuthorization(
         async assertCanUpdateGroup(principalId, ref, request) {
             // The AppInbox checks seat eligibility and director authority against the revision it writes.
             const lobbyOperation = request.roomLobby?.operation;
-            if (lobbyOperation !== 'release' && lobbyOperation !== 'wait' && request.roomClock === undefined && request.roomDeadline?.expectedDirectorEpoch === undefined) {
+            if (
+                lobbyOperation !== 'release' && lobbyOperation !== 'wait' && request.roomClock === undefined &&
+                request.roomDeadline?.expectedDirectorEpoch === undefined
+            ) {
                 await assertCanUpdateGroup(principalId, ref, dependencies);
             }
         },

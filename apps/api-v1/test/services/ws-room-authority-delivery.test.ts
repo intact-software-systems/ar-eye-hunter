@@ -1217,3 +1217,26 @@ function createRoomSnapshot(principalIds: readonly string[] = ['alice', 'bob']):
         publicationGrants: []
     };
 }
+
+test('expired room presence records the typed room denial even while the account socket scope is authorized', async () => {
+    const events: WsQueueBoxServerReceiptObservation[] = [];
+    const harness = createRoomDeliveryHarness(undefined, event => events.push(event));
+    let bodyFailed = false;
+    try {
+        harness.router.install();
+        addRecordingConnection(harness.server, 'alice');
+        const snapshot = createRoomSnapshot();
+        harness.state.current = { ...snapshot, activeSessions: snapshot.activeSessions.map(session =>
+            session.sessionId === 'alice' ? { ...session, expiresAtEpochMs: 1 } : session) };
+        const accepted = await harness.service.acceptIncomingMessage(roomMessage({}), 'alice');
+        assert.equal(accepted.left?.code, 'unauthorized');
+        const decision = events.find(event => event.kind === 'business-socket-decision');
+        assert.equal(decision?.scopeDisposition, 'authorized');
+        assert.equal(decision?.roomNackReason, 'membership-fenced');
+    } catch (error) {
+        bodyFailed = true;
+        throw error;
+    } finally {
+        await disposeRoomDeliveryHarness(harness, bodyFailed);
+    }
+});

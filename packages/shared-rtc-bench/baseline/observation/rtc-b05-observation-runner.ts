@@ -1,9 +1,9 @@
 import type { RtcBaselineAttemptLocatorDto, RtcBaselineResult } from '../contracts/rtc-baseline-contracts.ts';
 import { createRtcBaselineObservationId, createRtcBaselineRepeatId } from '../contracts/rtc-baseline-id.ts';
-import type { RtcBaselineFinalizedSummary } from '../evidence/rtc-baseline-finalized-evidence.ts';
 import type { RtcBaselineEnvelope } from '../runtime/rtc-baseline-envelope.ts';
+import { computeRtcPerformanceObservationOutcome } from './compute-rtc-performance-observation-outcome.ts';
 import type { RtcPerformanceObservationArchiveWritten } from './rtc-performance-observation-archive.ts';
-import type { RtcPerformanceObservation, RtcPerformanceObservationOutcome } from './rtc-performance-observation.ts';
+import type { RtcPerformanceObservation } from './rtc-performance-observation.ts';
 
 type RtcB05ObservationEnvelope = Pick<
     RtcBaselineEnvelope,
@@ -90,7 +90,7 @@ async function runRtcB05Observation(
     if (!primary.ok) {
         return primary;
     }
-    const primaryOutcome = outcomeOf(primary.value);
+    const primaryOutcome = computeRtcPerformanceObservationOutcome(primary.value);
     let repeatDecision: RtcPerformanceObservation['repeat']['decision'] = 'not-required';
     let repeatOutcome: RtcPerformanceObservation['repeat']['outcome'] = 'not-run';
     let repeatArtifacts: ReadonlyMap<string, Uint8Array> | undefined;
@@ -113,7 +113,7 @@ async function runRtcB05Observation(
             if (!repeated.ok) {
                 return repeated;
             }
-            repeatOutcome = outcomeOf(repeated.value.summary);
+            repeatOutcome = computeRtcPerformanceObservationOutcome(repeated.value.summary);
             repeatArtifacts = repeated.value.artifacts;
         }
     }
@@ -234,15 +234,6 @@ async function captureRepeat(
     return artifacts.ok
         ? { ok: true as const, value: { summary: summary.value, artifacts: artifacts.value } }
         : artifacts;
-}
-
-function outcomeOf(summary: RtcBaselineFinalizedSummary): RtcPerformanceObservationOutcome {
-    const outcomes = [...summary.sampleOutcomes, ...summary.cohortOutcomes];
-    return outcomes.length === 0
-        ? 'incomplete'
-        : outcomes.some(({ outcome }) => outcome !== 'passed')
-        ? 'failed'
-        : 'passed';
 }
 
 function validExitStatus(value: number) {

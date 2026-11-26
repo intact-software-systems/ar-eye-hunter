@@ -213,9 +213,11 @@ joins it, connects without an RTC readiness wait, and appoints itself before the
 rooted at the director and no rebuild follows the appointment; its stable-layout
 wait gates its traffic instead. The wait also reads the formation view once the layout has settled, and
 waits a reshape the gate holds out, up to 60 s longer. Each player joins the open group inside its
-`rtc.connect` room join, under the whole setup allowance; the players' connect
-and the `connected` barrier get the setup allowance plus 650 ms per participant,
-because the hosted lane admits about 1.5 joining players per second at 50 members. A `director.status`
+`rtc.connect` room join, under the whole setup allowance; a player's connect
+and its RTC readiness wait each get the setup allowance plus 650 ms per participant,
+because the hosted lane admits about 1.5 joining players per second at 50 members. The runtime
+waits for readiness only after the connect's own timeout, so the `connected` barrier covers both,
+one after the other. A `director.status`
 with `refresh: true` refreshes the one room under one deadline (its cached group
 read and the topology read-through) instead of listing every client and group of
 the workspace.
@@ -267,12 +269,14 @@ manifest and sends `room_id` only when `--room-id <id>` is supplied, so each
 spawned run is isolated by default. It creates a sanitized run id from the
 manifest file name plus a UTC timestamp (or `--run-id`), uses the manifest's
 `metadata.recommendedTerminalTimeoutSeconds` unless
-`--terminal-timeout-seconds` or `--fast` is given, and calls
+`--terminal-timeout-seconds` is given, and calls
 `gh workflow run`. It preflights the required repository or `production`
 environment secrets and refuses diagnostic manifests unless `--allow-diagnostic`
 is supplied. The `--fast` flag maps to `rollout_before_run=false`,
 `install_playwright=false`, `npm_ci=false`, `wait_for_agents=true`,
-`ready_timeout_seconds=60`, and `terminal_timeout_seconds=180`. The helper also
+and `ready_timeout_seconds=60`; it skips setup, not the run, so the manifest's
+recommended terminal timeout still bounds it, and `terminal_timeout_seconds=180`
+applies only to a manifest that recommends none. The helper also
 defaults `register_before_login=true` and `stop_after_run=true`. Passing only
 `rollout_before_run=false` does not skip Playwright unless
 `install_playwright=false` is also supplied. Pass `--keep-headless` only when
@@ -322,9 +326,11 @@ gh workflow run hetzner-distributed-recipe.yml \
   -f npm_ci=false \
   -f wait_for_agents=true \
   -f ready_timeout_seconds=60 \
-  -f terminal_timeout_seconds=180 \
   -f stop_after_run=true
 ```
+
+Leave `terminal_timeout_seconds` out so the workflow takes the manifest's
+`metadata.recommendedTerminalTimeoutSeconds`.
 
 The rollout records `/var/lib/rallar-black-box-control/deployment-readiness.json`
 (deployed commit, `package-lock.json` sha256, Playwright version, browser

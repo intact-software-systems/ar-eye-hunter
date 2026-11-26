@@ -1785,6 +1785,7 @@ describe('alm-conformance recipe family', () => {
         }
         expect(held).toEqual([
             'ws ordering-gap-repair sender alm-ws-ordering-gap-repair-sender-hold-ws',
+            'ws seeded-jitter-stream sender alm-ws-seeded-jitter-stream-sender-hold-ws',
             'ws buffered-track-drains sender alm-ws-buffered-track-drains-sender-hold-ws',
             'rtc ordering-resync sender alm-rtc-ordering-resync-sender-hold-rtc',
             'rtc ordering-gap-repair sender alm-rtc-ordering-gap-repair-sender-hold-rtc',

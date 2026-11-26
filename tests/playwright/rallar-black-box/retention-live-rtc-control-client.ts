@@ -1,3 +1,4 @@
+import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
 import { releaseControlResults } from '@shared-test/rallar-bb-test/result-release/release-control-results.ts';
 
 import { LiveRtcControlClient } from './live-rtc-control-client.ts';
@@ -41,7 +42,8 @@ export class RetentionLiveRtcControlClient extends LiveRtcControlClient {
         }
         // Artifact reads drain the recorder, including the last cleanup release acknowledgement.
         const response = await this.dependencies.request.get(
-            `${this.dependencies.baseUrl}/runs/${encodeURIComponent(input.runId)}/events.jsonl`
+            `${this.dependencies.baseUrl}/runs/${encodeURIComponent(input.runId)}/events.jsonl`,
+            { timeout: CONTROL_REQUEST_TIMEOUT_MS }
         );
         await readDisposedResponse(response, async (drained) => {
             if (!drained.ok()) {
@@ -54,7 +56,8 @@ export class RetentionLiveRtcControlClient extends LiveRtcControlClient {
         const response = await this.dependencies.request.fetch(String(url), {
             method: init?.method,
             headers: Object.fromEntries(new Headers(init?.headers).entries()),
-            data: typeof init?.body === 'string' ? init.body : undefined
+            data: typeof init?.body === 'string' ? init.body : undefined,
+            timeout: CONTROL_REQUEST_TIMEOUT_MS
         });
         return await readDisposedResponse(
             response,

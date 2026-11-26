@@ -6,7 +6,7 @@ import type { ApiV1MutationRuntime } from './create-api-v1-mutation-runtime.ts';
 
 export interface CreateApiV1AppInboxInput {
     readonly mutation: ApiV1MutationRuntime;
-    readonly runtime: Pick<RallarMiddlewareRuntime, 'inboxQueueReader' | 'qboxEngine'>;
+    readonly runtime: Pick<RallarMiddlewareRuntime, 'inboxQueueReader' | 'wakeQueueEngine'>;
     readonly timing: RallarTimingSink;
 }
 
@@ -16,7 +16,7 @@ export function createApiV1AppInbox(input: CreateApiV1AppInboxInput): RallarServ
         resourceInboxRepository: input.mutation.resourceInboxRepository.entries,
         resourceInboxResultsRepository: input.mutation.resourceInboxResultsRepository,
         database: input.mutation.database,
-        wakeOwningQueue: () => input.runtime.qboxEngine.wake()
+        wakeOwningQueue: input.runtime.wakeQueueEngine
     }, {
         serviceId: input.mutation.serviceId,
         finishedRetentionMs: input.mutation.appInboxFinishedRetentionMs,

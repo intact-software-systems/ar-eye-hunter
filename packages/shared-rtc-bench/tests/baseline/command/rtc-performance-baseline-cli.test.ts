@@ -48,6 +48,10 @@ function createEnvelope() {
             ok: true,
             value: { acceptedCohortCount: 0 }
         })),
+        recordExternalAttemptsNotStarted: vi.fn<RtcBaselineEnvelope['recordExternalAttemptsNotStarted']>(async () => ({
+            ok: true,
+            value: { notStartedSampleCount: 0 }
+        })),
         readRepeatRequirement: vi.fn<RtcBaselineEnvelope['readRepeatRequirement']>(async () => ({ ok: true, value: { workloadIds: [] } })),
         readPairedComparison: vi.fn<RtcBaselineEnvelope['readPairedComparison']>(async () => ({ ok: true, value: conclusiveComparison })),
         readBaselineValidation: vi.fn<RtcBaselineEnvelope['readBaselineValidation']>(async () => ({

@@ -1,3 +1,5 @@
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { RoomGuestSocket } from '../runtime/room-guest-socket.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
 import type { PersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/persisted-auth-session.ts';
@@ -37,6 +39,7 @@ export interface RegisterWsRoutesInput {
         AppClientInboxService,
         'writeAuthorisedWsClientConnect' | 'enqueueAuthorisedWsClientDisconnect'
     >;
+    readonly readGuestRoom?: (ref: GroupRef) => Promise<GroupSnapshot | undefined>;
     readonly readWsConnectTicket: (ticketDigest: string) => Promise<PersistedWebSocketTicket | undefined>;
     readonly readWsConnectSession: (sessionId: string) => Promise<PersistedAuthSession | undefined>;
     /** `hono/bun`'s `upgradeWebSocket`; it rejects when Bun refuses the upgrade. */
@@ -76,6 +79,17 @@ async function upgradeAuthorisedWebSocket(
     if (!ticketDigest || session === undefined) {
         return toWsTicketRejectionResponse(context, { sessionId, generationId: null });
     }
+    let guestSocket: RoomGuestSocket | undefined;
+    if (session.guestRoom) {
+        const room = session.guestRoom;
+        if (!input.readGuestRoom || requestUrl.searchParams.get('applicationId') !== room.applicationId ||
+            requestUrl.searchParams.get('workspaceId') !== room.workspaceId) {
+            return toWsTicketRejectionResponse(context, { sessionId, generationId: null });
+        }
+        guestSocket = new RoomGuestSocket({ guest: { roomRef: room, clientId: session.clientId, sessionId },
+            readSnapshot: input.readGuestRoom, now: input.nowEpochMs, serverPeerId: input.serverPeerId });
+        if (!await guestSocket.authorizeUpgrade()) return toWsTicketRejectionResponse(context, { sessionId, generationId: null });
+    }
     const connect = createAuthorisedWsConnect(input, {
         session,
         ticketDigest,
@@ -86,7 +100,7 @@ async function upgradeAuthorisedWebSocket(
     input.socketServer.expectedConnections.expect(connect.expected);
     const written = await writeAuthorisedWsConnect(input, connect);
     if (written?.right?.status === 'ok') {
-        return await registerAuthorisedWebSocket(context, input, connect);
+        return await registerAuthorisedWebSocket(context, input, { connect, guestSocket });
     }
     input.socketServer.expectedConnections.release(connect.expected);
     return await writeUnwrittenConnectResponse(context, input, { connect, written });
@@ -163,10 +177,15 @@ async function writeAuthorisedWsConnect(
     }
 }
 
+interface RegisterSocketConnection {
+    readonly connect: AuthorisedWsConnect;
+    readonly guestSocket?: RoomGuestSocket;
+}
+
 async function registerAuthorisedWebSocket(
     context: Context,
     input: RegisterWsRoutesInput,
-    connect: AuthorisedWsConnect
+    { connect, guestSocket }: RegisterSocketConnection
 ): Promise<Response> {
     if (context.req.raw.signal.aborted) {
         return await writeClosedGenerationResponse(context, input, { connect, reason: 'websocket-upgrade-abandoned' });
@@ -177,7 +196,7 @@ async function registerAuthorisedWebSocket(
     try {
         await input.upgradeWebSocket(
             context,
-            createJsonWebSocketEvents(input.socketServer, { id: connect.expected.id, ...connect.generation }, input)
+            createJsonWebSocketEvents(input.socketServer, { id: connect.expected.id, ...connect.generation }, { serverPeerId: input.serverPeerId, nowEpochMs: input.nowEpochMs, guestSocket })
         );
         rememberAuthorisedWsConnection(
             connect.expected.id,

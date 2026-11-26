@@ -31,6 +31,11 @@ export interface LogicalAppInboxCommand {
 export function toLogicalAppInboxCommand(
     enqueue: AppInboxEnqueue
 ): JsonWireValue {
+    if (enqueue.type === AppInboxType.GROUP_GUEST_ADMIT) {
+        const ingress = requireLogicalJsonObject(enqueue.authority, 'Room guest admission authority');
+        assertGroupMutationCommand(ingress.command);
+        return encodeLogicalCommand({ type: enqueue.type, data: ingress.command, authority: null });
+    }
     const stableAuth = toStableAuthCommand(enqueue.type, enqueue.data);
     if (stableAuth) {
         return encodeLogicalCommand({ type: enqueue.type, authority: null, data: stableAuth });

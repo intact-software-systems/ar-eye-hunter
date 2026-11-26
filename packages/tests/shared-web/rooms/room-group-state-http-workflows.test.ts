@@ -398,6 +398,24 @@ describe('room group-state HTTP workflows', () => {
         expect(fetchCalls.every((call) => !hasRequestId(call.body))).toBe(true);
     });
 
+    it('resumes an admitted membership by connecting presence without requesting admission again', async () => {
+        stubFetch(({ url, method }) =>
+            method === 'PUT' && url.endsWith('/groups/group-1/sessions/session-1')
+                ? jsonResponse(groupSnapshot('group-1'))
+                : notFoundResponse()
+        );
+        await expect(joinStateGroup({
+            presenceOnly: true,
+            nowMs: Date.now,
+            publicationKey: null,
+            groupId: 'group-1',
+            principalId: 'principal-1',
+            sessionId: 'session-1',
+            generationId: 'generation-1',
+            connectionGenerationId: 'ws-generation-1'
+        })).resolves.toMatchObject({ group: { groupId: 'group-1' } });
+    });
+
     it('joins a state group with explicit join intent before connecting presence', async () => {
         stubFetch(({ url, method }) => {
             if (method === 'POST' && url.endsWith('/groups/group-1/join')) {
@@ -606,6 +624,28 @@ describe('room group-state HTTP workflows', () => {
             reason: 'left-group'
         });
         expect(fetchCalls.every((call) => !hasRequestId(call.body))).toBe(true);
+    });
+
+    it('completes a guest leave whose seat has already ended and still refuses an account its own leave', async () => {
+        stubFetch(() => textResponse('Guest access to this room has ended.', 403));
+        const leave = {
+            groupId: 'group-1',
+            principalId: 'principal-1',
+            sessionId: 'session-1',
+            generationId: 'generation-1'
+        };
+        const authSession = {
+            clientId: 'principal-1',
+            accessToken: 'token',
+            username: 'principal-1',
+            sessionId: 'session-1',
+            expiresAtEpochMs: 1
+        };
+        const guestRoom = { applicationId: 'application-1', workspaceId: 'workspace-1', groupId: 'group-1' };
+
+        expect(await leaveStateGroup({ ...leave, authSession: { ...authSession, guestRoom } })).toBeUndefined();
+        expect(fetchCalls.map((call) => call.method)).toEqual(['POST', 'PUT']);
+        await expect(leaveStateGroup({ ...leave, authSession })).rejects.toMatchObject({ status: 403 });
     });
 
     it('reuses leave workflow request IDs across HTTP command retries', async () => {

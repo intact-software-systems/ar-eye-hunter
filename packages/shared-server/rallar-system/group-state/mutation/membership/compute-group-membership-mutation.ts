@@ -1,3 +1,5 @@
+import { roomGuestAccessMode } from '@shared/api/room-guests/access.ts';
+import { ROOM_GUEST_LIFETIME_MS } from '@shared/api/room-guests/invitation.ts';
 import { canJoinGroup } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
 import type { AuditStamp, GroupMember, GroupRef } from '@shared/api/group-types.ts';
 
@@ -46,28 +48,38 @@ export function computeJoin(
     read: GroupMutationRead,
     facts: GroupMutationFacts
 ): GroupMutationComputed {
-    assertPrincipalAuthority(command, command.targetPrincipalId);
+    const guestAdmission = facts.internalAuthority === 'guest-redemption';
+    if (!guestAdmission) {
+        assertPrincipalAuthority(command, command.targetPrincipalId);
+    }
     const stored = requireGroup(read, command.aggregateRef);
     const snapshot = toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs);
+    const existing = read.targetMember ?? undefined;
     const joinCodeMetadata = readJoinCode(stored.value.metadata);
     assertAllowed(
         canJoinGroup({
             snapshot,
             actor: {
-                principalId: command.input.actorPrincipalId ?? undefined,
+                principalId: command.targetPrincipalId,
                 sessionId: command.input.actorSessionId ?? undefined
             },
+            guestInvitationVerifier: guestAdmission ? command.input.inviteToken ?? undefined : undefined,
             nowEpochMs: facts.attemptAtEpochMs,
             capacity: facts.capacity,
             sessionReservations: read.sessionReservations?.value,
-            participation: command.input.participation ?? undefined,
+            participation: guestAdmission && existing ? undefined : command.input.participation ?? undefined,
             joinCode: command.input.joinCode ?? undefined,
             joinCodeVerifier: facts.joinCodeVerifier ?? undefined,
             expectedJoinCodeVerifier: stored.value.joinMode === 'code' ? (joinCodeMetadata?.verifier ?? '') : undefined,
             joinCodeExpiresAtEpochMs: joinCodeMetadata?.expiresAtEpochMs
         })
     );
-    const existing = read.targetMember ?? undefined;
+    if (guestAdmission && existing) {
+        if (!existing.guestLease || existing.status !== 'active' || existing.guestLease.expiresAtEpochMs <= facts.attemptAtEpochMs) {
+            throw new GroupMutationRejectedError('This guest identity is unavailable. Use a fresh invitation and guest identity.');
+        }
+        return noOp(command, read, facts);
+    }
     const role = command.input.participation === 'spectator'
         ? 'spectator'
         : command.input.participation === 'player' && existing?.role === 'spectator'
@@ -82,7 +94,7 @@ export function computeJoin(
     if (existing?.status === 'active' && existing.role === role && !requiresSeat) {
         return noOp(command, read, facts);
     }
-    const status = role === 'spectator' ? 'active' : resolveAdmittedMemberStatus({ read, facts, existing });
+    const status = role === 'spectator' ? 'active' : resolveAdmittedMemberStatus({ read, facts, existing, guestInvitation: guestAdmission });
     if (existing?.status === 'active' && status === 'pending') {
         throw new GroupMutationRejectedError('Player promotion requires admission approval.');
     }
@@ -90,7 +102,15 @@ export function computeJoin(
         return noOp(command, read, facts);
     }
     const audit = auditStamp(command, facts, command.targetPrincipalId);
-    const member = createJoinedGroupMember({ command, existing, role, status, audit });
+    const joined = createJoinedGroupMember({ command, existing, role, status, audit });
+    const member = guestAdmission ? {
+        ...joined,
+        guestLease: {
+            ...(command.input.guestDisplayName && { displayName: command.input.guestDisplayName }),
+            admittedAtEpochMs: facts.attemptAtEpochMs,
+            expiresAtEpochMs: facts.attemptAtEpochMs + ROOM_GUEST_LIFETIME_MS
+        }
+    } : joined;
     return computeGroupMembershipWrite({
         command,
         read,
@@ -180,6 +200,20 @@ export function computeGovernedMember(
     facts: GroupMutationFacts
 ): GroupMutationComputed {
     requireGroup(read, command.aggregateRef);
+    if (facts.internalAuthority === 'guest-expiry') {
+        const member = read.targetMember;
+        if (member?.status !== 'active' || !member.guestLease ||
+            roomGuestAccessMode(requireGroup(read, command.aggregateRef).value, member, facts.attemptAtEpochMs) !== 'expired') {
+            return noOp(command, read, facts);
+        }
+        const audit = auditStamp(command, facts, undefined);
+        const departed = transitionGroupMemberLifecycle({ ...member, updated: audit }, 'left', audit);
+        return computeGroupMembershipWrite({
+            command, read, facts, members: [departed], eventType: 'member-left',
+            publicationGrantEffects: computeDepartureGrantEffects(read, departed),
+            subscriptionEffects: computeMembershipSubscriptionEffects(command.aggregateRef, read, departed)
+        });
+    }
     const action = governanceActionFor(command);
     assertGovernance({ command, read, facts, action });
     const existing = read.targetMember ?? undefined;
@@ -371,6 +405,7 @@ function createJoinedGroupMember(
     return {
         ...command.aggregateRef,
         principalId: command.targetPrincipalId,
+        ...(existing?.guestLease && { guestLease: existing.guestLease }),
         role,
         updated: audit,
         left: null,

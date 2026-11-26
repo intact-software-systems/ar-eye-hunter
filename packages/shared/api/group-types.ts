@@ -1,3 +1,4 @@
+import type { RoomGuestInvitation, RoomGuestLease } from './room-guests/invitation.ts';
 import type { EcdsaP256PublicJwk } from '../signature/ecdsa-p256-signature.ts';
 import type { ApiJsonObject } from './api-json-value.ts';
 import type { GroupActivationStatus } from './group-lifecycle/activation-status/group-activation-status.ts';
@@ -133,6 +134,8 @@ type GroupBase =
          * (I4).
          */
         activationStatus: GroupActivationStatus | null;
+        /** Present only for rooms for which the owner issued a guest invitation. */
+        guestInvitation?: RoomGuestInvitation;
     }>;
 
 export type Group =
@@ -151,6 +154,7 @@ type GroupMemberBase =
     & GroupRef
     & Readonly<{
         principalId: PrincipalId;
+        guestLease?: RoomGuestLease;
         role: GroupRole;
         joined: AuditStamp | null;
         updated: AuditStamp;

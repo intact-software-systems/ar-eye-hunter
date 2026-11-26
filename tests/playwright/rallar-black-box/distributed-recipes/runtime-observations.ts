@@ -8,6 +8,15 @@ import { decodeRecord } from '../../../../packages/shared-test/rallar-bb-test/ru
 import { readControlRun } from '../full-stack-helpers.ts';
 import type { AgentHandle } from './browser-agents.ts';
 
+/** How long the control run is polled for a browser agent's received message. */
+export const BROWSER_MESSAGE_POLL_TIMEOUT_MS = 75_000;
+
+/** How long the control run is polled for an agent's runtime diagnostic. */
+export const RUNTIME_DIAGNOSTIC_POLL_TIMEOUT_MS = 30_000;
+
+/** How long the control run is polled for the realtime run's position payload. */
+export const REALTIME_POSITION_POLL_TIMEOUT_MS = 75_000;
+
 export interface RuntimeDiagnosticExpectation {
     readonly agentId: string;
     readonly diagnosticTypeId: string;
@@ -56,7 +65,7 @@ export async function waitForBrowserMessage(
     await expect.poll(async () => {
         const run = await readControlRun(request, runId);
         return run.events.some((event) => browserMessageMatches(event, input));
-    }, { timeout: 75_000 }).toBe(true);
+    }, { timeout: BROWSER_MESSAGE_POLL_TIMEOUT_MS }).toBe(true);
 }
 
 export async function waitForRuntimeDiagnostic(
@@ -67,7 +76,7 @@ export async function waitForRuntimeDiagnostic(
     await expect.poll(async () => {
         const run = await readControlRun(request, runId);
         return hasRuntimeDiagnostic(run.events, expected);
-    }, { timeout: 30_000 }).toBe(true);
+    }, { timeout: RUNTIME_DIAGNOSTIC_POLL_TIMEOUT_MS }).toBe(true);
 }
 
 export function hasRuntimeDiagnostic(
@@ -137,5 +146,5 @@ export async function waitForRealtimePositionPayload(
                 data.distributedRunId === distributedRunId &&
                 data.topic === 'room.black-box.rtc-realtime.position';
         });
-    }, { timeout: 75_000 }).toBe(true);
+    }, { timeout: REALTIME_POSITION_POLL_TIMEOUT_MS }).toBe(true);
 }

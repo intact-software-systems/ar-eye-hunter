@@ -1,3 +1,5 @@
+import { RESTORED_SESSION_LIFETIME_MS } from './restored-session-lifetime-ms.ts';
+
 export type SmokeTransport = 'realtime' | 'messages.rtc';
 
 export interface SmokeRestoredSession {
@@ -82,7 +84,7 @@ function readRestoredSession(prefix: 'A' | 'B'): SmokeRestoredSession | undefine
         clientId,
         sessionId,
         expiresAtEpochMs: readNumberEnv(`VITE_RALLAR_AGENT_${prefix}_EXPIRES_AT_EPOCH_MS`) ??
-            readNumberEnv(`VITE_RALLAR_${prefix}_EXPIRES_AT_EPOCH_MS`) ?? Date.now() + 30 * 60 * 1000
+            readNumberEnv(`VITE_RALLAR_${prefix}_EXPIRES_AT_EPOCH_MS`) ?? Date.now() + RESTORED_SESSION_LIFETIME_MS
     };
 }
 

@@ -2,6 +2,8 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { buildSync } from 'esbuild';
+
 const repoRoot = path.resolve(import.meta.dirname, '../../../..');
 const packageRoot = path.join(repoRoot, 'packages/shared-rtc-bench');
 const benchmarkPackageName = '@ar-eye-hunter/shared-rtc-bench';
@@ -13,6 +15,14 @@ const eventHistoryOwnerPath = path.join(repoRoot, 'packages/shared-test/rallar-b
 const resultReleaseArtifactDecoderPath = path.join(repoRoot, 'packages/shared-test/rallar-bb-test/result-release/decode-result-release-artifact.ts');
 const productionFixturePaths = ['full-stack-rtc-production-proof.ts', 'full-stack-rtc-build-tool-provenance.ts'].map((name) =>
     path.join(repoRoot, 'packages/shared-test/black-box-runner/fixtures/rtc-production', name)
+);
+const liveRtcMatrixTestTimeoutsPath = path.join(
+    repoRoot,
+    'packages/shared-test/rallar-bb-test/browser-test-budgets/live-rtc-matrix-test-timeouts.ts'
+);
+const fullStackWebServerStartTimeoutsPath = path.join(
+    repoRoot,
+    'packages/shared-test/rallar-bb-test/browser-test-budgets/full-stack-web-server-start-timeouts.ts'
 );
 const performanceScriptRoots = ['scripts/platform/perf', 'apps/api-v1/scripts/perf'] as const;
 const approvedRepositoryImportPrefixes = ['@shared/', '@shared-web/', '@shared-server/'] as const;
@@ -69,10 +79,21 @@ function isApprovedImport(file: string, specifier: string): boolean {
     }
     if (
         specifier.startsWith('.') &&
-        [finiteIceFixturePolicyPath, browserRecordingContractPath, eventHistoryOwnerPath, resultReleaseArtifactDecoderPath, ...productionFixturePaths].includes(
+        [
+            finiteIceFixturePolicyPath,
+            browserRecordingContractPath,
+            eventHistoryOwnerPath,
+            resultReleaseArtifactDecoderPath,
+            liveRtcMatrixTestTimeoutsPath,
+            fullStackWebServerStartTimeoutsPath,
+            ...productionFixturePaths
+        ].includes(
             path.resolve(path.dirname(file), specifier)
         )
     ) {
+        return true;
+    }
+    if (specifier === 'esbuild' && file.startsWith(path.join(packageRoot, 'tests') + path.sep)) {
         return true;
     }
     if (isPackageLocalImport(file, specifier)) {
@@ -95,6 +116,22 @@ function readUnapprovedImports(file: string): string[] {
     return toImportSpecifiers(fs.readFileSync(file, 'utf8'))
         .filter((specifier) => !isApprovedImport(file, specifier))
         .map((specifier) => `${path.relative(repoRoot, file)} -> ${specifier}`);
+}
+
+/** Every module the bundler loads to run a source, resolved through the package's own tsconfig aliases. */
+function readBundledInputs(entry: string): readonly string[] {
+    const bundle = buildSync({
+        absWorkingDir: repoRoot,
+        entryPoints: [entry],
+        bundle: true,
+        write: false,
+        metafile: true,
+        platform: 'node',
+        format: 'esm',
+        tsconfig: path.join(packageRoot, 'tsconfig.json'),
+        logLevel: 'silent'
+    });
+    return Object.keys(bundle.metafile.inputs);
 }
 
 function isBenchmarkPackageSpecifier(specifier: string): boolean {
@@ -173,6 +210,32 @@ describe('shared RTC benchmark package boundaries', () => {
         expect(isApprovedImport(catalogFile, '../../../shared-test/black-box-runner/fixtures/full-stack-rtc-ice-fixture-policy.ts')).toBe(true);
         expect(isApprovedImport(catalogFile, '../../../shared-test/black-box-runner/rallar-in-memory-runtime.ts')).toBe(false);
         expect(toImportSpecifiers(fs.readFileSync(finiteIceFixturePolicyPath, 'utf8'))).toEqual([]);
+    });
+
+    // The capture starts an attempt only while its job budget covers the attempt's test timeout, as the spec derives it.
+    it('admits only the matrix test timeouts and the web server start limits of the shared-test wait budgets', () => {
+        const consumer = path.join(packageRoot, 'baseline/observation/compute-rtc-b06-attempt-timeout-ms.ts');
+        expect(isApprovedImport(consumer, path.relative(path.dirname(consumer), liveRtcMatrixTestTimeoutsPath))).toBe(true);
+        expect(isApprovedImport(consumer, path.relative(path.dirname(consumer), fullStackWebServerStartTimeoutsPath)))
+            .toBe(true);
+        for (
+            const forbidden of [
+                '../../../shared-test/rallar-bb-test/browser-test-budgets/live-rtc-control-waits.ts',
+                '../../../shared-test/rallar-bb-test/control-protocol.ts',
+                '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-matrix-test-timeouts.ts',
+                '../../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts'
+            ]
+        ) {
+            expect(isApprovedImport(consumer, forbidden)).toBe(false);
+        }
+    });
+
+    // Its budget modules sat in tests/playwright; the bench's closure must stay out of the test tree and off Playwright.
+    it('loads only package modules outside packages/tests to derive an attempt\'s timeout', () => {
+        const inputs = readBundledInputs(path.join(packageRoot, 'baseline/observation/compute-rtc-b06-attempt-timeout-ms.ts'));
+
+        expect(inputs).toContain(path.relative(repoRoot, liveRtcMatrixTestTimeoutsPath));
+        expect(inputs.filter((input) => !input.startsWith('packages/') || input.startsWith('packages/tests/'))).toEqual([]);
     });
 
     it('admits the exact portable production proof/provenance owners while keeping other runner imports closed', () => {

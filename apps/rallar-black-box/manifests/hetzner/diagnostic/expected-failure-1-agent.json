@@ -52,7 +52,8 @@
     "rolePattern": "all-agents",
     "manifestSuite": "hetzner-distributed",
     "diagnostic": true,
-    "expectedFailure": true
+    "expectedFailure": true,
+    "recommendedTerminalTimeoutSeconds": 31
   },
   "description": "Diagnostic run that intentionally fails to verify artifact analyzer fix proposals."
 }

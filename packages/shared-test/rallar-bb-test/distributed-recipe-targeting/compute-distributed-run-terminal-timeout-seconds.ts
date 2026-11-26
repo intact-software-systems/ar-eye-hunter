@@ -6,6 +6,7 @@ import type {
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestRtcStreamCommand
 } from '../rallar-black-box-test-contracts.ts';
+import { computeRtcConnectReadinessTimeoutMs } from '../recipe/compute-rtc-connect-readiness-timeout-ms.ts';
 import {
     computeRallarBlackBoxRtcStreamPlan,
     RALLAR_BLACK_BOX_RTC_STREAM_DEFAULT_DRAIN_TIMEOUT_MS
@@ -23,13 +24,21 @@ export interface DistributedRunTerminalTimeoutInput {
  * recipe with every command using its whole budget, rounded up to the second the terminal wait counts in.
  */
 export function computeDistributedRunTerminalTimeoutSeconds(input: DistributedRunTerminalTimeoutInput): number {
-    const barrierTimeoutMs = input.barrier.enabled ? input.barrier.timeoutMs : 0;
     const slowestRecipeMs = Math.max(0, ...input.recipes.map((recipe) => computeCommandsBudgetMs(recipe.commands)));
-    return Math.ceil((input.ackTimeoutMs + barrierTimeoutMs + slowestRecipeMs) / 1_000);
+    return Math.ceil((computeDistributedRunPreambleMs(input) + slowestRecipeMs) / 1_000);
 }
 
+/** The agents acknowledge and meet at the barrier before any recipe starts. */
+export function computeDistributedRunPreambleMs(input: Omit<DistributedRunTerminalTimeoutInput, 'recipes'>): number {
+    return input.ackTimeoutMs + (input.barrier.enabled ? input.barrier.timeoutMs : 0);
+}
+
+/** Each command's own budget, and a connect's readiness wait after it. */
 function computeCommandsBudgetMs(commands: readonly RallarBlackBoxTestCommand[]): number {
-    return commands.reduce((sum, command) => sum + computeCommandBudgetMs(command), 0);
+    return commands.reduce(
+        (sum, command) => sum + computeCommandBudgetMs(command) + computeRtcConnectReadinessTimeoutMs(command),
+        0
+    );
 }
 
 /**

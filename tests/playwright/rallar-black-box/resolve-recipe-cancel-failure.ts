@@ -26,10 +26,10 @@ export function resolveRecipeCancelFailure(input: ResolveRecipeCancelFailureInpu
             answer.error?.message ?? 'no message'
         }.`;
     }
-    const value = answer.result?.value;
-    if (isJsonRecordValue(value) && value.cancelRequested === true) {
+    if (isRecipeCancelAccepted(answer)) {
         return undefined;
     }
+    const value = answer.result?.value;
     if (
         isJsonRecordValue(value) && value.cancelRequested === false && value.reason === 'target-not-exclusively-active'
     ) {
@@ -37,4 +37,10 @@ export function resolveRecipeCancelFailure(input: ResolveRecipeCancelFailureInpu
             'so nothing was cancelled.';
     }
     return `${named} an unknown answer: ${JSON.stringify(value) ?? 'no value'}.`;
+}
+
+/** Whether the agent answered the cancel by aborting its target; undefined, an unanswered cancel, is not. */
+export function isRecipeCancelAccepted(answer: ControlResultEnvelope | undefined): boolean {
+    const value = answer?.result?.value;
+    return answer?.ok === true && isJsonRecordValue(value) && value.cancelRequested === true;
 }

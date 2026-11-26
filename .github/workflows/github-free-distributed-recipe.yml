@@ -532,7 +532,7 @@ jobs:
     name: Observe selected all-local ALM manifest
     if: ${{ inputs.execution_mode == 'all-local' || inputs.execution_mode == 'all-local-postgres' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     services:
       postgres:
         image: postgres:16

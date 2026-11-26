@@ -20,6 +20,8 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
 
+type DirectorCarrier = 'ws' | 'rtc';
+
 export const RALLAR_DIRECTOR_RELAY_PROTOCOL = 'rallar.director.relay.v1';
 
 const DIRECTOR_COMMAND_UNCONFIRMED_REASON = 'The director did not confirm the command before its deadline.';
@@ -28,6 +30,11 @@ export namespace BrowserDirectorRelayTransport {
     export interface Input {
         readonly messages: RallarMessagesOperations;
         readSession(): AuthSession | undefined;
+        /**
+         * True while a held connection's WebSocket is not open: a WS send is then admitted to its queue and reaches no
+         * member until the socket reopens. Without a connection the send's own connect opens one.
+         */
+        isWebSocketDown(): boolean;
     }
 
     export interface SendCommandInput<T> {
@@ -44,6 +51,7 @@ export namespace BrowserDirectorRelayTransport {
         readonly topicId: string;
         readonly typeId: string;
         readonly payload: T;
+        readonly bestEffortFirst?: DirectorCarrier;
         /** Undefined sends best effort; a stated ack asks the frozen room audience for a logical receipt. */
         readonly ack: RallarDirectorOutputOptions['ack'] | undefined;
     }
@@ -122,21 +130,31 @@ export class BrowserDirectorRelayTransport {
             ack: 'none' as const,
             ttlMs: 5_000
         };
-        const rtc = await this.input.messages.rtc.send(message);
-        const rtcOutcome = await rtc.wait({ until: AL_DELIVERY_ADMITTED_STATES, timeoutMs: message.ttlMs });
-        if (isSuccessfulDirectorDelivery(rtcOutcome.lifecycle)) {
-            return { status: 'sent', rtc };
+        const wait = { until: AL_DELIVERY_ADMITTED_STATES, timeoutMs: message.ttlMs };
+        const sends: Partial<Record<DirectorCarrier, RallarMessageHandle>> = {};
+        let reason: string | undefined;
+        for (const carrier of this.resolveBestEffortCarriers(input.bestEffortFirst)) {
+            const send = await this.input.messages[carrier].send(message);
+            sends[carrier] = send;
+            const outcome = (await send.wait(wait)).lifecycle;
+            if (isSuccessfulDirectorDelivery(outcome)) {
+                return { status: 'sent', ...sends };
+            }
+            reason = outcome.evidence.reason ?? reason;
+            // An explicit room refusal cannot be bypassed on the peer connection.
+            if (carrier === 'ws' && isRoomRefusal(outcome)) {
+                return { status: 'failed', ...sends, reason };
+            }
         }
-        const ws = await this.input.messages.ws.send(message);
-        const wsOutcome = await ws.wait({ until: AL_DELIVERY_ADMITTED_STATES, timeoutMs: message.ttlMs });
-        return isSuccessfulDirectorDelivery(wsOutcome.lifecycle)
-            ? { status: 'sent', rtc, ws }
-            : {
-                status: 'failed',
-                rtc,
-                ws,
-                reason: wsOutcome.lifecycle.evidence.reason ?? rtcOutcome.lifecycle.evidence.reason
-            };
+        return { status: 'failed', ...sends, reason };
+    }
+
+    /** A WS-first send whose socket is down goes over RTC alone: its queued WS frame would reach no member now. */
+    private resolveBestEffortCarriers(first: DirectorCarrier | undefined): readonly DirectorCarrier[] {
+        if (first !== 'ws') {
+            return ['rtc', 'ws'];
+        }
+        return this.input.isWebSocketDown() ? ['rtc'] : ['ws', 'rtc'];
     }
 
     private async sendReceiptRoomEnvelope<T>(
@@ -265,6 +283,11 @@ function createEnvelope<T>(
         sentAtEpochMs: Date.now(),
         payload: input.payload
     };
+}
+
+function isRoomRefusal(lifecycle: ALDeliveryLifecycle): boolean {
+    const kind = lifecycle.evidence.failure?.kind;
+    return kind === 'refused' || kind === 'relay-rejected';
 }
 
 function isSuccessfulDirectorDelivery(lifecycle: ALDeliveryLifecycle): boolean {

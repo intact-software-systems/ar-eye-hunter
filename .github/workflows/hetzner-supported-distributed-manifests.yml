@@ -91,7 +91,6 @@ jobs:
       npm_ci: false
       wait_for_agents: false
       ready_timeout_seconds: '120'
-      terminal_timeout_seconds: '300'
       stop_after_run: false
     secrets: inherit
 
@@ -130,7 +129,6 @@ jobs:
       npm_ci: false
       wait_for_agents: true
       ready_timeout_seconds: '120'
-      terminal_timeout_seconds: '300'
       stop_after_run: true
     secrets: inherit
 

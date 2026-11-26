@@ -22,6 +22,7 @@ import {
     type TestContext
 } from 'vitest';
 
+import { readManifestRunnerOptions } from '../../../apps/rallar-black-box/scripts/read-manifest-runner-options.ts';
 import {
     runWorldFleetDistributedRecipe,
     type WorldFleetDistributedRecipeDependencies,
@@ -410,7 +411,8 @@ describe('world-fleet no-spawn distributed recipe runner', () => {
             token: 'owned-test-token',
             artifactDir,
             pollMs: 1,
-            timeoutMs: 100
+            readinessTimeoutMs: 100,
+            terminalTimeoutMs: 100
         }, createWorldFleetDependencies(worldFleetFetch({ token: 'owned-test-token', manifest: captureManifest(), bodies: new Map(), requests })))).resolves
             .toMatchObject({
                 left: { kind: 'validation', message: 'RTC capture mode must be off, signaling or native.' }
@@ -434,7 +436,8 @@ describe('world-fleet no-spawn distributed recipe runner', () => {
                 token: 'owned-test-token',
                 artifactDir,
                 pollMs: 1,
-                timeoutMs: 100
+                readinessTimeoutMs: 100,
+                terminalTimeoutMs: 100
             },
             createWorldFleetDependencies(async (urlInput, init) => {
                 requests.push(`${init?.method ?? 'GET'} ${new URL(String(urlInput)).pathname}`);
@@ -471,7 +474,8 @@ describe('world-fleet no-spawn distributed recipe runner', () => {
             token: 'owned-test-token',
             artifactDir,
             pollMs: 1,
-            timeoutMs: 100
+            readinessTimeoutMs: 100,
+            terminalTimeoutMs: 100
         };
         const dependencies = createWorldFleetDependencies(worldFleetFetch({ token: 'owned-test-token', manifest: authored, bodies: new Map(), requests }));
         const result = await runWorldFleetDistributedRecipe(options, dependencies).then((outcome) => outcome.left);
@@ -508,7 +512,8 @@ describe('world-fleet no-spawn distributed recipe runner', () => {
             token: 'owned-test-token',
             artifactDir: path.join(directory, 'artifacts'),
             pollMs: 1,
-            timeoutMs: 100
+            readinessTimeoutMs: 100,
+            terminalTimeoutMs: 100
         };
         const dependencies = createWorldFleetDependencies(
             worldFleetFetch({
@@ -620,7 +625,8 @@ describe('world-fleet no-spawn distributed recipe runner', () => {
             token: 'owned-test-token',
             artifactDir: path.join(directory, 'artifacts'),
             pollMs: 1,
-            timeoutMs: 100
+            readinessTimeoutMs: 100,
+            terminalTimeoutMs: 100
         }, createWorldFleetDependencies(worldFleetFetch({ token: 'owned-test-token', manifest: captureManifest(), bodies: new Map(), requests }))).then((
             outcome
         ) => outcome.left);
@@ -656,7 +662,8 @@ describe('world-fleet no-spawn distributed recipe runner', () => {
                     token: 'owned-test-token',
                     artifactDir: path.join(directory, 'artifacts'),
                     pollMs: 1,
-                    timeoutMs: 100
+                    readinessTimeoutMs: 100,
+                    terminalTimeoutMs: 100
                 },
                 createWorldFleetDependencies(
                     worldFleetFetch({
@@ -701,7 +708,8 @@ describe('world-fleet no-spawn distributed recipe runner', () => {
                 token: 'owned-test-token',
                 artifactDir,
                 pollMs: 1,
-                timeoutMs: 100
+                readinessTimeoutMs: 100,
+                terminalTimeoutMs: 100
             },
             createWorldFleetDependencies(
                 worldFleetFetch({ token: 'owned-test-token', manifest: authored, bodies: new Map(), requests: [], artifactFiles: { 'unknown.txt': 7 } })
@@ -730,7 +738,8 @@ describe('world-fleet no-spawn distributed recipe runner', () => {
                 token: 'owned-test-token',
                 artifactDir,
                 pollMs: 1,
-                timeoutMs: 100
+                readinessTimeoutMs: 100,
+                terminalTimeoutMs: 100
             },
             createWorldFleetDependencies(
                 worldFleetFetch({
@@ -759,7 +768,8 @@ describe('world-fleet no-spawn distributed recipe runner', () => {
             controlRunId: 'live-control-run',
             artifactDir: path.join(directory, 'artifacts'),
             pollMs: 1,
-            timeoutMs: 1000
+            readinessTimeoutMs: 1000,
+            terminalTimeoutMs: 1000
         }, createWorldFleetDependencies(worldFleetFetch({ manifest: expectedManifest, bodies, requests })));
         expect(outcome.right).toBe(true);
         expect(bodies.get('/distributed-runs/resolve-targets')).toEqual({ manifest: expectedManifest });
@@ -779,7 +789,8 @@ describe('world-fleet no-spawn distributed recipe runner', () => {
             manifestPath,
             artifactDir,
             pollMs: 1,
-            timeoutMs: 1000
+            readinessTimeoutMs: 1000,
+            terminalTimeoutMs: 1000
         }, createWorldFleetDependencies(worldFleetFetch({ manifest: manifest(), bodies: new Map(), requests, states: ['failed'] })));
         expect(outcome.left).toEqual({ kind: 'terminal', message: 'Distributed run reached failed before start.' });
         expect(requests).toEqual([
@@ -810,7 +821,8 @@ describe('world-fleet no-spawn distributed recipe runner', () => {
                 manifestPath,
                 artifactDir,
                 pollMs: 1,
-                timeoutMs: 1000
+                readinessTimeoutMs: 1000,
+                terminalTimeoutMs: 1000
             },
             createWorldFleetDependencies(
                 worldFleetFetch({ manifest: manifest(), bodies: new Map(), requests: [], artifactFiles: { '../escaped.txt': 'escaped' } })
@@ -841,7 +853,8 @@ function runFixture(fixture: RunnerFixture, overrides: RunnerOverrides = {}): Pr
         manifestPath: fixture.manifestPath,
         artifactDir: fixture.artifactDir,
         pollMs: 1,
-        timeoutMs: 1_000,
+        readinessTimeoutMs: 1_000,
+        terminalTimeoutMs: 1_000,
         ...options
     }, {
         ...createWorldFleetDependencies(fetchPort ?? fixture.server.fetch),
@@ -852,6 +865,21 @@ function runFixture(fixture: RunnerFixture, overrides: RunnerOverrides = {}): Pr
 async function readArtifact(fixture: RunnerFixture, fileName: string): Promise<string> {
     return await readFile(path.join(fixture.artifactDir, fileName), 'utf8');
 }
+
+describe('world-fleet runner command line', () => {
+    it('bounds both the readiness and the terminal wait by its one --timeout-ms', () => {
+        const required = ['--control', 'http://control.test', '--manifest', 'manifest.json'];
+
+        expect(readManifestRunnerOptions([...required, '--timeout-ms', '5000'], {})).toMatchObject({
+            readinessTimeoutMs: 5_000,
+            terminalTimeoutMs: 5_000
+        });
+        expect(readManifestRunnerOptions(required, {})).toMatchObject({
+            readinessTimeoutMs: 30 * 60_000,
+            terminalTimeoutMs: 30 * 60_000
+        });
+    });
+});
 
 describe('world-fleet completion and native evidence', () => {
     it.each(['passed', 'failed'] as const)('exports late result/event arrivals after caller completion for a %s operation', async (state) => {
@@ -1109,9 +1137,22 @@ describe('world-fleet completion and native evidence', () => {
 
     it('retains evidence after the ready wait times out', async () => {
         const fixture = await createRunnerFixture();
-        await expect(runFixture(fixture, { timeoutMs: -1 })).resolves.toMatchObject({ left: { message: expect.stringContaining('Timed out waiting') } });
+        await expect(runFixture(fixture, { readinessTimeoutMs: -1 })).resolves.toMatchObject({
+            left: { message: expect.stringContaining('Timed out waiting') }
+        });
         expect(await readArtifact(fixture, 'results.jsonl')).toBe('{"result":1}\n');
         expect(JSON.parse(await readArtifact(fixture, 'source-manifest.json'))).toEqual(manifest());
+        // Only the readiness wait ran out, so the run was never started.
+        expect(fixture.server.requests).not.toContain('POST /distributed-runs/world-fleet-test-run/start');
+    });
+
+    it('bounds the terminal wait by its own timeout once the readiness wait has passed', async () => {
+        const fixture = await createRunnerFixture();
+        await expect(runFixture(fixture, { readinessTimeoutMs: 1_000, terminalTimeoutMs: -1 })).resolves.toMatchObject({
+            left: { kind: 'timeout', message: expect.stringContaining('Timed out waiting') }
+        });
+        // The run was started, so only the terminal wait ran out.
+        expect(fixture.server.requests).toContain('POST /distributed-runs/world-fleet-test-run/start');
     });
 
     it('retains independent exports and the original run error when bundle export also fails', async () => {

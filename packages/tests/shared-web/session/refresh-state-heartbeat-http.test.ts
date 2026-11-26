@@ -43,6 +43,21 @@ describe('state heartbeat HTTP workflow', () => {
         vi.restoreAllMocks();
     });
 
+    it('renews an invited guest only in its admitted room using the WS-managed client session', async () => {
+        const guestRoom = groupSnapshot('group-1').group;
+        const client = clientSnapshot(clientData.clientId);
+        const calls: FetchCall[] = [];
+        stubFetch(calls, ({ url }) => url.includes('/groups/group-1/sessions/')
+            ? jsonResponse(groupSnapshot('group-1')) : new Response('', { status: 403 }));
+        const result = await refreshStateHeartbeat(clientData, [groupSnapshot('group-1'), groupSnapshot('group-2')], {
+            authSession: { guestRoom, clientId: clientData.clientId, sessionId: clientData.sessionId, accessToken: 'guest', username: 'Pickle', expiresAtEpochMs: 999 },
+            heartbeatAtEpochMs: 100, publicationKey: null, generationId: 'generation-1',
+            clientSnapshot: client, wsConnectionGenerationId: 'ws'
+        });
+        expect(result.groups.map(row => row.group.groupId)).toEqual(['group-1']);
+        expect(result.client).toEqual(client);
+    });
+
     it('heartbeats client and groups while tolerating one missing group presence', async () => {
         const calls: FetchCall[] = [];
         vi.spyOn(Date, 'now').mockReturnValue(1_000);

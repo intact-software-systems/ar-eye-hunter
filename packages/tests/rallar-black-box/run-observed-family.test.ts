@@ -94,7 +94,11 @@ describe('the observed family run', () => {
 
     it('does not let a rejecting wait for the roots replace the body\'s error or skip the observation and the close', async () => {
         const family = createFamily();
-        const stuckRoot = { commandId: 'stuck', readOutcome: async () => await Promise.reject(new Error('still running')) };
+        const stuckRoot = {
+            commandId: 'stuck',
+            readOutcome: async () => await Promise.reject(new Error('still running')),
+            cancelAfter: () => undefined
+        };
         const input = toInput(family, { body: bodyFailure });
 
         await expect(runObservedFamily({ ...input, run: { ...family.run, startedRoots: [stuckRoot] } }))
@@ -105,7 +109,11 @@ describe('the observed family run', () => {
 
     it('fails the run with the wait\'s failure after a passing body, and still observes and closes', async () => {
         const family = createFamily();
-        const stuckRoot = { commandId: 'stuck', readOutcome: async () => await Promise.reject(new Error('still running')) };
+        const stuckRoot = {
+            commandId: 'stuck',
+            readOutcome: async () => await Promise.reject(new Error('still running')),
+            cancelAfter: () => undefined
+        };
 
         await expect(runObservedFamily({ ...toInput(family, {}), run: { ...family.run, startedRoots: [stuckRoot] } }))
             .rejects.toThrow('still running');

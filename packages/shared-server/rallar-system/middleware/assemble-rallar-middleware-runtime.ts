@@ -23,6 +23,7 @@ export function assembleRallarMiddlewareRuntime(
     const { options, infrastructure, inboxServices } = input;
     return {
         qboxEngine: input.queueRegistration.finalise(input.registeredQueue),
+        wakeQueueEngine: infrastructure.wakeQueueEngine,
         wsQBoxServerService: infrastructure.wsQBoxServerService,
         inboxQueueReader: infrastructure.inboxQueueReader,
         outboxQueueReader: infrastructure.outboxQueueReader,
