@@ -36,8 +36,10 @@ import {
     INBOUND_TEST_SOURCE,
     loseInboundAdmissionWritesOf,
     loseInboundWritesFromNowOn,
+    loseNextInboundAdmissionWritesOf,
     restoreInboundWritesOnRetention,
     setNextInboundAdmissionParked,
+    toInboundTestAdmissionOutcomes,
     type CreateInboundTestRuntimeInput,
     type InboundTestRuntime
 } from './inbound-runtime-test-fixture.ts';
@@ -331,8 +333,8 @@ const REPLAYS_THAT_HAND_NOTHING_OVER: readonly (readonly [string, EntityStatus |
     ['a commit that conflicts on each of its attempts', EntityStatus.RETRY, async (onReplayAdmitted) => {
         let authorityReads = 0;
         const { fixture } = await startReplayThatConflictsAgain({
-            // Each of the first replay's three attempts asks its authority and reaches its write; the next replay is
-            // held, so the row is read after the first replay released it.
+            // Reads 1 to 3 authorize, so each attempt they admit reaches its write and loses it; every later read asks
+            // for a retry, which holds the row. Nothing here pins which claim made which read.
             readPendingAdmissionAuthority: async (_msg, source) => {
                 authorityReads++;
                 return authorityReads <= 3 ? { kind: 'authorized', source } : { kind: 'retry', retryAfterMs: 60_000 };
@@ -706,7 +708,7 @@ it('a drop retained on a commit conflict states pending first and its replay\'s 
         return toSentNackResources(controls).length;
     }).toBe(1);
 
-    expect(toAdmissionOutcomes(diagnostics, gapped)).toEqual([
+    expect(toInboundTestAdmissionOutcomes(diagnostics, gapped)).toEqual([
         { workerId: dependencies.effectWorkerId, outcome: 'pending', reason: 'pending-admission', traceId: 'trace-track-gapped', corrId: 'track-gapped' },
         { workerId: dependencies.effectWorkerId, outcome: 'not-handled', reason: 'resync-required', traceId: 'trace-track-gapped', corrId: 'track-gapped' }
     ]);
@@ -726,7 +728,7 @@ it('a replay that admits states committed / admitted', async () => {
     expect((await runtime.admitIncomingMessage(message, PENDING_SOURCE)).right).toEqual({ kind: 'pending-admission' });
     await expect.poll(() => delivered).toEqual(['dispatched']);
 
-    expect(toAdmissionOutcomes(diagnostics, message)).toEqual([
+    expect(toInboundTestAdmissionOutcomes(diagnostics, message)).toEqual([
         { workerId: 'replay-admits-worker', outcome: 'pending', reason: 'pending-admission', traceId: 'trace-replay-admits', corrId: 'replay-admits' },
         { workerId: 'replay-admits-worker', outcome: 'committed', reason: 'admitted', traceId: 'trace-replay-admits', corrId: 'replay-admits' }
     ]);
@@ -775,7 +777,7 @@ it('a replay that conflicts on each of its attempts states pending again', async
         return fixture.delivered;
     }).toEqual(['dispatched']);
 
-    expect(toAdmissionOutcomes(fixture.diagnostics, message).map(({ outcome, reason }) => ({ outcome, reason }))).toEqual([
+    expect(toInboundTestAdmissionOutcomes(fixture.diagnostics, message).map(({ outcome, reason }) => ({ outcome, reason }))).toEqual([
         { outcome: 'pending', reason: 'pending-admission' },
         { outcome: 'pending', reason: 'pending-admission' },
         { outcome: 'committed', reason: 'admitted' }
@@ -831,10 +833,10 @@ it('a replay its stored WS client scope no longer authorizes states unauthorized
     expect((await runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE)).right).toEqual({ kind: 'pending-admission' });
     await expect.poll(async () => {
         await queueEngine.executeOnce();
-        return toAdmissionOutcomes(diagnostics, message).length;
+        return toInboundTestAdmissionOutcomes(diagnostics, message).length;
     }).toBe(2);
 
-    expect(toAdmissionOutcomes(diagnostics, message).map(({ outcome, reason }) => ({ outcome, reason }))).toEqual([
+    expect(toInboundTestAdmissionOutcomes(diagnostics, message).map(({ outcome, reason }) => ({ outcome, reason }))).toEqual([
         { outcome: 'pending', reason: 'pending-admission' },
         { outcome: 'unauthorized', reason: 'unauthorized' }
     ]);
@@ -844,7 +846,7 @@ it('a replay its stored WS client scope no longer authorizes states unauthorized
 it('a replay that shutdown cuts short before its verdict states nothing', async () => {
     const { fixture, message } = await runReplayThatShutdownCutsShort(undefined);
 
-    expect(toAdmissionOutcomes(fixture.diagnostics, message).map(({ outcome }) => outcome)).toEqual(['pending']);
+    expect(toInboundTestAdmissionOutcomes(fixture.diagnostics, message).map(({ outcome }) => outcome)).toEqual(['pending']);
     expect(fixture.delivered).toEqual([]);
 });
 
@@ -870,11 +872,8 @@ async function startReplayThatConflictsAgain(input: ReplayArrangementInput): Pro
     restoreInboundWritesOnRetention(fixture.stores, () => {
         restoreWrites();
         // The replay's own write meets the fence again on each of its three attempts, as when other arrivals moved the
-        // surface each time; the next replay's write is the store's own.
-        const commitBundle = vi.spyOn(fixture.stores.admissionStore, 'commitBundle');
-        for (let attempt = 0; attempt < 3; attempt++) {
-            commitBundle.mockResolvedValueOnce('conflict');
-        }
+        // surface each time; the next replay's write, and every other write, is the store's own.
+        loseNextInboundAdmissionWritesOf(fixture.stores.admissionStore, { msg: message, count: 3 });
     });
 
     expect((await fixture.runtime.admitIncomingMessage(message, PENDING_SOURCE)).right).toEqual({ kind: 'pending-admission' });
@@ -916,15 +915,6 @@ function toAdmissionOutcomeOrigins(diagnostics: readonly ALInboundRuntimeDiagnos
     return diagnostics.flatMap((event) =>
         event.kind === 'admission-outcome' && event.msgId === message.id.msgId
             ? [{ workerId: event.workerId, carrier: event.carrier, outcome: event.outcome }]
-            : []
-    );
-}
-
-/** The `admission-outcome` events stated about one message, in the order they were stated. */
-function toAdmissionOutcomes(diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[], message: ALMessage) {
-    return diagnostics.flatMap((event) =>
-        event.kind === 'admission-outcome' && event.msgId === message.id.msgId
-            ? [{ workerId: event.workerId, outcome: event.outcome, reason: event.reason, traceId: event.traceId, corrId: event.corrId }]
             : []
     );
 }

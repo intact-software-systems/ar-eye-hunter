@@ -503,6 +503,40 @@ export function loseInboundAdmissionWritesOf(
     return () => commitBundle.mockRestore();
 }
 
+export interface InboundAdmissionWriteLoss {
+    readonly msg: ALMessage;
+    /** How many of its admission writes lose; every later one is the store's own. */
+    readonly count: number;
+    /** Absent does nothing; runs as each write is lost, before its `conflict` is answered. */
+    readonly onLoss?: () => void;
+}
+
+/**
+ * The next `loss.count` admission writes of `loss.msg` lose: `commitBundle` answers `conflict` and writes nothing, after
+ * `loss.onLoss` ran. Every other write, and every later one, goes to the store's commit as it stands when this is armed.
+ */
+export function loseNextInboundAdmissionWritesOf(admissionStore: ALInboundAdmissionStore, loss: InboundAdmissionWriteLoss): void {
+    const commit = admissionStore.commitBundle.bind(admissionStore);
+    let lost = 0;
+    vi.spyOn(admissionStore, 'commitBundle').mockImplementation(async (bundle) => {
+        if (lost === loss.count || !isInboundAdmissionWriteOf(bundle, loss.msg.id)) {
+            return await commit(bundle);
+        }
+        lost += 1;
+        loss.onLoss?.();
+        return 'conflict';
+    });
+}
+
+/** The `admission-outcome` events stated about one message, in the order they were stated. */
+export function toInboundTestAdmissionOutcomes(diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[], message: ALMessage) {
+    return diagnostics.flatMap((event) =>
+        event.kind === 'admission-outcome' && event.msgId === message.id.msgId
+            ? [{ workerId: event.workerId, outcome: event.outcome, reason: event.reason, traceId: event.traceId, corrId: event.corrId }]
+            : []
+    );
+}
+
 /**
  * The next admission is parked: its first write loses to a real competing commit of its own provenance row
  * (`setNextInboundCommitConflicted`), and every later one is answered `conflict` without a write. Answers the restore

@@ -21,12 +21,13 @@ import {
     createInboundTestStores,
     INBOUND_TEST_SENDER_PEER_ID,
     INBOUND_TEST_SOURCE,
-    isInboundAdmissionWriteOf,
+    loseNextInboundAdmissionWritesOf,
     planInboundTestMessage,
     readInboundTestWorkRows,
     restoreInboundWritesOnRetention,
     runInboundWorkDueNow,
     setNextInboundAdmissionParked,
+    toInboundTestAdmissionOutcomes,
     type CreateInboundTestRuntimeInput,
     type InboundTestRuntime
 } from '../inbound-runtime-test-fixture.ts';
@@ -228,7 +229,7 @@ describe('a replay of a retained admission', () => {
     // while its track's later messages waited behind it.
     it('a replay whose write is lost admits its message in the same claim and hands it to its owner once', async () => {
         const replay = createReplayRuntime('replay-one-loss');
-        await retainForReplay(replay, FIRST, () => loseReplayWritesOf(replay, FIRST, 1));
+        await retainForReplay(replay, FIRST, () => loseNextInboundAdmissionWritesOf(replay.fixture.stores.admissionStore, { msg: FIRST, count: 1 }));
 
         await runInboundWorkDueNow(replay.fixture);
 
@@ -243,14 +244,15 @@ describe('a replay of a retained admission', () => {
     // The bound holds for a replay: a fourth attempt would commit, and a replay that lost three writes would admit.
     it('a replay that loses three writes goes back as retry and states pending again', async () => {
         const replay = createReplayRuntime('replay-three-losses');
-        await retainForReplay(replay, FIRST, () => loseReplayWritesOf(replay, FIRST, 3));
+        await retainForReplay(replay, FIRST, () => loseNextInboundAdmissionWritesOf(replay.fixture.stores.admissionStore, { msg: FIRST, count: 3 }));
 
         // One round only: the row it retries is due at once, and the next claim's write is the store's own.
-        void replay.fixture.queueEngine.executeOnce();
+        await replay.fixture.queueEngine.executeOnce();
 
+        // The round's claim is released after the round answers; nothing else can claim it.
         await expect.poll(async () => await readRetainedAdmissions(replay.fixture.stores))
             .toEqual([{ msgId: 'message-1', status: EntityStatus.RETRY, attempts: 1 }]);
-        expect(readAdmissionOutcomes(replay.fixture, FIRST)).toEqual([
+        expect(readVerdicts(replay.fixture, FIRST)).toEqual([
             { outcome: 'pending', reason: 'pending-admission' },
             { outcome: 'pending', reason: 'pending-admission' }
         ]);
@@ -262,7 +264,7 @@ describe('a replay of a retained admission', () => {
     // The last of a replay's bounded attempts still asks, reads, decides and writes.
     it('a replay that loses two writes admits its message in the same claim and delivers it once', async () => {
         const replay = createReplayRuntime('replay-two-losses');
-        await retainForReplay(replay, FIRST, () => loseReplayWritesOf(replay, FIRST, 2));
+        await retainForReplay(replay, FIRST, () => loseNextInboundAdmissionWritesOf(replay.fixture.stores.admissionStore, { msg: FIRST, count: 2 }));
 
         await runInboundWorkDueNow(replay.fixture);
 
@@ -277,15 +279,23 @@ describe('a replay of a retained admission', () => {
     it('a replay whose authority rejects the message after its first lost write answers the rejection', async () => {
         const replay = createReplayRuntime('replay-rejected');
         await retainForReplay(replay, FIRST, () =>
-            loseReplayWritesOf(replay, FIRST, 1, () => {
-                replay.authority.next = { kind: 'rejected' };
+            loseNextInboundAdmissionWritesOf(replay.fixture.stores.admissionStore, {
+                msg: FIRST,
+                count: 1,
+                onLoss: () => {
+                    replay.authority.next = { kind: 'rejected' };
+                }
             }));
 
         await runInboundWorkDueNow(replay.fixture);
 
         expect(await readRetainedAdmissions(replay.fixture.stores))
             .toEqual([{ msgId: 'message-1', status: EntityStatus.COMPLETED, attempts: 1 }]);
-        expect(readAdmissionOutcomes(replay.fixture, FIRST).at(-1)).toEqual({ outcome: 'unauthorized', reason: 'unauthorized' });
+        // The lost attempt stated nothing: the arrival's pending, then the replay's one verdict.
+        expect(readVerdicts(replay.fixture, FIRST)).toEqual([
+            { outcome: 'pending', reason: 'pending-admission' },
+            { outcome: 'unauthorized', reason: 'unauthorized' }
+        ]);
         expect(await replay.fixture.stores.admissionStore.readDeliverySurface(FIRST.id, Date.now())).toBeUndefined();
         expect(replay.fixture.delivered).toEqual([]);
         expect(replay.handedOver).toEqual([]);
@@ -296,8 +306,12 @@ describe('a replay of a retained admission', () => {
     it('a replay whose authority asks for a retry after its first lost write answers not-ready and admits nothing', async () => {
         const replay = createReplayRuntime('replay-not-ready');
         await retainForReplay(replay, FIRST, () =>
-            loseReplayWritesOf(replay, FIRST, 1, () => {
-                replay.authority.next = { kind: 'retry', retryAfterMs: 60_000 };
+            loseNextInboundAdmissionWritesOf(replay.fixture.stores.admissionStore, {
+                msg: FIRST,
+                count: 1,
+                onLoss: () => {
+                    replay.authority.next = { kind: 'retry', retryAfterMs: 60_000 };
+                }
             }));
 
         await runInboundWorkDueNow(replay.fixture);
@@ -307,7 +321,7 @@ describe('a replay of a retained admission', () => {
         // A row not ready yet gives its claim back, so it counts no attempt; a lost write would have counted one.
         expect(await readRetainedAdmissions(replay.fixture.stores))
             .toEqual([{ msgId: 'message-1', status: EntityStatus.RETRY, attempts: 0 }]);
-        expect(readAdmissionOutcomes(replay.fixture, FIRST)).toEqual([{ outcome: 'pending', reason: 'pending-admission' }]);
+        expect(readVerdicts(replay.fixture, FIRST)).toEqual([{ outcome: 'pending', reason: 'pending-admission' }]);
         expect(await replay.fixture.stores.admissionStore.readDeliverySurface(FIRST.id, Date.now())).toBeUndefined();
         expect(replay.fixture.delivered).toEqual([]);
         expect(replay.handedOver).toEqual([]);
@@ -320,14 +334,21 @@ describe('a replay of a retained admission', () => {
         const message = createInboundTestMessage({ msgId: 'expiring', seq: 1 });
         const replay = createReplayRuntime('replay-expired');
         await retainForReplay(replay, message, () =>
-            loseReplayWritesOf(replay, message, 1, () => {
-                // Past the message's 60 s lifetime.
-                vi.setSystemTime(Date.now() + 120_000);
+            loseNextInboundAdmissionWritesOf(replay.fixture.stores.admissionStore, {
+                msg: message,
+                count: 1,
+                onLoss: () => {
+                    // Past the message's 60 s lifetime.
+                    vi.setSystemTime(Date.now() + 120_000);
+                }
             }));
 
         await runInboundWorkDueNow(replay.fixture);
 
-        expect(readAdmissionOutcomes(replay.fixture, message).at(-1)).toEqual({ outcome: 'rejected', reason: 'expired' });
+        expect(readVerdicts(replay.fixture, message)).toEqual([
+            { outcome: 'pending', reason: 'pending-admission' },
+            { outcome: 'rejected', reason: 'expired' }
+        ]);
         // The verdict shows the claim ran; its row, past its deadline, is gone with it.
         expect(await readRetainedAdmissions(replay.fixture.stores)).toEqual([]);
         expect(replay.fixture.delivered).toEqual([]);
@@ -339,9 +360,13 @@ describe('a replay of a retained admission', () => {
         const replay = createReplayRuntime('replay-disposed');
         let disposing: Promise<void> | undefined;
         await retainForReplay(replay, FIRST, () =>
-            loseReplayWritesOf(replay, FIRST, 1, () => {
-                replay.steps.push('disposed');
-                disposing = replay.fixture.runtime.dispose();
+            loseNextInboundAdmissionWritesOf(replay.fixture.stores.admissionStore, {
+                msg: FIRST,
+                count: 1,
+                onLoss: () => {
+                    replay.steps.push('disposed');
+                    disposing = replay.fixture.runtime.dispose();
+                }
             }));
         replay.steps.length = 0;
 
@@ -351,8 +376,30 @@ describe('a replay of a retained admission', () => {
         // One attempt plans twice, before its read and against it; a replay that attempted again would plan twice more.
         expect(replay.steps).toEqual(['plan message-1', 'plan message-1', 'disposed']);
         expect(replay.authorityReads).toEqual(['message-1']);
-        expect(readAdmissionOutcomes(replay.fixture, FIRST)).toEqual([{ outcome: 'pending', reason: 'pending-admission' }]);
+        expect(readVerdicts(replay.fixture, FIRST)).toEqual([{ outcome: 'pending', reason: 'pending-admission' }]);
         expect(replay.fixture.delivered).toEqual([]);
+    });
+
+    // A replay that went back to the work queue after one lost write left its track's buffered successor waiting
+    // behind it for another claim; one that released twice, or out of order, would deliver it twice or first.
+    it('delivers a buffered successor once and in order after its predecessor\'s replay admits on its second attempt', async () => {
+        const replay = createReplayRuntime('replay-buffered-successor');
+        const { admissionStore } = replay.fixture.stores;
+        // The successor is admitted first and buffered behind the gap its predecessor leaves; the predecessor is then
+        // retained, so the successor can be released only after the predecessor's replay commits.
+        expect((await replay.fixture.runtime.admitIncomingMessage(SECOND, INBOUND_TEST_SOURCE)).right)
+            .toEqual({ kind: 'admitted' });
+        expect(readDeliveredIds(replay.fixture)).toEqual([]);
+        await retainForReplay(replay, FIRST, () => loseNextInboundAdmissionWritesOf(admissionStore, { msg: FIRST, count: 1 }));
+
+        await runInboundWorkDueNow(replay.fixture);
+
+        // One claim admitted the predecessor; the row is finished, not retained for another.
+        expect(await readRetainedAdmissions(replay.fixture.stores))
+            .toEqual([{ msgId: 'message-1', status: EntityStatus.COMPLETED, attempts: 1 }]);
+        expect(readDeliveredIds(replay.fixture)).toEqual(['message-1', 'message-2']);
+        expect((await admissionStore.readOrderedDelivery(TRACK_KEY, 3)).completedThrough).toBe(2);
+        expect(replay.handedOver).toEqual(['message-1']);
     });
 });
 
@@ -400,27 +447,7 @@ async function retainForReplay(replay: ReplayRuntime, msg: ALMessage, arrangeRep
     expect((await runtime.admitIncomingMessage(msg, INBOUND_TEST_SOURCE)).right).toEqual({ kind: 'pending-admission' });
 }
 
-/**
- * The next `count` admission writes of `msg` lose, each after `onLoss` ran; every other write, and every later one, is
- * the store's own.
- */
-function loseReplayWritesOf(replay: ReplayRuntime, msg: ALMessage, count: number, onLoss: () => void = () => {}): void {
-    const { admissionStore } = replay.fixture.stores;
-    const commit = admissionStore.commitBundle.bind(admissionStore);
-    let lost = 0;
-    vi.spyOn(admissionStore, 'commitBundle').mockImplementation(async (bundle) => {
-        if (lost === count || !isInboundAdmissionWriteOf(bundle, msg.id)) {
-            return await commit(bundle);
-        }
-        lost += 1;
-        onLoss();
-        return 'conflict';
-    });
-}
-
-/** The `admission-outcome` events stated about `msg`, in the order they were stated. */
-function readAdmissionOutcomes(fixture: InboundTestRuntime, msg: ALMessage) {
-    return fixture.diagnostics.flatMap((event) =>
-        event.kind === 'admission-outcome' && event.msgId === msg.id.msgId ? [{ outcome: event.outcome, reason: event.reason }] : []
-    );
+/** The verdicts stated about `msg`, in the order they were stated: each `admission-outcome`'s outcome and reason. */
+function readVerdicts(fixture: InboundTestRuntime, msg: ALMessage) {
+    return toInboundTestAdmissionOutcomes(fixture.diagnostics, msg).map(({ outcome, reason }) => ({ outcome, reason }));
 }
