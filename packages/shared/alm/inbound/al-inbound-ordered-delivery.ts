@@ -1,5 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
+import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import { toALOrderingTrackKey, type ALOrderingObservation } from '../../al-contracts/al-runtime.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { computeALInboundDeliveryCompletion } from './admission/al-inbound-delivery-progress.ts';
@@ -67,6 +67,13 @@ export class ALInboundOrderedDelivery {
     }
 
     async release(input: ALInboundOrderedDelivery.ReleaseInput): Promise<ALInboundOrderedDelivery.ReleaseResult> {
+        return await this.releaseOnce(input);
+    }
+
+    /** One fresh read of the slot and the track's progress, the decision, and the write when the release needs one. */
+    private async releaseOnce(
+        input: ALInboundOrderedDelivery.ReleaseInput
+    ): Promise<ALInboundOrderedDelivery.ReleaseResult> {
         const { trackKey, seq, effectId } = input;
         const read = await this.dependencies.admissionStore.readBufferedRelease({
             trackKey,
@@ -76,6 +83,25 @@ export class ALInboundOrderedDelivery {
         if (!read) {
             return await this.confirmCompletion(trackKey, seq);
         }
+        const plan = await this.planRelease(read, effectId);
+        const readiness = await this.readiness(read.snapshot.msg);
+        if (shouldRetryALInboundDelivery(plan) || readiness.kind === 'waiting') {
+            return 'retry';
+        }
+        if (readiness.kind === 'completed') {
+            return 'completed';
+        }
+        if (readiness.kind === 'resync-required') {
+            return await this.reject(read.snapshot.msg, readiness.completedThrough);
+        }
+        if (plan.dropReason || !plan.localDelivery.enabled) {
+            return await this.complete(read.snapshot.msg);
+        }
+        return await this.commitRelease(read, plan);
+    }
+
+    /** The plan of a slot this work still owns, under its stored scope, before the message expired. */
+    private async planRelease(read: ALInboundBufferedReleaseReadDto, effectId: string): Promise<ALMessageHandlingPlan> {
         if (read.snapshot.delivery?.effectId !== effectId) {
             throw new NonRetryableException('Inbound work no longer owns its buffered message');
         }
@@ -92,19 +118,14 @@ export class ALInboundOrderedDelivery {
         if (expiresAtMs !== undefined && expiresAtMs <= this.dependencies.clock.nowMs()) {
             throw new NonRetryableException('Inbound buffered message expired before delivery');
         }
-        const readiness = await this.readiness(read.snapshot.msg);
-        if (shouldRetryALInboundDelivery(plan) || readiness.kind === 'waiting') {
-            return 'retry';
-        }
-        if (readiness.kind === 'completed') {
-            return 'completed';
-        }
-        if (readiness.kind === 'resync-required') {
-            return await this.reject(read.snapshot.msg, readiness.completedThrough);
-        }
-        if (plan.dropReason || !plan.localDelivery.enabled) {
-            return await this.complete(read.snapshot.msg);
-        }
+        return plan;
+    }
+
+    /** The release's one conditional write; the delivery it answers is dispatched only once it committed. */
+    private async commitRelease(
+        read: ALInboundBufferedReleaseReadDto,
+        plan: ALMessageHandlingPlan
+    ): Promise<ALInboundOrderedDelivery.ReleaseResult> {
         const facts = readALInboundEffectFacts(
             read.nowMs,
             this.dependencies.effectPreparation,
