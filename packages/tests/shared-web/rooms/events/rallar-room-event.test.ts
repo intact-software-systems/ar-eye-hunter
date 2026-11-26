@@ -298,3 +298,32 @@ it('finishes court entry when a refresh reads the old session during transport s
         expect(fixture.selected()).toEqual(court);
     } finally { disconnected.resolve(); event.stop(); }
 });
+
+it('watches the organizer roster across reconnect, clears it on denial and stays idle between notices', async () => {
+    const fixture = trial();
+    fixture.switchSession({ ...grant, guestRoom: undefined });
+    const event = fixture.open();
+    const requests: string[] = [];
+    let denied = false;
+    vi.stubGlobal('fetch', async (url: string) => {
+        requests.push(url);
+        if (denied) return new Response(null, { status: 403 });
+        return Response.json({ lobby, organizerId: 'alice', revision: 1, closesAt: 10_000, closed: false,
+            queue: [], courts: [{ groupId: 'court', capacity: 1, occurrence: 1, seats: [] }],
+            players: [{ principalId: 'alice', displayName: 'Alice' }] });
+    });
+    const roster = event.organizerView();
+    try {
+        vi.useFakeTimers();
+        await roster.start();
+        expect(roster.getState().view?.players).toEqual([{ principalId: 'alice', displayName: 'Alice' }]);
+        await vi.advanceTimersByTimeAsync(300_000);
+        expect(requests).toHaveLength(1);
+        expect(new URL(requests[0]).pathname).toMatch(/\/event\/organizer$/);
+        vi.useRealTimers();
+        denied = true;
+        fixture.push.reopen();
+        await expect.poll(() => roster.getState().view).toBeNull();
+        expect(roster.getState().error).toContain('403');
+    } finally { roster.stop(); }
+});
