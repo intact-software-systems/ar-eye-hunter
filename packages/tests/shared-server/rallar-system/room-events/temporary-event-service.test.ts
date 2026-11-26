@@ -124,7 +124,7 @@ it('dispatches a committed court offer after worker restart and retires only the
     const nowEpochMs = () => Date.now();
     const groups = fixture.repository;
     const authSessions = new AuthSessionPersistence(fixture.runtime);
-    const config = { serviceId: 'events', finishedRetentionMs: 3_600_000, organizerIds: ['owner'] };
+    const config = { serviceId: 'events', handoverWindowMs: 1000, finishedRetentionMs: 3_600_000, organizerIds: ['owner'] };
     const roomAccess = new EventRoomAccessEffects({ groups, sessions: authSessions, ...config });
     let calls = 0;
     const webPush = new EventWebPush({ ...generateVAPIDKeys(), subject: 'mailto:alerts@example.com' },

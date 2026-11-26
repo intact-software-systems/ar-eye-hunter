@@ -4,7 +4,7 @@ import { RoomEventRepository } from '@shared-server/rallar-system/room-events/ro
 
 const lobby = { applicationId: 'club', workspaceId: 'park', groupId: 'pickup' };
 const facts = { serviceId: 'rallar', traceId: 'test', createdAtEpochMs: 20, retentionMs: 60_000, audience: ['guest'] };
-const repository = new RoomEventRepository({ findEntry: async () => null });
+const repository = new RoomEventRepository({ findEntry: async () => undefined });
 const event = createRoomEvent({ lobby, organizerId: 'admin', nowEpochMs: 1,
     command: { action: 'create', courts: [{groupId: 'east', capacity: 1}], closesAt: 3_600_000 } });
 const consent = changeRoomEvent({ event, principalId: 'guest', nowEpochMs: 10, command: { action: 'enable-court-alerts',
@@ -14,7 +14,7 @@ const offered = changeRoomEvent({ event: consent, principalId: 'guest', nowEpoch
 
 it('commits one private delivery per new court offer and opted-in device', () => {
     const publish = (before: typeof event, after: typeof event) => repository.prepare({
-        value: before, entry: { key: 'event', revision: 1, value: JSON.stringify(before), expireAtTimestamp: 3_600_000 }
+        value: before, entry: { key: 'event', revision: 1, updatedTimestamp: new Date(facts.createdAtEpochMs).toISOString(), value: JSON.stringify(before), expireAtTimestamp: 3_600_000 }
     }, after, [], facts).outbox.map(row => row.entry).filter(entry => entry.key.topicId === 'room-event.court-alert');
     const alerts = publish(consent, offered);
     expect(alerts).toHaveLength(1);
