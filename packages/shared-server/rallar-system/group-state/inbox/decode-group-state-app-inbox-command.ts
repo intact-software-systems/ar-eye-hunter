@@ -36,6 +36,8 @@ export function decodeGroupStateAppInboxCommand(
         type === AppInboxType.GROUP_FORMATION_AUTOMATION ||
         type === AppInboxType.GROUP_FORMATION_CRITERION ||
         type === AppInboxType.GROUP_TOPOLOGY_PUBLICATION ||
+        type === AppInboxType.GROUP_GUEST_EXPIRE ||
+        type === AppInboxType.GROUP_GUEST_ADMIT ||
         type === AppInboxType.GROUP_TIMELINE_SETTLE ||
         type === AppInboxType.GROUP_ACTIVATION_STATUS
     ) {
@@ -126,6 +128,8 @@ function isAuthenticatedGroupMutationType(
         type !== AppInboxType.GROUP_FORMATION_AUTOMATION &&
         type !== AppInboxType.GROUP_FORMATION_CRITERION &&
         type !== AppInboxType.GROUP_TOPOLOGY_PUBLICATION &&
+        type !== AppInboxType.GROUP_GUEST_EXPIRE &&
+        type !== AppInboxType.GROUP_GUEST_ADMIT &&
         type !== AppInboxType.GROUP_TIMELINE_SETTLE &&
         type !== AppInboxType.GROUP_ACTIVATION_STATUS;
 }

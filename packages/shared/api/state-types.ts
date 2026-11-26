@@ -123,6 +123,8 @@ export interface CreateGroupRequest extends MutationActorInput {
 }
 
 export interface UpdateGroupRequest extends MutationActorInput {
+    /** Lowercase SHA-256 hex digest of a new random invitation secret. Only the room owner may rotate it. */
+    readonly guestInvitationVerifier?: string;
     readonly roomLobby?: RoomLobby.Mutation;
     readonly roomClock?: RoomClockMutation;
     readonly roomDeadline?: RoomDeadlineChange;

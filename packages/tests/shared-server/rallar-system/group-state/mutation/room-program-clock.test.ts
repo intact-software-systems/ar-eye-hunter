@@ -1,6 +1,7 @@
 import { readRoomTimeline } from '@shared/api/group-deadlines/room-timeline.ts';
 import { SCOPE } from './group-mutation-test-runtime.ts';
-import { computeGroupClockChange, computeGroupClockUpdate } from '@shared-server/rallar-system/group-state/mutation/aggregate/compute-group-clock-change.ts';
+import { computeGroupClockChange } from '@shared-server/rallar-system/group-state/mutation/aggregate/compute-group-clock-change.ts';
+import { computeGroupClockUpdate } from '@shared-server/rallar-system/group-state/mutation/aggregate/compute-group-clock-update.ts';
 import { assertRoomClockCommand, assertRoomClockMutation, readRoomClocks, readRoomSchedule } from '@shared/api/group-deadlines/room-clock.ts';
 import { pausedRoomSchedulePosition, type RoomSchedule } from '@shared/api/group-deadlines/room-schedule.ts';
 import { expect, it } from 'vitest';
@@ -25,20 +26,20 @@ it('freezes the greatest elapsed start and shifts only the remaining program onc
     const before = { ...group, kind: 'room' as const, metadata: {
         rallarRoomClocks: [{ ...schedule, phases }], rallarRoomDeadlines: venue
     } };
-    const frozen = computeGroupClockUpdate(before, pause, 200);
+    const frozen = computeGroupClockUpdate({ group: before, command: pause, now: 200 });
     if ('rejectionCode' in frozen) throw new Error(frozen.message);
     const observed = readRoomSchedule(frozen.metadata, 'court');
     expect(observed).toEqual({ ...schedule, revision: 2, status: 'program-paused', elapsedThroughEpochMs: 200 });
     expect(readRoomClocks(frozen.metadata)).toEqual([]);
     expect(pausedRoomSchedulePosition(observed!)).toEqual({ status: 'paused', current: phases[1], next: phases[2], remainingMs: 200 });
-    const running = computeGroupClockUpdate(frozen, resume, 600200);
+    const running = computeGroupClockUpdate({ group: frozen, command: resume, now: 600200 });
     if ('rejectionCode' in running) throw new Error(running.message);
     expect(readRoomSchedule(running.metadata, 'court')).toEqual({
         ...schedule, revision: 3, elapsedThroughEpochMs: 600200,
         phases: [phases[0], phases[1], { ...phases[2], startsAtEpochMs: 600400 }]
     });
     expect(running.metadata.rallarRoomDeadlines).toEqual(venue);
-    expect(computeGroupClockUpdate(running, resume, 600250)).toHaveProperty('rejectionCode', 'room-clock-revision-conflict');
+    expect(computeGroupClockUpdate({ group: running, command: resume, now: 600250 })).toHaveProperty('rejectionCode', 'room-clock-revision-conflict');
 });
 
 it('preserves a pre-start delay and never reverses the program for a slower writer', () => {

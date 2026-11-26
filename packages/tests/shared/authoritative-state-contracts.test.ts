@@ -44,6 +44,8 @@ type _RtcResultHasNoOptionalFields = Assert<Equal<OptionalKeys<RtcRttAppInboxRes
 
 /** Every entry names a reviewed semantic absence, never construction convenience. */
 type AuthoritativeOptionalKeyAllowlist = Readonly<{
+    Group: 'guestInvitation'; // A room may have no outstanding invitation.
+    GroupMember: 'guestLease'; // Ordinary account members have no guest lease.
     SerializedGraphInfoSnapshot: 'measured';
 }>;
 
@@ -58,8 +60,6 @@ describe('authoritative state contracts', () => {
         expectTypeOf<OptionalKeys<ClientInstance>>().toEqualTypeOf<never>();
         expectTypeOf<OptionalKeys<ClientSession>>().toEqualTypeOf<never>();
         expectTypeOf<OptionalKeys<ClientEvent>>().toEqualTypeOf<never>();
-        expectTypeOf<OptionalKeys<Group>>().toEqualTypeOf<never>();
-        expectTypeOf<OptionalKeys<GroupMember>>().toEqualTypeOf<never>();
         expectTypeOf<OptionalKeys<GroupPresenceSession>>().toEqualTypeOf<never>();
         expectTypeOf<OptionalKeys<GroupEvent>>().toEqualTypeOf<never>();
         expectTypeOf<OptionalKeys<ClientMutationReceipt>>().toEqualTypeOf<never>();
@@ -77,6 +77,8 @@ describe('authoritative state contracts', () => {
     });
 
     it('keeps only the named authoritative semantic-absence allowlist', () => {
+        expectTypeOf<OptionalKeys<Group>>().toEqualTypeOf<AuthoritativeOptionalKeyAllowlist['Group']>();
+        expectTypeOf<OptionalKeys<GroupMember>>().toEqualTypeOf<AuthoritativeOptionalKeyAllowlist['GroupMember']>();
         expectTypeOf<OptionalKeys<SerializedGraphInfoSnapshot>>().toEqualTypeOf<AuthoritativeOptionalKeyAllowlist['SerializedGraphInfoSnapshot']>();
     });
 

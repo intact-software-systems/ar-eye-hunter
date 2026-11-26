@@ -11,7 +11,7 @@ import { adoptGroupSnapshotsFromHeartbeat } from '@shared-web/browser/state-cach
 import { BROWSER_STATE_CACHE_TTL_MS } from '@shared-web/browser/state-cache/initialise-browser-cache-repositories.ts';
 import { emitBrowserStateReadDiagnostic } from '@shared-web/browser/state-read/diagnostics.ts';
 import { reconcileCompleteStateSnapshotCollections } from '@shared-web/browser/state-read/reconciliation.ts';
-import { listStateGroups } from '@shared-web/browser/state-read/state-snapshot-http-api.ts';
+import { findStateGroup, listStateGroups } from '@shared-web/browser/state-read/state-snapshot-http-api.ts';
 import type { AuthSession, ClientInfo } from '@shared/api/api-config.ts';
 import { validateAuthoritativeGroupSnapshotList } from '@shared/api/authoritative-state-validation.ts';
 import type { ClientSession } from '@shared/api/client-types.ts';
@@ -267,8 +267,13 @@ class BrowserStateHeartbeatRuntime {
     /** Cache expiry loses renewal targets, not membership. Re-read authority without admitting any room. */
     private async recoverGroupSnapshots(signal?: AbortSignal): Promise<void> {
         const observations = { clients: [], groups: this.readJoinedGroups() };
+        const guestRoom = this.#options.authSession?.guestRoom;
         const snapshots = await new Command(
-            (signal) => listStateGroups(this.#scope, { signal, authSession: this.#options.authSession ?? null }),
+            async (signal) => {
+                const options = { signal, authSession: this.#options.authSession ?? null };
+                return guestRoom ? [await findStateGroup(guestRoom.groupId, guestRoom, options)]
+                    : await listStateGroups(this.#scope, options);
+            },
             {
                 signal,
                 timeoutMs: this.handle.groupPresence?.requestTimeoutMs ?? this.#options.policies?.command?.timeoutMs ??
@@ -280,7 +285,9 @@ class BrowserStateHeartbeatRuntime {
             return;
         }
         validateAuthoritativeGroupSnapshotList(snapshots, this.#scope);
-        reconcileCompleteStateSnapshotCollections(observations, [], snapshots);
+        if (!guestRoom) {
+            reconcileCompleteStateSnapshotCollections(observations, [], snapshots);
+        }
         groupStateSnapshotsRepository.setGroupStateSnapshots(snapshots);
         this.#groupRecoveryAtEpochMs = this.readGroupCacheDeadline();
     }

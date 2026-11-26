@@ -1,3 +1,5 @@
+import { proveGuestCutoffRestart } from './prove-guest-cutoff-restart.mts';
+import { proveRoomGuestRedemption } from './prove-room-guest-redemption.mts';
 import assert from 'node:assert/strict';
 import postgres from 'postgres';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -18,6 +20,7 @@ async function proveLobbyCommitments({ plans, controls, databaseUrl }: ManagedCl
         principal, label: principal, apiBaseUrl: observer.baseUrl, wsBaseUrl: observer.baseUrl.replace(/^http/, 'ws')
     });
     const [alice, bob] = await Promise.all([login('alice'), login('bob')]);
+    await proveRoomGuestRedemption({ owner: alice, moderator: bob, secondOrigin: second.baseUrl });
     await proveProgramRegistrationBoundary({ plans, controls, databaseUrl, users, owner: alice, player: bob });
     console.log('Passed: program-bound registration survives pause, disconnection and duplicate delivery');
     const scope = { applicationId: 'lobby-proof', workspaceId: crypto.randomUUID() };
@@ -158,6 +161,8 @@ async function proveLobbyCommitments({ plans, controls, databaseUrl }: ManagedCl
         else console.log('Passed:', cases[index]);
     }
     if (failures.length) throw new AggregateError(failures, 'Lobby regression scenarios failed');
+    await proveGuestCutoffRestart({ plans, controls, users });
+    console.log('Passed: restarted worker recovered and released a guest at the frozen cutoff');
 }
 
 /** Account commitments are scoped by workspace so each scenario can start with an empty roster. */

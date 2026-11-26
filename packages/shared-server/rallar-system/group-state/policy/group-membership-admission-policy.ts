@@ -35,6 +35,7 @@ export interface CanJoinGroupInput {
     readonly joinCode?: string;
     readonly joinCodeVerifier?: string;
     readonly expectedJoinCodeVerifier?: string;
+    readonly guestInvitationVerifier?: string;
     readonly joinCodeExpiresAtEpochMs?: number;
 }
 
@@ -95,6 +96,13 @@ export function canJoinGroup(input: CanJoinGroupInput): GroupPolicyResult {
     });
     if (capacityDenial) {
         return capacityDenial;
+    }
+    if (input.guestInvitationVerifier !== undefined) {
+        const invitation = input.snapshot.group.guestInvitation;
+        return input.snapshot.group.kind === 'room' && invitation && input.nowEpochMs !== undefined &&
+                invitation.expiresAtEpochMs > input.nowEpochMs && invitation.verifier === input.guestInvitationVerifier
+            ? GROUP_POLICY_ALLOWED
+            : denyGroupPolicy('group-policy-denied', 'The room guest invitation is unavailable.');
     }
     return canUseGroupAdmissionCredentials(input);
 }

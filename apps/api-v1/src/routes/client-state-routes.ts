@@ -14,7 +14,7 @@ import {
 import {
     readCurrentClientSnapshot,
     registerClientStatePointReadRoute,
-    type ClientStatePointRead
+    type ClientStatePointRead, type ClientStatePointRouteDependencies
 } from './client-state-point-read-route.ts';
 import { readClientStateRouteScope } from './read-client-state-route-scope.ts';
 import { toClientStateRouteErrorResponse } from './to-client-state-route-error-response.ts';
@@ -34,6 +34,7 @@ export type ClientStateRouteService =
     }>;
 
 export type ClientStateRouteDependencies =
+    & Pick<ClientStatePointRouteDependencies, 'readGuestRoom' | 'nowEpochMs'>
     & ClientStateMutationRouteDependencies
     & Readonly<{
         clientStateService: ClientStateRouteService;
@@ -75,6 +76,7 @@ export function registerClientStateRoutes(
 
     registerClientStatePointReadRoute(app, {
         read: deps.readClientSnapshot,
+        readGuestRoom: deps.readGuestRoom, nowEpochMs: deps.nowEpochMs,
         requireAuthSession: deps.requireApiAuthSession,
         strictReadAuthorization: deps.strictReadAuthorization,
         hydrate: (snapshots) => hydrateClientSnapshots(deps, snapshots),

@@ -1,4 +1,5 @@
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
+import { roomGuestAccessMode } from '@shared/api/room-guests/access.ts';
 import { resolveGroupPublicationPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { GroupTopicSubscription } from '@shared/api/group-publication/group-topic-subscriptions.ts';
 import type { GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -49,6 +50,13 @@ export namespace RoomPublicationAdmission {
 export function computeRoomPublicationAdmission(
     input: RoomPublicationAdmission.Input
 ): Either<RoomPublicationAdmission.Refusal, RallarServerWsRoomAudience> {
+    const publisher = input.publisher;
+    if (publisher.kind === 'session') {
+        const member = input.snapshot.members.find(candidate => candidate.principalId === publisher.principalId);
+        if (member?.guestLease && roomGuestAccessMode(input.snapshot.group, member, input.nowEpochMs) === 'expired') {
+            return Either.ofLeft({ code: 'topic-not-granted', logMessage: 'Guest room access has ended.' });
+        }
+    }
     if (input.topic.participation === 'members') {
         return Either.ofRight(computeRoomPublicationAudience(input));
     }

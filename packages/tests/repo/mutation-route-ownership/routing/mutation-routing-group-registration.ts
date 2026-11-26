@@ -57,6 +57,7 @@ const ROOT_FAMILY_CALLS: readonly RootFamilyRegistration[] = [
     },
     { name: 'registerGroupStateMutationRoutes', sourcePath: './register-group-state-mutation-routes.ts', requiresAuthorization: true },
     { name: 'registerGroupLifecycleRoutes', sourcePath: './register-group-lifecycle-routes.ts', requiresAuthorization: false },
+    { name: 'registerRoomGuestRedemptionRoute', sourcePath: './register-room-guest-redemption-route.ts', requiresAuthorization: false },
     { name: 'registerGroupAdmissionRoutes', sourcePath: './register-group-admission-routes.ts', requiresAuthorization: false },
     { name: 'registerGroupMembershipRoutes', sourcePath: './register-group-membership-routes.ts', requiresAuthorization: true },
     { name: 'registerGroupPresenceRoutes', sourcePath: './register-group-presence-routes.ts', requiresAuthorization: true },

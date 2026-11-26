@@ -1,3 +1,4 @@
+import { computeGroupGuestSeatDeadlines } from '../schedule/group-guest-seat-deadline.ts';
 import { computeGroupTimelineDeadlines } from '../schedule/group-timeline-deadline.ts';
 import { directorAuthorityFences } from './orchestration/director-authority-fences.ts';
 import type { RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
@@ -176,7 +177,21 @@ export function computeGroupMutationWriteResult(
         subscriptionOutcome: input.subscriptionOutcome,
         rejection: null
     });
+    const admittedGuest = facts.internalAuthority === 'guest-redemption' && command.operation === 'joinGroup'
+        ? input.members.find(member => member.principalId === command.targetPrincipalId)
+        : undefined;
+    const guestTransport = command.operation === 'joinGroup' ? command.input.guestTransport : undefined;
     const computed: GroupMutationDomainWrite = {
+        ...(admittedGuest?.guestLease && guestTransport && {
+            guestTransportSession: {
+                ...guestTransport,
+                guestRoom: command.aggregateRef,
+                username: admittedGuest.principalId,
+                clientId: admittedGuest.principalId,
+                issuedAtEpochMs: admittedGuest.guestLease.admittedAtEpochMs,
+                expiresAtEpochMs: admittedGuest.guestLease.expiresAtEpochMs
+            }
+        }),
         outcome: 'write',
         viewProvenance: [...scheduled.viewProvenance, ...lobby.provenance],
         ...(input.directorPresenceGroup ? { directorPresenceGroup: input.directorPresenceGroup } : {}),
@@ -436,6 +451,11 @@ function computeScheduledMutationWrites(
         ? computeGroupTimelineDeadlines({ before: read.group?.value ?? null, after: group, createdAtEpochMs: facts.nowEpochMs,
             serviceId: facts.serviceId, traceId: facts.traceId })
         : [];
+    const guestDeadlines = computeGroupGuestSeatDeadlines({
+        group, previous: read.group?.value ?? null, facts,
+        newlyAdmitted: facts.internalAuthority === 'guest-redemption' ? members : [],
+        timelineChanged: command.operation === 'settleTimeline' || (command.operation === 'updateGroup' && command.input.roomClock !== undefined)
+    });
     const deadlines = computeGroupSessionDeadlines({
         changedMembers: members,
         previousMembers: [read.actorMember, read.targetMember, read.authorityMember, read.directorMember].filter((
@@ -449,7 +469,7 @@ function computeScheduledMutationWrites(
         traceId: facts.traceId
     });
     return {
-        outboxWrites: [...publication.outbox, ...observation.outbox, ...deadlines, ...timelineDeadlines],
+        outboxWrites: [...publication.outbox, ...observation.outbox, ...deadlines, ...timelineDeadlines, ...guestDeadlines],
         viewProvenance: [...publication.provenance, ...observation.provenance]
     };
 }

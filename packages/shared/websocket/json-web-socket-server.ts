@@ -30,6 +30,8 @@ export namespace ConnectionContext {
      */
     export interface Socket {
         readonly readyState: number;
+        /** An audience restriction applied before a native send or a retry is recorded. */
+        acceptsOutbound?(text: string): boolean;
         send(text: string): number;
         close(code?: number, reason?: string): void;
     }
@@ -384,6 +386,7 @@ export class JsonWebSocketServer {
 
     private trySendText(ctx: ConnectionContext, text: string): boolean {
         try {
+            if (ctx.socket.acceptsOutbound?.(text) === false) return false;
             if (ctx.socket.send(text) === DROPPED_FRAME) {
                 console.error(`WebSocket frame dropped for ${ctx.id}`);
                 return false;

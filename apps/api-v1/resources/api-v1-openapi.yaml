@@ -1241,6 +1241,64 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/guests/requests/{requestId}:
+    post:
+      tags: [Group State]
+      summary: Redeem a room invitation for a temporary guest seat
+      description: >-
+        Supply independent random 32-byte secrets encoded in lowercase hex. Retain the guest secret and request ID
+        when retrying a lost response. Redeeming an active guest identity again with a valid invitation preserves
+        its current role and seat. Access lasts four hours from admission. Players already in a round at expiry
+        may finish that occurrence until its frozen deadline, for at most one additional hour and three seconds.
+        Closing the occurrence or room earlier ends that access. A guest may give up its seat earlier by setting
+        its own membership to `left` through the self-service member route; the room's invitation stays valid for
+        other guests, and the departed identity cannot be readmitted.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [invitationSecret, guestSecret]
+              properties:
+                invitationSecret: { type: string, pattern: '^[0-9a-f]{64}$', writeOnly: true }
+                guestSecret: { type: string, pattern: '^[0-9a-f]{64}$', writeOnly: true }
+                displayName: { type: string, minLength: 1, maxLength: 64 }
+      responses:
+        '200':
+          description: Room-scoped guest session
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [clientId, sessionId, accessToken, issuedAtEpochMs, expiresAtEpochMs]
+                properties:
+                  clientId: { type: string }
+                  sessionId: { type: string }
+                  accessToken: { type: string }
+                  issuedAtEpochMs: { type: integer }
+                  expiresAtEpochMs: { type: integer }
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '403':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '409':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '429':
+          $ref: '#/components/responses/RateLimitedApiMutationFailure'
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/{requestId}:
     put:
       tags: [Group State]
@@ -2648,6 +2706,10 @@ paths:
         Self-service membership transitions only allow `active` and `left`.
         Role changes are ignored by the route layer, so an existing `owner` or
         `admin` role is preserved across leave/rejoin.
+        A room guest's bearer token is accepted here for one transition only:
+        setting its own membership to `left` in its admitted room. Its guest
+        credential ends with that departure, so a retry after the leave
+        committed is refused rather than restoring access.
       security:
         - bearerAuth: []
           clientIdHeader: []
@@ -7904,6 +7966,17 @@ components:
             deleted:
               $ref: '#/components/schemas/AuditStamp'
       properties:
+        guestInvitation:
+          description: Current owner-issued guest invitation. Present after first issuance.
+          type: object
+          required: [verifier, expiresAtEpochMs]
+          additionalProperties: false
+          properties:
+            verifier:
+              $ref: '#/components/schemas/GuestInvitationVerifier'
+            expiresAtEpochMs:
+              type: integer
+              minimum: 1
         applicationId:
           type: string
         workspaceId:
@@ -8269,6 +8342,11 @@ components:
         - banned
         - invitedByPrincipalId
         - invitationExpiresAtEpochMs
+      allOf:
+        - if: { required: [guestLease] }
+          then:
+            properties:
+              role: { type: string, enum: [member, spectator] }
       discriminator:
         propertyName: status
       oneOf:
@@ -8322,6 +8400,15 @@ components:
             banned:
               $ref: '#/components/schemas/AuditStamp'
       properties:
+        guestLease:
+          type: object
+          description: Fixed lease of an invited guest, established on first admission.
+          required: [admittedAtEpochMs, expiresAtEpochMs]
+          additionalProperties: false
+          properties:
+            displayName: { type: string, minLength: 1, maxLength: 64 }
+            admittedAtEpochMs: { type: integer, minimum: 0 }
+            expiresAtEpochMs: { type: integer, minimum: 1 }
         applicationId:
           type: string
         workspaceId:
@@ -9229,9 +9316,18 @@ components:
           description: "The creator's own initial publication grant, written with the group. Absent: the creator holds no grant."
         reason:
           type: string
+    GuestInvitationVerifier:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: '^[0-9a-f]{64}$'
+      description: Lowercase hexadecimal SHA-256 digest of a random invitation secret.
     UpdateGroupRequest:
       type: object
       properties:
+        guestInvitationVerifier:
+          description: Owner-only operation that issues or replaces a room invitation for 15 minutes.
+          $ref: '#/components/schemas/GuestInvitationVerifier'
         roomLobby:
           oneOf:
             - type: object
@@ -9285,6 +9381,11 @@ components:
               pattern: '^[A-Za-z0-9._-]{1,64}$'
             operation:
               enum: [start, pause, resume, advance-phase, extend-phase, set-successor, publish-schedule, pause-program, resume-program]
+            participantPrincipalIds:
+              type: array
+              uniqueItems: true
+              items: { type: string, minLength: 1 }
+              description: Active players at the beginning of a guest-play timeline occurrence.
             successor:
               type: [object, 'null']
               additionalProperties: false
@@ -9325,6 +9426,11 @@ components:
               minimum: 1
               maximum: 9007199254740991
           allOf:
+            - if: { required: [participantPrincipalIds] }
+              then:
+                properties:
+                  name: { const: guest-play }
+                  operation: { const: advance-phase }
             - if:
                 properties:
                   operation:

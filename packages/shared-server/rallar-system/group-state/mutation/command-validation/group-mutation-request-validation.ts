@@ -216,6 +216,7 @@ const GROUP_MUTATION_REQUEST_KEYS: Readonly<Record<GroupMutationCommand['operati
         'expiresAtEpochMs',
         'roomDeadline',
         'roomClock',
+        'guestInvitationVerifier',
         'emptySinceEpochMs',
         'purgeAfterEpochMs'
     ],

@@ -55,6 +55,7 @@ export class AuthSessionPersistence extends RuntimeStateJsonStore {
         expectedRevision: number | null = null
     ): Promise<RuntimeStateConditionalWriteResult> {
         const persisted = decodePersistedAuthSession(session);
+        if (persisted.guestRoom) throw new TypeError('Guest transport cannot appear in the account token index.');
         return expectedRevision === null
             ? await this.putValueIfAbsent(
                 {
@@ -132,6 +133,7 @@ export class AuthSessionPersistence extends RuntimeStateJsonStore {
             return { value: undefined, expiredEntry: read.expiredEntry };
         }
         const value = decodePersistedAuthSession(read.value.value);
+        if (value.guestRoom) throw new TypeError('Guest transport cannot appear in the account token index.');
         if (value.accessTokenDigest !== accessTokenDigest) {
             throw new TypeError('Persisted auth session token digest identity differs');
         }

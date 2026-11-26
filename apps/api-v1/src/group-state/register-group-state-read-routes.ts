@@ -1,3 +1,4 @@
+import { readRoomGuestRequest, assertRoomGuestSeat } from '@shared-server/http/room-guest-request.ts';
 import { readRoomLobbyPolicy } from '@shared/api/room-lobbies/room-lobby-policy.ts';
 import {
     Hono,
@@ -214,18 +215,21 @@ async function readGroupSnapshot(
 ): Promise<Response> {
     try {
         const groupId = context.req.param('groupId');
-        const authSession = await authorization.readStrictAuthSession(context.req);
-        const result = await dependencies.readGroupSnapshot({
-            ...toGroupStateRouteScope(context),
-            groupId
-        }, {
+        const roomRef = { ...toGroupStateRouteScope(context), groupId };
+        const guest = await readRoomGuestRequest(context.req, roomRef);
+        const authSession = guest ? undefined : await authorization.readStrictAuthSession(context.req);
+        const result = await dependencies.readGroupSnapshot(roomRef, {
             ...readGroupSnapshotPointQuery(new URL(context.req.raw.url).searchParams),
-            strictMode: authSession !== undefined
+            strictMode: guest !== undefined || authSession !== undefined
         });
         if (result.status === 'not-found') {
             return context.json({ error: `Group not found: ${groupId}` }, 404);
         }
-        authorization.assertAuthenticatedCanReadGroupState(authSession, result.snapshot);
+        if (guest) {
+            assertRoomGuestSeat(guest, result.snapshot, dependencies.nowEpochMs());
+        } else {
+            authorization.assertAuthenticatedCanReadGroupState(authSession, result.snapshot);
+        }
         if (result.status === 'floor-not-satisfied') {
             return context.json({
                 error: 'Group state revision floor was not satisfied',

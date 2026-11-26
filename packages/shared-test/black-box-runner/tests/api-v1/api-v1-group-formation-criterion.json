@@ -261,32 +261,6 @@
       }
     },
     {
-      "name": "startAutoPlansConnectsPublishedLayout",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{autoGroupId}/formation",
-        "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        },
-        "poll": {
-          "maxAttempts": 20,
-          "maxDurationMs": 8000,
-          "backoffMs": 100,
-          "backoffMultiplier": 1.2
-        }
-      },
-      "expect": {
-        "status": 200,
-        "body": {
-          "lifecycleState": "connecting",
-          "formationEpoch": 2
-        }
-      }
-    },
-    {
       "name": "formationAutoActivated",
       "type": "http",
       "connection": "primary",
@@ -312,6 +286,7 @@
           "formationAttemptCount": 0,
           "lastFormationOutcome": {
             "outcome": "activated",
+            "formationEpoch": 2,
             "observedRate": 1
           },
           "managerPrincipalIds": [

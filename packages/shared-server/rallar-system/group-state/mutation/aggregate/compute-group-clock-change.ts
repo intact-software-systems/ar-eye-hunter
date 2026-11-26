@@ -116,19 +116,6 @@ export function computeGroupClockChange(
     return { ...identity, ...occurrence, status: 'running', endsAtEpochMs };
 }
 
-/** Publish phase identity and time together in the one authoritative group write. */
-export function computeGroupClockUpdate(group: Group, command: RoomClockMutation, now: number): Group | ClockRefusal {
-    if (group.kind !== 'room' || group.status !== 'active') {
-        return { rejectionCode: 'group-mutation-rejected', message: 'Clocks require an active room.' };
-    }
-    const clocks = readRoomTimeRecords(group.metadata);
-    const clock = computeGroupClockChange(clocks, command, now);
-    if (!('status' in clock)) {
-        return clock;
-    }
-    return withGroupTimeRecord(group, clock, clocks);
-}
-
 export function withGroupTimeRecord(
     group: Group,
     clock: RoomClock | RoomTimeline | RoomSchedule,

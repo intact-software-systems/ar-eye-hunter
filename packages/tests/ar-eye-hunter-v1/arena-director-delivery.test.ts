@@ -623,7 +623,11 @@ describe('arena match lifecycle delivery', () => {
         resetRallarFacadeTestRuntime();
         setRallarFacadeRoomSnapshots([toArenaRoomSnapshot({ snapshotVersion: 9, rosterVersion: 4 })]);
         const facade = createRallarTestFacade();
-        const relay = new BrowserDirectorRelayTransport({ messages: facade.messages, readSession: () => directorRallar.apiMiddleware.session });
+        const relay = new BrowserDirectorRelayTransport({
+            messages: facade.messages,
+            readSession: () => directorRallar.apiMiddleware.session,
+            isWebSocketDown: () => false
+        });
 
         await relay.sendRoomEnvelope({
             current: { ...freshDirectorStatus(), roomRef: arenaRoomRef },

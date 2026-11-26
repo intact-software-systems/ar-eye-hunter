@@ -19,7 +19,7 @@ interface RecordedRequest {
 
 const bootstrapPatches = vi.hoisted(() => [] as Array<Record<string, string | boolean | undefined>>);
 const loadFacade = vi.hoisted(() => vi.fn());
-const restorableSession = vi.hoisted(() => ({ current: undefined as undefined | Record<string, string | number> }));
+const restorableSession = vi.hoisted(() => ({ current: undefined as AuthSession | undefined }));
 vi.mock('../../../apps/rallar-black-box/src/runtime-store.ts', () => ({
     rallarBlackBoxRuntimeStore: { updateBootstrapConfig: (patch: Record<string, string | boolean | undefined>) => bootstrapPatches.push(patch) }
 }));

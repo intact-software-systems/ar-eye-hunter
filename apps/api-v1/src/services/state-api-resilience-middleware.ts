@@ -31,9 +31,10 @@ export function createStateApiResilienceMiddleware(
 
     return async (c, next) => {
         const isClientMutation = isClientStateMutationRoute(c.req.method, c.req.path);
+        const redeemingGuest = c.req.method === 'POST' && /\/guests\/requests\/[^/]+$/.test(c.req.path);
         const limiter = readRateLimiter(
-            toRateLimiterNamespace(namespace, c.req.path),
-            readAuthenticatedClientKey(c),
+            redeemingGuest ? namespace + ':guest-redemption' : toRateLimiterNamespace(namespace, c.req.path),
+            redeemingGuest ? readRequestClientKey(c.req) : readAuthenticatedClientKey(c),
             isEventListRequest(c.req.path) ? eventListRateLimitPolicy : stateRateLimitPolicy
         );
 
