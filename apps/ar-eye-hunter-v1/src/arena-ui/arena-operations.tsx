@@ -52,7 +52,7 @@ export function ArenaOperations(props: ArenaOperationsProps) {
     return (
         <section className="hud hud--side" aria-label="Arena operations">
             <ArenaRoomEntry arena={arena} />
-            {arena.session && <ArenaSocialControls arena={arena} />}
+            {arena.session && !arena.session.guestRoom && <ArenaSocialControls arena={arena} />}
             {arena.connectionState === 'signed-out' || !arena.session
                 ? (
                     <ArenaAuthForm

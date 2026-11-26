@@ -34,9 +34,10 @@ describe('scheduled-session link entry', () => {
         browser.authenticate({ ...SESSION, guestRoom: DESTINATION.roomRef });
         const entry = browser.createEntry();
         entry.start();
-        entry.enter({ ...DESTINATION, joinCode: null });
+        entry.enter({ ...DESTINATION, joinCode: null, participation: 'player' });
         await entry.resume();
         expect(browser.requests[0].options.presenceOnly).toBe(true);
+        expect(browser.requests[0].options.participation).toBeUndefined();
         entry.stop();
     });
 

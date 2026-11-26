@@ -72,7 +72,9 @@ export function GuestSessionBookingPanel({ room, entry }: { readonly room: Group
                 {preview.participation === 'reserved' && <button type="button" disabled={busy} onClick={() => void decide('withdraw')}>Withdraw guest reservation</button>}
             </> : <>
                 {preview.participation === 'needs-confirmation' && <p>The organizer changed the schedule. Review the new time to reserve again.</p>}
-                <p>Return in this browser to claim your seat.</p>
+                <p>{preview.timing.phase === 'cancelled' ? 'The organizer cancelled this session.'
+                    : preview.timing.phase === 'reservations-expired' ? 'The reservation deadline has passed.'
+                    : 'Return in this browser to claim your seat.'}</p>
                 <button type="button" disabled={busy || !preview.canReserve} onClick={() => void decide('reserve')}>Reserve as a guest</button>
             </>}
         </>}

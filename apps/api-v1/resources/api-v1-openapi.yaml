@@ -1549,6 +1549,7 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -1562,6 +1563,8 @@ paths:
       responses:
         '200':
           description: Private result for this browser and scoped room.
+          headers:
+            x-request-id: { $ref: '#/components/headers/XRequestId' }
           content:
             application/json:
               schema:
@@ -1580,6 +1583,7 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/ApiMutationRequestId'
       requestBody:
         required: true
@@ -1596,6 +1600,8 @@ paths:
       responses:
         '200':
           description: Private result for this browser and scoped room.
+          headers:
+            x-request-id: { $ref: '#/components/headers/XRequestId' }
           content:
             application/json:
               schema:

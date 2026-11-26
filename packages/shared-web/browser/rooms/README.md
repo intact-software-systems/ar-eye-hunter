@@ -141,3 +141,14 @@ pending offer on their private event view. Pass its `offerId` to
 `cancel-handover` or `accept-handover`. Acceptance rechecks presence,
 authorization and server time. The former organizer then loses event management
 and roster access; occupied courts keep their existing clock and allocation.
+
+
+### Scheduled guest reservations
+
+For a scheduled room in an enabled application, pass `guestBooking: true` to
+`RallarScheduledSessions.create`. A signed-out client opens the usual session link and creates a
+`GuestSessionBooking` for its scoped room. Call `preview()` to read current timing, availability
+and that browser’s participation. Pass the displayed revision to `change('reserve', revision)`
+or `change('withdraw', revision)`. At arrival, `claim(revision)` returns the scoped guest
+admission used by `auth.activateGuest`. The SDK stores the browser proof separately from the link
+and can retry interrupted writes. A second browser needs its own available seat.
