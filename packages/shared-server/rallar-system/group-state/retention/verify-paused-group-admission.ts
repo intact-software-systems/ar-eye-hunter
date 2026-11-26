@@ -12,9 +12,12 @@ export async function verifyPausedGroupAdmission(
     if (!read.group || read.idempotency) return;
     const now = ingress.facts.attemptAtEpochMs;
     const playerOperation = ingress.facts.internalAuthority === 'none' || ingress.facts.internalAuthority === 'guest-redemption';
-    if (read.group.value.eventRoom && playerOperation && operation !== 'disconnectPresence' &&
-        !await repository.isEventRoomAvailable(read.group.value, now)) {
-        throw new GroupMutationRejectedError('This event is no longer available.');
+    if (read.group.value.eventRoom || read.group.value.temporaryPlayerRoom) {
+        if (playerOperation && operation !== 'disconnectPresence' &&
+            !await repository.isTemporaryRoomAvailable(read.group.value, now, read.group.entry.revision)) {
+            throw new GroupMutationRejectedError('This temporary room or event is no longer available.');
+        }
+        return;
     }
     if (operation !== 'connectPresence' && operation !== 'heartbeatPresence' &&
         operation !== 'joinGroup' && operation !== 'acceptGroupInvite') return;

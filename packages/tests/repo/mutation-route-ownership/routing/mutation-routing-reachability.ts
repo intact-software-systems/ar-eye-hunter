@@ -184,7 +184,7 @@ function findMaintenanceHandlers({
     program
 }: Pick<FindRegisteredHandlersInput, 'item' | 'program'>): readonly MutationRoutingAstNode[] {
     if (item.registrationMarker === 'installDurableDeadline') {
-        const delivery = findCall(program, item.registrationMarker, () => true);
+        const delivery = findAstNode(program, node => node.type === 'CallExpression' && decodeAstName(node.callee) === item.registrationMarker);
         const options = delivery && decodeAstNodes(delivery.arguments)[0];
         const enqueue = options && readObjectCallback(options, 'enqueue');
         return enqueue ? [enqueue] : [];

@@ -90,7 +90,7 @@ describe('Mutation route owner analysis contracts', () => {
         const original = read(path);
         const disconnected = original.replace(change.before, change.after);
         expect(disconnected).not.toBe(original);
-        const issues = routingContract.validateMutationRouteInventory(routingContract.MUTATION_ROUTE_INVENTORY, {
+        const issues = routingContract.validateMutationRouteInventory([route], {
             sourceOverrides: new Map([[path, disconnected]])
         });
         expect(issues.some(issue => issue.includes(route.entrypoint) && issue.includes(route.type))).toBe(true);

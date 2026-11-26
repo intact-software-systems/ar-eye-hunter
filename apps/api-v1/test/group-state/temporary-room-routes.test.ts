@@ -1,3 +1,5 @@
+import { Either } from '@shared/resilience/Either.ts';
+import { toRoomGuestCredential } from '@shared-server/rallar-system/auth/credentials/room-guest-credential.ts';
 import assert from 'node:assert/strict';
 import { test } from 'bun:test';
 import { hashRoomInvitationSecret } from '@shared/api/room-guests/invitation.ts';
@@ -56,11 +58,41 @@ test('a valid invitation to a retired event stays unavailable while its room cle
     const snapshot = createGroupStateRouteSnapshotWithMember('park', 'owner', 'active');
     const guestInvitation = { verifier: await hashRoomInvitationSecret(invitationSecret), expiresAtEpochMs: 500 };
     const runtime = createGroupStateRouteTestRuntime({ installStateAuthentication: false, nowEpochMs: () => 100,
-        isEventRoomAvailable: async () => false,
+        isTemporaryRoomAvailable: async () => false,
         groupService: { readCurrentSnapshot: async () => ({ ...snapshot, group: { ...snapshot.group, guestInvitation,
             eventRoom: { lobbyGroupId: 'park', organizerPlaying: false, emptyReturnWindowMs: 45_000 } } }) } });
     const response = await runtime.app.request(scopePath + '/groups/park/guests/preview', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invitationSecret })
     });
     assert.equal(response.status, 404);
+});
+
+test('an empty private game ends previews, guest reads and replayed redemption at its return cutoff', async () => {
+    let now = 199;
+    const ref = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'court' };
+    const guestSecret = '05'.repeat(32);
+    const credential = await toRoomGuestCredential(ref, guestSecret);
+    const previous = createGroupStateRouteSnapshotWithMember('court', credential.clientId, 'active');
+    const guestInvitation = { verifier: await hashRoomInvitationSecret(invitationSecret), expiresAtEpochMs: 500 };
+    const snapshot = { ...previous, group: { ...previous.group, guestInvitation, temporaryPlayerRoom: true as const },
+        members: previous.members.map(member => ({ ...member, guestLease: { admittedAtEpochMs: 0, expiresAtEpochMs: 14_400_000 } })) };
+    const runtime = createGroupStateRouteTestRuntime({ installStateAuthentication: false, nowEpochMs: () => now,
+        isTemporaryRoomAvailable: async (_group, at) => at < 200,
+        groupService: { readCurrentSnapshot: async () => snapshot },
+        readGroupSnapshot: async () => ({ source: 'durable', status: 'found', snapshot }),
+        processGuestAdmission: async () => Either.ofRight({ status: 'ok', result: { snapshot, event: null } }) });
+    const groupPath = scopePath + '/groups/court';
+    const post = (path: string, body: object) => runtime.app.request(groupPath + path, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    });
+    const preview = () => post('/guests/preview', { invitationSecret });
+    const redeem = () => post('/guests/requests/repeated-valid-redemption', { invitationSecret, guestSecret });
+    const read = () => runtime.app.request(groupPath, { headers: { Authorization: 'Bearer ' + credential.accessToken, 'x-client-id': credential.clientId } });
+    assert.equal((await preview()).status, 200);
+    assert.equal((await redeem()).status, 200);
+    assert.equal((await read()).status, 200);
+    now++;
+    assert.equal((await preview()).status, 404);
+    assert.equal((await redeem()).status, 403);
+    assert.equal((await read()).status, 403);
 });

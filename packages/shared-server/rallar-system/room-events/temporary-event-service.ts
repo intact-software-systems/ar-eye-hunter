@@ -196,6 +196,8 @@ function remainingAuthorityFences(fences: readonly RuntimeStateGuardedBatchEffec
     return fences.filter(fence => {
         const overlapping = rows.find(row => row.namespace === fence.namespace && row.key === fence.key);
         if (!overlapping) return true;
+        // A claimed player may have no presence yet. The seat release already guards that admission's absence.
+        if (fence.operation === 'insert' && overlapping.operation === 'insert') return false;
         if (!('expectedRevision' in overlapping) || !('expectedRevision' in fence) || overlapping.expectedRevision !== fence.expectedRevision) {
             throw new RuntimeStateWriteConflictError();
         }

@@ -1,3 +1,4 @@
+import { availableGuestSnapshot } from '@shared-server/http/available-guest-snapshot.ts';
 import { authorizationDenied } from '@shared-server/http/request-auth-service.ts';
 import { isApiJsonObject, type ApiJsonValue } from '@shared/api/api-json-value.ts';
 import type { Hono } from 'hono';
@@ -80,7 +81,7 @@ export function registerTemporaryRoomRoutes(app: Hono, dependencies: GroupStateR
             if (!snapshot || !group || group.kind !== 'room' || group.status !== 'active' ||
                 group.guestInvitation?.verifier !== verifier || group.guestInvitation.expiresAtEpochMs <= now ||
                 (group.expiresAtEpochMs !== null && group.expiresAtEpochMs <= now) ||
-                (group.eventRoom && !await dependencies.isEventRoomAvailable(group, now)) ||
+                (!await availableGuestSnapshot(snapshot, now, dependencies.isTemporaryRoomAvailable)) ||
                 (group.purgeAfterEpochMs !== null && group.purgeAfterEpochMs <= now)) {
                 return context.json({ error: 'Invitation unavailable.' }, 404);
             }

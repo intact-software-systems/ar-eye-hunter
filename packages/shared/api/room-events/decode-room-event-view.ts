@@ -1,10 +1,11 @@
+import type { PlainJsonValue } from '../../repository/compare-plain-json.ts';
 import { decodeExactGroupRef } from '../../encoding/decode-exact-group-ref.ts';
 import { requireEpoch, requireExactKeys, requireRecord } from '../exact-object-decoding.ts';
 import { assertValidRallarRouteId } from '../rallar-validation.ts';
-import { decodeEventParty, decodeEventProposal } from './decode-room-event.ts';
+import { decodeEventParty, decodeEventProposal, decodeEventRecord } from './decode-room-event.ts';
 import type { RoomEvent } from './room-event.ts';
 
-function decodeOffer(value: unknown): RoomEvent.Offer {
+function decodeOffer(value: PlainJsonValue | undefined): RoomEvent.Offer {
     const row = requireRecord(value, 'Court offer');
     requireExactKeys(row, ['groupId', 'partyId', 'occurrence', 'offerRevision', 'deadline'], 'Court offer');
     requireEpoch(row.occurrence, 'Court occurrence');
@@ -15,7 +16,7 @@ function decodeOffer(value: unknown): RoomEvent.Offer {
         occurrence: row.occurrence, offerRevision: row.offerRevision, deadline: row.deadline };
 }
 
-function decodeCourt(value: unknown): RoomEvent.View['courts'][number] {
+function decodeCourt(value: PlainJsonValue): RoomEvent.View['courts'][number] {
     const row = requireRecord(value, 'Event court');
     requireExactKeys(row, ['groupId', 'capacity', 'occurrence', 'availableSeats'], 'Event court');
     requireEpoch(row.capacity, 'Court capacity');
@@ -27,7 +28,7 @@ function decodeCourt(value: unknown): RoomEvent.View['courts'][number] {
 }
 
 export function decodeRoomEventView(value: unknown): RoomEvent.View {
-    const row = requireRecord(value, 'Private event view');
+    const row = decodeEventRecord(value, 'Private event view');
     requireExactKeys(row, ['principalId', 'lobby', 'revision', 'closesAt', 'closed', 'courts', 'queue', 'proposals', 'offer'], 'Private event view');
     const lobby = decodeExactGroupRef(row.lobby, 'Event lobby');
     const principalId = assertValidRallarRouteId(row.principalId);

@@ -91,7 +91,7 @@ export interface GraphTopologyRoutePlanning {
 }
 
 export interface GraphTopologyRouteDependencies {
-    readonly isEventRoomAvailable: import('../group-state/group-state-route-contracts.ts').GroupStateRouteDependencies['isEventRoomAvailable'];
+    readonly isTemporaryRoomAvailable: import('../group-state/group-state-route-contracts.ts').GroupStateRouteDependencies['isTemporaryRoomAvailable'];
     readonly groupStateService: GraphTopologyGroupStateService;
     readonly graphDiagnostics: GraphTopologyRouteGraphDiagnostics;
     readonly topologyQuery: GraphTopologyRouteQuery;
@@ -164,7 +164,7 @@ export function registerGraphTopologyRoutes(
                 const guest = await readRoomGuestRequest(c.req, groupRef);
                 const snapshot = await readCurrentGroupSnapshot(groupRef, deps);
                 if (guest) {
-                    if (!await availableGuestSnapshot(snapshot, deps.now(), deps.isEventRoomAvailable)) throw authorizationDenied('Event access has ended.');
+                    if (!await availableGuestSnapshot(snapshot, deps.now(), deps.isTemporaryRoomAvailable)) throw authorizationDenied('Event access has ended.');
                     assertRoomGuestSeat(guest, snapshot, deps.now());
                 }
                 else await assertCanReadGroupSnapshot(c.req, deps, snapshot);

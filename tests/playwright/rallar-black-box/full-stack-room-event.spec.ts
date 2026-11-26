@@ -33,7 +33,7 @@ async function openEvent(page: Page, lobby: GroupRef, invitationSecret?: string)
     }, { lobby, invitationSecret, sharedWeb, apiBaseUrl: config.apiBaseUrl });
 }
 
-test('a temporary player enters their assigned court, returns to the lobby and recovers a missed removal', async ({ page, browser, baseURL }) => {
+test('temporary friends consent to one party, independently enter their court and recover a missed removal', async ({ page, browser, baseURL }) => {
     test.skip(!config.enabled, config.skipReason);
     const lobby = { applicationId: 'club', workspaceId: crypto.randomUUID(), groupId: 'lounge' };
     const operator = await openEvent(page, lobby);
@@ -48,14 +48,25 @@ test('a temporary player enters their assigned court, returns to the lobby and r
         return secret;
     }, { lobby, invitationModule: '/@fs' + fileURLToPath(new URL('../../../packages/shared/api/room-guests/invitation.ts', import.meta.url)) });
     const guestPage = await browser.newPage({ baseURL });
+    const friendPage = await browser.newPage({ baseURL });
     try {
         const guest = await openEvent(guestPage, lobby, invitation);
         const guestId = await guest.evaluate(({ rallar }) => rallar.session()!.clientId);
-        await guest.evaluate(async ({ event }, guestId) => {
-            await event.act({ action: 'propose', players: [guestId], partyId: 'walkup' });
+        const friend = await openEvent(friendPage, lobby, invitation);
+        const friendId = await friend.evaluate(({ rallar }) => rallar.session()!.clientId);
+        await guest.evaluate(({ event }, players) => event.act({ action: 'propose', players, partyId: 'friends' }), [guestId, friendId]);
+        await expect.poll(() => friend.evaluate(({ event }) => event.getState().view?.proposals[0]?.id)).toBe('friends');
+        expect(await guest.evaluate(({ event }) => event.getState().view?.offer)).toBeNull();
+        await friend.evaluate(async ({ event }) => {
+            const proposal = event.getState().view!.proposals[0];
+            await event.act({ action: 'accept', partyId: proposal.id, proposalRevision: proposal.proposalRevision });
             if (event.getState().error) throw new Error(event.getState().error!);
-            await event.enterCourt();
-        }, guestId);
+        });
+        await expect.poll(() => guest.evaluate(({ event }) => event.getState().view?.offer?.groupId)).toBe('first');
+        await guest.evaluate(({ event }) => event.enterCourt());
+        expect(await friend.evaluate(({ rallar }) => rallar.rooms.selected()?.groupId)).toBe('lounge');
+        await friend.evaluate(({ event }) => event.enterCourt());
+        expect(await friend.evaluate(({ rallar }) => [rallar.session()!.clientId, rallar.rooms.selected()?.groupId])).toEqual([friendId, 'first']);
         await expect.poll(() => guest.evaluate(({ rallar }) => rallar.rooms.selected()?.groupId)).toBe('first');
         expect(await guest.evaluate(({ rallar }) => rallar.session()!.clientId)).toBe(guestId);
         await guest.evaluate(({ event }) => event.returnToLobby());
@@ -72,6 +83,6 @@ test('a temporary player enters their assigned court, returns to the lobby and r
         await expect.poll(() => guest.evaluate(({ event }) => event.getState().view)).toBeNull();
         await expect.poll(() => guest.evaluate(({ event }) => event.getState().error)).toContain('403');
     } finally {
-        await guestPage.close();
+        await Promise.all([guestPage.close(), friendPage.close()]);
     }
 });

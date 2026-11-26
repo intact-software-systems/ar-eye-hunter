@@ -26,6 +26,8 @@ import { GroupMembershipRepository } from './membership/group-membership-reposit
 import { GroupPresenceRepository } from './presence/group-presence-repository.ts';
 
 import { RoomEventRepository } from '../../room-events/room-event-repository.ts';
+import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
+import { computeEmptyGroupLifetime, readArrivalRetention } from '../retention/compute-empty-group-lifetime.ts';
 import { readRoomEventLifetime } from '../../room-events/room-event-lifetime.ts';
 
 export function createTransactionBoundGroupStateRepository(
@@ -49,7 +51,21 @@ export class GroupStateRepository extends GroupStateRepositoryReads {
         this.presence = new GroupPresenceRepository(repository);
     }
 
-    async isEventRoomAvailable(group: Group, now: number): Promise<boolean> {
+    async isTemporaryRoomAvailable(group: Group, now: number, expectedRevision?: number): Promise<boolean> {
+        if (group.status !== 'active' || (group.expiresAtEpochMs !== null && now >= group.expiresAtEpochMs)) return false;
+        if (group.temporaryPlayerRoom) {
+            const policy = readArrivalRetention(group);
+            if (!policy) return false;
+            if (now - group.created.atEpochMs < policy.reconnectGraceMs) return true;
+            const authority = await this.readPresenceSummaryEntries(group);
+            if (expectedRevision !== undefined && authority.group?.entry.revision !== expectedRevision) {
+                throw new RuntimeStateWriteConflictError();
+            }
+            const current = authority.group?.value;
+            if (!current?.temporaryPlayerRoom || current.status !== 'active') return false;
+            const currentPolicy = readArrivalRetention(current);
+            return currentPolicy !== null && computeEmptyGroupLifetime(authority, currentPolicy, now) !== 'expired';
+        }
         if (!group.eventRoom) return true;
         const lobby = { applicationId: group.applicationId, workspaceId: group.workspaceId, groupId: group.eventRoom.lobbyGroupId };
         const event = (await new RoomEventRepository(this.repository).read(lobby))?.value;

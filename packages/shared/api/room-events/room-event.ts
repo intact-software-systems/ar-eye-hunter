@@ -21,7 +21,7 @@ export interface RoomEvent {
 
 export namespace RoomEvent {
     export interface Party { readonly id: string; readonly players: readonly string[]; }
-    export interface Proposal extends Party { readonly accepted: readonly string[]; }
+    export interface Proposal extends Party { readonly proposalRevision: number; readonly accepted: readonly string[]; }
     export interface CourtSetup { readonly groupId: string; readonly capacity: number; }
     export interface Court extends CourtSetup { readonly occurrence: number; readonly seats: readonly Seat[]; }
     export interface Seat { readonly principalId: string; readonly partyId: string; readonly offerRevision: number; readonly deadline: number | null; }
@@ -40,7 +40,7 @@ export namespace RoomEvent {
     export type Command =
         | { readonly action: 'create'; readonly courts: readonly CourtSetup[]; readonly closesAt: number; readonly claimWindowMs?: number; readonly emptyReturnWindowMs?: number }
         | { readonly action: 'propose'; readonly partyId: string; readonly players: readonly string[] }
-        | { readonly action: 'accept'; readonly partyId: string }
+        | { readonly action: 'accept'; readonly partyId: string; readonly proposalRevision: number }
         | { readonly action: 'leave-queue' | 'close' | 'settle' }
         | { readonly action: 'claim' | 'decline-offer'; readonly groupId: string; readonly occurrence: number; readonly partyId: string; readonly offerRevision: number }
         | { readonly action: 'release'; readonly groupId: string; readonly occurrence: number; readonly requeue: boolean }
@@ -103,7 +103,7 @@ function proposeParty(event: RoomEvent, command: Extract<RoomEvent.Command, { ac
         !event.courts.some(court => court.capacity >= players.length)) throw new TypeError('Invalid event party.');
     if (event.proposals.some(p => p.id === partyId) || event.queue.some(p => p.id === partyId) ||
         event.courts.some(court => court.seats.some(seat => seat.partyId === partyId))) throw new TypeError('Party identity is already in use.');
-    const proposal = { id: partyId, players, accepted: [] };
+    const proposal = { id: partyId, players, accepted: [], proposalRevision: event.revision + 1 };
     return acceptParty({ ...event, proposals: [...event.proposals, proposal] }, proposal, player);
 }
 
@@ -112,7 +112,7 @@ function applyCommand(event: RoomEvent, command: RoomEvent.Command, player: stri
         case 'create': throw new TypeError('Event already exists.');
         case 'propose': return proposeParty(event, command, player);
         case 'accept': {
-            const proposal = event.proposals.find(p => p.id === command.partyId);
+            const proposal = event.proposals.find(p => p.id === command.partyId && p.proposalRevision === command.proposalRevision);
             if (!proposal) throw new TypeError('No matching party invitation.');
             return acceptParty(event, proposal, player);
         }

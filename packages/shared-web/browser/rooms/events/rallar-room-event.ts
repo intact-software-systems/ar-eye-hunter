@@ -29,7 +29,7 @@ export namespace RallarRoomEvent {
 }
 
 /** A private event view stays bound to its lobby identity while the player chooses which room to enter. */
-export class RallarRoomEvent extends AuthenticatedResource<RoomEvent.View, RallarRoomEvent.Action> {
+export class RallarRoomEvent extends AuthenticatedResource<RoomEvent.View | null, RallarRoomEvent.Action> {
     private readonly lobby: GroupRef;
     private readonly browser: RallarRoomEvent.Browser;
     private readonly grants: EventGuestGrants;
@@ -48,11 +48,7 @@ export class RallarRoomEvent extends AuthenticatedResource<RoomEvent.View, Ralla
                 if (!notice || (notice.resource === 'room-event' && notice.groupId === ref.groupId)) void changed();
             } })
         }, {
-            read: async ({ session, signal }) => {
-                const view = decodeRoomEventView(await readApiView({ baseUrl: readApiBaseUrl(), path, session, signal, timeoutMs: 10000 }));
-                if (view.principalId !== session.clientId || !isSameGroupRef(view.lobby, ref)) throw new TypeError('Event view belongs to another player or lobby.');
-                return view;
-            },
+            read: input => readPrivateEventView(ref, path, input),
             change: async ({ request, requestId, session, signal }) => {
                 const current = browser.session();
                 const actor = request.action === 'release' && current?.guestRoom &&
@@ -89,8 +85,11 @@ export class RallarRoomEvent extends AuthenticatedResource<RoomEvent.View, Ralla
                 !isSameGroupRef(decodeExactGroupRef(result.room, 'Court admission'), room)) throw new TypeError('Invalid court admission.');
             const access = isTemporaryRoomAdmission(result) ? result.access : undefined;
             if (session.guestRoom && access?.clientId !== session.clientId) throw new TypeError('Invalid court admission.');
-            await this.refresh();
-            const claimed = this.getState().view?.offer;
+            const observed = await readPrivateEventView(this.lobby, this.path, attempt);
+            const latest = this.getState().view;
+            const currentView = observed && latest && latest.revision > observed.revision ? latest : observed;
+            this.publishStreamView(attempt, currentView);
+            const claimed = currentView?.offer;
             if (!this.current(attempt) || !claimed || claimed.deadline !== null || claimed.occurrence !== offer.occurrence ||
                 claimed.offerRevision !== offer.offerRevision || claimed.partyId !== offer.partyId || claimed.groupId !== room.groupId) throw new Error('The court assignment has changed.');
             if (session.guestRoom && access) await this.browser.auth.activateGuest({ room, access, username: session.username });
@@ -115,4 +114,12 @@ export class RallarRoomEvent extends AuthenticatedResource<RoomEvent.View, Ralla
         signal.throwIfAborted();
         await this.browser.rooms.join(room, { signal, presenceOnly: true });
     }
+}
+
+async function readPrivateEventView(lobby: GroupRef, path: string, { session, signal }: AuthenticatedResource.ReadInput): Promise<RoomEvent.View | null> {
+    const response = await readApiView({ baseUrl: readApiBaseUrl(), path, session, signal, timeoutMs: 10000 });
+    if (response === null) return null;
+    const view = decodeRoomEventView(response);
+    if (view.principalId !== session.clientId || !isSameGroupRef(view.lobby, lobby)) throw new TypeError('Event view belongs to another player or lobby.');
+    return view;
 }

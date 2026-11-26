@@ -95,7 +95,7 @@ on the landing page. Opening its link shows free seats. Tapping **Join this
 town** claims one. **Return to game** on the landing page restores the most
 recent seat in the same browser while the room is available. The current room
 manager can invite, remove a guest, or hand management to a present player.
-Handing over management leaves the game director in place.
+During a round, **Manage town** opens those controls. Handing over management leaves the game director in place.
 
 To host from a registered account, choose **Play with friends**, sign in and **Create town**. Choose
 **Invite guests** to show a QR code and a shareable link. A friend can scan or

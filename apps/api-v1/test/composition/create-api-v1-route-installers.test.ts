@@ -66,7 +66,7 @@ test('route installers mount representative API and websocket behavior in order'
     assert.equal((await app.request('/api/crdt/catch-up', { method: 'POST' })).status, 401);
     const eventPath = '/api/state/apps/app/workspaces/workspace/groups/lobby/event';
     assert.equal((await app.request(eventPath)).status, 401);
-    assert.equal((await app.request(eventPath + '/requests/event-authority-01', {
+    assert.equal((await app.request(eventPath + '/requests/event-authority-request-01', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'leave-queue' })
     })).status, 401);
     assert.equal((await app.request('/api/state/apps/app/workspaces/workspace/temporary-rooms/requests/temporary-authority-01', {
@@ -322,7 +322,7 @@ function createTopology(): ApiV1RouteInstallerTopology {
         adminClientIds: ['admin'],
         readPlannedLayoutFingerprint: () => Promise.resolve(null),
         groupStateRepository: {
-            isEventRoomAvailable: rejectUnusedOperation,
+            isTemporaryRoomAvailable: rejectUnusedOperation,
             readLobbyOccupancy: rejectUnusedOperation,
             findLobbyCommitmentEntry: async () => undefined,
             readLifecyclePolicy: () => Promise.resolve({ status: 'absent' as const })

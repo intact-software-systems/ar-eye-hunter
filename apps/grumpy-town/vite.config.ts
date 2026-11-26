@@ -9,7 +9,7 @@ if (Boolean(certificatePath) !== Boolean(keyPath)) {
     throw new Error('Set both GRUMPY_TOWN_TLS_CERT and GRUMPY_TOWN_TLS_KEY to enable HTTPS.');
 }
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig({
     resolve: {
         alias: {
             '@shared-web': path.resolve(import.meta.dirname, '../../packages/shared-web'),
@@ -18,7 +18,6 @@ export default defineConfig(({ mode }) => ({
         }
     },
     server: {
-        watch: mode === 'test' ? null : undefined,
         port: 5180,
         strictPort: true,
         https: certificatePath && keyPath
@@ -33,4 +32,4 @@ export default defineConfig(({ mode }) => ({
         }
     },
     build: { target: 'es2023' }
-}));
+});

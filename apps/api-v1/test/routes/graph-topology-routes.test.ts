@@ -631,7 +631,7 @@ function createRouteApp(options: {
 }): Hono {
     const app = createTracedApiTestApp();
     graphTopologyRoutes.registerGraphTopologyRoutes(app, {
-        isEventRoomAvailable: async () => { throw new Error('Unexpected event availability read'); },
+        isTemporaryRoomAvailable: async () => { throw new Error('Unexpected temporary room availability read'); },
         groupStateService: {
             readCurrentSnapshot: (ref: GroupRef) => {
                 options.onCurrentGroupRead?.();

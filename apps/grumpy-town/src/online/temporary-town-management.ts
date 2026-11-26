@@ -7,6 +7,8 @@ import { renderGuestSharing } from './render-guest-sharing.ts';
 export namespace TemporaryTownManagement {
     export interface Input {
         readonly root: HTMLElement;
+        readonly opener: HTMLButtonElement;
+        readonly dialog: HTMLDialogElement;
         readonly browser: RallarFacade;
         readonly visit: AdmittedGuestVisit;
         readonly signal: AbortSignal;
@@ -25,6 +27,13 @@ export class TemporaryTownManagement {
         this.input = input;
         this.current = snapshot;
         this.secret = input.visit.invitationSecret;
+        const { root, opener, dialog, signal } = input;
+        const lobbySharing = root.parentElement!;
+        opener.addEventListener('click', () => {
+            dialog.append(root);
+            dialog.showModal();
+        }, { signal });
+        dialog.addEventListener('close', () => lobbySharing.append(root), { signal });
         input.root.addEventListener('click', event => {
             const button = event.target instanceof Element ? event.target.closest('button') : null;
             if (button && !button.disabled) void this.act(button);
@@ -34,8 +43,11 @@ export class TemporaryTownManagement {
 
     observe(snapshot: GroupSnapshot): void {
         this.current = snapshot;
-        const { root, visit } = this.input;
-        if (!snapshot.group.temporaryPlayerRoom || snapshot.group.ownerPrincipalId !== visit.access.clientId) {
+        const { root, visit, opener, dialog } = this.input;
+        const managesRoom = Boolean(snapshot.group.temporaryPlayerRoom && snapshot.group.ownerPrincipalId === visit.access.clientId);
+        opener.hidden = !managesRoom;
+        if (!managesRoom) {
+            if (dialog.open) dialog.close();
             this.dropSecret();
             root.replaceChildren();
             return;

@@ -24,7 +24,7 @@ export default defineConfig({
         reuseExistingServer: !process.env.CI,
         timeout: 60000
     }, {
-        command: 'npm run dev -- --mode test --host 127.0.0.1 --port 5182',
+        command: 'npm run build && npm exec -- vite preview --host 127.0.0.1 --port 5182 --strictPort',
         url: 'http://127.0.0.1:5182',
         env: { VITE_RALLAR_API_BASE_URL: 'http://localhost:18084' },
         reuseExistingServer: !process.env.CI

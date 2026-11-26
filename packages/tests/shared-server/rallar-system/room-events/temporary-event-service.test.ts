@@ -34,10 +34,21 @@ it.each(['hard close', 'empty return window'])('recovers the %s and closes both 
         await original.queue.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
         expect((await admitted.right!.wait()).right).toEqual({ revision: 1 });
         expect((await original.service.mutate.submit({ command: request, traceId: 'lost-response' })).right).toEqual({ revision: 1 });
+        if (cause === 'empty return window') {
+            // Claiming a seat may finish just before the browser goes away and before its first presence admission.
+            for (const next of [
+                { action: 'propose', partyId: 'alone', players: ['owner'] },
+                { action: 'claim', groupId: 'one', occurrence: 1, partyId: 'alone', offerRevision: 2 }
+            ] satisfies RoomEvent.Command[]) {
+                const pending = await original.service.mutate.enqueue({ command: { ...request, command: next, requestId: next.action }, traceId: next.action });
+                await original.queue.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
+                expect((await pending.right!.wait()).left).toBeFalsy();
+            }
+        }
         original.queue.inbox.stop();
         if (cause === 'empty return window') {
             const lobby = (await groups.findGroup(RETENTION_REF))!;
-            expect(await groups.isEventRoomAvailable(lobby, nowEpochMs() + 2000)).toBe(false);
+            expect(await groups.isTemporaryRoomAvailable(lobby, nowEpochMs() + 2000)).toBe(false);
         }
         const replacement = startWorker();
         await vi.waitFor(async () => {
@@ -82,15 +93,15 @@ it('holds the lobby open from an occupied court, then rejects a late reconnect b
         await commitMutation(fixture, requireMutationWrite((await prepareMutation(fixture, connect('first'))).computed));
         fixture.nowEpochMs += 1100;
         const lobby = (await groups.findGroup(RETENTION_REF))!;
-        expect(await groups.isEventRoomAvailable(lobby, nowEpochMs())).toBe(true);
+        expect(await groups.isTemporaryRoomAvailable(lobby, nowEpochMs())).toBe(true);
         const departure = await prepareMutation(fixture, mutationDescriptor({ scope: court, groupId: court.groupId,
             operation: 'disconnectPresence', sessionId: fixture.owner.sessionId, request: {
                 actorPrincipalId: 'owner', generationId: 'first', requestId: 'depart', disconnectedAtEpochMs: nowEpochMs() } }));
         await commitMutation(fixture, requireMutationWrite(departure.computed));
         fixture.nowEpochMs += 999;
-        expect(await groups.isEventRoomAvailable(lobby, nowEpochMs())).toBe(true);
+        expect(await groups.isTemporaryRoomAvailable(lobby, nowEpochMs())).toBe(true);
         fixture.nowEpochMs++;
-        expect(await groups.isEventRoomAvailable(lobby, nowEpochMs())).toBe(false);
+        expect(await groups.isTemporaryRoomAvailable(lobby, nowEpochMs())).toBe(false);
         await expect(prepareMutation(fixture, connect('late'))).rejects.toThrow('event is no longer available');
         expect((await groups.findGroup(court))?.status).toBe('active');
     }

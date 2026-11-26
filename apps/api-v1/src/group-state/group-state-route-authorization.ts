@@ -31,7 +31,7 @@ export async function requireRoomParticipantSession(
         request,
         readSnapshot: async (room) => {
             const result = await dependencies.readGroupSnapshot(room, { strictMode: true });
-            return result.status === 'found' ? await availableGuestSnapshot(result.snapshot, dependencies.nowEpochMs(), dependencies.isEventRoomAvailable) : undefined;
+            return result.status === 'found' ? await availableGuestSnapshot(result.snapshot, dependencies.nowEpochMs(), dependencies.isTemporaryRoomAvailable) : undefined;
         },
         nowEpochMs: dependencies.nowEpochMs,
         temporaryRoomOnly: guestScope === 'temporary-room',

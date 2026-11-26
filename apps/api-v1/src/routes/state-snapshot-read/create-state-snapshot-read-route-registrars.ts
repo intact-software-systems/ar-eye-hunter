@@ -76,7 +76,7 @@ export interface ApiV1StateSnapshotAuthRequest {
 }
 
 export interface ApiV1StateSnapshotRouteOperations<Runtime extends ApiV1StateSnapshotRouteRuntime> {
-    readonly isEventRoomAvailable: GroupStateRouteDependencies['isEventRoomAvailable'];
+    readonly isTemporaryRoomAvailable: GroupStateRouteDependencies['isTemporaryRoomAvailable'];
     readonly readLobbyOccupancy: GroupStateRouteDependencies['readLobbyOccupancy'];
     readonly requireApiAuthSession: (
         request: ApiV1StateSnapshotAuthRequest,
@@ -102,7 +102,7 @@ export function createStateSnapshotReadRouteRegistrars<Runtime extends ApiV1Stat
         client: (app: Hono) =>
             clientStateRoutes.registerClientStateRoutes(app, {
                 clientStateService: runtime.clientStateService,
-                readGuestRoom: async ref => availableGuestSnapshot(await runtime.groupStateService.readCurrentSnapshot(ref), policy.nowEpochMs(), operations.isEventRoomAvailable),
+                readGuestRoom: async ref => availableGuestSnapshot(await runtime.groupStateService.readCurrentSnapshot(ref), policy.nowEpochMs(), operations.isTemporaryRoomAvailable),
                 nowEpochMs: policy.nowEpochMs,
                 strictReadAuthorization: policy.strictReadAuthorization,
                 requireApiAuthSession: (request) =>
@@ -119,7 +119,7 @@ export function createStateSnapshotReadRouteRegistrars<Runtime extends ApiV1Stat
         group: (app: Hono) =>
             groupStateRoutes.registerGroupStateRoutes(app, {
                 groupStateService: runtime.groupStateService,
-                isEventRoomAvailable: operations.isEventRoomAvailable,
+                isTemporaryRoomAvailable: operations.isTemporaryRoomAvailable,
                 readLobbyOccupancy: operations.readLobbyOccupancy,
                 sessionDirectory: runtime.groupStateService.sessionDirectory,
                 rtcRttRepository: runtime.topologyServices.rttRepository,

@@ -1,4 +1,4 @@
-import type { ApiJsonValue } from '../api-json-value.ts';
+import { isPlainJsonValue, type PlainJsonRecord, type PlainJsonValue } from '../../repository/compare-plain-json.ts';
 import { assertCourtCapacity } from './room-event-courts.ts';
 import { decodeExactGroupRef } from '../../encoding/decode-exact-group-ref.ts';
 import { requireEpoch, requireExactKeys, requireExactOptionalKeys, requireRecord } from '../exact-object-decoding.ts';
@@ -6,30 +6,36 @@ import { assertValidRallarRouteId } from '../rallar-validation.ts';
 import { isGuestInvitationVerifier } from '../room-guests/invitation.ts';
 import type { RoomEvent } from './room-event.ts';
 
-function positive(value: ApiJsonValue | undefined, label: string): number {
+export function decodeEventRecord(input: unknown, label: string): PlainJsonRecord {
+    const row = requireRecord(input, label);
+    if (!isPlainJsonValue(row)) throw new TypeError(label + ' must contain JSON values.');
+    return row;
+}
+
+function positive(value: PlainJsonValue | undefined, label: string): number {
     requireEpoch(value, label);
     if (!value) throw new TypeError(label + ' must be positive.');
     return value;
 }
 
-function boolean(value: ApiJsonValue | undefined): boolean {
+function boolean(value: PlainJsonValue | undefined): boolean {
     if (typeof value !== 'boolean') throw new TypeError('Expected an event boolean.');
     return value;
 }
 
-function rows<T>(value: ApiJsonValue | undefined, read: (entry: ApiJsonValue) => T): T[] {
+function rows<T>(value: PlainJsonValue | undefined, read: (entry: PlainJsonValue) => T): T[] {
     if (!Array.isArray(value)) throw new TypeError('Expected an event collection.');
     return value.map(read);
 }
 
-function ids(value: ApiJsonValue | undefined): string[] {
+function ids(value: PlainJsonValue | undefined): string[] {
     const result = rows(value, entry => assertValidRallarRouteId(entry));
     if (new Set(result).size !== result.length) throw new TypeError('Duplicate event identity.');
     return result;
 }
 
-function courtSetup(value: ApiJsonValue): RoomEvent.CourtSetup {
-    const court = requireRecord(value, 'Court settings');
+function courtSetup(value: PlainJsonValue): RoomEvent.CourtSetup {
+    const court = decodeEventRecord(value, 'Court settings');
     requireExactKeys(court, ['groupId','capacity'], 'Court settings');
     const capacity = positive(court.capacity, 'Court capacity');
     assertCourtCapacity(capacity);
@@ -37,7 +43,7 @@ function courtSetup(value: ApiJsonValue): RoomEvent.CourtSetup {
 }
 
 export function decodeRoomEventCommand(value: unknown): RoomEvent.Command {
-    const c = requireRecord(value, 'Room event command');
+    const c = decodeEventRecord(value, 'Room event command');
     switch (c.action) {
         case 'create': {
             requireExactOptionalKeys({ value: c, required: ['action','courts','closesAt'], optional: ['claimWindowMs','emptyReturnWindowMs'], label: 'Event creation' });
@@ -50,8 +56,8 @@ export function decodeRoomEventCommand(value: unknown): RoomEvent.Command {
             requireExactKeys(c, ['action','partyId','players'], 'Event party proposal');
             return { action: c.action, partyId: assertValidRallarRouteId(c.partyId), players: ids(c.players) };
         case 'accept':
-            requireExactKeys(c, ['action','partyId'], 'Accept party');
-            return { action: c.action, partyId: assertValidRallarRouteId(c.partyId) };
+            requireExactKeys(c, ['action','partyId','proposalRevision'], 'Accept party');
+            return { action: c.action, partyId: assertValidRallarRouteId(c.partyId), proposalRevision: positive(c.proposalRevision, 'Proposal revision') };
         case 'release':
             requireExactOptionalKeys({ value: c, required: ['action','groupId','occurrence'], optional: ['requeue'], label: 'Court release' });
             return { action: c.action, groupId: assertValidRallarRouteId(c.groupId), occurrence: positive(c.occurrence, 'Court occurrence'),
@@ -72,30 +78,30 @@ export function decodeRoomEventCommand(value: unknown): RoomEvent.Command {
     }
 }
 
-export function decodeEventParty(value: unknown): RoomEvent.Party {
-    const row = requireRecord(value, 'Party');
+export function decodeEventParty(value: PlainJsonValue | undefined): RoomEvent.Party {
+    const row = decodeEventRecord(value, 'Party');
     requireExactKeys(row, ['id','players'], 'Party');
     const players = ids(row.players);
     if (!players.length) throw new TypeError('An event party needs players.');
     return { id: assertValidRallarRouteId(row.id), players };
 }
 
-export function decodeEventProposal(value: unknown): RoomEvent.Proposal {
-    const row = requireRecord(value, 'Party proposal');
-    const { accepted, ...rest } = row;
+export function decodeEventProposal(value: PlainJsonValue | undefined): RoomEvent.Proposal {
+    const row = decodeEventRecord(value, 'Party proposal');
+    const { accepted, proposalRevision, ...rest } = row;
     const group = decodeEventParty(rest);
     const consent = ids(accepted);
     if (!consent.length || consent.length >= group.players.length || consent.some(id => !group.players.includes(id))) {
         throw new TypeError('Invalid party consent.');
     }
-    return { ...group, accepted: consent };
+    return { ...group, accepted: consent, proposalRevision: positive(proposalRevision, 'Proposal revision') };
 }
 
-function court(value: ApiJsonValue): RoomEvent.Court {
-    const { occurrence, seats: stored, ...setup } = requireRecord(value, 'Court');
+function court(value: PlainJsonValue): RoomEvent.Court {
+    const { occurrence, seats: stored, ...setup } = decodeEventRecord(value, 'Court');
     const settings = courtSetup(setup);
     const seats = rows(stored, seat => {
-        const row = requireRecord(seat, 'Court seat');
+        const row = decodeEventRecord(seat, 'Court seat');
         requireExactKeys(row, ['principalId','partyId','offerRevision','deadline'], 'Court seat');
         if (row.deadline !== null) requireEpoch(row.deadline, 'Claim deadline');
         return { principalId: assertValidRallarRouteId(row.principalId), partyId: assertValidRallarRouteId(row.partyId), offerRevision: positive(row.offerRevision, 'Offer revision'), deadline: row.deadline };
@@ -105,7 +111,7 @@ function court(value: ApiJsonValue): RoomEvent.Court {
 }
 
 export function decodeRoomEvent(value: unknown): RoomEvent {
-    const e = requireRecord(value, 'Room event');
+    const e = decodeEventRecord(value, 'Room event');
     requireExactKeys(e, ['lobby','organizerId','createdAt','emptyReturnWindowMs','revision','closesAt','claimWindowMs','closed','courts','queue','proposals','removed'], 'Room event');
     requireEpoch(e.createdAt, 'Event creation time');
     const event = { createdAt: e.createdAt, emptyReturnWindowMs: positive(e.emptyReturnWindowMs, 'Event return window'),
@@ -117,7 +123,7 @@ export function decodeRoomEvent(value: unknown): RoomEvent {
     ids([event.lobby.groupId, ...event.courts.map(c => c.groupId)]);
     ids([...event.queue.flatMap(p => p.players), ...event.courts.flatMap(c => c.seats.map(s => s.principalId)), ...event.removed]);
     ids([...event.queue, ...event.proposals].map(p => p.id));
-    if (event.removed.includes(event.organizerId) || event.proposals.some(p => p.players.some(id => event.removed.includes(id))) ||
+    if (event.removed.includes(event.organizerId) || event.proposals.some(p => p.proposalRevision > event.revision || p.players.some(id => event.removed.includes(id))) ||
         event.courts.some(c => c.seats.some(s => s.offerRevision > event.revision || (s.deadline !== null && s.deadline > event.closesAt))) ||
         (event.closed && (event.queue.length || event.proposals.length || event.courts.some(c => c.seats.length)))) {
         throw new TypeError('Inconsistent stored event allocation.');

@@ -228,7 +228,7 @@ async function readGroupSnapshot(
             return context.json({ error: `Group not found: ${groupId}` }, 404);
         }
         if (guest) {
-            if (!await availableGuestSnapshot(result.snapshot, dependencies.nowEpochMs(), dependencies.isEventRoomAvailable)) {
+            if (!await availableGuestSnapshot(result.snapshot, dependencies.nowEpochMs(), dependencies.isTemporaryRoomAvailable)) {
                 throw authorizationDenied('Event access has ended.');
             }
             assertRoomGuestSeat(guest, result.snapshot, dependencies.nowEpochMs());

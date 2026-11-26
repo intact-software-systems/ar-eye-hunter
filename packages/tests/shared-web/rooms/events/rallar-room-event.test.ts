@@ -165,9 +165,10 @@ it('discards a delayed claim response when a new offer has replaced the old gran
     let revision = 3;
     vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
         if (init.method === 'GET') {
-            if (revision === 3) return Response.json(view);
+            if (revision === 3) return Response.json({ ...view, offer: { ...view.offer, deadline: null } });
             return Response.json({ ...view, revision, offer: { ...view.offer, offerRevision: revision, deadline: null } });
         }
+        Object.defineProperty(document, 'visibilityState', { value: 'hidden' });
         revision++;
         return Response.json({ revision: 4, room: court, access: courtAccess });
     });
@@ -177,5 +178,19 @@ it('discards a delayed claim response when a new offer has replaced the old gran
         await expect(event.enterCourt()).rejects.toThrow(/assignment/i);
         expect(fixture.join).not.toHaveBeenCalled();
         expect(fixture.session()).toEqual(grant);
+    } finally { event.stop(); }
+});
+
+it('opens an authorized lobby without an event and observes subsequent event creation', async () => {
+    const fixture = trial();
+    let created = false;
+    vi.stubGlobal('fetch', async () => Response.json(created ? view : null));
+    const event = fixture.open();
+    try {
+        await event.start();
+        expect(event.getState()).toMatchObject({ view: null, error: null });
+        created = true;
+        fixture.push.reopen();
+        await expect.poll(() => event.getState().view?.lobby).toEqual(lobby);
     } finally { event.stop(); }
 });

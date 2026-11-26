@@ -91,7 +91,7 @@ export interface ApiV1RouteInstallerTopology {
     readonly topologyPlanning: graphTopologyRoutes.GraphTopologyRoutePlanning;
     readonly adminClientIds: readonly string[];
     readonly groupStateRepository:
-        & Pick<ApiV1TopologyServices['groupStateRepository'], 'findLobbyCommitmentEntry' | 'readLobbyOccupancy' | 'isEventRoomAvailable'>
+        & Pick<ApiV1TopologyServices['groupStateRepository'], 'findLobbyCommitmentEntry' | 'readLobbyOccupancy' | 'isTemporaryRoomAvailable'>
         & Readonly<{
             readLifecyclePolicy: graphTopologyRoutes.GraphTopologyRouteDependencies['readLifecyclePolicy'];
         }>;
@@ -225,7 +225,7 @@ function createApiV1RouteConstruction<
     const requireSession = (request: ApiV1RouteAuthRequest) =>
         operations.requireApiAuthSession(request, runtime.authSessionRepository);
     const snapshots = createStateSnapshotReadRouteRegistrars(runtime, {
-        isEventRoomAvailable: (group, now) => input.topology.groupStateRepository.isEventRoomAvailable(group, now),
+        isTemporaryRoomAvailable: (group, now) => input.topology.groupStateRepository.isTemporaryRoomAvailable(group, now),
         readLobbyOccupancy: (rooms, now) => input.topology.groupStateRepository.readLobbyOccupancy(rooms, now),
         requireApiAuthSession: operations.requireApiAuthSession
     }, {
@@ -245,7 +245,7 @@ function createApiV1RouteConstruction<
         operations,
         requireSession,
         readGuestRoom: async ref => availableGuestSnapshot(await runtime.groupStateService.readCurrentSnapshot(ref), input.nowEpochMs(),
-            (group, now) => input.topology.groupStateRepository.isEventRoomAvailable(group, now)),
+            (group, now) => input.topology.groupStateRepository.isTemporaryRoomAvailable(group, now)),
         snapshots,
         authorizeCrdtDocumentAccess
     };
@@ -309,7 +309,7 @@ function registerApiV1StateRoutes<
     });
     graphTopologyRoutes.registerGraphTopologyRoutes(app, {
         groupStateService: snapshots.graphGroupStateService,
-        isEventRoomAvailable: (group, now) => input.topology.groupStateRepository.isEventRoomAvailable(group, now),
+        isTemporaryRoomAvailable: (group, now) => input.topology.groupStateRepository.isTemporaryRoomAvailable(group, now),
         graphDiagnostics: {
             readScopedGlobalGraphDiagnostic,
             readGroupGraphDiagnostic

@@ -14,7 +14,7 @@ it('reserves a whole consenting group together and releases only an unclaimed se
     let event = create([2]);
     event = change(event, 'ann', { action: 'propose', partyId: 'friends', players: ['ann', 'bo'] });
     expect(event.courts[0].seats).toEqual([]);
-    event = change(event, 'bo', { action: 'accept', partyId: 'friends' }, 100);
+    event = change(event, 'bo', { action: 'accept', partyId: 'friends', proposalRevision: event.proposals.find(p => p.id === 'friends')!.proposalRevision }, 100);
     expect(event.courts[0].seats.map(seat => seat.deadline)).toEqual([120100, 120100]);
     expect(projectRoomEvent(event, 'ann').offer?.groupId).toBe('court-0');
     const occurrence = event.courts[0].occurrence;
@@ -31,7 +31,7 @@ it('gives the next suitable court to the oldest group and fences a replayed rele
         event = change(event, id, { action: 'propose', partyId: id, players: [id] });
     }
     event = change(event, 'd', { action: 'propose', partyId: 'duo', players: ['d', 'e'] });
-    event = change(event, 'e', { action: 'accept', partyId: 'duo' });
+    event = change(event, 'e', { action: 'accept', partyId: 'duo', proposalRevision: event.proposals.find(p => p.id === 'duo')!.proposalRevision });
     event = change(event, 'f', { action: 'propose', partyId: 'solo', players: ['f'] });
     const release = { action: 'release', groupId: 'court-0', occurrence: event.courts[0].occurrence, requeue: false } as const;
     event = change(event, 'organizer', release);
@@ -46,9 +46,9 @@ it('requires a choice if an accepted friend receives another offer before the ne
     for (const id of ['a','b','c']) event = change(event, id, { action: 'propose', partyId: id, players: [id] });
     event = change(event, 'c', { action: 'propose', partyId: 'new', players: ['c','d'] });
     event = change(event, 'organizer', { action: 'release', groupId: 'court-0', occurrence: 1, requeue: false });
-    expect(() => change(event, 'd', { action: 'accept', partyId: 'new' })).toThrow('outstanding assignment');
+    expect(() => change(event, 'd', { action: 'accept', partyId: 'new', proposalRevision: event.proposals.find(p => p.id === 'new')!.proposalRevision })).toThrow('outstanding assignment');
     event = change(event, 'c', { action: 'decline-offer', groupId: 'court-0', occurrence: 2, partyId: 'c', offerRevision: event.courts[0].seats[0].offerRevision });
-    event = change(event, 'd', { action: 'accept', partyId: 'new' });
+    event = change(event, 'd', { action: 'accept', partyId: 'new', proposalRevision: event.proposals.find(p => p.id === 'new')!.proposalRevision });
     expect(event.courts[0].seats.map(seat => seat.principalId)).toEqual(['c','d']);
 });
 
@@ -65,15 +65,15 @@ it('keeps the remaining friends in place on departure and puts a replacement at 
     let event = create([3]);
     for (const id of ['a','b','c']) event = change(event, id, { action: 'propose', partyId: id, players: [id] });
     event = change(event,'d',{action:'propose',partyId:'old',players:['d','e','f']});
-    event = change(event,'e',{action:'accept',partyId:'old'});
-    event = change(event,'f',{action:'accept',partyId:'old'});
+    event = change(event,'e',{action:'accept',partyId:'old', proposalRevision: event.proposals.find(p => p.id === 'old')!.proposalRevision});
+    event = change(event,'f',{action:'accept',partyId:'old', proposalRevision: event.proposals.find(p => p.id === 'old')!.proposalRevision});
     event = change(event,'g',{action:'propose',partyId:'other',players:['g']});
     event = change(event,'f',{action:'leave-queue'});
     expect(event.queue.map(p => p.players)).toEqual([['d','e'],['g']]);
     event = change(event,'d',{action:'propose',partyId:'new',players:['d','e','h']});
-    event = change(event,'h',{action:'accept',partyId:'new'});
+    event = change(event,'h',{action:'accept',partyId:'new', proposalRevision: event.proposals.find(p => p.id === 'new')!.proposalRevision});
     expect(event.queue[0].players).toEqual(['d','e']);
-    event = change(event,'e',{action:'accept',partyId:'new'});
+    event = change(event,'e',{action:'accept',partyId:'new', proposalRevision: event.proposals.find(p => p.id === 'new')!.proposalRevision});
     expect(event.queue.map(p => p.players)).toEqual([['g'],['d','e','h']]);
 });
 
@@ -108,4 +108,15 @@ it('fences delayed decisions after the same party receives another offer in the 
 
 it('reserves numeric capacity for the administrative membership at a full court', () => {
     expect(() => create([Number.MAX_SAFE_INTEGER])).toThrow(/capacity/i);
+});
+
+it('requires fresh consent when the same party ID is used to invite a different set of players', () => {
+    let event = change(create([3]), 'ann', { action: 'propose', partyId: 'friends', players: ['ann', 'bo'] });
+    const old = event.proposals[0]!;
+    event = change(event, 'ann', { action: 'leave-queue' });
+    event = change(event, 'ann', { action: 'propose', partyId: 'friends', players: ['ann', 'bo', 'cal'] });
+    expect(() => change(event, 'bo', { action: 'accept', partyId: old.id, proposalRevision: old.proposalRevision })).toThrow(/invitation/);
+    const current = event.proposals[0]!;
+    event = change(event, 'bo', { action: 'accept', partyId: current.id, proposalRevision: current.proposalRevision });
+    expect(event.proposals[0]!.accepted).toEqual(['ann', 'bo']);
 });

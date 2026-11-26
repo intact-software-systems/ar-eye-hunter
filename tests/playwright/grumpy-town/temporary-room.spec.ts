@@ -1,5 +1,4 @@
 import { expect, test } from '@playwright/test';
-import { fileURLToPath } from 'node:url';
 
 test('retrying a lost private game creation recovers its room and working invitation', async ({ page, browser }) => {
     let committedRoom: string | undefined;
@@ -68,14 +67,8 @@ test('four fresh browsers play a private round, replace a disconnected director 
             for (const friend of friends) await expect(friend.locator('#online-game')).toHaveAttribute('data-match-id', matchId!);
             if (round === 0) {
                 previousRound = matchId;
-                const managerTarget = await creator.locator('#sharing [data-action=handover]').first().getAttribute('data-principal');
-                const groupId = new URLSearchParams(new URL(invitation).hash.slice(1)).get('room');
-                expect(managerTarget && groupId).toBeTruthy();
-                await creator.evaluate(async ({ sdk, managerTarget, groupId }) => {
-                    const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(sdk);
-                    await rallar.rooms.transferOwnership({ applicationId: 'grumpy-town', workspaceId: 'default', groupId }, managerTarget);
-                }, { sdk: '/@fs' + fileURLToPath(new URL('../../../packages/shared-web/browser/rallar.ts', import.meta.url)),
-                    managerTarget: managerTarget!, groupId: groupId! });
+                await creator.getByRole('button', { name: 'Manage town' }).click({ timeout: 3000 });
+                await creator.getByRole('button', { name: 'Hand over management' }).first().click();
                 await expect(creator.locator('#sharing [data-action=handover]')).toHaveCount(0);
                 const savedVisitUrl = creator.url();
                 await creator.close();
@@ -101,6 +94,15 @@ test('four fresh browsers play a private round, replace a disconnected director 
             }
         }
         expect(accountCalls).toEqual([]);
+    } catch (error) {
+        const states = await Promise.allSettled(contexts.flatMap(context => context.pages()).map(page => page.evaluate(() => {
+            const game = document.querySelector<HTMLElement>('#online-game');
+            return { phase: game?.dataset.phase, director: game?.dataset.director, seat: game?.dataset.seat, tick: game?.dataset.tick,
+                clock: document.querySelector('#round-clock')?.textContent, status: document.querySelector('#round-status')?.textContent,
+                results: document.querySelector('#round-result-title')?.textContent, lobbyVisible: !document.querySelector<HTMLElement>('.online')?.hidden };
+        })));
+        await test.info().attach('player round states', { body: JSON.stringify(states), contentType: 'application/json' });
+        throw error;
     } finally {
         await Promise.all(contexts.map(context => context.close()));
     }

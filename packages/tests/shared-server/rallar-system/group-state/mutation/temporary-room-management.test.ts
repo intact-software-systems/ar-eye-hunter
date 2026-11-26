@@ -72,3 +72,29 @@ it('transfers room management to a present guest exactly once and rejects the fo
     }
     finally { await fixture.storage.close(); }
 });
+
+it('ends an empty private room at its return cutoff before the retirement worker runs', async () => {
+    const fixture = await createRetentionDatabaseFixture();
+    try {
+        const now = fixture.nowEpochMs;
+        const owner = await guest('a', now);
+        const entrant = await guest('b', now);
+        const commandFor = async (player: typeof owner) => {
+            const common = { roomRef: RETENTION_REF, principalId: player.clientId, requestId: player.clientId, invitationVerifier,
+                guestTransport: { sessionId: player.sessionId, accessTokenDigest: await hashAuthSecret(player.accessToken) } };
+            return player === owner ? toTemporaryGroupCreationCommand({ ...common, capacity: 2, lifetimeMs: 3_600_000, emptyReturnWindowMs: 1_000 })
+                : toGroupGuestAdmissionCommand(common);
+        };
+        const opened = await fixture.mutations.captureGuestMembershipMutationIngress(await commandFor(owner), now);
+        await commitMutation(fixture, requireMutationWrite(await retryMutation(fixture, opened)));
+        const room = (await fixture.repository.findGroup(RETENTION_REF))!;
+        const redeem = await fixture.mutations.captureGuestMembershipMutationIngress(await commandFor(entrant), now);
+        fixture.nowEpochMs += 999;
+        expect(await fixture.repository.isTemporaryRoomAvailable(room, fixture.nowEpochMs)).toBe(true);
+        expect((await retryMutation(fixture, redeem)).outcome).toBe('write');
+        fixture.nowEpochMs++;
+        expect(await fixture.repository.isTemporaryRoomAvailable(room, fixture.nowEpochMs)).toBe(false);
+        await expect(retryMutation(fixture, redeem)).rejects.toThrow(/available/);
+        expect((await fixture.repository.findGroup(RETENTION_REF))?.status).toBe('active');
+    } finally { await fixture.storage.close(); }
+});

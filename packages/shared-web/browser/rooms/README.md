@@ -112,10 +112,12 @@ both seat counts. The visitor explicitly redeems the invitation to join.
 event lobby. Construct it with the browser facade and lobby reference. Call
 `start()` on mount, subscribe with `onChange`, and call `stop()` on unmount.
 The initial read, a private WebSocket notice, reconnect or foreground return
-recovers the player's current event view. An idle watcher sends no timer reads.
+recovers the player's current event view. Before an organizer creates the event,
+an authorized lobby member sees an empty view. An idle watcher sends no timer reads.
 
 Send organizer and queue commands with `act(command)`. A proposed party enters
-the queue once every invited player consents. `enterCourt()` claims the current
+the queue once every invited player consents. Pass the displayed proposal's
+`proposalRevision` when accepting and the offer's `offerRevision` when declining. `enterCourt()` claims the current
 offer and enters the matching court. Its saved request recovers a committed
 claim after transport loss or reload. `returnToLobby()` reselects the event
 lobby without surrendering its membership. A temporary player uses distinct
