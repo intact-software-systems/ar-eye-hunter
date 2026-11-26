@@ -103,11 +103,9 @@ describe('public application AppInbox', () => {
     });
 
     it('returns durable admission and wakes its owner before any worker runs or result wait begins', async () => {
-        const wakeObservations: Promise<readonly { status: string; }[]>[] = [];
+        const wakeObservations: Promise<readonly QueueRowObservation[]>[] = [];
         const harness = createHarness(storage.sql, () => {
-            wakeObservations.push(
-                storage.sql<{ status: string; }[]>`select ri_status as status from resource_inbox where ri_type_id = 'APP_INBOX'`.then((rows) => rows)
-            );
+            wakeObservations.push(readQueueRows());
         });
         const operation = registerStock(harness);
         harness.inbox.start();
@@ -117,7 +115,7 @@ describe('public application AppInbox', () => {
         const replay = await operation.readAdmission(COMMAND);
         expect(replay?.left).toBeUndefined();
         expect(replay?.right).toBeDefined();
-        expect(await Promise.all(wakeObservations)).toEqual([[{ status: 'NEW' }]]);
+        expect(await Promise.all(wakeObservations)).toEqual([[{ type: 'APP_INBOX', status: 'NEW' }]]);
         expect(harness.facts).toEqual([101]);
         expect(harness.afterCommit).toEqual([]);
         expect(await storage.sql`select quantity, revision from inventory`).toEqual([{ quantity: 10, revision: 0 }]);
@@ -130,9 +128,39 @@ describe('public application AppInbox', () => {
         expect(await storage.sql`select ri_status from resource_inbox where ri_type_id = 'APP_INBOX'`).toEqual([{ ri_status: 'COMPLETED' }]);
         expect(await admitted.right!.wait()).toEqual(Either.ofRight({ remaining: 7, capturedAt: 101 }));
         expect(await replay!.right!.wait()).toEqual(Either.ofRight({ remaining: 7, capturedAt: 101 }));
-        expect(wakeObservations).toHaveLength(1);
         expect(harness.afterCommit).toEqual([7]);
         expect(harness.facts).toEqual([101]);
+    });
+
+    it('announces the outbox rows its commit wrote, so their owner need not wait out its idle ceiling', async () => {
+        const wakeObservations: Promise<readonly QueueRowObservation[]>[] = [];
+        const harness = createHarness(storage.sql, () => {
+            wakeObservations.push(readQueueRows());
+        });
+        const operation = registerStock(harness);
+        harness.inbox.start();
+        await operation.enqueue({ command: COMMAND, traceId: TRACE_ID });
+        expect(await Promise.all(wakeObservations)).toEqual([[{ type: 'APP_INBOX', status: 'NEW' }]]);
+        await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
+        expect(await Promise.all(wakeObservations)).toEqual([
+            [{ type: 'APP_INBOX', status: 'NEW' }],
+            [{ type: 'APP_INBOX', status: 'COMPLETED' }, { type: 'APP_OUTBOX', status: 'NEW' }]
+        ]);
+    });
+
+    it('announces nothing for an attempt whose transaction rolled back', async () => {
+        const wakeObservations: Promise<readonly QueueRowObservation[]>[] = [];
+        const harness = createHarness(storage.sql, () => {
+            wakeObservations.push(readQueueRows());
+        });
+        harness.failWrite = true;
+        const operation = registerStock(harness);
+        harness.inbox.start();
+        await operation.enqueue({ command: COMMAND, traceId: TRACE_ID });
+        await Promise.all(wakeObservations);
+        await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
+        expect(await storage.sql`select quantity, revision from inventory`).toEqual([{ quantity: 10, revision: 0 }]);
+        expect(await Promise.all(wakeObservations)).toEqual([[{ type: 'APP_INBOX', status: 'NEW' }]]);
     });
 
     it('retains admitted work when its wake port fails and wakes the retained admission on retry', async () => {
@@ -152,7 +180,8 @@ describe('public application AppInbox', () => {
         expect(wakes).toBe(2);
         expect(harness.facts).toEqual([101]);
         expect(await drain(harness.reader, retry.right!.wait())).toEqual(Either.ofRight({ remaining: 7, capturedAt: 101 }));
-        expect(wakes).toBe(2);
+        const wakesOfFailedAdmissionRetryAndCommit = 3;
+        expect(wakes).toBe(wakesOfFailedAdmissionRetryAndCommit);
         expect(harness.afterCommit).toEqual([7]);
     });
 
@@ -187,11 +216,12 @@ describe('public application AppInbox', () => {
         harness.inbox.start();
         const first = await drain(harness.reader, operation.submit({ command: COMMAND, traceId: TRACE_ID }));
         expect(first).toEqual(Either.ofRight({ remaining: 7, capturedAt: 101 }));
-        expect(wakes).toBe(1);
+        const wakesOfAdmissionAndCommit = 2;
+        expect(wakes).toBe(wakesOfAdmissionAndCommit);
         expect(await operation.readReplay(COMMAND)).toEqual(first);
-        expect(wakes).toBe(1);
+        expect(wakes).toBe(wakesOfAdmissionAndCommit);
         expect(await operation.submit({ command: COMMAND, traceId: TRACE_ID })).toEqual(first);
-        expect(wakes).toBe(2);
+        expect(wakes).toBe(wakesOfAdmissionAndCommit + 1);
         expect(harness.facts).toEqual([101]);
         expect(harness.afterCommit).toEqual([7]);
         expect(await storage.sql`select quantity, revision from inventory`).toEqual([{ quantity: 7, revision: 1 }]);
@@ -472,6 +502,17 @@ describe('public application AppInbox', () => {
         expect(harness.afterCommit).toEqual([]);
     });
 });
+
+interface QueueRowObservation {
+    readonly type: string;
+    readonly status: string;
+}
+
+function readQueueRows(): Promise<readonly QueueRowObservation[]> {
+    return storage.sql<QueueRowObservation[]>`
+        select ri_type_id as type, ri_status as status from resource_inbox order by ri_type_id
+    `.then((rows) => rows.map(({ type, status }) => ({ type, status })));
+}
 
 interface Harness {
     readonly inbox: RallarServerAppInbox;

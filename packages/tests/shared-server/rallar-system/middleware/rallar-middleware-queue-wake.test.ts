@@ -8,6 +8,7 @@ import {
 } from 'vitest';
 
 import { createRallarMiddlewareInfrastructure } from '@shared-server/rallar-system/middleware/create-rallar-middleware-infrastructure.ts';
+import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/create-rallar-middleware.ts';
 import {
     newALEventRoute,
     newALUnicastMessage,
@@ -116,6 +117,24 @@ describe('Rallar middleware queue wake', () => {
             status: proofAvailable ? EntityStatus.COMPLETED : EntityStatus.NON_RETRYABLE,
             dequeueAudit: { attempts: 1 }
         });
+    });
+
+    it('hands a writer outside the middleware the wake that makes the outbound owner read storage again', async () => {
+        const resilience = createResilience();
+        const fixture = createRallarMiddlewareTestRuntime({ resilience: { inbox: resilience, outbox: resilience, appOutbox: resilience } });
+        const runtime = createRallarMiddleware({ ...fixture.options, webSocketServer: new JsonWebSocketServer() });
+        onTestFinished(() => runtime.wsQBoxServerService.dispose());
+        await runtime.qboxEngine.executeOnce();
+
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(createOutboundMessage(), EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
+        await fixture.outbox.enqueueIfAbsent(entry);
+        await runtime.qboxEngine.executeOnce();
+        expect(await readOutboxEntry(fixture.outbox, entry)).toMatchObject({ status: EntityStatus.NEW, dequeueAudit: { attempts: 0 } });
+
+        runtime.wakeQueueEngine();
+        await runtime.qboxEngine.executeOnce();
+
+        await expect.poll(async () => (await readOutboxEntry(fixture.outbox, entry)).dequeueAudit.attempts).toBe(1);
     });
 });
 
