@@ -4,7 +4,10 @@ import type { ALMessageRejection } from '@shared/al-contracts/al-message-persist
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
-import { toOrderedSendCellAnswer } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/to-ordered-send-cell-answer.ts';
+import {
+    toOrderedSendCellAnswer,
+    toOrderedSendThrownAnswer
+} from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/to-ordered-send-cell-answer.ts';
 
 const ANSWERED_AT_MS = 1_234.5625;
 
@@ -50,8 +53,38 @@ describe('toOrderedSendCellAnswer', () => {
             .toEqual({ acceptance: kind, answeredAtMs: 1_234.5625 });
     });
 
-    it('answers a send the entry took for a control as a control, without its handled flag', () => {
+    it('answers an offer the entry took for a control as a control, with whether that instance handled it', () => {
         expect(toOrderedSendCellAnswer(accepted({ kind: 'control', handled: false }), ANSWERED_AT_MS))
-            .toEqual({ acceptance: 'control', answeredAtMs: 1_234.5625 });
+            .toEqual({ acceptance: 'control', answeredAtMs: 1_234.5625, handled: false });
+        expect(toOrderedSendCellAnswer(accepted({ kind: 'control', handled: true }), ANSWERED_AT_MS))
+            .toEqual({ acceptance: 'control', answeredAtMs: 1_234.5625, handled: true });
+    });
+});
+
+describe('toOrderedSendThrownAnswer', () => {
+    it('answers an offer that threw with the error\'s name, its message and the unrounded instant it threw at', () => {
+        const error = new Error('Buffered inbound ordering slot lost its canonical message');
+        error.name = 'ALAdmissionCorruptionError';
+
+        expect(toOrderedSendThrownAnswer(error, ANSWERED_AT_MS)).toEqual({
+            acceptance: 'threw',
+            answeredAtMs: 1_234.5625,
+            errorName: 'ALAdmissionCorruptionError',
+            errorMessage: 'Buffered inbound ordering slot lost its canonical message'
+        });
+    });
+
+    it('records at most 240 characters of the message, and no URL of it', () => {
+        const error = new Error(`connect postgres://app:s3cr3t@db.internal:5432/run refused ${'x'.repeat(300)}`);
+
+        const answer = toOrderedSendThrownAnswer(error, ANSWERED_AT_MS);
+
+        expect(answer).toEqual({
+            acceptance: 'threw',
+            answeredAtMs: 1_234.5625,
+            errorName: 'Error',
+            errorMessage: `connect <url removed> refused ${'x'.repeat(209)}…`
+        });
+        expect(`connect <url removed> refused ${'x'.repeat(209)}…`).toHaveLength(240);
     });
 });

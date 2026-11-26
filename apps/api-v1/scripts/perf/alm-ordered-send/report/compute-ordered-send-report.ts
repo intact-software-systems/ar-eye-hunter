@@ -1,4 +1,5 @@
 import type { OrderedSendCellObservations } from '../ordered-send-cell-observations.ts';
+import { computeOrderedSendAckFigures, type OrderedSendAckFigures } from './compute-ordered-send-ack-figures.ts';
 import {
     computeOrderedSendBeforeFirstControlFigures,
     type OrderedSendBeforeFirstControlFigures
@@ -49,6 +50,7 @@ export interface OrderedSendReport {
     readonly controls: OrderedSendControlFigures;
     readonly beforeFirstControl: OrderedSendBeforeFirstControlFigures;
     readonly resends: OrderedSendResendFigures;
+    readonly acks: OrderedSendAckFigures;
     readonly standIn: OrderedSendStandInFigures;
     readonly unmatched: OrderedSendUnmatchedFigures;
 }
@@ -63,6 +65,7 @@ export function computeOrderedSendReport(observations: OrderedSendCellObservatio
         controls: computeOrderedSendControlFigures(observedSends),
         beforeFirstControl: computeOrderedSendBeforeFirstControlFigures(observedSends),
         resends: computeOrderedSendResendFigures(observedSends),
+        acks: computeOrderedSendAckFigures(observedSends),
         standIn: computeOrderedSendStandInFigures(observedSends),
         unmatched: computeOrderedSendUnmatchedFigures(observations)
     };

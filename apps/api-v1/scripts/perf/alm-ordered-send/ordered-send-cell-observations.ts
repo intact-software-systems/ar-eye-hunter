@@ -29,19 +29,31 @@ export interface OrderedSendCellOffer {
 }
 
 /**
- * What `acceptIncomingMessage` answered, read at `answeredAtMs` as soon as it resolved: the kind it accepted the send
- * as, `rejected` for a rejection, or `unanswered` for a send still pending when observation ended.
+ * What came of one offer at `acceptIncomingMessage`, read at `answeredAtMs` as soon as it was known: the kind the
+ * entry accepted the offer as; `rejected` for a rejection; `threw` for an offer whose call threw, with the error's
+ * name and its message, cut at 240 characters with anything URL-shaped removed; or `unanswered` for an offer still
+ * pending when observation ended. A `control` answer says whether the instance offered handled the control itself:
+ * it answers `handled: false` for an ACK it relayed to the other instances because it does not hold the send, and for
+ * a control its store could not persist. An offer that threw says nothing of what the server did with the frame: it
+ * may have admitted the send before it threw.
  */
 export type OrderedSendCellAnswer =
     | {
-        readonly acceptance: Exclude<ALInboundMessageRuntime.Acceptance['kind'], 'not-admitted'>;
+        readonly acceptance: Exclude<ALInboundMessageRuntime.Acceptance['kind'], 'not-admitted' | 'control'>;
         readonly answeredAtMs: number;
     }
     | { readonly acceptance: 'not-admitted'; readonly answeredAtMs: number; readonly notAdmittedReason: string; }
+    | { readonly acceptance: 'control'; readonly answeredAtMs: number; readonly handled: boolean; }
     | {
         readonly acceptance: 'rejected';
         readonly answeredAtMs: number;
         readonly rejectionCode: ALMessageRejection['code'];
+    }
+    | {
+        readonly acceptance: 'threw';
+        readonly answeredAtMs: number;
+        readonly errorName: string;
+        readonly errorMessage: string;
     }
     | { readonly acceptance: 'unanswered'; readonly answeredAtMs: null; };
 
@@ -64,6 +76,19 @@ export interface OrderedSendCellResendOffer {
 }
 
 export type OrderedSendCellResend = OrderedSendCellResendOffer & OrderedSendCellAnswer;
+
+/**
+ * One ACK a recipient offered the instance its socket is on, for its first read of a copy. `sentAtMs` is read
+ * immediately before the offer, one ACK offset after the read.
+ */
+export interface OrderedSendCellAckOffer {
+    /** The send whose copy is acknowledged. */
+    readonly msgId: string;
+    readonly recipientPeerId: string;
+    readonly sentAtMs: number;
+}
+
+export type OrderedSendCellAck = OrderedSendCellAckOffer & OrderedSendCellAnswer;
 
 /**
  * The server wrote a copy of a send to a session's socket: one frame on the wire, recorded each time one is written,
@@ -165,15 +190,17 @@ export interface OrderedSendCellDeclinedRepair {
 
 /**
  * What one run of the cell recorded. Every instant is an unrounded `performance.now()` reading of one clock. Every
- * list but `sends` and `resends` is in the order observed, appended as it happened, and the report takes "first" and
- * "before" from that order, never from comparing instants. `sends` and `resends` are each in the order offered. Every
- * frame a session's socket read is in exactly one of `arrivals`, `receipts`, `controls` and `unclassifiedControls`.
- * What the entry answered a recipient's ACK is in no list.
+ * list but `sends`, `resends` and `acks` is in the order observed, appended as it happened, and the report takes "first" and
+ * "before" from that order, never from comparing instants. `sends`, `resends` and `acks` are each in the order
+ * offered. Every frame a session's socket read is in exactly one of `arrivals`, `receipts`, `controls` and
+ * `unclassifiedControls`. Every offer the run made at the entry, of a send, of a send again and of an ACK, is in
+ * exactly one of `sends`, `resends` and `acks`, with what came of it.
  */
 export interface OrderedSendCellObservations {
     readonly sends: readonly OrderedSendCellSend[];
     /** Empty in a run under the sender recovery `none`. */
     readonly resends: readonly OrderedSendCellResend[];
+    readonly acks: readonly OrderedSendCellAck[];
     readonly arrivals: readonly OrderedSendCellArrival[];
     readonly handOffs: readonly OrderedSendCellHandOff[];
     readonly receipts: readonly OrderedSendCellReceipt[];

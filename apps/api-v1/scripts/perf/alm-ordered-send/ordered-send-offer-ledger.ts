@@ -1,4 +1,6 @@
 import type {
+    OrderedSendCellAck,
+    OrderedSendCellAckOffer,
     OrderedSendCellOffer,
     OrderedSendCellResend,
     OrderedSendCellResendOffer,
@@ -6,22 +8,27 @@ import type {
 } from './ordered-send-cell-observations.ts';
 import type { OrderedSendCellEntryAnswer } from './to-ordered-send-cell-answer.ts';
 
-/** Everything a run offered, each offer with the entry's answer or as unanswered, in the order offered. */
+/** Everything a run offered, each offer with what came of it or as unanswered, in the order offered. */
 export interface OrderedSendOffersClosed {
     readonly sends: readonly OrderedSendCellSend[];
     readonly resends: readonly OrderedSendCellResend[];
+    readonly acks: readonly OrderedSendCellAck[];
 }
 
+const UNANSWERED = { acceptance: 'unanswered', answeredAtMs: null } as const;
+
 /**
- * The sends of one run as they were first offered, every later offer of one, the answer the entry gave each offer,
- * and what an offer threw. It takes answers until it is closed, and an offer unanswered then stays unanswered.
+ * The sends of one run as they were first offered, every later offer of one, every ACK a recipient offered, and what
+ * came of each offer: the entry's answer, or that the offer threw. It takes answers until it is closed, and an offer
+ * unanswered then stays unanswered.
  */
 export class OrderedSendOfferLedger {
     private readonly offers: OrderedSendCellOffer[] = [];
     private readonly answers = new Map<string, OrderedSendCellEntryAnswer>();
     private readonly resendOffers: OrderedSendCellResendOffer[] = [];
     private readonly resendAnswers = new Map<number, OrderedSendCellEntryAnswer>();
-    private readonly failures: Error[] = [];
+    private readonly ackOffers: OrderedSendCellAckOffer[] = [];
+    private readonly ackAnswers = new Map<number, OrderedSendCellEntryAnswer>();
     private closed = false;
 
     /** The first offer of a send. */
@@ -29,7 +36,7 @@ export class OrderedSendOfferLedger {
         this.offers.push(offer);
     }
 
-    /** The answer to the first offer of the send. */
+    /** What came of the first offer of the send. */
     recordAnswer(msgId: string, answer: OrderedSendCellEntryAnswer): void {
         if (!this.closed) {
             this.answers.set(msgId, answer);
@@ -47,13 +54,15 @@ export class OrderedSendOfferLedger {
         }
     }
 
-    /** What an offer of a send or of an ACK threw. What the entry answered is an answer, never a failure. */
-    recordFailure(failure: Error): void {
-        this.failures.push(failure);
+    /** An ACK a recipient offered. Returns its place among the ACKs, by which its answer is recorded. */
+    recordAck(offer: OrderedSendCellAckOffer): number {
+        return this.ackOffers.push(offer) - 1;
     }
 
-    getFailures(): readonly Error[] {
-        return this.failures;
+    recordAckAnswer(ackPosition: number, answer: OrderedSendCellEntryAnswer): void {
+        if (!this.closed) {
+            this.ackAnswers.set(ackPosition, answer);
+        }
     }
 
     /** The instant the last send was first offered at; undefined while none was. A later offer never moves it. */
@@ -61,17 +70,21 @@ export class OrderedSendOfferLedger {
         return this.offers.at(-1)?.sentAtMs;
     }
 
-    /** Stops taking answers, and returns every offer with its answer, or as unanswered. */
+    /** Stops taking answers, and returns every offer with what came of it, or as unanswered. */
     close(): OrderedSendOffersClosed {
         this.closed = true;
         return {
             sends: this.offers.map((offer): OrderedSendCellSend => ({
                 ...offer,
-                ...(this.answers.get(offer.msgId) ?? { acceptance: 'unanswered', answeredAtMs: null })
+                ...(this.answers.get(offer.msgId) ?? UNANSWERED)
             })),
             resends: this.resendOffers.map((offer, resendPosition): OrderedSendCellResend => ({
                 ...offer,
-                ...(this.resendAnswers.get(resendPosition) ?? { acceptance: 'unanswered', answeredAtMs: null })
+                ...(this.resendAnswers.get(resendPosition) ?? UNANSWERED)
+            })),
+            acks: this.ackOffers.map((offer, ackPosition): OrderedSendCellAck => ({
+                ...offer,
+                ...(this.ackAnswers.get(ackPosition) ?? UNANSWERED)
             }))
         };
     }

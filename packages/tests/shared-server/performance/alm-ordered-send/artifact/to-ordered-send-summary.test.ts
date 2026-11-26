@@ -14,6 +14,7 @@ import {
 const NO_FIGURES: OrderedSendReport = computeOrderedSendReport({
     sends: [],
     resends: [],
+    acks: [],
     arrivals: [],
     handOffs: [],
     receipts: [],
@@ -102,23 +103,32 @@ const STALLED_RUN: OrderedSendSummarySource = {
             dueToFirstReadOverExpectedCopiesMs: { count: 518, p50: 45, p95: null, p99: null }
         },
         resends: {
+            ...NO_FIGURES.resends,
             count: 582,
             byAcceptance: { ...NO_FIGURES.resends.byAcceptance, admitted: 2, duplicate: 580 },
             sendsResent: 190,
             byCause: {
                 repair: {
+                    ...NO_FIGURES.resends.byCause.repair,
                     count: 12,
                     byAcceptance: { ...NO_FIGURES.resends.byAcceptance, duplicate: 12 },
                     sendsResent: 12,
                     largestAttempt: 1
                 },
                 'first-hop': {
+                    ...NO_FIGURES.resends.byCause['first-hop'],
                     count: 570,
                     byAcceptance: { ...NO_FIGURES.resends.byAcceptance, admitted: 2, duplicate: 568 },
                     sendsResent: 190,
                     largestAttempt: 3
                 }
             }
+        },
+        acks: {
+            ...NO_FIGURES.acks,
+            offered: 434,
+            byAcceptance: { ...NO_FIGURES.acks.byAcceptance, control: 434 },
+            controlsNotHandled: 290
         },
         standIn: {
             sendsEnded: 197,
@@ -144,6 +154,7 @@ describe('toOrderedSendSummary', () => {
             'commit abc1234; observed 75.0 s past the last offer; run wall time 97.3 s; ' +
             'load average 1.20 at start, 2.10 at end',
             'sends offered: 200; the entry answered admitted 180, pending-admission 20',
+            'offers that threw: none',
             'lateness of an offer against its due time: p50 0.2 ms, p95 1.3 ms, max 12.5 ms',
             'copies written to the recipient\'s socket: 434 of 2800 expected; ' +
             'sends written to every recipient 31, to at least one 31',
@@ -155,6 +166,8 @@ describe('toOrderedSendSummary', () => {
             '(the most hand-offs of one send: 3); answered pending-admission and never handed 16',
             'receipts, of the 200 sends that expect one: complete 23, timed out 158, admitted only 10, none 9',
             'offer to admitted receipt: p50 180.0 ms, p95 2.80 s; offer to complete receipt: p50 5.83 s, p95 7.00 s',
+            'ACKs the recipients offered: 434; the entry answered control 434, ' +
+            '290 of them not handled by the instance offered',
             'controls the server sent its publishers: 12 nack (gap 12), 12 repair (missing-seq 12); ' +
             'sends that drew a nack 12, a repair request 12',
             'resends: repair 12 (answered duplicate 12), first-hop 570 (answered admitted 2, duplicate 568); ' +
@@ -207,7 +220,7 @@ describe('toOrderedSendSummary', () => {
 
         const lines = toOrderedSendSummary(keptUp);
 
-        expect(lines).toHaveLength(15);
+        expect(lines).toHaveLength(17);
         expect(lines[0]).toBe(
             'ALM ordered-send cell: 5 publishers x 2 sends/s for 20 s; +0 ms on each database round trip; ' +
                 'sender recovery none; application pool 10 (API default 5)'
@@ -216,13 +229,13 @@ describe('toOrderedSendSummary', () => {
             'commit abc1234 with uncommitted changes; observed 75.0 s past the last offer; run wall time 97.3 s; ' +
                 'load average 1.20 at start, 2.10 at end'
         );
-        expect(lines.slice(4, 7)).toEqual([
+        expect(lines.slice(5, 8)).toEqual([
             'copies written to the recipient\'s socket: 2800 of 2800 expected; ' +
             'sends written to every recipient 200, to at least one 200',
             'due time to first write, over the 2800 expected copies: p50 43.1 ms, p95 65.0 ms, p99 80.0 ms',
             'due time to first write, over the 2800 written copies: p50 43.1 ms, p95 65.0 ms, max 120.0 ms'
         ]);
-        expect(lines.slice(11, 14)).toEqual([
+        expect(lines.slice(13, 16)).toEqual([
             'controls the server sent its publishers: none',
             'resends: none',
             'before each track\'s first control (0 of 5 tracks drew one): 200 sends, 2800 of 2800 copies written; ' +
@@ -248,7 +261,7 @@ describe('toOrderedSendSummary', () => {
             }
         };
 
-        expect(toOrderedSendSummary(withStrays).slice(16)).toEqual([
+        expect(toOrderedSendSummary(withStrays).slice(18)).toEqual([
             'recorded beside the sends the cell knows: arrivalsOfUnknownMessage 2, unclassifiedControls 1',
             'delays below zero, in no figure: sends.latenessMs 1, receipts.offerToCompleteMs 2',
             'copies written before their send\'s offer was read, in no delay figure: 3'
@@ -265,10 +278,39 @@ describe('toOrderedSendSummary', () => {
             shape: { ...STALLED_RUN.shape, senderRecovery: 'none' }
         };
 
-        expect(toOrderedSendSummary(nothingEnded)[13]).toBe(
+        expect(toOrderedSendSummary(nothingEnded)[15]).toBe(
             'sends the stand-in ended: none; repairs it declined for an ended or expired send: none'
         );
         expect(toOrderedSendSummary(withoutStandIn).join('\n')).not.toContain('stand-in ended');
+    });
+
+    it('prints each kind of offer that threw with its count by error name and the first message under each name', () => {
+        const corruption = 'Buffered inbound ordering slot lost its canonical message';
+        const withThrownOffers: OrderedSendSummarySource = {
+            ...STALLED_RUN,
+            report: {
+                ...STALLED_RUN.report,
+                sends: {
+                    ...STALLED_RUN.report.sends,
+                    byAcceptance: { ...STALLED_RUN.report.sends.byAcceptance, admitted: 177, threw: 3 },
+                    threwByErrorName: { ALAdmissionCorruptionError: 2, PostgresError: 1 },
+                    firstThrownMessageByErrorName: { ALAdmissionCorruptionError: corruption, PostgresError: 'connection ended' }
+                },
+                resends: {
+                    ...STALLED_RUN.report.resends,
+                    threwByErrorName: { ALAdmissionCorruptionError: 4 },
+                    firstThrownMessageByErrorName: { ALAdmissionCorruptionError: corruption }
+                }
+            }
+        };
+
+        const lines = toOrderedSendSummary(withThrownOffers);
+
+        expect(lines[2]).toBe('sends offered: 200; the entry answered admitted 177, pending-admission 20, threw 3');
+        expect(lines[3]).toBe(
+            `offers that threw: sends ALAdmissionCorruptionError 2 ("${corruption}"), ` +
+                `PostgresError 1 ("connection ended"); resends ALAdmissionCorruptionError 4 ("${corruption}")`
+        );
     });
 
     it('says a delay has no sample when no send reached it', () => {
@@ -280,7 +322,7 @@ describe('toOrderedSendSummary', () => {
             }
         };
 
-        expect(toOrderedSendSummary(noReceiptRead)[10]).toBe(
+        expect(toOrderedSendSummary(noReceiptRead)[11]).toBe(
             'offer to admitted receipt: p50 no sample, p95 no sample; ' +
                 'offer to complete receipt: p50 no sample, p95 no sample'
         );

@@ -29,6 +29,8 @@ export interface OrderedSendUnmatchedFigures {
     readonly sendEndsOfUnknownMessage: number;
     /** Repairs a stand-in declined of a msgId no send carries. */
     readonly declinedRepairsOfUnknownMessage: number;
+    /** ACKs a recipient offered of a msgId no send carries. */
+    readonly acksOfUnknownMessage: number;
 }
 
 export function computeOrderedSendUnmatchedFigures(
@@ -53,6 +55,7 @@ export function computeOrderedSendUnmatchedFigures(
         resendsOfUnknownMessage: observations.resends.filter(({ msgId }) => !sendByMsgId.has(msgId)).length,
         sendEndsOfUnknownMessage: observations.sendEnds.filter(({ msgId }) => !sendByMsgId.has(msgId)).length,
         declinedRepairsOfUnknownMessage: observations.declinedRepairs
-            .filter(({ msgId }) => !sendByMsgId.has(msgId)).length
+            .filter(({ msgId }) => !sendByMsgId.has(msgId)).length,
+        acksOfUnknownMessage: observations.acks.filter(({ msgId }) => !sendByMsgId.has(msgId)).length
     };
 }

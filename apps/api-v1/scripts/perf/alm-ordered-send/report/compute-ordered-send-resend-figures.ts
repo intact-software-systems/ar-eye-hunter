@@ -1,15 +1,18 @@
 import { computeNumberExtrema } from '@shared/measurement/compute-number-extrema.ts';
 
 import type { OrderedSendCellResend } from '../ordered-send-cell-observations.ts';
-import { computeOrderedSendCountByKey } from './compute-ordered-send-count-by-key.ts';
-import { NO_ORDERED_SEND_OFFERS_BY_ACCEPTANCE } from './compute-ordered-send-send-figures.ts';
+import {
+    computeOrderedSendAnswerFigures,
+    type OrderedSendAnswerFigures
+} from './compute-ordered-send-answer-figures.ts';
 import type { ObservedOrderedSend } from './to-observed-ordered-sends.ts';
 
-/** Some later offers of sends: how many, how the entry answered them, and how many sends they were of. */
-export interface OrderedSendResendCounts {
+/**
+ * Some later offers of sends: how many, what came of them, and how many sends they were of. Each count by answer is
+ * of what came of the later offer, never of the send's first one.
+ */
+export interface OrderedSendResendCounts extends OrderedSendAnswerFigures {
     readonly count: number;
-    /** By what the entry answered the later offer, never the send's first one. */
-    readonly byAcceptance: Readonly<Record<OrderedSendCellResend['acceptance'], number>>;
     /** Sends offered again at least once. */
     readonly sendsResent: number;
 }
@@ -58,10 +61,7 @@ function computeResendCounts(resendsBySend: readonly (readonly OrderedSendCellRe
     const resends = resendsBySend.flat();
     return {
         count: resends.length,
-        byAcceptance: computeOrderedSendCountByKey(
-            resends.map((resend) => resend.acceptance),
-            NO_ORDERED_SEND_OFFERS_BY_ACCEPTANCE
-        ),
+        ...computeOrderedSendAnswerFigures(resends),
         sendsResent: resendsBySend.filter((resendsOfSend) => resendsOfSend.length > 0).length
     };
 }

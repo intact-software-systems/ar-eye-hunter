@@ -38,6 +38,7 @@ const ARTIFACT = toOrderedSendArtifact({
         observations: {
             sends: [],
             resends: [],
+            acks: [],
             arrivals: [],
             handOffs: [],
             receipts: [],

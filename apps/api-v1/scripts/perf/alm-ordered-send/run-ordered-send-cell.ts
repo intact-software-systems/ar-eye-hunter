@@ -25,9 +25,9 @@ import type { OrderedSendCellObservations } from './ordered-send-cell-observatio
 import { createDefaultOrderedSendClock, type OrderedSendClock } from './ordered-send-clock.ts';
 import { OrderedSendObservationLog } from './ordered-send-observation-log.ts';
 import { OrderedSendOfferLedger } from './ordered-send-offer-ledger.ts';
+import { readOrderedSendCellAnswer } from './read-ordered-send-cell-answer.ts';
 import { startOrderedSendLoopLagSampling } from './start-ordered-send-loop-lag-sampling.ts';
 import { toOrderedSendAck } from './to-ordered-send-ack.ts';
-import { toOrderedSendCellAnswer } from './to-ordered-send-cell-answer.ts';
 import { toOrderedSendMessage } from './to-ordered-send-message.ts';
 import {
     validateOrderedSendShape,
@@ -103,9 +103,6 @@ const RUN_ID = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 /** The application and workspace of every run's room, and of every session's proven scope. */
 const ORDERED_SEND_SCOPE = { applicationId: 'ordered-send-cell', workspaceId: 'default' };
 
-/** How often the run looks, while it observes its tail, whether an offer threw. */
-const TAIL_POLL_MS = 25;
-
 /**
  * How often the run looks for a first-hop resend that has come due, a wait whose retries are spent and a send whose
  * lifetime is over: a resend leaves, and a send ends, at most this long after its deadline. The product's client
@@ -164,8 +161,9 @@ const ROOM_PRESENCE_LIFETIME_MS = 24 * 60 * 60 * 1_000;
  *   presence or heartbeat is written; none of the API's other workers run, no AppInbox reader among them, and no
  *   diagnostics sink is installed.
  *
- * An offer that throws, of a send or of an ACK, fails the run once it has stopped; what the entry answers is never a
- * failure.
+ * No offer fails a run: what the entry answers is recorded as its answer, and an offer that throws, of a send, of a
+ * send again or of an ACK, is recorded as `threw` with the error's name and message, and the run goes on to the end
+ * of its tail.
  */
 export async function runOrderedSendCell(
     input: RunOrderedSendCellInput,
@@ -286,9 +284,6 @@ async function observeOrderedSends(
         declinedRepairs: [...(run.clientStandIn?.getDeclinedRepairs() ?? [])]
     };
     await Promise.all([...run.answersInFlight, firstHopResends]);
-    if (run.ledger.getFailures().length > 0) {
-        throw new AggregateError(run.ledger.getFailures(), 'An offer of the ordered-send cell threw.');
-    }
     return {
         observations: { ...offers, ...reads, ...standInRecord },
         runtime: { sendWindow, applicationPoolMaxConnections: run.instances[0].applicationPoolMaxConnections }
@@ -368,13 +363,16 @@ function toSessionSocket(session: OrderedSendScheduledSession, run: OrderedSendR
     };
 }
 
-/** The first offer of one send on its publisher's instance. Its answer is recorded when it comes and waited for by nobody. */
+/** The first offer of one send on its publisher's instance. What comes of it is recorded when it comes and waited for by nobody. */
 function offerOrderedSend(due: DueOrderedSend, run: OrderedSendRun): void {
     const { send } = due;
     const message = toOrderedSendMessage({ send, roomRef: run.roomRef, createdAtEpochMs: run.clock.nowEpochMs() });
     const frame = JSON.stringify(message);
     const sentAtMs = run.clock.nowMs();
-    const answered = due.publisherInstance.acceptIncomingMessage(toWireValue(frame), send.publisherPeerId);
+    const answered = readOrderedSendCellAnswer(
+        () => due.publisherInstance.acceptIncomingMessage(toWireValue(frame), send.publisherPeerId),
+        run.clock.nowMs
+    );
     run.ledger.recordOffer({
         msgId: send.msgId,
         publisherPeerId: send.publisherPeerId,
@@ -383,32 +381,32 @@ function offerOrderedSend(due: DueOrderedSend, run: OrderedSendRun): void {
         sentAtMs,
         expectedRecipientPeerIds: send.expectedRecipientPeerIds
     });
+    // A client's frame has left its socket whatever the server then does with it, so a stand-in holds the send
+    // even when this offer throws.
     run.clientStandIn?.recordFirstOffer({ send, message, frame, offeredAtMs: sentAtMs });
-    answered.then(
-        (answer) => run.ledger.recordAnswer(send.msgId, toOrderedSendCellAnswer(answer, run.clock.nowMs())),
-        (error) => run.ledger.recordFailure(toError(error))
-    );
+    void answered.then((answer) => run.ledger.recordAnswer(send.msgId, answer));
 }
 
 /**
- * One later offer of a send: the frame of its first offer again, at the same entry of its publisher's instance. Its
- * answer is recorded when it comes and waited for by nobody.
+ * One later offer of a send: the frame of its first offer again, at the same entry of its publisher's instance. What
+ * comes of it is recorded when it comes and waited for by nobody.
  */
 function reofferOrderedSend(reoffer: OrderedSendClientStandIn.Reoffer, run: OrderedSendRun): void {
     const { send } = reoffer;
     const sentAtMs = run.clock.nowMs();
-    const answered = run.instances[send.publisherInstanceIndex]
-        .acceptIncomingMessage(toWireValue(reoffer.frame), send.publisherPeerId);
+    const answered = readOrderedSendCellAnswer(
+        () =>
+            run.instances[send.publisherInstanceIndex]
+                .acceptIncomingMessage(toWireValue(reoffer.frame), send.publisherPeerId),
+        run.clock.nowMs
+    );
     const resendPosition = run.ledger.recordResend({
         msgId: send.msgId,
         cause: reoffer.cause,
         attempt: reoffer.attempt,
         sentAtMs
     });
-    answered.then(
-        (answer) => run.ledger.recordResendAnswer(resendPosition, toOrderedSendCellAnswer(answer, run.clock.nowMs())),
-        (error) => run.ledger.recordFailure(toError(error))
-    );
+    void answered.then((answer) => run.ledger.recordResendAnswer(resendPosition, answer));
 }
 
 /**
@@ -451,7 +449,10 @@ async function offerFirstHopResendsWhenDue(
     }
 }
 
-/** One ACK of one copy, offered on the reader's own instance once its ACK offset passed, while observation lasts. */
+/**
+ * One ACK of one copy, offered on the reader's own instance once its ACK offset passed, while observation lasts, and
+ * recorded with what came of it.
+ */
 async function offerOrderedSendAck(
     copy: ALMessage,
     session: OrderedSendScheduledSession,
@@ -466,25 +467,31 @@ async function offerOrderedSendAck(
         recipientPeerId: session.peerId,
         observedAtEpochMs: run.clock.nowEpochMs()
     });
-    try {
-        await run.instances[session.instanceIndex]
-            .acceptIncomingMessage(toWireValue(JSON.stringify(ack)), session.peerId);
-    }
-    catch (error) {
-        run.ledger.recordFailure(toError(error));
-    }
+    const frame = toWireValue(JSON.stringify(ack));
+    const ackPosition = run.ledger.recordAck({
+        msgId: copy.id.msgId,
+        recipientPeerId: session.peerId,
+        sentAtMs: run.clock.nowMs()
+    });
+    run.ledger.recordAckAnswer(
+        ackPosition,
+        await readOrderedSendCellAnswer(
+            () => run.instances[session.instanceIndex].acceptIncomingMessage(frame, session.peerId),
+            run.clock.nowMs
+        )
+    );
 }
 
 /**
- * Waits until `endAtMs`, whatever the sessions have read by then: a send whose receipt is complete may still read
- * that receipt again, and the server may write a `timed-out` receipt long after its send's deadline. Nothing says
- * that no receipt comes after `endAtMs` either; a send without a terminal receipt by then is counted as such. Only an
- * offer that threw ends the wait early, since its run fails.
+ * Waits until `endAtMs`, whatever the sessions have read and whatever an offer threw by then: a send whose receipt is
+ * complete may still read that receipt again, and the server may write a `timed-out` receipt long after its send's
+ * deadline. Nothing says that no receipt comes after `endAtMs` either; a send without a terminal receipt by then is
+ * counted as such.
  */
 async function observeOrderedSendTail(run: OrderedSendRun, endAtMs: number): Promise<void> {
     let remainingMs = endAtMs - run.clock.nowMs();
-    while (run.ledger.getFailures().length === 0 && remainingMs > 0) {
-        await run.clock.sleep(Math.min(remainingMs, TAIL_POLL_MS));
+    while (remainingMs > 0) {
+        await run.clock.sleep(remainingMs);
         remainingMs = endAtMs - run.clock.nowMs();
     }
 }

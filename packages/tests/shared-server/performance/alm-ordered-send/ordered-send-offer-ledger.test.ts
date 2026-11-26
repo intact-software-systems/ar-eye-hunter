@@ -31,7 +31,8 @@ describe('OrderedSendOfferLedger', () => {
                 { ...toOffer(1, 100), acceptance: 'rejected', answeredAtMs: 650, rejectionCode: 'unauthorized' },
                 { ...toOffer(2, 600), acceptance: 'admitted', answeredAtMs: 640.25 }
             ],
-            resends: []
+            resends: [],
+            acks: []
         });
     });
 
@@ -90,7 +91,8 @@ describe('OrderedSendOfferLedger', () => {
                     acceptance: 'unanswered',
                     answeredAtMs: null
                 }
-            ]
+            ],
+            acks: []
         });
         expect(ledger.close()).toEqual(closed);
         expect(ledger.getLastOfferAtMs()).toBe(100);
@@ -119,13 +121,68 @@ describe('OrderedSendOfferLedger', () => {
         expect(ledger.getLastOfferAtMs()).toBe(600.75);
     });
 
-    it('keeps every failure an offer threw, in the order they were thrown', () => {
+    it('keeps an offer that threw as the answer of that offer, of a send and of a later offer alike', () => {
         const ledger = new OrderedSendOfferLedger();
-        const first = new Error('connection ended');
-        const second = new Error('statement failed');
-        ledger.recordFailure(first);
-        ledger.recordFailure(second);
+        const threw = {
+            acceptance: 'threw',
+            answeredAtMs: 130.5,
+            errorName: 'ALAdmissionCorruptionError',
+            errorMessage: 'Buffered inbound ordering slot lost its canonical message'
+        } as const;
+        ledger.recordOffer(toOffer(1, 100));
+        ledger.recordOffer(toOffer(2, 600));
+        ledger.recordAnswer('session-01-a-send-1', threw);
+        ledger.recordAnswer('session-01-a-send-2', { acceptance: 'admitted', answeredAtMs: 640 });
+        const resend = ledger.recordResend({ msgId: 'session-01-a-send-1', cause: 'first-hop', attempt: 1, sentAtMs: 2_100 });
+        ledger.recordResendAnswer(resend, { ...threw, answeredAtMs: 2_140 });
 
-        expect(ledger.getFailures()).toEqual([first, second]);
+        const closed = ledger.close();
+
+        expect(closed.sends).toEqual([
+            { ...toOffer(1, 100), ...threw },
+            { ...toOffer(2, 600), acceptance: 'admitted', answeredAtMs: 640 }
+        ]);
+        expect(closed.resends).toEqual([
+            { msgId: 'session-01-a-send-1', cause: 'first-hop', attempt: 1, sentAtMs: 2_100, ...threw, answeredAtMs: 2_140 }
+        ]);
+    });
+
+    it('keeps every ACK a recipient offered with the answer the entry gave it, in the order offered', () => {
+        const ledger = new OrderedSendOfferLedger();
+        const relayed = ledger.recordAck({ msgId: 'session-01-a-send-1', recipientPeerId: 'session-02-b', sentAtMs: 150 });
+        const counted = ledger.recordAck({ msgId: 'session-01-a-send-1', recipientPeerId: 'session-04-a', sentAtMs: 160 });
+        const unanswered = ledger.recordAck({ msgId: 'session-01-a-send-1', recipientPeerId: 'session-03-c', sentAtMs: 170 });
+        ledger.recordAckAnswer(counted, { acceptance: 'control', answeredAtMs: 165, handled: true });
+        ledger.recordAckAnswer(relayed, { acceptance: 'control', answeredAtMs: 180, handled: false });
+
+        const closed = ledger.close();
+        ledger.recordAckAnswer(unanswered, { acceptance: 'control', answeredAtMs: 90_000, handled: true });
+
+        expect(closed.acks).toEqual([
+            {
+                msgId: 'session-01-a-send-1',
+                recipientPeerId: 'session-02-b',
+                sentAtMs: 150,
+                acceptance: 'control',
+                answeredAtMs: 180,
+                handled: false
+            },
+            {
+                msgId: 'session-01-a-send-1',
+                recipientPeerId: 'session-04-a',
+                sentAtMs: 160,
+                acceptance: 'control',
+                answeredAtMs: 165,
+                handled: true
+            },
+            {
+                msgId: 'session-01-a-send-1',
+                recipientPeerId: 'session-03-c',
+                sentAtMs: 170,
+                acceptance: 'unanswered',
+                answeredAtMs: null
+            }
+        ]);
+        expect(ledger.close()).toEqual(closed);
     });
 });

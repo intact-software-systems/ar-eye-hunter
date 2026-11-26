@@ -65,6 +65,7 @@ const INPUT: ToOrderedSendArtifactInput = {
                 }
             ],
             resends: [],
+            acks: [],
             arrivals: [{ msgId: 'session-01-a-send-1', recipientPeerId: 'session-02-b', atMs: 1_040.5 }],
             handOffs: [],
             receipts: [],

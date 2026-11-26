@@ -23,6 +23,7 @@ function toSend(seq: number): OrderedSendCellSend {
 const OBSERVATIONS: OrderedSendCellObservations = {
     sends: [1, 2, 3, 4, 5].map(toSend),
     resends: [],
+    acks: [],
     arrivals: [],
     handOffs: [],
     receipts: [],

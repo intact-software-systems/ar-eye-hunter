@@ -1,4 +1,5 @@
 import type {
+    OrderedSendCellAck,
     OrderedSendCellArrival,
     OrderedSendCellControl,
     OrderedSendCellDeclinedRepair,
@@ -36,6 +37,8 @@ export interface ObservedOrderedSend {
     readonly controls: readonly OrderedSendCellControl[];
     /** The later offers of the send, in the order offered. */
     readonly resends: readonly OrderedSendCellResend[];
+    /** The ACKs its recipients offered of the send, in the order offered. */
+    readonly acks: readonly OrderedSendCellAck[];
     /** The ends its publisher's stand-in recorded of the send: at most one in a run of the cell. */
     readonly sendEnds: readonly OrderedSendCellSendEnd[];
     /** The repairs its publisher's stand-in declined of the send, in the order declined. */
@@ -59,6 +62,7 @@ export function toObservedOrderedSends(observations: OrderedSendCellObservations
     const receiptsByMsgId = Map.groupBy(observations.receipts, (receipt) => receipt.msgId);
     const controlsByMsgId = Map.groupBy(observations.controls, (control) => control.msgId);
     const resendsByMsgId = Map.groupBy(observations.resends, (resend) => resend.msgId);
+    const acksByMsgId = Map.groupBy(observations.acks, (ack) => ack.msgId);
     const sendEndsByMsgId = Map.groupBy(observations.sendEnds, (end) => end.msgId);
     const declinedRepairsByMsgId = Map.groupBy(observations.declinedRepairs, (declined) => declined.msgId);
     return [...toOrderedSendByMsgId(observations.sends).values()].map((send) => ({
@@ -68,6 +72,7 @@ export function toObservedOrderedSends(observations: OrderedSendCellObservations
         receipts: receiptsByMsgId.get(send.msgId) ?? [],
         controls: controlsByMsgId.get(send.msgId) ?? [],
         resends: resendsByMsgId.get(send.msgId) ?? [],
+        acks: acksByMsgId.get(send.msgId) ?? [],
         sendEnds: sendEndsByMsgId.get(send.msgId) ?? [],
         declinedRepairs: declinedRepairsByMsgId.get(send.msgId) ?? []
     }));

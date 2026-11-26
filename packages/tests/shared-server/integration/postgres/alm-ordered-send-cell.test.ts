@@ -118,7 +118,8 @@ function expectEverySendDeliveredAndReceipted(observations: OrderedSendCellObser
         unclassifiedControls: 0,
         resendsOfUnknownMessage: 0,
         sendEndsOfUnknownMessage: 0,
-        declinedRepairsOfUnknownMessage: 0
+        declinedRepairsOfUnknownMessage: 0,
+        acksOfUnknownMessage: 0
     });
     expect(report.sends.attempted).toBe(SENDS);
     expect(report.sends.byAcceptance.admitted + report.sends.byAcceptance['pending-admission']).toBe(SENDS);

@@ -11,6 +11,7 @@ import { computeOrderedSendReport } from '../../../../../../apps/api-v1/scripts/
 const NO_OBSERVATIONS: OrderedSendCellObservations = {
     sends: [],
     resends: [],
+    acks: [],
     arrivals: [],
     handOffs: [],
     receipts: [],
@@ -61,7 +62,17 @@ const NO_OFFERS_BY_ACCEPTANCE = {
     'not-admitted': 0,
     control: 0,
     rejected: 0,
+    threw: 0,
     unanswered: 0
+};
+
+/** What the figures of some offers hold beside their counts by answer when none was rejected, refused or threw. */
+const NO_ANSWER_DETAILS = {
+    rejectedByCode: { malformed: 0, oversized: 0, unauthorized: 0, unsupported: 0 },
+    notAdmittedByReason: {},
+    controlsNotHandled: 0,
+    threwByErrorName: {},
+    firstThrownMessageByErrorName: {}
 };
 
 const NO_SAMPLES = {
@@ -140,6 +151,7 @@ describe('computeOrderedSendReport', () => {
                 'not-admitted': 0,
                 control: 0,
                 rejected: 1,
+                threw: 0,
                 unanswered: 0
             });
             expect(report.sends.latenessMs).toMatchObject({ count: 4, p50: 1, p95: 7, p99: 7, max: 7 });
@@ -955,17 +967,20 @@ describe('computeOrderedSendReport', () => {
             expect(report.resends).toEqual({
                 count: 6,
                 byAcceptance: { ...NO_OFFERS_BY_ACCEPTANCE, admitted: 1, duplicate: 3, 'pending-admission': 1, unanswered: 1 },
+                ...NO_ANSWER_DETAILS,
                 sendsResent: 2,
                 byCause: {
                     repair: {
                         count: 2,
                         byAcceptance: { ...NO_OFFERS_BY_ACCEPTANCE, admitted: 1, duplicate: 1 },
+                        ...NO_ANSWER_DETAILS,
                         sendsResent: 1,
                         largestAttempt: 2
                     },
                     'first-hop': {
                         count: 4,
                         byAcceptance: { ...NO_OFFERS_BY_ACCEPTANCE, duplicate: 2, 'pending-admission': 1, unanswered: 1 },
+                        ...NO_ANSWER_DETAILS,
                         sendsResent: 2,
                         largestAttempt: 3
                     }
@@ -1079,7 +1094,8 @@ describe('computeOrderedSendReport', () => {
                 unclassifiedControls: 8,
                 resendsOfUnknownMessage: 9,
                 sendEndsOfUnknownMessage: 0,
-                declinedRepairsOfUnknownMessage: 0
+                declinedRepairsOfUnknownMessage: 0,
+                acksOfUnknownMessage: 0
             });
             expect(report.sends.attempted).toBe(2);
             expect(report.delivery).toMatchObject({ handedToApplication: 1, copiesExpected: 3, copiesRead: 1 });
@@ -1102,10 +1118,10 @@ describe('computeOrderedSendReport', () => {
                     'not-admitted': 0,
                     control: 0,
                     rejected: 0,
+                    threw: 0,
                     unanswered: 0
                 },
-                rejectedByCode: { malformed: 0, oversized: 0, unauthorized: 0, unsupported: 0 },
-                notAdmittedByReason: {},
+                ...NO_ANSWER_DETAILS,
                 latenessMs: NO_SAMPLES,
                 offerToAnswerMs: NO_SAMPLES
             },
@@ -1165,12 +1181,26 @@ describe('computeOrderedSendReport', () => {
             resends: {
                 count: 0,
                 byAcceptance: NO_OFFERS_BY_ACCEPTANCE,
+                ...NO_ANSWER_DETAILS,
                 sendsResent: 0,
                 byCause: {
-                    repair: { count: 0, byAcceptance: NO_OFFERS_BY_ACCEPTANCE, sendsResent: 0, largestAttempt: null },
-                    'first-hop': { count: 0, byAcceptance: NO_OFFERS_BY_ACCEPTANCE, sendsResent: 0, largestAttempt: null }
+                    repair: {
+                        count: 0,
+                        byAcceptance: NO_OFFERS_BY_ACCEPTANCE,
+                        ...NO_ANSWER_DETAILS,
+                        sendsResent: 0,
+                        largestAttempt: null
+                    },
+                    'first-hop': {
+                        count: 0,
+                        byAcceptance: NO_OFFERS_BY_ACCEPTANCE,
+                        ...NO_ANSWER_DETAILS,
+                        sendsResent: 0,
+                        largestAttempt: null
+                    }
                 }
             },
+            acks: { offered: 0, byAcceptance: NO_OFFERS_BY_ACCEPTANCE, ...NO_ANSWER_DETAILS },
             standIn: {
                 sendsEnded: 0,
                 endsByCause: {
@@ -1194,7 +1224,8 @@ describe('computeOrderedSendReport', () => {
                 unclassifiedControls: 0,
                 resendsOfUnknownMessage: 0,
                 sendEndsOfUnknownMessage: 0,
-                declinedRepairsOfUnknownMessage: 0
+                declinedRepairsOfUnknownMessage: 0,
+                acksOfUnknownMessage: 0
             }
         });
     });

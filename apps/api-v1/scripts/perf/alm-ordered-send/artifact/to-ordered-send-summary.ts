@@ -1,3 +1,4 @@
+import type { OrderedSendAnswerFigures } from '../report/compute-ordered-send-answer-figures.ts';
 import type { OrderedSendDelaySummary } from '../report/compute-ordered-send-delay-summary.ts';
 import type { OrderedSendReport } from '../report/compute-ordered-send-report.ts';
 import type { OrderedSendResendCauseFigures } from '../report/compute-ordered-send-resend-figures.ts';
@@ -19,7 +20,9 @@ const NO_SAMPLE = 'no sample';
 /**
  * The lines a run prints once it has ended, in the order to print them. A copy is "written to the recipient's
  * socket": a frame on the wire, which is no delivery to an application. A control a send drew is counted as drawn,
- * never as a send lost. The last three lines are there only when a count of theirs is above zero.
+ * never as a send lost. An offer that threw is printed with the name of its error and the first message under that
+ * name, which `toOrderedSendThrownError` bounded and cleared of URLs when it was recorded. The last three lines are
+ * there only when a count of theirs is above zero.
  */
 export function toOrderedSendSummary(source: OrderedSendSummarySource): readonly string[] {
     return [
@@ -51,6 +54,7 @@ function toSendLines(report: OrderedSendReport): readonly string[] {
     const { sends } = report;
     return [
         `sends offered: ${sends.attempted}; the entry answered ${toCountsAboveZero(sends.byAcceptance)}`,
+        toThrownOffersLine(report),
         `lateness of an offer against its due time: p50 ${toDelay(sends.latenessMs.p50, NO_SAMPLE)}, ` +
         `p95 ${toDelay(sends.latenessMs.p95, NO_SAMPLE)}, max ${toDelay(sends.latenessMs.max, NO_SAMPLE)}`
     ];
@@ -80,14 +84,33 @@ function toCopyLines(report: OrderedSendReport): readonly string[] {
     ];
 }
 
+/** The offers of each kind that threw, by the name of the error, with the first message under each name. */
+function toThrownOffersLine(report: OrderedSendReport): string {
+    const offersOfEachKind: readonly (readonly [string, OrderedSendAnswerFigures])[] = [
+        ['sends', report.sends],
+        ['resends', report.resends],
+        ['ACKs', report.acks]
+    ];
+    const thrown = offersOfEachKind.flatMap(([kind, figures]) => {
+        const byErrorName = Object.entries(figures.threwByErrorName)
+            .map(([errorName, count]) =>
+                `${errorName} ${count} ("${figures.firstThrownMessageByErrorName[errorName]}")`
+            );
+        return byErrorName.length === 0 ? [] : [`${kind} ${byErrorName.join(', ')}`];
+    });
+    return `offers that threw: ${thrown.length === 0 ? 'none' : thrown.join('; ')}`;
+}
+
 function toReceiptLines(report: OrderedSendReport): readonly string[] {
-    const { receipts } = report;
+    const { receipts, acks } = report;
     return [
         `receipts, of the ${receipts.expected} sends that expect one: complete ${receipts.complete}, ` +
         `timed out ${receipts.timedOut}, admitted only ${receipts.admittedWithoutTerminal}, ` +
         `none ${receipts.noReceipt}`,
         `offer to admitted receipt: ${toP50AndP95(receipts.offerToAdmittedMs)}; ` +
-        `offer to complete receipt: ${toP50AndP95(receipts.offerToCompleteMs)}`
+        `offer to complete receipt: ${toP50AndP95(receipts.offerToCompleteMs)}`,
+        `ACKs the recipients offered: ${acks.offered}; the entry answered ${toCountsAboveZero(acks.byAcceptance)}, ` +
+        `${acks.controlsNotHandled} of them not handled by the instance offered`
     ];
 }
 
