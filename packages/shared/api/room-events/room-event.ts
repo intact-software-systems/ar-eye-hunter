@@ -1,4 +1,4 @@
-import { assertCourtCapacity, changeCourt, closeEvent, offerCourts, playerOffer, settleOffers } from './room-event-courts.ts';
+import { assertCourtCapacity, changeCourt, closeEvent, offerCourts, playerOffer, removeCourtPlayer, settleOffers } from './room-event-courts.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '../../persistence/PersistenceProvider.ts';
 import type { GroupRef } from '../group-types.ts';
 import { assertValidRallarRouteId } from '../rallar-validation.ts';
@@ -124,7 +124,7 @@ function applyCommand(event: RoomEvent, command: RoomEvent.Command, player: stri
             if (command.targetId === event.organizerId) throw new TypeError('The organizer cannot be removed.');
             return { ...event, removed: [...new Set([...event.removed, command.targetId])],
                 queue: withoutPlayers(event.queue, [command.targetId]), proposals: event.proposals.filter(p => !p.players.includes(command.targetId)),
-                courts: event.courts.map(c => ({ ...c, seats: c.seats.filter(s => s.principalId !== command.targetId) })) };
+                courts: event.courts.map(court => removeCourtPlayer(court, command.targetId)) };
         }
         case 'settle': return event;
     }

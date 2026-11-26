@@ -120,3 +120,29 @@ it('requires fresh consent when the same party ID is used to invite a different 
     event = change(event, 'bo', { action: 'accept', partyId: current.id, proposalRevision: current.proposalRevision });
     expect(event.proposals[0]!.accepted).toEqual(['ann', 'bo']);
 });
+
+it('rejects a delayed release after removal empties the court and its next player claims', () => {
+    let event = create([1]);
+    event = change(event, 'a', { action: 'propose', partyId: 'a', players: ['a'] });
+    const first = projectRoomEvent(event, 'a').offer!;
+    event = change(event, 'a', { ...first, action: 'claim' });
+    const delayed = { action: 'release', groupId: first.groupId, occurrence: first.occurrence, requeue: false } as const;
+    event = change(event, 'b', { action: 'propose', partyId: 'b', players: ['b'] });
+    event = change(event, 'organizer', { action: 'remove', targetId: 'a' });
+    const next = projectRoomEvent(event, 'b').offer!;
+    event = change(event, 'b', { ...next, action: 'claim' });
+    expect(() => change(event, 'organizer', delayed)).toThrow(/occurrence/);
+    expect(projectRoomEvent(event, 'b').offer).toMatchObject({ occurrence: first.occurrence + 1, deadline: null });
+});
+
+it('honors an outstanding offer in the original occurrence when another player is removed', () => {
+    let event = create([2]);
+    for (const player of ['a', 'b']) event = change(event, player, { action: 'propose', partyId: player, players: [player] });
+    const first = projectRoomEvent(event, 'a').offer!;
+    const reserved = projectRoomEvent(event, 'b').offer!;
+    event = change(event, 'a', { ...first, action: 'claim' });
+    event = change(event, 'organizer', { action: 'remove', targetId: 'a' });
+    expect(projectRoomEvent(event, 'b').offer).toEqual(reserved);
+    event = change(event, 'b', { ...reserved, action: 'claim' });
+    expect(projectRoomEvent(event, 'b').offer).toEqual({ ...reserved, deadline: null });
+});

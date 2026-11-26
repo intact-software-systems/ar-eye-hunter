@@ -38,6 +38,13 @@ export function settleOffers(event: RoomEvent, now: number): RoomEvent {
     return courts.some((court, i) => court !== event.courts[i]) ? offerCourts({ ...event, courts }, now) : event;
 }
 
+export function removeCourtPlayer(court: RoomEvent.Court, principalId: string): RoomEvent.Court {
+    const seats = court.seats.filter(seat => seat.principalId !== principalId);
+    if (seats.length === court.seats.length) return court;
+    // A surviving reservation remains valid. An emptied court starts a new occurrence before allocating again.
+    return { ...court, seats, occurrence: seats.length ? court.occurrence : court.occurrence + 1 };
+}
+
 export function closeEvent(event: RoomEvent): RoomEvent {
     return { ...event, closed: true, proposals: [], queue: [], courts: event.courts.map(court => ({ ...court, seats: [] })) };
 }
