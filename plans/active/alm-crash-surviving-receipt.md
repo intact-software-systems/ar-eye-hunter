@@ -982,6 +982,59 @@ The server's own publications:
   ordering (the publishers' room messages have none, and the server's own publications go out, not in), so no
   ordered delivery or completion took place and the cell says nothing about the completion's retries.
 
+### Ordered room messages
+
+The same shape, with every room message ordered (`ordering: { orderingKey, epoch: 0, seq }`, one track per
+publisher) and receipted, so each arriving message goes through the inbound ordered delivery and its completion. Built:
+the branch's head; control: the commit before the completion's narrowed guard, its fresh attempts and the live
+`admitted` (one attempt, fenced on the whole observation). Each built run ran directly after a control run of the same
+cell; the 1-minute load stayed between 1.5 and 6.0 (6.0 only at the end of the built 45 s run). Counted at the WS
+server's in-process subscriber (the router subscriber the harness registers, on whichever instance claimed the work):
+the messages it was handed more than once; at every `complete` call, its completion writes and answer; and at each lost
+write, whether an admission's expiry refresh of the same track's progress row committed inside its window. Recipients
+read frames on their sockets. Five publishers send one message every 500 ms each; the fast track is one publisher at
+30.3 to 30.4 a second (the harness offers it steadily: sends at most 82 ms late).
+
+| Cell, latency, sends                | Tree    | Runs | Handed to the subscriber | Handed more than once        | Completions in 1 / 2 / 3 attempts, handed back | Complete by deadline | `admitted` > 8 s or never | Recipients' read, send to last ACK offered, p50 | Recipients out of order |
+| ----------------------------------- | ------- | ---- | ------------------------ | ---------------------------- | ---------------------------------------------- | -------------------- | ------------------------- | ----------------------------------------------- | ----------------------- |
+| Five, +5 ms, 20 s                   | control | 3    | 75-93 of 200             | 3-11 (3.3-14.7 %), up to 3 × | 74-93 / 0 / 0, 4-12 handed back                | 26-34 of 200         | 148-159                   | 6.3-26.0 s                                      | 70-252                  |
+|                                     | built   | 3    | 200 of 200 each          | 0                            | 197-198 / 2-3 / 0, none handed back            | 200 of 200 each      | 5-6                       | 12.9-16.7 s                                     | 0                       |
+| Five, +5 ms, 45 s                   | control | 1    | 40 of 450                | 4 (10 %), up to 3 ×          | 37 / 0 / 0, 8 handed back                      | 29 of 450            | 394                       | 3.1 s                                           | 28                      |
+|                                     | built   | 1    | 93 of 450                | 0                            | 89 / 4 / 0, none handed back                   | 93 of 450            | 5                         | 1.8 s (of the 93)                               | 0                       |
+| One track, 30 a second, +5 ms, 20 s | control | 3    | 2-4 of 600               | 0                            | 1-4 / 0 / 0, 0-1 handed back                   | 0-3 of 600           | 545-549                   | -                                               | 0                       |
+|                                     | built   | 3    | 2-3 of 600               | 0                            | 1-3 / 0-1 / 0, none handed back                | 0-3 of 600           | 532-544                   | -                                               | 0                       |
+| One track, 30 a second, +0 ms, 20 s | control | 3    | 4-10 of 600              | 0-2                          | 4-10 / 0 / 0, 0-2 handed back                  | 4-10 of 600          | 549-553                   | -                                               | 0-14                    |
+|                                     | built   | 3    | 8-31 of 600              | 0                            | 7-27 / 1-4 / 0, none handed back               | 8-31 of 600          | 460-472                   | -                                               | 0                       |
+
+A short bracket of one track at +5 ms, one pair each (not in the table above): at 2 a second both trees deliver 40 of
+40 once each and the built run meets every rule; at 5 a second the control hands 18 of 100 (3 of them more than once,
+one 5 times) and the built tree 58 of 100, each once; at 10 a second both hand 1 to 4 of 200.
+
+- **The built tree hands no ordered message to the application twice.** Over 13 built runs, none of the messages
+  handed (1 to 200 a run) was handed more than once; no completion took a third attempt and none handed the work
+  back; 22 writes lost and every one was won at the next attempt. The control hands 3.3 to 14.7 % of what it delivers at five
+  publishers more than once (10 % over 45 s, up to three times), and 37 of its 43 hand-backs over all its runs were
+  followed by a second hand-off.
+- **The lost writes lose to the expiry refresh.** All 22 lost built writes and 41 of the control's 43 had an
+  admission's refresh of the same track's progress row, writing the same `completedThrough`, commit inside the lost
+  write's window, and every such refresh moved the expiry by less than a tenth of the track's 1 h lifetime (by 35 ms to
+  1 s; over all refreshes at most 15.7 s). None had a position moved in its window.
+- **Neither tree drops or reorders a track at the subscriber**: every handed track's first hand-offs ran in sequence
+  with no gap below the highest. The control's recipients read 14 to 252 room frames a run out of their track's order,
+  and 10 twice in one run; the built tree's recipients read none twice and none out of order.
+- **The receipts' result of the unordered cells does not hold for ordered sends.** At five publishers over 20 s the
+  built tree completes all 200 in time, but its recipients read a message 12.9 to 16.7 s after its send (p50; at most
+  28.5 s against a 30 s lifetime), 5 or 6 `admitted` a run arrive 10.5 to 26.4 s late, and the receipts are read at
+  12.7 to 13.9 of 20.1 a second. Over 45 s only 93 of 450 are delivered and 352 end `timed-out`. One track at 5 a
+  second or faster stalls on both trees, at +0 ms as at +5 ms over 20 s (a 5 s run at 30 a second and +0 ms delivered
+  150 of 150).
+- **What the stall points at: an admission that loses to the progress row waits for its replay, and its track waits
+  with it.** The admission still fences on the whole progress value, and 13 to 18 % of the built tree's five-publisher
+  refreshes lost (71 to 79 % on the fast track); the send answers `pending-admission`, and its successors on the track
+  are not handed until its replay admits it. In the built 45 s run three of the five tracks stopped at such a send,
+  whose `admitted` was never read by the end of the run; the other two stopped at an admitted message that was never
+  handed. The harness re-sends no copy, so whether a sender's resend unblocks a track is not shown.
+
 ## Established in slice 1
 
 - **Unfenced rows neither conflict nor wait.** Through `PSqlAdmissionWorkBackend`, 30 concurrent writes to
@@ -1111,8 +1164,12 @@ The server's own publications:
   sub-second last ten holds at +10 ms is not shown.
 - `main` was not run in the five-publisher cell with or without the server's own publications, so its figures
   beside the built tree's are not shown.
-- No inbound ordered delivery took place in the cells measured through the WS server, so the completion's retries
-  under load are not measured.
+- The ordered completion's retries are measured through the WS server at +0 and +5 ms ("Ordered room messages"): the
+  built tree handed no ordered message twice and never needed a third attempt. Not shown: whether that holds where
+  the tracks keep up for longer than 20 s, since at five publishers over 45 s and on one track at 5 a second or more
+  the ordered tracks stall on both trees behind admissions left `pending-admission`; why the replay of such an
+  admission lands 10 to 26 s late or not within the run; why two tracks stopped at an admitted message that was never
+  handed; and whether a sender's resend unblocks a track.
 - The sustained cost of an ACK that finds no head: the measurement through the WS server offers each ACK only
   after its recipient reads the message, and does not count how many found no head.
 - Leader resolution in a cluster: the group-leader case pins the cross-instance count, not how the leader is
