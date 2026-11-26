@@ -3,7 +3,6 @@ import { AL_CONTROL_NACK_TYPE_ID } from '@shared/al-contracts/al-control-type-id
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
 import { NON_EXPIRING_SEND_TIMEOUT_MS, NON_EXPIRING_TTL_MS } from '../../alm-conformance-budgets.ts';
-import { ALM_CONFORMANCE_SINGLE_HOP_CARRIERS } from '../../alm-conformance-carriers.ts';
 import { toControlAdmissionWait, toVerdictTimeoutMs } from '../../alm-conformance-diagnostic-waits.ts';
 import {
     toAdmissionCommands,
@@ -19,6 +18,7 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 import { toSelfMembershipCommand } from '../../alm-conformance-session-commands.ts';
+import { resolveAlmCarrierMatrixCellCarriers } from '../../carrier-matrix/resolve-alm-carrier-matrix-cell-carriers.ts';
 
 type CatchUpSend = 'floored' | 'roster-move';
 
@@ -34,7 +34,7 @@ export const fencedCatchUp: AlmConformanceScenarioDefinition = {
     scenarioId: 'fenced-catch-up',
     scenarioKey: 'fenced-catch-up',
     tags: FULL_TAGS,
-    carriers: ALM_CONFORMANCE_SINGLE_HOP_CARRIERS,
+    carriers: resolveAlmCarrierMatrixCellCarriers('fenced-catch-up'),
     roles: ALM_CONFORMANCE_THREE_AGENT_ROLES,
     laneFamily: 'three-agent',
     toSenderCommands: toFencedCatchUpSenderCommands,
