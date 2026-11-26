@@ -44,7 +44,10 @@ it:
 5. **Security has open rulings.** Any room member can still deliver an unreceipted RTC room send
    under another session's id (D759), and a multicast is authorized when its `route.contextId`
    names another room (D82, checked in code).
-6. **The product contract is not adopted.** The ten completion criteria carry no "met" mark, dozens
+6. **Carrier parity is uneven where it matters most.** Most differences between WS and RTC follow
+   from what each carrier is and should stay. The ones that do not sit on the hand-over of
+   `rtc-with-ws-fallback`, the default strategy (section 5.7).
+7. **The product contract is not adopted.** The ten completion criteria carry no "met" mark, dozens
    of rulings are recorded as provisional or made on the maintainer's behalf, there is no
    version or upgrade policy beyond "deploy web and API together", and no game uses a capability
    delivered after Release 8.
@@ -189,7 +192,7 @@ Each item has an id for later reference, its source, and a class:
 | R2  | A WS receipt is lost with the server that admitted it                          | #885, D700       | Blocker |
 | R3  | A crashed server's sessions stay in room presence                              | D669             | Blocker |
 | R4  | A send the server kept and lost in a restart reads `expired`                   | D694             | Decide  |
-| R5  | Three stall windows under `rtc-with-ws-fallback`                               | D525             | Decide  |
+| R5  | Three stall windows under `rtc-with-ws-fallback`                               | D525             | see T1  |
 | R6  | A relay does not re-send to a child that answered `not-yet-in-sync`            | D646             | Should  |
 | R7  | A latest-wins ordered track stalls on a sequence superseded before it was sent | D712, D716       | Should  |
 | R8  | A message can be handed to the application twice                               | D783             | Decide  |
@@ -213,7 +216,8 @@ Notes on the rows that need them:
 - **R5.** A recipient the WS leg left out reads a gap the RTC origin cannot serve, and its track
   stalls until resync or expiry. Full closure needs a receipt field that states the audience the
   dequeue recorded, a protocol change. A related line: under the same strategy a late joiner waits
-  out a 7 to 10.5 s hold because the WS-leg floor raises its prior.
+  out a 7 to 10.5 s hold because the WS-leg floor raises its prior. Both are part of the
+  fallback-continuity item T1 in section 5.7.
 - **R8.** After D783 a repeat needs all three completion attempts to lose, a shutdown between
   dispatch and completion, or two instances after a lease expiry. The open choice is a delivered
   marker written with the dispatch, or a documented at-least-once contract toward the application
@@ -254,7 +258,7 @@ Notes on the rows that need them:
 - **S4.** Relay-side verification was declined (S8ii-R1) at one verify per forwarded control per
   level. The origin counts only what verifies, so the cost is availability, not truth.
 - **S5.** No code closes this before 1.0. The contract says so: a topic that needs
-  subscriber-only bytes stays on `ws`. Encryption is in section 5.7.
+  subscriber-only bytes stays on `ws`. Encryption is in section 5.8.
 - **S7.** The product description promises per-topic and per-sender limits and marks none built.
   The browser side is bounded (volatile budgets, stage limits, 256-entry histories).
 
@@ -320,7 +324,7 @@ Notes on the rows that need them:
 | G4 | Newer families run on the local lane only          | D505, D521, D731       | Should  |
 | G5 | No upgrade window was run against a previous build | D733                   | Should  |
 | G6 | The lane cannot say what a sender wrote            | D691, D730             | Should  |
-| G7 | Carrier-asymmetric proof                           | product description    | Should  |
+| G7 | Carrier-asymmetric proof                           | product description    | see T4  |
 | G8 | Tests that pin shapes no producer emits            | D692                   | Should  |
 
 - **G1.** A carrier may become required when its last ten counted runs are green with no rerun and
@@ -341,7 +345,7 @@ Notes on the rows that need them:
   phase in a recipe, and no declared start state beyond grants and subscriptions.
 - **G7.** `fenced-rejection` runs over `ws` only, the recovery owner over the RTC carriers only,
   `all` in no lane cell, `repair-exhausted` over the fallback strategy is not asserted, and no
-  cell meets a kept send over `rtc`.
+  cell meets a kept send over `rtc`. The carrier matrix, T4 in section 5.7, replaces this item.
 
 ### 5.5 Compatibility, deployment and operation
 
@@ -381,7 +385,7 @@ Notes on the rows that need them:
 | A4 | No consumer for anything delivered after Release 8                      | roadmap                  | Blocker |
 | A5 | No developer documentation outside `playground/`                        | none exists              | Blocker |
 | A6 | Stale statements in current documents                                   | below                    | Should  |
-| A7 | A client cannot learn a topic's fanout or participation before it sends | D482, D517               | Should  |
+| A7 | A client cannot learn a topic's fanout or participation before it sends | D482, D517               | Blocker |
 | A8 | Public surface leftovers                                                | backlog                  | Should  |
 | A9 | Replies travel over WS only and do not survive a reload                 | D441 to D446             | Later   |
 
@@ -398,21 +402,82 @@ Notes on the rows that need them:
   Console and the lane. The roadmap's own rule, that each release changes a game, stopped at
   Release 9.
 - **A6.** `docs/product.md` said the roadmap is "Releases 1 to 11"; the pull request that adds
-  this file corrects it. `docs/README.md` carries the same sentence and is left: it is a
-  build-contract path, so a change there selects the broad release gate. Still stale: the
+  this file corrects it. `docs/README.md` carries the same sentence and is left for
+  the documents slice. Still stale: the
   roadmap's header date, its release map ("thirty PRs in ten releases") and its matrix; row D740,
   cut off at a `||` inside a code span by the table formatter; the standing direction that
   "cryptographic proof of the original sender is outside this roadmap", which D758 overtook; the
   product description's header and its "acceptance authority" paragraph, which the campaign
   document contradicts; the QoS plan's "two persistence tiers today"; the addendum's "proposed
   requirements" framing; the keep-set in `plans/README.md`, which names four ALM documents where
-  five exist; and the lane table in `CLAUDE.md` (D636).
+  five exist; the lane table in `CLAUDE.md` (D636); and the product description's line that a
+  director command can arrive twice after a fallback "because AL dedup is per carrier lane",
+  which the inbound README contradicts: one session's inbound store is shared by both carriers.
+- **A7.** It is a Blocker because it is a parity defect as well as a convenience. The WS server
+  refuses a live publication on an `outbox` topic as `unsupported` while RTC infers a grant from
+  a channel declaration or a cached snapshot, so the same send gets a carrier-dependent answer.
 - **A8.** `createDefaultALInboundMessageRuntime` and its outbound sibling serve tests only while
   production calls the constructors; `validateALMessageInput` has no production caller;
   `BrowserPublicationStages.readLane` has no product consumer; `packages/shared/api/auth.ts` keeps
   a module-global session.
 
-### 5.7 After 1.0
+### 5.7 Carrier parity between WS and RTC
+
+The rule proposed here: a difference stays when it follows from what the carrier is and the
+carrier refuses with a typed `unsupported`; it is closed when the same logical send gets a
+different outcome by accident. HTTP is not a carrier and is out of scope.
+
+These stay by design:
+
+| Asymmetry                                     | Why it stays                                                   | Source              |
+| --------------------------------------------- | -------------------------------------------------------------- | ------------------- |
+| `exclusive` over WS only                      | One arbiter is needed; the server's admission store is it      | D174                |
+| `world` and `all` refused on RTC              | Those audiences reach beyond a room; the mesh is per room      | D157 to D159        |
+| A send to the server peer travels WS          | The server is not an RTC peer                                  | D76                 |
+| RTC unicast is direct, never relayed          | Under the fallback strategy it hands over to WS                | D75, D552           |
+| Over WS the server is the one gap requester   | The server orders the track                                    | D580                |
+| A granted audience over 256 is refused on RTC | The signed frozen audience must fit the envelope               | product description |
+| Relays can read a payload on RTC              | Until encryption exists; subscriber-only topics stay on `ws`   | D520                |
+| Revocation takes 20 to 60 s on RTC            | Peers hold cached authority; the server checks at each dequeue | D515                |
+| RTC signs, WS trusts the server's channel     | Two trust models, each sound for its carrier                   | D512, D758          |
+| Replies travel over WS only                   | Not scheduled for RTC; see T3 for the one fix                  | D441 to D446        |
+| `ws-then-rtc` falls back at admission only    | The strategy is outside the 1.0 modes of section 6             | D64, D557           |
+
+A row counts as by design only once it has a typed refusal and a lane cell that asserts it. That
+is T4.
+
+These should be closed:
+
+| Id | Item                                                                       | Source              | Class   |
+| -- | -------------------------------------------------------------------------- | ------------------- | ------- |
+| T1 | The hand-over of `rtc-with-ws-fallback` does not keep one lifecycle        | D525, D64, D700     | Blocker |
+| T2 | A granted `receiver` unicast to a non-holder reads `acknowledged` over RTC | D553                | Should  |
+| T3 | A reply wait that cannot be answered runs to its timeout                   | D441 to D446        | Should  |
+| T4 | No carrier matrix states each capability's outcome per carrier             | product description | Blocker |
+
+- **T1.** `rtc-with-ws-fallback` is the browser's default strategy, so one lifecycle across the
+  hand-over is the parity promise applications meet first. What breaks it today:
+  - the three stall windows of R5, and the late joiner's 7 to 10.5 s hold;
+  - a durable RTC message resumed after a reload has no handle and never hands over (D64);
+  - a handed-over message leaves its ordering and supersedence track on the first carrier;
+  - a handed-over send that WS then holds reads `submitted` to its 30 s deadline and `expired`
+    after it, and `repair-exhausted` over the strategy is not asserted (D630, D700);
+  - the server's position record does not count the RTC origin's sends, so a server copy can read
+    as an omission while the origin's RTC frame is still in flight;
+  - a frozen session that never subscribes after a hand-over stays expected and unconfirmed on WS.
+
+  R5's full closure needs a receipt field that states the audience the dequeue recorded, a
+  protocol change, so the slice starts with a design.
+- **T2.** WS answers the same send `unauthorized`. A receipt that reads `acknowledged` with zero
+  recipients is a truth defect, not a carrier property. RTC refuses at the origin.
+- **T3.** A reply that arrives over RTC is dropped `reply-late`, and a request on a topic WS
+  cannot carry cannot be replied to. What `awaitReply` does today on an `rtc`-only send was not
+  read for this plan; the slice pins it first, then refuses at the call with a typed value.
+- **T4.** One table of capability by carrier with the expected outcome, refusals included, kept
+  beside the conformance catalog and asserted by a cell for each entry. It covers the by-design
+  table above and the single-carrier cells of G7.
+
+### 5.8 After 1.0
 
 These are in scope of the product by D5 and out of scope of 1.0 by this plan. Each is a design of
 its own when a consumer asks.
@@ -424,8 +489,7 @@ its own when a consumer asks.
 - RallarActor integration and native publication-key custody (S9).
 - A durable owner hosted in a worker, a per-message persistence barrier, the polyfill out of the
   bundle, the fence-snapshot fold.
-- Carrier asymmetries that stay by design: `exclusive` over WS only, `world` and `all` refused on
-  RTC, replies over WS only, `ws-then-rtc` with admission-time fallback only.
+- Lifting any carrier asymmetry that section 5.7 keeps by design.
 - Congestion beyond V1b where P5 does not select it: rerouting around a backpressured peer, RTC
   unicast congestion, a rotating claim order.
 - Fleet faults with no mechanism today: loss of the api host, PostgreSQL restart or failover, a
@@ -441,10 +505,11 @@ A proposal for the maintainer to amend. ALM is 1.0 when all eight hold.
    audiences; receipts `none`, `receiver`, `all-logical-recipients` and `group-leader`; the four
    durability tiers; ordering with gap repair; replies over WS. Capabilities with no consumer and
    no hosted evidence ship labelled preview: granted topics and subscriptions, signed receipts
-   through relays, ordered subscription entry, `hop` and `subtree` receipts.
-2. **No silent loss or duplication is known** in the 1.0 modes. Every Blocker in 5.1 is closed,
-   and every Decide and Should is either closed or printed in a limits page an application
-   developer reads.
+   through relays, ordered subscription entry, `hop` and `subtree` receipts. The carrier matrix
+   (T4) states each capability's outcome on each carrier, and the lane asserts it.
+2. **No silent loss or duplication is known** in the 1.0 modes. Every Blocker in 5.1 and 5.7 is
+   closed, and every Decide and Should is either closed or printed in a limits page an
+   application developer reads.
 3. **The gate holds.** The full scope is required on all three carriers under the rule of D702.
 4. **A crash is survivable.** With three replicas, losing one leaves every receipt exact and every
    presence true within a stated bound, shown by cluster recipes that kill a process.
@@ -464,14 +529,14 @@ A proposal for the maintainer to amend. ALM is 1.0 when all eight hold.
 Six milestones. A and D can start now; B and C run beside each other; E needs B and C; F needs
 all.
 
-| Milestone            | Outcome                                                           | Closes                 |
-| -------------------- | ----------------------------------------------------------------- | ---------------------- |
-| A. In flight         | #912 and #885 on `main`; documents state the truth                | R2, A6                 |
-| B. Reliability       | No Blocker left in 5.1; each Decide ruled                         | R1, R3 to R14          |
-| C. A lane that gates | Full scope required on three carriers                             | G1 to G3, G6           |
-| D. Trust             | Authorization debts closed; signing ruled; server limits enforced | S1 to S8               |
-| E. Measured envelope | Workload family, probes, first rung, levels set                   | P1 to P11, G4          |
-| F. Product           | Upgrade rule, runbook, guide, a consumer per mode, adoption       | C1 to C6, A1 to A8, G5 |
+| Milestone            | Outcome                                                                       | Closes                  |
+| -------------------- | ----------------------------------------------------------------------------- | ----------------------- |
+| A. In flight         | #912 and #885 on `main`; documents state the truth                            | R2, A6                  |
+| B. Reliability       | No Blocker left in 5.1; each Decide ruled; one lifecycle across the hand-over | R1, R3 to R14, T1 to T3 |
+| C. A lane that gates | Full scope required on three carriers; the carrier matrix asserted            | G1 to G3, G6, T4        |
+| D. Trust             | Authorization debts closed; signing ruled; server limits enforced             | S1 to S8                |
+| E. Measured envelope | Workload family, probes, first rung, levels set                               | P1 to P11, G4           |
+| F. Product           | Upgrade rule, runbook, guide, a consumer per mode, adoption                   | C1 to C6, A1 to A8, G5  |
 
 ### The next two slices
 
@@ -510,32 +575,39 @@ families green on three carriers; the medium-scale gate green with no constant t
 
 ### The queue after them
 
-Outcome-shaped, in the order proposed. The first two can run beside Slices 1 and 2 because they
-touch other files.
+Outcome-shaped, in the order proposed. The first, and the S3 fix of the second, can run beside
+Slices 1 and 2 because they touch other files.
 
 1. **Documents state the truth (A6, A2).** Documents only. Refresh the roadmap's header, release
    map and matrix through Release 16; restore D740; correct the standing direction and the
    sentence in `docs/README.md`; mark each
    completion criterion met, partial or open with its evidence; add the fifth document to the
    keep-set.
-2. **Close the room-context authorization debt (S3).** Small and server-side: refuse a multicast
-   or broadcast whose `route.contextId` names another room than its `groupRef`, with a black-box
-   recipe.
+2. **Three small verdict fixes (S3, T2, T3).** Refuse a multicast or broadcast whose
+   `route.contextId` names another room than its `groupRef`, with a black-box recipe. Refuse a
+   granted `receiver` unicast to a non-holder at the RTC origin, as WS does. Refuse a reply wait
+   that no carrier can answer. Each is its own pull request.
 3. **A crashed server's sessions leave presence (R3).** Design first. It decides what ends a
    presence whose server died and within what bound, and it restates
    `api-v1-cluster-subscriber-instance-loss`. With Slice 1 it meets exit criterion 4.
-4. **The lane's four intermittents (G2), then start the count (G1).** Rule the in-sync readiness
-   signal and the stored-cancel diagnostic (decisions 8 and 9); attribute the durable-store
-   slowdown with timing on the direct admission path (P4).
-5. **The publication workload family (P1).** Rate, publisher count, group count, drain budgets,
+4. **The lane's four intermittents (G2), then start the count (G1), with the carrier matrix
+   (T4).** Rule the in-sync readiness signal and the stored-cancel diagnostic (decisions 8 and 9);
+   attribute the durable-store slowdown with timing on the direct admission path (P4); write the
+   matrix and add the missing cells, the refusals first.
+5. **Fallback continuity (T1).** Design first, because R5 needs a protocol change. The acceptance
+   is a lane family over `rtc-with-ws-fallback` in which a hand-over mid-stream keeps order,
+   settles every receipt, and survives a reload.
+6. **The publication workload family (P1).** Rate, publisher count, group count, drain budgets,
    payload, churn and seeded loss as parameters; delivered sample age from payload timestamps;
    the games' frame sizes measured; a hosted manifest whose roles resolve their principals at run
    time, which also unblocks G4. Beside it, run the two approved guidance runs of manifests 07
    and 09 (P2).
-6. **Sign every ordinary RTC room send (S1, S2)**, if decision 3 says so, with a phone timing.
-7. **The hosted fault step and the first rung (P1).** Needs the campaign's go-ahead.
-8. **The upgrade rule, the reclaim and the rehearsal (C1, C2, G5).**
-9. **A consumer per 1.0 mode (A4)** and the developer guide, limits page and runbook (A5, C3).
+7. **Sign every ordinary RTC room send (S1, S2)**, if decision 3 says so, with a phone timing.
+8. **Topic-policy advertisement (A7).** A client learns a topic's fanout and participation before
+   it sends, so both carriers give the same answer at the send.
+9. **The hosted fault step and the first rung (P1).** Needs the campaign's go-ahead.
+10. **The upgrade rule, the reclaim and the rehearsal (C1, C2, G5).**
+11. **A consumer per 1.0 mode (A4)** and the developer guide, limits page and runbook (A5, C3).
 
 ## 8. Decisions for the maintainer
 
@@ -577,3 +649,6 @@ Each with a recommendation. None is taken by this document.
     hosted fault step exist.
 14. **TURN and PostgreSQL failover (P11).** Recommend both stay outside 1.0, with the limits page
     saying that cross-region RTC may fall back to WS and that the database is a single point.
+15. **Which carrier differences are by design (section 5.7).** Recommend confirming the table as
+    written, so the limits page can print it and T4 can assert it. The alternative for any row is
+    a slice of its own after 1.0.
