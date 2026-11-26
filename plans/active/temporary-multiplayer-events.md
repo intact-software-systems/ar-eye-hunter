@@ -30,3 +30,10 @@ Event-wide removal immediately revokes lobby and court access and releases queue
 ## Engineering boundaries
 
 Use authoritative server mutations, conditional writes, private WebSocket notices and snapshot recovery. Reuse shared product paths and test at their public boundaries. Review changed files and support files in full, remove superseded code, and keep unrelated work outside the change. No migration or parallel compatibility implementation is planned. Expand the detailed implementation horizon after the first two slices supply evidence.
+
+## Event implementation and qualification
+
+The first two slices exposed an important boundary. Ordinary guests have a credential for exactly one room. A lobby player entering a court needs a new court grant backed by the assignment, while retaining the same player identity and the original lobby access.
+
+1. Model queue consent, prior commitments, court assignment, finite offers and independent claims as one functional event decision. Publish that decision through an AppInbox operation, one guarded event predecessor, private account-scoped WebSocket hints and authorized point reads. Provision event-owned courts and commit their grants or revocations with the event transition. Verify a single-court assignment from another browser, missed notification, room switch, expiry and denied unrelated-court access.
+2. Enable independent court capacities, occurrence-fenced release by a current court director or event organizer, oldest-fitting group selection, and selected requeue behavior. Schedule durable expiry and closing against the same authority. Verify concurrent releases, replay, worker restart, multi-court progression and event-wide removal on separate processes. Inspect the final server, SDK and consumer paths and run the release gate before handoff.
