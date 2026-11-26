@@ -2,55 +2,84 @@ import { describe, expect, it } from 'vitest';
 
 import { EdgeOrderSender } from '@shared-web/browser/messages/edge-order/edge-order-sender.ts';
 
-const RETRIED_UNTIL = (expiresAtMs: number): EdgeOrderSender.SendDto => ({ expiresAtMs, retried: true });
-const NEVER_RETRIED: EdgeOrderSender.SendDto = { expiresAtMs: 9_000, retried: false };
+const NOW_MS = 1_000;
+
+interface ObservedSend {
+    readonly position: number;
+    end(): void;
+}
+
+/** Opens, stamps and observes one send as the wiring does: a position at the call, the rest once the send exists. */
+function send(sender: EdgeOrderSender, expiresAtMs: number, retried = true): ObservedSend & {
+    readonly stamp: ReturnType<EdgeOrderSender['stampSend']>;
+} {
+    const position = sender.openSend();
+    const stamp = sender.stampSend(position, NOW_MS);
+    let ended = false;
+    sender.observeSend(position, { expiresAtMs, retried, hasEnded: () => ended });
+    return {
+        position,
+        stamp,
+        end: () => {
+            ended = true;
+        }
+    };
+}
 
 describe('EdgeOrderSender', () => {
     it('numbers the sends of its stream from 1, one position per call', () => {
         const sender = new EdgeOrderSender('stream-a');
 
         // Three calls in one turn, as an application that sends in a loop makes them: nothing is awaited between.
-        const stamps = [10_000, 10_000, 10_000].map((expiresAtMs) => sender.stampSend(RETRIED_UNTIL(expiresAtMs)));
+        const positions = [sender.openSend(), sender.openSend(), sender.openSend()];
 
-        expect(stamps.map((stamp) => stamp.position)).toEqual([1, 2, 3]);
-        expect(stamps.map((stamp) => stamp.stream)).toEqual(['stream-a', 'stream-a', 'stream-a']);
+        expect(positions).toEqual([1, 2, 3]);
+        expect(positions.map((position) => sender.stampSend(position, NOW_MS).stream)).toEqual([
+            'stream-a',
+            'stream-a',
+            'stream-a'
+        ]);
     });
 
     it('states the latest deadline among earlier open sends, and none once they have ended', () => {
         const sender = new EdgeOrderSender('stream-a');
 
-        expect(sender.stampSend(RETRIED_UNTIL(10_000))).toEqual({
+        const first = send(sender, 10_000);
+        expect(first.stamp).toEqual({
             stream: 'stream-a',
             position: 1,
             lowestOpenPosition: 1,
             earlierCanArriveUntilMs: undefined
         });
-        expect(sender.stampSend(RETRIED_UNTIL(12_000))).toEqual({
+        const second = send(sender, 12_000);
+        expect(second.stamp).toEqual({
             stream: 'stream-a',
             position: 2,
             lowestOpenPosition: 1,
             earlierCanArriveUntilMs: 10_000
         });
         // The latest, not the most recent: send 2 outlives send 3.
-        expect(sender.stampSend(RETRIED_UNTIL(11_000))).toEqual({
+        const third = send(sender, 11_000);
+        expect(third.stamp).toEqual({
             stream: 'stream-a',
             position: 3,
             lowestOpenPosition: 1,
             earlierCanArriveUntilMs: 12_000
         });
 
-        sender.endSend(1);
-        sender.endSend(2);
-        expect(sender.stampSend(RETRIED_UNTIL(13_000))).toEqual({
+        first.end();
+        second.end();
+        const fourth = send(sender, 13_000);
+        expect(fourth.stamp).toEqual({
             stream: 'stream-a',
             position: 4,
             lowestOpenPosition: 3,
             earlierCanArriveUntilMs: 11_000
         });
 
-        sender.endSend(3);
-        sender.endSend(4);
-        expect(sender.stampSend(RETRIED_UNTIL(14_000))).toEqual({
+        third.end();
+        fourth.end();
+        expect(send(sender, 14_000).stamp).toEqual({
             stream: 'stream-a',
             position: 5,
             lowestOpenPosition: 5,
@@ -60,48 +89,84 @@ describe('EdgeOrderSender', () => {
 
     it('keeps the lowest open position at the oldest send that has not ended, whatever order they end in', () => {
         const sender = new EdgeOrderSender('stream-a');
-        sender.stampSend(RETRIED_UNTIL(10_000));
-        sender.stampSend(RETRIED_UNTIL(10_000));
-        sender.stampSend(RETRIED_UNTIL(10_000));
+        const first = send(sender, 10_000);
+        const second = send(sender, 10_000);
+        send(sender, 10_000);
 
-        sender.endSend(2);
-        expect(sender.stampSend(RETRIED_UNTIL(10_000)).lowestOpenPosition).toBe(1);
+        second.end();
+        expect(send(sender, 10_000).stamp.lowestOpenPosition).toBe(1);
 
-        sender.endSend(1);
-        expect(sender.stampSend(RETRIED_UNTIL(10_000)).lowestOpenPosition).toBe(3);
+        first.end();
+        expect(send(sender, 10_000).stamp.lowestOpenPosition).toBe(3);
     });
 
-    it('states no deadline for a send nothing retries, and keeps it open until it is handed to the carrier', () => {
+    it('states no deadline for a send nothing retries, and keeps it open until it ends', () => {
         const sender = new EdgeOrderSender('stream-a');
-        sender.stampSend(NEVER_RETRIED);
+        const unretried = send(sender, 9_000, false);
 
         // Nothing brings send 1 back if it is lost, so no later message tells a receiver to wait for it.
-        expect(sender.stampSend(RETRIED_UNTIL(20_000))).toMatchObject({
-            lowestOpenPosition: 1,
-            earlierCanArriveUntilMs: undefined
-        });
-        expect(sender.stampSend(RETRIED_UNTIL(20_000))).toMatchObject({
-            lowestOpenPosition: 1,
-            earlierCanArriveUntilMs: 20_000
-        });
+        expect(send(sender, 20_000).stamp).toMatchObject({ lowestOpenPosition: 1, earlierCanArriveUntilMs: undefined });
+        expect(send(sender, 20_000).stamp).toMatchObject({ lowestOpenPosition: 1, earlierCanArriveUntilMs: 20_000 });
 
-        // The carrier took send 1: for a send that asks no receipt that is its end.
-        sender.endSend(1);
-        expect(sender.stampSend(RETRIED_UNTIL(20_000)).lowestOpenPosition).toBe(2);
+        unretried.end();
+        expect(send(sender, 20_000).stamp.lowestOpenPosition).toBe(2);
     });
 
-    it('ignores the end of a send that has already ended', () => {
+    it('ends a send whose deadline has passed, whatever its lifecycle says', () => {
         const sender = new EdgeOrderSender('stream-a');
-        sender.stampSend(RETRIED_UNTIL(10_000));
-        sender.stampSend(RETRIED_UNTIL(10_000));
+        send(sender, 5_000);
+        send(sender, 9_000);
 
-        sender.endSend(1);
-        sender.endSend(1);
+        const position = sender.openSend();
 
-        expect(sender.stampSend(RETRIED_UNTIL(10_000))).toMatchObject({
+        expect(sender.stampSend(position, 5_000)).toEqual({
+            stream: 'stream-a',
             position: 3,
             lowestOpenPosition: 2,
-            earlierCanArriveUntilMs: 10_000
+            earlierCanArriveUntilMs: 9_000
+        });
+    });
+
+    it('tells receivers to wait as long as they may for an earlier send that has no deadline yet', () => {
+        const sender = new EdgeOrderSender('stream-a');
+        // Send 1 took its position and is still connecting; send 2 is built first.
+        sender.openSend();
+        const second = sender.openSend();
+
+        expect(sender.stampSend(second, NOW_MS)).toEqual({
+            stream: 'stream-a',
+            position: 2,
+            lowestOpenPosition: 1,
+            earlierCanArriveUntilMs: Number.MAX_SAFE_INTEGER
+        });
+    });
+
+    it('closes the position of a send that ended before it had a lifecycle to read', () => {
+        const sender = new EdgeOrderSender('stream-a');
+        const refused = sender.openSend();
+        sender.endSend(refused);
+        sender.endSend(refused);
+
+        const next = sender.openSend();
+
+        expect(sender.stampSend(next, NOW_MS)).toEqual({
+            stream: 'stream-a',
+            position: 2,
+            lowestOpenPosition: 2,
+            earlierCanArriveUntilMs: undefined
+        });
+    });
+
+    it('does not count a later send that was built first among the earlier ones', () => {
+        const sender = new EdgeOrderSender('stream-a');
+        const first = sender.openSend();
+        send(sender, 30_000);
+
+        expect(sender.stampSend(first, NOW_MS)).toEqual({
+            stream: 'stream-a',
+            position: 1,
+            lowestOpenPosition: 1,
+            earlierCanArriveUntilMs: undefined
         });
     });
 });

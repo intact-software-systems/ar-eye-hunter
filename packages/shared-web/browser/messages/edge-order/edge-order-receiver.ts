@@ -28,13 +28,18 @@ export namespace EdgeOrderReceiver {
         reportGap(gap: EdgeOrderGap): void;
     }
 
-    export type Outcome = 'handed-over' | 'held' | 'late' | 'duplicate';
+    /** `expired`: the arrival was already past its own deadline, so its position was given up, not handed over. */
+    export type Outcome = 'handed-over' | 'held' | 'late' | 'duplicate' | 'expired';
 
     export interface Counts {
         readonly streams: number;
         readonly heldMessages: number;
         readonly lateMessages: number;
         readonly duplicateMessages: number;
+        /** Messages that reached their turn past their own deadline: a release timer that fired late. */
+        readonly expiredMessages: number;
+        /** Held messages given up by `dropHeldMessages`. */
+        readonly droppedMessages: number;
     }
 }
 
@@ -47,6 +52,8 @@ export class EdgeOrderReceiver<Message> {
     private heldMessages = 0;
     private lateMessages = 0;
     private duplicateMessages = 0;
+    private expiredMessages = 0;
+    private droppedMessages = 0;
 
     constructor(limits: EdgeOrderReceiverLimits, dependencies: EdgeOrderReceiver.Dependencies<Message>) {
         this.limits = limits;
@@ -69,12 +76,34 @@ export class EdgeOrderReceiver<Message> {
         return this.holdArrival(stream, arrival, nowMs);
     }
 
+    /**
+     * Gives up every held message and its timer, and keeps each stream's position: the clock the held messages
+     * were judged by is gone, and a copy of a message already handed over must stay late.
+     */
+    dropHeldMessages(): number {
+        const dropped = this.heldMessages;
+        for (const key of this.streams.keys()) {
+            const stream = this.streams.peek(key);
+            if (stream !== undefined) {
+                stream.cancelWake?.();
+                stream.cancelWake = undefined;
+                stream.held.clear();
+                stream.heldBytes = 0;
+            }
+        }
+        this.heldMessages = 0;
+        this.droppedMessages += dropped;
+        return dropped;
+    }
+
     getCounts(): EdgeOrderReceiver.Counts {
         return {
             streams: this.streams.size(),
             heldMessages: this.heldMessages,
             lateMessages: this.lateMessages,
-            duplicateMessages: this.duplicateMessages
+            duplicateMessages: this.duplicateMessages,
+            expiredMessages: this.expiredMessages,
+            droppedMessages: this.droppedMessages
         };
     }
 
@@ -104,7 +133,10 @@ export class EdgeOrderReceiver<Message> {
         stream.heldBytes += arrival.byteLength;
         this.heldMessages += 1;
         this.release(stream);
-        return stream.held.has(stamp.position) ? 'held' : 'handed-over';
+        if (stream.held.has(stamp.position)) {
+            return 'held';
+        }
+        return arrival.expiresAtMs <= nowMs ? 'expired' : 'handed-over';
     }
 
     /** At the stream cap: the least recently heard stream that holds nothing, or else the least recently heard. */
@@ -122,10 +154,11 @@ export class EdgeOrderReceiver<Message> {
     }
 
     private release(stream: EdgeOrderReceivedStream<Message>): void {
-        let step = computeEdgeOrderStreamStep(stream, this.dependencies.timers.nowMs(), this.limits);
+        let nowMs = this.dependencies.timers.nowMs();
+        let step = computeEdgeOrderStreamStep(stream, nowMs, this.limits);
         while (step.kind !== 'rest' && step.kind !== 'wait') {
             if (step.kind === 'hand-over') {
-                this.handOver(stream, step.held);
+                this.handOver(stream, step.held, nowMs);
             }
             else {
                 stream.nextPosition = step.nextPosition;
@@ -138,7 +171,8 @@ export class EdgeOrderReceiver<Message> {
                     reason: step.reason
                 });
             }
-            step = computeEdgeOrderStreamStep(stream, this.dependencies.timers.nowMs(), this.limits);
+            nowMs = this.dependencies.timers.nowMs();
+            step = computeEdgeOrderStreamStep(stream, nowMs, this.limits);
         }
 
         stream.cancelWake?.();
@@ -147,11 +181,27 @@ export class EdgeOrderReceiver<Message> {
             : undefined;
     }
 
-    private handOver(stream: EdgeOrderReceivedStream<Message>, held: EdgeOrderHeldMessage<Message>): void {
-        stream.held.delete(held.stamp.position);
+    /** A message whose turn comes past its own deadline is given up: a release timer can fire late. */
+    private handOver(
+        stream: EdgeOrderReceivedStream<Message>,
+        held: EdgeOrderHeldMessage<Message>,
+        nowMs: number
+    ): void {
+        const { position } = held.stamp;
+        stream.held.delete(position);
         stream.heldBytes -= held.byteLength;
-        stream.nextPosition = held.stamp.position + 1;
+        stream.nextPosition = position + 1;
         this.heldMessages -= 1;
-        this.dependencies.handOver(held.message);
+        if (held.expiresAtMs > nowMs) {
+            this.dependencies.handOver(held.message);
+            return;
+        }
+        this.expiredMessages += 1;
+        this.dependencies.reportGap({
+            ...stream.origin,
+            fromPosition: position,
+            toPosition: position,
+            reason: 'held-message-expired'
+        });
     }
 }

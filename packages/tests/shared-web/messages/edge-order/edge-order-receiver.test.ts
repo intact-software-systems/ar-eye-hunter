@@ -21,6 +21,8 @@ interface ReceiverFixture {
     readonly gaps: EdgeOrderGap[];
     /** Run inside the hand-over port, so a test can act as an application that reacts in the same turn. */
     readonly handOverListeners: Array<(message: string) => void>;
+    /** How far the receiver's clock runs ahead of its timers: a throttled tab fires a timer this late. */
+    readonly timerLag: { ms: number; };
 }
 
 function createReceiverFixture(limits: Partial<EdgeOrderReceiverLimits> = {}): ReceiverFixture {
@@ -29,8 +31,9 @@ function createReceiverFixture(limits: Partial<EdgeOrderReceiverLimits> = {}): R
     const handedOverAtMs: number[] = [];
     const gaps: EdgeOrderGap[] = [];
     const handOverListeners: Array<(message: string) => void> = [];
+    const timerLag = { ms: 0 };
     const receiver = new EdgeOrderReceiver<string>({ ...EDGE_ORDER_RECEIVER_DEFAULT_LIMITS, ...limits }, {
-        timers,
+        timers: { nowMs: () => timers.nowMs() + timerLag.ms, schedule: timers.schedule },
         handOver: (message) => {
             handedOver.push(message);
             handedOverAtMs.push(timers.nowMs());
@@ -42,12 +45,20 @@ function createReceiverFixture(limits: Partial<EdgeOrderReceiverLimits> = {}): R
             gaps.push(gap);
         }
     });
-    return { timers, receiver, handedOver, handedOverAtMs, gaps, handOverListeners };
+    return { timers, receiver, handedOver, handedOverAtMs, gaps, handOverListeners, timerLag };
 }
 
 /** A stamp of stream A whose sender has nothing earlier open, unless the test states what is. */
 function stamp(position: number, statement: Partial<Omit<EdgeOrderStamp, 'position'>> = {}): EdgeOrderStamp {
     return { stream: 'A', position, lowestOpenPosition: position, earlierCanArriveUntilMs: undefined, ...statement };
+}
+
+/** The stamp a sender page gives its next send, which stays open until `expiresAtMs`. */
+function stampNextSend(sender: EdgeOrderSender, retried: boolean, expiresAtMs = FAR_DEADLINE_MS): EdgeOrderStamp {
+    const position = sender.openSend();
+    const edgeOrderStamp = sender.stampSend(position, START_MS);
+    sender.observeSend(position, { expiresAtMs, retried, hasEnded: () => false });
+    return edgeOrderStamp;
 }
 
 /** A stamp whose sender still has the send at `lowestOpenPosition` open, retried until `untilMs`. */
@@ -111,13 +122,12 @@ describe('EdgeOrderReceiver: order', () => {
         const fixture = createReceiverFixture();
         const beforeReload = new EdgeOrderSender('A');
         const afterReload = new EdgeOrderSender('B');
-        const send = { expiresAtMs: FAR_DEADLINE_MS, retried: true };
 
-        accept(fixture, beforeReload.stampSend(send), { message: 'a1' });
+        accept(fixture, stampNextSend(beforeReload, true), { message: 'a1' });
         // Send 2 of the old stream is still on its way when the new page's first message arrives.
-        const delayed = beforeReload.stampSend(send);
-        accept(fixture, beforeReload.stampSend(send), { message: 'a3' });
-        accept(fixture, afterReload.stampSend(send), { message: 'b1' });
+        const delayed = stampNextSend(beforeReload, true);
+        accept(fixture, stampNextSend(beforeReload, true), { message: 'a3' });
+        accept(fixture, stampNextSend(afterReload, true), { message: 'b1' });
         accept(fixture, delayed, { message: 'a2' });
 
         expect(fixture.handedOver).toEqual(['a1', 'b1', 'a2', 'a3']);
@@ -167,11 +177,10 @@ describe('EdgeOrderReceiver: the gap rule', () => {
     it('never waits for a send nothing retries: the newest is handed over and the late one is dropped', () => {
         const fixture = createReceiverFixture();
         const sender = new EdgeOrderSender('A');
-        const unretried = { expiresAtMs: 3_000, retried: false };
         // Three sends in one turn: none has reached the carrier when the next is stamped.
-        const first = sender.stampSend(unretried);
-        const second = sender.stampSend(unretried);
-        const third = sender.stampSend(unretried);
+        const first = stampNextSend(sender, false, 3_000);
+        const second = stampNextSend(sender, false, 3_000);
+        const third = stampNextSend(sender, false, 3_000);
 
         accept(fixture, first);
         expect(accept(fixture, third)).toBe('handed-over');
@@ -235,18 +244,26 @@ describe('EdgeOrderReceiver: the gap rule', () => {
     it('closes a hole at once when a later message says the missing send has ended', () => {
         const fixture = createReceiverFixture();
         const sender = new EdgeOrderSender('A');
-        const send = { expiresAtMs: FAR_DEADLINE_MS, retried: true };
-        const first = sender.stampSend(send);
-        sender.stampSend(send);
-        const third = sender.stampSend(send);
+        let earlierSendsEnded = false;
+        const stampOpenSend = (): EdgeOrderStamp => {
+            const position = sender.openSend();
+            const edgeOrderStamp = sender.stampSend(position, START_MS);
+            sender.observeSend(position, {
+                expiresAtMs: FAR_DEADLINE_MS,
+                retried: true,
+                hasEnded: () => earlierSendsEnded
+            });
+            return edgeOrderStamp;
+        };
+        const first = stampOpenSend();
+        stampOpenSend();
+        const third = stampOpenSend();
         accept(fixture, first);
         expect(accept(fixture, third)).toBe('held');
 
         // Send 2 was cancelled; sends 1 and 3 were acknowledged. Send 4 is stamped with nothing earlier open.
-        sender.endSend(1);
-        sender.endSend(2);
-        sender.endSend(3);
-        accept(fixture, sender.stampSend(send));
+        earlierSendsEnded = true;
+        accept(fixture, stampOpenSend());
 
         expect(fixture.handedOver).toEqual(['m1', 'm3', 'm4']);
         expect(fixture.gaps).toEqual([
@@ -269,6 +286,59 @@ describe('EdgeOrderReceiver: the gap rule', () => {
 
         accept(fixture, stampBehind(3, 2));
         expect(fixture.handedOver).toEqual(['m1', 'm3', 'm4', 'm5']);
+    });
+});
+
+describe('EdgeOrderReceiver: deadlines and dropped holds', () => {
+    it('drops a held message its release timer reaches after its deadline, and reports its position', async () => {
+        const fixture = createReceiverFixture();
+        accept(fixture, stamp(1));
+        accept(fixture, stampBehind(3, 2, 90_000), { expiresAtMs: 4_000 });
+        accept(fixture, stampBehind(4, 2, 90_000), { expiresAtMs: 9_000 });
+
+        // The timer set for just before message 3's deadline fires 50 ms late.
+        fixture.timerLag.ms = 50;
+        await fixture.timers.advanceTo(4_000);
+
+        expect(fixture.handedOver).toEqual(['m1', 'm4']);
+        expect(fixture.gaps).toEqual([
+            { senderId: 'p', stream: 'A', fromPosition: 2, toPosition: 2, reason: 'held-message-deadline' },
+            { senderId: 'p', stream: 'A', fromPosition: 3, toPosition: 3, reason: 'held-message-expired' }
+        ]);
+        expect(fixture.receiver.getCounts()).toMatchObject({ heldMessages: 0, expiredMessages: 1 });
+    });
+
+    it('drops an arrival that is already past its deadline and goes on with the next position', () => {
+        const fixture = createReceiverFixture();
+        accept(fixture, stamp(1));
+
+        expect(accept(fixture, stampBehind(2, 2), { expiresAtMs: START_MS })).toBe('expired');
+        expect(accept(fixture, stampBehind(3, 3))).toBe('handed-over');
+
+        expect(fixture.handedOver).toEqual(['m1', 'm3']);
+        expect(fixture.gaps).toEqual([
+            { senderId: 'p', stream: 'A', fromPosition: 2, toPosition: 2, reason: 'held-message-expired' }
+        ]);
+    });
+
+    it('drops every held message on request, cancels their timers and keeps each stream where it stands', async () => {
+        const fixture = createReceiverFixture();
+        accept(fixture, stamp(1));
+        accept(fixture, stampBehind(3, 2, 5_000));
+        accept(fixture, stamp(2, { stream: 'B', lowestOpenPosition: 1, earlierCanArriveUntilMs: 5_000 }), {
+            message: 'b2'
+        });
+
+        expect(fixture.receiver.dropHeldMessages()).toBe(2);
+
+        expect(fixture.timers.pendingCount()).toBe(0);
+        expect(fixture.receiver.getCounts()).toMatchObject({ streams: 2, heldMessages: 0, droppedMessages: 2 });
+        await fixture.timers.advanceTo(6_000);
+        expect(fixture.handedOver).toEqual(['m1']);
+        // Stream A still stands at 2: a copy of 1 is late, and 2 is handed over when it comes.
+        expect(accept(fixture, stamp(1))).toBe('late');
+        expect(accept(fixture, stampBehind(2, 2))).toBe('handed-over');
+        expect(fixture.gaps).toEqual([]);
     });
 });
 
@@ -351,7 +421,9 @@ describe('EdgeOrderReceiver: duplicates and bounds', () => {
             streams: 1,
             heldMessages: 1,
             lateMessages: 1,
-            duplicateMessages: 1
+            duplicateMessages: 1,
+            expiredMessages: 0,
+            droppedMessages: 0
         });
         accept(fixture, stampBehind(2, 2));
         expect(fixture.handedOver).toEqual(['m1', 'm2', 'm3']);
