@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { toALOutboundOriginMessageKey, toALOutboundVersionKey } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
 import type { ALReceiptRecordRef } from '@shared/alm/receipt-record/al-receipt-record-keys.ts';
+import { toWsQueueBoxServerEndedReceiptControlId } from '@shared/services/ws-queue-box-server/receipt/to-ws-queue-box-server-receipt-control.ts';
 import type { WsQueueBoxServerReceiptOutboxVerdict } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 
 import { createWorkerHold, type WorkerHold } from '../../../shared/alm/create-worker-hold.ts';
@@ -13,6 +15,7 @@ import {
     readOriginTerminalReceipt,
     readReceiptAggregationVerdicts,
     readTerminalReceiptIdentities,
+    RECEIPT_SERVER_PEER_ID,
     receiverAck,
     roomMessage,
     toReceiptSets,
@@ -37,7 +40,11 @@ import {
 } from './test-support/create-receipt-cluster.ts';
 import { holdPostgresAfterCommit, holdPostgresCommit } from './test-support/hold-postgres-commit.ts';
 import { awaitHoldArrival, racePastHeldCommit } from './test-support/race-past-held-commit.ts';
-import { toRecordedPostgresStatementShape, type PostgresStatementLog } from './test-support/record-postgres-statements.ts';
+import {
+    toRecordedPostgresStatementShape,
+    type PostgresStatementLog,
+    type RecordedPostgresStatement
+} from './test-support/record-postgres-statements.ts';
 
 const ORIGIN = 'o';
 const ROOM = ['o', 'r1', 'r2'];
@@ -268,7 +275,72 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL WS 
         ]);
         expect((await cluster.reader.read(toRef(msgId))).right?.tally.confirmedRecipientPeerIds).toEqual(['r1']);
     }, CASE_TIMEOUT_MS);
+
+    // Pins a terminal receipt control whose enqueue or dequeue fences the server's own version row, which every
+    // receipt the server issues would then compete for, or which costs either commit another statement. The decision
+    // still reads that row: its read rides the batched autocommit statement before the enqueue's transaction.
+    it('enqueues and dequeues a terminal receipt control in a pinned list of statements, none on the server\'s version row', async () => {
+        const cluster = await createReceiptCluster();
+        const log: PostgresStatementLog = { statements: [], transactions: 0 };
+        const only = await startInstance(cluster, { ...instanceInput('a', ROOM), log, starts: false });
+        await connect(only, 'r1');
+        await connect(only, 'r2');
+        const msgId = toMsgId(cluster, 'ended-control');
+        await connectOrigin(cluster, only);
+        expect((await only.service.acceptIncomingMessage(message(msgId, LIFETIME_MS), ORIGIN)).right?.kind).toBe('admitted');
+        expect((await only.service.acceptIncomingMessage(ackOf(msgId, 'r1'), 'r1')).left).toBeUndefined();
+        expect((await only.service.acceptIncomingMessage(ackOf(msgId, 'r2'), 'r2')).left).toBeUndefined();
+
+        await expect.poll(async () => {
+            await only.engine.executeOnce();
+            return phases(cluster, msgId);
+        }, POLL).toEqual(['admitted', 'complete']);
+        await waitForQuietStatements(log);
+
+        const { namespace } = only.outboundAdmissionStore;
+        const controlVersionKey = toALOutboundOriginMessageKey({
+            row: 'msg-version',
+            namespace,
+            originPeerId: RECEIPT_SERVER_PEER_ID,
+            msgId: toWsQueueBoxServerEndedReceiptControlId(toRef(msgId))
+        });
+        const serverVersionKey = toALOutboundVersionKey(namespace, RECEIPT_SERVER_PEER_ID);
+        const controlTransactions = readTransactionsNaming(log, controlVersionKey);
+        expect(controlTransactions).toHaveLength(2);
+        const [enqueue, dequeue] = controlTransactions;
+        expect(readTransactionVerbs(log, enqueue)).toEqual([
+            { verb: 'with' }, // the guarded batch on the control's version row
+            { verb: 'insert' } // the work row
+        ]);
+        expect(readTransactionVerbs(log, dequeue)).toEqual([
+            { verb: 'with' }, // the guarded batch on the control's version row
+            { verb: 'select' }, // the hold of the claimed row
+            { verb: 'insert' } // the work row
+        ]);
+        expect(log.statements.filter(({ transaction, values }) => transaction !== null && namesKey(values, serverVersionKey))).toEqual([]);
+        const enqueueStart = log.statements.findIndex(({ transaction }) => transaction === enqueue);
+        expect(log.statements.slice(0, enqueueStart).some(({ transaction, values }) => transaction === null && namesKey(values, serverVersionKey))).toBe(true);
+    }, CASE_TIMEOUT_MS);
 });
+
+/** The recorded transactions, in order, that hold a statement naming `key`; a key can sit inside a JSON-encoded parameter. */
+function readTransactionsNaming(log: PostgresStatementLog, key: string): readonly number[] {
+    const transactions = log.statements.flatMap(({ transaction, values }) => transaction !== null && namesKey(values, key) ? [transaction] : []);
+    return [...new Set(transactions)];
+}
+
+function readTransactionVerbs(log: PostgresStatementLog, transaction: number | undefined): readonly Readonly<{ verb: string; }>[] {
+    return log.statements.filter((statement) => statement.transaction === transaction).map((statement) => ({
+        verb: toRecordedPostgresStatementShape(statement).verb
+    }));
+}
+
+/** Whether the encoded values name `key` as a parameter, or inside a parameter that is itself JSON-encoded. */
+function namesKey(values: RecordedPostgresStatement['values'], key: string): boolean {
+    const encoded = JSON.stringify(values, (_, value) => typeof value === 'bigint' ? value.toString() : value);
+    const asParameter = JSON.stringify(key).slice(1, -1);
+    return encoded.includes(asParameter) || encoded.includes(JSON.stringify(asParameter).slice(1, -1));
+}
 
 async function startThree(cluster: ReceiptCluster): Promise<ReceiptTrio> {
     const a = await startInstance(cluster, instanceInput('a', ROOM));

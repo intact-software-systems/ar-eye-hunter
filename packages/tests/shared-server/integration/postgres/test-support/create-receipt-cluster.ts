@@ -7,6 +7,7 @@ import {
 } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import {
     toALReceiptRecordHeadKey,
     toALReceiptRecordRefToken,
@@ -19,6 +20,7 @@ import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import type { WsQueueBoxServerReceiptObservation } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 
 import type { WorkerHold } from '../../../../shared/alm/create-worker-hold.ts';
@@ -74,6 +76,8 @@ interface StartInstanceInput {
 export interface ReceiptInstance extends ClusterInstance {
     /** The client the instance's record stores use: its own when they are wrapped, else the instance's one client. */
     readonly recordClient: TerminablePostgresSql;
+    /** The outbound admission store the instance's service writes through. */
+    readonly outboundAdmissionStore: ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>;
 }
 
 export type ReceiptTrio = Readonly<Record<'a' | 'b' | 'c', ReceiptInstance>>;
@@ -150,13 +154,14 @@ export async function startInstance(cluster: ReceiptCluster, input: StartInstanc
         nowMs: Date.now
     });
     expect(receiptRecordStores.namespace).toBe(cluster.recordNamespace);
+    const outboundStores = createDefaultPSqlALOutboundRuntimeStores({
+        repository,
+        namespace: cluster.storeId,
+        decodePrepared: decodeWsQueueBoxServerPreparedMessage
+    });
     const instance = await createClusterInstance({
         name: RECEIPT_SERVER_PEER_ID,
-        outboundStores: createDefaultPSqlALOutboundRuntimeStores({
-            repository,
-            namespace: cluster.storeId,
-            decodePrepared: decodeWsQueueBoxServerPreparedMessage
-        }),
+        outboundStores,
         inboundStores: createDefaultPSqlALInboundRuntimeStores({ repository, namespace: cluster.storeId }),
         inboundVolatileStores: undefined,
         receiptRecordStores,
@@ -170,7 +175,7 @@ export async function startInstance(cluster: ReceiptCluster, input: StartInstanc
     if (input.starts) {
         instance.engine.start();
     }
-    return { ...instance, recordClient };
+    return { ...instance, recordClient, outboundAdmissionStore: outboundStores.admissionStore };
 }
 
 /** An instance lost as a process is: its service disposed and its engine stopped, its sockets left as they were. */

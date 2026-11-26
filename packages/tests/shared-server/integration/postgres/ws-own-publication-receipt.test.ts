@@ -103,6 +103,40 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL rec
         expect(movedForFifty).toBe(1);
     }, CASE_TIMEOUT_MS);
 
+    // Pins a dequeue of a server publication that names no sequence moving the server's version row, which every
+    // publication and receipt the server issues would then compete for, and a sequenced one's dequeue no longer
+    // fencing the track place its sender's other messages share.
+    it('moves the server\'s version row once for a sequenced publication\'s dequeue, and not at all for one that names no sequence', async () => {
+        const cluster = await createReceiptCluster();
+        const sessionIds = toSessionIds(2);
+        const only = await startInstance(cluster, { ...instanceInput('a', sessionIds), starts: false });
+        const sessions = await connectAll(only, sessionIds);
+        const store = readOwnReceiptStore(cluster);
+        const unsequenced = publication(cluster, 'unsequenced', NO_WINDOW_QOS);
+        // The first place on a track of its own, as a client-state event states one.
+        const sequenced: ALMessage = {
+            ...publication(cluster, 'sequenced', NO_WINDOW_QOS),
+            ordering: { orderingKey: `own-${cluster.runId}-track`, epoch: 0, seq: 1 }
+        };
+
+        const movedForUnsequenced = await measureServerVersionMoveAcrossDequeue(store, only, { sent: unsequenced, sessions });
+        const movedForSequenced = await measureServerVersionMoveAcrossDequeue(store, only, { sent: sequenced, sessions });
+        only.engine.start();
+        await confirmTogether(sessions, unsequenced);
+        await confirmTogether(sessions, sequenced);
+
+        expect(movedForUnsequenced).toBe(0);
+        expect(movedForSequenced).toBe(1);
+        for (const sent of [unsequenced, sequenced]) {
+            await expectStoredEnd(cluster, toOwnReceiptRef(sent), {
+                phase: 'complete',
+                confirmedRecipientPeerIds: sessionIds,
+                outsideAudienceRecipientPeerIds: []
+            });
+            await pollRowEnded(toRowEndedPoll(store, sent));
+        }
+    }, CASE_TIMEOUT_MS);
+
     // Pins what one ACK of a server publication costs when its head is open and it does not complete the set: the
     // record's count alone (the head and the confirmation key in one read, the insert in one transaction, the prefix
     // read for the tally), five round trips with BEGIN and COMMIT. A client ACK's pin also holds the refusal hook's
@@ -424,6 +458,27 @@ async function measureVersionMoves(store: OwnReceiptStore, instance: ReceiptInst
     await confirmTogether(sessions, sent);
     await pollRowEnded(toRowEndedPoll(store, sent));
     return await readPublicationVersion(store, sent) - before;
+}
+
+/**
+ * How often the server's own version row moved across the publication's dequeue: read once its enqueue committed and
+ * again once every session holds the dequeue's copy, with the instance's engine passes the only work run between.
+ */
+async function measureServerVersionMoveAcrossDequeue(store: OwnReceiptStore, instance: ReceiptInstance, publication: Publication): Promise<number> {
+    const { sent, sessions } = publication;
+    await enqueue(instance, publication);
+    const before = await readServerVersion(store, sent);
+    await expect.poll(async () => {
+        await instance.engine.executeOnce();
+        return readCopies(sessions, sent);
+    }, POLL).toEqual(sessions.map(() => 1));
+    return await readServerVersion(store, sent) - before;
+}
+
+/** The server's sender version; a row no commit wrote is version 0. */
+async function readServerVersion(store: OwnReceiptStore, sent: ALMessage): Promise<number> {
+    const read = { msgId: sent.id.msgId, originPeerId: RECEIPT_SERVER_PEER_ID, phase: 'admitted', expectedRecipientPeerIds: [] } as const;
+    return (await store.readReceiptAdmission(read)).clientRecord?.version ?? 0;
 }
 
 async function readPublicationVersion(store: OwnReceiptStore, sent: ALMessage): Promise<number> {
