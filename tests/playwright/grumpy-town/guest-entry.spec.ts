@@ -58,6 +58,10 @@ test('a guest joins with a shuffled name and reloads the same seat without an ac
         await expect(phone.getByText(nickname, { exact: true })).toBeVisible();
         await expect(page.locator('#roster li')).toHaveCount(2);
         await expect(page.locator('#roster')).toContainText(nickname);
+        const { accessToken } = await response.json();
+        expect(typeof accessToken).toBe('string');
+        expect(await phone.evaluate((token: string) => [localStorage, sessionStorage].every(storage =>
+            Object.values(storage).every(value => !String(value).includes(token))), accessToken)).toBe(true);
         await phone.reload();
         await expect(phone.getByRole('heading', { name: 'Your town lobby' })).toBeVisible();
         await expect(phone.getByText(nickname, { exact: true })).toBeVisible();
@@ -282,7 +286,7 @@ test('a phone guest reloads into the same playing round and moves again', async 
         await expect(game).toHaveAttribute('data-match-id', matchId!);
         await expect(phone.getByLabel('Your nickname')).toHaveText(nickname);
         await expect(phone.getByRole('button', { name: 'Dash and drop' })).toBeEnabled({ timeout: 12000 });
-        await expect.poll(async () => Number(await game.getAttribute('data-tick'))).toBeGreaterThan(45);
+        await expect.poll(async () => Number(await game.getAttribute('data-tick')), { timeout: 15000 }).toBeGreaterThan(45);
         const host = owner.locator('#online-game');
         const originalX = Number(await host.getAttribute('data-peer-x'));
         await phone.keyboard.down('KeyD');

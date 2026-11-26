@@ -17,6 +17,12 @@ test('retrying a lost private game creation recovers its room and working invita
     await expect(link).toHaveValue(/\/guest#/);
     const invitation = new URL(await link.inputValue());
     expect(new URLSearchParams(invitation.hash.slice(1)).get('room')).toBe(committedRoom);
+    expect(await link.evaluate(input => {
+        if (!(input instanceof HTMLInputElement)) return false;
+        const secret = new URLSearchParams(new URL(input.value).hash.slice(1)).get('invite');
+        if (!secret) return false;
+        return [localStorage, sessionStorage].every(storage => Object.values(storage).every(value => !String(value).includes(secret)));
+    })).toBe(true);
     const friend = await browser.newPage();
     try {
         await friend.goto(invitation.href);
