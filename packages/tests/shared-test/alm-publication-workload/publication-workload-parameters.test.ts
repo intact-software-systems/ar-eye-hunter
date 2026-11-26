@@ -187,15 +187,15 @@ describe('publication workload parameters', () => {
             .toEqual([]);
     });
 
-    it('derives 600 frames, 2 Hz, 14 subscribers, at least 570 deliveries and 8,400 fan-out messages', () => {
+    it('derives 600 frames, 2 Hz, 14 subscribers, at least 570 inbound messages each and 8,400 fan-out messages', () => {
         // 300,000 / 500 = 600 frames; 1,000 / 500 = 2 Hz; 15 - 1 = 14 subscribers; 570 of 600 is 0.95 and
         // 594 of 600 is 0.99; 600 x 14 = 8,400 fan-out messages.
         expect(computePublicationWorkloadPlan(POINT)).toEqual({
             frameCount: 600,
             configuredRateHz: 2,
             subscriberCount: 14,
-            expectedDeliveriesPerSubscriber: 600,
-            minDeliveriesPerSubscriber: 570,
+            expectedInboundMessages: 600,
+            minExpectedInboundMessages: 570,
             minAcceptedSends: 594,
             logicalFanoutMessages: 8_400
         });
@@ -219,7 +219,7 @@ describe('publication workload parameters', () => {
             minSendSuccessRatio: ratio
         });
 
-        expect(plan.minDeliveriesPerSubscriber).toBe(minimum);
+        expect(plan.minExpectedInboundMessages).toBe(minimum);
         expect(plan.minAcceptedSends).toBe(minimum);
     });
 

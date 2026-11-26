@@ -672,10 +672,14 @@ and it has no status list.
   TypeScript; D642 folds only the identical TypeScript copies into
   `packages/shared/measurement`. They fold when those scripts become
   TypeScript.
-- Delivered sample age is measured from application payload timestamps in the
-  workload family, not by ALM (D642): a receiver cannot compute it from the
-  envelope, which carries only `expiresAtMs`
-  (`packages/shared/al-contracts/al-contract.ts`).
+- Delivered sample age is read by the harness from an application payload
+  timestamp (`messages.received` with `ageFrom`), not by ALM (D642): a receiver
+  cannot compute it from the envelope, which carries only `expiresAtMs`
+  (`packages/shared/al-contracts/al-contract.ts`). Each sample is the difference
+  of two agents' clocks, so between machines it holds their clock offset, which
+  nothing measures. On one machine that offset is zero; a hosted rung of the
+  publication workload family needs it measured before its ages read as
+  latency.
 - No lane cell asserts the congestion episode figure (D665): the `congestion` scenario cells read the action
   counters only. A cell that holds a carrier backpressured, releases it and reads
   `stats.rallar.alm.congestionEpisodes` needs the delta operator the paced cells also lack, or an invariant such

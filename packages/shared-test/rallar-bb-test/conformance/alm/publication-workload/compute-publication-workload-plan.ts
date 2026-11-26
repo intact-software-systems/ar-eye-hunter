@@ -6,8 +6,10 @@ export interface PublicationWorkloadPlan {
     /** Derived from the integer interval, so it is not rounded. */
     readonly configuredRateHz: number;
     readonly subscriberCount: number;
-    readonly expectedDeliveriesPerSubscriber: number;
-    readonly minDeliveriesPerSubscriber: number;
+    /** What one subscriber is to receive, in the words of the artifact analysis's `ReceiverDeliverySpec`. */
+    readonly expectedInboundMessages: number;
+    /** The fewest of them that reach `minReceiveRatio`, again for one subscriber. */
+    readonly minExpectedInboundMessages: number;
     readonly minAcceptedSends: number;
     readonly logicalFanoutMessages: number;
 }
@@ -27,8 +29,8 @@ export function computePublicationWorkloadPlan(parameters: PublicationWorkloadPa
         frameCount,
         configuredRateHz: 1_000 / parameters.publishIntervalMs,
         subscriberCount,
-        expectedDeliveriesPerSubscriber: frameCount,
-        minDeliveriesPerSubscriber: computeMinimumFrameCount(frameCount, parameters.minReceiveRatio),
+        expectedInboundMessages: frameCount,
+        minExpectedInboundMessages: computeMinimumFrameCount(frameCount, parameters.minReceiveRatio),
         minAcceptedSends: computeMinimumFrameCount(frameCount, parameters.minSendSuccessRatio),
         logicalFanoutMessages: frameCount * subscriberCount
     };
