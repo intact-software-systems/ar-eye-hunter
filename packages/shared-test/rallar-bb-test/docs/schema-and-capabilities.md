@@ -830,12 +830,15 @@ RTC receivers add two waits on `rallar.browser.alm.storage` for the one `recover
 `recovery-owner-invoked` matches the event's kind and the cell's ordering key, `recovery-owner-cursor`
 the cursor it handed the owner (`lastContiguousSeq: 1`, `expectedSeq: 2`, `observedSeq: 300`, carrier
 `rtc`); the sender's peer id sits between them in the emitted order, so one `contains` cannot span both.
-Over `ws` the relay refuses the gapped send before the receiver sees it, so no owner is invoked there.
+Over `ws` the relay refuses the gapped send before the receiver sees it, so no owner is invoked there: the
+`ws` receiver ends on `no-recovery-owner-invoked`, an `absent: true` wait for the same kind and ordering
+key. It follows the receiver's absence window and reads the cell's history from its first event, so the
+page stated no invocation in that window or in the wait's own 5 s.
 The hosted combined recipe shares one connect across its cells and names no owner, so manifest 18 carries
 neither the field nor the waits.
 
 The `ordering-gap-repair` conformance scenario runs over the single-hop carriers `ws` and `rtc`
-(`ALM_CONFORMANCE_SINGLE_HOP_CARRIERS`) and repairs an in-window gap by range. The sender sends seq 1 and
+(the `ordered-gap-repair` capability of `ALM_CARRIER_MATRIX` names it there) and repairs an in-window gap by range. The sender sends seq 1 and
 proves it left (`observe-transport-accepted-1`, asserted `transport-accepted` or `acknowledged`; a room of two pages
 gives the sender one next hop, so the carrier's acceptance orders seq 1 first), arms the native hold of its type on each carrier the cell can hold,
 sends seq 2, then holds that one message by the id its send returned (`hold-message-2-<carrier>`, a
