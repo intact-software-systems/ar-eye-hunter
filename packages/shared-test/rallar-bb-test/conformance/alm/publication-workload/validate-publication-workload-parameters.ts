@@ -33,7 +33,7 @@ export interface PublicationWorkloadParameters {
     readonly readyTimeoutMs: number;
 }
 
-export const PUBLICATION_WORKLOAD_LIMITS = {
+const PUBLICATION_WORKLOAD_LIMITS = {
     minParticipantCount: 2,
     maxParticipantCount: 50,
     /** The publisher's loop holds one send per frame, and a loop expands at most this many commands. */
