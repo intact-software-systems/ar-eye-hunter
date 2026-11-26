@@ -736,9 +736,13 @@ slot between the completion's read and its write, a retention extension among th
 A write that loses, to a moved position or slot, or on PostgreSQL to a row version another commit moved inside the
 write's own round trip, starts a fresh attempt: the completion reads the slot and the progress again as they then are,
 decides again (a position already past the message reads it completed), and writes again, three attempts in all, one
-after another with no wait. The completion hands the work back (`retry`) in three cases: every attempt lost, the
-shutdown signal aborted it, or its predecessor has not completed, so no completion can be placed yet. The application
-can then be handed the message again, as after a crash between dispatch and completion.
+after another with no wait. After a dispatch the completion hands the work back (`retry`) in two cases, every attempt
+lost or the shutdown signal aborted it, and the application can then be handed the message again, as after a crash
+between dispatch and completion. It also hands the work back when its predecessor has not completed, so no completion
+can be placed yet; no dispatch precedes that answer, since a dispatch needs the predecessor completed: only a dropped
+plan or a disabled local delivery reach it, and they hand the application nothing. An attempt ends in a
+`NonRetryableException` when the slot holds another message, when the progress row is gone, or when the slot is gone
+and the position has not moved past the message.
 
 `validateALInboundControlAdmission` returns every reason an acknowledgement is
 inadmissible; the caller joins them into one rejection reason. Only an absent pending

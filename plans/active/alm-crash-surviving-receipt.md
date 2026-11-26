@@ -540,7 +540,8 @@ sender fence that writes a row the sender's messages share is refused, as before
 The dequeue lane groups a batch's dispatches by sender before any decision exists, and the flag is a fact of the
 decision. So the dispatch admission, once it has read the group's decisions, parts them into the bundles that fence
 the sender, which must have read one version of it, and those that do not, and commits each part in its own write,
-both at once. The part that fences no sender commits as one transaction: one BEGIN and one COMMIT for a page of
+both at once. When the bundles that fence the sender read different versions, they commit alone and the others are
+still one write. The part that fences no sender commits as one transaction: one BEGIN and one COMMIT for a page of
 receipts, and a conflict on one member's version fails that part, whose members then commit alone. A part that does
 not commit falls back to its own members alone, each after its predecessor on its track; a part that committed is
 never committed again, unless its write or its settlement threw after the transaction committed, when its members
@@ -610,9 +611,12 @@ position, the slot is gone or was rewritten (it is compared whole, so a retentio
 on PostgreSQL another commit moved a row version between the write's own read and its conditional statement. Because
 the application already has the message, a lost write is not handed back as work: the completion reads the slot and
 the progress again as they then are, decides again, as the doctrine has every conflict do, and writes again, three
-attempts in all with no wait between them. The completion hands the work back in three cases: every attempt lost, the
-shutdown signal aborted it, or its predecessor has not completed so no completion can be placed yet. The application
-can then be handed the message again: the same class as a crash between dispatch and completion.
+attempts in all with no wait between them. After a dispatch the completion hands the work back in two cases, every
+attempt lost or the shutdown signal aborted it, and the application can then be handed the message again: the same
+class as a crash between dispatch and completion. It also hands the work back when its predecessor has not completed
+so no completion can be placed yet, which no dispatch precedes: only a dropped plan or a disabled local delivery reach
+it, and they hand the application nothing. An attempt ends in a `NonRetryableException` when the slot holds another
+message, when the progress row is gone, or when the slot is gone and the position has not moved past the message.
 
 Not changed: an admission's own guard still fences on the whole progress value, so a completion that commits first
 makes that admission conflict and replay, which has no external effect.

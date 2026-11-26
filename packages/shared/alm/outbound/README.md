@@ -7,7 +7,8 @@ admission state itself. [`ALOutboundDispatchAdmission`](./al-outbound-dispatch-a
 owns optimistic read/compute/commit. Nothing serializes a sender's commits, in a tab or across tabs:
 a dispatch is fenced on its message's version, and on the sender's one version too when its decision read rows the
 sender's messages share; a message end, an ACK window, a repair hint's follow-up and a first-hop wait's own commits
-are fenced on both whatever they read, a peer control on its message's version alone, and the not-yet-in-sync retry
+are fenced on both whatever they read, a peer control on its message's version alone, a server receipt on its
+message's version and on the sender's too only when it read the track positions, and the not-yet-in-sync retry
 schedule on the sender's version alone ([the version rows](#the-admission-directory)). A dispatch whose write lost a
 fence it took reads, decides and writes again at once, `AL_OUTBOUND_COMMIT_ATTEMPTS` (3)
 attempts in all, the last after a jittered 10 ms pause; past the bound a send retains its request as
@@ -506,10 +507,7 @@ Every admission -- a send, a control hand-off, a dequeue, a repair -- runs the s
 validation and optimistic commit, and no queue or Web Lock orders the commits of a sender. Each dispatch
 is fenced on its message's version, and a dispatch whose decision read rows its sender's messages share on the
 sender's one version too, which is what keeps a track's sequences unique and gap-free: two dispatches that read one
-version mint one sequence, and only one of their writes lands. The commits that are not dispatches fence as the
-version-row paragraph of [the admission directory](#the-admission-directory) states: a message end, an ACK window, a
-repair hint's follow-up and a first-hop wait's own commits on both versions, a peer control on its message's alone,
-and the not-yet-in-sync retry schedule on the sender's alone. The other
+version mint one sequence, and only one of their writes lands. The losing dispatch's
 write answers `conflict`, and its commit reads, decides and writes again at once
 (`AL_OUTBOUND_COMMIT_CONFLICT_RETRY` in
 [`al-outbound-dispatch-admission.ts`](./al-outbound-dispatch-admission.ts), on the shared
@@ -519,6 +517,14 @@ makes at most three reads and three writes and waits at most 15 ms, and contenti
 reads, never a wait for another commit's read. Concurrent sends of one track are sequenced in the
 order their commits land, not the order they were called: the outbound promises no call order
 between sends that are in flight at once.
+
+The commits that are not dispatches fence as the version-row paragraph of
+[the admission directory](#the-admission-directory) states: a message end, an ACK window, a repair hint's follow-up
+and a first-hop wait's own commits on both versions, a peer control on its message's alone, a server receipt on its
+message's and on the sender's too only when it read the track positions, and the not-yet-in-sync retry schedule on the
+sender's alone. Of these only a server receipt retries at once, the same three attempts, before it retains its
+control; a peer control that loses is retained as work the outbound worker replays, and the others throw a retryable
+conflict to their work's retry.
 
 Past the bound a send retains its request: the canonical payload, immutable identity and compact
 `admit-message` work, atomically, through
@@ -1379,8 +1385,9 @@ alone, each part written by its own `commitBundles`, both at once. Each write re
 canonical pairs in one observation read, runs every bundle's own message-version, pending, effect, observation and
 identity fences, writes every bundle, and, for the sender-fenced part alone, fences the sender version once and moves
 it once. The whole group falls back when a member settles before its write (it fails validation, finds its own
-pending admission, or has nothing to commit), when the members name two senders, when the sender-fenced members
-read different versions of it, or when the group's read throws. A part falls back alone when two of its bundles write one row, when its write answers
+pending admission, or has nothing to commit), when the members name two senders, or when the group's read throws.
+When the sender-fenced members read different versions of it, they fall back and the members that fence their own
+message alone are still written as one part. A part falls back alone when two of its bundles write one row, when its write answers
 anything but `committed`, or when its write or its settlement throws; a part that committed stands, except that a
 throw after its transaction committed sends its members to commit alone a second time, each through a fresh read.
 Every member that falls back goes through the single-message commit, with its retries, one after another, and keeps its own answer:

@@ -854,10 +854,11 @@ and it has no status list.
   timer it replaces; no step ruled; for the maintainer.
 - The inbound lane can still hand an ordered message to the application again
   when its own work runs twice: a completion that loses all three of its
-  attempts, one the shutdown signal aborts, one that cannot be placed because
-  its predecessor has not completed, or two instances that hold the same work
-  after a lease expiry (the same class as a crash between dispatch and
-  completion). An admission's expiry refresh or a control row written during
+  attempts, one the shutdown signal aborts, or two instances that hold the
+  same work after a lease expiry (the same class as a crash between dispatch
+  and completion). A completion that cannot be placed because its predecessor
+  has not completed hands its work back too, but follows no dispatch: only a
+  dropped plan or a disabled local delivery reach it. An admission's expiry refresh or a control row written during
   the completion no longer does: the completion is guarded on its position and
   its slot alone. In-process subscribers that are not idempotent per message id
   are where a repeat would show (on the WS server: router handlers and proxies,

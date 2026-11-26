@@ -235,8 +235,11 @@ export class ALInboundOrderedDelivery {
     }
 
     /**
-     * Hands the work back (`retry`), to be dispatched again, when every attempt's write lost, when the shutdown signal
-     * aborted it, or when the predecessor has not completed, so no completion can be placed yet.
+     * Hands the work back (`retry`) when every attempt's write lost or the shutdown signal aborted it; after a dispatch,
+     * the application is then handed the message again. It also hands the work back when the predecessor has not
+     * completed, which no dispatch can precede: only a dropped plan or a disabled local delivery, which hand the
+     * application nothing, reach that answer. An attempt ends in a `NonRetryableException` when the slot holds another
+     * message, when the progress row is gone, or when the slot is gone and the position has not moved past the message.
      */
     async complete(msg: ALMessage): Promise<'completed' | 'retry'> {
         const trackKey = toALOrderingTrackKey(msg);

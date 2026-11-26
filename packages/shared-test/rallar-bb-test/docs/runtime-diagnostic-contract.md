@@ -1291,7 +1291,8 @@ receipt's control id, subject/origin, phase and exact audience snapshot:
   `admitted` written live on the instance that answers it records one per
   connection it called: `transport: 'recipient'`, `publisherCall: 'absent'`,
   `originIsHere: true`, `outcome` `sent` for a returned write and `failed` for one
-  that threw.
+  that threw. A connection whose socket's outbound filter refuses the frame is not
+  called and records nothing.
 - `receipt-publication`: actual publish/direct call states, returned direct status
   (`sent-live`, `no-recipients`, `expired`, `partial-failure`, `failed`) and counts,
   plus publisher return/throw. A returned publication can coexist with wrapper
