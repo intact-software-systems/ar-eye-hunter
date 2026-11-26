@@ -36,13 +36,14 @@ export class PracticeApp {
     constructor(root: HTMLElement, onOnline: () => void, onStartGame: () => void) {
         this.root = root;
         root.innerHTML = createPracticeMarkup();
-        const returnUrl = lastGuestVisitUrl();
-        if (returnUrl) {
+        const actions = root.querySelector('.hud-actions')!;
+        void lastGuestVisitUrl().then(returnUrl => {
+            if (!returnUrl || !actions.isConnected) return;
             const resume = document.createElement('a');
             resume.href = returnUrl.href;
             resume.textContent = 'Return to game';
-            root.querySelector('.hud-actions')!.prepend(resume);
-        }
+            actions.prepend(resume);
+        });
         const canvas = requirePracticeElement<HTMLCanvasElement>(root, 'canvas');
         this.scene = new PracticeScene(canvas);
         this.controls = new PracticeControls(root, canvas);

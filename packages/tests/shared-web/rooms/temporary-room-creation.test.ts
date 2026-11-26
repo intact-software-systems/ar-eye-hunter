@@ -1,3 +1,4 @@
+import 'fake-indexeddb/auto';
 import { afterEach, expect, it, vi } from 'vitest';
 import { TemporaryRoomCreation, previewRoomGuestInvitation } from '@shared-web/browser/rooms/entry/temporary-room-creation.ts';
 import { hashRoomInvitationSecret } from '@shared/api/room-guests/invitation.ts';
@@ -6,9 +7,13 @@ const room = { applicationId: 'tournaments', workspaceId: 'weekend', groupId: 'c
 const access = { clientId: 'player', sessionId: 'session', accessToken: 'bearer', issuedAtEpochMs: 1, expiresAtEpochMs: 14_400_001 };
 const storage = new Map<string, string>();
 const browserStorage = {
-    getItem: (key: string) => storage.get(key) ?? null,
-    setItem: (key: string, value: string) => { storage.set(key, value); },
-    removeItem: (key: string) => { storage.delete(key); }
+    async readOrCreate(key: string, value: string) {
+        if (!storage.has(key)) storage.set(key, value);
+        return storage.get(key)!;
+    },
+    async removeIfEqual(key: string, expected: string) {
+        if (storage.get(key) === expected) storage.delete(key);
+    }
 };
 afterEach(() => { storage.clear(); vi.unstubAllGlobals(); });
 
@@ -23,8 +28,10 @@ it('recovers the original invitation, identity proof and creation request after 
         expect(url === original.url && init.body === original.body).toBe(true);
         return Response.json({ room, access });
     });
-    await expect(new TemporaryRoomCreation(room, browserStorage).start({ displayName: 'Guest', capacity: 6 })).rejects.toThrow('response lost');
-    const created = await new TemporaryRoomCreation(room, browserStorage).start({ displayName: 'Guest', capacity: 6 });
+    await expect(new TemporaryRoomCreation(room).start({ displayName: 'Guest', capacity: 6 })).rejects.toThrow('response lost');
+    const reloaded = new TemporaryRoomCreation(room);
+    const created = await reloaded.start({ displayName: 'Guest', capacity: 6 });
+    await reloaded.clear();
     expect(created.room).toEqual(room);
     expect(created.access).toEqual(access);
     const proof = JSON.parse(original!.body);
@@ -88,9 +95,31 @@ it('a late denial from another tab does not discard the proof for a newer pendin
     const old = firstTab.start({});
     await vi.waitFor(() => expect(rejectOld).toBeDefined());
     await secondTab.start({});
-    secondTab.clear();
+    await secondTab.clear();
     await expect(secondTab.start({})).rejects.toThrow('response lost');
     rejectOld!();
     await expect(old).rejects.toThrow();
     await expect(secondTab.start({})).resolves.toMatchObject({ room });
+});
+
+it('sends no creation request if the private proof cannot be durably protected', async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    const creation = new TemporaryRoomCreation(room, {
+        ...browserStorage, readOrCreate: async () => { throw new Error('Secure storage unavailable'); }
+    });
+    await expect(creation.start({})).rejects.toThrow('Secure storage unavailable');
+    expect(fetch).not.toHaveBeenCalled();
+});
+
+it('two tabs starting together submit the same durable creation proof', async () => {
+    const submitted = new Set<string>();
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+        submitted.add(url + String(init.body));
+        return Response.json({ room, access });
+    });
+    const results = await Promise.all([new TemporaryRoomCreation(room, browserStorage).start({}),
+        new TemporaryRoomCreation(room, browserStorage).start({})]);
+    expect(submitted.size).toBe(1);
+    expect(results[0].invitationSecret === results[1].invitationSecret).toBe(true);
 });

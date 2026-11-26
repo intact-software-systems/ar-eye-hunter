@@ -44,7 +44,7 @@ export function openGuestMatch({ root, visit, snapshot, pageSignal }: OpenGuestM
         occupants.textContent = `${room.group.displayName} · ${count} ${count === 1 ? 'player' : 'players'}`;
     };
     renderOccupants(snapshot);
-    configureAuthSessionStorage('session');
+    configureAuthSessionStorage('memory');
     writeSession({ ...visit.access, username: visit.nickname, guestRoom: roomRef });
     const leave = () => location.assign(import.meta.env.BASE_URL);
     const diagnostics = new URLSearchParams(location.search).get('diagnostics') === '1'
@@ -110,7 +110,9 @@ export function openGuestMatch({ root, visit, snapshot, pageSignal }: OpenGuestM
         if (signal.aborted) return;
         const results = match.lastConfirmedResults;
         lifetime.abort();
-        forgetGuestVisit(visit.room);
+        void forgetGuestVisit(visit.room).catch(() => {
+            root.querySelector('[role=alert]')!.textContent += ' Clear site data to remove the saved visit from this device.';
+        });
         root.innerHTML = `<main class="loading"><h1></h1><ul></ul><p role="alert">Guest access has ended. Ask the owner for a fresh invitation.</p><a>Play solo</a></main>`;
         root.querySelector('h1')!.textContent = results ? 'Round complete' : 'Town invitation';
         root.querySelector('a')!.href = import.meta.env.BASE_URL;

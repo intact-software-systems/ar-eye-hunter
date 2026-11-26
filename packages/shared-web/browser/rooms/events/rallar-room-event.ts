@@ -14,6 +14,7 @@ import { sendApiHttpRequest } from '../../api/send-api-http-request.ts';
 import { toStateGroupHttpPath } from '../../api/state-http-path.ts';
 import { subscribeViewInvalidations } from '../../api/subscribe-view-invalidations.ts';
 import type { SubscribeViewRecovery } from '../../api/subscribe-view-recovery.ts';
+import { browserCredentialStore } from '../../auth/browser-credential-store.ts';
 import { BrowserActivity } from '../../browser-activity.ts';
 import type { RallarFacade } from '../../rallar.ts';
 import type { RallarAuthFacade } from '../../session/rallar-auth-facade.ts';
@@ -35,12 +36,12 @@ export class RallarRoomEvent extends AuthenticatedResource<RoomEvent.View | null
     private readonly grants: EventGuestGrants;
     private readonly path: string;
 
-    constructor(browser: RallarRoomEvent.Browser, lobby: GroupRef, storage: EventGuestGrants.Storage = localStorage) {
+    constructor(browser: RallarRoomEvent.Browser, lobby: GroupRef, storage: EventGuestGrants.Storage = browserCredentialStore) {
         const ref = decodeExactGroupRef(lobby, 'Event lobby');
         const path = toStateGroupHttpPath(ref, ref.groupId) + '/event';
         const grants = new EventGuestGrants(ref, storage);
         super({
-            auth: { session: () => grants.lobbySession(browser.session()), onChange: (listener, options) => browser.auth.onChange(listener, options) },
+            auth: { session: () => grants.identity(browser.session()), onChange: (listener, options) => browser.auth.onChange(listener, options) },
             activity: new BrowserActivity(), timers: createDefaultTimers(), createId: () => crypto.randomUUID()
         }, {
             scope: ref, changeResult: 'read',
@@ -48,11 +49,11 @@ export class RallarRoomEvent extends AuthenticatedResource<RoomEvent.View | null
                 if (!notice || (notice.resource === 'room-event' && notice.groupId === ref.groupId)) void changed();
             } })
         }, {
-            read: input => readPrivateEventView(ref, path, input),
-            change: async ({ request, requestId, session, signal }) => {
+            read: async input => readPrivateEventView(ref, path, { ...input, session: await grants.lobbySession(browser.session(), input.signal) }),
+            change: async ({ request, requestId, signal }) => {
                 const current = browser.session();
                 const actor = request.action === 'release' && current?.guestRoom &&
-                    isSameGroupRef(current.guestRoom, { ...ref, groupId: request.groupId }) ? current : session;
+                    isSameGroupRef(current.guestRoom, { ...ref, groupId: request.groupId }) ? current : await grants.lobbySession(current, signal);
                 const result = await sendApiHttpRequest<typeof request, ApiJsonValue>({ baseUrl: readApiBaseUrl(),
                     path: toApiMutationRequestPath(path, requestId), method: 'POST', body: request, options: { authSession: actor, signal } });
                 if (!isApiJsonObject(result) || !Number.isSafeInteger(result.revision)) throw new TypeError('Invalid event acknowledgement.');
@@ -71,9 +72,11 @@ export class RallarRoomEvent extends AuthenticatedResource<RoomEvent.View | null
         const attempt = this.beginOperation();
         if (!attempt) throw new Error('The event session is unavailable or busy.');
         try {
-            const { session, signal } = attempt;
+            const { signal } = attempt;
+            const session = await this.grants.lobbySession(this.browser.session(), signal);
             const room = { ...this.lobby, groupId: offer.groupId };
-            const { requestId, courtSecret } = this.grants.claim(session.clientId, offer);
+            const { requestId, courtSecret } = await this.grants.claim(session.clientId, offer);
+            signal.throwIfAborted();
             const body = { action: 'claim', groupId: offer.groupId, occurrence: offer.occurrence, partyId: offer.partyId, offerRevision: offer.offerRevision,
                 ...(session.guestRoom && { courtSecret }) };
             const result = await sendApiHttpRequest<typeof body, ApiJsonValue>({
@@ -85,14 +88,17 @@ export class RallarRoomEvent extends AuthenticatedResource<RoomEvent.View | null
                 !isSameGroupRef(decodeExactGroupRef(result.room, 'Court admission'), room)) throw new TypeError('Invalid court admission.');
             const access = isTemporaryRoomAdmission(result) ? result.access : undefined;
             if (session.guestRoom && access?.clientId !== session.clientId) throw new TypeError('Invalid court admission.');
-            const observed = await readPrivateEventView(this.lobby, this.path, attempt);
+            const observed = await readPrivateEventView(this.lobby, this.path, { ...attempt, session });
             const latest = this.getState().view;
             const currentView = observed && latest && latest.revision > observed.revision ? latest : observed;
             this.publishStreamView(attempt, currentView);
             const claimed = currentView?.offer;
             if (!this.current(attempt) || !claimed || claimed.deadline !== null || claimed.occurrence !== offer.occurrence ||
                 claimed.offerRevision !== offer.offerRevision || claimed.partyId !== offer.partyId || claimed.groupId !== room.groupId) throw new Error('The court assignment has changed.');
-            if (session.guestRoom && access) await this.browser.auth.activateGuest({ room, access, username: session.username });
+            if (session.guestRoom && access) {
+                this.grants.switchTo(attempt.session, access);
+                await this.browser.auth.activateGuest({ room, access, username: session.username });
+            }
             await this.selectRoom(room, signal);
         } finally { this.finishOperation(attempt); }
     }
@@ -101,8 +107,12 @@ export class RallarRoomEvent extends AuthenticatedResource<RoomEvent.View | null
         const attempt = this.beginOperation();
         if (!attempt) throw new Error('The event session is unavailable or busy.');
         try {
-            const { signal, session } = attempt;
-            if (session.guestRoom) await this.browser.auth.activateGuest({ room: this.lobby, access: session, username: session.username });
+            const { signal } = attempt;
+            const session = await this.grants.lobbySession(this.browser.session(), signal);
+            if (session.guestRoom) {
+                this.grants.switchTo(attempt.session, session);
+                await this.browser.auth.activateGuest({ room: this.lobby, access: session, username: session.username });
+            }
             await this.selectRoom(this.lobby, signal);
             await this.refresh();
         } finally { this.finishOperation(attempt); }

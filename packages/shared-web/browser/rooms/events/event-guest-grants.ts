@@ -5,14 +5,13 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import { decodeExactGroupRef } from '@shared/encoding/decode-exact-group-ref.ts';
 import type { RoomEvent } from '@shared/api/room-events/room-event.ts';
 import { isGuestInvitationVerifier } from '@shared/api/room-guests/invitation.ts';
+import { browserCredentialStore } from '../../auth/browser-credential-store.ts';
+import { toAuthSessionKey } from '../../auth/to-auth-session-key.ts';
 import { readApiBaseUrl } from '../../api-client-config.ts';
 import { createRoomGuestSecret } from '../entry/redeem-guest-invitation.ts';
 
 export namespace EventGuestGrants {
-    export interface Storage {
-        getItem(key: string): string | null;
-        setItem(key: string, value: string): void;
-    }
+    export type Storage = Pick<typeof browserCredentialStore, 'read' | 'write' | 'readOrCreate'>;
     export interface Claim {
         readonly requestId: string;
         readonly courtSecret: string;
@@ -24,6 +23,8 @@ export class EventGuestGrants {
     private readonly lobby: GroupRef;
     private readonly storage: EventGuestGrants.Storage;
     private readonly prefix: string;
+    private savedLobby: AuthSession | undefined;
+    private transition: { identity: AuthSession; destination: string } | undefined;
 
     constructor(lobby: GroupRef, storage: EventGuestGrants.Storage) {
         this.lobby = lobby;
@@ -31,16 +32,34 @@ export class EventGuestGrants {
         this.prefix = 'rallar.event.' + JSON.stringify([readApiBaseUrl(), lobby.applicationId, lobby.workspaceId, lobby.groupId]);
     }
 
-    lobbySession(active: AuthSession | undefined): AuthSession | undefined {
-        if (!active?.guestRoom) return active;
+    /** Only an SDK-verified room switch belongs to the same resource operation. */
+    identity(active: AuthSession | undefined): AuthSession | undefined {
+        if (active && this.transition?.destination === toAuthSessionKey(active)) return this.transition.identity;
+        this.transition = undefined;
+        if (active !== this.savedLobby) this.savedLobby = undefined;
+        return active;
+    }
+
+    switchTo(identity: AuthSession, destination: Pick<AuthSession, 'clientId' | 'sessionId'>): void {
+        this.transition = { identity, destination: toAuthSessionKey(destination) };
+    }
+
+    async lobbySession(active: AuthSession | undefined, signal: AbortSignal): Promise<AuthSession> {
+        signal.throwIfAborted();
+        if (!active) throw new Error('An active event session is required.');
+        if (!active.guestRoom) return active;
         const key = this.prefix + '.lobby.' + active.clientId;
         if (isSameGroupRef(active.guestRoom, this.lobby)) {
-            const saved = JSON.stringify(active);
-            if (this.storage.getItem(key) !== saved) this.storage.setItem(key, saved);
+            if (active !== this.savedLobby) {
+                await this.storage.write(key, JSON.stringify(active));
+                signal.throwIfAborted();
+                this.savedLobby = active;
+            }
             return active;
         }
-        const raw = this.storage.getItem(key);
-        if (!raw) return undefined;
+        const raw = await this.storage.read(key);
+        signal.throwIfAborted();
+        if (!raw) throw new Error('The event lobby session is unavailable.');
         const saved: ApiJsonValue = JSON.parse(raw);
         if (!isApiJsonObject(saved) || saved.clientId !== active.clientId ||
             !isSameGroupRef(decodeExactGroupRef(saved.guestRoom, 'Saved event grant'), this.lobby) || typeof saved.username !== 'string' ||
@@ -51,17 +70,13 @@ export class EventGuestGrants {
             accessToken: saved.accessToken, expiresAtEpochMs: saved.expiresAtEpochMs, guestRoom: this.lobby };
     }
 
-    claim(principalId: string, offer: RoomEvent.Offer): EventGuestGrants.Claim {
-        const key = this.prefix + '.claim.' + principalId;
-        const occurrence = JSON.stringify([offer.groupId, offer.partyId, offer.occurrence, offer.offerRevision]);
-        const raw = this.storage.getItem(key);
-        if (raw) {
-            const saved: ApiJsonValue = JSON.parse(raw);
-            if (isApiJsonObject(saved) && saved.occurrence === occurrence && typeof saved.requestId === 'string' &&
-                isGuestInvitationVerifier(saved.courtSecret)) return { requestId: saved.requestId, courtSecret: saved.courtSecret };
+    async claim(principalId: string, offer: RoomEvent.Offer): Promise<EventGuestGrants.Claim> {
+        const key = this.prefix + '.claim.' + JSON.stringify([principalId, offer.groupId, offer.partyId, offer.occurrence, offer.offerRevision]);
+        const raw = await this.storage.readOrCreate(key, JSON.stringify({ courtSecret: createRoomGuestSecret(), requestId: crypto.randomUUID() }));
+        const saved: ApiJsonValue = JSON.parse(raw);
+        if (!isApiJsonObject(saved) || typeof saved.requestId !== 'string' || !isGuestInvitationVerifier(saved.courtSecret)) {
+            throw new TypeError('Invalid saved court claim.');
         }
-        const claim = { courtSecret: createRoomGuestSecret(), requestId: crypto.randomUUID() };
-        this.storage.setItem(key, JSON.stringify({ occurrence, ...claim }));
-        return claim;
+        return { requestId: saved.requestId, courtSecret: saved.courtSecret };
     }
 }

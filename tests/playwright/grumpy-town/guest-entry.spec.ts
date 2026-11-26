@@ -258,6 +258,15 @@ test('a phone guest reloads into the same playing round and moves again', async 
     const guest = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
     try {
         const phone = await guest.newPage();
+        let admissionDelivered = false;
+        await phone.route('**/guests/requests/*', async route => {
+            const response = await route.fetch();
+            const access = await response.json();
+            const lifetime = access.expiresAtEpochMs - access.issuedAtEpochMs;
+            await route.fulfill({ response, json: { ...access,
+                expiresAtEpochMs: access.issuedAtEpochMs, issuedAtEpochMs: access.issuedAtEpochMs - lifetime } });
+            admissionDelivered = true;
+        }, { times: 1 });
         await phone.goto(await owner.getByLabel('Guest invitation link').inputValue());
         const nickname = await phone.getByRole('status', { name: 'Your nickname' }).innerText();
         await phone.getByRole('button', { name: 'Join this town' }).click();
@@ -267,16 +276,7 @@ test('a phone guest reloads into the same playing round and moves again', async 
         const game = phone.locator('#online-game');
         await expect(game).toHaveAttribute('data-phase', 'playing', { timeout: 20000 });
         const matchId = await game.getAttribute('data-match-id');
-        // An old local admission deadline requires Rallar to verify the unchanged seat on reload.
-        const admissionDeadline = await phone.evaluate(() => {
-            const key = 'grumpy-town.guest-visit.' + encodeURIComponent(new URL(location.href).searchParams.get('room')!);
-            const visit = JSON.parse(localStorage.getItem(key)!);
-            const lifetime = visit.access.expiresAtEpochMs - visit.access.issuedAtEpochMs;
-            visit.access.expiresAtEpochMs = visit.access.issuedAtEpochMs;
-            visit.access.issuedAtEpochMs -= lifetime;
-            localStorage.setItem(key, JSON.stringify(visit));
-            return Number(visit.access.expiresAtEpochMs);
-        });
+        expect(admissionDelivered).toBe(true);
         await phone.reload();
         await expect(game).toHaveAttribute('data-phase', 'playing', { timeout: 22000 });
         await expect(game).toHaveAttribute('data-match-id', matchId!);
@@ -289,8 +289,7 @@ test('a phone guest reloads into the same playing round and moves again', async 
         await expect.poll(async () => Number(await host.getAttribute('data-peer-x'))).toBeGreaterThan(originalX + 0.2);
         await phone.keyboard.up('KeyD');
         await expect(host).toHaveAttribute('data-match-id', matchId!);
-        expect(await phone.evaluate(() => JSON.parse(sessionStorage.getItem('auth.session')!).expiresAtEpochMs))
-            .toBe(admissionDeadline);
+        expect(await phone.evaluate(() => [localStorage, sessionStorage].every(storage => !storage.getItem('auth.session')))).toBe(true);
     }
     finally {
         await guest.close();

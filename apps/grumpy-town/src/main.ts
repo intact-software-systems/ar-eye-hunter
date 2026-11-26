@@ -13,7 +13,7 @@ if (location.pathname.replace(/\/$/, '') === `${import.meta.env.BASE_URL}guest`)
     window.addEventListener('hashchange', () => location.reload(), { signal: lifetime.signal });
     void import('./online/open-guest-invitation.ts').then(({ openGuestInvitation }) => {
         if (!lifetime.signal.aborted) {
-            openGuestInvitation(root, lifetime.signal);
+            return openGuestInvitation(root, lifetime.signal);
         }
     });
 }

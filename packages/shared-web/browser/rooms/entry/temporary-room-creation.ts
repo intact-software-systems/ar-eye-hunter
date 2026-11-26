@@ -8,6 +8,7 @@ import {
 } from '@shared/api/room-guests/temporary-room.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { readApiBaseUrl } from '../../api-client-config.ts';
+import { browserCredentialStore } from '../../auth/browser-credential-store.ts';
 import { ApiHttpError } from '../../api/http-error.ts';
 import { sendApiHttpRequest } from '../../api/send-api-http-request.ts';
 import { toStateGroupHttpPath, toStateScopeHttpPath } from '../../api/state-http-path.ts';
@@ -30,25 +31,29 @@ export namespace TemporaryRoomCreation {
 
 /** Persists the private request before sending so a reload can recover a lost creation response. */
 export class TemporaryRoomCreation {
-    private requestId?: string;
+    private savedAttempt?: string;
     private readonly key: string;
     private readonly baseUrl = readApiBaseUrl();
     private readonly scope: StateScope;
-    private readonly storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+    private readonly storage: Pick<typeof browserCredentialStore, 'readOrCreate' | 'removeIfEqual'>;
 
-    constructor(scope: StateScope, storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>) {
+    constructor(scope: StateScope, storage: Pick<typeof browserCredentialStore, 'readOrCreate' | 'removeIfEqual'> = browserCredentialStore) {
         this.scope = scope;
         this.storage = storage;
         this.key = 'rallar.temporary-room.create.' + JSON.stringify([this.baseUrl, scope.applicationId, scope.workspaceId]);
     }
 
     async start(options: TemporaryRoomCreation.Options, signal?: AbortSignal): Promise<TemporaryRoomCreation.Created> {
-        const attempt = this.readOrBegin(options);
-        this.requestId = attempt.requestId;
+        const candidate = { ...options, requestId: crypto.randomUUID(), guestSecret: createRoomGuestSecret(), invitationSecret: createRoomGuestSecret() };
+        if (!isSavedAttempt(candidate)) throw new TypeError('Invalid temporary room creation options.');
+        const raw = await this.storage.readOrCreate(this.key, JSON.stringify(candidate));
+        const attempt: ApiJsonValue = JSON.parse(raw);
+        if (!isSavedAttempt(attempt)) throw new TypeError('Invalid saved temporary room request.');
+        this.savedAttempt = raw;
         try {
             return await this.admit(attempt, signal);
         } catch (error) {
-            if (error instanceof ApiHttpError && [400, 403, 404, 410].includes(error.status)) this.clearAttempt(attempt.requestId);
+            if (error instanceof ApiHttpError && [400, 403, 404, 410].includes(error.status)) await this.storage.removeIfEqual(this.key, raw);
             throw error;
         }
     }
@@ -69,30 +74,11 @@ export class TemporaryRoomCreation {
     }
 
     /** Call once the application has saved the returned seat and share link, or the player abandons the request. */
-    clear(): void {
-        if (this.requestId) this.clearAttempt(this.requestId);
-    }
-
-    private clearAttempt(requestId: string): void {
-        const raw = this.storage.getItem(this.key);
-        if (raw === null) return;
-        const value: ApiJsonValue = JSON.parse(raw);
-        if (isSavedAttempt(value) && value.requestId === requestId) this.storage.removeItem(this.key);
-    }
-
-    private readOrBegin(options: TemporaryRoomCreation.Options): TemporaryRoomCreation.SavedAttempt {
-        const raw = this.storage.getItem(this.key);
-        if (raw !== null) {
-            const value: ApiJsonValue = JSON.parse(raw);
-            if (!isSavedAttempt(value)) throw new TypeError('Invalid saved temporary room request.');
-            return value;
-        }
-        const attempt = {
-            ...options, requestId: crypto.randomUUID(),
-            guestSecret: createRoomGuestSecret(), invitationSecret: createRoomGuestSecret()
-        };
-        this.storage.setItem(this.key, JSON.stringify(attempt));
-        return attempt;
+    async clear(): Promise<void> {
+        const saved = this.savedAttempt;
+        if (saved === undefined) return;
+        await this.storage.removeIfEqual(this.key, saved);
+        if (this.savedAttempt === saved) this.savedAttempt = undefined;
     }
 }
 

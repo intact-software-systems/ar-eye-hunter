@@ -84,7 +84,9 @@ export class TemporaryTownManagement {
         if (!this.secret) return;
         this.secret = undefined;
         const { invitationSecret: _removed, ...seat } = this.input.visit;
-        saveGuestVisit(seat);
+        void saveGuestVisit(seat).catch(() => {
+            this.error = 'The revoked invitation could not be removed from this device.';
+        });
     }
 
     private async act(button: HTMLButtonElement): Promise<void> {
@@ -100,7 +102,7 @@ export class TemporaryTownManagement {
                 const { secret, snapshot } = await issueTownInvitation(browser, room, signal);
                 signal.throwIfAborted();
                 this.secret = secret;
-                saveGuestVisit({ ...visit, invitationSecret: secret });
+                await saveGuestVisit({ ...visit, invitationSecret: secret });
                 this.observe(snapshot);
             } else if (button.dataset.action === 'remove' && principal) {
                 this.observe(await browser.rooms.removeMember(room, principal, { signal }));

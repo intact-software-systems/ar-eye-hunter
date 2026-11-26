@@ -23,7 +23,7 @@ export async function enterTownInvitation(input: EnterTownInvitationInput): Prom
             room, invitationVerifier, nickname,
             requestId: crypto.randomUUID(), guestSecret: previous?.guestSecret ?? createRoomGuestSecret()
         };
-        saveGuestVisit(pending);
+        await saveGuestVisit(pending);
         const access = await redeemRoomGuestInvitation({ ...GRUMPY_TOWN_SCOPE, groupId: room }, {
             invitationSecret, guestSecret: pending.guestSecret, displayName: pending.nickname
         }, { requestId: pending.requestId, signal });
@@ -31,7 +31,7 @@ export async function enterTownInvitation(input: EnterTownInvitationInput): Prom
             return;
         }
         visit = { room, nickname: pending.nickname, access };
-        saveGuestVisit(visit);
+        await saveGuestVisit(visit);
     }
     if (!visit || !('access' in visit)) {
         return;

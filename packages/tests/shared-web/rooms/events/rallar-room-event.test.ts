@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { AppTopics, type AuthSession } from '@shared/api/api-config.ts';
 import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import type { RoomEvent } from '@shared/api/room-events/room-event.ts';
+import type { RallarAuthChangeListener } from '@shared-web/browser/session/rallar-auth-facade.ts';
 import { RallarRoomEvent } from '@shared-web/browser/rooms/events/rallar-room-event.ts';
 import { decodeExactGroupRef } from '@shared/encoding/decode-exact-group-ref.ts';
 import { createGroupSnapshotFixture } from '../../authoritative-group-fixtures.ts';
@@ -19,29 +20,43 @@ const view: RoomEvent.View = {
     queue: null, proposals: [], offer: { groupId: 'court', occurrence: 1, offerRevision: 3, partyId: 'friends', deadline: 1000 }
 };
 
-function trial() {
+function trial(beforeActivation?: () => Promise<void>) {
     vi.stubGlobal('window', new EventTarget());
     vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
     vi.stubGlobal('navigator', { onLine: true });
     const rows = new Map<string, string>();
-    const storage = { getItem: (key: string) => rows.get(key) ?? null, setItem: (key: string, value: string) => { rows.set(key, value); } };
-    let active: AuthSession = grant;
+    const storage = { read: vi.fn(async (key: string) => rows.get(key) ?? null),
+        write: async (key: string, value: string) => { rows.set(key, value); },
+        readOrCreate: async (key: string, value: string) => {
+            const chosen = rows.get(key) ?? value;
+            rows.set(key, chosen);
+            return chosen;
+        } };
+    const listeners = new Set<RallarAuthChangeListener>();
+    let active: AuthSession | undefined = grant;
     let selected = lobby;
     const session = () => active;
+    const switchSession = (next: AuthSession | undefined) => {
+        active = next;
+        for (const listener of listeners) listener(active ? { authenticated: true, session: active, reason: 'login' } : { authenticated: false, reason: 'logout' });
+    };
     const push = new ViewPushBrowser(session);
     const browser: RallarRoomEvent.Browser = {
         session, ws: push.ws, messages: push.messages, auth: {
-            onChange: () => () => {},
-            activateGuest: async ({ room, access, username }) => { active = { ...access, guestRoom: room, username }; }
+            onChange: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; },
+            activateGuest: async ({ room, access, username }) => {
+                await beforeActivation?.();
+                switchSession({ ...access, guestRoom: room, username });
+            }
         },
         connect: vi.fn<RallarRoomEvent.Browser['connect']>(), rooms: {
             join: async target => {
                 selected = decodeExactGroupRef(target, 'Event room selection');
-                return createGroupSnapshotFixture({ ...selected, sessionIds: [active.sessionId] });
+                return createGroupSnapshotFixture({ ...selected, sessionIds: active ? [active.sessionId] : [] });
             }
         }
     };
-    return { push, selected: () => selected, session, open: () => new RallarRoomEvent(browser, lobby, storage) };
+    return { storage, switchSession, push, selected: () => selected, session, open: () => new RallarRoomEvent(browser, lobby, storage) };
 }
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
@@ -201,4 +216,83 @@ it('opens an authorized lobby without an event and observes subsequent event cre
         fixture.push.reopen();
         await expect.poll(() => event.getState().view?.lobby).toEqual(lobby);
     } finally { event.stop(); }
+});
+
+it('discards a delayed protected lobby read on account change before sending a private request', async () => {
+    const fixture = trial();
+    fixture.switchSession({ ...courtAccess, guestRoom: court, username: 'Alice' });
+    const pending = Promise.withResolvers<string | null>();
+    fixture.storage.read.mockReturnValueOnce(pending.promise);
+    const requests: string[] = [];
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+        requests.push(new Headers(init.headers).get('authorization') ?? '');
+        return Response.json({ ...view, principalId: 'bob' });
+    });
+    const event = fixture.open();
+    try {
+        const started = event.start();
+        await expect.poll(() => fixture.storage.read.mock.calls.length).toBe(1);
+        fixture.switchSession({ clientId: 'bob', username: 'Bob', sessionId: 'bob-session',
+            accessToken: 'bob-proof', expiresAtEpochMs: grant.expiresAtEpochMs });
+        pending.resolve(JSON.stringify(grant));
+        await started;
+        await expect.poll(() => event.getState().view?.principalId).toBe('bob');
+        expect(requests).toEqual(['Bearer bob-proof']);
+    } finally { pending.resolve(null); event.stop(); }
+});
+
+it('keeps a fresh event signed out until the app explicitly restores the guest visit', async () => {
+    const fixture = trial();
+    const fetch = vi.fn(async () => Response.json(view));
+    vi.stubGlobal('fetch', fetch);
+    const original = fixture.open();
+    await original.start();
+    original.stop();
+    fixture.switchSession(undefined);
+    fetch.mockClear();
+    const fresh = fixture.open();
+    try {
+        await fresh.start();
+        expect(fresh.getState().view).toBeNull();
+        expect(fetch).not.toHaveBeenCalled();
+        fixture.switchSession(grant);
+        await expect.poll(() => fresh.getState().view?.principalId).toBe(grant.clientId);
+        expect(fetch).toHaveBeenCalledTimes(1);
+    } finally { fresh.stop(); }
+});
+
+it('reuses a single claim identity across concurrent watchers of the same offer', async () => {
+    const fixture = trial();
+    const claims: {url: string; body: string}[] = [];
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+        if (init.method === 'GET') return Response.json(view);
+        claims.push({ url, body: String(init.body) });
+        throw new TypeError('response lost');
+    });
+    const watchers = [fixture.open(), fixture.open()];
+    try {
+        await Promise.all(watchers.map(watcher => watcher.start()));
+        await Promise.all(watchers.map(watcher => expect(watcher.enterCourt()).rejects.toThrow('response lost')));
+        expect(claims).toHaveLength(2);
+        expect(claims[1]).toEqual(claims[0]);
+    } finally { watchers.forEach(watcher => watcher.stop()); }
+});
+
+it('finishes court entry when a refresh reads the old session during transport shutdown', async () => {
+    const switching = Promise.withResolvers<void>();
+    const disconnected = Promise.withResolvers<void>();
+    const fixture = trial(() => { switching.resolve(); return disconnected.promise; });
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => Response.json(init.method === 'GET'
+        ? { ...view, offer: { ...view.offer, deadline: null } }
+        : { revision: 4, room: court, access: courtAccess }));
+    const event = fixture.open();
+    try {
+        await event.start();
+        const entry = event.enterCourt();
+        await switching.promise;
+        await event.refresh();
+        disconnected.resolve();
+        await entry;
+        expect(fixture.selected()).toEqual(court);
+    } finally { disconnected.resolve(); event.stop(); }
 });

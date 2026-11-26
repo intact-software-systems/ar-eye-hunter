@@ -98,11 +98,10 @@ clock and enforce time-sensitive actions at their receiving authority.
 
 An app enabled for temporary games can start a room before account sign-in.
 Configure the API client first, then construct `TemporaryRoomCreation` from
-`rooms/entry/temporary-room-creation.ts` with the application/workspace scope
-and browser storage. Its `start({ capacity, displayName }, signal)` saves the
+`rooms/entry/temporary-room-creation.ts` with the application/workspace scope. Its `start({ capacity, displayName }, signal)` saves the
 request ID and private creation proof before sending. Both options may be omitted.
-Retry with the same scope and storage after a lost response or a reload. Save
-the returned room, room-scoped guest access and invitation secret before calling
+Retry with the same scope on this device after a lost response or a reload. The SDK keeps the private proof in its encrypted browser credential store. Save
+the returned room, room-scoped guest access and invitation secret before awaiting
 `clear()`. Only the invitation secret belongs in the shared link.
 `previewRoomGuestInvitation(room, secret, signal)` reads the room name and seat
 availability without admitting the visitor. An uncapped room returns null for
@@ -123,4 +122,7 @@ claim after transport loss or reload. `returnToLobby()` reselects the event
 lobby without surrendering its membership. A temporary player uses distinct
 room credentials for those two connections under the same player identity.
 Start a guest visit with `auth.activateGuest({room, access, username})` using
-the admission Rallar returned for that room.
+the admission Rallar returned for that room. After a page reload, explicitly recover the guest
+visit through your app’s invitation flow and call `activateGuest` again. A signed-out event
+watcher waits for authentication. With an active court visit, the watcher retrieves the
+same player's lobby grant from the protected credential store before reading the event.

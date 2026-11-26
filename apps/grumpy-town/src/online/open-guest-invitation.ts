@@ -18,7 +18,7 @@ const nicknames = [
     'Wobbly Turnip'
 ];
 
-export function openGuestInvitation(root: HTMLElement, signal: AbortSignal): void {
+export async function openGuestInvitation(root: HTMLElement, signal: AbortSignal): Promise<void> {
     configureApiClient({ apiBaseUrl: townApiBaseUrl });
     const fragment = new URLSearchParams(location.hash.slice(1));
     const room = fragment.get('room') ?? new URLSearchParams(location.search).get('room');
@@ -40,7 +40,8 @@ export function openGuestInvitation(root: HTMLElement, signal: AbortSignal): voi
 
     let visit: GuestVisit | undefined;
     try {
-        visit = room ? readGuestVisit(room) : undefined;
+        visit = room ? await readGuestVisit(room) : undefined;
+        if (signal.aborted) return;
     }
     catch {
         message.textContent = 'Allow browser storage and reopen the invitation to keep your guest seat.';
@@ -48,12 +49,12 @@ export function openGuestInvitation(root: HTMLElement, signal: AbortSignal): voi
     }
     let index = visit ? nicknames.indexOf(visit.nickname) : -1;
     if (index < 0) {
-        index = Math.floor(Math.random() * nicknames.length);
+        index = randomNicknameIndex(nicknames.length);
     }
     output.value = nicknames[index];
     shuffle.disabled = hasPendingGuestVisit(visit);
     shuffle.addEventListener('click', () => {
-        const offset = 1 + Math.floor(Math.random() * (nicknames.length - 1));
+        const offset = 1 + randomNicknameIndex(nicknames.length - 1);
         index = (index + offset) % nicknames.length;
         output.value = nicknames[index];
     }, { signal });
@@ -83,10 +84,10 @@ export function openGuestInvitation(root: HTMLElement, signal: AbortSignal): voi
                 return;
             }
             const failure = describeGuestEntryFailure(error instanceof ApiHttpError ? error : undefined, valid);
-            if (room) visit = readGuestVisit(room);
+            if (room) visit = await readGuestVisit(room);
             if (failure.clearVisit) {
                 visit = undefined;
-                if (room) forgetGuestVisit(room);
+                if (room) await forgetGuestVisit(room);
             }
             message.textContent = failure.message;
             join.hidden = !failure.retry;
@@ -111,4 +112,8 @@ function describeGuestEntryFailure(error: ApiHttpError | undefined, validInvitat
 
 function hasPendingGuestVisit(visit: GuestVisit | undefined): boolean {
     return visit !== undefined && 'guestSecret' in visit;
+}
+
+function randomNicknameIndex(count: number): number {
+    return crypto.getRandomValues(new Uint32Array(1))[0] % count;
 }

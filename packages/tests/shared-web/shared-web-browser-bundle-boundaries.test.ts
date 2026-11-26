@@ -219,7 +219,7 @@ describe('shared-web browser bundle boundaries', () => {
         'browser/rooms/recent-rooms/rallar-recent-rooms.ts',
         'browser/rooms/directory/rallar-room-directory.ts'
     ])(
-        'keeps %s independent of the facade and storage engines',
+        'limits %s to its room feature and required browser storage',
         (label) => {
             const entry = budgetedEntries.find((boundary) => boundary.label === label);
             if (!entry) {
@@ -230,7 +230,13 @@ describe('shared-web browser bundle boundaries', () => {
             expect(inputs).not.toContainEqual(expect.stringContaining('packages/shared-server/'));
             expect(inputs).not.toContainEqual(expect.stringContaining('node_modules/react/'));
             expect(inputs).not.toContainEqual(expect.stringContaining('node_modules/@js-temporal/polyfill'));
-            expect(inputs).not.toContainEqual(expect.stringContaining('indexed-db'));
+            const hasPrivateRecovery = label === 'browser/rooms/events/rallar-room-event.ts' ||
+                label === 'browser/rooms/entry/temporary-room-creation.ts';
+            const credentialStore = 'packages/shared-web/browser/auth/browser-credential-store.ts';
+            expect(inputs.includes(credentialStore)).toBe(hasPrivateRecovery);
+            expect(inputs.filter(path => path.includes('indexed-db')).sort()).toEqual(hasPrivateRecovery
+                ? ['packages/shared/persistence/indexed-db-request.ts', 'packages/shared/persistence/open-indexed-db.ts']
+                : []);
         }
     );
 

@@ -1,3 +1,4 @@
+import { browserCredentialStore } from '@shared-web/browser/auth/browser-credential-store.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { isGuestInvitationVerifier, isRoomGuestAccess, type RoomGuestAccess } from '@shared/api/room-guests/invitation.ts';
 
@@ -18,8 +19,8 @@ function visitKey(room: string): string {
     return 'grumpy-town.guest-visit.' + encodeURIComponent(room);
 }
 
-export function readGuestVisit(roomId: string): GuestVisit | undefined {
-    const raw = localStorage.getItem(visitKey(roomId));
+export async function readGuestVisit(roomId: string): Promise<GuestVisit | undefined> {
+    const raw = await browserCredentialStore.read(visitKey(roomId));
     if (!raw) {
         return;
     }
@@ -48,14 +49,14 @@ export function readGuestVisit(roomId: string): GuestVisit | undefined {
     }
 }
 
-export function saveGuestVisit(visit: GuestVisit): void {
-    localStorage.setItem(visitKey(visit.room), JSON.stringify(visit));
-    if ('access' in visit) localStorage.setItem(lastVisit, visit.room);
+export async function saveGuestVisit(visit: GuestVisit): Promise<void> {
+    await browserCredentialStore.write(visitKey(visit.room), JSON.stringify(visit));
+    if ('access' in visit) await browserCredentialStore.write(lastVisit, visit.room);
 }
 
-export function forgetGuestVisit(room: string): void {
-    localStorage.removeItem(visitKey(room));
-    if (localStorage.getItem(lastVisit) === room) localStorage.removeItem(lastVisit);
+export async function forgetGuestVisit(room: string): Promise<void> {
+    await browserCredentialStore.remove(visitKey(room));
+    await browserCredentialStore.removeIfEqual(lastVisit, room);
 }
 
 export function guestVisitUrl(room: string): URL {
@@ -70,10 +71,10 @@ export function guestInvitationUrl(room: string, secret: string): URL {
     return url;
 }
 
-export function lastGuestVisitUrl(): URL | undefined {
+export async function lastGuestVisitUrl(): Promise<URL | undefined> {
     try {
-        const room = localStorage.getItem(lastVisit);
-        if (room && readGuestVisit(room)) return guestVisitUrl(room);
+        const room = await browserCredentialStore.read(lastVisit);
+        if (room && await readGuestVisit(room)) return guestVisitUrl(room);
     } catch {
         // The solo landing page also runs with browser storage disabled.
     }
