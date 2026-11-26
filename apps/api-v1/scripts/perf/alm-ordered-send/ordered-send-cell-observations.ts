@@ -66,9 +66,15 @@ export interface OrderedSendCellResendOffer {
 export type OrderedSendCellResend = OrderedSendCellResendOffer & OrderedSendCellAnswer;
 
 /**
- * A session's socket read a copy; every read is recorded, at whichever session. A read at a session the send did not
- * expect, its own publisher or a session outside its audience, is no copy of any expected recipient: the report
- * counts it in `unmatched.arrivalsAtUnexpectedRecipient` and in no delivery or delay figure. On `main` the copy of a
+ * The server wrote a copy of a send to a session's socket: one frame on the wire, recorded each time one is written,
+ * at whichever session. An arrival is a wire copy, taken before the de-duplication and the ordered hold-back of a
+ * client, which a session of the cell has not: a client drops a copy it has taken before and holds back one that is
+ * ahead of its track, and here both are arrivals. So an arrival is no delivery to an application, and where a figure
+ * of the report says a copy was "read", it was read off the socket the server wrote it to.
+ *
+ * An arrival at a session the send did not expect, its own publisher or a session outside its audience, is no copy
+ * of any expected recipient: the report counts it in `unmatched.arrivalsAtUnexpectedRecipient` and in no delivery or
+ * delay figure. On `main` the copy of a
  * send on a topic the router has no definition of is a live notice, never a row of the WS outbox: the instance that
  * hands the send to its router publishes one `ws-live-notice` NOTIFY that carries the message, writes the copies of
  * its own sessions once the publish returned, and each other instance writes its sessions' copies as the NOTIFY

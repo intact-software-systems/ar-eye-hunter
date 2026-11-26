@@ -13,7 +13,7 @@ import {
     type ApiV1DatabaseLifecycle,
     type ApiV1DatabaseNotificationPort
 } from '../../../src/db/api-v1-database-lifecycle.ts';
-import { connectOrderedSendSession } from './connect-ordered-send-session.ts';
+import { connectOrderedSendSession, type OrderedSendSessionDisconnect } from './connect-ordered-send-session.ts';
 import { createDelayedDatabaseNotificationPort } from './create-delayed-database-notification-port.ts';
 import { createDelayedPSqlSql } from './create-delayed-p-sql-sql.ts';
 import { createOrderedSendWsServer, type OrderedSendWsServer } from './create-ordered-send-ws-server.ts';
@@ -156,7 +156,7 @@ function wireOrderedSendInstance(
         queueResilience: config.queueResilience,
         nowEpochMs
     });
-    const disconnects: (() => void)[] = [];
+    const disconnects: OrderedSendSessionDisconnect[] = [];
     return {
         instanceIndex,
         applicationPoolMaxConnections: config.applicationPoolMaxConnections,
@@ -173,7 +173,7 @@ function wireOrderedSendInstance(
                 authorisationLifetimeMs: SESSION_LIFETIME_MS
             }));
         },
-        stop: () => stopOrderedSendWsServer(server, disconnects),
+        stop: () => stopOrderedSendWsServer(server, disconnects, nowEpochMs),
         close: () => lifecycle.close()
     };
 }
@@ -201,12 +201,16 @@ async function startOrderedSendWsServer(server: OrderedSendWsServer): Promise<vo
 }
 
 /** Runs each step in turn whatever the one before it did, then fails with every failure there was. */
-async function stopOrderedSendWsServer(server: OrderedSendWsServer, disconnects: (() => void)[]): Promise<void> {
+async function stopOrderedSendWsServer(
+    server: OrderedSendWsServer,
+    disconnects: OrderedSendSessionDisconnect[],
+    nowEpochMs: () => number
+): Promise<void> {
     const steps: readonly (() => Promise<void> | void)[] = [
         () => server.queueEngine.stop(),
         () => server.service.dispose(),
         () => server.stopLiveNotices(),
-        () => disconnects.splice(0).forEach((disconnect) => disconnect())
+        () => disconnects.splice(0).forEach((disconnect) => disconnect(nowEpochMs()))
     ];
     const failures: Error[] = [];
     for (const step of steps) {

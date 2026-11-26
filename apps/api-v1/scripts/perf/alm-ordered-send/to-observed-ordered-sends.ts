@@ -8,7 +8,7 @@ import type {
     OrderedSendCellSend
 } from './ordered-send-cell-observations.ts';
 
-/** One read of a copy: its instant and its place in `arrivals`, the order the cell observed reads in. */
+/** One write of a copy to its recipient's socket, as the cell read it there: its instant and its place in `arrivals`. */
 export interface ObservedOrderedSendRead {
     readonly atMs: number;
     readonly arrivalPosition: number;
@@ -17,7 +17,7 @@ export interface ObservedOrderedSendRead {
 /** One expected recipient's share of a send. */
 export interface ObservedOrderedSendCopy {
     readonly recipientPeerId: string;
-    /** In the order observed; empty when the recipient never read its copy. */
+    /** In the order observed; empty when the server never wrote the copy to its recipient's socket. */
     readonly reads: readonly ObservedOrderedSendRead[];
 }
 

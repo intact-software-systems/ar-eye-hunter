@@ -20,13 +20,16 @@ export interface ConnectOrderedSendSessionInput {
     readonly authorisationLifetimeMs: number;
 }
 
+/** Disconnects the session at the epoch time given and forgets the facts of its connect. */
+export type OrderedSendSessionDisconnect = (disconnectedAtEpochMs: number) => void;
+
 /**
  * Connects one session of the run to an instance as the API's upgrade route connects a browser's socket once its
  * authorised connect committed: the facts of the connect remembered for the connection's generation, the connection
  * registered, and its open dispatched. No connect is written to the database, and no socket is opened: the server
- * writes the session's frames to `socket`. Returns what disconnects the session and forgets its facts.
+ * writes the session's frames to `socket`. Returns what disconnects the session.
  */
-export function connectOrderedSendSession(input: ConnectOrderedSendSessionInput): () => void {
+export function connectOrderedSendSession(input: ConnectOrderedSendSessionInput): OrderedSendSessionDisconnect {
     const { socketServer, sessionPeerId, connectedAtEpochMs } = input;
     const connection = new ConnectionContext({
         id: sessionPeerId,
@@ -37,13 +40,13 @@ export function connectOrderedSendSession(input: ConnectOrderedSendSessionInput)
     if (socketServer.registerConnection(connection)) {
         socketServer.dispatchConnectionOpen(connection);
     }
-    return () => {
+    return (disconnectedAtEpochMs) => {
         socketServer.dispatchConnectionClose(connection, 1000, 'ordered-send-run-ended');
         releaseAuthorisedWsCloseFacts({
             sessionId: sessionPeerId,
             generationId: connection.generationId,
             generationStartedAtEpochMs: connection.generationStartedAtEpochMs,
-            disconnectedAtEpochMs: connectedAtEpochMs,
+            disconnectedAtEpochMs,
             reason: 'ordered-send-run-ended'
         });
     };

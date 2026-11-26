@@ -128,8 +128,8 @@ const ROOM_PRESENCE_LIFETIME_MS = 24 * 60 * 60 * 1_000;
  *   its work row hands it to the router, which publishes one NOTIFY that carries the message, sends the copies of
  *   the sessions on that instance once the publish returned, and the other instances send theirs as the NOTIFY
  *   reaches them. No copy is a row of the WS outbox: one an instance missed is written again only when the send is
- *   handed to a router again. A publisher that sends it again changes nothing: the entry answers `duplicate`, hands
- *   nothing off and publishes nothing;
+ *   handed to a router again. Once the server has admitted a send, its publisher offering it again changes
+ *   nothing: the entry answers `duplicate`, hands nothing off and publishes nothing;
  * - a receipt: a row the instance that admitted the send writes to the shared WS outbox. The instance whose worker
  *   takes the row writes it to the origin's socket when that socket is its own, and otherwise announces the row's
  *   key to the others by a NOTIFY, again and again until the row expires;
@@ -143,7 +143,10 @@ const ROOM_PRESENCE_LIFETIME_MS = 24 * 60 * 60 * 1_000;
  * `set local` pair around a custom-planned statement; the warm-up of the pools.
  *
  * What differs from a deployment:
- * - one event loop runs the three instances and the load, where a deployment gives each instance a process;
+ * - one event loop runs the three instances and the load, where a deployment gives each instance a process. With no
+ *   added latency that loop is busy most of the time, and two runs of one shape have differed several times over in
+ *   how long an `admitted` receipt took: an absolute delay there measures the harness as much as the server. The
+ *   result carries the loop's lag and the process's processor time over the send window to judge a run by;
  * - a frame enters at `acceptIncomingMessage`, below the socket bridge, so its size check and its JSON parse are no
  *   part of a run, and a session is a socket object the server writes to, with no WebSocket;
  * - a recipient has no client runtime: its socket takes every frame the server writes, a repeated copy and a copy
@@ -153,7 +156,8 @@ const ROOM_PRESENCE_LIFETIME_MS = 24 * 60 * 60 * 1_000;
  *   recovery: nothing under `none`; under `client-stand-in` what `OrderedSendClientStandIn` states, a stand-in for
  *   the product's WS client whose comment also says what of that client it leaves out;
  * - the room authorizer admits a fixed audience and reads nothing, where the API's reads the room's current snapshot
- *   for each of the three decisions a send takes, and once more for each replay and each second dispatch;
+ *   for each of the three decisions a send takes, and once more for each replay and each second dispatch: at least
+ *   three round trips to the database a send that no run pays;
  * - the envelope carries no room send fence, which a browser's room send carries;
  * - no group and no client is in the database, so the target resolver has no snapshot to read and no connect,
  *   presence or heartbeat is written; none of the API's other workers run, no AppInbox reader among them, and no

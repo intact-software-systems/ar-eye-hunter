@@ -336,6 +336,33 @@ describe('computeOrderedSendReport', () => {
         });
     });
 
+    describe('sends the entry retained', () => {
+        it('splits the sends answered pending-admission into those an instance handed off and those none did', () => {
+            const report = computeOrderedSendReport({
+                ...NO_OBSERVATIONS,
+                sends: [
+                    { ...SEND, msgId: 'retained-then-handed', seq: 1, acceptance: 'pending-admission' },
+                    { ...SEND, msgId: 'retained-never-handed', seq: 2, acceptance: 'pending-admission' },
+                    { ...SEND, msgId: 'retained-then-handed-twice', seq: 3, acceptance: 'pending-admission' },
+                    { ...SEND, msgId: 'admitted-and-handed', seq: 4 },
+                    { ...SEND, msgId: 'admitted-never-handed', seq: 5 }
+                ],
+                handOffs: [
+                    { msgId: 'admitted-and-handed', instanceIndex: 0, atMs: 5 },
+                    { msgId: 'retained-then-handed', instanceIndex: 1, atMs: 400 },
+                    { msgId: 'retained-then-handed-twice', instanceIndex: 1, atMs: 410 },
+                    { msgId: 'retained-then-handed-twice', instanceIndex: 2, atMs: 420 }
+                ]
+            });
+
+            expect(report.delivery).toMatchObject({
+                handedToApplication: 3,
+                pendingAdmissionHandedToApplication: 2,
+                pendingAdmissionNeverHanded: 1
+            });
+        });
+    });
+
     describe('track order', () => {
         it('counts a copy read before its predecessor on the same track as out of order', () => {
             const recipients = ['swaps-first-two', 'reads-in-order', 'reads-third-first'];
@@ -1082,6 +1109,8 @@ describe('computeOrderedSendReport', () => {
                 handedToApplication: 0,
                 handedMoreThanOnce: 0,
                 handedByMoreThanOneInstance: 0,
+                pendingAdmissionHandedToApplication: 0,
+                pendingAdmissionNeverHanded: 0,
                 largestHandOffMultiplicity: null,
                 offerToFirstHandOffMs: NO_SAMPLES,
                 deliveredToEveryRecipient: 0,

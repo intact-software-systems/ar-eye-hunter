@@ -1,13 +1,15 @@
 import type { ObservedOrderedSend } from './to-observed-ordered-sends.ts';
 
 /**
- * How each recipient's reads followed each publisher's track. Both counts are over the expected copies their
- * recipient read, and "before" is the order of the first reads in `arrivals`, never a comparison of instants.
+ * How the copies the server wrote to each recipient's socket followed each publisher's track. Both counts are over
+ * the expected copies written to their recipient's socket, and "before" is the order of the first writes in
+ * `arrivals`, never a comparison of instants. They are the order on the wire: a client holds back a copy that is
+ * ahead of its track, so its application may still see in order what was written out of it.
  */
 export interface OrderedSendTrackOrderFigures {
-    /** Copies first read before the first read of a lower seq that the same recipient read of the same publisher. */
+    /** Copies first written to a socket before the first write, to the same socket, of a lower seq of the same publisher. */
     readonly copiesReadOutOfTrackOrder: number;
-    /** Copies read while the same recipient never read a lower seq it was expected to read of the same publisher. */
+    /** Copies written to a socket that was never written a lower seq of the same publisher its session expected. */
     readonly copiesReadPastAnUnreadPredecessor: number;
 }
 

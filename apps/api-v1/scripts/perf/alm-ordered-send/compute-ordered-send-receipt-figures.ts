@@ -5,8 +5,9 @@ import type { OrderedSendCellReceipt, OrderedSendCellSend } from './ordered-send
 import type { ObservedOrderedSend } from './to-observed-ordered-sends.ts';
 
 /**
- * What the publishers read of their receipts. A receipt is expected of a send the entry answered `admitted` or
- * `pending-admission`, and every figure here is over those sends only; the others are in `sends.byAcceptance`. A
+ * What the publishers read of their receipts. A receipt is expected of a send whose first offer the entry answered
+ * `admitted` or `pending-admission`, and every figure here is over those sends only; the others are in
+ * `sends.byAcceptance`. Every delay is from that first offer, whatever was offered again. A
  * publisher may read one receipt more than once: a send's state and each of its delays come from the first read of
  * the phase, and `moreThanOneTerminal`, `sendsWithARepeatedAdmittedReceipt` and
  * `sendsWithAnAdmittedAfterTheirTerminal` count the sends that read one again, each of them in one of the four

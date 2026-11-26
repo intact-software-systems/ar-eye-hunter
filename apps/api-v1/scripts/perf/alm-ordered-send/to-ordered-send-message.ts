@@ -24,8 +24,11 @@ export const ORDERED_SEND_TOPIC_ID = 'room.ordered-send';
 /**
  * The envelope a browser's `notification` channel gives an ordered room send on the WS carrier: a room broadcast of
  * its publisher with the channel's reliability, receipt, lifetime and durability, on the room's ordering key at the
- * seq the schedule gave it. A publisher is its track's only sender, so each publisher has a track of its own. It
- * states no roster or snapshot floor, as a browser's room view would.
+ * seq the schedule gave it. A publisher is its track's only sender, so each publisher has a track of its own.
+ *
+ * It carries no room send fence. A browser's room send carries the fence its room view resolves
+ * (`resolveRoomSendFence` of `BrowserRallarMessageSender`), which the server checks the send against; this envelope
+ * states none, so no send of a run is refused or retained for its fence.
  */
 export function toOrderedSendMessage(input: ToOrderedSendMessageInput): ALMessage {
     const { send, roomRef, createdAtEpochMs } = input;

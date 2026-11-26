@@ -1,4 +1,9 @@
-export interface OfferOrderedSendsWhenDueInput<DueSend extends Readonly<{ dueAtMs: number; }>> {
+/** What falls due at an instant of the clock its offers are timed on. */
+export interface OrderedSendDue {
+    readonly dueAtMs: number;
+}
+
+export interface OfferOrderedSendsWhenDueInput<DueSend extends OrderedSendDue> {
     /** In the order the sends fall due; each `dueAtMs` is an instant of the clock `nowMs` reads. */
     readonly sends: readonly DueSend[];
     readonly nowMs: () => number;
@@ -12,7 +17,7 @@ export interface OfferOrderedSendsWhenDueInput<DueSend extends Readonly<{ dueAtM
  * a wait that ends before the instant is waited out. Each wait is armed against the send's own due instant, never
  * against the offer before it, so a late offer is followed by the next one at that one's own time.
  */
-export async function offerOrderedSendsWhenDue<DueSend extends Readonly<{ dueAtMs: number; }>>(
+export async function offerOrderedSendsWhenDue<DueSend extends OrderedSendDue>(
     input: OfferOrderedSendsWhenDueInput<DueSend>
 ): Promise<void> {
     for (const send of input.sends) {

@@ -32,8 +32,10 @@ export interface OrderedSendEdgeDelayFigures {
 }
 
 /**
- * How long each expected recipient waited for its copy, to its first read. A copy read before its send was offered
- * has no trustworthy read instant: it is in no delay figure, on either base, and counted apart.
+ * How long each expected recipient waited for the server to write its copy to its socket, to the first write. It is
+ * the delay on the wire: a client that holds a copy back for its track hands it to its application later still. A
+ * copy read before its send was offered has no trustworthy read instant: it is in no delay figure, on either base,
+ * and counted apart. Every delay is from the send's first offer or its due time, whatever was offered again.
  */
 export interface OrderedSendRecipientDelayFigures extends OrderedSendEdgeDelayFigures {
     /** Every copy read at or after its offer, from its send's due time: what a recipient waited, lateness included. */
