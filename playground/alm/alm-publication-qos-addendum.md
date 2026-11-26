@@ -874,8 +874,9 @@ peer id, a recipient skipped below its position or a session the dequeue
 re-check dropped was recorded in `outsideAudiencePeerIds` of the server's own
 pending receipt through one fenced commit under the server's sender version,
 tried up to three times on a lost fence. That commit is deleted: such a
-recipient is now one `outside` confirmation in the receipt record, with no
-fenced commit and no diagnostic (D778). A retry then targets only the
+recipient is now one `outside` confirmation in the receipt record once the
+server's pending receipt row exists, with no fenced commit and no diagnostic,
+and a first dequeue's drop, which precedes that row, writes nothing (D778). A retry then targets only the
 unconfirmed recipients, and the receipt completes once every expected recipient
 is confirmed or outside and one is confirmed. A mid-round Relic joiner's first
 transition is `round-resolved` at `seq 2` with prior 0, read as `entered` with no
@@ -1060,8 +1061,9 @@ one `outside-audience-commit` outbound diagnostic,
 trace, through the runtime diagnostics and with no console line; an `absent`
 answer was the commit's normal one and a thrown commit propagated so the retry
 re-judged, so neither was written. The commit and its diagnostic are deleted:
-an own-row drop is now one `outside` confirmation in the receipt record, which
-takes no fence (D778). The 6b probe
+an own-row drop is now one `outside` confirmation in the receipt record once
+the server's pending receipt row exists, which takes no fence, and a first
+dequeue's drop, which precedes that row, writes nothing (D778). The 6b probe
 (`ws-tracked-dequeue-statements.test.ts`, on Postgres) counted the tracked
 dequeue before and after: the front is unchanged (past `seq 1` the prefix list
 returns N rows at depth N, the row's own index row included, and
@@ -1742,7 +1744,8 @@ row's audience with no filter wired; the track-order fixture records a durable
 drop outside with no socket open here, needs the open socket for an open-here
 drop, and turned three conflicts into one `outside-audience-commit` diagnostic
 with no console line, until that commit and its diagnostic were deleted and an
-own-row drop became one `outside` confirmation in the receipt record (D778);
+own-row drop became one `outside` confirmation in the receipt record once the
+pending receipt row exists, a first dequeue's drop writing nothing (D778);
 the bridge suite reports the captured sessions its
 send-time re-check dropped beside the skips, open-here; the api-v1 units read a
 session live nowhere outside at the dequeue, the receipt completing on the other

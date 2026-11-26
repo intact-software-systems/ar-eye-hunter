@@ -478,8 +478,9 @@ every session the page opens. The event's `data` is the event itself:
   `commitDurationMs` and `commitOutcome` for the write transaction —
   `committed`, `conflict`, `expired`, or `not-attempted` when the admission
   settled before opening one. No queue or lock orders a sender's commits, so a
-  write can lose the sender-version fence to another commit of the sender; the
-  commit then reads, decides and writes again, and `commitAttemptCount` counts
+  write can lose a fence it took to another commit: its message's version, or
+  its sender's, which a dispatch takes only when its decision read rows its
+  sender's messages share; the commit then reads, decides and writes again, and `commitAttemptCount` counts
   the write transactions it opened: one per attempt, at most three, and one more
   when a send lost every attempt and retained its request (`commitOutcome` is
   then the retention's). The read fields and `commitDurationMs` sum over every

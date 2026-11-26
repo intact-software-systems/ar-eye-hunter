@@ -437,7 +437,10 @@ held holds its own on the same carrier as the first, so each receipt is confirme
 slot holding `collectionEntries` (256) pairs, the most its decoder reads, records no further pair, whose copy then
 draws no answer at the release.
 
-No retried copy is delivered locally twice. A next hop outside the frozen audience reads complete at the origin once
+No retried copy is delivered locally twice: a copy meets the dedup row. The one admitted message is handed to the
+application again only when its own work runs twice: an ordered delivery's completion that hands the work back (below,
+"A delivery's completion"), a crash between dispatch and completion, or a second instance that claims the work after
+the first one's lease ran out. A next hop outside the frozen audience reads complete at the origin once
 its own terminal hop-end arrives, which confirms no recipient but completes its hop in the origin's hop view, so a
 retry resends into its subtree no more; until then every retry resends to it, bounded by the attempt cap.
 
@@ -1151,7 +1154,8 @@ written-key guard decides the schedule alike on all three. The schedule module
 [`al-shared-key-arbitration.test.ts`](../../../tests/shared/alm/al-shared-key-arbitration.test.ts)
 is the proof: it runs that schedule over memory, IndexedDB and pglite for both stores and names,
 per case, the written key whose guard decides it — the dedup key, the supersedence latest, the
-ordering track, the outbound supersedence latest and the outbound sender version; the same-message
+ordering track, the outbound supersedence latest and the outbound sender version, which two messages of one sender,
+each on its own ordering track, share and nothing else; the same-message
 case of
 [`inbound-supersedence-concurrency.test.ts`](../../../tests/shared/alm/inbound-supersedence-concurrency.test.ts)
 covers the message owner on the same three backends. An admission, send, or ACK against a different
@@ -1210,8 +1214,8 @@ The deadline is captured before pending retention and checked again after awaite
 authority reads. Changed policy, restart, and retry cannot extend it. Conditional
 write conflicts consume ordinary processing attempts; QueueBox owns their bounded
 retry policy. A pure computation does not make sending atomic with completing work:
-crash replay can repeat an external effect, so protocol identity and deduplication
-remain necessary.
+crash replay can repeat an external effect, and so can an ordered completion that hands
+its work back, so protocol identity and deduplication remain necessary.
 
 Message admission also passes that deadline to the existing backend write boundary.
 IndexedDB checks native request completion while the transaction can still abort;

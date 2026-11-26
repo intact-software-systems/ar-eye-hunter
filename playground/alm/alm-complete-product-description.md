@@ -905,7 +905,9 @@ own transaction and record positions at their first dequeue; a tracked row
 waits at dequeue for every lower sequence of its track still to record, and a
 row that ends without recording deletes its index row, releasing the rows after
 it; and the server records a recipient it skipped or dropped on one of its own
-rows outside its own receipt (S5-i, D538–D550).
+rows outside its own receipt once that receipt's pending row exists, while a
+drop at the row's first dequeue, which precedes it, records nothing (S5-i,
+D538–D550).
 **Limit:** the dequeue judges every captured session from durable presence
 (S7-i, D568–D572), so in a cluster positions and the outside class cover
 sessions on every instance; a principal row keeps its co-members' sessions

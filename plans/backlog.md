@@ -843,26 +843,26 @@ and it has no status list.
   write does not stop it (the window supersession has; D686). A cancel adds
   one interleaving of it: its end names a retained admission that another
   tab's replay is committing, and the replay's send row is reserved before the
-  end row runs (D754). Next step, as the review named it: fence the guard read
-  on the sender version; no step ruled.
+  end row runs (D754). A plain message's commits no longer move its sender's
+  version, so the lever is the message's own version: fence the guard read on
+  it; no step ruled.
 - A superseded `ack-timeout` row is left pending when a dispatch moves its
   receipt's deadline; it fires later, finds no receipt or a moved one, and
   completes, one no-op work item per moved deadline. Predates the slice; the
   end of a message completes only the current timer (D692). The option Task
   11 named: a dispatch that moves an open receipt's deadline completes the
   timer it replaces; no step ruled; for the maintainer.
-- The inbound lane can dispatch a message to its consumer twice: when the next
-  sequence's admission commits while the previous message's batch is between
-  its dispatch and its completion commit, the completion gets `conflict` and
-  returns `retry`, and the retried row dispatches again; nothing deduplicates.
-  Reproduced on memory and IndexedDB: with admissions awaited back to back and
-  no drain, 10 of 10 runs; with a started engine and admissions 5 ms apart,
-  IndexedDB 4 of 10 and memory 0; with work drained between admissions, 0.
-  First deliveries stay in order. It predates the slice (from #521; on `main`
-  `al-inbound-release-promotion.test.ts` says a completion that loses its
-  commit is dispatched again), and the inbound README does not state it. The
-  lane cells did not meet it. Open decision: a delivered marker written with
-  the dispatch.
+- The inbound lane can still hand an ordered message to the application again
+  when its own work runs twice: a completion that loses all three of its
+  attempts, one the shutdown signal aborts, or two instances that hold the same
+  work after a lease expiry (the same class as a crash between dispatch and
+  completion). An admission's expiry refresh or a control row written during
+  the completion no longer does: the completion is guarded on its position and
+  its slot alone. In-process subscribers that are not idempotent per message id
+  are where a repeat would show (on the WS server: router handlers and proxies,
+  an ordered RTC signal's relay, an ordered RTT sample, game and app topic
+  handlers with no msgId-keyed command). Not measured under load: no cell of
+  the measurement through the WS server carried ordered arrivals.
 - Thirteen tests use a gap NACK that names no range as a whole-message resend,
   a shape no producer emits, so the decoder still accepts it (D692):
   `al-indexeddb-runtime-stores.test.ts`, `al-outbound-durable-effects.test.ts`
@@ -1040,43 +1040,45 @@ and it has no status list.
 - The receipt row's republication delivers one receipt more than once under
   one control id until its origin acknowledges it: in one of three runs of
   `api-v1-cluster-publisher-instance-loss` a survivor delivered the crashed
-  server's `admitted` to the reconnected publisher three times. The publisher
-  admits an identical repeat without a write; no recipe asserts the count.
+  server's `admitted` to the reconnected publisher three times. An `admitted`
+  with a head behind it is now a row only when its origin had no socket on the
+  instance that answered it, so the repetition can still occur for such an
+  `admitted`, for one that expects nobody, and for every terminal receipt. The
+  publisher admits an identical repeat without a write; no recipe asserts the
+  count.
 - A session whose server crashed stays in the room's presence: the receipt of
   a later broadcast still expects it and ends `timed-out` (D669,
   `api-v1-cluster-subscriber-instance-loss`). What ends such a presence, and
   when, is not read by any recipe.
 - Unread: in an exploratory run of the publisher recipe a second `admitted`
   receipt for one broadcast reached the publisher after the first was consumed.
-  It is either the receipt row's republication (one control id, above) or the
-  answer to a re-sent copy (a fresh control id); the run did not read which.
-- A WS server's receipts backlog under five publishers at +5 ms per round
-  trip, larger since the per-message fence (D703). Run again at `a4b87879a`
-  (`main` not run in this cell): with five publishers at 2 Hz, in three runs of
-  20 s of sends, the last ten messages read `complete` 7.4 to 11.3 times later
-  than the first ten (p50 24 157 to 24 741 ms against 2 137 to 3 344 ms; at
-  `396a38cae`, before the fence, 7 168 to 10 650 against 1 699 to 1 795), and
-  only 112 to 128 of 200 `complete` reached their publisher by the 30 s
-  deadline (all 200 before). In one run of 45 s of sends 76 of 450 did, and 192
-  read none 15 s after the last deadline; one receipt row expired undelivered.
-  The count keeps up (69 to 72 ms from the last ACK) and the record stays
-  exact: no message read `timed-out` or two terminal receipts. The cause is
-  measured: each instance's one outbound worker runs one batch at a time, its
-  claims one after another except that a batch's dequeued rows are admitted
-  together; it was busy throughout (12 to 14 batches of 1.18 to 1.37 s each,
-  nearly all full pages of 16) and completed 7.1 to 10.1 rows a second (13 to
-  17 before the fence). The same work now runs about 38 % more statements and
-  each commit takes about twice as long; fewer receipt enqueues conflict (58 to
-  62 % against 75 to 80 %), but only 52 to 55 % of their replays commit at
-  their first attempt (85 to 88 % before). The pool is ruled out (a
-  transaction waited 0.6 to 0.7 ms from its `begin`, the median). The deadline
-  rows of completed receipts that come due inside the 45 s run change the
-  drain after the sends stop by no clear margin (6.8 to 7.7 rows a second
-  against 6.7 to 9.5). The worker is not the server identity's: room messages
-  under their publishers' identities share it. The lever: take the receipts'
-  delivery off each instance's outbound worker, and with it off the server
-  identity's fence, for example by delivering them from the receipt record's
-  own work rows, or raise that worker's throughput. For the maintainer.
+  It is either the receipt row's republication (one control id, above), which
+  an `admitted` now takes only when its origin had no socket on the instance
+  that answered it, or the answer to a re-sent copy (a fresh control id); the
+  run did not read which.
+- The WS server's receipts were measured at five publishers and +5 ms per
+  round trip, locally; still not run: the hosted statement latency itself,
+  latencies above +5 ms, more than five publishers (so the rate at which the
+  receipts stop keeping up is unknown), `main` in the five-publisher cell,
+  group-state deltas themselves (stood in for by one sequenced server
+  publication every 500 ms) and a higher server publication rate.
+- The commits that still fence a sender whatever their message: a message end
+  through the message-end bundle, each ACK window, a first-hop wait's own
+  commits, a repair hint's follow-up and the not-yet-in-sync retry schedule. A
+  server publication's own receipt windows so keep competing for the server's
+  version row. The lever: the same read-derived rule for those commits, with the
+  schedule fenced on the message's version.
+- A stray `nack-retry`: the not-yet-in-sync schedule is fenced against an end
+  only through the sender's version, and an end made by a control, or by a
+  dispatch that completes its receipt and fences no sender, does not move it.
+  So one retry can be scheduled for a message that just ended; its dispatch
+  answers `message-ended`, writes nothing, and the retry record expires.
+  Accepted; the lever is the schedule fenced on the message's version.
+- Two levers for the receipts' delivery measured or weighed and set aside:
+  delivering receipts from the receipt record's own work rows, which needs a
+  cluster notice and an at-least-once rule of its own for the ended work row;
+  and more claims at once on the outbound worker, which with four turned
+  queueing on the server's version row into conflicts on it (126 of 200).
 - Two cheap economies of the receipt record, not taken: the runtime refusal
   hook lists a head's confirmations it does not use (a head-only read would
   make a client's ACK 7 round trips instead of 8), and a completed receipt's
