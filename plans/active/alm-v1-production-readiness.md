@@ -400,8 +400,8 @@ Notes on the rows that need them:
 - **A6.** `docs/product.md` said the roadmap is "Releases 1 to 11"; the pull request that adds
   this file corrects it. `docs/README.md` carries the same sentence and is left: it is a
   build-contract path, so a change there selects the broad release gate. Still stale: the
-  roadmap's header date, its release map ("thirty PRs in ten releases") and its matrix; row D740, cut off at a `||` inside a code span by the table
-  formatter; the standing direction that "cryptographic proof of the original sender is outside
+  roadmap's header date, its release map ("thirty PRs in ten releases") and its matrix; row D740,
+  cut off at a `||` inside a code span by the table formatter; the standing direction that "cryptographic proof of the original sender is outside
   this roadmap", which D758 overtook; the product description's header and its "acceptance
   authority" paragraph, which the campaign document contradicts; the QoS plan's "two persistence
   tiers today"; the addendum's "proposed requirements" framing; the keep-set in `plans/README.md`,
