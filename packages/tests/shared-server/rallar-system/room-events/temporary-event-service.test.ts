@@ -176,6 +176,12 @@ it('grants the roster and all room ownership only after the eligible recipient a
         expect((await send(actor, { action: 'close' }, 'late')).left).toBeTruthy();
         for (const [groupId, previousStatus] of [[RETENTION_REF.groupId, 'active'], ['court', 'left']]) {
             const ref = { ...RETENTION_REF, groupId };
+            const rename = (principalId: string) => mutationDescriptor({ scope: ref, groupId, operation: 'updateGroup',
+                request: { requestId: 'rename-' + groupId + '-' + principalId, actorPrincipalId: principalId, displayName: 'New name' } });
+            expect((await prepareMutation(f, rename('owner'))).computed).toMatchObject({ outcome: 'rejected', policyDenial: { code: 'forbidden-role' } });
+            const authorizedRename = await prepareMutation({ ...f, owner: other }, rename('staff'));
+            await commitMutation(f, requireMutationWrite(authorizedRename.computed));
+            expect((await f.repository.findGroup(ref))?.displayName).toBe('New name');
             expect((await f.repository.findGroup(ref))?.ownerPrincipalId).toBe('staff');
             expect(await f.repository.findMember({ ...ref, principalId: 'owner' })).toMatchObject({ role: 'member', status: previousStatus });
             expect(await f.repository.findMember({ ...ref, principalId: 'staff' })).toMatchObject({ role: 'owner', status: 'active' });
