@@ -523,39 +523,29 @@ export const reviewedBrowserDispositions = Object.freeze([
     // require traversed records and guard session text/peer arrays before literal
     // comparisons; they neither execute director commands nor claim a state DTO.
     Object.freeze({
-        path: 'tests/playwright/rallar-black-box/full-stack-director-orchestration.spec.ts',
+        path: 'tests/playwright/rallar-black-box/director-orchestration-operations.ts',
         rule: 'boundary.unknown',
         symbol: 'requireRecord'
     }),
     Object.freeze({
-        path: 'tests/playwright/rallar-black-box/full-stack-director-orchestration.spec.ts',
-        rule: 'boundary.unknown',
-        symbol: 'stringValue'
-    }),
-    Object.freeze({
-        path: 'tests/playwright/rallar-black-box/full-stack-director-orchestration.spec.ts',
+        path: 'tests/playwright/rallar-black-box/director-orchestration-operations.ts',
         rule: 'boundary.unknown',
         symbol: 'stringArrayValue'
     }),
     Object.freeze({
-        path: 'tests/playwright/rallar-black-box/full-stack-director-orchestration.spec.ts',
+        path: 'tests/playwright/rallar-black-box/director-orchestration-operations.ts',
         rule: 'boundary.unknown',
         symbol: 'resultValue'
     }),
     Object.freeze({
-        path: 'tests/playwright/rallar-black-box/full-stack-director-orchestration.spec.ts',
+        path: 'tests/playwright/rallar-black-box/director-orchestration-operations.ts',
         rule: 'boundary.unknown',
         symbol: 'directorStatusValue'
     }),
     Object.freeze({
-        path: 'tests/playwright/rallar-black-box/full-stack-director-orchestration.spec.ts',
+        path: 'tests/playwright/rallar-black-box/director-orchestration-operations.ts',
         rule: 'boundary.unknown',
-        symbol: 'eventPayload'
-    }),
-    Object.freeze({
-        path: 'tests/playwright/rallar-black-box/full-stack-director-orchestration.spec.ts',
-        rule: 'boundary.unknown',
-        symbol: 'runtimeEventPayload'
+        symbol: 'toDirectorRuntimeEventPayload'
     }),
     // Storage JSON enters the canonical full-session decoder before auth use; the
     // connected-event predicate checks records/topic/ok and returns only boolean.

@@ -230,7 +230,8 @@
     "manifestSuite": "hetzner-distributed",
     "diagnostic": false,
     "expectedFailure": false,
-    "freshAgentsRequired": true
+    "freshAgentsRequired": true,
+    "recommendedTerminalTimeoutSeconds": 175
   },
   "description": "Two fresh accounts observe their own committed view invalidations, then recover offline changes through canonical reads after reconnect."
 }

@@ -66,7 +66,8 @@ import type {
 
 import type { HetznerDistributedManifestEntry } from './hetzner-manifest-entry.ts';
 import {
-    createManifestEntry,
+    createBudgetedManifestEntry,
+    createRootBoundManifestEntry,
     HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER,
     HETZNER_DISTRIBUTED_MANIFEST_GROUP
 } from './hetzner-manifest-entry.ts';
@@ -78,8 +79,8 @@ const ALM_CONFORMANCE_TYPE_ID = 'alm.conformance';
 
 const ALM_CONFORMANCE_DEADLINE_MS = 18_000;
 
-/** Also the execution budget of each combined root (distributed-run-commands.ts), so it bounds the whole hosted run. */
-const ALM_CONFORMANCE_2_AGENT_TERMINAL_TIMEOUT_SECONDS = 1_800;
+/** The execution budget of each combined reload root (distributed-run-commands.ts), which bounds the hosted run. */
+const ALM_CONFORMANCE_2_AGENT_ROOT_BUDGET_MS = 1_800_000;
 
 const ALM_CONFORMANCE_SENDER_CONNECTION = 'almConformanceSender';
 
@@ -166,7 +167,7 @@ const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
 export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEntry {
     const scenarios = toAlmConformanceScenariosForAllCarriers('two-agent');
 
-    return createManifestEntry({
+    return createRootBoundManifestEntry({
         filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[17],
         title: 'ALM conformance 2-agent',
         description: 'ALM conformance family (the volatile default, bounded rejection, deadline expiry, delivery ' +
@@ -195,11 +196,10 @@ export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEnt
         groupAssertions: [],
         metadata: {
             family: 'alm-conformance',
-            recommendedTerminalTimeoutSeconds: ALM_CONFORMANCE_2_AGENT_TERMINAL_TIMEOUT_SECONDS,
             carriers: [...ALM_CONFORMANCE_CARRIERS],
             scenarios: toAlmConformanceScenarioIds(scenarios)
         }
-    });
+    }, ALM_CONFORMANCE_2_AGENT_ROOT_BUDGET_MS);
 }
 
 /**
@@ -208,7 +208,7 @@ export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEnt
  */
 export function createAlmConformance3AgentEntry(): HetznerDistributedManifestEntry {
     const scenarios = toAlmConformanceScenariosForAllCarriers('three-agent');
-    return createManifestEntry({
+    return createBudgetedManifestEntry({
         filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[21],
         title: 'ALM conformance 3-agent',
         description:
@@ -233,7 +233,6 @@ export function createAlmConformance3AgentEntry(): HetznerDistributedManifestEnt
         groupAssertions: [],
         metadata: {
             family: 'alm-conformance',
-            recommendedTerminalTimeoutSeconds: 300,
             carriers: [...ALM_CONFORMANCE_CARRIERS],
             scenarios: toAlmConformanceScenarioIds(scenarios)
         }

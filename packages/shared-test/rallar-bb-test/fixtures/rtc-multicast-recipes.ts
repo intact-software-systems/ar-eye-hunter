@@ -6,13 +6,13 @@ import type {
     RallarBlackBoxTestRtcStreamThresholds
 } from '../rallar-black-box-test-contracts.ts';
 import {
-    computeRtcEstablishAndReadyCommandTimeoutMs,
     createRallarBlackBoxEnsureGroupCommands,
     defaultRallarBlackBoxGroup,
     groupRoomRef,
     RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS,
     RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS,
-    RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS
+    RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS,
+    RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
 } from './live-rtc-setup.ts';
 import { normalizeRallarBlackBoxRtcRealtimeRateHz } from './rtc-realtime-recipes.ts';
 
@@ -156,15 +156,16 @@ export interface RtcMessagesDeliveryPollWindowInput {
 
 /**
  * Peers connect at different times and the last one to connect streams last: measured from a receiver's connect, the
- * latest sender streams until the worst-case spread between connects, the lead-in and the stream are over. A receiver
- * that streams first has already spent its own lead-in and stream when its poll starts, so only the spread remains.
+ * latest sender streams until the worst-case spread between connects, the lead-in and the stream are over. The spread
+ * is a whole connect, its room join included, and the readiness wait that follows it. A receiver that streams first
+ * has already spent its own lead-in and stream when its poll starts, so only the spread remains.
  */
 export function computeRtcMessagesSenderStreamRemainingAtPollStartMs(
     input: RtcMessagesDeliveryPollWindowInput
 ): number {
     const leadInAndStreamMs = input.leadInMs + input.durationSeconds * 1_000;
-    const latestSenderStreamEndMs = computeRtcEstablishAndReadyCommandTimeoutMs(input.readinessTimeoutMs) +
-        leadInAndStreamMs;
+    const connectSpreadMs = RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS + input.readinessTimeoutMs;
+    const latestSenderStreamEndMs = connectSpreadMs + leadInAndStreamMs;
     const earliestPollStartMs = input.streamsBeforePoll ? leadInAndStreamMs : 0;
     return latestSenderStreamEndMs - earliestPollStartMs;
 }
@@ -226,7 +227,7 @@ function messagesRtcConnectCommand(
             ...RALLAR_BLACK_BOX_GROUP_MULTICAST_POSITION_SELECTOR,
             timeoutMs: RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS
         },
-        timeoutMs: computeRtcEstablishAndReadyCommandTimeoutMs(readinessTimeoutMs),
+        timeoutMs: RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS,
         readiness: {
             minReadyPeers: options.minReadyPeers,
             timeoutMs: readinessTimeoutMs,

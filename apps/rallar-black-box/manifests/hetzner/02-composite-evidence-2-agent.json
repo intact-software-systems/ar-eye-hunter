@@ -111,7 +111,8 @@
     "rolePattern": "all-agents",
     "manifestSuite": "hetzner-distributed",
     "diagnostic": false,
-    "expectedFailure": false
+    "expectedFailure": false,
+    "recommendedTerminalTimeoutSeconds": 32
   },
   "description": "Loop, parallel, wait, and assert evidence without relying on live RTC delivery."
 }

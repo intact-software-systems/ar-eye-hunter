@@ -8,7 +8,7 @@ import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/ralla
 import type { RallarBlackBoxEventHistoryPolicy } from '@shared-test/rallar-bb-test/runtime/event-history.ts';
 import type { HetznerDistributedManifestEntry, ManifestCatalogInput } from './hetzner-manifest-entry.ts';
 import {
-    createMulticastManifestEntry,
+    createBudgetedManifestEntry,
     HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER,
     HETZNER_DISTRIBUTED_MANIFEST_GROUP,
     toControllerAgentIds,
@@ -17,7 +17,7 @@ import {
 } from './hetzner-manifest-entry.ts';
 
 export function createDiagnosticRtcMessagesPrincipal50Agent60m20hzTreeEntry(): HetznerDistributedManifestEntry {
-    return createMulticastManifestEntry({
+    return createBudgetedManifestEntry({
         filePath:
             'apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-messages-principal-50-agent-60m-20hz-tree.json',
         title: 'RTC messages principal 50-agent 60m 20 Hz tree diagnostic',
@@ -76,7 +76,7 @@ const GROWTH_PROOF_EVENT_HISTORY: RallarBlackBoxEventHistoryPolicy = { mode: 're
  * reading its stats, the ALM ledger among them, every 30 s while the stream runs.
  */
 export function createRtcMessagesPrincipal15Agent78m2hzTreeEntry(): HetznerDistributedManifestEntry {
-    return createMulticastManifestEntry({
+    return createBudgetedManifestEntry({
         filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[22],
         title: 'RTC messages principal 15-agent 78m 2 Hz tree',
         description: 'One principal headless sender multicasts RTC messages at 2 Hz to 14 receivers for 78 minutes ' +
@@ -129,7 +129,7 @@ export function createRtcMessagesPrincipal15Agent78m2hzTreeEntry(): HetznerDistr
 }
 
 export function createDiagnosticRtcMessagesAllPeer50Agent30s20hzTreeEntry(): HetznerDistributedManifestEntry {
-    return createMulticastManifestEntry({
+    return createBudgetedManifestEntry({
         filePath:
             'apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-messages-all-peer-50-agent-30s-20hz-tree.json',
         title: 'RTC messages all-peer 50-agent 30s 20 Hz tree diagnostic',
@@ -170,7 +170,7 @@ export function createDiagnosticRtcMessagesAllPeer50Agent30s20hzTreeEntry(): Het
 }
 
 export function createRtcMessagesAllPeer50Agent30s5hzTreeEntry(): HetznerDistributedManifestEntry {
-    return createMulticastManifestEntry({
+    return createBudgetedManifestEntry({
         filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[8],
         title: 'RTC messages all-peer 50-agent 30s 5 Hz tree',
         description: 'All 50 headless peers multicast RTC messages at 5 Hz through a forced tree topology.',
@@ -214,7 +214,7 @@ export function createRtcMessagesAllPeer50Agent30s5hzTreeEntry(): HetznerDistrib
 }
 
 export function createRtcMessagesPrincipal50Agent30s20hzMeshEntry(): HetznerDistributedManifestEntry {
-    return createMulticastManifestEntry({
+    return createBudgetedManifestEntry({
         filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[7],
         title: 'RTC messages principal 50-agent 30s 20 Hz mesh',
         description:
@@ -258,7 +258,7 @@ export function createRtcMessagesPrincipal50Agent30s20hzMeshEntry(): HetznerDist
 }
 
 export function createRtcMessagesPrincipal50Agent30s20hzTreeEntry(): HetznerDistributedManifestEntry {
-    return createMulticastManifestEntry({
+    return createBudgetedManifestEntry({
         filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[6],
         title: 'RTC messages principal 50-agent 30s 20 Hz tree',
         description:
@@ -312,7 +312,7 @@ export function createRtcMessagesPrincipal50Agent30s20hzTreeEntry(): HetznerDist
 }
 
 export function createLongAllPeerEntry(rateHz: number): HetznerDistributedManifestEntry {
-    return createMulticastManifestEntry({
+    return createBudgetedManifestEntry({
         filePath:
             `apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-messages-all-peer-50-agent-60m-${rateHz}hz-tree.json`,
         title: `RTC messages all-peer 50-agent 60m ${rateHz} Hz tree diagnostic`,
@@ -377,7 +377,7 @@ function createPrincipalTreeAlternative(
     }
 ): HetznerDistributedManifestEntry {
     const { participantCount, principalTreePath, principalRecipes, principalMetadata } = input;
-    return createMulticastManifestEntry({
+    return createBudgetedManifestEntry({
         filePath: principalTreePath,
         title: `RTC messages principal ${participantCount}-agent 30s 20 Hz tree`,
         description: `One principal headless sender multicasts RTC messages at 20 Hz to ${
@@ -431,7 +431,7 @@ function createPrincipalMeshAlternative(
     }
 ): HetznerDistributedManifestEntry {
     const { participantCount, principalMeshPath, principalRecipes, principalMetadata } = input;
-    return createMulticastManifestEntry({
+    return createBudgetedManifestEntry({
         filePath: principalMeshPath,
         title: `RTC messages principal ${participantCount}-agent 30s 20 Hz mesh`,
         description: `One principal headless sender multicasts RTC messages at 20 Hz to ${
@@ -463,7 +463,7 @@ function createAllPeerTreeAlternative(
     input: { readonly participantCount: number; readonly allPeerTreePath: string; }
 ): HetznerDistributedManifestEntry {
     const { participantCount, allPeerTreePath } = input;
-    return createMulticastManifestEntry({
+    return createBudgetedManifestEntry({
         filePath: allPeerTreePath,
         title: `RTC messages all-peer ${participantCount}-agent 30s 5 Hz tree`,
         description:
@@ -606,7 +606,7 @@ function createRtcMessagesMatrixEntry(
     };
     const roleFields = toRtcMessagesMatrixRoles(input, baseInput);
 
-    return createMulticastManifestEntry({
+    return createBudgetedManifestEntry({
         filePath:
             `apps/rallar-black-box/manifests/hetzner/diagnostic/matrix/rtc-messages-${input.profile}-${input.participantCount}-agent-${label}-${input.rateHz}hz-tree.json`,
         title:

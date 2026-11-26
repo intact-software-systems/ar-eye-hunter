@@ -4,7 +4,8 @@ set -Eeuo pipefail
 RALLAR_CONTROL_HTTP_URL="${RALLAR_CONTROL_HTTP_URL:-https://control.rallar.intactss.com}"
 RALLAR_DISTRIBUTED_MANIFEST_PATH="${RALLAR_DISTRIBUTED_MANIFEST_PATH:-}"
 RALLAR_DISTRIBUTED_ARTIFACT_DIR="${RALLAR_DISTRIBUTED_ARTIFACT_DIR:-/tmp/rallar-distributed-runs}"
-RALLAR_DISTRIBUTED_TERMINAL_TIMEOUT_SECONDS="${RALLAR_DISTRIBUTED_TERMINAL_TIMEOUT_SECONDS:-300}"
+RALLAR_DISTRIBUTED_TERMINAL_TIMEOUT_SECONDS="${RALLAR_DISTRIBUTED_TERMINAL_TIMEOUT_SECONDS:-}"
+DEFAULT_DISTRIBUTED_TERMINAL_TIMEOUT_SECONDS=300
 RALLAR_DISTRIBUTED_READY_TIMEOUT_SECONDS="${RALLAR_DISTRIBUTED_READY_TIMEOUT_SECONDS:-120}"
 RALLAR_DISTRIBUTED_RUN_ID="${RALLAR_DISTRIBUTED_RUN_ID:-}"
 RALLAR_DISTRIBUTED_CONTROL_RUN_ID="${RALLAR_DISTRIBUTED_CONTROL_RUN_ID:-}"
@@ -432,6 +433,17 @@ build_create_body() {
 	jq -n -c --slurpfile manifest "${source_manifest_file}" '{manifest: $manifest[0]}'
 }
 
+resolve_terminal_timeout_seconds() {
+	local manifest_path="$1"
+	local recommended
+	if [[ -n "${RALLAR_DISTRIBUTED_TERMINAL_TIMEOUT_SECONDS}" ]]; then
+		printf '%s' "${RALLAR_DISTRIBUTED_TERMINAL_TIMEOUT_SECONDS}"
+		return 0
+	fi
+	recommended="$(jq -r '.metadata.recommendedTerminalTimeoutSeconds // empty' "${manifest_path}")"
+	printf '%s' "${recommended:-${DEFAULT_DISTRIBUTED_TERMINAL_TIMEOUT_SECONDS}}"
+}
+
 validate_manifest_scope() {
 	local manifest_path="$1"
 	local actual_scope
@@ -465,6 +477,10 @@ run_self_test() {
 	require_command jq
 
 	case "${RALLAR_DISTRIBUTED_SCRIPT_SELF_TEST}" in
+	terminal-timeout)
+		printf 'terminalTimeoutSeconds=%s\n' "$(resolve_terminal_timeout_seconds "${RALLAR_DISTRIBUTED_MANIFEST_PATH}")"
+		return 0
+		;;
 	validate-manifest-scope)
 		validate_manifest_scope "${RALLAR_DISTRIBUTED_MANIFEST_PATH}"
 		printf 'manifestScope=valid\n'
@@ -574,9 +590,9 @@ if [[ ! -r "${RALLAR_DISTRIBUTED_MANIFEST_PATH}" ]]; then
 fi
 
 validate_positive_integer RALLAR_DISTRIBUTED_READY_TIMEOUT_SECONDS "${RALLAR_DISTRIBUTED_READY_TIMEOUT_SECONDS}"
-validate_positive_integer RALLAR_DISTRIBUTED_TERMINAL_TIMEOUT_SECONDS "${RALLAR_DISTRIBUTED_TERMINAL_TIMEOUT_SECONDS}"
-
 manifest_file="${RALLAR_DISTRIBUTED_MANIFEST_PATH}"
+terminal_timeout_seconds="$(resolve_terminal_timeout_seconds "${manifest_file}")"
+validate_positive_integer RALLAR_DISTRIBUTED_TERMINAL_TIMEOUT_SECONDS "${terminal_timeout_seconds}"
 echo "RALLAR_OPERATION_STAGE=manifest-scope-validation"
 validate_manifest_scope "${manifest_file}"
 echo "RALLAR_OPERATION_STAGE=recipe-execution"
@@ -630,7 +646,7 @@ else
 				"distributed-run.json" \
 				"start"; then
 				final_state="failed"
-			elif ! final_state="$(wait_for_state "${distributed_run_id}" "${distributed_run_path_id}" "${RALLAR_DISTRIBUTED_TERMINAL_TIMEOUT_SECONDS}" terminal)"; then
+			elif ! final_state="$(wait_for_state "${distributed_run_id}" "${distributed_run_path_id}" "${terminal_timeout_seconds}" terminal)"; then
 				final_state="timed-out"
 			fi
 		fi

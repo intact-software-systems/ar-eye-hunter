@@ -4,6 +4,8 @@ import path from 'node:path';
 import { runWorldFleetDistributedRecipe } from '../../../apps/rallar-black-box/scripts/run-world-fleet-distributed-recipe.ts';
 import { decodeControlDistributedRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-distributed-run-snapshot.ts';
 import { decodeDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run-validation.ts';
+
+import { computeViewPushTestDeadlines, VIEW_PUSH_STATE_POLL_INTERVAL_MS } from './compute-view-push-test-deadlines.ts';
 import {
     FULL_STACK_CONTROL_BASE_URL,
     openBrowserControlAgent,
@@ -12,6 +14,7 @@ import {
     waitForControlRunAgent,
     type OpenedBrowserControlAgent
 } from './full-stack-helpers.ts';
+import { toControlTimedFetch } from './to-control-timed-fetch.ts';
 
 const config = readFullStackConfig();
 const manifestPath = 'apps/rallar-black-box/manifests/hetzner/24-view-push-2-agent.json';
@@ -20,13 +23,14 @@ test(
     'two fresh browser agents observe private view push and recover offline changes',
     async ({ browser, request }, testInfo) => {
         test.skip(!config.enabled, config.skipReason);
-        test.setTimeout(180_000);
         const authored = decodeDistributedRunManifest(JSON.parse(await readFile(manifestPath, 'utf8'))).fold(
             (issues) => {
                 throw new Error(`Invalid view push manifest: ${JSON.stringify(issues)}`);
             },
             (value) => value
         );
+        const deadlines = computeViewPushTestDeadlines(authored);
+        test.setTimeout(deadlines.testTimeoutMs);
         const runId = uniqueRunId(testInfo);
         const manifest = { ...authored, distributedRunId: `${runId}-view-push`, controlRunId: runId };
         const agents: OpenedBrowserControlAgent[] = [];
@@ -52,10 +56,11 @@ test(
                 manifestPath,
                 controlRunId: runId,
                 artifactDir,
-                pollMs: 250,
-                timeoutMs: 90_000
+                pollMs: VIEW_PUSH_STATE_POLL_INTERVAL_MS,
+                readinessTimeoutMs: deadlines.readinessTimeoutMs,
+                terminalTimeoutMs: deadlines.terminalTimeoutMs
             }, {
-                fetch,
+                fetch: toControlTimedFetch(fetch),
                 readManifestText: async () => JSON.stringify(manifest),
                 artifacts: {
                     mkdir: async (directory) => {

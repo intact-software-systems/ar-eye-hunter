@@ -50,7 +50,8 @@
     "rolePattern": "all-agents",
     "manifestSuite": "hetzner-distributed",
     "diagnostic": false,
-    "expectedFailure": false
+    "expectedFailure": false,
+    "recommendedTerminalTimeoutSeconds": 30
   },
   "description": "Cheap headless control-agent reachability check using health and stats commands."
 }

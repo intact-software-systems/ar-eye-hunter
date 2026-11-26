@@ -105,7 +105,10 @@
               "groupId": "hetzner-headless-room"
             },
             "transport": "realtime",
-            "timeoutMs": 15000,
+            "timeoutMs": 135000,
+            "rallar": {
+              "timeoutMs": 65000
+            },
             "readiness": {
               "minReadyPeers": 1,
               "timeoutMs": 10000,
@@ -217,7 +220,8 @@
     "rolePattern": "all-agents",
     "manifestSuite": "hetzner-distributed",
     "diagnostic": false,
-    "expectedFailure": false
+    "expectedFailure": false,
+    "recommendedTerminalTimeoutSeconds": 270
   },
   "description": "Lower-risk 5 Hz RTC realtime stream for green stability and first-pass pacing evidence."
 }

@@ -5,6 +5,8 @@ import {
     type TestInfo
 } from '@playwright/test';
 
+import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
+
 import { deriveDistributedRunWarningRegressionReport } from '../../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import {
     type ControlDistributedRunSnapshot,
@@ -205,7 +207,9 @@ export async function attachDistributedRunSummary(
     runId: string
 ): Promise<void> {
     const run = await readControlRun(request, runId);
-    const distributedResponse = await request.get(`${FULL_STACK_CONTROL_BASE_URL}/distributed-runs`);
+    const distributedResponse = await request.get(`${FULL_STACK_CONTROL_BASE_URL}/distributed-runs`, {
+        timeout: CONTROL_REQUEST_TIMEOUT_MS
+    });
     const distributed = distributedResponse.ok()
         ? decodeDistributedRunList(await distributedResponse.json())
         : undefined;

@@ -138,7 +138,11 @@ export function toPresenceGenerationPollCommand(
     });
 }
 
-function toRoomSnapshotCommand(step: AlmConformanceStepInput, name: string): RallarBlackBoxTestHttpRequestCommand {
+/** The room's snapshot, read under the page's own session: the presences the server holds now. */
+export function toRoomSnapshotCommand(
+    step: AlmConformanceStepInput,
+    name: string
+): RallarBlackBoxTestHttpRequestCommand {
     return {
         kind: 'http.request',
         commandId: toCommandId(step, name),

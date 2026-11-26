@@ -582,3 +582,55 @@ describe('RTC baseline failure accounting', () => {
         });
     });
 });
+
+describe('RTC baseline attempts not started for the job budget', () => {
+    const notStartedIssue = {
+        path: '$',
+        code: 'not-started-job-budget',
+        message: 'Not started: the job budget left could not cover the attempt\'s test timeout.'
+    };
+
+    it('records the unstarted external attempt as not run for the job budget and its cohort as unasserted', async () => {
+        const { service, writes } = recordingAcceptance({
+            readManifest: async () => ({ ok: true, value: externalManifest }),
+            reconcileAcceptedOperation: async () => {
+                throw new Error('Nothing ran, so nothing is reconciled.');
+            }
+        });
+
+        expect(await service.recordExternalAttemptsNotStarted({ baselineId, locator: externalInput.locator }))
+            .toEqual({ ok: true, value: { notStartedSampleCount: 1 } });
+        expect(persistedRows(writes)).toEqual([
+            ['not-run', 'not-started-job-budget', externalOwner, 'not-run', 'not-started-job-budget', [notStartedIssue], null],
+            [
+                'failure',
+                'failure-cohort-cohort',
+                cohortOwner,
+                'failed',
+                null,
+                [{
+                    path: '$.identity.memberSampleIds',
+                    code: 'cohort-members-not-started-job-budget',
+                    message: 'Cohort assertion cannot run while a member attempt was not started for the job budget.'
+                }],
+                { causalFailureId: 'not-started-job-budget', blockedMemberSampleIds: ['external-sample'] }
+            ]
+        ]);
+    });
+
+    it('refuses an undeclared or browser attempt without writing anything', async () => {
+        const { service, writes } = recordingAcceptance({
+            readManifest: async () => ({ ok: true, value: externalManifest })
+        });
+
+        expect(
+            await service.recordExternalAttemptsNotStarted({
+                baselineId,
+                locator: { ...externalInput.locator, outerOrdinal: 9 }
+            })
+        ).toMatchObject({ ok: false, issues: [{ code: 'unknown-external-attempt' }] });
+        expect(await service.recordExternalAttemptsNotStarted({ baselineId, locator: browserInput.locator }))
+            .toMatchObject({ ok: false, issues: [{ code: 'entry-ownership' }] });
+        expect(writes).toEqual([]);
+    });
+});

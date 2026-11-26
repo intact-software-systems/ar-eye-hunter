@@ -17,17 +17,18 @@ import {
 import { toCommandId, toScenarioTypeId } from '../../alm-conformance-step-identities.ts';
 import { toSettledStateCommands } from '../../to-settled-state-commands.ts';
 import { STREAM_SENDS, toOrderedStreamReceiverCommands, toSequences } from './ordered-stream.ts';
+import { toReorderedStreamSendCommands } from './to-reordered-stream-send-commands.ts';
 
 /** An RTC channel applies no delay, so a jitter has one carrier. */
 const JITTER_CARRIERS: readonly AlmConformanceCarrier[] = ['ws'];
 const JITTER = { jitter: { minDelayMs: 0, maxDelayMs: 80, seed: 11 } } as const;
 
 /**
- * An ordered receipted stream keeps its order when every data frame leaves after a seeded delay of 0 to 80 ms: all
- * twenty arrive in sequence order, nothing arrives twice, and every handle ends `acknowledged`. Two facts prove the
- * jitter disturbed the stream. Every matching frame draws a delay, so the release must read one for each send at
- * least; and the sender must have admitted a gap NACK about its track, which the server sends only when a later
- * sequence reached it first. A run whose frames all arrived in order claims nothing and fails.
+ * An ordered receipted stream keeps its order when every data frame leaves after a seeded delay of 0 to 80 ms and one
+ * send reaches the server after a later one: all twenty arrive in sequence order, nothing arrives twice, and every
+ * handle ends `acknowledged`. Every matching frame draws a delay, so the release must read one for each send at least.
+ * Whether the delays alone reorder the frames depends on the runner's pace, so send 2 is held until send 3 is on the
+ * socket, and the sender must have admitted the gap NACK the server sends when a later sequence reached it first.
  */
 export const seededJitterStream: AlmConformanceScenarioDefinition = {
     scenarioId: 'seeded-jitter-stream',
@@ -44,7 +45,11 @@ function toSeededJitterStreamSenderCommands(sender: AlmConformanceStepInput): re
     const sequences = toSequences(1, STREAM_SENDS);
     return [
         toJitterCommand(sender, 'arm'),
-        ...sequences.flatMap((seq) => toOrderedSendCommands(sender, seq, { ack: 'receiver' })),
+        ...toReorderedStreamSendCommands({
+            sender,
+            toSend: (seq) => toOrderedSendCommands(sender, seq, { ack: 'receiver' }),
+            longestFrameDelayMs: JITTER.jitter.maxDelayMs
+        }),
         ...sequences.flatMap((seq) => toSettledStateCommands({ ...sender, index: seq }, 'acknowledged')),
         toGapNackWait({ step: sender, name: 'gap-nack', orderingKey: toOrderingKey(sender), absent: false }),
         toJitterCommand(sender, 'release'),

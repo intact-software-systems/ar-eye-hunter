@@ -111,7 +111,8 @@ export function createRtcB06ObservationBunRuntime(
         createArchive: createVerifiedRtcPerformanceObservationArchive,
         writeOutput: ({ outputDirectory, archive }) =>
             writeRtcPerformanceObservationOutput(input.runtime, outputDirectory, archive),
-        nowUtc: () => input.runtime.now().toISOString()
+        nowUtc: () => input.runtime.now().toISOString(),
+        monotonicNowMs: () => input.runtime.performanceNow()
     };
 }
 

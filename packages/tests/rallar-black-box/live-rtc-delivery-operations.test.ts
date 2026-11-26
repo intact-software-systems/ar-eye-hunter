@@ -6,16 +6,27 @@ import {
 } from 'vitest';
 
 import type { RtcNativeAcquisitionProof, RtcNativeCapturedConnection } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
+import { computeEnqueuedCommandWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
+import { GROUP_MEMBERSHIP_REQUEST_RESULT_WAIT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/group-membership-waits.ts';
+import { MATRIX_SEND_RESULT_WAIT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-delivery-waits.ts';
+import {
+    FORMATION_CONNECT_RESULT_WAIT_MS,
+    FORMATION_READINESS_BOUNDED_WAITS_MS
+} from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-formation-waits.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 import type { LiveRtcControlPort } from '../../../tests/playwright/rallar-black-box/create-group-formation-lifecycle-driver.ts';
-import type { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
+import {
+    resolveLiveRtcResultPollTimeoutMs,
+    type LiveRtcControlClient
+} from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
 import { createLiveRtcDeliveryOperations, LiveRtcNackProbeFailure } from '../../../tests/playwright/rallar-black-box/live-rtc-delivery-operations.ts';
 import { normalizeJson } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
 import { createLiveRtcFormationOperations } from '../../../tests/playwright/rallar-black-box/live-rtc-formation-operations.ts';
+import { RecordingLiveRtcControl } from './recording-live-rtc-control-fixture.ts';
 
 const config = {
     almDiagnostics: true,
@@ -246,6 +257,83 @@ describe('live RTC delivery owner', () => {
             nativeAcquisitionFailure: initialNativeAcquisitionFailure
         });
         expect(recording.commands.filter(({ command }) => command.kind === 'rtc.connect')).toHaveLength(1);
+    });
+
+    // B4 deleted the reconnect's Native acquisition input with these cases; a formation run still reaches every branch.
+    it('records each admitted Connect\'s successful native acquisition in the formation run', async () => {
+        const recording = createCapturingLiveRtcControl('native', 'enabled');
+        const run = await createLiveRtcDeliveryOperations({ ...config, rtcCaptureMode: 'native' }).runGroupFormation({
+            ...initialFormationInput(recording),
+            nativeAcquisition: {
+                readRtcNativeAcquisition: async (connection: RtcNativeCapturedConnection) =>
+                    Either.ofRight<typeof initialNativeAcquisitionFailure, RtcNativeAcquisitionProof>({ ...initialNativeProof, connection })
+            }
+        });
+
+        expect(run.nativeAcquisitions.map((proof) => proof.connection)).toEqual(run.rtcConnectCaptures);
+        expect(run.nativeAcquisitions[0]).toEqual(initialNativeProof);
+    });
+
+    it('refuses an unavailable native capture scope without calling the acquisition port or reading presence', async () => {
+        const recording = createCapturingLiveRtcControl('native', 'unavailable');
+        const calls: string[] = [];
+        const outcome = await createLiveRtcDeliveryOperations({ ...config, rtcCaptureMode: 'native' }).runGroupFormation({
+            ...initialFormationInput(recording),
+            nativeAcquisition: {
+                readRtcNativeAcquisition: async (connection: RtcNativeCapturedConnection) => {
+                    calls.push('acquisition');
+                    return Either.ofRight<typeof initialNativeAcquisitionFailure, RtcNativeAcquisitionProof>({ ...initialNativeProof, connection });
+                }
+            }
+        }).then(() => undefined, toError);
+
+        expect.soft(outcome).toMatchObject({
+            rtcConnectCaptures: [initialNativeConnectCaptures[0]],
+            nativeAcquisitions: [],
+            nativeAcquisitionFailure: { reason: 'native-capture-unavailable', connection: initialNativeConnectCaptures[0], source: null }
+        });
+        expect.soft(recording.milestones).not.toContain('presence:1');
+        expect(calls).toEqual([]);
+    });
+
+    it('retains the admitted Connect when the acquisition invocation throws before returning a promise', async () => {
+        const recording = createCapturingLiveRtcControl('native', 'enabled');
+        const acquisitionFailure = new Error('The native acquisition port threw during invocation.');
+        const outcome = await createLiveRtcDeliveryOperations({ ...config, rtcCaptureMode: 'native' }).runGroupFormation({
+            ...initialFormationInput(recording),
+            nativeAcquisition: {
+                readRtcNativeAcquisition: (_connection: RtcNativeCapturedConnection) => {
+                    throw acquisitionFailure;
+                }
+            }
+        }).then(() => undefined, toError);
+
+        expect.soft(outcome?.cause).toBe(acquisitionFailure);
+        expect.soft(outcome).toMatchObject({
+            rtcConnectCaptures: [initialNativePreflightCapture],
+            nativeAcquisitions: [],
+            nativeAcquisitionFailure: { reason: 'acquisition-failed', connection: initialNativePreflightCapture, cause: acquisitionFailure }
+        });
+        expect.soft(recording.milestones).not.toContain('presence:1');
+        expect(recording.commands.filter(({ command }) => command.kind === 'rtc.connect')).toHaveLength(1);
+    });
+
+    it('refuses a native acquisition under a non-Native capture request before any Connect or acquisition', async () => {
+        const recording = createCapturingLiveRtcControl('signaling', 'unavailable');
+        const calls: string[] = [];
+        const outcome = await createLiveRtcDeliveryOperations({ ...config, rtcCaptureMode: 'signaling' }).runGroupFormation({
+            ...initialFormationInput(recording),
+            nativeAcquisition: {
+                readRtcNativeAcquisition: async (connection: RtcNativeCapturedConnection) => {
+                    calls.push('acquisition');
+                    return Either.ofRight<typeof initialNativeAcquisitionFailure, RtcNativeAcquisitionProof>({ ...initialNativeProof, connection });
+                }
+            }
+        }).then(() => undefined, toError);
+
+        expect.soft(outcome?.message).toContain('Native acquisition requires an explicit Native capture request');
+        expect.soft(recording.commands.filter(({ command }) => command.kind === 'rtc.connect')).toEqual([]);
+        expect(calls).toEqual([]);
     });
 
     it('keeps only the completed A and B Connect facts after initial pair readiness fails', async () => {
@@ -523,6 +611,59 @@ describe('live RTC delivery owner', () => {
                 })
             }))
         ]);
+    });
+
+    // The membership requests and the mesh configuration waited the bare 45 s result poll past their own budgets, and
+    // the matrix send a 70 s literal; every budgeted command now waits its budget, then the result poll.
+    it('lets the control client wait each budgeted command its budget, then the result poll, as the timeouts count', async () => {
+        const recording = new RecordingLiveRtcControl();
+        const operations = createLiveRtcDeliveryOperations(config);
+        await operations.setupGroupMembership({
+            control: recording,
+            runId: 'run',
+            owner: recording.agents[0],
+            members: recording.agents,
+            groupId: 'room/c',
+            suffix: 'try/d'
+        });
+        await operations.runGroupFormation({
+            control: recording,
+            runId: 'run',
+            agents: recording.agents,
+            transport: 'messages.rtc',
+            groupId: 'room/c',
+            suffix: 'try/d',
+            readinessScope: 'all'
+        });
+        await operations.sendMatrixPayload({
+            control: recording,
+            runId: 'run',
+            sender: recording.agents[0],
+            transport: 'messages.rtc',
+            groupId: 'room/c',
+            suffix: 'try/d',
+            deliveryMode: 'broadcast',
+            matrixId: 'counted-send'
+        });
+        const budgeted = recording.commands.filter(({ command }) => command.timeoutMs !== undefined);
+        const waitsByCommand = new Map(budgeted.map((execution) => [
+            execution.commandId.replace(/-(?:try\/d|messages-rtc).*$/, ''),
+            computeEnqueuedCommandWaitMs(resolveLiveRtcResultPollTimeoutMs(execution))
+        ]));
+
+        expect(budgeted.filter((execution) => execution.timeoutMs !== undefined)).toEqual([]);
+        expect(Object.fromEntries(waitsByCommand)).toMatchObject({
+            'group-create': GROUP_MEMBERSHIP_REQUEST_RESULT_WAIT_MS,
+            'group-join-B': GROUP_MEMBERSHIP_REQUEST_RESULT_WAIT_MS,
+            'group-join-C': GROUP_MEMBERSHIP_REQUEST_RESULT_WAIT_MS,
+            'connect-a': FORMATION_CONNECT_RESULT_WAIT_MS,
+            'topology-mesh': 10_000 + 10_000 + 45_000,
+            'send-counted-send': MATRIX_SEND_RESULT_WAIT_MS
+        });
+        for (const execution of budgeted.filter(({ command }) => command.kind === 'formation.readiness')) {
+            expect(computeEnqueuedCommandWaitMs(resolveLiveRtcResultPollTimeoutMs(execution)))
+                .toBeLessThanOrEqual(FORMATION_READINESS_BOUNDED_WAITS_MS);
+        }
     });
 
     it('runs the retention formation and reconnect paths before sending to the returned session', async () => {
@@ -1153,6 +1294,19 @@ describe('live RTC delivery owner', () => {
     });
 });
 
+/** The initial formation of the retained-capture trio on `recording`, with every member's readiness awaited. */
+function initialFormationInput(recording: RecordingLiveRtcControl) {
+    return {
+        control: recording,
+        runId: 'retained-capture-run',
+        agents: recording.agents,
+        transport: 'messages.rtc' as const,
+        groupId: 'retained-room',
+        suffix: 'initial',
+        readinessScope: 'all' as const
+    };
+}
+
 function createCapturingLiveRtcControl(
     mode: RtcSignalingDiagnostics.CaptureMode,
     nativeAvailability: 'enabled' | 'unavailable'
@@ -1227,348 +1381,4 @@ function createAppliedCaptureReadout(
             nativeCoverage: mode === 'native' ? 'attached' : 'not-applicable'
         }
     };
-}
-
-namespace RecordingLiveRtcControl {
-    export interface InitialState {
-        readonly lifecycleState: 'forming' | 'active';
-        readonly acceptedSessions: readonly string[];
-        readonly rtcCapture?: ApiJsonValue;
-    }
-}
-
-class RecordingLiveRtcControl implements LiveRtcControlPort {
-    readonly commands: LiveRtcControlClient.ExecuteInput[] = [];
-    readonly milestones: string[] = [];
-    readonly connected = new Set<string>();
-    private lifecycleState: 'forming' | 'active' | 'connecting' | 'reconfiguring';
-    private acceptedSessions: readonly string[];
-    private readonly rtcCapture: ApiJsonValue | undefined;
-    private formationEpoch = 0;
-    private groupRevision = 0;
-    private deferReadiness = false;
-    private readonly connectionCountByAgentId = new Map<string, number>();
-    private readonly sessionIdByAgentId = new Map<string, string>();
-    private readonly pendingReadiness = new Map<LiveRtcControlClient.FormationAgent['prefix'], Array<(durationMs: number) => void>>();
-    readonly messageObservations: LiveRtcControlClient.WaitForMessageInput[] = [];
-    readonly readinessObservations: Array<
-        Readonly<{
-            agentPrefix: LiveRtcControlClient.FormationAgent['prefix'];
-            expectedPeerIds: readonly string[];
-        }>
-    > = [];
-    readonly agents: readonly [
-        LiveRtcControlClient.FormationAgent,
-        LiveRtcControlClient.FormationAgent,
-        LiveRtcControlClient.FormationAgent
-    ] = [this.createAgent('A'), this.createAgent('B'), this.createAgent('C')];
-    constructor(
-        initial: RecordingLiveRtcControl.InitialState = {
-            lifecycleState: 'forming',
-            acceptedSessions: []
-        }
-    ) {
-        this.lifecycleState = initial.lifecycleState;
-        this.acceptedSessions = initial.acceptedSessions;
-        this.rtcCapture = initial.rtcCapture;
-    }
-
-    deferReadinessObservations(): void {
-        this.deferReadiness = true;
-    }
-
-    pendingReadinessCount(
-        prefix: LiveRtcControlClient.FormationAgent['prefix']
-    ): number {
-        return this.pendingReadiness.get(prefix)?.length ?? 0;
-    }
-
-    completeNextReadiness(
-        prefix: LiveRtcControlClient.FormationAgent['prefix'],
-        durationMs: number
-    ): void {
-        const pending = this.pendingReadiness.get(prefix)?.shift();
-        if (!pending) {
-            throw new Error(`No pending readiness observation for ${prefix}`);
-        }
-        pending(durationMs);
-    }
-
-    private createAgent(
-        prefix: 'A' | 'B' | 'C'
-    ): LiveRtcControlClient.FormationAgent {
-        return {
-            prefix,
-            agentId: prefix,
-            actor: prefix,
-            connection: prefix,
-            refreshRoom: async () => {
-                this.milestones.push(`refresh:${prefix}`);
-            }
-        };
-    }
-    executeOk = async (
-        input: LiveRtcControlClient.ExecuteInput
-    ): Promise<LiveRtcControlClient.Result> => {
-        this.commands.push(input);
-        const command = input.command;
-        if (command.kind === 'formation.readiness') {
-            return await this.recordFormationReadiness(input);
-        }
-        const body = this.recordCommand(input, command);
-        const sessionId = this.sessionIdByAgentId.get(input.agentId);
-        return {
-            agentId: input.agentId,
-            commandId: input.commandId,
-            ok: true,
-            result: {
-                value: {
-                    body,
-                    ...(command.kind === 'rtc.connect' ? { almDiagnostics: true } : {}),
-                    ...(command.kind === 'rtc.connect' && this.rtcCapture !== undefined ? { rtcCapture: normalizeJson(this.rtcCapture) } : {}),
-                    ...(sessionId
-                        ? {
-                            sessionId,
-                            message: {
-                                message: {
-                                    id: { msgId: 'attempted-message', senderId: sessionId }
-                                }
-                            }
-                        }
-                        : {})
-                }
-            }
-        };
-    };
-    executeResult = this.executeOk;
-    private recordCommand(
-        input: LiveRtcControlClient.ExecuteInput,
-        command: LiveRtcControlClient.ExecuteInput['command']
-    ): ReturnType<LiveRtcControlPort['resultValue']> {
-        if (command.kind === 'rtc.connect') {
-            this.recordConnection(input.agentId);
-        }
-        else if (command.kind === 'rtc.send') {
-            this.milestones.push('send');
-        }
-        else if (command.kind === 'close' || command.kind === 'reset') {
-            this.milestones.push(`${command.kind}:${input.agentId}`);
-            this.connected.delete(input.agentId);
-        }
-        else {
-            return this.recordHttpCommand(input, command);
-        }
-        return {};
-    }
-
-    private recordConnection(agentId: string): void {
-        if (agentId === 'C' && this.lifecycleState !== 'active') {
-            throw new Error('Third agent connected before pair activation');
-        }
-        const connectionCount = (this.connectionCountByAgentId.get(agentId) ?? 0) + 1;
-        this.connectionCountByAgentId.set(agentId, connectionCount);
-        this.sessionIdByAgentId.set(
-            agentId,
-            `session-${agentId}-${connectionCount}`
-        );
-        this.connected.add(agentId);
-        if (this.lifecycleState === 'active' && connectionCount > 1) {
-            this.acceptedSessions = [...this.connected].map((id) => this.requireConnectedSessionId(id));
-        }
-        this.milestones.push(`connect:${agentId}`);
-    }
-
-    private recordHttpCommand(
-        input: LiveRtcControlClient.ExecuteInput,
-        command: LiveRtcControlClient.ExecuteInput['command']
-    ): ReturnType<LiveRtcControlPort['resultValue']> {
-        const request = 'request' in command ? command.request : undefined;
-        if (input.commandId.startsWith('group-presence')) {
-            this.milestones.push(`presence:${this.connected.size}`);
-            return {
-                activeSessions: [...this.connected].map((id) => ({
-                    sessionId: this.requireConnectedSessionId(id)
-                }))
-            };
-        }
-        if (request?.path?.endsWith('/topology')) {
-            this.milestones.push('planned');
-            return {
-                snapshot: {
-                    sourceGroupStateCausalRevision: {
-                        groupRevision: this.groupRevision,
-                        presenceRevision: this.connected.size
-                    },
-                    version: 1,
-                    state: 'active',
-                    activeSessionIds: [...this.connected].map((id) => this.requireConnectedSessionId(id))
-                }
-            };
-        }
-        if (request?.method === 'GET') {
-            return { group: { lifecycleState: this.lifecycleState } };
-        }
-        return this.recordLifecycleRequest(request?.path);
-    }
-
-    private recordLifecycleRequest(
-        requestPath: string | undefined
-    ): ReturnType<LiveRtcControlPort['resultValue']> {
-        if (requestPath?.includes('/topology/config/')) {
-            this.milestones.push('mesh');
-        }
-        else if (requestPath?.includes('/lifecycle/plan/')) {
-            this.formationEpoch++;
-            this.groupRevision++;
-            this.lifecycleState = 'connecting';
-            this.milestones.push('plan');
-            return {
-                group: { formationEpoch: this.formationEpoch },
-                causalRevision: { groupRevision: this.groupRevision }
-            };
-        }
-        else if (requestPath?.includes('/lifecycle/reconfigure/')) {
-            this.formationEpoch++;
-            this.groupRevision++;
-            this.lifecycleState = 'reconfiguring';
-            this.milestones.push('reconfigure');
-            return {
-                group: { formationEpoch: this.formationEpoch },
-                causalRevision: { groupRevision: this.groupRevision }
-            };
-        }
-        else if (requestPath?.includes('/lifecycle/connect/')) {
-            this.acceptedSessions = [...this.connected].map((id) => this.requireConnectedSessionId(id));
-            this.milestones.push(`connect-layout:${this.connected.size}`);
-        }
-        else if (requestPath?.includes('/lifecycle/activate/')) {
-            this.lifecycleState = 'active';
-            this.acceptedSessions = [...this.connected].map((id) => this.requireConnectedSessionId(id));
-            this.milestones.push(`activate:${this.connected.size}`);
-        }
-        return {};
-    }
-    resultValue(
-        result: LiveRtcControlClient.Result
-    ): ReturnType<LiveRtcControlPort['resultValue']> {
-        const value = result.result?.value;
-        if (!value || typeof value !== 'object' || Array.isArray(value)) {
-            throw new Error('Recorded control result must contain an object value');
-        }
-        return value;
-    }
-    requireSessionId(result: LiveRtcControlClient.Result): string {
-        const value = result.result?.value;
-        if (
-            value &&
-            typeof value === 'object' &&
-            !Array.isArray(value) &&
-            typeof value.sessionId === 'string'
-        ) {
-            return value.sessionId;
-        }
-        throw new Error('Recorded connect result must contain a session ID');
-    }
-    waitForPeerReadiness = async (
-        input: LiveRtcControlClient.WaitForRtcReadinessInput
-    ): Promise<number> => {
-        await input.agent.refreshRoom({ refresh: 'always', timeoutMs: 60_000 });
-        const dialableSessions = this.acceptedSessions.length > 0
-            ? this.acceptedSessions
-            : [...this.connected].map((id) => this.requireConnectedSessionId(id));
-        if (input.expectedPeerIds.some((id) => !dialableSessions.includes(id))) {
-            throw new Error(
-                'Readiness requested for a peer absent from the dialable layout'
-            );
-        }
-        return await this.recordReadiness(
-            input.agent.prefix,
-            input.expectedPeerIds
-        );
-    };
-
-    private async recordFormationReadiness(
-        input: LiveRtcControlClient.ExecuteInput
-    ): Promise<LiveRtcControlClient.Result> {
-        const prefix = input.agentId as LiveRtcControlClient.FormationAgent['prefix'];
-        const ownSessionId = this.requireConnectedSessionId(input.agentId);
-        const desiredPeerIds = this.acceptedSessions.filter(
-            (sessionId) => sessionId !== ownSessionId
-        );
-        await this.recordReadiness(prefix, desiredPeerIds);
-        return {
-            agentId: input.agentId,
-            commandId: input.commandId,
-            ok: true,
-            result: {
-                value: {
-                    readyAtEpochMs: Date.now(),
-                    formation: {
-                        stage: 'active',
-                        room: {
-                            state: 'open',
-                            desiredPeerIds,
-                            activePeerIds: desiredPeerIds,
-                            readyPeerIds: desiredPeerIds,
-                            failedPeerIds: [],
-                            acceptedLayoutIdentity: {
-                                groupRevision: this.groupRevision,
-                                presenceRevision: this.connected.size,
-                                version: 1,
-                                state: 'active'
-                            }
-                        }
-                    }
-                }
-            }
-        };
-    }
-
-    private async recordReadiness(
-        prefix: LiveRtcControlClient.FormationAgent['prefix'],
-        expectedPeerIds: readonly string[]
-    ): Promise<number> {
-        this.readinessObservations.push({
-            agentPrefix: prefix,
-            expectedPeerIds
-        });
-        this.milestones.push(`ready:${prefix}`);
-        this.milestones.push(`ready-start:${prefix}`);
-        if (!this.deferReadiness) {
-            this.milestones.push(`ready-complete:${prefix}`);
-            return 1;
-        }
-        return await new Promise<number>((resolve) => {
-            const pending = this.pendingReadiness.get(prefix) ?? [];
-            pending.push((durationMs) => {
-                this.milestones.push(`ready-complete:${prefix}`);
-                resolve(durationMs);
-            });
-            this.pendingReadiness.set(prefix, pending);
-        });
-    }
-    waitForPeerAbsence = async (
-        input: LiveRtcControlClient.WaitForPeerAbsenceInput
-    ): Promise<void> => {
-        this.milestones.push(
-            `absent:${input.agent.prefix}:${input.departedPeerIds.join(',')}`
-        );
-    };
-    waitForMessage = async (
-        input: LiveRtcControlClient.WaitForMessageInput
-    ): Promise<number> => {
-        this.messageObservations.push(input);
-        return 1;
-    };
-    readyPeerIds(): string[] {
-        return [];
-    }
-
-    private requireConnectedSessionId(agentId: string): string {
-        const sessionId = this.sessionIdByAgentId.get(agentId);
-        if (!sessionId) {
-            throw new Error(`Connected agent ${agentId} has no recorded session ID`);
-        }
-        return sessionId;
-    }
 }

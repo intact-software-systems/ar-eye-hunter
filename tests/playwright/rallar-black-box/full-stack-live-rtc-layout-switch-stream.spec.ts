@@ -7,7 +7,6 @@ import {
 } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 
-import { RALLAR_BLACK_BOX_RTC_STREAM_DEFAULT_DRAIN_TIMEOUT_MS } from '@shared-test/rallar-bb-test/rtc-stream.ts';
 import { AL_CHANNEL_SEND_DEFAULTS } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import {
     isSameGroupLayoutIdentity,
@@ -21,6 +20,10 @@ import {
     type LiveRtcLayoutSwitchEvidence,
     type LiveRtcLayoutSwitchStream
 } from './compute-live-rtc-layout-switch-evidence.ts';
+import {
+    drainLiveRtcLayoutSwitchReceivers,
+    type LiveRtcLayoutSwitchDrain
+} from './drain-live-rtc-layout-switch-receivers.ts';
 import {
     almDiagnostics,
     apiBaseUrl,
@@ -39,6 +42,14 @@ import { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import { createLiveRtcDeliveryOperations, type AgentPrefix } from './live-rtc-delivery-operations.ts';
 import { createLiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
 import { LiveRtcLayoutSwitchOperations, type LiveRtcStreamQos } from './live-rtc-layout-switch-operations.ts';
+import {
+    LAYOUT_SWITCH_HOLD_MS,
+    LAYOUT_SWITCH_PROMOTION_POLL_INTERVAL_MS,
+    LAYOUT_SWITCH_PROMOTION_POLL_TIMEOUT_MS,
+    LAYOUT_SWITCH_STREAM_DURATION_MS,
+    LAYOUT_SWITCH_STREAM_LEAD_MS,
+    LIVE_RTC_LAYOUT_SWITCH_TEST_TIMEOUT_MS
+} from './live-rtc-layout-switch-test-timeouts.ts';
 import {
     resolveLiveRtcLayoutShape,
     toLiveRtcAcceptedLayout,
@@ -72,12 +83,6 @@ const MESSAGES_RTC = { typeId: 'manual.type', topicId: 'manual.topic' } as const
  * still holds its admission until its deadline, as an unacknowledged one does.
  */
 const STREAM_RATE_HZ = 10;
-const STREAM_LEAD_MS = 3_000;
-/** Outside the 15 s overlap of the previous switch, so the two promotions never share one overlap. */
-const SWITCH_HOLD_MS = 16_000;
-/** This spec's bound on each promotion poll; it also sizes the streams, which must be fixed before they start. */
-const PROMOTION_POLL_TIMEOUT_MS = 15_000;
-const STREAM_DURATION_MS = STREAM_LEAD_MS + 2 * (PROMOTION_POLL_TIMEOUT_MS + SWITCH_HOLD_MS);
 /** The overlap the managed API serves by default. */
 const SERVED_OVERLAP_MS = 15_000;
 /**
@@ -93,6 +98,7 @@ const STREAM_VARIANTS: readonly Readonly<{ label: string; qos: LiveRtcStreamQos;
     { label: 'best-effort', qos: { reliability: 'best-effort', ack: 'none' } }
 ];
 const REPORTED_RECORDS = 20;
+
 /** Slack on the direct-edge bound, for timestamp granularity; the rule itself needs none. */
 const DIRECT_BOUND_SLACK_MS = 250;
 
@@ -114,6 +120,7 @@ interface LayoutSwitchProgress {
     layoutReads: { label: string; readAtEpochMs: number; layouts: readonly (LiveRtcAcceptedLayout | undefined)[]; }[];
     switches: { label: string; requestedAtEpochMs: number; detectedAtEpochMs: number | null; }[];
     leafToLeafReadyAtSwitch2: Readonly<Record<string, boolean>> | null;
+    drainEndedBy: LiveRtcLayoutSwitchDrain.EndedBy | null;
 }
 
 /** The two files every run writes: the evidence before asserting, the progress in every outcome. */
@@ -172,7 +179,7 @@ test.describe('live RTC layout switch stream', () => {
             `three ${variant.label} 10 Hz streams cross an owner-issued tree switch and its reversal; ` +
                 'every receiver takes 20 messages a second',
             async ({ browser, request }, testInfo) => {
-                test.setTimeout(360_000);
+                test.setTimeout(LIVE_RTC_LAYOUT_SWITCH_TEST_TIMEOUT_MS);
                 expectEvidenceSources();
                 const scenario = await openScenario(browser, request);
                 let failure: Error | undefined;
@@ -230,7 +237,8 @@ async function openScenario(browser: Browser, request: APIRequestContext): Promi
         servedOverlapMs: null,
         layoutReads: [],
         switches: [],
-        leafToLeafReadyAtSwitch2: null
+        leafToLeafReadyAtSwitch2: null,
+        drainEndedBy: null
     };
     return { control, runId, groupId, suffix, agents, operations, progress };
 }
@@ -284,7 +292,7 @@ async function runLayoutSwitches(
     const sessionIds: SessionIds = [sessions.A, sessions.B, sessions.C];
     const formed = await readFormedLayout(scenario, sessionIds);
     const streams = startStreams(scenario, qos);
-    await holdFor(scenario, STREAM_LEAD_MS);
+    await holdFor(scenario, LAYOUT_SWITCH_STREAM_LEAD_MS);
     const switched = await runSwitches(scenario, { sessions, sessionIds, formed });
     const settledStreams = requireStreams(scenario, sessions, await streams);
     const events = await drainReceivers(scenario, settledStreams);
@@ -322,7 +330,7 @@ async function runSwitches(
         sessionIds
     });
     const treeShape = resolveTree(tree.layout, sessionIds);
-    await holdFor(scenario, tree.detectedAtEpochMs + SWITCH_HOLD_MS - Date.now());
+    await holdFor(scenario, tree.detectedAtEpochMs + LAYOUT_SWITCH_HOLD_MS - Date.now());
     await expectTreeHeld(scenario, tree.layout);
     const leafToLeafReadyAtSwitch2 = await readLeafToLeafReadiness(scenario, room.sessions, treeShape);
     scenario.progress.leafToLeafReadyAtSwitch2 = leafToLeafReadyAtSwitch2;
@@ -361,7 +369,7 @@ function startStreams(
             agent,
             qos,
             rateHz: STREAM_RATE_HZ,
-            durationMs: STREAM_DURATION_MS
+            durationMs: LAYOUT_SWITCH_STREAM_DURATION_MS
         })
     ));
 }
@@ -442,11 +450,14 @@ async function waitForPromotion(
             const common = toCommonLayout(latest);
             return common !== undefined && !isSameGroupLayoutIdentity(common.identity, expected.previous) &&
                 resolveLiveRtcLayoutShape(common, expected.sessionIds).kind === expected.kind;
-        }, { timeout: PROMOTION_POLL_TIMEOUT_MS, intervals: [1_000] }).toBe(true);
+        }, {
+            timeout: LAYOUT_SWITCH_PROMOTION_POLL_TIMEOUT_MS,
+            intervals: [LAYOUT_SWITCH_PROMOTION_POLL_INTERVAL_MS]
+        }).toBe(true);
     }
     catch (cause) {
         throw new Error(
-            `${expected.label}: not every browser promoted a ${expected.kind} layout within ${PROMOTION_POLL_TIMEOUT_MS} ms; ` +
+            `${expected.label}: not every browser promoted a ${expected.kind} layout within ${LAYOUT_SWITCH_PROMOTION_POLL_TIMEOUT_MS} ms; ` +
                 `last read: ${JSON.stringify(latest)}`,
             { cause }
         );
@@ -503,29 +514,19 @@ async function readLeafToLeafReadiness(
     return ready;
 }
 
-/**
- * Reads the run until every receiver holds every planned frame, or until the missing count has not changed for the
- * agent stream's own drain bound (`RALLAR_BLACK_BOX_RTC_STREAM_DEFAULT_DRAIN_TIMEOUT_MS`), so frames whose events
- * are still being published are waited for as long as they keep arriving.
- */
+/** Drains the receivers' events and records in the progress what ended the drain. */
 async function drainReceivers(
     scenario: LayoutSwitchScenario,
     streams: readonly LiveRtcLayoutSwitchStream[]
 ): Promise<readonly LiveRtcControlClient.Event[]> {
-    let lastMissing = Infinity;
-    let lastChangedAtMs = Date.now();
-    for (;;) {
-        const { events } = await scenario.control.fetchRun(scenario.runId);
-        const missing = countLiveRtcMissingFrames({ runId: scenario.runId, streams, events });
-        if (missing !== lastMissing) {
-            lastMissing = missing;
-            lastChangedAtMs = Date.now();
-        }
-        if (missing === 0 || Date.now() - lastChangedAtMs >= RALLAR_BLACK_BOX_RTC_STREAM_DEFAULT_DRAIN_TIMEOUT_MS) {
-            return events;
-        }
-        await holdFor(scenario, 1_000);
-    }
+    const drained = await drainLiveRtcLayoutSwitchReceivers({
+        readEvents: async () => (await scenario.control.fetchRun(scenario.runId)).events,
+        countMissing: (events) => countLiveRtcMissingFrames({ runId: scenario.runId, streams, events }),
+        hold: async (ms) => await holdFor(scenario, ms),
+        now: Date.now
+    });
+    scenario.progress.drainEndedBy = drained.endedBy;
+    return drained.events;
 }
 
 async function holdFor(scenario: LayoutSwitchScenario, ms: number): Promise<void> {
@@ -723,8 +724,8 @@ function expectPromotionsInsideStreams(run: LayoutSwitchRun): void {
     const lastSwitchOne = Math.max(...switchOnePromotions.map((promotedAt) => promotedAt ?? Infinity));
     expect.soft(
         run.requestedAtEpochMs[1] - lastSwitchOne,
-        `Switch 2 was issued less than ${SWITCH_HOLD_MS} ms after the last browser promoted switch 1`
-    ).toBeGreaterThanOrEqual(SWITCH_HOLD_MS);
+        `Switch 2 was issued less than ${LAYOUT_SWITCH_HOLD_MS} ms after the last browser promoted switch 1`
+    ).toBeGreaterThanOrEqual(LAYOUT_SWITCH_HOLD_MS);
     for (const promotion of run.evidence.promotions) {
         const window =
             `browser ${promotion.prefix}'s stream ran ${promotion.firstFrameAtEpochMs}..${promotion.lastFrameAtEpochMs}`;
@@ -739,8 +740,8 @@ function expectPromotionsInsideStreams(run: LayoutSwitchRun): void {
         }
         expect.soft(
             (promotion.lastFrameAtEpochMs ?? -Infinity) - (promotion.promotedAtEpochMs[1] ?? Infinity),
-            `${window}, under ${SWITCH_HOLD_MS} ms past its promotion of switch 2`
-        ).toBeGreaterThanOrEqual(SWITCH_HOLD_MS);
+            `${window}, under ${LAYOUT_SWITCH_HOLD_MS} ms past its promotion of switch 2`
+        ).toBeGreaterThanOrEqual(LAYOUT_SWITCH_HOLD_MS);
     }
 }
 

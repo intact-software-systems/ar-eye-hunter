@@ -1,7 +1,9 @@
+import { LIVE_RTC_RECORDER_READ_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-recorder-read-waits.ts';
+
 export const LIVE_RTC_LIFECYCLE_LIMITS = Object.freeze({
     inputBytes: 8_388_608,
     transportBytes: 67_108_864,
-    transportTimeoutMs: 30_000,
+    transportTimeoutMs: LIVE_RTC_RECORDER_READ_TIMEOUT_MS,
     scannedRows: 20_000,
     rowBytes: 16_384,
     retainedRows: 600,

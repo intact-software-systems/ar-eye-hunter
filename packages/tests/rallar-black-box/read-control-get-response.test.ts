@@ -11,8 +11,13 @@ import {
 
 import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 
+import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
+
 import { readControlRun } from '../../../tests/playwright/rallar-black-box/full-stack-helpers.ts';
-import { readControlGetResponse } from '../../../tests/playwright/rallar-black-box/read-control-get-response.ts';
+import {
+    CONTROL_GET_BOUNDED_WAITS_MS,
+    readControlGetResponse
+} from '../../../tests/playwright/rallar-black-box/read-control-get-response.ts';
 
 const snapshot = {
     runId: 'run',
@@ -92,6 +97,31 @@ describe('a control run read', () => {
             .mockRejectedValue(new Error('apiRequestContext.get: read ECONNRESET past the bound'));
 
         await expect(readControlRun(request, 'run')).rejects.toBe(last);
+    });
+
+    // A read outside a poll was counted by its pauses alone, though each attempt may wait its request's own timeout.
+    it('passes the control request timeout and waits at most its bound when every attempt hangs up at that timeout', async () => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+        try {
+            const request = await openRequest();
+            const timeouts: (number | undefined)[] = [];
+            vi.spyOn(request, 'get').mockImplementation(async (_url, options) => {
+                timeouts.push(options?.timeout);
+                await new Promise((resolve) => setTimeout(resolve, options?.timeout ?? 0));
+                throw new Error('apiRequestContext.get: read ECONNRESET');
+            });
+            const startedAtMs = Date.now();
+            const refused = expect(readControlRun(request, 'run')).rejects.toThrow('read ECONNRESET');
+
+            await vi.runAllTimersAsync();
+
+            await refused;
+            expect(timeouts).toEqual([CONTROL_REQUEST_TIMEOUT_MS, CONTROL_REQUEST_TIMEOUT_MS, CONTROL_REQUEST_TIMEOUT_MS]);
+            expect(Date.now() - startedAtMs).toBe(CONTROL_GET_BOUNDED_WAITS_MS);
+        }
+        finally {
+            vi.useRealTimers();
+        }
     });
 
     it('does not retry an HTTP error response', async () => {

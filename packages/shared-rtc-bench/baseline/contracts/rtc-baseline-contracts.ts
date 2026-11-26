@@ -118,6 +118,12 @@ export interface RtcBaselineRecordAttemptInputDto {
     rawResultRelativePath: string;
 }
 
+export interface RtcBaselineRecordNotStartedInputDto {
+    baselineId: string;
+    /** The first attempt the capture did not start; it and every later attempt of its workload stay unstarted. */
+    locator: RtcBaselineAttemptInputLocatorDto;
+}
+
 export interface RtcBaselineRecordCohortInputDto {
     baselineId: string;
     workloadId: RtcBaselineWorkloadId;

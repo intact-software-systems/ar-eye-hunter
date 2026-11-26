@@ -14,6 +14,16 @@ import {
     type RtcNativeAcquisitionProof,
     type RtcNativeCapturedConnection
 } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
+import { computeCommandResultPollTimeoutMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
+import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
+import {
+    LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS,
+    LIVE_RTC_HEALTH_RESULT_POLL_TIMEOUT_MS,
+    LIVE_RTC_MESSAGE_WAIT_TIMEOUT_MS,
+    LIVE_RTC_PEER_ABSENCE_TIMEOUT_MS,
+    LIVE_RTC_PEER_READINESS_TIMEOUT_MS
+} from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-control-waits.ts';
+import { LIVE_RTC_DIAGNOSTICS_RESULT_POLL_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-diagnostics-waits.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
@@ -259,7 +269,8 @@ export class LiveRtcControlClient {
 
     async fetchRun(runId: string): Promise<LiveRtcControlClient.RunSnapshot> {
         const response = await this.#request.get(
-            `${this.#baseUrl}/runs/${encodeURIComponent(runId)}`
+            `${this.#baseUrl}/runs/${encodeURIComponent(runId)}`,
+            { timeout: CONTROL_REQUEST_TIMEOUT_MS }
         );
         return await readDisposedResponse(response, async (read) => {
             expect(read.ok()).toBe(true);
@@ -278,7 +289,8 @@ export class LiveRtcControlClient {
                 async () => {
                     const response = await this.#request.get(
                         `${this.#baseUrl}/runs/${encodeURIComponent(input.runId)}` +
-                            '?limitEvents=0&limitStats=0&limitReports=0&limitHeartbeats=0'
+                            '?limitEvents=0&limitStats=0&limitReports=0&limitHeartbeats=0',
+                        { timeout: CONTROL_REQUEST_TIMEOUT_MS }
                     );
                     return await readDisposedResponse(response, async (read) => {
                         expect(read.ok()).toBe(true);
@@ -290,7 +302,7 @@ export class LiveRtcControlClient {
                     });
                 },
                 {
-                    timeout: input.timeoutMs ?? 45_000
+                    timeout: resolveLiveRtcResultPollTimeoutMs(input)
                 }
             )
             .toBe(true);
@@ -311,7 +323,8 @@ export class LiveRtcControlClient {
                 data: {
                     commandId: input.commandId,
                     command: input.command
-                }
+                },
+                timeout: CONTROL_REQUEST_TIMEOUT_MS
             }
         );
         await readDisposedResponse(response, async (enqueued) => {
@@ -384,7 +397,7 @@ export class LiveRtcControlClient {
                     {
                         message:
                             `Expected ${input.agentId} to receive ${input.transport} ${input.deliveryMode} ${input.matrixId}`,
-                        timeout: input.timeoutMs ?? 60_000
+                        timeout: input.timeoutMs ?? LIVE_RTC_MESSAGE_WAIT_TIMEOUT_MS
                     }
                 )
                 .toBe(true);
@@ -490,7 +503,7 @@ export class LiveRtcControlClient {
                     safeFileName(agentId)
                 }`,
                 command: { kind: 'health', includeRtcDiagnostics: true },
-                timeoutMs: 15_000
+                timeoutMs: LIVE_RTC_HEALTH_RESULT_POLL_TIMEOUT_MS
             });
             return [
                 agentId,
@@ -509,7 +522,7 @@ export class LiveRtcControlClient {
     async waitForPeerReadiness(
         input: LiveRtcControlClient.WaitForRtcReadinessInput
     ): Promise<number> {
-        const deadlineMs = this.#monotonicNow() + 60_000;
+        const deadlineMs = this.#monotonicNow() + LIVE_RTC_PEER_READINESS_TIMEOUT_MS;
         const readyAtMs = await this.#observeRtcReadiness(input, deadlineMs);
         if (readyAtMs >= deadlineMs) {
             throw new Error(
@@ -539,7 +552,7 @@ export class LiveRtcControlClient {
                                 ', '
                             )
                         } for ${input.suffix}`,
-                        timeout: 60_000
+                        timeout: LIVE_RTC_PEER_READINESS_TIMEOUT_MS
                     }
                 )
                 .toBe(true);
@@ -569,7 +582,7 @@ export class LiveRtcControlClient {
         }
         await input.agent.refreshRoom({ refresh: 'always', timeoutMs: refreshTimeoutMs });
         const healthTimeoutMs = Math.min(
-            15_000,
+            LIVE_RTC_HEALTH_RESULT_POLL_TIMEOUT_MS,
             deadlineMs - this.#monotonicNow()
         );
         if (healthTimeoutMs <= 0) {
@@ -605,7 +618,7 @@ export class LiveRtcControlClient {
             runId: input.runId,
             agentId: input.agent.agentId,
             commandId: `health-readiness-failure-${input.agent.prefix.toLowerCase()}-${input.suffix}-${attempt}`,
-            timeoutMs: 15_000
+            timeoutMs: LIVE_RTC_HEALTH_RESULT_POLL_TIMEOUT_MS
         });
         await this.#writeDiagnosticsArtifact(
             `live-rtc-readiness-failure-${safeFileName(input.agent.agentId)}-${safeFileName(input.suffix)}.json`,
@@ -664,7 +677,7 @@ export class LiveRtcControlClient {
                         agentId: input.agent.agentId,
                         commandId: `health-absent-${input.agent.prefix.toLowerCase()}-${input.suffix}-${attempt++}`,
                         command: { kind: 'health' },
-                        timeoutMs: 15_000
+                        timeoutMs: LIVE_RTC_HEALTH_RESULT_POLL_TIMEOUT_MS
                     }).catch(() => undefined);
                     if (!result?.ok) {
                         return input.departedPeerIds;
@@ -678,7 +691,7 @@ export class LiveRtcControlClient {
                             ', '
                         )
                     } for ${input.suffix}`,
-                    timeout: 60_000
+                    timeout: LIVE_RTC_PEER_ABSENCE_TIMEOUT_MS
                 }
             )
             .toEqual([]);
@@ -698,7 +711,8 @@ export class LiveRtcControlClient {
         input: LiveRtcControlClient.ArtifactBundleInput
     ): Promise<void> {
         const response = await this.#request.get(
-            `${this.#baseUrl}/runs/${encodeURIComponent(input.runId)}/artifacts`
+            `${this.#baseUrl}/runs/${encodeURIComponent(input.runId)}/artifacts`,
+            { timeout: CONTROL_REQUEST_TIMEOUT_MS }
         );
         const bundle = await readDisposedResponse(response, async (read) => {
             expect(read.ok()).toBe(true);
@@ -792,7 +806,7 @@ export class LiveRtcControlClient {
                     runId: input.runId,
                     agentId: agent.agentId,
                     commandId,
-                    timeoutMs: 30_000
+                    timeoutMs: LIVE_RTC_DIAGNOSTICS_RESULT_POLL_TIMEOUT_MS
                 })
             );
         }
@@ -946,7 +960,7 @@ export class LiveRtcControlClient {
                 agentId,
                 commandId: `health-nack-failure-${safeFileName(input.commandId)}-${safeFileName(agentId)}`,
                 command: { kind: 'health', includeRtcDiagnostics: true },
-                timeoutMs: 15_000
+                timeoutMs: LIVE_RTC_HEALTH_RESULT_POLL_TIMEOUT_MS
             });
             return [
                 agentId,
@@ -972,6 +986,17 @@ export class LiveRtcControlClient {
             return { succeeded: false, run: undefined };
         }
     }
+}
+
+/**
+ * How long the control client polls for a command's result once it is enqueued: the wait its caller names, or else the
+ * command's own budget and then the result poll, so a command that names no budget is polled for the result poll
+ * alone. The command's enqueue request runs before it under the control request timeout.
+ */
+export function resolveLiveRtcResultPollTimeoutMs(
+    input: Pick<LiveRtcControlClient.ExecuteInput, 'command' | 'timeoutMs'>
+): number {
+    return input.timeoutMs ?? computeCommandResultPollTimeoutMs(input.command, LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS);
 }
 
 export function countUnexpectedLiveRtcDeliveries(

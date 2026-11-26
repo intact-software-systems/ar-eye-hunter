@@ -131,6 +131,13 @@ interface RemoteRecipeScenario {
 const repoRoot = path.resolve(__dirname, '../../..');
 const dispatchScriptPath = path.join(repoRoot, 'scripts/hosted-rallar/dispatch-distributed-recipe.sh');
 
+function recommendedTerminalTimeoutSecondsOf(manifestName: string): number | undefined {
+    const recommended = createHetznerDistributedManifestCatalog()
+        .find((entry) => entry.filePath.endsWith(`/${manifestName}.json`))
+        ?.manifest.metadata.recommendedTerminalTimeoutSeconds;
+    return typeof recommended === 'number' ? recommended : undefined;
+}
+
 /** The run phase records its start as a journalctl epoch and exports both service journals from it on exit. */
 const runJournalExportEffect = expect.stringMatching(
     /^journals\|--since @\d{10} --output-dir \/tmp\/rallar-distributed-operations\/owned-distributed$/
@@ -1114,6 +1121,21 @@ describe('Hetzner workflow contracts and effects', () => {
         }
     });
 
+    // A hard-coded '300' overrode each manifest's own recommendation, which the runner reads when the input is blank.
+    it('lets every supported manifest\'s own recommended terminal timeout bound its run', async () => {
+        const parsedWorkflow = await readWorkflow(supportedManifestsWorkflowPath);
+        for (const job of ['prepare', 'run']) {
+            expect(parsedWorkflow.jobs[job]?.with, job).not.toHaveProperty('terminal_timeout_seconds');
+        }
+        const runner = await readWorkflow(distributedRunnerWorkflowPath);
+        expect(runner.on.workflow_call?.inputs?.terminal_timeout_seconds?.default).toBe('');
+        const catalog = createHetznerDistributedManifestCatalog();
+        for (const manifestPath of supportedMainlineManifestPaths) {
+            const entry = catalog.find((candidate) => candidate.filePath === manifestPath);
+            expect(entry?.manifest.metadata.recommendedTerminalTimeoutSeconds, manifestPath).toEqual(expect.any(Number));
+        }
+    });
+
     it('rejects topology-specific manifests from the shared supported-suite preparation', async (context) => {
         const directory = await mkdtemp(path.join(tmpdir(), 'rallar-supported-topology-'));
         onTestFinished(() => rm(directory, { recursive: true, force: true }));
@@ -1200,6 +1222,11 @@ describe('Hetzner workflow contracts and effects', () => {
             }
         });
 
+        // The smoke manifest recommends its own terminal timeout, which the dispatch passes unless one is explicit.
+        const recommendedTerminalTimeoutSeconds = createHetznerDistributedManifestCatalog()
+            .find((entry) => entry.filePath === 'apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json')
+            ?.manifest.metadata.recommendedTerminalTimeoutSeconds;
+        expect(recommendedTerminalTimeoutSeconds).toBe(263);
         const args = (await readFile(fixture.argsFile, 'utf8')).trim().split('\n');
         expect(args).toEqual([
             'workflow',
@@ -1232,7 +1259,7 @@ describe('Hetzner workflow contracts and effects', () => {
             '-f',
             'ready_timeout_seconds=120',
             '-f',
-            'terminal_timeout_seconds=300',
+            `terminal_timeout_seconds=${recommendedTerminalTimeoutSeconds}`,
             '-f',
             'stop_after_run=true',
             '-f',
@@ -1685,12 +1712,82 @@ describe('Hetzner workflow contracts and effects', () => {
         expect(args).toContain('npm_ci=false');
         expect(args).toContain('wait_for_agents=true');
         expect(args).toContain('ready_timeout_seconds=60');
-        expect(args).toContain('terminal_timeout_seconds=180');
+        // Fast mode skips setup, not the run: the manifest's own recommendation bounds it.
+        expect(args).toContain(`terminal_timeout_seconds=${recommendedTerminalTimeoutSecondsOf('01-health-2-agent')}`);
         expect(args).toContain('register_before_login=true');
         expect(args).toContain('stop_after_run=true');
         expect(args).toContain('run_id=fast-health');
         expect(stdout).toContain('Mode     : fast');
         expect(stdout).toContain('Register : true');
         expect(stdout).toContain('Stop headless: true');
+    });
+
+    // Fast mode marked its 180 s explicit, below the recommendations of manifests 03 (263 s), 05b-05e and 17 (392 s).
+    it('lets a fast run of a manifest longer than 180 s wait its recommended terminal timeout', async (context) => {
+        const fixture = await createGhDispatchFixture({ label: 'rallar-dispatch-fast-long-gh-', secretResponses: completeSecretResponses });
+        const { stdout } = await runOwnedTestProcess(context, {
+            executable: 'bash',
+            args: [
+                dispatchScriptPath,
+                'apps/rallar-black-box/manifests/hetzner/17-group-assertions-2-agent.json',
+                '--run-id',
+                'fast-group-assertions',
+                '--fast'
+            ],
+            options: { cwd: repoRoot, env: fixture.environment }
+        });
+
+        const args = (await readFile(fixture.argsFile, 'utf8')).trim().split('\n');
+        const recommended = recommendedTerminalTimeoutSecondsOf('17-group-assertions-2-agent');
+        expect(recommended).toBeGreaterThan(180);
+        expect(args).toContain(`terminal_timeout_seconds=${recommended}`);
+        expect(stdout).toContain('Mode     : fast');
+    });
+
+    it('keeps an explicit terminal timeout given before or after --fast', async (context) => {
+        for (const order of [['--terminal-timeout-seconds', '420', '--fast'], ['--fast', '--terminal-timeout-seconds', '420']]) {
+            const fixture = await createGhDispatchFixture({ label: 'rallar-dispatch-fast-explicit-gh-', secretResponses: completeSecretResponses });
+            const { stdout } = await runOwnedTestProcess(context, {
+                executable: 'bash',
+                args: [
+                    dispatchScriptPath,
+                    'apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json',
+                    '--run-id',
+                    'fast-explicit',
+                    ...order
+                ],
+                options: { cwd: repoRoot, env: fixture.environment }
+            });
+
+            const args = (await readFile(fixture.argsFile, 'utf8')).trim().split('\n');
+            expect(args, order.join(' ')).toContain('terminal_timeout_seconds=420');
+            expect(stdout, order.join(' ')).toContain('Mode     : fast');
+        }
+    });
+
+    it('falls back to 180 s in fast mode for a manifest that recommends no terminal timeout', async (context) => {
+        const fixture = await createGhDispatchFixture({ label: 'rallar-dispatch-fast-fallback-gh-', secretResponses: completeSecretResponses });
+        // The script dispatches only a manifest inside the repository; its ignored tmp directory holds this one.
+        await mkdir(path.join(repoRoot, 'tmp'), { recursive: true });
+        const directory = await mkdtemp(path.join(repoRoot, 'tmp', 'rallar-dispatch-fast-fallback-'));
+        context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const manifestPath = path.join(directory, 'unrecommended.json');
+        await writeFile(
+            manifestPath,
+            JSON.stringify({
+                targetPolicy: { expectedParticipantCount: 2 },
+                group: { groupId: 'hetzner-headless-room', applicationId: 'rallar-server', workspaceId: 'default' },
+                metadata: {}
+            })
+        );
+        const { stdout } = await runOwnedTestProcess(context, {
+            executable: 'bash',
+            args: [dispatchScriptPath, manifestPath, '--run-id', 'fast-fallback', '--fast'],
+            options: { cwd: repoRoot, env: fixture.environment }
+        });
+
+        const args = (await readFile(fixture.argsFile, 'utf8')).trim().split('\n');
+        expect(args).toContain('terminal_timeout_seconds=180');
+        expect(stdout).toContain('Mode     : fast');
     });
 });

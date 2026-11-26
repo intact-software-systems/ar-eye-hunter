@@ -6,6 +6,7 @@ import {
     it
 } from 'vitest';
 
+import { resolveLiveRtcResultPollTimeoutMs } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
 import {
     createCapturedNativeConnectionFixture,
     createNativeRecorderRowsFixture,
@@ -69,5 +70,21 @@ describe('live RTC native archive HTTP adapter', () => {
         expect(acquired.left).toMatchObject({ reason: 'acquisition-failed', source: null, cause: expect.any(Error) });
         expect(fixture.state.recorderReads).toBe(1);
         await expect.poll(() => fixture.state.recorderClosed).toBe(true);
+    });
+});
+
+describe('live RTC control client result poll', () => {
+    // A command with its own budget was polled only the bare 45 s unless its caller restated a literal wait.
+    it('polls a command its own budget, then the 45 s result poll, unless its caller names a wait', () => {
+        expect(resolveLiveRtcResultPollTimeoutMs({ command: { kind: 'health' } })).toBe(45_000);
+        expect(resolveLiveRtcResultPollTimeoutMs({ command: { kind: 'rtc.send', timeoutMs: 60_000 } })).toBe(60_000 + 45_000);
+        expect(resolveLiveRtcResultPollTimeoutMs({
+            command: {
+                kind: 'rtc.connect',
+                timeoutMs: 135_000,
+                readiness: { minReadyPeers: 2, timeoutMs: 30_000, intervalMs: 100 }
+            }
+        })).toBe(135_000 + 30_000 + 45_000);
+        expect(resolveLiveRtcResultPollTimeoutMs({ command: { kind: 'close' }, timeoutMs: 15_000 })).toBe(15_000);
     });
 });

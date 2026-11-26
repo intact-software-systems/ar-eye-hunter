@@ -8,6 +8,8 @@ import {
     type TestInfo
 } from '@playwright/test';
 
+import { CONTROL_AGENT_OPENING_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-agent-opening-timeout-ms.ts';
+import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
 import { isRallarBlackBoxTestError } from '@shared-test/rallar-bb-test/composite-results.ts';
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import { computeAlmRecipeRunTimeoutMs } from '@shared-test/rallar-bb-test/conformance/alm/alm-recipe-run-extension.ts';
@@ -41,9 +43,10 @@ import type {
     RallarBlackBoxTestRecipeCancelCommand
 } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { closeParticipantContext } from './close-participant-context.ts';
+import { createScenarioRoots } from './create-scenario-roots.ts';
 import { readControlGetResponse } from './read-control-get-response.ts';
 import { readDisposedResponse } from './read-disposed-response.ts';
-import { resolveRecipeCancelFailure } from './resolve-recipe-cancel-failure.ts';
+import { isRecipeCancelAccepted, resolveRecipeCancelFailure } from './resolve-recipe-cancel-failure.ts';
 import { startPageDiagnosticsCapture, type PageDiagnosticsCapture } from './start-page-diagnostics-capture.ts';
 
 export interface FullStackUser {
@@ -120,6 +123,8 @@ export interface RecipeRunOutcome {
     readonly commandId: string;
     readonly ok: boolean;
     readonly summary: string;
+    /** The root of a peer role whose failure cancelled this one; undefined when no peer's failure did. */
+    readonly cancelledAfter: string | undefined;
 }
 
 export interface RecipePairOutcome {
@@ -136,6 +141,11 @@ export interface RecipePair {
 export interface StartedRecipeRun {
     readonly commandId: string;
     readOutcome(): Promise<RecipeRunOutcome>;
+    /**
+     * Cancels the root because a peer role's recipe ended not ok: its outcome read sends the cancel once it finds no
+     * result. The first peer named wins; a root whose result its read already found is not cancelled.
+     */
+    cancelAfter(peer: RecipeRunOutcome): void;
 }
 
 export interface BrowserControlAgentInput {
@@ -198,7 +208,7 @@ export interface LoginUserInput {
 }
 
 export interface EnqueueControlCommandInput {
-    readonly request: APIRequestContext;
+    readonly request: Pick<APIRequestContext, 'post'>;
     readonly runId: string;
     readonly agentId: string;
     readonly commandId: string;
@@ -287,6 +297,19 @@ interface RecipeRunRoot {
     readonly cancel: RallarBlackBoxTestRecipeCancelCommand;
 }
 
+/** A root's outcome read: the root, the deadline it captured when it started, and the peer failure that cancels it. */
+interface RecipeRunWatch {
+    readonly root: RecipeRunRoot;
+    readonly deadlineAtMs: number;
+    readonly getPeerFailure: () => RecipeRunOutcome | undefined;
+}
+
+/** The cancel the lane sends a root, and the failure that stops the family when the root is still live after it. */
+interface RecipeRunCancellation {
+    readonly command: RallarBlackBoxTestRecipeCancelCommand;
+    readonly stillLive: string;
+}
+
 interface ReceiverConnectBarrierInput {
     readonly connectCommandId: string;
     readonly runCommandId: string;
@@ -350,8 +373,45 @@ const RTC_READINESS_WAIT_TOPIC = 'rallar.bb.rtc.readiness_wait_started';
 const RECIPE_RUN_TIMEOUT_MS = 180_000;
 /** Covers the agent's dispatch latency (its deadline starts at dispatch, the lane's at enqueue) and its cleanup. */
 const RECIPE_RESULT_GRACE_MS = 30_000;
+/** How long a sender's run waits for its receiver to connect before it is released anyway. */
 const RECEIVER_CONNECT_TIMEOUT_MS = 60_000;
+
+/** How long a control run poll pauses between its reads. */
 const CONTROL_POLL_INTERVAL_MS = 250;
+
+/** How long a signed-in page may take to show its run header. */
+export const LOGIN_RUN_HEADER_TIMEOUT_MS = 30_000;
+
+/** How long the control run is polled until an agent reports itself connected. */
+export const CONTROL_RUN_AGENT_POLL_TIMEOUT_MS = 30_000;
+
+/** Opening a browser control agent waits for the login gate or workbench, the Advanced tab, then registration. */
+export const BROWSER_CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS = 3 * CONTROL_AGENT_OPENING_TIMEOUT_MS;
+
+/** How long the control run is polled until a command reports an ok result. */
+const CONTROL_COMMAND_OK_POLL_TIMEOUT_MS = 30_000;
+
+/** How long a refreshed run manager or distributed panel may take to list a run. */
+const CONTROL_RUN_LISTING_TIMEOUT_MS = 30_000;
+
+/** The buttons a page's cleanup clicks, each only when it shows. */
+const RALLAR_PAGE_CLEANUP_BUTTON_LABELS = [
+    'Close connections',
+    'Close',
+    'Cleanup',
+    'Unsubscribe WS',
+    'Clear subscriptions',
+    'Stop all',
+    'Logout'
+] as const;
+
+/** How long a page's cleanup waits for each button it clicks. */
+const RALLAR_PAGE_CLEANUP_CLICK_TIMEOUT_MS = 2_000;
+
+/** A page's cleanup may click each of its buttons in turn. */
+export const RALLAR_PAGE_CLEANUP_BOUNDED_WAITS_MS = RALLAR_PAGE_CLEANUP_BUTTON_LABELS.length *
+    RALLAR_PAGE_CLEANUP_CLICK_TIMEOUT_MS;
+
 const CONTROL_POLL_TIMERS = createDefaultTimers();
 
 export function readFullStackConfig(): FullStackConfig {
@@ -413,7 +473,8 @@ export async function expectFullStackApiReady(
     const configResponse = await request.get(`${config.apiBaseUrl}/api/config`, {
         headers: {
             origin: FULL_STACK_SPA_ORIGIN
-        }
+        },
+        timeout: CONTROL_REQUEST_TIMEOUT_MS
     });
     await readDisposedResponse(configResponse, async (response) => {
         expect(response.ok()).toBe(true);
@@ -456,7 +517,7 @@ export async function loginUser(input: LoginUserInput): Promise<AuthSession> {
         })
     });
     await signInFullStackUser({ ...input, query });
-    await expect(page.locator('.run-header')).toContainText(user.username, { timeout: 30_000 });
+    await expect(page.locator('.run-header')).toContainText(user.username, { timeout: LOGIN_RUN_HEADER_TIMEOUT_MS });
     await openTab(page, input.tab ?? 'rallar-server', input.workspace);
     return await readBrowserAuthSession(page);
 }
@@ -544,7 +605,7 @@ export async function enqueueControlCommand(input: EnqueueControlCommandInput): 
         `${FULL_STACK_CONTROL_BASE_URL}/runs/${encodeURIComponent(input.runId)}/agents/${
             encodeURIComponent(input.agentId)
         }/commands`,
-        { data: { commandId: input.commandId, command: input.command } }
+        { data: { commandId: input.commandId, command: input.command }, timeout: CONTROL_REQUEST_TIMEOUT_MS }
     );
     await readDisposedResponse(response, async (enqueued) => {
         expect(enqueued.status()).toBe(202);
@@ -552,11 +613,13 @@ export async function enqueueControlCommand(input: EnqueueControlCommandInput): 
 }
 
 export async function readControlRun(
-    request: APIRequestContext,
+    request: Pick<APIRequestContext, 'get'>,
     runId: string
 ): Promise<ControlRunSnapshot> {
     const response = await readControlGetResponse(async () =>
-        await request.get(`${FULL_STACK_CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}`)
+        await request.get(`${FULL_STACK_CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}`, {
+            timeout: CONTROL_REQUEST_TIMEOUT_MS
+        })
     );
     const body = await readDisposedResponse(response, async (read) => {
         expect(read.ok()).toBe(true);
@@ -579,7 +642,7 @@ export async function waitForControlCommandOk(
         const run = await readControlRun(request, runId);
         return run.results.some((result) => result.commandId === commandId && result.ok === true);
     }, {
-        timeout: 30_000
+        timeout: CONTROL_COMMAND_OK_POLL_TIMEOUT_MS
     }).toBe(true);
 }
 
@@ -592,7 +655,7 @@ export async function waitForControlRunAgent(
         const run = await readControlRun(request, runId);
         return run.agents.some((agent) => agent.agentId === agentId && agent.connected);
     }, {
-        timeout: 30_000
+        timeout: CONTROL_RUN_AGENT_POLL_TIMEOUT_MS
     }).toBe(true);
 }
 
@@ -601,7 +664,9 @@ export async function exportControlRunArtifacts(
     runId: string
 ): Promise<ControlRunArtifactBundle> {
     const response = await readControlGetResponse(async () =>
-        await request.get(`${FULL_STACK_CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}/artifacts`)
+        await request.get(`${FULL_STACK_CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}/artifacts`, {
+            timeout: CONTROL_REQUEST_TIMEOUT_MS
+        })
     );
     const body = await readDisposedResponse(response, async (read) => {
         expect(read.ok()).toBe(true);
@@ -640,10 +705,10 @@ export async function openBrowserControlAgentInContext(
         await page.goto(`${FULL_STACK_SPA_ORIGIN}/?${toBrowserControlAgentQuery(agent).toString()}`);
         await signInIfLoginGateIsVisible(page);
         await expect(page.getByRole('tab', { name: 'Advanced' })).toHaveAttribute('aria-selected', 'true', {
-            timeout: 30_000
+            timeout: CONTROL_AGENT_OPENING_TIMEOUT_MS
         });
         await expect(page.locator('#panel-local-workbench .control-panel')).toContainText('registered', {
-            timeout: 30_000
+            timeout: CONTROL_AGENT_OPENING_TIMEOUT_MS
         });
         return { context, page, session: await readBrowserAuthSession(page), diagnostics };
     }
@@ -676,15 +741,6 @@ export async function createTwoAgentRun(
     };
 }
 
-export async function runRecipeOnAgent(
-    run: RecipeRun,
-    agent: RecipeRunAgent,
-    recipe: RallarBlackBoxTestRecipe
-): Promise<RecipeRunOutcome> {
-    const started = await startRecipeRun(run, agent, recipe);
-    return await started.readOutcome();
-}
-
 /**
  * Authored paired reload roots are bound and enqueued together; control owns their causal checkpoints.
  * For ordinary recipes, the receiver's prologue creates the group and owns it, so its recipe starts first and the
@@ -706,7 +762,7 @@ export async function runRecipePairOnTwoAgents(
     }
     const receiverRun = await startRecipientRecipeRun(run, run.receiver, recipes.receiver);
     const senderRun = await startRecipeRun(run, run.sender, recipes.sender);
-    return requireRecipePairOutcome(await Promise.allSettled([senderRun.readOutcome(), receiverRun.readOutcome()]));
+    return await readRecipePairOutcome(senderRun, receiverRun);
 }
 
 /**
@@ -735,10 +791,15 @@ export async function startRecipeRun(
 
 function startRecipeRoot(run: RecipeRun, root: RecipeRunRoot): StartedRecipeRun {
     const deadlineAtMs = CONTROL_POLL_TIMERS.nowMs() + root.timeoutMs;
+    let peerFailure: RecipeRunOutcome | undefined;
     let outcome: Promise<RecipeRunOutcome> | undefined;
     const started = {
         commandId: root.commandId,
-        readOutcome: () => outcome ??= readRecipeRunOutcome(run, root, deadlineAtMs)
+        readOutcome: () =>
+            outcome ??= readRecipeRunOutcome(run, { root, deadlineAtMs, getPeerFailure: () => peerFailure }),
+        cancelAfter: (peer: RecipeRunOutcome) => {
+            peerFailure ??= peer;
+        }
     };
     run.startedRoots.push(started);
     return started;
@@ -784,7 +845,7 @@ export async function selectControlRunInManager(
     await openTab(page, 'run-manager', 'black-box-runner');
     const panel = page.locator('#panel-run-manager');
     await panel.getByRole('button', { name: 'Refresh' }).click();
-    await expect(panel).toContainText(runId, { timeout: 30_000 });
+    await expect(panel).toContainText(runId, { timeout: CONTROL_RUN_LISTING_TIMEOUT_MS });
     const runSelect = panel.locator('.run-manager-toolbar select').first();
     await runSelect.selectOption(runId);
     await expect(panel.locator('.run-manager-agent-list')).toBeVisible();
@@ -798,7 +859,7 @@ export async function refreshDistributedTargets(
     await openTab(page, 'distributed-recipes', 'black-box-runner');
     const panel = page.locator('#panel-distributed-recipes');
     await panel.getByRole('button', { name: 'Refresh' }).click();
-    await expect(panel).toContainText(runId, { timeout: 30_000 });
+    await expect(panel).toContainText(runId, { timeout: CONTROL_RUN_LISTING_TIMEOUT_MS });
     const runSelect = panel.locator('.distributed-toolbar select').first();
     if (await runSelect.count()) {
         await runSelect.selectOption(runId);
@@ -827,17 +888,7 @@ export async function cleanupRallarPage(page: Page): Promise<void> {
         return;
     }
 
-    for (
-        const label of [
-            'Close connections',
-            'Close',
-            'Cleanup',
-            'Unsubscribe WS',
-            'Clear subscriptions',
-            'Stop all',
-            'Logout'
-        ]
-    ) {
+    for (const label of RALLAR_PAGE_CLEANUP_BUTTON_LABELS) {
         await clickVisibleButton(page, label);
     }
 
@@ -1035,7 +1086,8 @@ function toRecipeRunRequest(recipe: RallarBlackBoxTestRecipe): RecipeRunRequest 
     return { recipe, timeoutMs: computeAlmRecipeRunTimeoutMs(recipe, RECIPE_RUN_TIMEOUT_MS) };
 }
 
-function toRecipeRunCommandId(recipe: RallarBlackBoxTestRecipe): string {
+/** The id the lane enqueues a recipe's root under, which its result and every outcome of it carry. */
+export function toRecipeRunCommandId(recipe: RallarBlackBoxTestRecipe): string {
     return `${recipe.recipeId}-run`;
 }
 
@@ -1080,7 +1132,7 @@ function normalizeBaseUrl(value: string): string {
 async function signInIfLoginGateIsVisible(page: Page): Promise<void> {
     const loginGate = page.getByRole('heading', { name: 'Rallar Server Login' });
     const workbench = page.getByRole('tab', { name: 'Advanced' });
-    await expect(loginGate.or(workbench).first()).toBeVisible({ timeout: 30_000 });
+    await expect(loginGate.or(workbench).first()).toBeVisible({ timeout: CONTROL_AGENT_OPENING_TIMEOUT_MS });
     if (await loginGate.isVisible()) {
         await page.getByRole('button', { name: 'Sign in' }).click();
     }
@@ -1188,7 +1240,7 @@ async function runReloadPairOnTwoAgents(run: RecipePairRun, recipes: RecipePair)
         run,
         toReloadRunRoot(run.receiver, pair.receiver.commandId, receiverRequest.timeoutMs)
     );
-    return requireRecipePairOutcome(await Promise.allSettled([sender.readOutcome(), receiver.readOutcome()]));
+    return await readRecipePairOutcome(sender, receiver);
 }
 
 /** A reload root is a control-owned segment: only the agent's untargeted cancel reaches it, as the paired cleanup. */
@@ -1205,6 +1257,13 @@ function toRecipeCancelReason(commandId: string, timeoutMs: number): string {
     return `${commandId} outlived its ${timeoutMs} ms deadline and ${RECIPE_RESULT_GRACE_MS} ms grace.`;
 }
 
+async function readRecipePairOutcome(sender: StartedRecipeRun, receiver: StartedRecipeRun): Promise<RecipePairOutcome> {
+    const scenario = createScenarioRoots();
+    return requireRecipePairOutcome(
+        await Promise.allSettled([scenario.readOutcome(sender), scenario.readOutcome(receiver)])
+    );
+}
+
 function requireRecipePairOutcome(
     [sender, receiver]: readonly [PromiseSettledResult<RecipeRunOutcome>, PromiseSettledResult<RecipeRunOutcome>]
 ): RecipePairOutcome {
@@ -1219,64 +1278,106 @@ function requireRecipePairOutcome(
 
 /**
  * The agent bounds the recipe by the same deadline from its dispatch, so its own timeout result arrives within the
- * grace. A root with no result by then is cancelled; one still live after the cancel's grace stops the family, since a
- * live recipe's later cleanup closes connections under whatever cell runs next on its page.
+ * grace. A root with no result by then, or once a peer's failure cancels it, is cancelled; one still live after the
+ * cancel's grace stops the family, since a live recipe's later cleanup closes connections under whatever cell runs next
+ * on its page.
  */
-async function readRecipeRunOutcome(
-    run: RecipeRun,
-    root: RecipeRunRoot,
-    deadlineAtMs: number
-): Promise<RecipeRunOutcome> {
-    const result = await readRecipeRunResult(run, root.commandId, deadlineAtMs + RECIPE_RESULT_GRACE_MS) ??
-        await cancelRecipeRun(run, root);
+async function readRecipeRunOutcome(run: RecipeRun, watch: RecipeRunWatch): Promise<RecipeRunOutcome> {
+    const { root } = watch;
+    const ended = await readRecipeRunResult(run, watch);
+    if (ended !== undefined) {
+        return toRecipeRunOutcome(root.commandId, ended, {
+            summary: toControlResultSummary(ended),
+            cancelledAfter: undefined
+        });
+    }
+    const peer = watch.getPeerFailure();
+    const cancellation = peer === undefined ? toDeadlineCancellation(root) : toPeerCancellation(root, peer);
+    const { result, cancelAccepted } = await cancelRecipeRun(run, root, cancellation);
+    const cancelled = result.ok !== true && (cancelAccepted || isCancelledResult(result));
+    const summary = peer === undefined && isCancelledResult(result)
+        ? 'cancelled at its deadline'
+        : toControlResultSummary(result);
+    return toRecipeRunOutcome(root.commandId, result, {
+        summary,
+        cancelledAfter: cancelled ? peer?.commandId : undefined
+    });
+}
+
+/** A recipe a cancel ended says so in its result, whether it stopped between commands or an abort was thrown out of it. */
+function isCancelledResult(result: ControlResultEnvelope): boolean {
+    return result.result?.status === 'cancelled';
+}
+
+function toRecipeRunOutcome(
+    commandId: string,
+    result: ControlResultEnvelope,
+    end: Pick<RecipeRunOutcome, 'summary' | 'cancelledAfter'>
+): RecipeRunOutcome {
+    return { commandId, ok: result.ok === true, ...end };
+}
+
+function toDeadlineCancellation(root: RecipeRunRoot): RecipeRunCancellation {
     return {
-        commandId: root.commandId,
-        ok: result.ok === true,
-        summary: toControlResultSummary(result)
+        command: root.cancel,
+        stillLive:
+            `${root.commandId} is still running after its deadline and cancellation; no later cell may run on its page.`
     };
 }
 
-async function cancelRecipeRun(run: RecipeRun, root: RecipeRunRoot): Promise<ControlResultEnvelope> {
+/** The failing peer leads the family's failure, since its error, not the cancelled root's, is the scenario's cause. */
+function toPeerCancellation(root: RecipeRunRoot, peer: RecipeRunOutcome): RecipeRunCancellation {
+    return {
+        command: { ...root.cancel, reason: `${root.commandId} cancelled after ${peer.commandId} ended not ok.` },
+        stillLive: `${peer.commandId} ended not ok (${peer.summary}), and ${root.commandId}, cancelled after it, is ` +
+            'still running; no later cell may run on its page.'
+    };
+}
+
+/**
+ * The root's result once its cancel went out, and whether the agent answered the cancel by aborting it: a root whose
+ * own failure raced the cancel ended for its own reason.
+ */
+async function cancelRecipeRun(
+    run: RecipeRun,
+    root: RecipeRunRoot,
+    cancellation: RecipeRunCancellation
+): Promise<Readonly<{ result: ControlResultEnvelope; cancelAccepted: boolean; }>> {
     const cancelCommandId = `cancel-${root.commandId}`;
     await enqueueControlCommand({
         request: run.request,
         runId: run.runId,
         agentId: root.agentId,
         commandId: cancelCommandId,
-        command: root.cancel
+        command: cancellation.command
     });
     const read = await readControlRunUntil(run, {
         timeoutMs: RECIPE_RESULT_GRACE_MS,
-        select: (snapshot) => ({
-            result: findControlResult(snapshot, root.commandId),
-            failure: resolveRecipeCancelFailure({
-                answer: findControlResult(snapshot, cancelCommandId),
-                cancelCommandId,
-                agentId: root.agentId
-            })
-        }),
+        select: (snapshot) => {
+            const answer = findControlResult(snapshot, cancelCommandId);
+            return {
+                result: findControlResult(snapshot, root.commandId),
+                cancelAccepted: isRecipeCancelAccepted(answer),
+                failure: resolveRecipeCancelFailure({ answer, cancelCommandId, agentId: root.agentId })
+            };
+        },
         accept: ({ result, failure }) => result !== undefined || failure !== undefined
     });
     if (read.kind === 'accepted' && read.value.result !== undefined) {
-        return read.value.result;
+        return { result: read.value.result, cancelAccepted: read.value.cancelAccepted };
     }
     if (read.kind === 'accepted') {
         throw new Error(read.value.failure);
     }
-    throw new Error(
-        `${root.commandId} is still running after its deadline and cancellation; no later cell may run on its page.`
-    );
+    throw new Error(cancellation.stillLive);
 }
 
-async function readRecipeRunResult(
-    run: RecipeRun,
-    commandId: string,
-    deadlineAtMs: number
-): Promise<ControlResultEnvelope | undefined> {
+/** The root's result, or undefined once its deadline and grace passed or a peer's failure cancels it without one. */
+async function readRecipeRunResult(run: RecipeRun, watch: RecipeRunWatch): Promise<ControlResultEnvelope | undefined> {
     const read = await readControlRunUntil(run, {
-        timeoutMs: deadlineAtMs - CONTROL_POLL_TIMERS.nowMs(),
-        select: (snapshot) => findControlResult(snapshot, commandId),
-        accept: (result) => result !== undefined
+        timeoutMs: watch.deadlineAtMs + RECIPE_RESULT_GRACE_MS - CONTROL_POLL_TIMERS.nowMs(),
+        select: (snapshot) => findControlResult(snapshot, watch.root.commandId),
+        accept: (result) => result !== undefined || watch.getPeerFailure() !== undefined
     });
     return read.kind === 'accepted' ? read.value : undefined;
 }
@@ -1307,7 +1408,7 @@ async function clickVisibleButton(page: Page, name: string): Promise<void> {
     const button = page.getByRole('button', { name }).first();
     try {
         if ((await button.count()) > 0 && await button.isVisible() && await button.isEnabled()) {
-            await button.click({ timeout: 2_000 });
+            await button.click({ timeout: RALLAR_PAGE_CLEANUP_CLICK_TIMEOUT_MS });
         }
     }
     catch {
@@ -1348,8 +1449,12 @@ async function enqueueRecipeRun(
     return commandId;
 }
 
+/** A cancelled result carries no error of its own, so the control client's default error would only hide that it was. */
 function toControlResultSummary(result: ControlResultEnvelope): string {
-    return result.ok === true ? 'ok' : toControlErrorSummary(result.error);
+    if (result.ok === true) {
+        return 'ok';
+    }
+    return isCancelledResult(result) ? 'cancelled' : toControlErrorSummary(result.error);
 }
 
 function toControlErrorSummary(error: RallarBlackBoxTestError | undefined): string {

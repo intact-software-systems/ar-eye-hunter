@@ -303,7 +303,7 @@ export function toCueListenCommands(step: AlmConformanceStepInput): readonly Ral
 
 /**
  * Tells every role listening on the members topic that this role reached `cue`. The cue has left the page once its
- * handle reads `transport-accepted`, so a role that drops its socket right after its cue still sends it.
+ * handle reads `transport-accepted`; a page that departs next sends its cue with `toDepartingCueSendCommands`.
  */
 export function toCueSendCommands(step: AlmConformanceStepInput, cue: string): readonly RallarBlackBoxTestCommand[] {
     const handleId = toCommandId(step, `cue-${cue}`);

@@ -99,7 +99,10 @@
               "groupId": "hetzner-headless-room"
             },
             "transport": "realtime",
-            "timeoutMs": 15000,
+            "timeoutMs": 135000,
+            "rallar": {
+              "timeoutMs": 65000
+            },
             "readiness": {
               "minReadyPeers": 1,
               "timeoutMs": 10000,
@@ -280,7 +283,8 @@
     "rolePattern": "all-agents",
     "manifestSuite": "hetzner-distributed",
     "diagnostic": false,
-    "expectedFailure": false
+    "expectedFailure": false,
+    "recommendedTerminalTimeoutSeconds": 392
   },
   "description": "Coordinator-evaluated group assertions: allEqual convergence over the shared group snapshot and noneMatch isolation over per-agent absence windows."
 }

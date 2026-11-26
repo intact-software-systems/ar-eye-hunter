@@ -9,6 +9,7 @@ import {
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 import type { RecipePairRun } from '../../../tests/playwright/rallar-black-box/full-stack-helpers.ts';
 import { openSuccessorPage, runRecipeTrioOnSameContext } from '../../../tests/playwright/rallar-black-box/full-stack-same-context-run.ts';
@@ -219,7 +220,7 @@ it('closes a newly opened successor page when registration fails, keeping its sh
     }
 });
 
-it('rejects without starting the successor when the owner\'s gate neither passes nor ends within its timeout', async () => {
+it('rejects without starting the successor, the owner cancelled, when the owner\'s gate neither passes nor ends within its timeout', async () => {
     const baseline = createAlmConformanceRecipes({
         group,
         carrier: 'ws',
@@ -274,10 +275,111 @@ it('rejects without starting the successor when the owner\'s gate neither passes
             { owner: { ...run.sender, page: ownerPage }, successor: { agentId: 'successor-agent' }, ownerEnd: 'close', successorGate: 'owner-gate' },
             { sender: baseline.sender, receiver: baseline.receiver, successor }
         )).rejects.toThrow('owner-gate: the gate did not pass within 90000 ms.');
-        expect(posted()).toEqual([`${baseline.receiver.recipeId}-run`, ownerRunId]);
+        // The owner's recipe is read from its start, so it is cancelled rather than left running past the failed gate,
+        // after the lane's steps beside it that failed, not after itself.
+        expect(posted()).toEqual([`${baseline.receiver.recipeId}-run`, ownerRunId, `cancel-${ownerRunId}`]);
+        expect(control.posted.find(({ commandId }) => commandId === `cancel-${ownerRunId}`)?.command).toEqual({
+            kind: 'recipe.cancel',
+            targetCommandId: ownerRunId,
+            reason: `${ownerRunId} cancelled after ${baseline.sender.recipeId}-side-steps ended not ok.`
+        });
     }
     finally {
         vi.restoreAllMocks();
         await control.close();
     }
 });
+
+it('cancels the running owner after the page steps when the gated successor\'s enqueue fails, instead of waiting out its deadline', async () => {
+    const baseline = createAlmConformanceRecipes({
+        group,
+        carrier: 'ws',
+        typeId: 'probe',
+        senderConnection: 'sender',
+        receiverConnection: 'receiver',
+        deadlineMs: 18_000,
+        laneFamilies: ['two-agent'],
+        principalIdsByRole: {}
+    }).find((scenario) => scenario.scenarioId === 'delivery-baseline')!;
+    const successor = { ...baseline.sender, recipeId: `${baseline.sender.recipeId}-successor` };
+    const ownerRunId = `${baseline.sender.recipeId}-run`;
+    const receiverRunId = `${baseline.receiver.recipeId}-run`;
+    const receiverConnectId = baseline.receiver.commands.find((command) => command.kind === 'rtc.connect')!.commandId!;
+    const failure = new Error('the successor enqueue failed');
+    const control = await openRecordingControlRequest('same-context-successor-enqueue');
+    const record = vi.mocked(control.request.post).getMockImplementation()!;
+    vi.mocked(control.request.post).mockImplementation(async (url, options) => {
+        const data = options?.data;
+        if (isJsonRecordValue(data) && data.commandId === `${successor.recipeId}-run`) {
+            throw failure;
+        }
+        return await record(url, options);
+    });
+    const cancels = () => control.posted.flatMap(({ command }) => command.kind === 'recipe.cancel' ? [command] : []);
+    // The owner's gate passed while both the owner and the receiver keep running until the lane cancels them.
+    const run: RecipePairRun = {
+        request: control.request,
+        runId: 'same-context-successor-enqueue',
+        sender: { agentId: 'owner-agent' },
+        receiver: { agentId: 'receiver-agent' },
+        startedRoots: [],
+        readSnapshot: async () => ({
+            runId: 'same-context-successor-enqueue',
+            createdAtEpochMs: 1,
+            updatedAtEpochMs: 2,
+            agents: [],
+            commands: [],
+            events: [toPassedCommandEvent(receiverConnectId), toPassedCommandEvent('owner-gate')],
+            stats: [],
+            reports: [],
+            heartbeats: [],
+            results: cancels().flatMap(({ targetCommandId }) =>
+                targetCommandId === undefined ? [] : [{
+                    kind: 'result' as const,
+                    protocolVersion: 1,
+                    runId: 'same-context-successor-enqueue',
+                    agentId: 'observed-agent',
+                    commandId: targetCommandId,
+                    ok: false,
+                    result: {
+                        commandId: targetCommandId,
+                        kind: 'recipe.run',
+                        status: 'cancelled' as const,
+                        ok: false,
+                        startedAtEpochMs: 1,
+                        endedAtEpochMs: 1,
+                        durationMs: 0
+                    }
+                }]
+            )
+        })
+    };
+    try {
+        await expect(runRecipeTrioOnSameContext(
+            run,
+            {
+                owner: { ...run.sender, page: {} as Playwright.Page },
+                successor: { agentId: 'successor-agent' },
+                ownerEnd: 'close',
+                successorGate: 'owner-gate'
+            },
+            { sender: baseline.sender, receiver: baseline.receiver, successor }
+        )).rejects.toBe(failure);
+        expect(cancels()).toEqual([
+            {
+                kind: 'recipe.cancel',
+                targetCommandId: ownerRunId,
+                reason: `${ownerRunId} cancelled after ${baseline.sender.recipeId}-side-steps ended not ok.`
+            },
+            {
+                kind: 'recipe.cancel',
+                targetCommandId: receiverRunId,
+                reason: `${receiverRunId} cancelled after ${ownerRunId} ended not ok.`
+            }
+        ]);
+    }
+    finally {
+        vi.restoreAllMocks();
+        await control.close();
+    }
+}, 10_000);

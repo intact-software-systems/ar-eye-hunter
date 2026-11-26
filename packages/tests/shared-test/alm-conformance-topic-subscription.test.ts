@@ -1253,6 +1253,8 @@ describe('ALM ordered subscription reconnect conformance', () => {
                 ...toPublishSteps('probe-ready'),
                 ...toPublishOnceSteps(`${track}-p1`),
                 ...toPublishOnceSteps(`${track}-p2`),
+                'cue-leaving-received',
+                'sibling-session-gone',
                 'sibling-left',
                 ...toPublishSteps('probe-receiver-alone'),
                 ...toPublishOnceSteps(`${track}-p3`),
@@ -1298,6 +1300,8 @@ describe('ALM ordered subscription reconnect conformance', () => {
             ...toPublicationSteps('received', 'a', [1, 2]),
             ...toPublicationSteps('received', 'c', [1, 2]),
             ...toConfirmedCueSteps(2),
+            'cue-leaving',
+            'cue-leaving-acknowledged',
             'product-socket-close'
         ]);
         expect(toContinuationStepNames(scenario)).toEqual([
@@ -1363,6 +1367,86 @@ describe('ALM ordered subscription reconnect conformance', () => {
                 expect(left).not.toHaveProperty('absent');
             }
         }
+    });
+
+    it('each producer reads the sibling\'s own session from its leaving cue and waits until the room no longer holds it, before its count and its alone-probe', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const scenario = findBarrieredReconnectScenario(carrier);
+            const sibling = requireRoleRecipe(scenario, 'sibling');
+            const siblingIds = sibling.commands.map(({ commandId }) => commandId);
+            const leaving = findStep(sibling, 'cue-leaving');
+            // The room acknowledged the cue before the socket closes, so no close-driven disconnect can fence it.
+            expect(siblingIds.indexOf(`${sibling.recipeId}-cue-leaving-acknowledged`), carrier).toBeGreaterThan(siblingIds.indexOf(leaving.commandId));
+            expect(siblingIds.indexOf(`${sibling.recipeId}-product-socket-close`), carrier)
+                .toBeGreaterThan(siblingIds.indexOf(`${sibling.recipeId}-cue-leaving-acknowledged`));
+            for (const [role] of PRODUCER_TRACKS) {
+                const producer = requireRoleRecipe(scenario, role);
+                const commandIds = producer.commands.map(({ commandId }) => commandId);
+                const cue = findStep(producer, 'cue-leaving-received');
+                const gone = findStep(producer, 'sibling-session-gone');
+                const order = [cue.commandId, gone.commandId, `${producer.recipeId}-sibling-left`, `${producer.recipeId}-probe-receiver-alone`]
+                    .map((commandId) => commandIds.indexOf(commandId));
+
+                expect(order.every((index) => index > -1), `${carrier} ${role}`).toBe(true);
+                expect(order, `${carrier} ${role}`).toEqual(order.toSorted((left, right) => left - right));
+                expect(leaving, `${carrier} ${role}`).toMatchObject({
+                    kind: 'messages.send',
+                    payload: cue.kind === 'wait' ? cue.match.equals : 'not a wait'
+                });
+                expect(cue).toMatchObject({ kind: 'wait', match: { kind: 'message', payloadPath: 'data.payload' } });
+                expect(cue).not.toHaveProperty('absent');
+                const children = gone.kind === 'loop' ? gone.commands : [];
+                expect(children.map(({ kind }) => kind), `${carrier} ${role}`).toEqual(['http.request', 'wait']);
+                expect(children[0]).toMatchObject({ request: { method: 'GET', path: '/api/state/apps/app/workspaces/ws/groups/room-alm' } });
+                expect(children[1]).toMatchObject({
+                    match: {
+                        topic: 'rallar.bb.http.response',
+                        payloadPath: 'body.activeSessions',
+                        contains: `"sessionId":"{resultCache.${cue.commandId}.value.event.payload.senderId}"`
+                    },
+                    absent: true
+                });
+            }
+        }
+    });
+
+    it('takes the sibling for gone once no active session names it, its membership stamps still naming it', async () => {
+        const producer = requireRoleRecipe(findBarrieredReconnectScenario('ws'), 'sender');
+        const cue = findStep(producer, 'cue-leaving-received');
+        const gone = findStep(producer, 'sibling-session-gone');
+        const [read, absent] = gone.kind === 'loop' ? gone.commands : [];
+        const leaving = {
+            kind: 'message' as const,
+            topic: 'rallar.browser.messages.ws.message',
+            connection: cue.kind === 'wait' ? cue.match.connection : 'not a wait',
+            payload: {
+                senderId: 'session-sibling',
+                data: { payload: cue.kind === 'wait' ? cue.match.equals ?? null : null }
+            }
+        };
+        // The sibling wrote its own membership in its prologue, so its session stays in that member's audit stamps.
+        const toMember = (principalId: string, sessionId: string) => {
+            const stamp = { atEpochMs: 1, actor: { kind: 'session', sessionId, principalId }, reason: null, traceId: 't', requestId: 'r' };
+            return { principalId, status: 'active', joined: stamp, updated: stamp };
+        };
+        const toSnapshot = (activeSessionIds: readonly string[]) => ({
+            kind: 'event' as const,
+            topic: 'rallar.bb.http.response',
+            commandId: absent?.kind === 'wait' ? absent.match.commandId : 'not a wait',
+            transport: 'http' as const,
+            severity: 'info' as const,
+            payload: {
+                status: 200,
+                body: {
+                    members: [toMember('sender', 'session-sender'), toMember('sibling', 'session-sibling')],
+                    activeSessions: activeSessionIds.map((sessionId) => ({ sessionId }))
+                }
+            }
+        });
+
+        expect(read?.kind).toBe('http.request');
+        expect(await runAfterEvents([cue, absent!], [leaving, toSnapshot(['session-sender'])])).toBe(true);
+        expect(await runAfterEvents([cue, absent!], [leaving, toSnapshot(['session-sender', 'session-sibling'])])).toBe(false);
     });
 
     it('counts a session removal from the armed barrier onward, and no count the roles reached while connecting', async () => {
