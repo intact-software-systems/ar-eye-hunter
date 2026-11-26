@@ -364,8 +364,7 @@ as they were written before the slices ran.
   - A refused send in the middle of a burst is waited for until the sends before it end. Closing that hole at once
     is added to slice 4.
   - Bundle cost: `browser/rallar.ts` 332.379 to 335.296 KiB (+2.92, above the 1.5 to 2.5 estimate) against a budget
-    of 332, which `main` already passes since PR 911; the headless agent 433.602 to 436.714 KiB against 434. Neither
-    budget is raised; that is the maintainer's decision.
+    of 332, which `main` already passes since PR 911; the headless agent 433.602 to 436.714 KiB against 434. The maintainer had both budgets raised in that pull request, to 336 and 437.
 
 **Where the work can stop and still be useful.**
 
