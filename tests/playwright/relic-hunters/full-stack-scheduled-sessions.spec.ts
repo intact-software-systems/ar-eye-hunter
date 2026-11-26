@@ -29,5 +29,5 @@ roomBrowserTest('a guest recovers a booking after a lost response and enters the
     async ({ page, guest, browser }) => {
         roomBrowserTest.skip(process.env.RELIC_HUNTERS_FULL_STACK !== '1', 'Requires the actual API, Relic server and SPA.');
         roomBrowserTest.setTimeout(180_000);
-        await guestSessionBookingJourney(page, guest, browser, 'relic');
+        await guestSessionBookingJourney({ page, guest, browser, game: 'relic' });
     });

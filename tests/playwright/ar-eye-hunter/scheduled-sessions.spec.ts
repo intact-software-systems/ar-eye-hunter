@@ -23,5 +23,5 @@ roomBrowserTest('a guest recovers a booking after a lost response and enters whi
     async ({ page, guest, browser }) => {
         roomBrowserTest.skip(process.env.RALLAR_ARENA_FULL_STACK !== '1', 'Requires the actual API and built SPA.');
         roomBrowserTest.setTimeout(180_000);
-        await guestSessionBookingJourney(page, guest, browser, 'arena');
+        await guestSessionBookingJourney({ page, guest, browser, game: 'arena' });
     });

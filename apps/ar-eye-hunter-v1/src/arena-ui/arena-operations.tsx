@@ -231,7 +231,7 @@ function ArenaSessionPanel({ arena, localColor, matchRemainingMs }: ArenaOperati
                     type="button"
                     className="primary"
                     disabled={arena.tournament.mode !== 'casual' || arena.spectating || !arena.roomId ||
-                        arena.directorStatus.isDirector ||
+                        Boolean(arena.session?.guestRoom) || arena.directorStatus.isDirector ||
                         arena.directorAttempt.status === 'pending'}
                     onClick={arena.appointSelfAsDirector}
                 >
