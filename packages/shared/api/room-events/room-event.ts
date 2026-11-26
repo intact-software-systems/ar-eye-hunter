@@ -1,3 +1,4 @@
+import { enableEventAlerts, withoutEventAlerts, type EventAlertConsent, type EventPushSubscription } from './room-event-alerts.ts';
 import { assertCourtCapacity, changeCourt, closeEvent, offerCourts, playerOffer, removeCourtPlayer, settleOffers } from './room-event-courts.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '../../persistence/PersistenceProvider.ts';
 import type { GroupRef } from '../group-types.ts';
@@ -16,6 +17,7 @@ export interface RoomEvent {
     readonly courts: readonly RoomEvent.Court[];
     readonly queue: readonly RoomEvent.Party[];
     readonly proposals: readonly RoomEvent.Proposal[];
+    readonly alerts?: readonly EventAlertConsent[];
     readonly removed: readonly string[];
 }
 
@@ -39,6 +41,8 @@ export namespace RoomEvent {
     }
     export type Command =
         | { readonly action: 'create'; readonly courts: readonly CourtSetup[]; readonly closesAt: number; readonly claimWindowMs?: number; readonly emptyReturnWindowMs?: number }
+        | { readonly action: 'enable-court-alerts'; readonly subscription: EventPushSubscription }
+        | { readonly action: 'disable-court-alerts'; readonly endpoint: string }
         | { readonly action: 'propose'; readonly partyId: string; readonly players: readonly string[] }
         | { readonly action: 'accept'; readonly partyId: string; readonly proposalRevision: number }
         | { readonly action: 'leave-queue' | 'close' | 'settle' }
@@ -110,6 +114,8 @@ function proposeParty(event: RoomEvent, command: Extract<RoomEvent.Command, { ac
 function applyCommand(event: RoomEvent, command: RoomEvent.Command, player: string): RoomEvent {
     switch (command.action) {
         case 'create': throw new TypeError('Event already exists.');
+        case 'enable-court-alerts': return enableEventAlerts(event, player, command.subscription);
+        case 'disable-court-alerts': return withoutEventAlerts(event, consent => consent.principalId === player && consent.subscription.endpoint === command.endpoint);
         case 'propose': return proposeParty(event, command, player);
         case 'accept': {
             const proposal = event.proposals.find(p => p.id === command.partyId && p.proposalRevision === command.proposalRevision);
@@ -122,7 +128,7 @@ function applyCommand(event: RoomEvent, command: RoomEvent.Command, player: stri
         case 'close': return closeEvent(event);
         case 'remove': {
             if (command.targetId === event.organizerId) throw new TypeError('The organizer cannot be removed.');
-            return { ...event, removed: [...new Set([...event.removed, command.targetId])],
+            return { ...withoutEventAlerts(event, consent => consent.principalId === command.targetId), removed: [...new Set([...event.removed, command.targetId])],
                 queue: withoutPlayers(event.queue, [command.targetId]), proposals: event.proposals.filter(p => !p.players.includes(command.targetId)),
                 courts: event.courts.map(court => removeCourtPlayer(court, command.targetId)) };
         }

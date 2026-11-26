@@ -1,3 +1,4 @@
+import { decodeEventAlertConsent, decodeEventPushSubscription, decodePushEndpoint } from './room-event-alerts.ts';
 import { isPlainJsonValue, type PlainJsonRecord, type PlainJsonValue } from '../../repository/compare-plain-json.ts';
 import { assertCourtCapacity } from './room-event-courts.ts';
 import { decodeExactGroupRef } from '../../encoding/decode-exact-group-ref.ts';
@@ -52,6 +53,12 @@ export function decodeRoomEventCommand(value: unknown): RoomEvent.Command {
                 ...(c.emptyReturnWindowMs !== undefined && { emptyReturnWindowMs: positive(c.emptyReturnWindowMs, 'Event return window') }),
                 ...(c.claimWindowMs !== undefined && { claimWindowMs: positive(c.claimWindowMs, 'Court claim window') }) };
         }
+        case 'enable-court-alerts':
+            requireExactKeys(c, ['action','subscription'], 'Enable court alerts');
+            return { action: c.action, subscription: decodeEventPushSubscription(c.subscription) };
+        case 'disable-court-alerts':
+            requireExactKeys(c, ['action','endpoint'], 'Disable court alerts');
+            return { action: c.action, endpoint: decodePushEndpoint(c.endpoint) };
         case 'propose':
             requireExactKeys(c, ['action','partyId','players'], 'Event party proposal');
             return { action: c.action, partyId: assertValidRallarRouteId(c.partyId), players: ids(c.players) };
@@ -112,13 +119,19 @@ function court(value: PlainJsonValue): RoomEvent.Court {
 
 export function decodeRoomEvent(value: unknown): RoomEvent {
     const e = decodeEventRecord(value, 'Room event');
-    requireExactKeys(e, ['lobby','organizerId','createdAt','emptyReturnWindowMs','revision','closesAt','claimWindowMs','closed','courts','queue','proposals','removed'], 'Room event');
+    requireExactOptionalKeys({ value: e, required: ['lobby','organizerId','createdAt','emptyReturnWindowMs','revision','closesAt','claimWindowMs','closed','courts','queue','proposals','removed'], optional: ['alerts'], label: 'Room event' });
     requireEpoch(e.createdAt, 'Event creation time');
     const event = { createdAt: e.createdAt, emptyReturnWindowMs: positive(e.emptyReturnWindowMs, 'Event return window'),
         lobby: decodeExactGroupRef(e.lobby, 'Event lobby'), organizerId: assertValidRallarRouteId(e.organizerId),
         revision: positive(e.revision, 'Event revision'), closesAt: positive(e.closesAt, 'Event closing time'),
         claimWindowMs: positive(e.claimWindowMs, 'Court claim window'), closed: boolean(e.closed),
+        ...(e.alerts !== undefined && { alerts: rows(e.alerts, decodeEventAlertConsent) }),
         courts: rows(e.courts, court), queue: rows(e.queue, decodeEventParty), proposals: rows(e.proposals, decodeEventProposal), removed: ids(e.removed) };
+    if (event.alerts && (event.closed || !event.alerts.length ||
+        new Set(event.alerts.map(consent => consent.subscription.endpoint)).size !== event.alerts.length ||
+        event.alerts.some(consent => consent.revision > event.revision || event.removed.includes(consent.principalId)))) {
+        throw new TypeError('Inconsistent event alert consent.');
+    }
     if (!event.courts.length) throw new TypeError('Stored event has no courts.');
     ids([event.lobby.groupId, ...event.courts.map(c => c.groupId)]);
     ids([...event.queue.flatMap(p => p.players), ...event.courts.flatMap(c => c.seats.map(s => s.principalId)), ...event.removed]);
