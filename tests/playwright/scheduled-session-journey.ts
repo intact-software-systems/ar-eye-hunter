@@ -191,7 +191,7 @@ export async function guestSessionBookingJourney({ page, guest, browser, game }:
     const accountOnlyReads: string[] = [];
     guest.on('request', request => {
         const path = new URL(request.url()).pathname;
-        if (path.endsWith('/group-directory') || path.endsWith('/tournament')) accountOnlyReads.push(path);
+        if (/\/(?:group-directory|tournament|clients|groups)$/.test(path)) accountOnlyReads.push(path);
     });
     await guest.route('**/session/guest/requests/*', async route => {
         const response = await route.fetch();
@@ -215,6 +215,13 @@ export async function guestSessionBookingJourney({ page, guest, browser, game }:
     await claim.click();
     await expect(page.getByRole('region', { name: 'Scheduled sessions', exact: true })).toContainText('0 of 2 player seats available.');
     await expect(guest.getByText(`Entered ${session.groupId}.`, { exact: true })).toBeVisible();
+    await expect(guest.getByRole('button', { name: 'Logout', exact: true })).toBeVisible();
+    const refresh = guest.waitForResponse(response => {
+        const path = new URL(response.url()).pathname;
+        return response.request().method() === 'GET' && (path.endsWith('/groups') || path.endsWith('/groups/' + session.groupId));
+    });
+    await guest.getByRole('button', { name: 'Refresh', exact: true }).click();
+    expect((await refresh).status()).toBe(200);
     await expect(guest.getByRole('button', { name: 'Logout', exact: true })).toBeVisible();
     if (game === 'arena') {
         await expect(guest.getByRole('button', { name: 'Appoint this SPA' })).toBeDisabled();
