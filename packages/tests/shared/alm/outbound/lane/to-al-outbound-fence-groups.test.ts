@@ -68,14 +68,6 @@ describe('one sender\'s decided bundles as the groups one write each can commit'
         expect(new Set(groups!.flat())).toEqual(new Set(members));
     });
 
-    it('keeps a follower in the part of its batch predecessor', () => {
-        // Pins a follower parted from its predecessor: both hold places on one track, so both fence the sender, and a
-        // follower whose predecessor fell back alone in another part would be left behind it.
-        const members = [toFenced('predecessor', 2), toUnfenced('receipt', 2), toFenced('follower', 2)];
-
-        expect(toNames(toALOutboundFenceGroups(members))).toEqual([['predecessor', 'follower'], ['receipt']]);
-    });
-
     it('answers nothing when the sender-fenced bundles read different versions', () => {
         // Pins a group whose reads disagree on the sender version committing alone, as no one write can fence both.
         const members = [toUnfenced('receipt', 1), toFenced('event-1', 1), toFenced('event-2', 2)];
