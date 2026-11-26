@@ -142,12 +142,12 @@ describe('a cue departure\'s hold for another role', () => {
 describe('a cue its page departs after', () => {
     // Run 45221540520: the churn sender closed its page 8 ms after its cue read transport-accepted, the close-driven
     // disconnect committed first, and the server fenced the cue (member-not-active); the receiver waited out its cue.
+    // The churn now sends no cue: its receiver counts its arrivals and its sender leaves once the last is acknowledged.
     it('is acknowledged by its room before the page departs, not merely accepted by its transport', () => {
         const departures = toAllRoleRecipes().flatMap(toCueDepartures);
 
         expect(departures.map(({ cell, cue }) => `${cell} ${cue.commandId?.replace(/.*-cue-/u, 'cue-')}`).toSorted())
             .toEqual([
-                'rtc churn-bounded-tracks cue-tracks-sent',
                 'rtc subscription-ordered-reconnect cue-leaving',
                 'rtc-with-ws-fallback subscription-ordered-reconnect cue-leaving',
                 'ws subscription-ordered-reconnect cue-leaving'
