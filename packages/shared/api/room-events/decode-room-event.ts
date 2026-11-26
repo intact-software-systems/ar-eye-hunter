@@ -15,7 +15,7 @@ export function decodeEventRecord(input: unknown, label: string): PlainJsonRecor
 }
 
 export function decodeEventOffer(value: PlainJsonValue | undefined): RoomEvent.Offer {
-    const row = requireRecord(value, 'Court offer');
+    const row = decodeEventRecord(value, 'Court offer');
     requireExactKeys(row, ['groupId', 'partyId', 'occurrence', 'offerRevision', 'deadline'], 'Court offer');
     const occurrence = positive(row.occurrence, 'Court occurrence');
     const offerRevision = positive(row.offerRevision, 'Offer revision');

@@ -201,14 +201,14 @@ export class TemporaryEventService {
     }
 }
 
-interface NextEventForPlayer {
+interface NextPlayerEvent {
     readonly before: RoomEvent | null;
     readonly input: RoomEventMutation;
     readonly nowEpochMs: number;
     readonly handoverWindowMs: number;
 }
 
-function nextEventForPlayer({ before, input, nowEpochMs, handoverWindowMs }: NextEventForPlayer): RoomEvent {
+function nextEventForPlayer({ before, input, nowEpochMs, handoverWindowMs }: NextPlayerEvent): RoomEvent {
     if (input.command.action === 'create') {
         if (before) throw new TypeError('This lobby already has an event.');
         return createRoomEvent({ lobby: input.lobby, organizerId: input.principalId, command: input.command, nowEpochMs });

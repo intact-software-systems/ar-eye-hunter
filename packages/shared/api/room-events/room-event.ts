@@ -63,6 +63,13 @@ export namespace RoomEvent {
         readonly nowEpochMs: number;
         readonly handoverWindowMs?: number;
     }
+    export interface ChangeInput {
+        readonly event: RoomEvent;
+        readonly principalId: string;
+        readonly command: Command;
+        readonly nowEpochMs: number;
+        readonly handoverWindowMs?: number;
+    }
     export type Command =
         | { readonly action: 'create'; readonly courts: readonly CourtSetup[]; readonly closesAt: number; readonly claimWindowMs?: number; readonly emptyReturnWindowMs?: number }
         | { readonly action: 'enable-court-alerts'; readonly subscription: EventPushSubscription }
