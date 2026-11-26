@@ -4,6 +4,7 @@ import { newALBroadcastMessage, newALRoute, newALUnicastMessage, type ALMessage 
 import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage, type ALMessageRejection } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ALInboundCommitBundle } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -87,10 +88,11 @@ export interface WsReceiptedSendLink {
     /** Each claim the server makes of its inbound work from now claims nothing, until the returned release. */
     holdServerWorkClaims(): () => void;
     /**
-     * The server's next admission write not already held waits at the returned hold: `before-write` after its reads and
-     * before it enters the backend, `after-commit` once it committed and before its writer reads the answer.
+     * The server's next write of `msg`'s admission not already held waits at the returned hold: `before-write` after its
+     * reads and before it enters the store, `after-commit` once it committed and before its writer reads the answer.
+     * Writes of other messages pass. `arrived` fails with the reason when the held write throws or does not commit.
      */
-    holdServerNextAdmissionWrite(stage: ServerAdmissionWriteStage): WorkerHold;
+    holdServerNextAdmissionWrite(msg: ALMessage, stage: ServerAdmissionWriteStage): WorkerHold;
     /** The server's release of `msg`'s kept row, once its replay ran, waits at the returned hold; the row stays claimed. */
     holdServerKeptRowRelease(msg: ALMessage): WorkerHold;
     /** The recipient's `delivered` ACK through the server's ingress, as its socket would send it. */
@@ -253,11 +255,11 @@ function createServerWorkHolds(
     server: ServerIngressFixture
 ): Pick<WsReceiptedSendLink, 'holdServerWorkClaims' | 'holdServerNextAdmissionWrite' | 'holdServerKeptRowRelease'> {
     const { workQueue } = server.admission;
-    const { backend } = server;
+    const { admissionStore } = server;
     const reserveEntries = workQueue.reserveEntries.bind(workQueue);
     const releaseEntries = workQueue.releaseEntries.bind(workQueue);
-    const write = backend.write.bind(backend);
-    const writeHolds: { readonly hold: WorkerHold; readonly stage: ServerAdmissionWriteStage; }[] = [];
+    const commitBundle = admissionStore.commitBundle.bind(admissionStore);
+    const writeHolds: ServerAdmissionWriteHold[] = [];
     let writesSpied = false;
     return {
         holdServerWorkClaims: () => {
@@ -281,27 +283,49 @@ function createServerWorkHolds(
             });
             return hold;
         },
-        holdServerNextAdmissionWrite: (stage) => {
+        holdServerNextAdmissionWrite: (msg, stage) => {
             const hold = createWorkerHold();
+            const refused = Promise.withResolvers<never>();
             onTestFinished(() => hold.release());
-            writeHolds.push({ hold, stage });
+            writeHolds.push({ msg, hold, stage, refuse: refused.reject });
             if (!writesSpied) {
                 writesSpied = true;
-                vi.spyOn(backend, 'write').mockImplementation(async (operation, executionExpiresAtMs) => {
-                    const next = writeHolds.shift();
+                vi.spyOn(admissionStore, 'commitBundle').mockImplementation(async (bundle) => {
+                    const index = writeHolds.findIndex((held) => isAdmissionWriteOf(bundle, held.msg));
+                    const next = index < 0 ? undefined : writeHolds.splice(index, 1)[0];
                     if (next?.stage === 'before-write') {
                         await next.hold.arrive();
                     }
-                    const result = await write(operation, executionExpiresAtMs);
+                    const status = await commitBundle(bundle).catch((error: unknown) => {
+                        next?.refuse(new Error(`The held admission write of ${next.msg.id.msgId} threw`, { cause: error }));
+                        throw error;
+                    });
                     if (next?.stage === 'after-commit') {
+                        if (status !== 'committed') {
+                            next.refuse(new Error(`The held admission write of ${next.msg.id.msgId} answered ${status}`));
+                            return status;
+                        }
                         await next.hold.arrive();
                     }
-                    return result;
+                    return status;
                 });
             }
-            return hold;
+            return { ...hold, arrived: Promise.race([hold.arrived, refused.promise]) };
         }
     };
+}
+
+interface ServerAdmissionWriteHold {
+    readonly msg: ALMessage;
+    readonly hold: WorkerHold;
+    readonly stage: ServerAdmissionWriteStage;
+    /** Fails the hold's `arrived` with why the held write will never arrive at it. */
+    readonly refuse: (reason: Error) => void;
+}
+
+function isAdmissionWriteOf(bundle: ALInboundCommitBundle, msg: ALMessage): boolean {
+    return bundle.observations.msgId === msg.id.msgId && bundle.observations.senderId === msg.id.senderId &&
+        bundle.mutations.some((mutation) => mutation.kind === 'set-inbound-message');
 }
 
 function isKeptRowOf(entry: ResourceEntry, msg: ALMessage, namespace: string): boolean {

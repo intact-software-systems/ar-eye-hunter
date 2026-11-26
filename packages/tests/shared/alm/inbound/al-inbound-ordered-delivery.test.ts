@@ -74,29 +74,37 @@ it('completes on the last attempt after two lost writes', async () => {
 });
 
 // A fresh attempt reads the track again: a write that merely went out again would meet the moved position each time and
-// hand the work back, to be dispatched again.
+// hand the work back, to be dispatched again. The competitor's later expiry marks its row, so a fresh attempt that
+// wrote the position again would show in it.
 it('answers a completion whose position another completion moved, without writing', async () => {
     const admissionStore = await createAdmittedStore();
     const commitDeliveryCompletion = admissionStore.commitDeliveryCompletion.bind(admissionStore);
+    const readProgress = async () =>
+        (await admissionStore.readOrderingTrack({ trackKey: TRACK_KEY, message: FIRST.id, nowMs: Date.now() }))
+            .observations.deliveryProgress?.value;
+    let competitorProgress: Awaited<ReturnType<typeof readProgress>>;
     vi.spyOn(admissionStore, 'commitDeliveryCompletion').mockImplementationOnce(async (completion) => {
         const competing = (await readSlot(admissionStore))!;
+        const observedProgress = competing.observations.deliveryProgress!.value!;
+        const extendedExpiry = observedProgress.expireAtTimestamp + 60_000;
         expect(
             await commitDeliveryCompletion({
                 trackKey: TRACK_KEY,
                 seq: 1,
                 observedSlot: competing.snapshot,
-                observedProgress: competing.observations.deliveryProgress!.value!
+                observedProgress: { ...observedProgress, expireAtTimestamp: extendedExpiry }
             })
         ).toBe('committed');
-        return await commitDeliveryCompletion(completion);
+        competitorProgress = await readProgress();
+        expect(competitorProgress).toEqual({ completedThrough: 1, expireAtTimestamp: extendedExpiry });
+        const stale = await commitDeliveryCompletion(completion);
+        expect(stale).toBe('conflict');
+        return stale;
     });
-    const competitorPosition = async () =>
-        (await admissionStore.readOrderingTrack({ trackKey: TRACK_KEY, message: FIRST.id, nowMs: Date.now() }))
-            .observations.deliveryProgress?.value;
 
     expect(await createInboundTestOrderedDelivery(admissionStore).complete(FIRST)).toBe('completed');
 
-    expect((await competitorPosition())?.completedThrough).toBe(1);
+    expect(await readProgress()).toEqual(competitorProgress);
     expect(await readSlot(admissionStore)).toBeUndefined();
 });
 
@@ -117,10 +125,8 @@ function createAcknowledgedMessage(seq: number): ALMessage {
     return createInboundTestMessage({ msgId: `message-${seq}`, seq, acknowledged: true });
 }
 
-// A copy records its carrier on the slot only while its sequence is held behind a gap, and the release answers that
-// pair `delivered`. Sequence 2 is held, released by sequence 1, and its copy on another carrier arrives during its
-// completion: the sequence is no longer held, so the slot stays as the completion read it, and the copy is answered
-// `delivered` on its own carrier, as a pair recorded on the slot would have been.
+// Sequence 2 is held behind the gap at 1, released by sequence 1, and its copy on another carrier arrives during its
+// completion: the slot stays as the completion read it, and the copy is answered `delivered` on its own carrier.
 it('answers a copy on another carrier that arrives during a released message\'s completion delivered on that carrier', async () => {
     const fixture = createInboundTestRuntime({
         carrier: 'ws',
@@ -150,12 +156,17 @@ it('answers a copy on another carrier that arrives during a released message\'s 
     });
     onTestFinished(() => releaseCompletion.resolve());
     expect((await fixture.runtime.admitIncomingMessage(released, INBOUND_TEST_SOURCE)).right?.kind).toBe('admitted');
+    expect(await admissionStore.readOrderingSnapshot(TRACK_KEY, Date.now())).toMatchObject({
+        lastContiguousSeq: 0,
+        bufferedSeqs: [2]
+    });
     expect((await fixture.runtime.admitIncomingMessage(createAcknowledgedMessage(1), INBOUND_TEST_SOURCE)).right?.kind)
         .toBe('admitted');
     const draining = runInboundWorkDueNow(fixture);
     await completionRead.promise;
     expect(fixture.deliveredMessages.map((delivered) => delivered.id.msgId)).toEqual(['message-1', 'message-2']);
     const read = await readBufferedRelease({ trackKey: TRACK_KEY, seq: 2, nowMs: Date.now() });
+    expect(read?.snapshot.msg.id.msgId).toBe('message-2');
 
     const copy = await fixture.runtime.admitIncomingMessage(released, { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID });
     expect(copy.right?.kind).toBe('duplicate');

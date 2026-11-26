@@ -347,7 +347,7 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
         const link = await createWsReceiptedSendLink('in-sync');
         const releaseClaims = link.holdServerWorkClaims();
         const [first, second] = await sendTwoOrderedSideBySide(link);
-        const copyWrite = link.holdServerNextAdmissionWrite('before-write');
+        const copyWrite = link.holdServerNextAdmissionWrite(second, 'before-write');
         const keptRowRelease = link.holdServerKeptRowRelease(second);
         const copy = link.writeCopy(second);
         await copyWrite.arrived;
@@ -383,8 +383,8 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
         const link = await createWsReceiptedSendLink('in-sync');
         const releaseClaims = link.holdServerWorkClaims();
         const [first, second] = await sendTwoOrderedSideBySide(link);
-        const copyWrite = link.holdServerNextAdmissionWrite('before-write');
-        const replayCommit = link.holdServerNextAdmissionWrite('after-commit');
+        const copyWrite = link.holdServerNextAdmissionWrite(second, 'before-write');
+        const replayCommit = link.holdServerNextAdmissionWrite(second, 'after-commit');
         const copy = link.writeCopy(second);
         await copyWrite.arrived;
         releaseClaims();

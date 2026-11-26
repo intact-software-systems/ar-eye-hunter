@@ -738,6 +738,27 @@ describe('WS server receipt aggregation of the admitted receipt on the origin\'s
         expect(fixture.enqueued).toEqual([]);
     });
 
+    // Pins a live `admitted` with no observer attached left off the origin's socket, or written there and enqueued too.
+    it('writes a live admitted through the counting send when no observer is attached', async () => {
+        const fixture = createAggregation({ ingressAudience: undefined, recordStores: undefined, originSocket: 'here' }, 'none');
+
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
+
+        expect(fixture.live.map(toReceipt)).toMatchObject([{ phase: 'admitted', originPeerId: 'a', expectedRecipientPeerIds: ['b', 'c'] }]);
+        expect(fixture.enqueued).toEqual([]);
+        expect((await fixture.record.read(RECORD_REF)).right?.head.phase).toBe('open');
+    });
+
+    // Pins an `admitted` the counting send wrote to no socket, with no observer attached, left without its row.
+    it('enqueues the admitted row when the counting send reaches no socket and no observer is attached', async () => {
+        const fixture = createAggregation({ ingressAudience: undefined, recordStores: undefined, originSocket: 'elsewhere' }, 'none');
+
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
+
+        expect(readPhases(fixture)).toEqual(['admitted']);
+        expect(fixture.live).toEqual([]);
+    });
+
     // Pins the only answer of a send admitted to nobody, which has no head to answer a resend from, leaving its
     // durable row. It also pins that answer opening a head.
     it('keeps the row of an admitted that expects nobody', async () => {
@@ -931,8 +952,12 @@ const ORIGIN_SOCKET_SENDS: Readonly<Record<AggregationFixtureOptions['originSock
     elsewhere: { sentCount: 0, writes: [] }
 };
 
+/** `none`: the aggregation is built without a receipt observer, so it records no observation. */
+type AggregationObserver = 'attached' | 'none';
+
 function createAggregation(
-    options: AggregationFixtureOptions = { ingressAudience: undefined, recordStores: undefined, originSocket: 'elsewhere' }
+    options: AggregationFixtureOptions = { ingressAudience: undefined, recordStores: undefined, originSocket: 'elsewhere' },
+    observer: AggregationObserver = 'attached'
 ): AggregationFixture {
     const clock = { nowMs: 1_000 };
     const engine = new InboxOutboxEngine({ nowEpochMs: () => clock.nowMs, random: () => 0, reportTaskFailure: () => undefined });
@@ -950,7 +975,7 @@ function createAggregation(
     };
     const aggregation = new WsQueueBoxServerReceiptAggregation({
         serverPeerId: 'server',
-        receiptObserver: (observation) => observations.push(observation),
+        receiptObserver: observer === 'attached' ? (observation) => observations.push(observation) : undefined,
         clock: { nowMs: () => clock.nowMs },
         random: () => 0,
         newControlId: () => `receipt-${enqueued.length + live.length + 1}`,
