@@ -164,7 +164,7 @@ describe('ALInboundMessageRuntime', () => {
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const admission = stores.admissionStore;
         const commitBundle = admission.commitBundle.bind(admission);
-        vi.spyOn(admission, 'commitBundle').mockImplementationOnce(async (bundle) => {
+        const conflict = vi.spyOn(admission, 'commitBundle').mockImplementationOnce(async (bundle) => {
             expect(
                 await commitBundle({
                     ...bundle,
@@ -193,6 +193,7 @@ describe('ALInboundMessageRuntime', () => {
         await disposal;
 
         expect(queued.right).toEqual({ kind: 'pending-admission' });
+        expect(conflict).toHaveBeenCalledTimes(1);
         expect(first.dispatchedTexts).toEqual([]);
         expect(first.forwardedIds).toEqual([]);
         expect(first.controlMessages).toEqual([]);
