@@ -744,6 +744,17 @@ plan or a disabled local delivery reach it, and they hand the application nothin
 `NonRetryableException` when the slot holds another message, when the progress row is gone, or when the slot is gone
 and the position has not moved past the message.
 
+**Under load.** Measured through the WS server on PostgreSQL with five publishers of ordered receipted room sends at
++5 ms (D784): the completion's guard holds, with no message handed to the application twice in 13 runs and every
+lost completion write won at its next attempt, but the tracks fall behind. Every admission on a track rewrites its
+delivery-progress row only to extend its expiry (`computeDeliveryProgressRetention`), which makes a completion, a
+buffered release or another admission that read the row lose its compare-and-set; an ingress admission that loses
+is retained `pending-admission` (the initial data admission conflict, above) rather than read and decided again; and
+a row that loses again waits in RETRY, which the work rotation reads only after every NEW row
+(`read-al-inbound-work-selection.ts`). Recipients then read a message 5 to 17 s after its send, and over 45 s most
+messages expire. The levers and why they are not built yet are in `plans/backlog.md` ("Ordered room sends under
+load").
+
 `validateALInboundControlAdmission` returns every reason an acknowledgement is
 inadmissible; the caller joins them into one rejection reason. Only an absent pending
 obligation short-circuits, because the remaining checks read that obligation.

@@ -235,7 +235,8 @@ ACK's statements is serialized against another ACK.
 
 Real PostgreSQL, three instances, each client delaying every statement, BEGIN and COMMIT by the added latency
 (one attributed hosted run recorded about 5 ms per statement). Lag is p50 from a message's last ACK to its
-`complete`. Test-only code, not kept in the tree.
+`complete`. Test-only code, not kept in the tree. Every cell but the last bullet's sends unordered receipted messages;
+the last bullet's are ordered, which is what a browser's room send is by default.
 
 - **The record alone keeps up.** 40 messages at 2 a second, 14 recipients each, 28 ACKs a second: at +0 ms a p50 of
   5.6 to 9.0 ms, at +5 ms 60.5 to 62.8 ms, the last ten messages no slower than the first ten; 560 of 560
@@ -243,26 +244,42 @@ Real PostgreSQL, three instances, each client delaying every statement, BEGIN an
 - **Through the WS server, one publisher keeps up**: the same 40 messages from one client session among 15 on three
   instances, in the first measurement about 31 ms at +0 ms and about 450 ms at +5 ms, with no trend across the run.
   **Five publishers keep up at +0 ms** (200 messages, 140 ACKs a second; about 23 ms in the first measurement).
-- **Five publishers keep up at +5 ms.** Five client sessions, on instances a, b, c, a and b, each send at 2 Hz for
-  20 s (200 messages, 140 ACKs a second). In each of three runs all 200 read `complete` before their deadline; over
-  the last ten messages `admitted` reached its publisher 0.13 to 0.14 s after the send and `complete` 0.42 to 0.47 s
-  after the last ACK (p50), no slower than over the first ten; the publishers read 19.5 receipts a second of the
-  20.1 offered; no receipt enqueue was retained, no receipt commit conflicted, and a message cost 223 to 225
-  statements. Sends kept up for 45 s read 450 of 450 at the same figures (0.13 s and 0.45 s over the last ten). With
-  the server also publishing a receipted, sequenced room publication of its own every 500 ms on one instance, three
-  runs read 200 of 200, and all 40 of the server's publications `complete` in each. One publisher at +0 and +5 ms and
-  five at +0 ms keep up too: across every cell the last ten's p50 is 0.61 to 1.15 times the first ten's. The
-  machine's 1-minute load was 1.0 to 3.7.
+- **Five publishers of unordered sends keep up at +5 ms.** Five client sessions, on instances a, b, c, a and b, each
+  send at 2 Hz for 20 s (200 messages, 140 ACKs a second). In each of three runs all 200 read `complete` before their
+  deadline; over the last ten messages `admitted` reached its publisher 0.13 to 0.14 s after the send and `complete`
+  0.42 to 0.47 s after the last ACK (p50), no slower than over the first ten; the publishers read 19.5 receipts a second
+  of the 20.1 offered; no receipt enqueue was retained, no receipt commit conflicted, and a message cost 223 to 225
+  statements. Sends kept up for 45 s read 450 of 450 at the same figures (0.13 s and 0.45 s over the last ten). With the
+  server also publishing a receipted, sequenced room publication of its own every 500 ms on one instance, three runs
+  read 200 of 200, and all 40 of the server's publications `complete` in each. One publisher at +0 and +5 ms and five at
+  +0 ms keep up too: across every cell the last ten's p50 is 0.61 to 1.15 times the first ten's. The machine's 1-minute
+  load was 1.0 to 3.7.
 - **Before**, with every receipt commit fenced on the server's one sender-version row and `admitted` a durable row,
   the same five publishers on the same machine read 111 to 124 of 200 `complete` by the deadline and the last ten's
   `admitted` 18 to 19 s after the send, so a publisher saw a send end `failed` when no receipt arrived inside its
   first-hop budget of about 8 s, and else `expired` at its deadline, for a message every recipient confirmed.
-- **The record stays exact.** No publisher's room message, before or after, read `timed-out` or two terminal
-  receipts. Of the server's own publications, the runs before ended 3 of 120 `timed-out`, 2 `complete` and
+- **The record stays exact.** No publisher's unordered room message, before or after, read `timed-out` or two
+  terminal receipts. Of the server's own publications, the runs before ended 3 of 120 `timed-out`, 2 `complete` and
   never opened the rest; the runs after completed all 120.
+- **Five publishers of ordered sends do not keep up at +5 ms.** The same five publishers, each message ordered on
+  its publisher's own track and receipted, beside the tree before the record's last changes. Over 20 s all 200
+  receipts complete in time (before: 26 to 34) and no message is handed to the application twice (before: 3.3 to
+  14.7 % of those delivered, up to three times, and 70 to 252 frames a run read out of order at recipients), but
+  recipients read a message 5 to 17 s after its send (p50, up to 28.5 s), 5 or 6 `admitted` a run arrive 10.5 to
+  26.4 s late, and receipts are read at 12.5 to 15.1 of 20.1 a second. Over 45 s only 93 to 166 of 450 are
+  delivered (before: 29), the rest `timed-out`. One ordered track at 5 messages a second or more stalls on both
+  trees; at 2 a second both keep up. The stall is in the inbound ordered admission on the server, not in the
+  record: an admission that loses its write to the track's progress row is parked `pending-admission`, and its
+  track waits behind its replay. Its causes, the levers prototyped and why they are not built here are in
+  `plans/backlog.md` ("Ordered room sends under load", D784). It is older than this work, which improves it and does
+  not remove it.
 
 ## Stated limits
 
+- **Ordered sends under load.** Five publishers of ordered receipted sends at +5 ms do not keep up (above,
+  "Measured"): every receipt completes over 20 s, but recipients read a message seconds late and over 45 s most
+  messages end `timed-out`; one ordered track at 5 a second stalls. A browser's room send is ordered by default, so
+  this limit outweighs the unordered cells' result.
 - **The sender's version still moves.** A message end through the message-end bundle (a spent repair budget, a
   re-plan refused for good, a receipt control's included) and each ACK window fence the sender, so a server
   publication's own receipt windows keep competing for the server's version row.
@@ -312,14 +329,15 @@ Real PostgreSQL, three instances, each client delaying every statement, BEGIN an
   a receipt. A copy's opening names its own snapshot version, since the version its audience was read at is not
   stored.
 
-Not shown: the hosted statement latency itself (the runs were local, at +0 and +5 ms); latencies above +5 ms; more
-than five publishers in a room, so the rate at which the receipts stop keeping up; `main` in the five-publisher cell;
+Not shown: the hosted statement latency itself (the runs were local, at +0 and +5 ms); latencies above +5 ms; more than
+five publishers in a room, so the rate at which the receipts stop keeping up; `main` in the five-publisher cell;
 group-state deltas themselves, which the measurement stood in for with one sequenced publication every 500 ms, and a
-higher server publication rate; an inbound ordered delivery's completion under load, since no message arriving in
-the measured cells carried an ordering; the sustained cost of an ACK that finds no head; how a cluster resolves a
-group leader (the group-leader case pins the cross-instance count); a survivor taking over a work row whose lease a killed process held
-(a "lost" instance in the PostgreSQL cluster cases is a disposed one; the black-box cluster recipe kills a process);
-the dequeue's and the ACK's latency under sustained load.
+higher server publication rate; whether the ordered delivery's completion keeps to two attempts where ordered tracks
+keep up for longer than 20 s, since at five publishers over 45 s and on one fast track they stall first; whether a
+sender's resend unblocks a stalled track (the harness resends nothing); the sustained cost of an ACK that finds no head;
+how a cluster resolves a group leader (the group-leader case pins the cross-instance count); a survivor taking over a
+work row whose lease a killed process held (a "lost" instance in the PostgreSQL cluster cases is a disposed one; the
+black-box cluster recipe kills a process); the dequeue's and the ACK's latency under sustained load.
 
 ## Navigation probes
 

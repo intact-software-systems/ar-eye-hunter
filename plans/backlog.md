@@ -863,8 +863,101 @@ and it has no status list.
   its slot alone. In-process subscribers that are not idempotent per message id
   are where a repeat would show (on the WS server: router handlers and proxies,
   an ordered RTC signal's relay, an ordered RTT sample, game and app topic
-  handlers with no msgId-keyed command). Not measured under load: no cell of
-  the measurement through the WS server carried ordered arrivals.
+  handlers with no msgId-keyed command). Measured under load through the WS
+  server with ordered arrivals (D784): in 13 runs none of the 1 to 200
+  messages a run was handed twice, no completion took a third attempt, and
+  each of the 22 lost writes, every one to an admission's expiry refresh of
+  the track's progress row, was won at the next attempt.
+- Ordered room sends under load (D784). Ordered, at-least-once is a browser's
+  room send by default, and five such publishers do not keep up through the WS
+  server on PostgreSQL. Measured locally: three WS server instances, every
+  statement, BEGIN and COMMIT delayed 5 ms, fifteen sessions in one room, five
+  publishers sending one receipted message every 500 ms each on a track of
+  their own, a 30 s lifetime, each run beside a control run of the tree before
+  the receipt record's fence split, live `admitted` and completion guard. Over
+  20 s every receipt completes in time (200 of 200; control 26 to 34) and no
+  message is handed to the application twice (control 3.3 to 14.7 % of those
+  it delivered, up to three times, with 70 to 252 frames a run read out of
+  order at recipients), but recipients read a message 5 to 17 s after its send
+  (p50, at most 28.5 s), 5 or 6 `admitted` a run arrive 10.5 to 26.4 s late,
+  and receipts are read at 12.5 to 15.1 of 20.1 a second. Over 45 s only 93 to
+  166 of 450 are delivered (control 29), the rest ending `timed-out`. One
+  track at 5 messages a second or more stalls on both trees, at +0 ms as at +5
+  ms; at 2 a second both keep up. The stall is older than the receipt record:
+  the control shows the same three causes, and the record's changes improve it
+  without removing it.
+  The three causes, read from probed runs (three 20 s runs, 600 messages):
+  (1) Every admission on a track rewrites the track's delivery-progress row
+  only to extend its expiry to `now + orderingTrackTtlMs` with the same
+  `completedThrough` (`computeDeliveryProgressRetention`,
+  `packages/shared/alm/inbound/prepare-al-inbound-commit-bundle.ts`). That
+  moves the row's version, so a completion, a buffered release or another
+  admission that read the row loses its compare-and-set: of 135 lost
+  admissions 54 lost to such a refresh alone (71 to a moved
+  `completedThrough`, 10 to another row), and so did every lost completion
+  attempt and every lost release.
+  (2) An ingress admission that loses its write is retained
+  `pending-admission` (`admitDataInStore`,
+  `packages/shared/alm/inbound/lane/al-inbound-store-lane.ts`) instead of
+  reading and deciding again. Its replay waits for a lane batch (send to first
+  replay p50 2.0 s, p95 5.2 s), and the track's later messages wait buffered
+  behind it.
+  (3) A row that loses again goes to RETRY, and the inbound work rotation
+  reads RETRY rows only after paging through every NEW row (`SCAN_STATUSES`
+  NEW, RETRY, RESERVED and pages of `AL_INBOUND_WORK_PAGE_SIZE` 16,
+  `packages/shared/alm/inbound/read-al-inbound-work-selection.ts`). Under a
+  room's steady control traffic no retried row was claimed for 30 s on any
+  instance, so a retried release or replay waits tens of seconds, the stuck
+  message can expire first, and the track's next release then reads
+  `resync-required`. The retry policy's delays play no part.
+  Two levers were prototyped, outside the tree. A: write the progress row only
+  when it is new, when a witness moves its position, or when its stored expiry
+  is earlier than what the track needs (the later of `now +
+  orderingTrackTtlMs` and the expiry of every slot the admission buffers); a
+  write then sets the later of the stored expiry, `now + 2 *
+  orderingTrackTtlMs` and those slots' expiries. Two lifetimes because the row
+  must outlive the ordering snapshot each admission writes (live until
+  `updatedAtMs + orderingTrackTtlMs`, `isALOrderingSnapshotLive`); refreshing
+  at half a lifetime would let a live track's progress expire under a live
+  snapshot. B: a conflicted ingress admission makes up to three fresh attempts
+  at once, each a full read and decision, before it is retained, through
+  `TryWithPolicy` and `RetryableConflictError` as the completion's
+  `AL_INBOUND_COMPLETION_CONFLICT_RETRY` does. With A alone: 196 to 200 of 200
+  over 20 s, 309 of 450 over 45 s, every completion in one attempt. With A and
+  B: 200 of 200 and 450 of 450, recipients at 0.6 s p50 (at most 1.0 s),
+  receipts read at 19.3 to 19.7 of 20.0 to 20.1 a second, no
+  `pending-admission`. Neither rescues one track at 5 or 10 a second (7 of 100
+  and 5 of 200 with both): its admissions conflict with each other more than
+  three times in a row and its replay waits in RETRY. B alone was not
+  measured.
+  Why A is not built as prototyped: the browser's delivered-marker cap
+  (`ALInboundDeliveredMarkerIndex`,
+  `packages/shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts`;
+  256 markers on the session's IndexedDB and volatile pairs, which an RTC
+  receiver uses too; the server passes no cap) ranks a track by when its
+  progress row's expiry last moved forward and evicts the head. With A a live
+  track's marker stops moving and can be evicted while its ordering snapshot,
+  which that cap ranks by `updatedAtMs`, stays live; the track's next release
+  then reads `resync-required`. The way through: feed the marker index from
+  each committed ordering snapshot (`set-ordering`) instead of from marker
+  writes, and have the eviction's guarded recheck compare the snapshot's
+  `updatedAtMs`, so both caps rank by the same fact; the index is in memory,
+  so no stored shape changes. A also keeps an idle track's progress one to two
+  lifetimes instead of one, which the delivered markers' growth surface
+  (`growth-surfaces.ts`) and three tests must restate. For B:
+  `ALInboundMessageAdmission.attempt` also answers `conflict` for a
+  readmission whose first delivery is still queued (`isFirstDeliveryQueued`,
+  `toPendingAttempt`), which is not a lost write, so a retry keyed on
+  `conflict` must not read it again; and about 52 tests in 10 files inject one
+  conflict to reach `pending-admission` and would inject one on every attempt.
+  The third lever, not prototyped: a due RETRY row must not wait for the
+  rotation to page through every NEW row; changing `SCAN_STATUSES` alone would
+  also move the head read a commit asks for. A smaller step in that direction
+  is B for the replay too (`replayAuthorized` attempts once). The work is its
+  own pull request (decided on the maintainer's behalf, since the correct A
+  changes the browser's marker eviction, which was neither designed nor
+  measured); until it lands the default browser send stays slow under five
+  publishers.
 - Thirteen tests use a gap NACK that names no range as a whole-message resend,
   a shape no producer emits, so the decoder still accepts it (D692):
   `al-indexeddb-runtime-stores.test.ts`, `al-outbound-durable-effects.test.ts`
