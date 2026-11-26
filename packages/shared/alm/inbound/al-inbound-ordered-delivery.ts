@@ -2,12 +2,12 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import { toALOrderingTrackKey, type ALOrderingObservation } from '../../al-contracts/al-runtime.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
-import { RetryableConflictError, TryWithExhaustedError, TryWithPolicy } from '../../resilience/try-with-policy.ts';
 import { computeALInboundDeliveryCompletion } from './admission/al-inbound-delivery-progress.ts';
 import {
     computeALInboundBufferedRelease,
     type ALInboundBufferedRelease
 } from './admission/compute-al-inbound-admission.ts';
+import { retryALInboundLostWrite } from './admission/retry-al-inbound-lost-write.ts';
 import { validateALInboundCommitBundle } from './admission/validate-al-inbound-commit-bundle.ts';
 import type { ALInboundBufferedReleaseReadDto, ALInboundCommitBundle } from './al-inbound-admission-store.ts';
 import { shouldRetryALInboundDelivery, type ALInboundEffectIntent } from './al-inbound-effect-intent.ts';
@@ -27,18 +27,6 @@ import { signALInboundReceiptControls } from './receipt-proof/sign-al-inbound-re
 
 /** One completion attempt: `conflict` when its write lost, so the next attempt reads and decides again. */
 type ALInboundCompletionAttempt = 'completed' | 'retry' | 'conflict';
-
-/**
- * A completion runs after the application was handed the message, so a write that lost reads and decides again, as
- * any conflict does, rather than send the work back to be dispatched again; bounded, so contention never holds the
- * worker. The attempts follow at once: a lost write means the winner committed, so the fresh read sees it.
- */
-const AL_INBOUND_COMPLETION_ATTEMPTS = 3;
-const AL_INBOUND_COMPLETION_CONFLICT_RETRY = TryWithPolicy.defaults()
-    .label('inbound completion conflict')
-    .maxAttempts(AL_INBOUND_COMPLETION_ATTEMPTS)
-    .retryIf((error) => error instanceof RetryableConflictError)
-    .waitBeforeRetry(() => Promise.resolve());
 
 export namespace ALInboundOrderedDelivery {
     export type Readiness =
@@ -235,6 +223,9 @@ export class ALInboundOrderedDelivery {
     }
 
     /**
+     * A completion runs after the application was handed the message, so a write that lost reads and decides again
+     * rather than send the work back to be dispatched again.
+     *
      * Hands the work back (`retry`) when every attempt's write lost or the shutdown signal aborted it; after a dispatch,
      * the application is then handed the message again. It also hands the work back when the predecessor has not
      * completed, which no dispatch can precede: only a dropped plan or a disabled local delivery, which hand the
@@ -247,22 +238,11 @@ export class ALInboundOrderedDelivery {
         if (trackKey === undefined || seq === undefined) {
             return 'completed';
         }
-        try {
-            return await AL_INBOUND_COMPLETION_CONFLICT_RETRY.run(async () => {
-                const attempt = await this.completeOnce(msg, trackKey, seq);
-                if (attempt === 'conflict') {
-                    throw new RetryableConflictError('Inbound delivery completion conflict');
-                }
-                return attempt;
-            });
-        }
-        catch (error) {
-            const cause = error instanceof TryWithExhaustedError ? error.cause : error;
-            if (cause instanceof RetryableConflictError) {
-                return 'retry';
-            }
-            throw cause;
-        }
+        const completed = await retryALInboundLostWrite({
+            attempt: () => this.completeOnce(msg, trackKey, seq),
+            isLostWrite: (attempt) => attempt === 'conflict'
+        });
+        return completed === 'conflict' ? 'retry' : completed;
     }
 
     /** One fresh read of the slot and the progress, its decision, and its write. */
