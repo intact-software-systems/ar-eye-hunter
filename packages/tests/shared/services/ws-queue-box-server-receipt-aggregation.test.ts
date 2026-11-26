@@ -738,8 +738,8 @@ describe('WS server receipt aggregation of the admitted receipt on the origin\'s
         expect(fixture.enqueued).toEqual([]);
     });
 
-    // Pins the only answer of a send admitted to nobody, which no resend recovers, leaving its durable row. It also
-    // pins that answer opening a head.
+    // Pins the only answer of a send admitted to nobody, which has no head to answer a resend from, leaving its
+    // durable row. It also pins that answer opening a head.
     it('keeps the row of an admitted that expects nobody', async () => {
         const fixture = createAggregation({ ingressAudience: undefined, recordStores: undefined, originSocket: 'here' });
 
@@ -941,6 +941,13 @@ function createAggregation(
     const ownerControls: ALMessage[] = [];
     const observations: WsQueueBoxServerReceiptObservation[] = [];
     const recordStores = options.recordStores ?? createInMemoryALReceiptRecordStores('server-ws-qbox:test', () => clock.nowMs);
+    const sendToOrigin = (message: ALMessage): WsQueueBoxServerLiveDelivery.EvidencedPeerSend => {
+        const sent = ORIGIN_SOCKET_SENDS[options.originSocket];
+        if (sent.sentCount > 0) {
+            live.push(message);
+        }
+        return sent;
+    };
     const aggregation = new WsQueueBoxServerReceiptAggregation({
         serverPeerId: 'server',
         receiptObserver: (observation) => observations.push(observation),
@@ -956,13 +963,8 @@ function createAggregation(
             return { verdict: { kind: 'admitted', durable: true, queuedAttempts: 0 }, message, entries: [], trackedReceiptAlgo: 'receiver' };
         },
         liveDelivery: {
-            sendToResolvedPeerWithEvidence: ({ message }) => {
-                const sent = ORIGIN_SOCKET_SENDS[options.originSocket];
-                if (sent.sentCount > 0) {
-                    live.push(message);
-                }
-                return sent;
-            }
+            sendToResolvedPeer: ({ message }) => sendToOrigin(message).sentCount,
+            sendToResolvedPeerWithEvidence: ({ message }) => sendToOrigin(message)
         },
         acceptServerControl: async (message) => {
             ownerControls.push(message);

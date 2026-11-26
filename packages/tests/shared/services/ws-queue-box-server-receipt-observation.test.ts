@@ -843,7 +843,7 @@ async function createObservedAggregation(
         recordStores,
         readIngressAudience: async () => undefined,
         enqueueOutbox: enqueue,
-        liveDelivery: { sendToResolvedPeerWithEvidence: () => ({ sentCount: 0, writes: [] }) },
+        liveDelivery: { sendToResolvedPeer: () => 0, sendToResolvedPeerWithEvidence: () => ({ sentCount: 0, writes: [] }) },
         acceptServerControl: async () => ({ kind: 'not-handled' }),
         acceptServerReceipt: effects.acceptServerReceipt ?? (async () => ({ kind: 'not-handled' })),
         readOwnPendingReceipt: async () => undefined,

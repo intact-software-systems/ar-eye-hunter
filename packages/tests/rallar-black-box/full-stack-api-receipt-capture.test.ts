@@ -157,7 +157,7 @@ function toReceiptOwnerChildSource({ msgId, expectedRecipientPeerIds }: ReceiptO
                 message, verdict: { kind: 'admitted', durable: true, queuedAttempts: 0 },
                 entries: [], trackedReceiptAlgo: 'none'
             }),
-            liveDelivery: { sendToResolvedPeerWithEvidence: () => ({ sentCount: 0, writes: [] }) },
+            liveDelivery: { sendToResolvedPeer: () => 0, sendToResolvedPeerWithEvidence: () => ({ sentCount: 0, writes: [] }) },
             acceptServerControl: async () => ({ kind: 'not-handled' }),
             acceptServerReceipt: async () => ({ kind: 'not-handled' }),
             readOwnPendingReceipt: async () => undefined,
@@ -972,6 +972,10 @@ describe('full-stack private upstream receipt capture', () => {
         const captured = await capturePendingReceipt({ scenario: 'native-return', sink: 'clock-mutating', appInboxPhaseTiming: true });
         expect(captured.effects.lastReceiptReleaseAtMs).toBe(baseline.effects.lastReceiptReleaseAtMs);
         expect(captured.effects.lastReceiptReleaseAtMs).toBe(1700000000000);
+        expect(captured.effects).toMatchObject({
+            enginePasses: baseline.effects.enginePasses,
+            clockReads: baseline.effects.clockReads
+        });
     });
 
     it('rejects unsafe new work records entirely while retaining the transport evidence', async () => {

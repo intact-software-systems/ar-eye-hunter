@@ -183,7 +183,10 @@ export namespace WsQueueBoxServerReceiptAggregation {
             plan: ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage>
         ) => Promise<ALOutboundEnqueueResult>;
         /** Writes a control to the sockets this instance holds for a peer, with what each native call did. */
-        readonly liveDelivery: Pick<WsQueueBoxServerLiveDelivery, 'sendToResolvedPeerWithEvidence'>;
+        readonly liveDelivery: Pick<
+            WsQueueBoxServerLiveDelivery,
+            'sendToResolvedPeer' | 'sendToResolvedPeerWithEvidence'
+        >;
         /** The server's own outbound owner, which answers every control addressed to the server itself. */
         readonly acceptServerControl: (message: ALMessage) => Promise<ALOutboundControlAdmissionResult>;
         /**
@@ -740,20 +743,21 @@ export class WsQueueBoxServerReceiptAggregation {
 
     /**
      * Writes an `admitted` receipt with a head behind it, which a re-sent copy is answered from, to the origin's
-     * sockets here, and records one `receipt-transport` per connection it called; whether a socket took it. A sender
-     * that resends nothing reads only its terminal receipt when this copy is lost on the wire. Any other receipt is
-     * not written here and answers false.
+     * sockets here, and, with an observer attached, records one `receipt-transport` per connection it called; whether
+     * a socket took it. A sender that resends nothing reads only its terminal receipt when this copy is lost on the
+     * wire. Any other receipt is not written here and answers false.
      */
     private writeLiveReceipt(issued: WsQueueBoxServerIssuedReceipt, message: ALMessage): boolean {
         if (!isWsQueueBoxServerHeadBackedAdmittedReceipt(issued.receipt)) {
             return false;
         }
         const { liveDelivery, receiptObserver, serverPeerId } = this.#dependencies;
-        const sent = liveDelivery.sendToResolvedPeerWithEvidence({ peerId: issued.receipt.originPeerId, message });
-        const transports = receiptObserver === undefined
-            ? []
-            : toWsQueueBoxServerLiveReceiptTransports(issued, sent.writes, serverPeerId);
-        for (const transport of transports) {
+        const peerSend = { peerId: issued.receipt.originPeerId, message };
+        if (receiptObserver === undefined) {
+            return liveDelivery.sendToResolvedPeer(peerSend) > 0;
+        }
+        const sent = liveDelivery.sendToResolvedPeerWithEvidence(peerSend);
+        for (const transport of toWsQueueBoxServerLiveReceiptTransports(issued, sent.writes, serverPeerId)) {
             recordWsQueueBoxServerReceiptObservation(receiptObserver, transport);
         }
         return sent.sentCount > 0;

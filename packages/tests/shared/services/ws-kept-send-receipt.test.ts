@@ -347,7 +347,7 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
         const link = await createWsReceiptedSendLink('in-sync');
         const releaseClaims = link.holdServerWorkClaims();
         const [first, second] = await sendTwoOrderedSideBySide(link);
-        const copyWrite = link.holdServerNextAdmissionWrite();
+        const copyWrite = link.holdServerNextAdmissionWrite('before-write');
         const keptRowRelease = link.holdServerKeptRowRelease(second);
         const copy = link.writeCopy(second);
         await copyWrite.arrived;
@@ -368,6 +368,40 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
         expect(toControlsOf(link, second)).toEqual([
             { control: 'receipt:admitted', admission: 'committed' },
             { control: 'receipt:admitted', admission: 'rejected' },
+            { control: 'receipt:timed-out', admission: 'committed' }
+        ]);
+        expect(toControlsOf(link, first)).toEqual([
+            { control: 'receipt:admitted', admission: 'committed' },
+            { control: 'receipt:admitted', admission: 'rejected' },
+            { control: 'receipt:timed-out', admission: 'committed' }
+        ]);
+        expect(link.deliveredToPeer(first)).toBe(1);
+        expect(link.deliveredToPeer(second)).toBe(1);
+    });
+
+    it('characterization: a copy of a send kept after a lost race, whose replay commits before it writes and answers after it: it joins the kept row and is answered nothing, one admitted for it', async () => {
+        const link = await createWsReceiptedSendLink('in-sync');
+        const releaseClaims = link.holdServerWorkClaims();
+        const [first, second] = await sendTwoOrderedSideBySide(link);
+        const copyWrite = link.holdServerNextAdmissionWrite('before-write');
+        const replayCommit = link.holdServerNextAdmissionWrite('after-commit');
+        const copy = link.writeCopy(second);
+        await copyWrite.arrived;
+        releaseClaims();
+        await replayCommit.arrived;
+        // The replay committed while the copy's write waited after its reads; it has opened no head and answered nothing.
+        expect(link.readReceiptsToOrigin(second)).toEqual([]);
+        copyWrite.release();
+        expect(await copy).toBe('pending-admission');
+        replayCommit.release();
+        expect(await link.writeCopy(first)).toBe('duplicate');
+        await link.advance(0);
+        await link.advance(200);
+        await link.advance(200);
+        await advanceInSecondsTo(link, LINK_MESSAGE_TTL_MS + 31_000);
+
+        expect(toControlsOf(link, second)).toEqual([
+            { control: 'receipt:admitted', admission: 'committed' },
             { control: 'receipt:timed-out', admission: 'committed' }
         ]);
         expect(toControlsOf(link, first)).toEqual([

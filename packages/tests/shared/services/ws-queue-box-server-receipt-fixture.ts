@@ -563,20 +563,30 @@ export async function runReceiptWorkerHandoff(input: ReceiptWorkerHandoffInput):
     return { receipts: readSentReceipts(alice), wrongFrames: wrong.sent, claims };
 }
 
+/** The console's own error printer, taken before any case spies on it. */
+const printConsoleError = console.error.bind(console);
+/** The refusals whose printed lines are silenced in the running case. */
+const silencedRefusals = new Set<Error>();
+
 /**
  * The socket's next native send throws, as a socket closing under it would; its later sends are its own. Only the
- * line the server prints for that refusal is silenced, and only until the case ends.
+ * line the server prints for that refusal is silenced, and only until the case ends; a case may refuse several.
  */
 export function refuseNextNativeSend(socket: SimulatedWebSocket): void {
     const send = socket.send.bind(socket);
     const refusal = new Error('Native WebSocket refused the frame');
-    const printError = console.error.bind(console);
-    const silenced = vi.spyOn(console, 'error').mockImplementation((...lines) => {
-        if (!lines.includes(refusal)) {
-            printError(...lines);
-        }
-    });
-    onTestFinished(() => silenced.mockRestore());
+    if (silencedRefusals.size === 0) {
+        const silenced = vi.spyOn(console, 'error').mockImplementation((...lines) => {
+            if (!lines.some((line) => silencedRefusals.has(line))) {
+                printConsoleError(...lines);
+            }
+        });
+        onTestFinished(() => {
+            silencedRefusals.clear();
+            silenced.mockRestore();
+        });
+    }
+    silencedRefusals.add(refusal);
     socket.send = () => {
         socket.send = send;
         throw refusal;

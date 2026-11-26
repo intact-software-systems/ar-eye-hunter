@@ -76,7 +76,7 @@ describe('which receipt is an admitted with a head behind it', () => {
         expect(isWsQueueBoxServerHeadBackedAdmittedReceipt(receiptAt('admitted', head.expectedRecipientPeerIds))).toBe(true);
     });
 
-    // Pins the only answer of a send admitted to nobody, which no resend is answered again, losing its row.
+    // Pins the only answer of a send admitted to nobody, which has no head to answer a resend from, losing its row.
     it('is not an admitted receipt that expects nobody', () => {
         expect(isWsQueueBoxServerHeadBackedAdmittedReceipt(receiptAt('admitted', []))).toBe(false);
     });

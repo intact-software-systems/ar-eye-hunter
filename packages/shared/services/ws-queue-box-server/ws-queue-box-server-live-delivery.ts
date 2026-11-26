@@ -68,7 +68,7 @@ export namespace WsQueueBoxServerLiveDelivery {
         readonly requireAuthenticatedRecipient: boolean;
         readonly invalidatedSessionId: string | undefined;
         readonly generations: ReadonlyMap<string, string | undefined>;
-        /** Collects each connection's write for a caller that reads them; undefined on a send that reads none. */
+        /** The send appends each connection's write here, for a caller that reads them; undefined on one that reads none. */
         readonly writes: ConnectionWrite[] | undefined;
     }
 
@@ -215,12 +215,9 @@ export class WsQueueBoxServerLiveDelivery {
         writes: WsQueueBoxServerLiveDelivery.ConnectionWrite[] | undefined
     ): number {
         const { peerId, message, encoded, inboundScope } = input;
-        if (hasServerPushedViewTopic(message)) {
-            return 0;
-        }
-        if (
-            requiresWsQueueBoxServerRecipientScope(message) && validateALOutboundRecipientScope(inboundScope).length > 0
-        ) {
+        const refusesScope = requiresWsQueueBoxServerRecipientScope(message) &&
+            validateALOutboundRecipientScope(inboundScope).length > 0;
+        if (hasServerPushedViewTopic(message) || refusesScope) {
             return 0;
         }
         const expiresAtMs = resolveALMessageExpireAtMs(message, normalizeALQosPolicy(message).effective);

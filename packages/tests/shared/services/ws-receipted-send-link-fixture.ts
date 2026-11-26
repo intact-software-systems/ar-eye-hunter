@@ -35,6 +35,7 @@ import {
     type WsClientCarrierStores
 } from '../alm/outbound-runtime-test-fixture.ts';
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
+import { reserveNoResourceEntries } from '../reserve-no-resource-entries.ts';
 import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
 import { createServerIngressFixture, type ServerIngressFixture } from './ws-queue-box-server-ingress-fixture.ts';
 
@@ -57,6 +58,9 @@ const LINK_PASSES_PER_STEP = 12;
  * peer-c-joined: authorized, audience [origin, peer-b, peer-c], snapshotVersion 4.
  */
 export type WsReceiptedSendRoomView = 'in-sync' | 'behind' | 'fenced' | 'peer-b-left' | 'peer-c-joined';
+
+/** Where `holdServerNextAdmissionWrite` holds a write. */
+export type ServerAdmissionWriteStage = 'before-write' | 'after-commit';
 
 /** One control the server sent the origin, `nack:<reason>` or `receipt:<phase>`, and what the origin's outbound owner decided. */
 export interface WsReceiptedSendServerControl extends ControlFrameLabel {
@@ -82,8 +86,11 @@ export interface WsReceiptedSendLink {
     loseFramesToOrigin(count: number): void;
     /** Each claim the server makes of its inbound work from now claims nothing, until the returned release. */
     holdServerWorkClaims(): () => void;
-    /** The server's next admission write waits at the returned hold, after its reads and before it enters the backend. */
-    holdServerNextAdmissionWrite(): WorkerHold;
+    /**
+     * The server's next admission write not already held waits at the returned hold: `before-write` after its reads and
+     * before it enters the backend, `after-commit` once it committed and before its writer reads the answer.
+     */
+    holdServerNextAdmissionWrite(stage: ServerAdmissionWriteStage): WorkerHold;
     /** The server's release of `msg`'s kept row, once its replay ran, waits at the returned hold; the row stays claimed. */
     holdServerKeptRowRelease(msg: ALMessage): WorkerHold;
     /** The recipient's `delivered` ACK through the server's ingress, as its socket would send it. */
@@ -246,11 +253,18 @@ function createServerWorkHolds(
     server: ServerIngressFixture
 ): Pick<WsReceiptedSendLink, 'holdServerWorkClaims' | 'holdServerNextAdmissionWrite' | 'holdServerKeptRowRelease'> {
     const { workQueue } = server.admission;
+    const { backend } = server;
+    const reserveEntries = workQueue.reserveEntries.bind(workQueue);
+    const releaseEntries = workQueue.releaseEntries.bind(workQueue);
+    const write = backend.write.bind(backend);
+    const writeHolds: { readonly hold: WorkerHold; readonly stage: ServerAdmissionWriteStage; }[] = [];
+    let writesSpied = false;
     return {
         holdServerWorkClaims: () => {
-            const reserveEntries = workQueue.reserveEntries.bind(workQueue);
             let held = true;
-            vi.spyOn(workQueue, 'reserveEntries').mockImplementation(async (request) => held ? new Map() : await reserveEntries(request));
+            vi.spyOn(workQueue, 'reserveEntries').mockImplementation(async (request) =>
+                held ? await reserveNoResourceEntries(request) : await reserveEntries(request)
+            );
             return () => {
                 held = false;
                 server.engine.wake();
@@ -259,7 +273,6 @@ function createServerWorkHolds(
         holdServerKeptRowRelease: (msg) => {
             const hold = createWorkerHold();
             onTestFinished(() => hold.release());
-            const releaseEntries = workQueue.releaseEntries.bind(workQueue);
             vi.spyOn(workQueue, 'releaseEntries').mockImplementation(async (releases) => {
                 if (releases.some(({ entry }) => isKeptRowOf(entry, msg, server.admissionStore.namespace))) {
                     await hold.arrive();
@@ -268,15 +281,24 @@ function createServerWorkHolds(
             });
             return hold;
         },
-        holdServerNextAdmissionWrite: () => {
+        holdServerNextAdmissionWrite: (stage) => {
             const hold = createWorkerHold();
             onTestFinished(() => hold.release());
-            const { backend } = server;
-            const write = backend.write.bind(backend);
-            vi.spyOn(backend, 'write').mockImplementationOnce(async (operation, executionExpiresAtMs) => {
-                await hold.arrive();
-                return await write(operation, executionExpiresAtMs);
-            });
+            writeHolds.push({ hold, stage });
+            if (!writesSpied) {
+                writesSpied = true;
+                vi.spyOn(backend, 'write').mockImplementation(async (operation, executionExpiresAtMs) => {
+                    const next = writeHolds.shift();
+                    if (next?.stage === 'before-write') {
+                        await next.hold.arrive();
+                    }
+                    const result = await write(operation, executionExpiresAtMs);
+                    if (next?.stage === 'after-commit') {
+                        await next.hold.arrive();
+                    }
+                    return result;
+                });
+            }
             return hold;
         }
     };

@@ -510,7 +510,6 @@ function toReceiptPhase(frame: string): string | undefined {
     return control?.type === 'receipt' ? control.payload.phase : undefined;
 }
 
-/** A work row names its effect, a send's beginning with the message it sends; a canonical message row names none. */
 /** The backend's own claim, which hands every entry it reserves to `onReserved` before it answers. */
 function toObservedReserveEntries(
     backend: InMemoryAdmissionBackend,
@@ -534,6 +533,7 @@ function toObservedReserveEntries(
     return observed;
 }
 
+/** A work row names its effect, a send's beginning with the message it sends; a canonical message row names none. */
 function isSendWorkOf(entry: ResourceEntry, msgId: string): boolean {
     return decodeWorkEffectId(JSON.parse(entry.resource))?.startsWith(`${toALOutboundEffectId(['send', msgId])}:`) === true;
 }
