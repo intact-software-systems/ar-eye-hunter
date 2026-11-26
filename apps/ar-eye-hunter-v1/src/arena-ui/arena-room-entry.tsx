@@ -1,3 +1,4 @@
+import { GuestSessionBookingPanel } from '@shared-react/guest-session-booking-panel.tsx';
 import {
     useEffect,
     useState,
@@ -42,6 +43,9 @@ export function ArenaRoomEntry({ arena }: ArenaRoomEntryProps) {
     return (
         <section className="panel stack" aria-label="Shared room entry">
             <h3>Enter a shared arena</h3>
+            {!arena.session && entry.destination?.intent === 'preview-session' && (
+                <GuestSessionBookingPanel key={JSON.stringify(entry.destination.roomRef)} room={entry.destination.roomRef} entry={arenaRoomEntry} />
+            )}
             <ArenaRoomEntryForm
                 participation={participation}
                 setParticipation={setParticipation}

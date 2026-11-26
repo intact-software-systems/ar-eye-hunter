@@ -27,7 +27,7 @@ export class GroupSessionDirectory {
         this.dependencies = dependencies;
     }
 
-    public async read(ref: GroupRef, principalId: string): Promise<GroupSessionPreview | null> {
+    public async read(ref: GroupRef, principalId: string, audience: 'account' | 'guest-booking' = 'account'): Promise<GroupSessionPreview | null> {
         const entries = await this.dependencies.repository.readMutationExactEntries({
             aggregateRef: ref,
             includeGroup: true,
@@ -46,7 +46,7 @@ export class GroupSessionDirectory {
             clientSessions: [],
             subscriptionPrincipalIds: []
         });
-        return toGroupSessionPreview({ ref, principalId, entries, nowEpochMs: this.dependencies.now() });
+        return toGroupSessionPreview({ ref, principalId, entries, audience, nowEpochMs: this.dependencies.now() });
     }
 
     public async listForPrincipal(
@@ -67,6 +67,7 @@ export class GroupSessionDirectory {
 }
 
 interface GroupSessionPreviewRead {
+    readonly audience: 'account' | 'guest-booking';
     readonly ref: GroupRef;
     readonly principalId: string;
     readonly entries: GroupStateMutationExactEntries;
@@ -74,14 +75,14 @@ interface GroupSessionPreviewRead {
 }
 
 function toGroupSessionPreview(
-    { ref, principalId, entries, nowEpochMs }: GroupSessionPreviewRead
+    { ref, principalId, entries, nowEpochMs, audience }: GroupSessionPreviewRead
 ): GroupSessionPreview | null {
     const snapshot = entries.groupSnapshot.status === 'read' ? entries.groupSnapshot.snapshot : undefined;
     if (snapshot === undefined || snapshot.group.status !== 'active') {
         return null;
     }
     const schedule = readGroupSessionSchedule(snapshot.group.metadata);
-    if (schedule === null) {
+    if (schedule === null || (audience === 'guest-booking' && !schedule.guestBooking)) {
         return null;
     }
     const reservations = entries.sessionReservations?.value;
@@ -100,7 +101,7 @@ function toGroupSessionPreview(
     const reserved = reservations.principalIds.includes(principalId);
     const admitted = activePlayers.includes(principalId);
     const expired = timing.phase === 'reservations-expired' || timing.phase === 'cancelled';
-    const availability = canUseGroupAdmissionCredentials({ snapshot, actor: { principalId }, nowEpochMs });
+    const availability = canUseGroupAdmissionCredentials({ snapshot, actor: { principalId }, nowEpochMs, guestBooking: audience === 'guest-booking' });
     return {
         roomRef: ref,
         displayName: snapshot.group.displayName,
@@ -124,7 +125,7 @@ function toGroupSessionPreview(
             : null,
         canReserve: !expired && availability.allowed &&
             (admitted || reserved || occupied < snapshot.group.maxMembers),
-        canEnter: timing.phase !== 'upcoming' && timing.phase !== 'cancelled' && availability.allowed &&
+        canEnter: (audience === 'account' || admitted || (reserved && !expired)) && timing.phase !== 'upcoming' && timing.phase !== 'cancelled' && availability.allowed &&
             (admitted || (!expired && reserved) || occupied < snapshot.group.maxMembers)
     };
 }

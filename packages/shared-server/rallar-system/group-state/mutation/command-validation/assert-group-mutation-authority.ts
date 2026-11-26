@@ -45,6 +45,14 @@ function assertInternalMutationAuthority(
     if (facts.authenticatedAuthority !== null) {
         throw new TypeError('Internal group mutation cannot use authenticated authority facts');
     }
+    if (facts.internalAuthority === 'guest-booking') {
+        if (command.operation !== 'changeGroupSession' || command.input.actorSessionId !== null ||
+            !/^guest-[a-f0-9]{64}$/.test(command.input.actorPrincipalId ?? '') ||
+            (command.input.action !== 'reserve' && command.input.action !== 'withdraw')) {
+            throw new TypeError('A guest booking requires a scoped identity and reservation decision.');
+        }
+        return;
+    }
     if (command.input.actorPrincipalId !== null || command.input.actorSessionId !== null) {
         throw new TypeError('Internal group maintenance cannot claim semantic actor authority');
     }

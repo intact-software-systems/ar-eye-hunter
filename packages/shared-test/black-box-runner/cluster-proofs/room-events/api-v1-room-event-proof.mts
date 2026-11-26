@@ -5,6 +5,8 @@ import { hashRoomInvitationSecret } from '@shared/api/room-guests/invitation.ts'
 import { ApiV1RtcTopologyProofApi, requestJson, requireRecord } from '../../topology-replay/api-v1-rtc-topology-proof-api.mts';
 import { runManagedClusterProof, type ManagedClusterProof } from '../run-managed-cluster-proof.mts';
 
+import { proveScheduledGuestReservations } from './prove-scheduled-guest-reservations.mts';
+
 async function runEventNight({ plans, controls }: ManagedClusterProof.ScenarioInput): Promise<void> {
     const [worker, first, second] = plans;
     assert.ok(worker && first && second);
@@ -12,6 +14,9 @@ async function runEventNight({ plans, controls }: ManagedClusterProof.ScenarioIn
         alice: { username: 'alice', password: 'secret' }, bob: { username: 'bob', password: 'secret' } });
     const organizer = await users.login({ principal: 'admin', label: 'organizer', apiBaseUrl: first.baseUrl,
         wsBaseUrl: first.baseUrl.replace(/^http/, 'ws') });
+    const player = await users.login({ principal: 'alice', label: 'registered player', apiBaseUrl: second.baseUrl,
+        wsBaseUrl: second.baseUrl.replace(/^http/, 'ws') });
+    await proveScheduledGuestReservations(organizer, player);
     const groups = '/api/state/apps/event-qualification/workspaces/' + crypto.randomUUID() + '/groups';
     const lobby = groups + '/pickup';
     await requestJson(first.baseUrl, toApiMutationRequestPath(groups, crypto.randomUUID()), { method: 'POST', session: organizer,

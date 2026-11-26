@@ -36,6 +36,7 @@ export interface CanJoinGroupInput {
     readonly joinCodeVerifier?: string;
     readonly expectedJoinCodeVerifier?: string;
     readonly guestInvitationVerifier?: string;
+    readonly guestBooking?: boolean;
     readonly joinCodeExpiresAtEpochMs?: number;
 }
 
@@ -115,7 +116,7 @@ export function canUseGroupAdmissionCredentials(input: CanJoinGroupInput): Group
         return blocked;
     }
     // Credentials authorize admission; they do not revoke existing membership.
-    if (member?.status === 'active') {
+    if (member?.status === 'active' || (input.guestBooking && readGroupSessionSchedule(input.snapshot.group.metadata)?.guestBooking)) {
         return GROUP_POLICY_ALLOWED;
     }
     switch (input.snapshot.group.joinMode) {

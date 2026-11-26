@@ -1540,6 +1540,77 @@ paths:
           $ref: '#/components/responses/ApiMutationFailure'
         '404':
           $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/session/guest/preview:
+    post:
+      tags: [Group State]
+      summary: Read the booking held by this browser
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [guestSecret]
+              properties:
+                guestSecret: { type: string, pattern: '^[0-9a-f]{64}$', writeOnly: true }
+      responses:
+        '200':
+          description: Private result for this browser and scoped room.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSessionPreview'
+        '400': { $ref: '#/components/responses/ApiMutationFailure' }
+        '403': { $ref: '#/components/responses/ApiMutationFailure' }
+        '404': { $ref: '#/components/responses/ApiMutationFailure' }
+        '409': { $ref: '#/components/responses/ApiMutationFailure' }
+        '429': { $ref: '#/components/responses/ApiMutationFailure' }
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/session/guest/requests/{requestId}:
+    post:
+      tags: [Group State]
+      summary: Reserve, withdraw or claim a scheduled lobby seat as a guest
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [guestSecret, action, expectedScheduleRevision]
+              properties:
+                guestSecret: { type: string, pattern: '^[0-9a-f]{64}$', writeOnly: true }
+                action: { type: string, enum: [reserve, withdraw, claim] }
+                expectedScheduleRevision: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Private result for this browser and scoped room.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/RoomGuestAccess'
+                  - type: object
+                    required: [accepted]
+                    additionalProperties: false
+                    properties:
+                      accepted: { const: true }
+        '400': { $ref: '#/components/responses/ApiMutationFailure' }
+        '403': { $ref: '#/components/responses/ApiMutationFailure' }
+        '404': { $ref: '#/components/responses/ApiMutationFailure' }
+        '409': { $ref: '#/components/responses/ApiMutationFailure' }
+        '429': { $ref: '#/components/responses/ApiMutationFailure' }
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/session/requests/{requestId}:
     post:
       tags: [Group State]
@@ -9286,6 +9357,7 @@ components:
       additionalProperties: false
       required: [revision, startsAtEpochMs, cancelledAtEpochMs]
       properties:
+        guestBooking: { const: true, description: The organizer enabled browser-bound guest reservations. }
         revision:
           type: integer
           minimum: 1
@@ -9423,6 +9495,9 @@ components:
           description: Listing intent, independent of admission credentials. Unlisted rooms are excluded from discovery and Quick Join; scoped entry still uses normal admission. The setting is returned in metadata.rallarDirectoryListing.
         retention:
           $ref: '#/components/schemas/GroupRetentionIntent'
+        guestBooking:
+          type: boolean
+          description: Enable browser-bound guest reservations for this scheduled room when the application permits guest booking.
         scheduledStartAtEpochMs:
           type: integer
           format: int64

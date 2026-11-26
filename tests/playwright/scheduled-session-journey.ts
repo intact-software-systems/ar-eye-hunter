@@ -129,7 +129,7 @@ export interface ScheduledSessionDestination {
     readonly startsAtEpochMs: number;
 }
 
-export async function scheduleThroughControls(page: Page, delayMs: number): Promise<ScheduledSessionDestination> {
+export async function scheduleThroughControls(page: Page, delayMs: number, guestBooking = false): Promise<ScheduledSessionDestination> {
     const panel = page.getByRole('region', { name: 'Scheduled sessions', exact: true });
     await expect(panel).toBeVisible();
     await panel.getByText('Schedule a session', { exact: true }).click();
@@ -137,6 +137,7 @@ export async function scheduleThroughControls(page: Page, delayMs: number): Prom
     await panel.getByLabel('Session name', { exact: true }).fill(`Together ${Date.now()}`);
     await panel.getByLabel('Session start', { exact: true }).fill(start.input);
     await panel.getByLabel('Player seats', { exact: true }).fill('2');
+    if (guestBooking) await panel.getByLabel('Allow guest reservations').check();
     await panel.getByRole('button', { name: 'Create scheduled session', exact: true }).click();
     const link = panel.getByLabel('Session share link', { exact: true });
     await expect(link).toHaveValue(/#rallar-session\?/);

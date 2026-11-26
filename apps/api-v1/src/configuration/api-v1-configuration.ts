@@ -131,6 +131,7 @@ export interface ApiV1GroupAdmissionConfiguration {
 
 export interface ApiV1GroupConfiguration {
     readonly eventOrganizerIdsByApplication: Readonly<Record<string, readonly string[]>>;
+    readonly guestBookingByApplication: Readonly<Record<string, boolean>>;
     readonly temporaryRoomPoliciesByApplication: Readonly<Record<string, TemporaryRoomPolicy>>;
     readonly roomLobbyPoliciesByApplication: Readonly<Record<string, RoomLobby.Policy>>;
     readonly roomOwnedAppDataBindings: readonly RoomOwnedAppData.Binding[];

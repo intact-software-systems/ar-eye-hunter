@@ -456,6 +456,10 @@ function decodeGroup(
             }
             return value.map(id => assertValidRallarRouteId(id));
         }),
+        guestBookingByApplication: decodeApplicationPolicies(decoder, 'group.guestBookingByApplication', value => {
+            if (typeof value !== 'boolean') throw new TypeError('Guest booking app policy must be a boolean.');
+            return value;
+        }),
         temporaryRoomPoliciesByApplication: decodeApplicationPolicies(decoder, 'group.temporaryRoomPoliciesByApplication', value => {
             const policy = decodeTemporaryRoomPolicy(value);
             return { ...policy, creationLimit: computeApiReplicaLimitShare(policy.creationLimit, decoder.replicaCount()) };

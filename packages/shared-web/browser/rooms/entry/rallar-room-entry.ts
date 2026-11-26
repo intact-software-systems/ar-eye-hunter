@@ -336,6 +336,8 @@ export class RallarRoomEntry {
         }
         try {
             await this.dependencies.rooms.join(attempt.destination.roomRef, {
+                ...(attempt.destination.participation === 'preserve' && attempt.session.guestRoom &&
+                    isSameGroupRef(attempt.session.guestRoom, attempt.destination.roomRef) && { presenceOnly: true }),
                 joinCode: attempt.destination.joinCode ?? undefined,
                 participation: attempt.destination.participation === 'preserve'
                     ? undefined

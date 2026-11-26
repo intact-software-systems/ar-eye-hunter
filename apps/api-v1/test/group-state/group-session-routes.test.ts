@@ -1,3 +1,4 @@
+import { Either } from '@shared/resilience/Either.ts';
 import { authenticationRequired } from '@shared-server/http/request-auth-service.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
@@ -78,4 +79,29 @@ test('session routes reject unauthenticated reads and writes', async () => {
     assert.equal((await app.request(PATH)).status, 401);
     assert.equal((await app.request(`${BASE}/group-sessions`)).status, 401);
     assert.equal((await app.request(`${PATH}/requests/${REQUEST_ID}`, { method: 'POST' })).status, 401);
+});
+
+test('a guest reservation request requires an app opt-in and binds the browser proof to this room', async () => {
+    const app = createTracedApiTestApp();
+    const ids: string[] = [];
+    registerGroupStateRoutes(app, {
+        ...createGroupStateRouteTestDependencies(),
+        guestBookingByApplication: { 'app-1': true },
+        processGuestBooking: async input => {
+            ids.push(input.principalId);
+            return Either.ofRight(toGroupStateWritten(createGroupStateRouteSnapshot('room-1')));
+        }
+    });
+    const request = (path: string, guestSecret: string) => app.request(path + '/guest/requests/' + REQUEST_ID, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ guestSecret, action: 'reserve', expectedScheduleRevision: 1 })
+    });
+    const secret = 'a'.repeat(64);
+    assert.equal((await request(PATH.replace('app-1', 'disabled'), secret)).status, 403);
+    for (const [room, proof] of [[PATH, secret], [PATH, secret], [PATH, 'b'.repeat(64)], [PATH.replace('room-1', 'room-2'), secret]]) {
+        const response = await request(room, proof);
+        assert.equal(response.status, 200, await response.text());
+    }
+    assert.equal(ids[0], ids[1]);
+    assert.equal(new Set(ids).size, 3);
 });

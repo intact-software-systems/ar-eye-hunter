@@ -307,6 +307,13 @@ without leaving the current game. Signed-in accounts can reserve one player seat
 reservation, and find their sessions again after reload. The organizer occupies one player seat.
 Rescheduling releases reservations and asks interested accounts to review and confirm the new time.
 
+Applications can enable guest booking with `group.guestBookingByApplication`. The organizer then
+selects **Allow guest reservations** when scheduling. A signed-out visitor with the session link
+can reserve a lobby seat weeks ahead, withdraw it, or return in the same browser to review a changed
+time. Forwarding the link lets another visitor book an available seat with their own browser.
+At lobby opening the guest explicitly claims the reservation to receive room access. Booking
+provides no court assignment. Existing sessions continue to accept signed-in reservations only.
+
 The lobby opens ten minutes before the scheduled start. Entry claims the account's reserved seat;
 accounts without reservations can enter only if an unreserved seat is available. The current host
 starts gameplay explicitly at or after the scheduled time. Passing the start time never starts a
