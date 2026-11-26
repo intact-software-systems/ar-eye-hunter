@@ -177,7 +177,8 @@ function toShareSpread(shares: readonly number[]): EdgeOrderFigures['outOfOrderS
  */
 export function computeEdgeOrderFigures(records: EdgeOrderRunRecords, settings: EdgeOrderReplaySettings): EdgeOrderFigures {
     const sends = new Map(records.sends.map((send) => [toSendKey(send.publisher, send.position), send]));
-    const recipients = [...records.arrivalsByRecipient.values()];
+    // A session that read nothing (a lone publisher) has no arrival order to report.
+    const recipients = [...records.arrivalsByRecipient.values()].filter((arrivals) => arrivals.length > 0);
     const orders = recipients.map(computeArrivalOrder);
     const replays = recipients.map((arrivals) => replayEdgeOrderArrivals(arrivals, settings));
     const handOvers = replays.flatMap((replay) => toMeasuredHandOvers(replay, sends));
