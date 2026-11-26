@@ -71,8 +71,12 @@ export interface PublicationWorkloadPublisherFigures {
     readonly acceptedSends: number;
     readonly completedIterations: number;
     readonly elapsedMs: number;
-    /** The loop's own rate, between the starts of its iterations; `undefined` where the loop states none. */
-    readonly achievedRateHz: number | undefined;
+    /**
+     * The loop's `pacing.achievedRateHz`: its iterations, whether their send was accepted or not, as the n - 1
+     * intervals between them over the loop's elapsed time, which includes the last child, to four places. `null`
+     * where the loop states none, as a loop of one iteration does: the record is written as JSON, which keeps a `null`.
+     */
+    readonly achievedIterationRateHz: number | null;
     /** The publisher page's publication stage as its `stats` read it: holdings, limits, counters and figures. */
     readonly publicationStage: ALOutboundPublicationStageReport;
 }
@@ -152,11 +156,13 @@ function decodeLoopFigures(
     const record = decodeRecord(loop);
     const pacing = decodeRecord(record.pacing);
     const acceptedSends = decodeNonNegativeInteger(record.passed);
+    const childResultCount = decodeNonNegativeInteger(record.childResultCount);
     const completedIterations = decodeNonNegativeInteger(pacing.completedIterations);
     const elapsedMs = decodeFiniteNumber(pacing.elapsedMs);
     const achievedRateHz = decodeFiniteNumber(pacing.achievedRateHz);
     const issues = [
         ...(acceptedSends === undefined ? [`${LOOP_PATH}.passed must be a whole number of at least 0`] : []),
+        ...validateLoopChildResultCount(childResultCount, completedIterations),
         ...(completedIterations === undefined
             ? [`${LOOP_PATH}.pacing.completedIterations must be a whole number of at least 0`]
             : []),
@@ -172,7 +178,28 @@ function decodeLoopFigures(
     ) {
         return Either.ofLeft(issues);
     }
-    return Either.ofRight({ acceptedSends, completedIterations, elapsedMs, achievedRateHz });
+    return Either.ofRight({
+        acceptedSends,
+        completedIterations,
+        elapsedMs,
+        achievedIterationRateHz: achievedRateHz ?? null
+    });
+}
+
+/**
+ * The family's loop holds one send, so it ran one child per iteration. A loop that ran another number is not the
+ * family's, and its `passed` would not count accepted sends.
+ */
+function validateLoopChildResultCount(
+    childResultCount: number | undefined,
+    completedIterations: number | undefined
+): readonly string[] {
+    if (childResultCount === undefined) {
+        return [`${LOOP_PATH}.childResultCount must be a whole number of at least 0`];
+    }
+    return completedIterations === undefined || childResultCount === completedIterations
+        ? []
+        : [`${LOOP_PATH}.childResultCount must be ${LOOP_PATH}.pacing.completedIterations, one child per iteration`];
 }
 
 /** The stage decoder names each bad field under `publication.`, the block `stats.rallar.alm` holds it in. */

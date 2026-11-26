@@ -46,6 +46,8 @@ const TOPIC_ID = 'room.publication-workload';
 const FRAME_TYPE_ID = 'room.publication-workload.frame.v1';
 /** A live send names its stream; the one publisher of a point publishes one. */
 const STREAM_RESOURCE_ID = 'publication-workload';
+/** The publisher's loop of sends: its result's `passed` is what the assert on the accepted sends reads. */
+const PUBLISH_LOOP_COMMAND_ID = `${SCOPE}-${ROLE_NAMES.owner}-frames`;
 /**
  * A page's ALM diagnostics put an event per send and per arrival on the page whose load a point measures, so the
  * family's pages connect without them.
@@ -67,21 +69,20 @@ export function createPublicationWorkloadRecipes(
     }
     const plan = computePublicationWorkloadPlan(parameters);
     const window = createPublisherWindowCommands(parameters, plan);
-    // A subscriber waits at the complete barrier through the publisher's whole window. Its assert reads a local result
-    // and names no timeout; every other command of the window names its own.
-    const completeTimeoutMs = computeCommandsTimeoutMs(
-        window.filter((command) => command.kind !== 'assert'),
-        'the complete barrier'
-    );
+    // A subscriber waits at the complete barrier through the publisher's whole window.
+    const completeTimeoutMs = computeCommandsTimeoutMs(window, 'the complete barrier');
     return Either.ofRight({
         publisher: {
             agentCount: 1,
             recipe: {
                 ...toRecipeIdentity('owner'),
+                // The gate on the accepted sends comes last: a publisher that fails it has already met the
+                // subscribers at the complete barrier, so they still count what did arrive.
                 commands: [
                     ...createSetupCommands(parameters, 'owner'),
                     ...window,
-                    createBarrier('owner', 'complete', completeTimeoutMs)
+                    createBarrier('owner', 'complete', completeTimeoutMs),
+                    createAcceptedSendsAssert(plan)
                 ]
             }
         },
@@ -120,7 +121,10 @@ function createBarrier(role: AlmCohortRole, phase: string, timeoutMs: number): R
     return createAlmCohortBarrier({ scope: SCOPE, roleName: ROLE_NAMES[role], phase, timeoutMs });
 }
 
-/** The cohort settles on one layout whatever the carrier, then every role meets before the first send. */
+/**
+ * The cohort settles on one layout whatever the carrier, and its setup-complete barrier is the one gate before the
+ * window: the publisher's first send and a subscriber's wait both follow it directly.
+ */
 function createSetupCommands(
     parameters: PublicationWorkloadParameters,
     role: AlmCohortRole
@@ -135,38 +139,35 @@ function createSetupCommands(
         channel: { typeId: FRAME_TYPE_ID, topicId: TOPIC_ID }
     };
     const setup = createAlmCohortSetupCommands(cohort, role);
-    return [
-        ...setup.entry,
-        ...setup.gathering,
-        ...setup.settling,
-        createBarrier(role, 'traffic-ready', parameters.readyTimeoutMs)
-    ];
+    return [...setup.entry, ...setup.gathering, ...setup.settling];
 }
 
 /**
- * The sends, the gate on how many were accepted, and the stats once the stage holds nothing of the window. A staged
- * value leaves the stage at an opportunity, admitted or, past its lifetime, expired, and the next opportunity is at
- * most one cadence away: one lifetime and one cadence after the last send, the stage's counters are final.
+ * The sends, and the stats once the stage holds nothing of the window. A staged value leaves the stage at an
+ * opportunity, admitted or, past its lifetime, expired, and the next opportunity is at most one cadence away: one
+ * lifetime and one cadence after the last send, the stage's counters are final.
  */
 function createPublisherWindowCommands(
     parameters: PublicationWorkloadParameters,
     plan: PublicationWorkloadPlan
 ): readonly RallarBlackBoxTestCommand[] {
     const prefix = toCommandPrefix('owner');
-    const loop = createPublishLoop(parameters, plan);
     return [
-        loop,
-        // A loop's thresholds read `rtc.send` and `ws.send` alone, so the accepted sends are judged here.
-        {
-            kind: 'assert',
-            commandId: `${prefix}-assert-accepted-sends`,
-            source: `resultCache.${loop.commandId}.value.passed`,
-            operator: 'gte',
-            expected: plan.minAcceptedSends
-        },
+        createPublishLoop(parameters, plan),
         toPauseWait(`${prefix}-drain`, parameters.publication.cadenceMs + parameters.ttlMs),
         { kind: 'stats', commandId: `${prefix}-stats`, timeoutMs: STATS_TIMEOUT_MS }
     ];
+}
+
+/** A loop's thresholds read `rtc.send` and `ws.send` alone, so the accepted sends are judged by an assert of their own. */
+function createAcceptedSendsAssert(plan: PublicationWorkloadPlan): RallarBlackBoxTestCommand {
+    return {
+        kind: 'assert',
+        commandId: `${toCommandPrefix('owner')}-assert-accepted-sends`,
+        source: `resultCache.${PUBLISH_LOOP_COMMAND_ID}.value.passed`,
+        operator: 'gte',
+        expected: plan.minAcceptedSends
+    };
 }
 
 /**
@@ -177,11 +178,11 @@ function createPublisherWindowCommands(
 function createPublishLoop(
     parameters: PublicationWorkloadParameters,
     plan: PublicationWorkloadPlan
-): RallarBlackBoxTestLoopCommand & Readonly<{ commandId: string; }> {
+): RallarBlackBoxTestLoopCommand {
     const prefix = toCommandPrefix('owner');
     return {
         kind: 'loop',
-        commandId: `${prefix}-frames`,
+        commandId: PUBLISH_LOOP_COMMAND_ID,
         count: plan.frameCount,
         intervalMs: parameters.publishIntervalMs,
         continueOnFailure: true,

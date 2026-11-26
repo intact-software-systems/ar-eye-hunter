@@ -28,7 +28,10 @@ const POINT: PublicationWorkloadParameters = {
     readyTimeoutMs: 45_000
 };
 
-/** The loop's own figure for 60 iterations over 30,260 ms: 59 x 1,000 / 30,260, to four places. */
+/**
+ * Sixty iterations of one send each, 59 of them accepted. The loop's own rate for them over 30,260 ms is its 59
+ * intervals: 59 x 1,000 / 30,260, to four places.
+ */
 const LOOP_RESULT = {
     commandId: 'publication-workload-publish',
     iterations: 60,
@@ -163,9 +166,23 @@ const UNREADABLE_RUNS: readonly UnreadableRun[] = [
         run: { ...RUN, publisher: { ...RUN.publisher, loop: 'cancelled' } },
         paths: [
             '$.publisher.loop.passed',
+            '$.publisher.loop.childResultCount',
             '$.publisher.loop.pacing.completedIterations',
             '$.publisher.loop.pacing.elapsedMs'
         ]
+    },
+    {
+        unreadable: 'a loop that ran 61 children in its 60 iterations, so not one send per iteration',
+        run: { ...RUN, publisher: { ...RUN.publisher, loop: { ...LOOP_RESULT, childResultCount: 61 } } },
+        paths: ['$.publisher.loop.childResultCount']
+    },
+    {
+        unreadable: 'a loop whose elapsed time is negative',
+        run: {
+            ...RUN,
+            publisher: { ...RUN.publisher, loop: { ...LOOP_RESULT, pacing: { ...LOOP_RESULT.pacing, elapsedMs: -1 } } }
+        },
+        paths: ['$.publisher.loop.pacing.elapsedMs']
     },
     {
         unreadable: 'a stats result that read no publication stage',
@@ -182,6 +199,16 @@ const UNREADABLE_RUNS: readonly UnreadableRun[] = [
             }
         },
         paths: ['$.publisher.stats.rallar.alm.publication.staged']
+    },
+    {
+        unreadable: 'a subscriber whose count left no result value',
+        run: { ...RUN, subscribers: [{ agentId: 'agent-2', received: undefined }] },
+        paths: ['$.subscribers[0].received.observed', '$.subscribers[0].received.sampleAge']
+    },
+    {
+        unreadable: 'a sample age whose unrecorded samples are no count',
+        run: { ...RUN, subscribers: [{ agentId: 'agent-2', received: toReceivedResult(60, FIRST_AGE_MS, -1) }] },
+        paths: ['$.subscribers[0].received.sampleAge.unrecordedSamples']
     },
     {
         unreadable: 'a count that named no ageFrom',
@@ -239,7 +266,7 @@ const UNREADABLE_RUNS: readonly UnreadableRun[] = [
 ];
 
 describe('toPublicationWorkloadFigures', () => {
-    it('repeats the point as configured, and reports the achieved rate and each subscriber\'s age ranges as measured', () => {
+    it('repeats the point as configured, and reports the loop\'s iteration rate and each subscriber\'s age ranges as measured', () => {
         expect(toPublicationWorkloadFigures(RUN).right).toEqual({
             configured: {
                 parameters: POINT,
@@ -259,7 +286,7 @@ describe('toPublicationWorkloadFigures', () => {
                     acceptedSends: 59,
                     completedIterations: 60,
                     elapsedMs: 30_260,
-                    achievedRateHz: 1.9498,
+                    achievedIterationRateHz: 1.9498,
                     publicationStage: PUBLICATION_STAGE
                 },
                 subscribers: [
@@ -301,6 +328,32 @@ describe('toPublicationWorkloadFigures', () => {
 
         expect(figures.right).toBeUndefined();
         expect(figures.left?.map((issue) => issue.slice(0, issue.indexOf(' ')))).toEqual(paths);
+    });
+
+    it('reads a loop of one iteration, which has no interval and so states no rate, as a rate of null', () => {
+        const figures = toPublicationWorkloadFigures({
+            ...RUN,
+            publisher: {
+                ...RUN.publisher,
+                loop: {
+                    ...LOOP_RESULT,
+                    iterations: 1,
+                    childResultCount: 1,
+                    passed: 1,
+                    failed: 0,
+                    pacing: { requestedIntervalMs: 500, requestedRateHz: 2, plannedIterations: 60, completedIterations: 1, elapsedMs: 12 }
+                }
+            }
+        });
+
+        expect(figures.left).toBeUndefined();
+        expect(figures.right?.measured.publisher).toEqual({
+            acceptedSends: 1,
+            completedIterations: 1,
+            elapsedMs: 12,
+            achievedIterationRateHz: null,
+            publicationStage: PUBLICATION_STAGE
+        });
     });
 
     it('says that a subscriber recorded no age, and reports no zero in its place', () => {

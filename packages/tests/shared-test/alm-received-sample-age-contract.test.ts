@@ -3,7 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { validateAlmControlCommand } from '@shared-test/rallar-bb-test/alm/validate-alm-control-command.ts';
 import { RALLAR_BLACK_BOX_COMMAND_CAPABILITIES } from '@shared-test/rallar-bb-test/schema/rallar-black-box-command-capabilities.ts';
 
-import { command, readBoundaries } from './alm-messages-received-boundaries.ts';
+import {
+    computeAlmMessagesReceivedBoundaryAdmission,
+    toAlmMessagesReceivedCommand
+} from './alm-messages-received-boundaries.ts';
 
 describe('a sample-age reading in a messages.received command', () => {
     it.each([
@@ -15,7 +18,7 @@ describe('a sample-age reading in a messages.received command', () => {
             stallMs: 1_000
         }]
     ])('admits %s through schema and command validation', (_label, fields) => {
-        expect(readBoundaries({ ...command, ...fields })).toEqual({ schema: true, command: true });
+        expect(computeAlmMessagesReceivedBoundaryAdmission(toAlmMessagesReceivedCommand(fields))).toEqual({ schema: true, command: true });
     });
 
     it.each([
@@ -23,13 +26,13 @@ describe('a sample-age reading in a messages.received command', () => {
         ['a blank field name', { ageFrom: '  ' }],
         ['a field name that is no string', { ageFrom: 3 }]
     ])('refuses %s at both boundaries', (_label, fields) => {
-        expect(readBoundaries({ ...command, ...fields })).toEqual({ schema: false, command: false });
+        expect(computeAlmMessagesReceivedBoundaryAdmission(toAlmMessagesReceivedCommand(fields))).toEqual({ schema: false, command: false });
     });
 
     it('refuses an age reading beside an absence claim, which asks for no copy, and says why', () => {
-        const absence = { ...command, ageFrom: 'sentAtEpochMs', absent: true };
+        const absence = toAlmMessagesReceivedCommand({ ageFrom: 'sentAtEpochMs', absent: true });
 
-        expect(readBoundaries(absence)).toEqual({ schema: true, command: false });
+        expect(computeAlmMessagesReceivedBoundaryAdmission(absence)).toEqual({ schema: true, command: false });
         expect(validateAlmControlCommand(absence, 'messages.received').map((issue) => issue.message)).toEqual([
             'messages.received.ageFrom reads the age of the copies a count asks for, which an absence claim ' +
             '(absent: true) asks for none of.'

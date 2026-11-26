@@ -72,15 +72,13 @@ function toSoleSendLoop(recipe: RallarBlackBoxTestRecipe): RallarBlackBoxTestLoo
     return loop;
 }
 
-/** The commands a role runs after `afterBarrierId`, up to the next barrier or the end of its recipe. */
+/** The commands a role runs after the barrier `afterBarrierId`, to the end of its recipe. */
 function toCommandsAfterBarrier(
     recipe: RallarBlackBoxTestRecipe,
     afterBarrierId: string
 ): readonly RallarBlackBoxTestCommand[] {
     const start = recipe.commands.findIndex((command) => command.kind === 'barrier' && command.barrierId === afterBarrierId);
-    const following = recipe.commands.slice(start + 1);
-    const end = following.findIndex((command) => command.kind === 'barrier');
-    return start < 0 ? [] : following.slice(0, end < 0 ? following.length : end);
+    return start < 0 ? [] : recipe.commands.slice(start + 1);
 }
 
 function toBarrierIds(recipe: RallarBlackBoxTestRecipe): readonly string[] {
@@ -172,14 +170,13 @@ describe('the recipes of one point of the publication workload family', () => {
         }
     );
 
-    it('meets both roles at the same five barriers, in order, under command ids of their own', () => {
+    it('meets both roles at the same four barriers, in order, under command ids of their own', () => {
         const { publisher, subscriber } = createRecipes(POINT);
 
         const barrierIds = [
             'publication-workload-group-created',
             'publication-workload-connected',
             'publication-workload-setup-complete',
-            'publication-workload-traffic-ready',
             'publication-workload-complete'
         ];
         expect(toBarrierIds(publisher.recipe)).toEqual(barrierIds);
@@ -189,29 +186,41 @@ describe('the recipes of one point of the publication workload family', () => {
         expect(publisherCommandIds.filter((commandId) => subscriberCommandIds.includes(commandId))).toEqual([]);
     });
 
-    it('gives a subscriber the whole of the publisher\'s window before the complete barrier gives up, and keeps its whole inbound log', () => {
+    it('starts the window at the setup-complete barrier: the publisher sends, drains and reads its stats, a subscriber waits at the complete barrier through all of it, and keeps its whole inbound log', () => {
         const { publisher, subscriber } = createRecipes(POINT);
 
         // Twice the 30,000 ms window for the loop, the 5,100 ms drain and the 3,000 ms stats read.
         const completeBarrier = { kind: 'barrier', barrierId: 'publication-workload-complete', timeoutMs: 68_100 };
-        expect(publisher.recipe.commands.at(-1)).toMatchObject(completeBarrier);
-        expect(toCommandsAfterBarrier(subscriber.recipe, 'publication-workload-traffic-ready')).toEqual([]);
-        expect(subscriber.recipe.commands.find((command) => command.kind === 'barrier' && command.barrierId === completeBarrier.barrierId))
+        const publisherWindow = toCommandsAfterBarrier(publisher.recipe, 'publication-workload-setup-complete');
+        expect(publisherWindow.map((command) => command.commandId)).toEqual([
+            'publication-workload-publisher-frames',
+            'publication-workload-publisher-drain',
+            'publication-workload-publisher-stats',
+            'publication-workload-publisher-complete',
+            'publication-workload-publisher-assert-accepted-sends'
+        ]);
+        expect(publisherWindow[3]).toMatchObject(completeBarrier);
+        expect(toCommandsAfterBarrier(subscriber.recipe, 'publication-workload-setup-complete')[0])
             .toMatchObject(completeBarrier);
         expect(subscriber.recipe.eventHistory).toEqual({ mode: 'full' });
     });
 });
 
-describe('the publisher\'s window, run by the runtime between its two barriers', () => {
+describe('the publisher\'s commands after the setup-complete barrier, run by the runtime', () => {
     interface PublisherWindowRun {
         readonly ok: boolean;
         /** The failures outside the loop: a refused send fails under its loop's id and is the loop's to count. */
         readonly failedCommandIds: readonly string[];
+        /** Every command of the recipe that returned a result, in the order it ran. */
+        readonly ranCommands: readonly Readonly<{ commandId: string; ok: boolean; }>[];
         readonly sends: readonly RallarBlackBoxTestMessagesSendCommand[];
         readonly statsReadAtEpochMs: number | undefined;
     }
 
-    /** Sends take no time and every sleep advances the clock, so the clock reads the schedule alone. */
+    /**
+     * Sends take no time and every sleep advances the clock, so the clock reads the schedule alone. The executor
+     * releases a barrier as soon as the publisher arrives at it, as a control server whose subscribers already wait.
+     */
     async function runPublisherWindow(refusedSendCount: number): Promise<PublisherWindowRun> {
         let now = WINDOW_STARTED_AT_EPOCH_MS;
         const sends: RallarBlackBoxTestMessagesSendCommand[] = [];
@@ -221,6 +230,13 @@ describe('the publisher\'s window, run by the runtime between its two barriers',
                 now += ms;
             },
             commandExecutor: (command, context) => {
+                if (command.kind === 'barrier') {
+                    return {
+                        status: 'ok',
+                        value: { barrierId: command.barrierId, outcome: 'released', arrivedAgentIds: [] },
+                        nextStatus: context.state().status
+                    };
+                }
                 if (command.kind !== 'messages.send' || !('carrier' in command)) {
                     return undefined;
                 }
@@ -237,11 +253,17 @@ describe('the publisher\'s window, run by the runtime between its two barriers',
                 schemaVersion: 1,
                 recipeId: 'publisher-window',
                 continueOnFailure: false,
-                commands: toCommandsAfterBarrier(createRecipes(POINT).publisher.recipe, 'publication-workload-traffic-ready')
+                commands: toCommandsAfterBarrier(createRecipes(POINT).publisher.recipe, 'publication-workload-setup-complete')
             }
         });
+        const ran = isJsonRecordValue(result.value) && Array.isArray(result.value.results) ? result.value.results : [];
         return {
             ok: result.ok,
+            ranCommands: ran.flatMap((entry) =>
+                isJsonRecordValue(entry) && typeof entry.commandId === 'string' && typeof entry.ok === 'boolean'
+                    ? [{ commandId: entry.commandId, ok: entry.ok }]
+                    : []
+            ),
             failedCommandIds: runtime.state().failures
                 .map((failure) => failure.commandId)
                 .filter((commandId) => !commandId.startsWith('publication-workload-publisher-frames:')),
@@ -270,7 +292,7 @@ describe('the publisher\'s window, run by the runtime between its two barriers',
         expect(run.statsReadAtEpochMs).toBe(1_800_000_029_500 + 5_100);
     });
 
-    it('passes with 57 of 60 sends accepted and fails its own assert, before any stats, with 56', async () => {
+    it('passes with 57 of 60 sends accepted, and with 56 fails its own assert only after it read its stats and met the subscribers at the complete barrier', async () => {
         const atThreshold = await runPublisherWindow(3);
         const belowThreshold = await runPublisherWindow(4);
 
@@ -279,7 +301,14 @@ describe('the publisher\'s window, run by the runtime between its two barriers',
         expect(belowThreshold.ok).toBe(false);
         expect(belowThreshold.failedCommandIds)
             .toEqual(['publication-workload-publisher-assert-accepted-sends', 'publisher-window']);
-        expect(belowThreshold.statsReadAtEpochMs).toBeUndefined();
+        expect(belowThreshold.statsReadAtEpochMs).toBe(1_800_000_029_500 + 5_100);
+        expect(belowThreshold.ranCommands).toEqual([
+            { commandId: 'publication-workload-publisher-frames', ok: true },
+            { commandId: 'publication-workload-publisher-drain', ok: true },
+            { commandId: 'publication-workload-publisher-stats', ok: true },
+            { commandId: 'publication-workload-publisher-complete', ok: true },
+            { commandId: 'publication-workload-publisher-assert-accepted-sends', ok: false }
+        ]);
     });
 });
 
