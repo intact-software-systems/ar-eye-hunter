@@ -148,7 +148,7 @@ describe('pull-request release workflow', () => {
         expect(workflow.concurrency).toEqual({ group: 'rtc-b06-performance-observation', 'cancel-in-progress': false });
         expect(workflow.jobs.diagnostic).toMatchObject({
             needs: 'source',
-            strategy: { 'fail-fast': false, matrix: { runner: [1, 2, 3] } }
+            strategy: { 'fail-fast': false, matrix: { runner: [1, 2, 3], case: ['default', 'all-scenarios', 'retention-100'] } }
         });
         expect(publication.needs).toEqual(['source', 'capture']);
         expect(publication.steps[0]?.with?.ref).toBe('${{ github.sha }}');

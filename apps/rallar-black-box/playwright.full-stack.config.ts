@@ -5,6 +5,8 @@ import {
 } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 
+import { FULL_STACK_SPA_START_TIMEOUT_MS } from '../../packages/shared-test/rallar-bb-test/browser-test-budgets/full-stack-web-server-start-timeouts.ts';
+import { FULL_STACK_EXPECT_TIMEOUT_MS } from '../../packages/shared-test/rallar-bb-test/browser-test-budgets/playwright-expect-timeouts.ts';
 import { loadLiveRtcPerformanceAttempt } from '../../tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts';
 import { readGovernedLiveRtcControlServer } from '../../tests/playwright/rallar-black-box/read-governed-live-rtc-control-server.ts';
 
@@ -108,7 +110,7 @@ const spaWebServer = preparedProduction?.right
         env: { VITE_RALLAR_API_BASE_URL: fullStackApiBaseUrl },
         url: headlessSpaEnabled ? `${fullStackSpaBaseUrl}/headless/` : fullStackSpaBaseUrl,
         reuseExistingServer,
-        timeout: 60_000
+        timeout: FULL_STACK_SPA_START_TIMEOUT_MS
     };
 
 const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
@@ -144,12 +146,15 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
     controlWebServer
 ];
 
+/** A full-stack test's limit when it sets none of its own. */
+const FULL_STACK_TEST_TIMEOUT_MS = 90_000;
+
 export default defineConfig({
     testDir: '../../tests/playwright/rallar-black-box',
     testMatch: /full-stack-.*\.spec\.ts/,
-    timeout: 90_000,
+    timeout: FULL_STACK_TEST_TIMEOUT_MS,
     expect: {
-        timeout: 15_000
+        timeout: FULL_STACK_EXPECT_TIMEOUT_MS
     },
     reporter: [['list', { printSteps: true }]],
     use: {

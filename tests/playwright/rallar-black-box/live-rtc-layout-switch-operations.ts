@@ -5,7 +5,22 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import { LIVE_RTC_LAYOUT_SWITCH_FRAME_TOPIC } from './compute-live-rtc-layout-switch-evidence.ts';
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import { jsonRecord, numberValue } from './live-rtc-evidence-json.ts';
-import type { FormationHealth, LiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
+import type {
+    FormationAgentInput,
+    FormationHealth,
+    LiveRtcFormationOperations
+} from './live-rtc-formation-operations.ts';
+
+/** The `/api/config` read's own budget. */
+export const LAYOUT_SWITCH_CONFIG_READ_TIMEOUT_MS = 10_000;
+
+/** Each durable topology write's own budget. */
+export const LAYOUT_SWITCH_TOPOLOGY_WRITE_TIMEOUT_MS = 10_000;
+
+/** A stream reports once its last frame settled, so its result poll covers its duration and its own drain. */
+export function computeLayoutSwitchStreamResultPollTimeoutMs(durationMs: number): number {
+    return durationMs + 2 * RALLAR_BLACK_BOX_RTC_STREAM_DEFAULT_DRAIN_TIMEOUT_MS;
+}
 
 /** The delivery each frame is sent with; `ack` is named, since a send with no channel defaults to `none`. */
 export interface LiveRtcStreamQos {
@@ -15,8 +30,8 @@ export interface LiveRtcStreamQos {
 
 export namespace LiveRtcLayoutSwitchOperations {
     export interface Input {
-        readonly control: LiveRtcControlClient;
-        readonly formation: LiveRtcFormationOperations;
+        readonly control: FormationAgentInput['control'];
+        readonly formation: Pick<LiveRtcFormationOperations, 'health'>;
         readonly runId: string;
         readonly roomRef: GroupRef;
         readonly suffix: string;
@@ -55,7 +70,7 @@ export class LiveRtcLayoutSwitchOperations {
                 kind: 'http.request',
                 request: { path: '/api/config', method: 'GET' },
                 response: { body: 'json', acceptedStatusCodes: [200] },
-                timeoutMs: 10_000
+                timeoutMs: LAYOUT_SWITCH_CONFIG_READ_TIMEOUT_MS
             }
         });
         return numberValue(jsonRecord(control.resultValue(result).body)?.rtcReplacedLayoutOverlapMs);
@@ -78,7 +93,7 @@ export class LiveRtcLayoutSwitchOperations {
                     body: { config: { topologyKind } }
                 },
                 response: { body: 'json', acceptedStatusCodes: [200] },
-                timeoutMs: 10_000
+                timeoutMs: LAYOUT_SWITCH_TOPOLOGY_WRITE_TIMEOUT_MS
             }
         });
         return requestedAtEpochMs;
@@ -89,7 +104,6 @@ export class LiveRtcLayoutSwitchOperations {
         return await this.#input.formation.health({ control, runId, agent, roomRef, suffix });
     }
 
-    /** The stream reports once its last frame settled, so the wait covers its duration and its own drain. */
     async runStream(input: LiveRtcLayoutSwitchOperations.StreamInput): Promise<LiveRtcControlClient.Result> {
         const { control, runId, roomRef, messagesRtc } = this.#input;
         const { agent, qos } = input;
@@ -123,7 +137,7 @@ export class LiveRtcLayoutSwitchOperations {
                     }
                 }
             },
-            timeoutMs: input.durationMs + 2 * RALLAR_BLACK_BOX_RTC_STREAM_DEFAULT_DRAIN_TIMEOUT_MS
+            timeoutMs: computeLayoutSwitchStreamResultPollTimeoutMs(input.durationMs)
         });
     }
 

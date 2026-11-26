@@ -80,7 +80,7 @@ function createMediaPolicyFixture(): MediaPolicyFixture {
         peerSessionId: 'remote',
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         isPolite: true,
-        offerGeneration: 1
+        connectionGeneration: 1
     }, new DeterministicRtcOfferIds());
     onTestFinished(() => {
         peer.reset();

@@ -16,6 +16,7 @@ import {
     FULL_STACK_RTC_PRODUCTION_POLICY,
     type FullStackRtcProductionSeal
 } from '../../packages/shared-test/black-box-runner/fixtures/rtc-production/full-stack-rtc-production-proof.ts';
+import { FULL_STACK_SPA_START_TIMEOUT_MS } from '../../packages/shared-test/rallar-bb-test/browser-test-budgets/full-stack-web-server-start-timeouts.ts';
 import { Either } from '../../packages/shared/resilience/Either.ts';
 import type { LiveRtcPerformanceAttemptContext } from '../../tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts';
 
@@ -52,7 +53,7 @@ export interface FullStackRtcProductionServerConfiguration {
     readonly env: Readonly<Record<string, string>>;
     readonly url: string;
     readonly reuseExistingServer: false;
-    readonly timeout: 60000;
+    readonly timeout: number;
 }
 
 export interface FullStackRtcProductionFailure {
@@ -204,7 +205,7 @@ export function createFullStackRtcPreviewServer(
         },
         url: seal.spaOrigin,
         reuseExistingServer: false,
-        timeout: 60_000
+        timeout: FULL_STACK_SPA_START_TIMEOUT_MS
     };
 }
 

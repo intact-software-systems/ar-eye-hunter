@@ -1,6 +1,7 @@
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 import type {
+    RtcBaselineAttemptInputLocatorDto,
     RtcBaselineAttemptLocatorDto,
     RtcBaselineConditionalEnvironmentDecisionDto,
     RtcBaselineResult
@@ -8,6 +9,8 @@ import type {
 import { createRtcBaselineObservationId } from '../contracts/rtc-baseline-id.ts';
 import type { RtcBaselineFinalizedSummary } from '../evidence/rtc-baseline-finalized-evidence.ts';
 import type { RtcBaselineEnvelope } from '../runtime/rtc-baseline-envelope.ts';
+import { computeRtcB06AttemptTimeoutMs } from './compute-rtc-b06-attempt-timeout-ms.ts';
+import { computeRtcPerformanceObservationOutcome } from './compute-rtc-performance-observation-outcome.ts';
 import { readRtcB06EvidenceReport, type RtcB06EvidenceReport } from './read-rtc-b06-evidence-report.ts';
 import type { RtcB06PerformanceObservation } from './rtc-b06-performance-observation.ts';
 import type { RtcPerformanceObservationArchiveWritten } from './rtc-performance-observation-archive.ts';
@@ -20,6 +23,11 @@ export interface RtcB06ObservationRunInput {
     readonly githubRunAttempt: number;
     readonly githubRunUrl: string;
     readonly outputDirectory: string;
+    /**
+     * How long, from the capture's start, it may keep starting attempts before its job must upload and report; absent,
+     * it runs every declared attempt.
+     */
+    readonly jobBudgetSeconds?: number;
 }
 
 export interface RtcB06BaselineCaptureInput extends Omit<RtcB06ObservationRunInput, 'sourceRef'> {
@@ -63,6 +71,7 @@ export interface RtcB06ObservationRunnerDependencies {
         archive: RtcPerformanceObservationArchiveWritten;
     }): Promise<RtcBaselineResult<RtcB06ObservationOutput>>;
     nowUtc(): string;
+    monotonicNowMs(): number;
 }
 
 type RtcB06ObservationEnvelope = Pick<
@@ -71,6 +80,7 @@ type RtcB06ObservationEnvelope = Pick<
     | 'readExternalAttempts'
     | 'recordExternalAttempt'
     | 'recordExternalCohortAssertion'
+    | 'recordExternalAttemptsNotStarted'
     | 'finalize'
     | 'readBaselineValidation'
 >;
@@ -96,6 +106,9 @@ async function captureRtcB06Baseline(
     dependencies: RtcB06ObservationRunnerDependencies,
     capture: RtcB06BaselineCaptureInput
 ): Promise<RtcBaselineResult<RtcB06BaselineCapture>> {
+    const deadlineMs = capture.jobBudgetSeconds === undefined
+        ? undefined
+        : dependencies.monotonicNowMs() + capture.jobBudgetSeconds * 1_000;
     const preflight = await dependencies.preflight(capture.environmentId);
     if (!preflight.ok) {
         return preflight;
@@ -119,11 +132,15 @@ async function captureRtcB06Baseline(
     if (!initialized.ok) {
         return initialized;
     }
-    const primary = await captureAndFinalize(dependencies, identity.value, capture.environmentId);
+    const primary = await captureAndFinalize(dependencies, {
+        baselineId: identity.value,
+        environmentId: capture.environmentId,
+        deadlineMs
+    });
     if (!primary.ok) {
         return primary;
     }
-    const primaryOutcome = outcomeOf(primary.value);
+    const primaryOutcome = computeRtcPerformanceObservationOutcome(primary.value);
     const evidenceReport = await readEvidenceReport(dependencies, primary.value);
     if (!evidenceReport.ok) {
         return evidenceReport;
@@ -221,53 +238,97 @@ function initializePrimary(
     });
 }
 
-async function captureAndFinalize(
-    dependencies: RtcB06ObservationRunnerDependencies,
-    baselineId: string,
-    environmentId: RtcB06BaselineCaptureInput['environmentId']
-) {
+interface RtcB06AttemptsRun {
+    readonly baselineId: string;
+    readonly environmentId: RtcB06BaselineCaptureInput['environmentId'];
+    /**
+     * The monotonic time by which a started attempt, its build and web server start included, must be able to end;
+     * absent, every attempt starts.
+     */
+    readonly deadlineMs: number | undefined;
+}
+
+interface RtcB06ProducedAttempts {
+    readonly complete: boolean;
+    readonly retentionExitStatus: number;
+}
+
+async function captureAndFinalize(dependencies: RtcB06ObservationRunnerDependencies, run: RtcB06AttemptsRun) {
+    const { baselineId, environmentId } = run;
     const retentionCohortId = `rtc-b06-${environmentId.toLowerCase()}-retention`;
-    const attempts = await dependencies.envelope.readExternalAttempts({
-        baselineId,
-        workloadId: 'RTC-B06'
-    });
+    const attempts = await dependencies.envelope.readExternalAttempts({ baselineId, workloadId: 'RTC-B06' });
     if (!attempts.ok) {
         return attempts;
     }
-    let attemptsComplete = true;
-    let retentionExitStatus = 1;
-    for (const attempt of attempts.value) {
-        const exitStatus = await runProducer(dependencies, baselineId, attempt);
-        if (attempt.caseId === 'retention-100' && attempt.intendedPhase === 'retained') {
-            retentionExitStatus = exitStatus;
-        }
-        const recorded = await dependencies.envelope.recordExternalAttempt({
-            baselineId,
-            locator: {
-                workloadId: attempt.workloadId,
-                caseId: attempt.caseId,
-                inputKey: attempt.inputKey,
-                intendedPhase: attempt.intendedPhase,
-                outerOrdinal: attempt.outerOrdinal
-            },
-            producerExitStatus: exitStatus,
-            rawResultRelativePath: attempt.rawResultRelativePath
-        });
-        if (!recorded.ok) {
-            attemptsComplete = false;
-            break;
-        }
+    const produced = await produceAttempts(dependencies, run, attempts.value);
+    if (!produced.ok) {
+        return produced;
     }
-    if (attemptsComplete) {
+    if (produced.value.complete) {
         await dependencies.envelope.recordExternalCohortAssertion({
             baselineId,
             workloadId: 'RTC-B06',
             cohortId: retentionCohortId,
-            producerExitStatus: retentionExitStatus,
+            producerExitStatus: produced.value.retentionExitStatus,
             rawResultRelativePath: `artifacts/staging/${retentionCohortId}.json`
         });
     }
     return dependencies.envelope.finalize({ baselineId });
+}
+
+/**
+ * Runs the attempts in order until one is refused or the job budget cannot cover the next attempt; that attempt and
+ * every later one are then recorded as not started, so finalization still accounts for each of them.
+ */
+async function produceAttempts(
+    dependencies: RtcB06ObservationRunnerDependencies,
+    run: RtcB06AttemptsRun,
+    attempts: readonly RtcBaselineAttemptLocatorDto[]
+): Promise<RtcBaselineResult<RtcB06ProducedAttempts>> {
+    let retentionExitStatus = 1;
+    for (const attempt of attempts) {
+        const locator = toAttemptInputLocator(attempt);
+        if (!fitsJobDeadline(dependencies, run, attempt)) {
+            const notStarted = await dependencies.envelope.recordExternalAttemptsNotStarted({
+                baselineId: run.baselineId,
+                locator
+            });
+            return notStarted.ok ? { ok: true, value: { complete: false, retentionExitStatus } } : notStarted;
+        }
+        const exitStatus = await runProducer(dependencies, run.baselineId, attempt);
+        if (attempt.caseId === 'retention-100' && attempt.intendedPhase === 'retained') {
+            retentionExitStatus = exitStatus;
+        }
+        const recorded = await dependencies.envelope.recordExternalAttempt({
+            baselineId: run.baselineId,
+            locator,
+            producerExitStatus: exitStatus,
+            rawResultRelativePath: attempt.rawResultRelativePath
+        });
+        if (!recorded.ok) {
+            return { ok: true, value: { complete: false, retentionExitStatus } };
+        }
+    }
+    return { ok: true, value: { complete: true, retentionExitStatus } };
+}
+
+function fitsJobDeadline(
+    dependencies: RtcB06ObservationRunnerDependencies,
+    run: RtcB06AttemptsRun,
+    attempt: RtcBaselineAttemptLocatorDto
+): boolean {
+    return run.deadlineMs === undefined ||
+        run.deadlineMs - dependencies.monotonicNowMs() >= computeRtcB06AttemptTimeoutMs(attempt.caseId);
+}
+
+function toAttemptInputLocator(attempt: RtcBaselineAttemptLocatorDto): RtcBaselineAttemptInputLocatorDto {
+    return {
+        workloadId: attempt.workloadId,
+        caseId: attempt.caseId,
+        inputKey: attempt.inputKey,
+        intendedPhase: attempt.intendedPhase,
+        outerOrdinal: attempt.outerOrdinal
+    };
 }
 
 async function runProducer(
@@ -283,15 +344,6 @@ async function runProducer(
     catch {
         return 1;
     }
-}
-
-function outcomeOf(summary: RtcBaselineFinalizedSummary): RtcPerformanceObservationOutcome {
-    const outcomes = [...summary.sampleOutcomes, ...summary.cohortOutcomes];
-    return outcomes.length === 0
-        ? 'incomplete'
-        : outcomes.some(({ outcome }) => outcome !== 'passed')
-        ? 'failed'
-        : 'passed';
 }
 
 function validExitStatus(value: number) {

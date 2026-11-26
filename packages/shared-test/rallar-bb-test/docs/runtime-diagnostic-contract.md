@@ -382,7 +382,7 @@ diagnostics event per emission, recorded the moment the outbound runtime calls
 the sink — independent of any connection, so it observes admission work for
 every session the page opens. The event's `data` is the event itself:
 
-- `kind`: `commit-phases`, `effect-drain`, `readiness-probe`, `control-admission`,
+- `kind`: `commit-phases`, `effect-drain-started`, `effect-drain`, `readiness-probe`, `control-admission`,
   `relay-forward-not-enqueued`, `receipt-confirmation`, `congestion`, `rtc-ack-submission`,
   `rtc-handoff-refusal`, `rtc-queued-bytes-high-water`, `track-index-end`,
   `publication-staging` or `publication-opportunity` (the last two are described under
@@ -391,7 +391,7 @@ every session the page opens. The event's `data` is the event itself:
   carries `msgId`, `trackKey`, `seq` and `outcome` — `absent`, `other-message`,
   `conflict` (reported once, not retried) or `failed` (the end threw) — and no payload;
   the row keeps the outcome it had
-- `durationMs`: how long that phase took, on every kind but `commit-phases`,
+- `durationMs`: how long that phase took, on every kind but `commit-phases`, `effect-drain-started`,
   `control-admission`, `relay-forward-not-enqueued`, `receipt-confirmation`, `congestion`, the three `rtc-*` kinds, `track-index-end` and the two
   `publication-*` kinds, which are outcomes, not phases: `commit-phases` splits its own into the two halves
   below, and `control-admission` is a verdict, not a phase. On
@@ -403,7 +403,8 @@ every session the page opens. The event's `data` is the event itself:
   slow commit is charged to the work behind it rather than guessed at from a
   duration
 - `traceId` then `corrId` close every message-scoped kind: `commit-phases`,
-  `control-admission` (after a receipt's `phase`, or a NACK's fields and any proof refusal),
+  `control-admission` (after a receipt's `phase`, a NACK's or a repair's fields, any proof refusal, and `admission`
+  with any `run`),
   `relay-forward-not-enqueued`,
   `receipt-confirmation`,
   `congestion`, `rtc-ack-submission` and `track-index-end`. `publication-staging` is the one
@@ -415,7 +416,7 @@ every session the page opens. The event's `data` is the event itself:
   the browser's send handle name. On `control-admission`,
   `receipt-confirmation` and `rtc-ack-submission` the pair is the control's
   own, and a control travels under the trace of the message it answers. The
-  batch-scoped kinds (`effect-drain`, `readiness-probe`,
+  batch-scoped kinds (`effect-drain-started`, `effect-drain`, `readiness-probe`,
   `rtc-handoff-refusal` and `rtc-queued-bytes-high-water`) carry neither.
   Because the pair is appended after every other field, a wait that matches
   earlier fields in their emitted order still matches; match the trace itself
@@ -440,6 +441,12 @@ every session the page opens. The event's `data` is the event itself:
   ```
 - the phase's own identity fields: `workerId`, `claimedCount`, `completedCount`, `rescheduledCount` and `rejectedCount`
   for `effect-drain`
+- `effect-drain-started` states a drain once its selection is reserved, before its first claim runs: `lane`,
+  `workerId`, `startedAtMs` (the run loop's start, the same `startedAtMs` its `effect-drain` states) and
+  `claimedCount` (the claims its selection reserved). Every start is followed by exactly one `effect-drain` with the
+  same `workerId` and `startedAtMs`, so a start with no end is a drain still running, and the time between a start and
+  its end is how long that batch held the lane. A batch that disposal stopped before its selection, or whose selection
+  threw, states neither
 - the outbound `effect-drain` also carries three of the inbound one's phases
   below, `claimDurationMs`, `runDurationMs` and `releaseDurationMs`, and its
   `startedAtMs`. It has no `selectionDurationMs` or `queueWaitMs`: the outbound
@@ -461,7 +468,63 @@ every session the page opens. The event's `data` is the event itself:
   start together, so each of theirs runs from the group's start. A drain that
   takes seconds therefore names the claim that took them; `claims` is not an
   identity, and an `admit-control` among them is the replay of a control a
-  `control-admission` read `pending-control` for
+  `control-admission` read `pending-control` for. Each entry also states
+  `startedAtMs`, between `run` and `durationMs`: when the batch began awaiting
+  that run, so a run's wait behind the claims before it is its `startedAtMs`
+  less the drain's own
+- after `claims` the outbound `effect-drain` states `expeditedCount`, the rows
+  `expedite()` named that joined the batch after its selection (they count in
+  `claimedCount` too), then `end`: `drained` for a batch that ran its claims
+  out, `aborted` for one disposal cut short (its unstarted claims are released
+  `not-ready`), or `failed` for one whose release flush, or a claim group's
+  start, threw. Only a `drained` batch reports the store's first-batch recovery
+  and the server's dequeue timing; the counts of the other two describe no rows
+  they settled. The inbound lanes relay drained batches only and state no start:
+
+  ```json
+  {
+    "kind": "effect-drain",
+    "lane": "durable",
+    "workerId": "al-outbound:peer-a",
+    "durationMs": 18400,
+    "claimedCount": 3,
+    "completedCount": 3,
+    "rescheduledCount": 0,
+    "rejectedCount": 0,
+    "claimDurationMs": 6,
+    "runDurationMs": 18200,
+    "releaseDurationMs": 190,
+    "startedAtMs": 1700000000006,
+    "claims": [
+      {
+        "payloadKind": "send-prepared",
+        "effectId": "e-1",
+        "expedited": false,
+        "run": 1,
+        "startedAtMs": 1700000000006,
+        "durationMs": 18100
+      },
+      {
+        "payloadKind": "admit-control",
+        "effectId": "e-2",
+        "expedited": true,
+        "run": 1,
+        "startedAtMs": 1700000018106,
+        "durationMs": 60
+      },
+      {
+        "payloadKind": "send-prepared",
+        "effectId": "e-3",
+        "expedited": false,
+        "run": 1,
+        "startedAtMs": 1700000018166,
+        "durationMs": 40
+      }
+    ],
+    "expeditedCount": 1,
+    "end": "drained"
+  }
+  ```
 - `commit-phases` also carries `msgId` and `typeId`, so one message -- an RTC
   offer, say -- can be followed from the commit that admitted it to the drain
   that sent it, and a lane's commits can be counted apart from the rest
@@ -554,8 +617,13 @@ every session the page opens. The event's `data` is the event itself:
   and one more for each renewal (present exactly when the NACK carries one, a
   gap NACK's); `nackLogicalRecipientPeerId`, the recipient the NACK speaks for;
   and `nackFromPeerId`, the peer that sent it, the recipient itself or the relay
-  that forwarded it (both present on every NACK, and on no other control): one
-  event for every inbound ACK, NACK,
+  that forwarded it (both present on every NACK, and on no other control); and
+  for a repair, where a NACK's fields go, `repairGapRequestNumber`, the number
+  of the gap NACK the repair travels with (present exactly when the repair
+  carries one, a `missing-seq` request's), and `repairFromPeerId`, the peer
+  that asked for it (present on every repair and on no other control: a repair
+  names no recipient it speaks for, so its requester is the peer to join it
+  on): one event for every inbound ACK, NACK,
   repair or receipt control the outbound owner decides, recorded when it decides
   it. Every carrier discards that verdict: when captured, the inbound topic's
   `admission-outcome` for the same control reads `not-handled`/`control`
@@ -582,14 +650,15 @@ every session the page opens. The event's `data` is the event itself:
   refusal (`AL control proof is refused: <kind>`) after
   `AL control was already admitted`, so a wait that matches a proof refusal
   reads `proofRefusal` rather than the reason's start. Its bounded
-  dimensions are `outcome`, `phase` and `nackReason`; `nackOrderingKey`,
-  `nackGapRequestNumber`, the two peer ids, `targetMsgId` and the free-text
-  `reason` are not. A gap NACK a relay forwarded reads `nackReason: gap` at the
+  dimensions are `outcome`, `phase`, `nackReason` and `admission`;
+  `nackOrderingKey`, `nackGapRequestNumber`, `repairGapRequestNumber`, `run`,
+  the peer ids, `targetMsgId` and the free-text `reason` are not. A gap NACK a relay forwarded reads `nackReason: gap` at the
   origin, like the recipient's own, since it is the recipient's own; it reads the
   relay as `nackFromPeerId`, so a gap request a relay carried is the one whose
   `nackFromPeerId` differs from its `nackLogicalRecipientPeerId`. A lane wait
-  matches `"nackGapRequestNumber":<n>,"nackLogicalRecipientPeerId":"<peer>"` as
-  one run (`toGapRequestAdmissionWait`), and `"nackReason":"gap","nackOrderingKey":"<key>`
+  matches `"nackLogicalRecipientPeerId":"<peer>"` with `data.nackGapRequestNumber`
+  as a `payloadMinimums` floor (`toGapRequestAdmissionWait`), since commits are not
+  ordered across request numbers, and `"nackReason":"gap","nackOrderingKey":"<key>`
   still opens a gap NACK's fields. A `rejected` control whose receipt proof the origin
   refused also carries, straight after the NACK's fields, `proofRefusal`
   (`missing-proof`, `unknown-key`, `key-mismatch` or `invalid-signature`),
@@ -599,7 +668,17 @@ every session the page opens. The event's `data` is the event itself:
   the verdict its replay reaches under the same control id, so a control that
   read `pending-control` reads again, `committed`, `rejected` or `duplicate`, once per replay
   (a replay that conflicts again reads `pending-control` again); a replay past
-  the control's deadline reports nothing. The event describes a received control
+  the control's deadline reports nothing. Every event then states how its
+  admission ran, after any proof refusal and before the trace: `admission` is
+  `direct` for the decision on the control's arrival, `expedited` for a replay
+  of a parked control's `admit-control` row that `expedite()` claimed into the
+  running batch, or `replay` for one a batch's own selection claimed; `run`,
+  present exactly when `admission` is not `direct`, is which run of that claim
+  the replay is, from 1, the same `run` its claim's `effect-drain` entry states.
+  So a parked control's verdicts read `direct` with `pending-control`, then
+  `expedited` with `run` 1, 2 and 3 while its replays in the running batch
+  conflict, and `replay` with `run` 1 once a later batch claims its row:
+  `{"kind":"control-admission","msgId":"repair-1","typeId":"al.control.repair.v3","targetMsgId":"msg-1","outcome":"committed","reason":"none","repairGapRequestNumber":2,"repairFromPeerId":"peer-c","admission":"expedited","run":1,"traceId":"trace-1","corrId":"repair-1"}`. The event describes a received control
   decision and rides the page's batched diagnostics. Its presence does not
   guarantee a matching `admission-outcome`
 - A WS server receipt (`al.control.receipt.v1`) is decided by the origin's
@@ -612,15 +691,16 @@ every session the page opens. The event's `data` is the event itself:
   its message` (a `timed-out` is committed), and one about a
   message the origin never sent reads `AL receipt names no retained outbound
   message of its origin`. It also carries the receipt's `phase` (`admitted`,
-  `complete` or `timed-out`) straight after `reason`, followed only by the
-  trailing `traceId` and `corrId` every message-scoped kind ends with. No other
+  `complete` or `timed-out`) straight after `reason`, followed only by
+  `admission` (and a replay's `run`) and the trailing `traceId` and `corrId`
+  every message-scoped kind ends with. No other
   control has a phase, so the field is absent from every other
   `control-admission` event; it is optional only for that reason. Because the
   phase adds nothing before `reason` and follows it directly, a wait that
   matches `typeId`, `targetMsgId` and `outcome` in their emitted order still
   matches a receipt, and one that appends `"reason":"none","phase":"complete"`
   matches only the committed terminal receipt:
-  `{"kind":"control-admission","msgId":"receipt-1","typeId":"al.control.receipt.v1","targetMsgId":"msg-1","outcome":"committed","reason":"none","phase":"complete","traceId":"trace-1","corrId":"receipt-1"}`. When its arrival also produces a captured inbound
+  `{"kind":"control-admission","msgId":"receipt-1","typeId":"al.control.receipt.v1","targetMsgId":"msg-1","outcome":"committed","reason":"none","phase":"complete","admission":"direct","traceId":"trace-1","corrId":"receipt-1"}`. When its arrival also produces a captured inbound
   `admission-outcome`, that event carries the same `typeId`, carrier `ws` and
   `not-handled`/`control`, joined by `msgId`; a committed receipt is also
   the acknowledgement settlement on the send's handle (`messages.receipts`

@@ -183,7 +183,7 @@ function createReceivingEndpoint(
             token: 'test-token',
             iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
             isPolite: false,
-            offerGeneration: 1
+            connectionGeneration: 1
         },
         new DeterministicRtcOfferIds()
     );

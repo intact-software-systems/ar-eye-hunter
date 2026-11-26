@@ -34,6 +34,10 @@ interface BrowserBundleMeasurement {
     readonly metafile: EsbuildMetafile;
 }
 
+// The budget test bundles and compresses every budgeted entry with esbuild; on a loaded CI runner that takes longer than
+// Vitest's 5 s default.
+const BUNDLE_BUDGET_TEST_TIMEOUT_MS = 60_000;
+
 const repoRoot = process.cwd();
 const outputDir = path.join(tmpdir(), 'rallar-shared-web-boundary-test');
 const esbuildBin = path.join(
@@ -232,7 +236,7 @@ describe('shared-web browser bundle boundaries', () => {
                     `packages/shared-web/bundle-budgets.json; budgets are adjustable, so raise it to ${Math.floor(result.brotliKiB) + 1} and say so in the PR`
             ).toBeLessThan(entry.brotliBudgetKiB);
         }
-    });
+    }, BUNDLE_BUDGET_TEST_TIMEOUT_MS);
 
     it('erases both type-only edges between room contracts and group-state translation', () => {
         const translation = bundleForBoundary({

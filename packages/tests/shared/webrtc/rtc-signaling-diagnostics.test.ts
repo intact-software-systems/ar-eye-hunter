@@ -166,14 +166,18 @@ describe('owned RTC signaling observations', () => {
     it('distinguishes queued ICE and ignored collision from native application success', async () => {
         const events: RtcSignalingDiagnostics.Event[] = [];
         const { peer, native } = createObservedPeer((event) => events.push(event), () => 10, false);
-        await peer.handleSignal({ signalType: 'IceCandidate', payload: { description: null, candidate: { candidate: 'private-ice' } } });
+        await peer.handleSignal({
+            signalType: 'IceCandidate',
+            connectionGeneration: 1,
+            payload: { description: null, candidate: { candidate: 'private-ice' } }
+        });
         expect(native.receivedCandidates).toEqual([]);
         expect(events).toContainEqual(expect.objectContaining({ disposition: 'ice-queued', signalType: 'IceCandidate' }));
         await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
         await peer.handleSignal({
             signalType: 'Offer',
             offerId: 'remote',
-            offerGeneration: 1,
+            connectionGeneration: 1,
             payload: { description: { type: 'offer', sdp: 'private-offer' }, candidate: null }
         });
         expect(native.receivedDescriptions).toEqual([]);
@@ -323,10 +327,14 @@ describe('owned RTC signaling observations', () => {
         await peer.handleSignal({
             signalType: 'Offer',
             offerId: 'remote',
-            offerGeneration: 1,
+            connectionGeneration: 1,
             payload: { description: { type: 'offer', sdp: 'private-offer' }, candidate: null }
         });
-        await peer.handleSignal({ signalType: 'IceCandidate', payload: { description: null, candidate: { candidate: 'private-ice' } } });
+        await peer.handleSignal({
+            signalType: 'IceCandidate',
+            connectionGeneration: 1,
+            payload: { description: null, candidate: { candidate: 'private-ice' } }
+        });
         expect(native.receivedDescriptions).toEqual([{ type: 'offer', sdp: 'private-offer' }]);
         expect(native.localDescription?.type).toBe('answer');
         expect(native.receivedCandidates).toEqual([{ candidate: 'private-ice' }]);
@@ -344,7 +352,7 @@ describe('owned RTC signaling observations', () => {
             peerSessionId: 'peer',
             iceCandidates: { iceServers: [], expiresAtEpochMs: 100 },
             isPolite: true,
-            offerGeneration: 1
+            connectionGeneration: 1
         }, new DeterministicRtcOfferIds());
         onTestFinished(() => {
             try {
@@ -358,7 +366,7 @@ describe('owned RTC signaling observations', () => {
         await peer.handleSignal({
             signalType: 'Offer',
             offerId: 'remote',
-            offerGeneration: 1,
+            connectionGeneration: 1,
             payload: { description: { type: 'offer', sdp: 'private-offer' }, candidate: null }
         });
         expect(runtime.createdConnections[0].receivedDescriptions).toHaveLength(1);
@@ -367,7 +375,7 @@ describe('owned RTC signaling observations', () => {
         await enabled.peer.handleSignal({
             signalType: 'Offer',
             offerId: 'remote',
-            offerGeneration: 1,
+            connectionGeneration: 1,
             payload: { description: { type: 'offer', sdp: 'private-offer' }, candidate: null }
         });
         expect(enabled.native.receivedDescriptions).toHaveLength(1);
@@ -400,7 +408,12 @@ function isRelease(event: RtcSignalingDiagnostics.Event, disposition: RtcSignali
 }
 
 function answer(offerId: string) {
-    return { signalType: 'Answer', offerId, payload: { description: { type: 'answer', sdp: 'private-answer' }, candidate: null } } as const;
+    return {
+        signalType: 'Answer',
+        connectionGeneration: 1,
+        offerId,
+        payload: { description: { type: 'answer', sdp: 'private-answer' }, candidate: null }
+    } as const;
 }
 
 function createObservedPeer(record: RtcSignalingDiagnostics['record'], nowEpochMs: () => number, isPolite: boolean): ObservedPeerFixture {
@@ -412,7 +425,7 @@ function createObservedPeer(record: RtcSignalingDiagnostics['record'], nowEpochM
         peerSessionId: 'peer',
         iceCandidates: { iceServers: [], expiresAtEpochMs: 100 },
         isPolite,
-        offerGeneration: 1
+        connectionGeneration: 1
     }, dependencies);
     onTestFinished(() => {
         try {
@@ -442,7 +455,7 @@ function offer() {
         ...signalEnvelope(),
         signalType: 'Offer',
         offerId: 'remote',
-        offerGeneration: 1,
+        connectionGeneration: 1,
         payload: { description: { type: 'offer', sdp: 'private-offer' }, candidate: null }
     } as const;
 }

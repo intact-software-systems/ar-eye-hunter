@@ -28,9 +28,11 @@ export interface ALOutboundClaimWork {
 
 /**
  * One run of a claim of an outbound batch as its drain states it: the effect its row held, whether `expedite()` claimed
- * it and which of its runs this is, and what running it cost.
+ * it and which of its runs this is, when the run started and what running it cost.
  */
 export interface ALOutboundClaimRun extends ALOutboundClaimWork, ALWorkClaimRun {
+    /** When its settlement began to be awaited: a claim of a group shares the group's start. */
+    readonly startedAtMs: number;
     readonly durationMs: number;
 }
 
@@ -118,7 +120,12 @@ export async function settleALOutboundClaim<TPrepared>(
         outcome,
         runs: startedAtMs === undefined || work === undefined
             ? []
-            : [{ ...work, ...settlement.claimRun, durationMs: Math.max(0, settlement.readNowMs() - startedAtMs) }]
+            : [{
+                ...work,
+                ...settlement.claimRun,
+                startedAtMs,
+                durationMs: Math.max(0, settlement.readNowMs() - startedAtMs)
+            }]
     };
 }
 

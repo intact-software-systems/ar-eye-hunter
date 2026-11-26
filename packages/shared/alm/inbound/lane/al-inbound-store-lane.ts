@@ -345,17 +345,18 @@ export class ALInboundStoreLane {
     }
 
     /**
-     * A batch is relayed when it touched work; a probe is not relayed at all. Every engine pass probes
-     * every inbound lane, and in the conformance lane every relayed event is a round trip out of the
-     * page, so one event per pass roughly doubled that page's traffic and with it its measured
-     * per-operation cost -- 8.2 to 20.9 ms/op -- which delayed RTC signaling far enough that the
-     * delivery baseline received nothing and the lane failed. Suppressed, the same cell passes at
-     * 10-13 ms/op (12.6 measured on the full lane here, 10.3 on the rtc-only run that isolated this
-     * relay). The probe's own `durationMs` is still measured and the outbound owners, whose probes are
-     * the invalidations they can name, still report theirs.
+     * A drained batch is relayed when it touched work; a batch's start, a batch that disposal or a
+     * failure ended, and a probe are not relayed at all, and only a drained batch reports the store's
+     * recovery. Every engine pass probes every inbound lane, and in the conformance lane every relayed
+     * event is a round trip out of the page, so one event per pass roughly doubled that page's
+     * traffic and with it its measured per-operation cost -- 8.2 to 20.9 ms/op -- which delayed RTC
+     * signaling far enough that the delivery baseline received nothing and the lane failed.
+     * Suppressed, the same cell passes at 10-13 ms/op (12.6 measured on the full lane here, 10.3 on
+     * the rtc-only run that isolated this relay). The probe's own `durationMs` is still measured and
+     * the outbound owners, whose probes are the invalidations they can name, still report theirs.
      */
     private recordWorkDiagnostics(event: ALWorkDiagnostics): void {
-        if (event.kind === 'work-batch') {
+        if (event.kind === 'work-batch' && event.end === 'drained') {
             this.storageRecovery?.reportFirstBatch(event.claimedCount);
             this.recordWorkBatch(event);
         }

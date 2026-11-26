@@ -11,6 +11,7 @@ import type {
     FullStackRtcBrowserEntry,
     FullStackRtcServedBuild
 } from '@shared-test/black-box-runner/fixtures/rtc-production/full-stack-rtc-production-proof.ts';
+import { CONTROL_AGENT_OPENING_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-agent-opening-timeout-ms.ts';
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '@shared-test/rallar-bb-test/client-defaults.ts';
 import type { RallarBlackBoxEventHistoryPolicy } from '@shared-test/rallar-bb-test/runtime/event-history.ts';
 import { toError } from '@shared/resilience/to-error.ts';
@@ -99,13 +100,13 @@ export async function openLiveRtcBrowserAgent(
 
         if (input.auth.kind === 'login') {
             await expect(page.getByRole('heading', { name: 'Rallar Server Login' }))
-                .toBeVisible();
+                .toBeVisible({ timeout: CONTROL_AGENT_OPENING_TIMEOUT_MS });
             await page.getByRole('button', { name: 'Sign in' }).click();
         }
 
         await openTab(page, 'local-workbench', 'black-box-runner');
         await expect(page.locator('#panel-local-workbench .control-panel'))
-            .toContainText('registered', { timeout: 30_000 });
+            .toContainText('registered', { timeout: CONTROL_AGENT_OPENING_TIMEOUT_MS });
 
         return {
             context,

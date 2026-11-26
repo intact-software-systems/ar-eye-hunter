@@ -76,7 +76,7 @@ class NativeRtcPair {
             peerSessionId: 'native-right',
             iceCandidates: { iceServers: [], expiresAtEpochMs: Number.MAX_SAFE_INTEGER },
             isPolite: false,
-            offerGeneration: 1
+            connectionGeneration: 1
         }, { createOfferId });
         this.right = new QRtcPeerConnection(this.signaling, {
             sessionId: 'native-right',
@@ -84,7 +84,7 @@ class NativeRtcPair {
             peerSessionId: 'native-left',
             iceCandidates: { iceServers: [], expiresAtEpochMs: Number.MAX_SAFE_INTEGER },
             isPolite: true,
-            offerGeneration: 1
+            connectionGeneration: 1
         }, { createOfferId });
         this.signaling.peers.set('native-left', this.left);
         this.signaling.peers.set('native-right', this.right);

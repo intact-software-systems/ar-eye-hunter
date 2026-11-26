@@ -42,7 +42,8 @@ export interface WorldFleetDistributedRecipeRunnerOptions {
     /** Absent for artifacts/world-fleet/<distributedRunId>. */
     readonly artifactDir?: string;
     readonly pollMs: number;
-    readonly timeoutMs: number;
+    readonly readinessTimeoutMs: number;
+    readonly terminalTimeoutMs: number;
 }
 
 export interface WorldFleetDistributedRecipeDependencies {
@@ -274,8 +275,9 @@ async function readWorldFleetState(
     run: WorldFleetRun,
     phase: 'readiness' | 'terminal'
 ): Promise<Either<WorldFleetFailure, ControlDistributedRunSnapshot>> {
+    const timeoutMs = phase === 'readiness' ? run.options.readinessTimeoutMs : run.options.terminalTimeoutMs;
     const startedAt = run.dependencies.clock.now();
-    while (run.dependencies.clock.now() - startedAt <= run.options.timeoutMs) {
+    while (run.dependencies.clock.now() - startedAt <= timeoutMs) {
         const snapshot = await readWorldFleetSnapshotResponse(run, {
             pathname: toRunPath(run.manifest),
             method: 'GET'

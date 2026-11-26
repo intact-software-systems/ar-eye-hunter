@@ -57,18 +57,22 @@ import { decodeDistributedRunManifest } from '../../../packages/shared-test/rall
 import { isJsonRecordValue } from '../../../packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { Either } from '../../../packages/shared/resilience/Either.ts';
 
+import {
+    ALL_LOCAL_ALM_READINESS_TIMEOUT_MS,
+    ALL_LOCAL_ALM_REGISTRATION_TIMEOUT_MS,
+    computeAllLocalAlmObservationDeadlines
+} from './compute-all-local-alm-observation-deadlines.ts';
 import { expectWorldFleetGroupAssertions, expectWorldFleetManifest } from './expect-world-fleet-manifest.ts';
 
 const REQUIRED_NATIVE_ASSERTION_COUNT = 231;
 
-// The lifecycle ceiling contains registration, both existing operator waits, export and owned cleanup.
-// It does not change any request, socket, RTC, barrier, recipe or ACK deadline.
+// The operator's terminal wait is the selected manifest's own terminal timeout, and the harness abort, the owned
+// worker's idle exit and this test's limit are derived from it.
 test('observes the selected authored ALM manifest with complete native evidence', async () => {
     test.skip(
         process.env.RALLAR_BLACK_BOX_FULL_STACK !== '1' || process.env.RALLAR_BLACK_BOX_FULL_STACK_HEADLESS !== '1',
         'Opt-in standalone headless full-stack observation required'
     );
-    test.setTimeout(900_000);
     const selection = selectAllLocalAlmManifest({
         manifestPath: process.env.RALLAR_BLACK_BOX_MANIFEST_PATH,
         targetAgentCount: process.env.RALLAR_BLACK_BOX_EXPECTED_AGENT_COUNT,
@@ -95,6 +99,8 @@ test('observes the selected authored ALM manifest with complete native evidence'
         .find((entry) => entry.filePath === selection.path && entry.agentCount === selection.participantCount);
     expect(authored, 'Selected ALM source must be authored by the canonical producer').toBeDefined();
     expect(source.toString('utf8')).toBe(`${JSON.stringify(authored!.manifest, null, 2)}\n`);
+    const deadlines = computeAllLocalAlmObservationDeadlines(manifest);
+    test.setTimeout(deadlines.testTimeoutMs);
     expect(manifest.targetPolicy.expectedParticipantCount).toBe(selection.participantCount);
     expect(manifest.groupAssertions).toHaveLength(REQUIRED_NATIVE_ASSERTION_COUNT);
     const apiBaseUrl = readFullStackApiBaseUrl();
@@ -107,7 +113,7 @@ test('observes the selected authored ALM manifest with complete native evidence'
     let producerCompletedBeforeExport = false;
     let cleanup = 'not-started';
     const harnessAbort = new AbortController();
-    const harnessTimer = setTimeout(() => harnessAbort.abort(), 780_000);
+    const harnessTimer = setTimeout(() => harnessAbort.abort(), deadlines.harnessTimeoutMs);
 
     try {
         await writeProvenance(artifactDir, source, selection.participantCount);
@@ -151,7 +157,7 @@ test('observes the selected authored ALM manifest with complete native evidence'
                 RALLAR_BLACK_BOX_HEADLESS_ENTRY: 'headless',
                 RALLAR_BLACK_BOX_REGISTER: 'true',
                 RALLAR_BLACK_BOX_EXIT_MODE: 'after-target-distributed-run-terminal',
-                RALLAR_BLACK_BOX_IDLE_EXIT_MS: '780000'
+                RALLAR_BLACK_BOX_IDLE_EXIT_MS: String(deadlines.harnessTimeoutMs)
             }
         });
         worker.on('error', () => harnessAbort.abort());
@@ -164,7 +170,7 @@ test('observes the selected authored ALM manifest with complete native evidence'
                 agent.connected && agent.registeredAtEpochMs !== undefined
             )
                 .map((agent) => agent.agentId).sort();
-        }, { timeout: 90_000, intervals: [1_000] }).toEqual(agentIds);
+        }, { timeout: ALL_LOCAL_ALM_REGISTRATION_TIMEOUT_MS, intervals: [1_000] }).toEqual(agentIds);
 
         stage = 'manifest-operation';
         const operation = await runWorldFleetDistributedRecipe({
@@ -173,7 +179,8 @@ test('observes the selected authored ALM manifest with complete native evidence'
             artifactDir,
             rtcCaptureMode: process.env.INPUT_RTC_CAPTURE_MODE,
             pollMs: 2_000,
-            timeoutMs: 330_000
+            readinessTimeoutMs: ALL_LOCAL_ALM_READINESS_TIMEOUT_MS,
+            terminalTimeoutMs: deadlines.terminalTimeoutMs
         }, {
             fetch: (url, init) => fetch(url, { ...init, signal: harnessAbort.signal }),
             readManifestText: async (filePath) => {

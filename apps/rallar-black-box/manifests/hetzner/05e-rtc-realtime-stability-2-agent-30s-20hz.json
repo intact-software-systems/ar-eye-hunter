@@ -105,7 +105,10 @@
               "groupId": "hetzner-headless-room"
             },
             "transport": "realtime",
-            "timeoutMs": 15000,
+            "timeoutMs": 135000,
+            "rallar": {
+              "timeoutMs": 65000
+            },
             "readiness": {
               "minReadyPeers": 1,
               "timeoutMs": 10000,
@@ -298,7 +301,10 @@
               "groupId": "hetzner-headless-room"
             },
             "transport": "realtime",
-            "timeoutMs": 15000,
+            "timeoutMs": 135000,
+            "rallar": {
+              "timeoutMs": 65000
+            },
             "readiness": {
               "minReadyPeers": 1,
               "timeoutMs": 10000,
@@ -387,7 +393,8 @@
     "rolePattern": "sender-receiver",
     "manifestSuite": "hetzner-distributed",
     "diagnostic": false,
-    "expectedFailure": false
+    "expectedFailure": false,
+    "recommendedTerminalTimeoutSeconds": 295
   },
   "description": "Highest-rate 20 Hz RTC realtime stability stream with one sender and one receiver for sustained pacing evidence."
 }

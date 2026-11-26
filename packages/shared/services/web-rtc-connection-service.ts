@@ -383,7 +383,7 @@ export class WebRtcConnectionService {
     private readonly heldInboundSignals: HeldInboundRtcSignals;
     private readonly peerEstablishmentWatchdog: AsyncCommand<PeerId, WebRtcConnectionService.Peer>;
     private readonly attemptBudget: RtcPeerConnectionAttemptBudget;
-    private lastOfferGeneration = 0;
+    private lastConnectionGeneration = 0;
 
     public readonly signaler: QRtcSignalingTransport;
     public readonly input: WebRtcConnectionService.InputDto;
@@ -914,10 +914,10 @@ export class WebRtcConnectionService {
             onConnected: async () => {
                 this.markPeerEstablished(peer);
             },
-            onClosed: async () => {
+            onClosed: async (_peerId, issuer) => {
                 this.clearPeerEstablishmentTimeout(peer.peerId);
                 // Churn must not refund the consumed establishment attempts.
-                this.removePeer(peer.peerId, { resetAttemptBudget: false }, 'native-closed');
+                this.removePeer(peer.peerId, { resetAttemptBudget: false }, issuer);
             },
             onSignalingFailed: (failure) =>
                 this.notifyPeerLifecycle('onSignalingFailed', (listener) => listener.onSignalingFailed?.(peer, failure))
@@ -1073,7 +1073,10 @@ export class WebRtcConnectionService {
     }
 
     private createPeerHandle(peerId: PeerId): WebRtcConnectionService.Peer {
-        this.lastOfferGeneration = computeNextOfferGeneration(this.dependencies.nowEpochMs(), this.lastOfferGeneration);
+        this.lastConnectionGeneration = computeNextConnectionGeneration(
+            this.dependencies.nowEpochMs(),
+            this.lastConnectionGeneration
+        );
         const connection = new QRtcPeerConnection(
             this.signaler,
             {
@@ -1082,7 +1085,7 @@ export class WebRtcConnectionService {
                 peerSessionId: peerId,
                 iceCandidates: this.input.iceCandidates,
                 isPolite: this.isPolite(peerId),
-                offerGeneration: this.lastOfferGeneration
+                connectionGeneration: this.lastConnectionGeneration
             },
             this.dependencies
         );
@@ -1525,6 +1528,6 @@ function toInboundAdmissionInput(
  * Epoch-based, so a rebuilt runtime's connections also outrank the ones it replaced; the increment
  * keeps successive connections rising when the clock repeats or steps back.
  */
-function computeNextOfferGeneration(nowEpochMs: number, lastOfferGeneration: number): number {
-    return Math.max(Math.floor(nowEpochMs), lastOfferGeneration + 1);
+function computeNextConnectionGeneration(nowEpochMs: number, lastConnectionGeneration: number): number {
+    return Math.max(Math.floor(nowEpochMs), lastConnectionGeneration + 1);
 }

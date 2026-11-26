@@ -14,11 +14,16 @@ import type {
     RtcNativeCapturedConnection,
     RtcNativeRecipeAttribution
 } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
+import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
+import { REALTIME_SEND_OPEN_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/realtime-send-open-timeout-ms.ts';
 import { toRtcCaptureReadout } from '@shared-web/browser/connection/to-rtc-capture-readout.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { decodeRallarBlackBoxTestResult } from '../../../packages/shared-test/rallar-bb-test/composite-results.ts';
-import { createRallarBlackBoxEnsureGroupCommands } from '../../../packages/shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
+import {
+    createRallarBlackBoxEnsureGroupCommands,
+    RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS
+} from '../../../packages/shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
 import type { RallarBlackBoxTestCommand } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 import { waitForHeadlessWorkerAgentRegistration } from '../../../apps/rallar-black-box/src/headless-worker/headless-worker-runtime.ts';
@@ -30,6 +35,22 @@ import {
     requiredString,
     type LiveRtcJsonRecord
 } from './live-rtc-evidence-json.ts';
+import {
+    computeWorkerHostCaptureTestTimeoutMs,
+    computeWorkerRecipeResultPollTimeoutMs,
+    toWorkerRecipeRoot,
+    WORKER_CAPTURE_AGENT_ORDINALS,
+    WORKER_CONNECT_TIMING,
+    WORKER_HOST_REFUSAL_TEST_TIMEOUT_MS,
+    WORKER_MEMBERSHIP_REQUEST_TIMEOUT_MS,
+    WORKER_REGISTRATION_TIMEOUT_MS,
+    WORKER_SEND_TIMING,
+    WORKER_STARTUP_REFUSAL_TIMEOUT_MS,
+    WORKER_STOP_TIMEOUT_MS
+} from './worker-host-capture-test-timeouts.ts';
+
+/** How long the registration wait pauses between its reads of the control run. */
+const WORKER_REGISTRATION_POLL_INTERVAL_MS = 500;
 
 interface WorkerCaptureRun {
     readonly control: LiveRtcControlClient;
@@ -112,7 +133,11 @@ class WorkerCaptureProcess {
         }
         this.child.kill('SIGTERM');
         try {
-            return await within(this.exited, 10_000, 'Worker did not release its browser after SIGTERM');
+            return await within(
+                this.exited,
+                WORKER_STOP_TIMEOUT_MS,
+                'Worker did not release its browser after SIGTERM'
+            );
         }
         catch (error) {
             this.child.kill('SIGKILL');
@@ -132,9 +157,10 @@ test.describe('actual default headless worker HOST capture', () => {
         test(
             `applies HOST ${mode} with omitted RUN and delivers the exact scoped RTC payload`,
             async ({ request }, testInfo) => {
+                test.setTimeout(computeWorkerHostCaptureTestTimeoutMs(mode));
                 const run = createDefaultWorkerCaptureRun(request, testInfo, mode);
                 const worker = new WorkerCaptureProcess(createDefaultWorkerEnvironment(run, mode));
-                const agents = [1, 2].map((ordinal) => ({
+                const agents = WORKER_CAPTURE_AGENT_ORDINALS.map((ordinal) => ({
                     agentId: `${run.agentPrefix}-${String(ordinal).padStart(2, '0')}`,
                     connection: `worker-${ordinal}`
                 }));
@@ -224,15 +250,22 @@ test.describe('actual default headless worker HOST capture', () => {
     }
 
     test('refuses malformed HOST before acquiring a usable agent', async ({ request }, testInfo) => {
+        test.setTimeout(WORKER_HOST_REFUSAL_TEST_TIMEOUT_MS);
         const run = createDefaultWorkerCaptureRun(request, testInfo, 'malformed');
         const worker = new WorkerCaptureProcess(createDefaultWorkerEnvironment(run, 'Native'));
         let failure: Error | undefined;
         try {
-            const exited = await within(worker.exited, 10_000, 'Malformed HOST did not refuse startup');
+            const exited = await within(
+                worker.exited,
+                WORKER_STARTUP_REFUSAL_TIMEOUT_MS,
+                'Malformed HOST did not refuse startup'
+            );
             expect(exited).toEqual({ code: 1, signal: null });
             expect(worker.getOutput()).toContain('RALLAR_BLACK_BOX_RTC_CAPTURE_MODE');
             expect(worker.getOutput()).not.toContain('Opening agent');
-            const response = await request.get(`${controlBaseUrl}/runs/${encodeURIComponent(run.runId)}`);
+            const response = await request.get(`${controlBaseUrl}/runs/${encodeURIComponent(run.runId)}`, {
+                timeout: CONTROL_REQUEST_TIMEOUT_MS
+            });
             expect(response.status()).toBe(404);
             await writeEvidence(run, 'startup-refusal.json', { exited, controlRunStatus: response.status() });
         }
@@ -278,7 +311,7 @@ function createDefaultWorkerEnvironment(run: WorkerCaptureRun, mode: string): No
         RALLAR_BLACK_BOX_ROOM_ID: run.group.groupId,
         RALLAR_BLACK_BOX_APPLICATION_ID: run.group.applicationId,
         RALLAR_BLACK_BOX_WORKSPACE_ID: run.group.workspaceId,
-        RALLAR_BLACK_BOX_AGENT_COUNT: '2',
+        RALLAR_BLACK_BOX_AGENT_COUNT: String(WORKER_CAPTURE_AGENT_ORDINALS.length),
         RALLAR_BLACK_BOX_AGENT_PREFIX: run.agentPrefix,
         RALLAR_BLACK_BOX_AGENT_START_INDEX: '1',
         RALLAR_BLACK_BOX_AGENT_1_USERNAME: `${run.agentPrefix}-user-1`,
@@ -301,8 +334,8 @@ async function waitForWorkerAgent(
 ): Promise<void> {
     await waitForHeadlessWorkerAgentRegistration({
         agentId: agent.agentId,
-        timeoutMs: 45_000,
-        pollIntervalMs: 500,
+        timeoutMs: WORKER_REGISTRATION_TIMEOUT_MS,
+        pollIntervalMs: WORKER_REGISTRATION_POLL_INTERVAL_MS,
         fetchSnapshot: async (signal) => {
             const response = await fetch(`${controlBaseUrl}/runs/${encodeURIComponent(run.runId)}`, { signal });
             if (!response.ok) {
@@ -328,7 +361,7 @@ async function ensureWorkerMemberships(
             requestPrefix: agent.agentId,
             group: run.group,
             actor: '{auth.clientId}',
-            timeoutMs: 45_000
+            timeoutMs: WORKER_MEMBERSHIP_REQUEST_TIMEOUT_MS
         });
         if (index === 0) {
             const created = await run.control.executeOk({
@@ -391,7 +424,7 @@ async function connectWorkerAgent(
 ): Promise<RtcNativeCapturedConnection> {
     const commandId = `connect-${agent.agentId}`;
     const connected = await executeWorkerRecipe(run, agent, {
-        kind: 'rtc.connect',
+        ...WORKER_CONNECT_TIMING,
         commandId,
         connection: agent.connection,
         actor: agent.agentId,
@@ -400,9 +433,13 @@ async function connectWorkerAgent(
         workspaceId: run.group.workspaceId,
         roomRef: { ...run.group },
         transport: 'realtime',
-        rallar: { apiBaseUrl, restoreSession: true, logoutOnClose: false, leaveRoomOnClose: false },
-        timeoutMs: 45_000,
-        readiness: { minReadyPeers: 1, timeoutMs: 10_000, intervalMs: 100 }
+        rallar: {
+            apiBaseUrl,
+            restoreSession: true,
+            logoutOnClose: false,
+            leaveRoomOnClose: false,
+            timeoutMs: RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS
+        }
     });
     return toWorkerCapturedConnection(run, agent, { ...connected, mode, commandId });
 }
@@ -459,16 +496,14 @@ async function executeWorkerRecipe(
     command: RallarBlackBoxTestCommand
 ): Promise<WorkerRecipeResult> {
     const rootCommandId = `recipe-${requiredString(command.commandId, '$.command.commandId')}`;
-    const recipe = { schemaVersion: 1 as const, recipeId: rootCommandId, commands: [command] };
+    const root = toWorkerRecipeRoot(command);
+    const { recipe } = root;
     const result = await run.control.executeOk({
         runId: run.runId,
         agentId: agent.agentId,
         commandId: rootCommandId,
-        command: {
-            kind: 'recipe.run',
-            recipe
-        },
-        timeoutMs: 60_000
+        command: root,
+        timeoutMs: computeWorkerRecipeResultPollTimeoutMs(command)
     });
     expect(result.commandId).toBe(rootCommandId);
     expect(result.agentId).toBe(agent.agentId);
@@ -505,15 +540,19 @@ async function executeWorkerRecipe(
 
 async function sendWorkerPayload(run: WorkerCaptureRun, send: WorkerCaptureSend): Promise<void> {
     await executeWorkerRecipe(run, send.agent, {
-        kind: 'rtc.send',
+        ...WORKER_SEND_TIMING,
         commandId: `send-${send.agent.agentId}`,
         connection: send.agent.connection,
         applicationId: run.group.applicationId,
         workspaceId: run.group.workspaceId,
         roomRef: { ...run.group },
         transport: 'realtime',
-        timeoutMs: 60_000,
-        send: { roomId: run.group.groupId, peerIds: [send.targetSessionId], openTimeoutMs: 20_000, data: send.payload }
+        send: {
+            roomId: run.group.groupId,
+            peerIds: [send.targetSessionId],
+            openTimeoutMs: REALTIME_SEND_OPEN_TIMEOUT_MS,
+            data: send.payload
+        }
     });
 }
 
@@ -562,12 +601,16 @@ async function retireWorkerRun(
 ): Promise<WorkerCaptureProcess.Exit> {
     const cleanup = await Promise.allSettled([
         worker.stop(),
-        run.request.get(`${controlBaseUrl}/runs/${encodeURIComponent(run.runId)}/artifacts`).then(async (response) => {
+        run.request.get(`${controlBaseUrl}/runs/${encodeURIComponent(run.runId)}/artifacts`, {
+            timeout: CONTROL_REQUEST_TIMEOUT_MS
+        }).then(async (response) => {
             if (response.ok()) {
                 await writeEvidence(run, 'control-artifact-bundle.json', await response.json());
             }
         }),
-        run.request.get(`${controlBaseUrl}/runs/${encodeURIComponent(run.runId)}/events.jsonl`).then(
+        run.request.get(`${controlBaseUrl}/runs/${encodeURIComponent(run.runId)}/events.jsonl`, {
+            timeout: CONTROL_REQUEST_TIMEOUT_MS
+        }).then(
             async (response) => {
                 if (response.ok()) {
                     await writeFile(run.testInfo.outputPath('recorder-events.jsonl'), await response.text());

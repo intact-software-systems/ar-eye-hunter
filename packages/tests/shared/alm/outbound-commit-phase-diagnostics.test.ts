@@ -2,6 +2,7 @@ import {
     afterEach,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -29,6 +30,7 @@ import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
 
 type CommitPhasesEvent = Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'commit-phases'; }>;
 type ControlAdmissionEvent = Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'control-admission'; }>;
+type DrainEvent = Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'effect-drain' | 'effect-drain-started'; }>;
 
 /** The admission read chain a first send walks: client record, message version, stored message, canonical pair, control. */
 const FIRST_SEND_READ_OPERATIONS = 10;
@@ -195,7 +197,7 @@ it.each(['memory', 'indexeddb'] as const)(
         }
 
         const verdict = { kind: 'control-admission', typeId: AL_CONTROL_ACK_TYPE_ID, targetMsgId: message.id.msgId };
-        const trace = { traceId: 'trace-outbound-commit-phase-diagnostics' };
+        const trace = { admission: 'direct', traceId: 'trace-outbound-commit-phase-diagnostics' };
         expect(controlAdmissionsOf(diagnostics)).toEqual([
             { ...verdict, msgId: 'control-peer-1', outcome: 'committed', reason: 'none', ...trace, corrId: 'control-peer-1' },
             {
@@ -257,9 +259,58 @@ it('names the lane on the commit, readiness and drain events each store lane sta
     await runtime.dispose();
 });
 
+it('states an outbound drain\'s start before its first claim, and hands only drained batches to recovery and dequeue timing', async () => {
+    const drains: DrainEvent[] = [];
+    const order: string[] = [];
+    const firstBatches: number[] = [];
+    const timedBatchEnds: string[] = [];
+    const sendEntered = Promise.withResolvers<void>();
+    const finishSend = Promise.withResolvers<void>();
+    onTestFinished(() => finishSend.resolve());
+    const runtime = createDefaultOutboundTestRuntime({
+        stores: { ...createStores('memory'), storageRecovery: { reportFirstBatch: (count) => firstBatches.push(count) } },
+        diagnostics: (event) => {
+            if (event.kind === 'effect-drain' || event.kind === 'effect-drain-started') {
+                drains.push(event);
+                order.push(event.kind);
+            }
+        },
+        dequeueTiming: (observation) => {
+            if (observation.kind === 'work-batch') {
+                timedBatchEnds.push(observation.batch.end);
+            }
+        },
+        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{}] }),
+        sendPreparedMessage: async () => {
+            order.push('send');
+            sendEntered.resolve();
+            await finishSend.promise;
+            return { status: 'sent' as const, submissionAttempted: true };
+        }
+    });
+    await runtime.ready();
+
+    await runtime.enqueueIfAbsent(createOutboundMessage('aborted-drain'));
+    await sendEntered.promise;
+    const disposing = runtime.dispose();
+    finishSend.resolve();
+    await disposing;
+
+    expect(order.slice(-3)).toEqual(['effect-drain-started', 'send', 'effect-drain']);
+    expect(drains.at(-2)).toMatchObject({ kind: 'effect-drain-started', lane: 'durable', claimedCount: 1 });
+    const aborted = drains.at(-1)!;
+    expect(aborted).toMatchObject({ kind: 'effect-drain', lane: 'durable', claimedCount: 1, end: 'aborted' });
+    expect(Object.keys(aborted).slice(-3)).toEqual(['claims', 'expeditedCount', 'end']);
+    const drainedCount = drains.filter((event) => event.kind === 'effect-drain' && event.end === 'drained').length;
+    expect(drainedCount).toBeGreaterThan(0);
+    expect(firstBatches).toHaveLength(drainedCount);
+    expect(timedBatchEnds).toEqual(timedBatchEnds.map(() => 'drained'));
+});
+
 it('states each claim of an outbound drain with the effect its row held and what running it cost', async () => {
     const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
     let nowMs = Date.now();
+    const drainStartedAtMs = nowMs;
     const sendCostMs: Readonly<Record<string, number>> = { first: 7, second: 30 };
     const runtime = createDefaultOutboundTestRuntime({
         stores: createStores('memory'),
@@ -288,8 +339,22 @@ it('states each claim of an outbound drain with the effect its row held and what
             claimedCount: 2,
             runDurationMs: 37,
             claims: [
-                { payloadKind: 'send-prepared', effectId: expect.any(String), expedited: false, run: 1, durationMs: 7 },
-                { payloadKind: 'send-prepared', effectId: expect.any(String), expedited: false, run: 1, durationMs: 30 }
+                {
+                    payloadKind: 'send-prepared',
+                    effectId: expect.any(String),
+                    expedited: false,
+                    run: 1,
+                    startedAtMs: drainStartedAtMs,
+                    durationMs: 7
+                },
+                {
+                    payloadKind: 'send-prepared',
+                    effectId: expect.any(String),
+                    expedited: false,
+                    run: 1,
+                    startedAtMs: drainStartedAtMs + 7,
+                    durationMs: 30
+                }
             ]
         }))
     );

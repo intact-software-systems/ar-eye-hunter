@@ -237,7 +237,7 @@ function createStreamingPeer(sessionId: string, peerSessionId: string): Streamin
         token: 'test-token',
         iceCandidates: ICE_CANDIDATES,
         isPolite: false,
-        offerGeneration: 1
+        connectionGeneration: 1
     }, new DeterministicRtcOfferIds());
     const channel = new QRtcDataChannel(connection, { faultPort: createPassThroughTransportFaultPort(), peerId: peerSessionId, dataChannelName: 'rtc-test' });
     const wire = new LoopbackDataChannel();

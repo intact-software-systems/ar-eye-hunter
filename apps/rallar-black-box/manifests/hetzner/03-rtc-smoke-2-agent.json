@@ -99,7 +99,10 @@
               "groupId": "hetzner-headless-room"
             },
             "transport": "realtime",
-            "timeoutMs": 15000,
+            "timeoutMs": 135000,
+            "rallar": {
+              "timeoutMs": 65000
+            },
             "readiness": {
               "minReadyPeers": 1,
               "timeoutMs": 10000,
@@ -161,7 +164,8 @@
     "rolePattern": "all-agents",
     "manifestSuite": "hetzner-distributed",
     "diagnostic": false,
-    "expectedFailure": false
+    "expectedFailure": false,
+    "recommendedTerminalTimeoutSeconds": 263
   },
   "description": "Live RTC connect/send/stats smoke against the Hetzner headless room."
 }

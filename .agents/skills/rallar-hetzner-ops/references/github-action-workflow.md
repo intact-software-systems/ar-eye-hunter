@@ -82,9 +82,10 @@ when intentionally reusing a stable group. It checks the required repository or
 `production` environment secret names before dispatch and refuses diagnostic
 manifests unless `--allow-diagnostic` is supplied. `--fast` sets
 `rollout_before_run=false`, `install_playwright=false`, `npm_ci=false`,
-`wait_for_agents=true`, `ready_timeout_seconds=60`, and
-`terminal_timeout_seconds=180`; it also sends `register_before_login=true` by
-default. Passing `rollout_before_run=false` by itself does not skip Playwright;
+`wait_for_agents=true`, and `ready_timeout_seconds=60`; it skips setup, not the
+run, so the manifest's `metadata.recommendedTerminalTimeoutSeconds` still sets
+`terminal_timeout_seconds`, and 180 s applies only to a manifest that recommends
+none. It also sends `register_before_login=true` by default. Passing `rollout_before_run=false` by itself does not skip Playwright;
 also pass `install_playwright=false` or use `--fast`. The helper and workflow
 default to `stop_after_run=true`, so browser processes are cleaned up after
 artifact capture and analysis. Pass `--keep-headless` only for live debugging or
@@ -132,9 +133,11 @@ gh workflow run hetzner-distributed-recipe.yml \
   -f npm_ci=false \
   -f wait_for_agents=true \
   -f ready_timeout_seconds=60 \
-  -f terminal_timeout_seconds=180 \
   -f stop_after_run=true
 ```
+
+Leave `terminal_timeout_seconds` out so the workflow takes the manifest's
+`metadata.recommendedTerminalTimeoutSeconds`.
 
 The supported main-branch workflow prepares the controller once, writes a
 deployment-readiness stamp containing the exact commit, `package-lock.json`

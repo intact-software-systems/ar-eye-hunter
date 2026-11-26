@@ -53,6 +53,7 @@ const RECEIVER_ORDERED_CARRIERS: readonly AlmConformanceCarrier[] = ['rtc'];
 /** The receiver counts the 280 once the sender cued that its last track is sent. */
 const CHURN_ARRIVALS: AlmCuedArrivals = {
     cue: 'tracks-sent',
+    senderDepartsAfterCue: true,
     count: CHURN_TRACK_COUNT,
     toSends: toChurnSends
 };

@@ -36,7 +36,7 @@ import type { ALStorageReadiness } from '../storage/al-storage-readiness.ts';
 import type { ALStorageRecoveryReporter } from '../storage/al-storage-recovery-reporter.ts';
 import type { ALVolatileSessionBudget, ALVolatileSessionLimit } from '../volatile-budget/al-volatile-session-budget.ts';
 import type { ALDurableWorkOwnership } from '../work/al-durable-work-ownership.ts';
-import type { ALWorkObservationDeferral } from '../work/al-work-handler.ts';
+import type { ALWorkBatchEndKind, ALWorkObservationDeferral } from '../work/al-work-handler.ts';
 import type { ALWorkReadinessProbeCause } from '../work/al-work-readiness-memory.ts';
 import type {
     ALOutboundAdmissionStore,
@@ -421,12 +421,23 @@ export type ALOutboundRuntimeDiagnosticsEvent =
             nackLogicalRecipientPeerId?: string;
             /** The peer that sent the NACK: its recipient, or the relay that forwarded it. */
             nackFromPeerId?: string;
+            /** The number of the gap NACK a repair travels with, present exactly when the repair carries one. */
+            repairGapRequestNumber?: number;
+            /** The peer that asked for the repair, present exactly when the control is a repair: it names no recipient. */
+            repairFromPeerId?: string;
             /** Why the control's proof was refused; this and the next two are present exactly when one was. */
             proofRefusal?: ALReceiptProofRefusal['kind'];
             /** The recipient the refused control spoke for. */
             claimedRecipientPeerId?: string;
             /** The peer the refused control arrived from. */
             channelPeerId?: string;
+            /**
+             * How the admission ran: on the control's arrival, or as a replay of the work row a control that parked
+             * left, claimed by `expedite()` into the running batch or by a batch's own selection.
+             */
+            admission: 'direct' | 'expedited' | 'replay';
+            /** Which run of its claim the replay is, from 1; present exactly when the admission is not direct. */
+            run?: number;
         }>
         /** The control's own trace and correlation; a receipt and an ACK carry the trace of the message they answer. */
         & ALMessageTrace
@@ -451,6 +462,20 @@ export type ALOutboundRuntimeDiagnosticsEvent =
         startedAtMs: number;
         /** Each claim whose work decoded, in the order it settled: a slow drain names the claim that made it slow. */
         claims: readonly ALOutboundClaimRun[];
+        /** The rows `expedite()` named that joined the batch after its selection; `claimedCount` counts them too. */
+        expeditedCount: number;
+        /** How the batch ended: only a `drained` batch reports its storage recovery and its dequeue timing. */
+        end: ALWorkBatchEndKind;
+    }>
+    | Readonly<{
+        /** A drain whose selection is reserved, before its first claim runs; its `effect-drain` states the same `startedAtMs`. */
+        kind: 'effect-drain-started';
+        lane: ALStoreDurability;
+        workerId: string;
+        /** When the batch's run loop started, after its selection and reservation. */
+        startedAtMs: number;
+        /** The claims its selection reserved. */
+        claimedCount: number;
     }>
     | Readonly<{
         kind: 'readiness-probe';

@@ -490,7 +490,7 @@ describe('churn-bounded-tracks', () => {
             'observe-last-track',
             'assert-last-track-sent',
             `${CHURN_CUES}-sender-cue-tracks-sent`,
-            `${CHURN_CUES}-sender-cue-tracks-sent-sent`,
+            `${CHURN_CUES}-sender-cue-tracks-sent-acknowledged`,
             'close-departs',
             'stats'
         ]);
@@ -589,9 +589,9 @@ describe('churn-bounded-tracks', () => {
 
         expect(findCommand(scenario.sender, 'open-tracks')).toMatchObject({ kind: 'loop', timeoutMs: loopBudgetMs });
         // The cue wait opens with the sender's body: its storage baseline (3 s), its reconnect (45 s and 30 s of
-        // readiness), the loop, the last track's observation (10 s), its assertion (2 s) and the cue's send and
-        // observation (5 s each).
-        expect(cueWait?.timeoutMs).toBe(3_000 + 45_000 + 30_000 + loopBudgetMs + 10_000 + 2_000 + 10_000);
+        // readiness), the loop, the last track's observation (10 s), its assertion (2 s), the cue's send (5 s) and
+        // the observation of its acknowledgement (10 s, as any acknowledged observation of a non-expiring send).
+        expect(cueWait?.timeoutMs).toBe(3_000 + 45_000 + 30_000 + loopBudgetMs + 10_000 + 2_000 + 5_000 + 10_000);
         for (const recipe of [scenario.sender, scenario.receiver]) {
             expect(computeAlmRecipeRunTimeoutMs(recipe, ORDINARY_RUN_MS), recipe.recipeId)
                 .toBe(ORDINARY_RUN_MS + (cueWait?.timeoutMs ?? 0));

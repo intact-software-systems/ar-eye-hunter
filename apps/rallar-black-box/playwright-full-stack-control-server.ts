@@ -1,3 +1,4 @@
+import { FULL_STACK_CONTROL_START_TIMEOUT_MS } from '../../packages/shared-test/rallar-bb-test/browser-test-budgets/full-stack-web-server-start-timeouts.ts';
 type EnvReader = Readonly<Record<string, string | undefined>>;
 
 export type FullStackControlWebServer = Readonly<{
@@ -30,7 +31,7 @@ export function createFullStackControlWebServer(
         command: `cd ../rallar-black-box-control-server && PORT=${portFromBaseUrl(baseUrl)} bun run src/main.ts`,
         url: `${baseUrl}/health`,
         reuseExistingServer: input.reuseExistingServer ?? true,
-        timeout: 60_000
+        timeout: FULL_STACK_CONTROL_START_TIMEOUT_MS
     };
 }
 

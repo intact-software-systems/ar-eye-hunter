@@ -54,8 +54,7 @@ export function createRelicGameInboxFixture(
     });
     const dependencies = {
         appInbox,
-        service: fixture.service,
-        wakeQueue: () => undefined
+        service: fixture.service
     };
     const inbox = new RelicGameInboxService(dependencies, {
         serviceId: 'relic-inbox-test',

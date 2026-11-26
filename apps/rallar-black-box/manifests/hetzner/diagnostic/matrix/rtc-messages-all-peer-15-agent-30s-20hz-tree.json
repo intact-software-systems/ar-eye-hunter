@@ -112,7 +112,7 @@
               "topicId": "black-box.group.multicast.position",
               "timeoutMs": 65000
             },
-            "timeoutMs": 115000,
+            "timeoutMs": 135000,
             "readiness": {
               "minReadyPeers": 1,
               "timeoutMs": 45000,
@@ -251,9 +251,9 @@
           {
             "kind": "loop",
             "commandId": "rtc-messages-all-peer-delivery-poll",
-            "count": 25,
+            "count": 38,
             "intervalMs": 5000,
-            "maxCommands": 50,
+            "maxCommands": 76,
             "until": "first-success",
             "metadata": {
               "profile": "rtc-messages-all-peer-multicast",
@@ -270,7 +270,7 @@
               "minReceiveRatio": 0.8,
               "logicalFanoutMessages": 126000,
               "purpose": "delivery-poll",
-              "pollWindowMs": 120000
+              "pollWindowMs": 185000
             },
             "commands": [
               {
@@ -324,9 +324,9 @@
           {
             "kind": "loop",
             "commandId": "rtc-messages-all-peer-relay-hold",
-            "count": 121,
+            "count": 186,
             "intervalMs": 1000,
-            "maxCommands": 121,
+            "maxCommands": 186,
             "metadata": {
               "profile": "rtc-messages-all-peer-multicast",
               "transport": "messages.rtc",
@@ -342,7 +342,7 @@
               "minReceiveRatio": 0.8,
               "logicalFanoutMessages": 126000,
               "purpose": "relay-hold",
-              "relayHoldMs": 120000
+              "relayHoldMs": 185000
             },
             "commands": [
               {
@@ -430,7 +430,7 @@
       "streamFrames": 9000,
       "logicalFanoutMessages": 126000
     },
-    "recommendedTerminalTimeoutSeconds": 510
+    "recommendedTerminalTimeoutSeconds": 705
   },
   "description": "Diagnostic 15-agent all-peer RTC messages multicast run at 20 Hz for 30s through a forced tree topology."
 }

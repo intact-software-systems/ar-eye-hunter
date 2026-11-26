@@ -16,12 +16,16 @@ import type {
 import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 
-import { drainUntil } from '../advance-until.ts';
+import { advanceUntil } from '../advance-until.ts';
 import { room, RtcEndpointFixture } from '../rtc-endpoint-fixture.ts';
 import { toOriginDirectedSnapshot } from './rtc-origin-overlay-fixture.ts';
 
-/** A `command` send's receipt: three retries two seconds apart, so every window has passed by then. */
-const RECEIPT_LIFETIME_MS = 9_000;
+/**
+ * A `command` send's receipt ends after three retries two seconds apart. A retried copy that reaches the relay before
+ * the relay's own deadline restarts that window, so the relay's row can end several windows after the origin's. The
+ * wait stays inside the message's thirty-second lifetime.
+ */
+const RECEIPT_END_WAIT = { stepMs: 1_000, maxSteps: 24 } as const;
 
 describe('the receipt timeout of a copy an RTC relay forwarded', () => {
     beforeEach(() => {
@@ -61,9 +65,13 @@ describe('the receipt timeout of a copy an RTC relay forwarded', () => {
         const relayCommits = recordCommits(relay);
 
         await origin.multicast.enqueueIfAbsent(message);
-        // The relay verifies the origin's proof with real WebCrypto (D756) before it admits and forwards the copy.
-        await drainUntil(() => readPendingAttempts(relayCommits).length > 0);
-        await vi.advanceTimersByTimeAsync(RECEIPT_LIFETIME_MS);
+        // The relay hashes and verifies every copy with real WebCrypto (D756), which fake time does not wait for, so
+        // a retried copy and the relay's own deadline arrive in either order. Both rows end either way.
+        await advanceUntil(
+            () => hasEndedReceipt(originCommits) && hasEndedReceipt(relayCommits),
+            RECEIPT_END_WAIT.stepMs,
+            RECEIPT_END_WAIT.maxSteps
+        );
 
         const retry = { trigger: 'ack-timeout', failedPeerIds: ['director'], missingRanges: [] };
         expect(new Set(readPendingAttempts(relayCommits))).toEqual(new Set([0, 1, 2, 3]));
@@ -91,6 +99,10 @@ function recordCommits(endpoint: RtcEndpointFixture): readonly ALOutboundCommitB
         return status;
     });
     return committed;
+}
+
+function hasEndedReceipt(commits: readonly ALOutboundCommitBundle<ALOutboundTransportMessage>[]): boolean {
+    return commits.some((bundle) => bundle.mutations.some((mutation) => mutation.kind === 'end-sent-message'));
 }
 
 function readPendingAttempts(commits: readonly ALOutboundCommitBundle<ALOutboundTransportMessage>[]): readonly number[] {

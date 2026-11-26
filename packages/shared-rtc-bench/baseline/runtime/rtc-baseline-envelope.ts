@@ -56,6 +56,7 @@ export function createRtcBaselineEnvelope(dependencies: Dependencies): RtcBaseli
         recordBrowser: (input) => dependencies.acceptance.recordBrowser(input),
         recordExternalAttempt: (input) => dependencies.acceptance.recordExternalAttempt(input),
         recordExternalCohortAssertion: (input) => dependencies.acceptance.recordExternalCohortAssertion(input),
+        recordExternalAttemptsNotStarted: (input) => dependencies.acceptance.recordExternalAttemptsNotStarted(input),
         finalize: (input) => dependencies.finalizedEvidence.finalize(input),
         readExternalAttempts: (input) => dependencies.finalizedReader.readExternalAttempts(input),
         readRepeatRequirement: (input) => dependencies.finalizedReader.readRepeatRequirement(input),

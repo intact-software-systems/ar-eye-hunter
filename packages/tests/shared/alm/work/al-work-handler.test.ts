@@ -252,12 +252,14 @@ describe('ALWorkHandler', () => {
             completedCount: 2,
             rescheduledCount: 0,
             rejectedCount: 0,
+            expeditedCount: 0,
             selectionDurationMs: PHASE_SELECTION_MS,
             claimDurationMs: PHASE_CLAIM_MS,
             runDurationMs: 2 * PHASE_RUN_MS,
             releaseDurationMs: PHASE_RELEASE_MS,
             queueWaitMs: PHASE_QUEUE_WAIT_MS,
-            startedAtMs: runLoopStartedAtMs
+            startedAtMs: runLoopStartedAtMs,
+            end: 'drained'
         }]);
     });
 
@@ -298,12 +300,14 @@ describe('ALWorkHandler', () => {
             completedCount: 0,
             rescheduledCount: 0,
             rejectedCount: 1,
+            expeditedCount: 0,
             selectionDurationMs: 0,
             claimDurationMs: 0,
             runDurationMs: 0,
             releaseDurationMs: PHASE_RELEASE_MS,
             queueWaitMs: 0,
-            startedAtMs: PHASE_BATCH_START_MS
+            startedAtMs: PHASE_BATCH_START_MS,
+            end: 'drained'
         }]);
     });
 
@@ -568,6 +572,123 @@ describe('ALWorkHandler', () => {
         expect(flushes).toHaveLength(1);
         expect(flushes[0]!.map((release) => [release.claim.entry.key.contextId, release.outcome.status]))
             .toEqual([['abort-1', 'completed'], ['abort-2', 'not-ready']]);
+    });
+
+    it('states a batch\'s start before its first claim runs, and its end as drained', async () => {
+        const log: (string | ALWorkDiagnostics)[] = [];
+        const handler = new ALWorkHandler({
+            workerId: 'start-worker',
+            port: recordingPort(['start-1', 'start-2'], []),
+            queueEngine: createEngine(),
+            ownsQueueEngine: false,
+            clock: { nowMs: () => 1_000 },
+            pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
+            readNextReadyAtMs: async () => undefined,
+            selectReady: async (p, size) => toTestALWorkReadySelection(await p.claim({ maxCount: size, observedEntries: undefined })),
+            claimSuccessor: undefined,
+            runClaim: async (claim) => {
+                log.push(`run:${claim.entry.key.contextId}`);
+                return { status: 'completed' };
+            },
+            diagnostics: (event) => log.push(event)
+        });
+        onTestFinished(() => handler.dispose());
+
+        await handler.ready();
+
+        expect(log.map((entry) => typeof entry === 'string' ? entry : entry.kind))
+            .toEqual(['work-batch-started', 'run:start-1', 'run:start-2', 'work-batch']);
+        expect(log[0]).toEqual({
+            kind: 'work-batch-started',
+            workerId: 'start-worker',
+            startedAtMs: 1_000,
+            claimedCount: 2
+        });
+        expect(log[3]).toMatchObject({ startedAtMs: 1_000, claimedCount: 2, completedCount: 2, end: 'drained' });
+    });
+
+    it('states the end of a batch disposal cut short as aborted', async () => {
+        const events: ALWorkDiagnostics[] = [];
+        const claimEntered = Promise.withResolvers<void>();
+        const finishClaim = Promise.withResolvers<void>();
+        onTestFinished(() => finishClaim.resolve());
+        const handler = new ALWorkHandler({
+            workerId: 'aborted-worker',
+            port: recordingPort(['aborted-1', 'aborted-2'], []),
+            queueEngine: createEngine(),
+            ownsQueueEngine: false,
+            clock: { nowMs: () => 1_000 },
+            pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
+            readNextReadyAtMs: async () => undefined,
+            selectReady: async (p, size) => toTestALWorkReadySelection(await p.claim({ maxCount: size, observedEntries: undefined })),
+            claimSuccessor: undefined,
+            runClaim: async () => {
+                claimEntered.resolve();
+                await finishClaim.promise;
+                return { status: 'completed' };
+            },
+            diagnostics: (event) => events.push(event)
+        });
+
+        const bootstrap = handler.ready();
+        await claimEntered.promise;
+        const disposing = handler.dispose();
+        finishClaim.resolve();
+        await bootstrap;
+        await disposing;
+
+        expect(events.map((event) => event.kind)).toEqual(['work-batch-started', 'work-batch']);
+        expect(events[1]).toMatchObject({
+            claimedCount: 2,
+            completedCount: 1,
+            rescheduledCount: 1,
+            end: 'aborted'
+        });
+    });
+
+    it('states the end of a started batch whose release throws as failed, and nothing for a selection that throws', async () => {
+        const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        onTestFinished(() => consoleErrorSpy.mockRestore());
+        const runBatch = async (failure: 'release' | 'selection'): Promise<ALWorkDiagnostics[]> => {
+            const events: ALWorkDiagnostics[] = [];
+            const port: ALWorkQueuePort = {
+                ...recordingPort(['failed-1'], []),
+                releaseAll: async () => {
+                    if (failure === 'release') {
+                        throw new Error('release storage unavailable');
+                    }
+                }
+            };
+            const handler = new ALWorkHandler({
+                workerId: 'failed-worker',
+                port,
+                queueEngine: createEngine(),
+                ownsQueueEngine: false,
+                clock: { nowMs: () => 1_000 },
+                pageSize: 16,
+                readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
+                readNextReadyAtMs: async () => undefined,
+                selectReady: async (p, size) => {
+                    if (failure === 'selection') {
+                        throw new Error('selection storage unavailable');
+                    }
+                    return toTestALWorkReadySelection(await p.claim({ maxCount: size, observedEntries: undefined }));
+                },
+                claimSuccessor: undefined,
+                runClaim: async () => ({ status: 'completed' }),
+                diagnostics: (event) => events.push(event)
+            });
+            onTestFinished(() => handler.dispose());
+            await handler.ready();
+            return events;
+        };
+
+        const released = await runBatch('release');
+        expect(released.map((event) => event.kind)).toEqual(['work-batch-started', 'work-batch']);
+        expect(released[1]).toMatchObject({ claimedCount: 1, completedCount: 1, end: 'failed' });
+        expect(await runBatch('selection')).toEqual([]);
     });
 
     it('flushes a collected exhaustion finalization even when the selection throws', async () => {

@@ -1,13 +1,39 @@
+import { REALTIME_SEND_OPEN_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/realtime-send-open-timeout-ms.ts';
 import {
     type RallarBlackBoxDistributedGroupRef,
     type RallarBlackBoxDistributedRunManifest
 } from '../../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
+import {
+    RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS,
+    RALLAR_BLACK_BOX_RTC_CONNECT_READY_INTERVAL_MS,
+    RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
+} from '../../../../packages/shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
 import { createRallarBlackBoxRtcRealtimeRecipe } from '../../../../packages/shared-test/rallar-bb-test/fixtures/rtc-realtime-recipes.ts';
 import { type RallarBlackBoxTestRecipe } from '../../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from '../../../../packages/shared-test/rallar-bb-test/recipe-fixtures.ts';
 import { decodeRecord } from '../../../../packages/shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 
 import { config } from './browser-agents.ts';
+
+// The recipes' budgets are counted from the recipes themselves by the distributed run's terminal timeout.
+
+/** The WS send recipe's budget for its send. */
+const WS_SEND_RECIPE_TIMEOUT_MS = 45_000;
+
+/** How long the RTC connect recipe waits for its two peers to be ready. */
+const RTC_CONNECT_RECIPE_READINESS_TIMEOUT_MS = 30_000;
+
+/** The RTC send recipe's budget for its broadcast. */
+const RTC_SEND_RECIPE_TIMEOUT_MS = 60_000;
+
+/** How long the preprovisioned realtime recipe streams its positions. */
+const PREPROVISIONED_REALTIME_DURATION_SECONDS = 1;
+
+/** How long a distributed run waits for its targets to acknowledge a phase, unless its manifest names its own. */
+const DISTRIBUTED_MANIFEST_ACK_TIMEOUT_MS = 10_000;
+
+/** How long the preprovisioned realtime recipe waits for its peers to be ready. */
+const REALTIME_RECIPE_READY_TIMEOUT_MS = 5_000;
 
 interface RtcSendRecipeInput {
     readonly recipeId: string;
@@ -80,7 +106,7 @@ export function createDistributedManifest(
         targetPolicy: input.targetPolicy,
         variables: {},
         roleAssignments: input.roleAssignments ?? [],
-        ackTimeoutMs: input.ackTimeoutMs ?? 10_000,
+        ackTimeoutMs: input.ackTimeoutMs ?? DISTRIBUTED_MANIFEST_ACK_TIMEOUT_MS,
         barrier: { enabled: false },
         startMode: 'manual',
         groupAssertions: [],
@@ -118,7 +144,7 @@ export function wsSendRecipe(
                     from: '{auth.clientId}'
                 }
             },
-            timeoutMs: 45_000
+            timeoutMs: WS_SEND_RECIPE_TIMEOUT_MS
         }]
     };
 }
@@ -140,14 +166,19 @@ export function rtcConnectRecipe(
             workspaceId: group.workspaceId,
             roomRef: group,
             transport: 'realtime',
-            readiness: { minReadyPeers: 2, timeoutMs: 30_000, intervalMs: 100 },
+            readiness: {
+                minReadyPeers: 2,
+                timeoutMs: RTC_CONNECT_RECIPE_READINESS_TIMEOUT_MS,
+                intervalMs: RALLAR_BLACK_BOX_RTC_CONNECT_READY_INTERVAL_MS
+            },
             rallar: {
                 apiBaseUrl: config.apiBaseUrl,
                 restoreSession: true,
                 logoutOnClose: false,
-                leaveRoomOnClose: false
+                leaveRoomOnClose: false,
+                timeoutMs: RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS
             },
-            timeoutMs: 45_000
+            timeoutMs: RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
         }]
     };
 }
@@ -168,7 +199,7 @@ export function rtcSendRecipe(input: RtcSendRecipeInput): RallarBlackBoxTestReci
             roomRef: group,
             send: {
                 roomId: group.groupId,
-                openTimeoutMs: 20_000,
+                openTimeoutMs: REALTIME_SEND_OPEN_TIMEOUT_MS,
                 data: {
                     topic: 'rallar.black-box.distributed.recipe.qa',
                     distributedRunId,
@@ -178,7 +209,7 @@ export function rtcSendRecipe(input: RtcSendRecipeInput): RallarBlackBoxTestReci
                     groupId: group.groupId
                 }
             },
-            timeoutMs: 60_000
+            timeoutMs: RTC_SEND_RECIPE_TIMEOUT_MS
         }]
     };
 }
@@ -186,11 +217,11 @@ export function rtcSendRecipe(input: RtcSendRecipeInput): RallarBlackBoxTestReci
 export function createPreprovisionedRealtimeRecipe(input: PreprovisionedRealtimeRecipeInput): RallarBlackBoxTestRecipe {
     const { recipeId, group, distributedRunId, connection } = input;
     const base = createRallarBlackBoxRtcRealtimeRecipe({
-        durationSeconds: 1,
+        durationSeconds: PREPROVISIONED_REALTIME_DURATION_SECONDS,
         connection,
         group,
         readyPeerCount: 2,
-        readyTimeoutMs: 5_000
+        readyTimeoutMs: REALTIME_RECIPE_READY_TIMEOUT_MS
     });
     return {
         ...base,

@@ -42,6 +42,25 @@ function toRootResult(command: RecordedControlCommand, error: RallarBlackBoxTest
     };
 }
 
+/**
+ * A root a cancel ended: its `recipe.run` result is `cancelled` and carries no error, so the envelope's error is the
+ * control client's default.
+ */
+function toCancelledRootResult(command: RecordedControlCommand): ControlResultEnvelope {
+    return {
+        ...toRootResult(command, { code: 'RALLAR_BLACK_BOX_COMMAND_FAILED', message: 'Command failed.' }),
+        result: {
+            commandId: command.commandId,
+            kind: 'recipe.run',
+            status: 'cancelled',
+            ok: false,
+            startedAtEpochMs: 1,
+            endedAtEpochMs: 1,
+            durationMs: 0
+        }
+    };
+}
+
 const reloadScenario = createAlmConformanceRecipes({
     group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
     carrier: 'ws',
@@ -160,7 +179,7 @@ describe('local paired reload enqueue', () => {
                 return toRunSnapshot(
                     posted
                         .filter(({ command, agentId }) => command.kind === 'recipe.run' && cancelled.has(agentId))
-                        .map((command) => toRootResult(command, { code: 'RALLAR_BLACK_BOX_COMMAND_CANCELLED', message: 'Paired reload stopped.' }))
+                        .map((command) => toCancelledRootResult(command))
                 );
             }
         };
@@ -179,11 +198,19 @@ describe('local paired reload enqueue', () => {
                 { commandId: `cancel-${senderRunId}`, agentId: 'actual-sender', targetCommandId: undefined },
                 { commandId: `cancel-${receiverRunId}`, agentId: 'actual-receiver', targetCommandId: undefined }
             ]);
-            const cancelled = 'RALLAR_BLACK_BOX_COMMAND_CANCELLED: Paired reload stopped.';
-            expect(outcome).toEqual({
-                sender: { commandId: senderRunId, ok: false, summary: cancelled },
-                receiver: { commandId: receiverRunId, ok: false, summary: cancelled }
-            });
+            const atDeadline = 'cancelled at its deadline';
+            // Both roots pass their deadline together: the one cancelled first at its deadline, whichever it is, cancels
+            // the other after its failure.
+            expect([
+                {
+                    sender: { commandId: senderRunId, ok: false, summary: atDeadline, cancelledAfter: undefined },
+                    receiver: { commandId: receiverRunId, ok: false, summary: 'cancelled', cancelledAfter: senderRunId }
+                },
+                {
+                    sender: { commandId: senderRunId, ok: false, summary: 'cancelled', cancelledAfter: receiverRunId },
+                    receiver: { commandId: receiverRunId, ok: false, summary: atDeadline, cancelledAfter: undefined }
+                }
+            ]).toContainEqual(outcome);
         }
         finally {
             vi.restoreAllMocks();

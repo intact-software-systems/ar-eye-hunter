@@ -20,18 +20,22 @@ export const RTC_SERVICE_SIGNAL_DISPOSITIONS = [
     'accepted-peer-result'
 ] as const;
 
+/** Native refusals of a signal from a remote connection older than the newest one this connection applied. */
+export const RTC_GENERATION_REFUSALS = ['offer-superseded', 'answer-superseded', 'ice-superseded'] as const;
+
 export const RTC_NATIVE_SIGNAL_DISPOSITIONS = [
     'no-native-peer',
     'retired-before-application',
     'application-started',
     'answer-ineligible',
-    'offer-superseded',
+    ...RTC_GENERATION_REFUSALS,
     'impolite-offer-ignored',
     'rollback-and-remote-description-returned',
     'remote-description-returned',
     'local-answer-description-returned',
     'ice-ignored',
     'ice-queued',
+    'ice-displaced',
     'ice-added',
     'retired-after-remote-description',
     'retired-after-ice-flush',
@@ -216,6 +220,7 @@ export namespace RtcSignalingDiagnostics {
         | 'explicit-remove'
         | 'disconnect-peer'
         | 'native-closed'
+        | 'superseded-answer'
         | 'lane-wait-cleanup'
         | 'unusable-peer-replacement'
         | 'establishment-timeout'
@@ -317,6 +322,8 @@ export namespace RtcSignalingDiagnostics {
 
     export type ServiceDisposition = typeof RTC_SERVICE_SIGNAL_DISPOSITIONS[number];
     export type NativeDisposition = typeof RTC_NATIVE_SIGNAL_DISPOSITIONS[number];
+    /** Native refusals whose rows also carry the two connection generations they compared. */
+    export type GenerationRefusal = typeof RTC_GENERATION_REFUSALS[number];
     export type CallerRelease = typeof RTC_SIGNAL_CALLER_RELEASES[number];
 
     export interface SignalIdentity {
@@ -341,7 +348,7 @@ export namespace RtcSignalingDiagnostics {
                 | {
                     readonly kind: 'native-signal-decision';
                     readonly nativeIdentity: NativeIdentity;
-                    readonly disposition: Exclude<NativeDisposition, 'offer-superseded'>;
+                    readonly disposition: Exclude<NativeDisposition, GenerationRefusal>;
                     readonly capturedPeerConnection: boolean;
                     readonly currentPeerConnection: boolean | undefined;
                     readonly offerMatches: boolean | undefined;
@@ -350,16 +357,20 @@ export namespace RtcSignalingDiagnostics {
                 | {
                     readonly kind: 'native-signal-decision';
                     readonly nativeIdentity: NativeIdentity;
-                    /** An offer below the highest generation this connection applied, refused unanswered. */
-                    readonly disposition: 'offer-superseded';
+                    /**
+                     * An offer refused unanswered, an answer refused unapplied, or a candidate dropped unapplied, because
+                     * it comes from a remote connection older than the newest one whose description this connection
+                     * applied.
+                     */
+                    readonly disposition: GenerationRefusal;
                     readonly capturedPeerConnection: true;
                     readonly currentPeerConnection: true;
                     readonly offerMatches: undefined;
                     readonly signalingState: RTCSignalingState;
-                    /** The refused offer's generation. */
-                    readonly offerGeneration: number;
-                    /** The highest offer generation this connection has applied. */
-                    readonly appliedOfferGeneration: number;
+                    /** The refused signal's connection generation. */
+                    readonly connectionGeneration: number;
+                    /** The highest remote connection generation this connection has applied. */
+                    readonly appliedRemoteGeneration: number;
                 }
                 | {
                     readonly kind: 'signal-caller-release';

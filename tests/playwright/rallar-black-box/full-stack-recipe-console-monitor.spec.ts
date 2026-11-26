@@ -18,6 +18,7 @@ import {
 } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
 import { RtcNativeChannelAttachments } from '@shared-test/black-box-runner/artifacts/rtc-native-channel-attachments.ts';
 import { toRtcNativeObservationProjection } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts';
+import { CONTROL_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-request-timeout-ms.ts';
 import { decodeRallarBlackBoxTestResult } from '@shared-test/rallar-bb-test/composite-results.ts';
 import type { ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type {
@@ -49,6 +50,7 @@ import {
     evaluateFullStackConfiguredServiceEvidence,
     type FullStackConfiguredServiceProbe
 } from '../../../apps/rallar-black-box/playwright-full-stack-api-server.ts';
+import { computeDistributedRunPassedWaitMs } from './distributed-recipes/distributed-control.ts';
 import {
     cleanupRallarPage,
     decodeFullStackAuthSession,
@@ -62,6 +64,22 @@ import {
     waitForControlRunAgent
 } from './full-stack-helpers.ts';
 import { readLiveRtcRecorderRows } from './live-rtc-recorder-reader.ts';
+import {
+    computeConsoleNativeTestTimeoutMs,
+    CONSOLE_CANCEL_PROOF_POLL_TIMEOUT_MS,
+    CONSOLE_COMPOSITE_PASSED_WAIT_MS,
+    CONSOLE_LIFECYCLE_AGENT_COUNT,
+    CONSOLE_LIFECYCLE_TEST_TIMEOUT_MS,
+    CONSOLE_NATIVE_AGENT_COUNT,
+    CONSOLE_NATIVE_SETUP_TIMEOUT_MS
+} from './recipe-console-monitor-test-timeouts.ts';
+import {
+    CONSOLE_AGENT_PAGES_POLL_TIMEOUT_MS,
+    CONSOLE_AGENTS_READY_STATUS_TIMEOUT_MS,
+    CONSOLE_MONITOR_VERDICT_TIMEOUT_MS,
+    CONSOLE_STAGE_READY_TIMEOUT_MS,
+    CONSOLE_TARGETS_TIMEOUT_MS
+} from './recipe-console-operator-waits.ts';
 
 interface OperatorUrlInput {
     readonly actor: string;
@@ -101,6 +119,9 @@ interface ConsoleNativeAttachment {
     readonly event: ApiJsonObject;
 }
 
+/** The readiness limit the test expects the Stability recipe to author for its connect: an asserted value, not a wait. */
+const EXPECTED_STABILITY_CONNECT_READINESS_TIMEOUT_MS = 10_000;
+
 const COMPOSITE_RECIPE: ExecuteRecipeExpectation = {
     recipeId: 'composite-evidence-recipe',
     providerMode: 'simulated',
@@ -133,7 +154,7 @@ test('completes the configured live distributed run lifecycle and exports its ar
         (await configuredPostgresStackAvailability(request)) === 'unavailable',
         CONFIGURED_LIVE_SKIP_REASON
     );
-    test.setTimeout(240_000);
+    test.setTimeout(CONSOLE_LIFECYCLE_TEST_TIMEOUT_MS);
     await expectFullStackApiReady(request, CONFIGURED_POSTGRES);
 
     const groupId = uniqueGroupId(testInfo);
@@ -164,7 +185,7 @@ test('completes the configured live distributed run lifecycle and exports its ar
             controlRunId,
             groupId,
             prefix: 'recipe-console-live-agent',
-            count: 3
+            count: CONSOLE_LIFECYCLE_AGENT_COUNT
         });
         agentPages.push(...launched.pages);
         agentIds = launched.agentIds;
@@ -173,7 +194,7 @@ test('completes the configured live distributed run lifecycle and exports its ar
         await assertLiveExecuteTargets(page, agentIds, COMPOSITE_RECIPE);
         const passedRunId = await createDraftThroughVisibleExecuteControls(page);
         await stageThroughVisibleExecuteControls(page);
-        await startThroughVisibleExecuteControls(page);
+        await startThroughVisibleExecuteControls(page, CONSOLE_COMPOSITE_PASSED_WAIT_MS);
         await navigateToMonitor(page, passedRunId, 'passed');
         assertSchemaV2Artifact(
             await exportMonitorArtifact(page, passedRunId, testInfo.outputPath('lifecycle-artifact.json')),
@@ -219,7 +240,7 @@ test('completes the configured live distributed run lifecycle and exports its ar
         await expect(cancelDialog).toHaveCount(0);
         await expect(
             page.locator('[data-monitor-section="verdict"]')
-        ).toHaveAttribute('data-run-state', 'cancelled', { timeout: 30_000 });
+        ).toHaveAttribute('data-run-state', 'cancelled', { timeout: CONSOLE_MONITOR_VERDICT_TIMEOUT_MS });
         await expectCompletedCancelProof(
             request,
             controlRunId,
@@ -244,7 +265,7 @@ test('applies Console Full native run intent through real browser agents', async
         (await configuredPostgresStackAvailability(request)) === 'unavailable',
         CONFIGURED_LIVE_SKIP_REASON
     );
-    test.setTimeout(240_000);
+    test.setTimeout(CONSOLE_NATIVE_SETUP_TIMEOUT_MS);
     await expectFullStackApiReady(request, CONFIGURED_POSTGRES);
     const groupId = uniqueGroupId(testInfo);
     const controlRunId = uniqueRunId(testInfo);
@@ -268,7 +289,7 @@ test('applies Console Full native run intent through real browser agents', async
             controlRunId,
             groupId,
             prefix: 'console-native-agent',
-            count: 2
+            count: CONSOLE_NATIVE_AGENT_COUNT
         });
         agentPages.push(...launched.pages);
         const agentIds = launched.agentIds;
@@ -295,6 +316,10 @@ test('applies Console Full native run intent through real browser agents', async
             throw new Error('Visible Stability selection omitted its authored recipe.');
         }
         assertAuthoredStabilityRecipe(authored, original);
+        // The started run joins the room under the stability recipe's connect, then streams; it may take its whole
+        // terminal budget on top of the test's other steps.
+        const passedWaitMs = computeDistributedRunPassedWaitMs(original);
+        test.setTimeout(computeConsoleNativeTestTimeoutMs(original));
         await writeFile(
             testInfo.outputPath('console-native-original-manifest.json'),
             JSON.stringify(original, null, 2)
@@ -322,7 +347,7 @@ test('applies Console Full native run intent through real browser agents', async
         const staged = await readDistributedRun(request, distributedRunId);
         expect(staged.manifest).toEqual(draft.manifest);
         assertConsolePhaseOwnership(staged, await readControlRun(request, controlRunId), 'stage');
-        await startThroughVisibleExecuteControls(page);
+        await startThroughVisibleExecuteControls(page, passedWaitMs);
         expect((await readVisibleExecuteManifest(page)).recipes).toEqual(original.recipes);
         await expect(capture).toBeDisabled();
         const completed = await readDistributedRun(request, distributedRunId);
@@ -443,7 +468,7 @@ function assertAuthoredStabilityRecipe(
         commandId: 'rtc-realtime-connect',
         transport: 'realtime',
         roomRef: manifest.group,
-        readiness: { minReadyPeers: 1, timeoutMs: 10_000 }
+        readiness: { minReadyPeers: 1, timeoutMs: EXPECTED_STABILITY_CONNECT_READINESS_TIMEOUT_MS }
     });
     expect(connect[0].rallar?.rtcCaptureMode).toBeUndefined();
     expect(authored.commands.find((command) => command.kind === 'rtc.stream')).toMatchObject({
@@ -735,11 +760,11 @@ async function configuredPostgresStackAvailability(
         request.get(`${CONFIGURED_POSTGRES.apiBaseUrl}/api/config`, {
             failOnStatusCode: false,
             headers: { origin: FULL_STACK_SPA_ORIGIN },
-            timeout: 5_000
+            timeout: CONTROL_REQUEST_TIMEOUT_MS
         }),
         request.get(`${CONFIGURED_POSTGRES.controlBaseUrl}/health`, {
             failOnStatusCode: false,
-            timeout: 5_000
+            timeout: CONTROL_REQUEST_TIMEOUT_MS
         })
     ]);
     return await evaluateFullStackConfiguredServiceEvidence({
@@ -778,7 +803,7 @@ async function assertLiveExecuteTargets(
     const targets = page.locator('[data-execute-targets]');
     await expect(targets.locator('[data-execute-target]')).toHaveCount(
         agentIds.length,
-        { timeout: 30_000 }
+        { timeout: CONSOLE_TARGETS_TIMEOUT_MS }
     );
     for (const agentId of agentIds) {
         await expect(targets).toContainText(agentId);
@@ -808,7 +833,7 @@ async function launchBrowserAgentsThroughVisibleControls(
         }).click();
         await expect.poll(
             () => context.pages().filter((candidate) => !existingPages.has(candidate)).length,
-            { timeout: 30_000 }
+            { timeout: CONSOLE_AGENT_PAGES_POLL_TIMEOUT_MS }
         ).toBe(input.count);
         const agentPages = context.pages().filter((candidate) => !existingPages.has(candidate));
         await Promise.all(
@@ -823,7 +848,7 @@ async function launchBrowserAgentsThroughVisibleControls(
         const agentIds = readLaunchedAgentIds(agentPages, input);
         await expect(setup.getByRole('status')).toContainText(
             `${input.count} launched browser agents are ready and selected as targets.`,
-            { timeout: 60_000 }
+            { timeout: CONSOLE_AGENTS_READY_STATUS_TIMEOUT_MS }
         );
         return { pages: agentPages, agentIds };
     }
@@ -870,11 +895,11 @@ async function stageThroughVisibleExecuteControls(page: Page): Promise<void> {
     await expect(page.locator('[data-execute-run-status]')).toHaveAttribute(
         'data-run-state',
         'ready',
-        { timeout: 60_000 }
+        { timeout: CONSOLE_STAGE_READY_TIMEOUT_MS }
     );
 }
 
-async function startThroughVisibleExecuteControls(page: Page): Promise<void> {
+async function startThroughVisibleExecuteControls(page: Page, passedWaitMs: number): Promise<void> {
     const actions = page.locator('[data-execute-action-runway]');
     await actions.getByRole('button', { name: 'Review and start' }).click();
     await page.getByRole('dialog', { name: 'Start distributed run?' })
@@ -882,7 +907,7 @@ async function startThroughVisibleExecuteControls(page: Page): Promise<void> {
     await expect(page.locator('[data-execute-run-status]')).toHaveAttribute(
         'data-run-state',
         'passed',
-        { timeout: 90_000 }
+        { timeout: passedWaitMs }
     );
 }
 
@@ -904,7 +929,7 @@ async function navigateToMonitor(
     );
     await expect(
         page.locator('[data-monitor-section="verdict"]')
-    ).toHaveAttribute('data-run-state', state, { timeout: 30_000 });
+    ).toHaveAttribute('data-run-state', state, { timeout: CONSOLE_MONITOR_VERDICT_TIMEOUT_MS });
 }
 
 async function exportMonitorArtifact(
@@ -1018,7 +1043,8 @@ async function readDistributedRun(
     distributedRunId: string
 ): Promise<ControlDistributedRunSnapshot> {
     const response = await request.get(
-        `${CONFIGURED_POSTGRES.controlBaseUrl}/distributed-runs/${encodeURIComponent(distributedRunId)}`
+        `${CONFIGURED_POSTGRES.controlBaseUrl}/distributed-runs/${encodeURIComponent(distributedRunId)}`,
+        { timeout: CONTROL_REQUEST_TIMEOUT_MS }
     );
     expect(response.ok()).toBe(true);
     return decodeControlDistributedRunSnapshot(await response.json()).fold(
@@ -1040,7 +1066,7 @@ async function expectCompletedCancelProof(
             readControlRun(request, controlRunId)
         ]);
         return hasCompletedCancelProof(distributedRun, controlRun);
-    }, { timeout: 30_000 }).toBe(true);
+    }, { timeout: CONSOLE_CANCEL_PROOF_POLL_TIMEOUT_MS }).toBe(true);
 
     const [distributedRun, controlRun] = await Promise.all([
         readDistributedRun(request, distributedRunId),

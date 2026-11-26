@@ -7,6 +7,7 @@ import {
     createRtcBaselineFinalizedArtifactVerifier,
     type RtcBaselineFinalizedArtifactVerifier
 } from '../evidence/rtc-baseline-finalized-verification.ts';
+import { computeRtcPerformanceObservationOutcome } from './compute-rtc-performance-observation-outcome.ts';
 import type { RtcRepositoryPerformanceObservation } from './rtc-performance-observation.ts';
 
 export interface RtcPerformanceObservationEvidenceValidationInput {
@@ -86,12 +87,7 @@ function validateRtcPerformanceObservationEvidenceContract(
         observed !== null &&
         observed.git.headCommit === input.observation.source.commit &&
         observed.git.headTree === input.observation.source.tree;
-    const actualOutcome = [
-            ...input.evidence.summary.sampleOutcomes,
-            ...input.evidence.summary.cohortOutcomes
-        ].some(({ outcome }) => outcome !== 'passed')
-        ? 'failed'
-        : 'passed';
+    const actualOutcome = computeRtcPerformanceObservationOutcome(input.evidence.summary);
     const metricsMatch = input.role === 'repeat' ||
         input.acceptedMetrics === (
                 actualOutcome === 'passed' && input.evidence.summary.metricSummaries.length > 0

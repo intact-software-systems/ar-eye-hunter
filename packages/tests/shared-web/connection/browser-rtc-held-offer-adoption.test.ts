@@ -253,7 +253,7 @@ function toOfferEnvelope(msgId: string): string {
             token: 'test-token',
             signalType: 'Offer',
             offerId: 'offer-1',
-            offerGeneration: 1,
+            connectionGeneration: 1,
             payload: { description: { type: 'offer', sdp: 'held-offer-sdp' }, candidate: null }
         }
     });

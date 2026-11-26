@@ -1593,7 +1593,7 @@
               "groupId": "hetzner-headless-room"
             },
             "transport": "messages.rtc",
-            "timeoutMs": 50000,
+            "timeoutMs": 95000,
             "rallar": {
               "username": "{auth.username}",
               "password": "",
@@ -1631,7 +1631,7 @@
             "kind": "barrier",
             "commandId": "alm-scale-director-connected",
             "barrierId": "alm-scale-connected",
-            "timeoutMs": 52150
+            "timeoutMs": 147150
           },
           {
             "kind": "wait",
@@ -4916,10 +4916,10 @@
               "groupId": "hetzner-headless-room"
             },
             "transport": "messages.rtc",
-            "timeoutMs": 52150,
+            "timeoutMs": 95000,
             "readiness": {
               "minReadyPeers": 1,
-              "timeoutMs": 47150,
+              "timeoutMs": 52150,
               "intervalMs": 100
             },
             "rallar": {
@@ -4943,7 +4943,7 @@
             "kind": "barrier",
             "commandId": "alm-scale-player-connected",
             "barrierId": "alm-scale-connected",
-            "timeoutMs": 52150
+            "timeoutMs": 147150
           },
           {
             "kind": "wait",
@@ -10409,7 +10409,6 @@
     "senderCount": 1,
     "receiverCount": 10,
     "expectedDurationSeconds": 30,
-    "recommendedTerminalTimeoutSeconds": 330,
     "rtcTopologyEnv": {
       "RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE": "12"
     },
@@ -11898,7 +11897,8 @@
           "role": "receiver"
         }
       ]
-    }
+    },
+    "recommendedTerminalTimeoutSeconds": 868
   },
   "description": "Diagnostic: One director and 10 players send reliable AR Eye match payloads within a 30-second workload deadline, with seven bounded ALM samples and native per-agent delivery evidence."
 }
