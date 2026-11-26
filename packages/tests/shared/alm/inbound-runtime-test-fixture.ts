@@ -467,12 +467,25 @@ export function loseInboundWritesFromNowOn(admissionStore: ALInboundAdmissionSto
 
 /**
  * The next admission is parked: its first write loses to a real competing commit of its own provenance row
- * (`setNextInboundCommitConflicted`) and every later one to the same fence. Answers the restore function. The
- * competing commit is the store's commit as it stands, so a seam still armed on it must be restored first.
+ * (`setNextInboundCommitConflicted`), and every later one is answered `conflict` without a write. Answers the restore
+ * function. The competing commit is the store's commit as it stands, so a seam still armed on it must be restored first.
  */
 export function setNextInboundAdmissionParked(admissionStore: ALInboundAdmissionStore): () => void {
     setNextInboundCommitConflicted(admissionStore);
     return loseInboundWritesFromNowOn(admissionStore);
+}
+
+/**
+ * Runs `restoreWrites` as the next retained row is written to `stores.workQueue`: after the parked arrival's last
+ * attempt and before the batch its retention schedules can claim the row, so that replay commits as the store's own.
+ */
+export function restoreInboundWritesOnRetention(stores: ALInboundRuntimeStores, restoreWrites: () => void): void {
+    const enqueueIfAbsent = stores.workQueue.enqueueIfAbsent.bind(stores.workQueue);
+    vi.spyOn(stores.workQueue, 'enqueueIfAbsent').mockImplementationOnce(async (entry) => {
+        const retained = await enqueueIfAbsent(entry);
+        restoreWrites();
+        return retained;
+    });
 }
 
 /**

@@ -61,7 +61,7 @@ import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/ws-rtc-signal
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import '../../setup-browser-indexeddb.ts';
-import { loseInboundWritesFromNowOn } from '../alm/inbound-runtime-test-fixture.ts';
+import { loseInboundWritesFromNowOn, restoreInboundWritesOnRetention } from '../alm/inbound-runtime-test-fixture.ts';
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
@@ -263,15 +263,18 @@ class RtcControlHandoffFixture {
             }
             return 'conflict';
         });
-        // Every later attempt's write is lost too, so the signal is retained however often its owner looks again.
-        const restoreWrites = loseInboundWritesFromNowOn(this.dependencies.inboundStores.admissionStore);
+        // Every later attempt's write is lost too, so the signal is retained however often its owner looks again; the
+        // store commits again once the row is retained, before its replay.
+        restoreInboundWritesOnRetention(
+            this.dependencies.inboundStores,
+            loseInboundWritesFromNowOn(this.dependencies.inboundStores.admissionStore)
+        );
         const receiverClock = {
             signalEpochMs: Date.now(),
             startedAtMonotonicMs: performance.now()
         };
         this.dependencies.observations.receiverClock = receiverClock;
         const pending = await this.dependencies.service.acceptIncomingMessage(signal);
-        restoreWrites();
         expect(pending.right).toEqual({ kind: 'pending-admission' });
         return {
             signal,

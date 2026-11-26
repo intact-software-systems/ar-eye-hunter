@@ -26,7 +26,6 @@ import {
     type ControlFrameLabel
 } from '../../ws-receipted-send-test-controls.ts';
 import { createWorkerHold, type WorkerHold } from '../alm/create-worker-hold.ts';
-import { loseInboundWritesFromNowOn } from '../alm/inbound-runtime-test-fixture.ts';
 import {
     createWsClientCarrierStores,
     createWsClientMintingPlanner,
@@ -97,12 +96,10 @@ export interface WsReceiptedSendLink {
     /** The server's release of `msg`'s kept row, once its replay ran, waits at the returned hold; the row stays claimed. */
     holdServerKeptRowRelease(msg: ALMessage): WorkerHold;
     /**
-     * The server's next admission write commits as its store's own; every later one is lost, however many attempts its
-     * owner makes, until the returned restore.
+     * The server's admission writes go to its store's own commit until one loses to the store's fence; every later one
+     * is answered `conflict` without a write, however many attempts its owner makes, until the server retains a message.
      */
-    loseServerAdmissionWritesAfterNextCommit(): () => void;
-    /** Every admission write the server starts from now on is lost, until the returned restore; one already held is not. */
-    loseServerAdmissionWritesFromNowOn(): () => void;
+    loseServerAdmissionWritesAfterTheFirstLoss(): void;
     /** The recipient's `delivered` ACK through the server's ingress, as its socket would send it. */
     acknowledge(msg: ALMessage): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>>;
     /** Moves the one clock, then `LINK_PASSES_PER_STEP` times: the server's engine, its answers to the client, the client's due work. */
@@ -266,16 +263,48 @@ function createServerWorkHolds(
     | 'holdServerWorkClaims'
     | 'holdServerNextAdmissionWrite'
     | 'holdServerKeptRowRelease'
-    | 'loseServerAdmissionWritesAfterNextCommit'
-    | 'loseServerAdmissionWritesFromNowOn'
+    | 'loseServerAdmissionWritesAfterTheFirstLoss'
 > {
     const { workQueue } = server.admission;
     const { admissionStore } = server;
     const reserveEntries = workQueue.reserveEntries.bind(workQueue);
     const releaseEntries = workQueue.releaseEntries.bind(workQueue);
     const commitBundle = admissionStore.commitBundle.bind(admissionStore);
+    const enqueueIfAbsent = workQueue.enqueueIfAbsent.bind(workQueue);
     const writeHolds: ServerAdmissionWriteHold[] = [];
+    let losing: 'no' | 'after-the-first-loss' | 'yes' = 'no';
     let writesSpied = false;
+    // One routing of the store's commit serves the holds and the losses, so neither removes the other.
+    const routeWrites = (): void => {
+        if (writesSpied) {
+            return;
+        }
+        writesSpied = true;
+        vi.spyOn(admissionStore, 'commitBundle').mockImplementation(async (bundle) => {
+            if (losing === 'yes') {
+                return 'conflict';
+            }
+            const index = writeHolds.findIndex((held) => isAdmissionWriteOf(bundle, held.msg));
+            const next = index < 0 ? undefined : writeHolds.splice(index, 1)[0];
+            if (next?.stage === 'before-write') {
+                await next.hold.arrive();
+            }
+            const written = commitBundle(bundle);
+            written.catch(() => next?.refuse(new Error(`The held admission write of ${next.msg.id.msgId} threw`)));
+            const status = await written;
+            if (status === 'conflict' && losing === 'after-the-first-loss') {
+                losing = 'yes';
+            }
+            if (next?.stage === 'after-commit') {
+                if (status !== 'committed') {
+                    next.refuse(new Error(`The held admission write of ${next.msg.id.msgId} answered ${status}`));
+                    return status;
+                }
+                await next.hold.arrive();
+            }
+            return status;
+        });
+    };
     return {
         holdServerWorkClaims: () => {
             let held = true;
@@ -298,37 +327,21 @@ function createServerWorkHolds(
             });
             return hold;
         },
-        loseServerAdmissionWritesAfterNextCommit: () => {
-            vi.spyOn(admissionStore, 'commitBundle').mockImplementationOnce(commitBundle);
-            return loseInboundWritesFromNowOn(admissionStore);
+        loseServerAdmissionWritesAfterTheFirstLoss: () => {
+            routeWrites();
+            losing = 'after-the-first-loss';
+            vi.spyOn(workQueue, 'enqueueIfAbsent').mockImplementationOnce(async (entry) => {
+                const retained = await enqueueIfAbsent(entry);
+                losing = 'no';
+                return retained;
+            });
         },
-        loseServerAdmissionWritesFromNowOn: () => loseInboundWritesFromNowOn(admissionStore),
         holdServerNextAdmissionWrite: (msg, stage) => {
             const hold = createWorkerHold();
             const refused = Promise.withResolvers<never>();
             onTestFinished(() => hold.release());
             writeHolds.push({ msg, hold, stage, refuse: refused.reject });
-            if (!writesSpied) {
-                writesSpied = true;
-                vi.spyOn(admissionStore, 'commitBundle').mockImplementation(async (bundle) => {
-                    const index = writeHolds.findIndex((held) => isAdmissionWriteOf(bundle, held.msg));
-                    const next = index < 0 ? undefined : writeHolds.splice(index, 1)[0];
-                    if (next?.stage === 'before-write') {
-                        await next.hold.arrive();
-                    }
-                    const written = commitBundle(bundle);
-                    written.catch(() => next?.refuse(new Error(`The held admission write of ${next.msg.id.msgId} threw`)));
-                    const status = await written;
-                    if (next?.stage === 'after-commit') {
-                        if (status !== 'committed') {
-                            next.refuse(new Error(`The held admission write of ${next.msg.id.msgId} answered ${status}`));
-                            return status;
-                        }
-                        await next.hold.arrive();
-                    }
-                    return status;
-                });
-            }
+            routeWrites();
             return { ...hold, arrived: Promise.race([hold.arrived, refused.promise]) };
         }
     };

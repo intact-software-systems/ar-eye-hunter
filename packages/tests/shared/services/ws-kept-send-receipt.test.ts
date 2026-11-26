@@ -355,11 +355,8 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
         await keptRowRelease.arrived;
         // The replay admitted the kept row while the copy's write waited after its reads; the row is still claimed.
         expect(link.readReceiptsToOrigin(second).map((receipt) => receipt.phase)).toEqual(['admitted']);
-        // The held write loses to the replay's commit, and every later attempt's write of the copy is lost too.
-        const restoreWrites = link.loseServerAdmissionWritesFromNowOn();
         copyWrite.release();
         expect(await copy).toBe('pending-admission');
-        restoreWrites();
         keptRowRelease.release();
         expect(await link.writeCopy(first)).toBe('duplicate');
         await link.advance(0);
@@ -394,11 +391,8 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
         await replayCommit.arrived;
         // The replay committed while the copy's write waited after its reads; it has opened no head and answered nothing.
         expect(link.readReceiptsToOrigin(second)).toEqual([]);
-        // The held write loses to the replay's commit, and every later attempt's write of the copy is lost too.
-        const restoreWrites = link.loseServerAdmissionWritesFromNowOn();
         copyWrite.release();
         expect(await copy).toBe('pending-admission');
-        restoreWrites();
         replayCommit.release();
         expect(await link.writeCopy(first)).toBe('duplicate');
         await link.advance(0);
@@ -518,16 +512,16 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
 });
 
 /**
- * Holds the frames of two ordered notices and hands them to ingress side by side: the first commits, and every attempt's
- * write of the second is lost, so the server keeps the second however often it looks again.
+ * Holds the frames of two ordered notices and hands them to ingress side by side: the second loses the race to the
+ * store's own fence, and every later attempt's write of it is lost too, so the server keeps it however often it looks
+ * again.
  */
 async function sendTwoOrderedSideBySide(link: WsReceiptedSendLink): Promise<readonly [ALMessage, ALMessage]> {
     link.holdFrames();
     const first = await link.send(toOrderedRoomNotice());
     const second = await link.send(toOrderedRoomNotice());
-    const restoreWrites = link.loseServerAdmissionWritesAfterNextCommit();
+    link.loseServerAdmissionWritesAfterTheFirstLoss();
     expect(await link.writeHeldFramesSideBySide()).toEqual(['admitted', 'pending-admission']);
-    restoreWrites();
     return [first, second];
 }
 

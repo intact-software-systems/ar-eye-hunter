@@ -38,6 +38,8 @@ import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-o
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
+import { restoreInboundWritesOnRetention } from './inbound-runtime-test-fixture.ts';
+
 describe('inbound admission preparation boundary', () => {
     afterEach(() => {
         vi.restoreAllMocks();
@@ -524,9 +526,14 @@ describe('inbound admission preparation boundary', () => {
         const statuses: ('committed' | 'conflict' | 'expired')[] = [];
         const commitBundle = stores.admissionStore.commitBundle.bind(stores.admissionStore);
         let injectConflict = true;
-        // Until the arrival answers, every attempt's write is lost: the first to a real competing commit of its
+        // Until the arrival is retained, every attempt's write is lost: the first to a real competing commit of its
         // provenance row, every later one without a write, so the arrival is retained however often it looks again.
         let arrivalWritesLost = true;
+        let arrivalCandidates = 0;
+        restoreInboundWritesOnRetention(stores, () => {
+            arrivalCandidates = candidates.length;
+            arrivalWritesLost = false;
+        });
         vi.spyOn(stores.admissionStore, 'commitBundle').mockImplementation(async (bundle) => {
             const admissionCandidate = bundle.durableEffects.some((effect) => effect.payload.kind === 'send-control');
             if (admissionCandidate) {
@@ -565,13 +572,15 @@ describe('inbound admission preparation boundary', () => {
                 authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' }
             });
             expect(first.right).toEqual({ kind: 'pending-admission' });
-            arrivalWritesLost = false;
             expect(controls).toEqual([]);
 
             await expect.poll(() => controls.length).toBeGreaterThan(0);
-            // The arrival's attempts all lost; the one fresh QueueBox attempt committed the last candidate.
-            expect(statuses).toEqual([...candidates.slice(0, -1).map(() => 'conflict'), 'committed']);
-            const committedControls = candidates.at(-1)!.durableEffects.flatMap((effect) => effect.payload.kind === 'send-control' ? [effect.payload.msg] : []);
+            // Each of the arrival's attempts lost; the one fresh QueueBox attempt committed one more candidate.
+            expect(statuses).toEqual([...Array.from({ length: arrivalCandidates }, () => 'conflict'), 'committed']);
+            expect(candidates).toHaveLength(arrivalCandidates + 1);
+            const committedControls = candidates[arrivalCandidates]!.durableEffects.flatMap((effect) =>
+                effect.payload.kind === 'send-control' ? [effect.payload.msg] : []
+            );
             expect(controls).toEqual(committedControls);
             expect(controls).not.toEqual(candidates[0]!.durableEffects);
         }

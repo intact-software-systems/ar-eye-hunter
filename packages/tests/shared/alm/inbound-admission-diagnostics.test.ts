@@ -13,6 +13,7 @@ import {
     createInboundTestRuntime,
     createInboundTestStores,
     INBOUND_TEST_SENDER_PEER_ID,
+    restoreInboundWritesOnRetention,
     setNextInboundAdmissionParked,
     type InboundTestRuntime,
     type InboundTestStorage
@@ -288,14 +289,13 @@ it.each(
 
         await runtime.ready();
         // Every attempt's write of the arrival is lost, so the claim settled is the retained admission's replay.
-        const restoreWrites = setNextInboundAdmissionParked(stores.admissionStore);
+        restoreInboundWritesOnRetention(stores, setNextInboundAdmissionParked(stores.admissionStore));
         const admitted = await runtime.admitIncomingMessage(
             message,
             { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID }
         );
 
         expect(admitted.right).toEqual({ kind: 'pending-admission' });
-        restoreWrites();
         await expect.poll(() => claimsOf(diagnostics).length).toBeGreaterThanOrEqual(1);
 
         // A retained admission keeps the message itself, so this claim names both halves of its identity.
@@ -333,11 +333,10 @@ it('an expired retained admission states rejected / expired once', async () => {
 
     await runtime.ready();
     // Every attempt's write of the arrival is lost, so the expiry is met by the retained admission's replay.
-    const restoreWrites = setNextInboundAdmissionParked(stores.admissionStore);
+    restoreInboundWritesOnRetention(stores, setNextInboundAdmissionParked(stores.admissionStore));
     const admitted = await runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID });
 
     expect(admitted.right).toEqual({ kind: 'pending-admission' });
-    restoreWrites();
     await expect.poll(() => claimsOf(diagnostics).length).toBeGreaterThanOrEqual(1);
     expect(admissionOutcomesOf(diagnostics).map(({ workerId, msgId, outcome, reason, traceId }) => ({ workerId, msgId, outcome, reason, traceId })))
         .toEqual([

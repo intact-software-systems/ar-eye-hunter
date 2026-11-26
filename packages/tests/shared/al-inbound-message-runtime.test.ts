@@ -174,7 +174,7 @@ describe('ALInboundMessageRuntime', () => {
             ).toBe('committed');
             return await commitBundle(bundle);
         });
-        // Every later attempt's write is lost too, so the stale write is retained however often its owner looks again.
+        // Were the owner to write again, that write would be lost too; the count below pins that it does not.
         const restoreWrites = loseInboundWritesFromNowOn(admission);
         const first = createInboundHarness(stores);
         const enqueue = stores.workQueue.enqueueIfAbsent.bind(stores.workQueue);
