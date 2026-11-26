@@ -2,9 +2,8 @@ import 'fake-indexeddb/auto';
 import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it, vi } from 'vitest';
 
-import { newALMulticastMessage, type ALAckMode, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
-import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import type { ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
 import type { ALInboundMessageOwner } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { toALInboundLocalDeliveryEffectId } from '@shared/alm/inbound/al-inbound-effect-intent.ts';
@@ -14,9 +13,13 @@ import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import {
+    createInboundTestRoomMessage,
+    toInboundTestForgedCopy,
+    toInboundTestForgedText
+} from '../create-inbound-test-room-message.ts';
+import {
     createInboundTestBackendStores,
     createInboundTestRuntime,
-    INBOUND_TEST_SELF_PEER_ID,
     INBOUND_TEST_SENDER_PEER_ID,
     runInboundWorkDueNow,
     type InboundTestRuntime,
@@ -42,7 +45,7 @@ interface TwoCarrierReceiver {
 describe('an origin-authenticated readmission at the inbound runtime (ruling 1)', () => {
     it('keeps a WS fallback copy of an unreceipted send a duplicate of the RTC copy it already delivered: one delivery', async () => {
         const receiver = await createTwoCarrierReceiver('memory');
-        const message = createRoomMessage('unreceipted', 'none', 'volatile');
+        const message = createInboundTestRoomMessage('unreceipted', 'none', 'volatile');
 
         expect((await receiver.overRtc.runtime.admitIncomingMessage(message, RTC_ARRIVAL)).right).toEqual({ kind: 'admitted' });
         expect((await receiver.overWs.runtime.admitIncomingMessage(message, WS_ARRIVAL)).right).toEqual({ kind: 'duplicate' });
@@ -58,15 +61,15 @@ describe('an origin-authenticated readmission at the inbound runtime (ruling 1)'
         'admits the WS copy of a receipted send over a forged unreceipted RTC copy as new, and confirms it, as a relay\'s leaf does (%s, %s)',
         async (storage, durability) => {
             const receiver = await createTwoCarrierReceiver(storage);
-            const origin = createRoomMessage(`receipted-${storage}`, 'receiver', durability);
-            const forged = toForgedCopy(origin);
+            const origin = createInboundTestRoomMessage(`receipted-${storage}`, 'receiver', durability);
+            const forged = toInboundTestForgedCopy(origin);
 
             expect((await receiver.overRtc.runtime.admitIncomingMessage(forged, RTC_ARRIVAL)).right).toEqual({ kind: 'admitted' });
             await drainBoth(receiver);
             expect((await receiver.overWs.runtime.admitIncomingMessage(origin, WS_ARRIVAL)).right).toEqual({ kind: 'admitted' });
             await drainBoth(receiver);
 
-            expect(readDeliveredTexts(receiver)).toEqual([forgedText(origin), originText(origin)]);
+            expect(readDeliveredTexts(receiver)).toEqual([toInboundTestForgedText(origin), originText(origin)]);
             expect(readAckStatuses(receiver.overWs)).toEqual(['delivered']);
             expect(await receiver.readOwner(origin)).toMatchObject({ originAuthenticated: true });
             // The origin's authenticated admission now owns the row: a further unsigned copy is its duplicate.
@@ -76,9 +79,9 @@ describe('an origin-authenticated readmission at the inbound runtime (ruling 1)'
 
     it('waits while the forged copy\'s delivery is still queued, then delivers each content once, the origin\'s last', async () => {
         const receiver = await createTwoCarrierReceiver('memory');
-        const origin = createRoomMessage('queued-first', 'receiver', 'volatile');
+        const origin = createInboundTestRoomMessage('queued-first', 'receiver', 'volatile');
 
-        expect((await receiver.overRtc.runtime.admitIncomingMessage(toForgedCopy(origin), RTC_ARRIVAL)).right)
+        expect((await receiver.overRtc.runtime.admitIncomingMessage(toInboundTestForgedCopy(origin), RTC_ARRIVAL)).right)
             .toEqual({ kind: 'admitted' });
         expect((await receiver.overWs.runtime.admitIncomingMessage(origin, WS_ARRIVAL)).right)
             .toEqual({ kind: 'pending-admission' });
@@ -87,14 +90,14 @@ describe('an origin-authenticated readmission at the inbound runtime (ruling 1)'
             expect(readDeliveredTexts(receiver)).toHaveLength(2);
         });
 
-        expect(readDeliveredTexts(receiver)).toEqual([forgedText(origin), originText(origin)]);
+        expect(readDeliveredTexts(receiver)).toEqual([toInboundTestForgedText(origin), originText(origin)]);
         expect(readAckStatuses(receiver.overWs)).toEqual(['delivered']);
     });
 
     it('brings a readmitted delivery that waits out a retry due now, as any retained delivery is', async () => {
         const receiver = await createTwoCarrierReceiver('memory', 'retry');
-        const origin = createRoomMessage('readmitted-retry', 'receiver', 'volatile');
-        await receiver.overRtc.runtime.admitIncomingMessage(toForgedCopy(origin), RTC_ARRIVAL);
+        const origin = createInboundTestRoomMessage('readmitted-retry', 'receiver', 'volatile');
+        await receiver.overRtc.runtime.admitIncomingMessage(toInboundTestForgedCopy(origin), RTC_ARRIVAL);
         await drainBoth(receiver);
         await receiver.overWs.runtime.admitIncomingMessage(origin, WS_ARRIVAL);
         await vi.waitFor(async () => expect((await readReadmittedDelivery(receiver, origin))?.status).toBe(EntityStatus.RETRY));
@@ -135,28 +138,6 @@ async function createTwoCarrierReceiver(
     return { overRtc, overWs, readOwner };
 }
 
-/** A room multicast from the fixture's sender frozen to the receiver, asking `ack`. */
-function createRoomMessage(msgId: string, ack: ALAckMode, durability: ALDurabilityAlgo): ALMessage {
-    const message = newALMulticastMessage({
-        createdAtEpochMs: Date.now(),
-        senderId: INBOUND_TEST_SENDER_PEER_ID,
-        route: { topicId: 'chat', resourceId: msgId, contextId: 'room' },
-        groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' },
-        typeId: 'chat.message.v1',
-        resource: { text: msgId },
-        options: {
-            ack,
-            reliability: ack === 'none' ? 'best-effort' : 'at-least-once',
-            ttlMs: 60_000,
-            qos: { durability: { algo: durability } }
-        }
-    });
-    return {
-        ...toALFrozenMulticastMessage(message, { recipientPeerIds: [INBOUND_TEST_SELF_PEER_ID], snapshotVersion: 1 }),
-        id: { ...message.id, msgId }
-    };
-}
-
 async function drainBoth(receiver: TwoCarrierReceiver): Promise<void> {
     await runInboundWorkDueNow(receiver.overRtc);
     await runInboundWorkDueNow(receiver.overWs);
@@ -167,19 +148,6 @@ function readAckStatuses(fixture: InboundTestRuntime): readonly string[] {
         const parsed = parseALControlMessage(control);
         return parsed?.type === 'ack' ? [parsed.payload.status] : [];
     });
-}
-
-/** The forger's copy of `origin`: the origin's id and audience, its own content, asking no receipt. */
-function toForgedCopy(origin: ALMessage): ALMessage {
-    return {
-        ...origin,
-        payload: { ...origin.payload, resource: forgedText(origin) },
-        delivery: { reliability: 'best-effort', ack: 'none' }
-    };
-}
-
-function forgedText(origin: ALMessage): string {
-    return JSON.stringify({ text: `forged ${origin.id.msgId}` });
 }
 
 function originText(origin: ALMessage): string {

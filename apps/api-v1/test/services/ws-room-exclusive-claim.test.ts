@@ -48,7 +48,9 @@ test('a second session\'s exclusive send on a claimed resource is NACKed held-by
     }
 });
 
-test('two sessions claiming one free resource at once: the loser is retained on the conflict, NACKed held-by-other on its replay, reaches no one and starts no receipt', async () => {
+// The loser's write is lost to the winner's claim, and its fresh look reads that claim at once: it is refused then,
+// rather than retained for a replay to refuse.
+test('two sessions claiming one free resource at once: the loser reads the winner\'s claim on its next attempt, is NACKed held-by-other, reaches no one and starts no receipt', async () => {
     const { runtime, room } = await createClaimRuntime();
     try {
         const first = createPickupSend({ room, senderId: 'session-1', ownership: 'exclusive', ttlMs: SEND_TTL_MS });
@@ -62,7 +64,7 @@ test('two sessions claiming one free resource at once: the loser is retained on 
         await waitForRoomSends(() => false);
 
         assert.deepEqual(firstAcceptance.right, { kind: 'admitted' });
-        assert.deepEqual(secondAcceptance.right, { kind: 'pending-admission' });
+        assert.deepEqual(secondAcceptance.right, { kind: 'not-admitted', reason: HELD_BY_OTHER_DETAIL });
         assert.deepEqual(readNackReasons(runtime.sent, 'session-2'), ['held-by-other']);
         assert.deepEqual(readNackReasons(runtime.sent, 'session-1'), []);
         assert.deepEqual(readPickupSends(runtime.sent), [

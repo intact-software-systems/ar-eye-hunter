@@ -105,7 +105,10 @@ export namespace ALInboundMessageAdmission {
             /** The commit persisted work the inbound worker must claim; an idle worker stays idle without it. */
             readonly wroteWork: boolean;
         }
-        | { readonly kind: 'conflict'; readonly pending: ALInboundPendingAdmission; };
+        /** Its write lost to another commit on a row it read: a fresh attempt reads the winner. */
+        | { readonly kind: 'conflict'; readonly pending: ALInboundPendingAdmission; }
+        /** A readmission whose first delivery still waits to run: it wrote nothing, and a second read finds the same. */
+        | { readonly kind: 'waiting'; readonly pending: ALInboundPendingAdmission; };
 }
 
 interface ALInboundAttemptPreparation {
@@ -129,7 +132,7 @@ interface ALInboundAttemptDecision {
     readonly deadline: number;
 }
 
-/** One conditional admission per call; the existing QueueBox worker owns retries. */
+/** One conditional admission per `attempt`; its owner looks again after a lost write, and QueueBox replays the rest. */
 export class ALInboundMessageAdmission {
     private readonly dependencies: ALInboundMessageAdmission.Dependencies;
     private readonly shutdown = new AbortController();
@@ -177,7 +180,7 @@ export class ALInboundMessageAdmission {
             return Either.ofRight(ATTEMPT_EXPIRED);
         }
         if (readmission && await this.isFirstDeliveryQueued(admitted)) {
-            return Either.ofRight(toPendingAttempt(admitted, deadline, source));
+            return Either.ofRight({ kind: 'waiting', pending: toPendingAdmission(admitted, deadline, source) });
         }
         return await this.commitAttempt({ msg, source, preparation, read, plan, readmission, deadline });
     }
@@ -253,7 +256,10 @@ export class ALInboundMessageAdmission {
             return Either.ofRight(ATTEMPT_EXPIRED);
         }
         if (status === 'conflict') {
-            return Either.ofRight(toPendingAttempt(preparation.admitted, decision.deadline, source));
+            return Either.ofRight({
+                kind: 'conflict',
+                pending: toPendingAdmission(preparation.admitted, decision.deadline, source)
+            });
         }
         this.recordResyncRequired(msg, source, plan);
         this.recordOrderingPosition(msg, source, plan);
@@ -434,30 +440,30 @@ function toRejectedReplay(rejection: ALMessageRejection): ALInboundMessageAdmiss
     };
 }
 
-/** A replay that conflicts again is retained still, so it states pending again; shutdown reached no verdict. */
+/**
+ * A replay that conflicts again, or waits for its first delivery, is retained still, so it states pending again;
+ * shutdown reached no verdict.
+ */
 function toAttemptReplay(
     attempt: ALInboundMessageAdmission.Attempt,
     shutDown: boolean
 ): ALInboundMessageAdmission.ReplayResult {
     return {
-        outcome: attempt.kind === 'conflict' || shutDown ? 'retry' : 'completed',
+        outcome: attempt.kind !== 'completed' || shutDown ? 'retry' : 'completed',
         wroteWork: attempt.kind === 'completed' && attempt.wroteWork,
         admission: shutDown
             ? undefined
-            : Either.ofRight(attempt.kind === 'conflict' ? { kind: 'pending-admission' } : attempt.acceptance)
+            : Either.ofRight(attempt.kind === 'completed' ? attempt.acceptance : { kind: 'pending-admission' })
     };
 }
 
-/** An attempt retained to run again: its commit conflicted, or it waits on an earlier delivery of its message. */
-function toPendingAttempt(
+/** The admission retained to run again: its commit conflicted, or it waits on an earlier delivery of its message. */
+function toPendingAdmission(
     msg: ALMessage,
     deadline: number,
     source: ALInboundMessageRuntime.Source
-): ALInboundMessageAdmission.Attempt {
-    return {
-        kind: 'conflict',
-        pending: { kind: 'admit-message', msg: toALInboundMessageWithDeadline(msg, deadline), source }
-    };
+): ALInboundPendingAdmission {
+    return { kind: 'admit-message', msg: toALInboundMessageWithDeadline(msg, deadline), source };
 }
 
 function toAdmissionAcceptance(plan: ALMessageHandlingPlan): ALInboundMessageRuntime.Acceptance {

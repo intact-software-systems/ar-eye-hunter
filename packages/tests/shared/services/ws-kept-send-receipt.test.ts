@@ -343,7 +343,7 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
         expect(link.deliveredToPeer(second)).toBe(1);
     });
 
-    it('characterization: a copy of a send kept after a lost race, whose replay commits between its reads and its write: it joins the kept row and is answered from its head, one admitted for it', async () => {
+    it('characterization: a copy of a send kept after a lost race, whose replay commits between its reads and its write: it loses its write, reads the replay\'s admission and is a duplicate answered from its head, one admitted for it', async () => {
         const link = await createWsReceiptedSendLink('in-sync');
         const releaseClaims = link.holdServerWorkClaims();
         const [first, second] = await sendTwoOrderedSideBySide(link);
@@ -356,7 +356,8 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
         // The replay admitted the kept row while the copy's write waited after its reads; the row is still claimed.
         expect(link.readReceiptsToOrigin(second).map((receipt) => receipt.phase)).toEqual(['admitted']);
         copyWrite.release();
-        expect(await copy).toBe('pending-admission');
+        // Its lost write is read again at once: the replay's admission makes it a duplicate rather than a second kept row.
+        expect(await copy).toBe('duplicate');
         keptRowRelease.release();
         expect(await link.writeCopy(first)).toBe('duplicate');
         await link.advance(0);
@@ -379,7 +380,7 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
         expect(link.deliveredToPeer(second)).toBe(1);
     });
 
-    it('characterization: a copy of a send kept after a lost race, whose replay commits before it writes and answers after it: it joins the kept row and is answered nothing, one admitted for it', async () => {
+    it('characterization: a copy of a send kept after a lost race, whose replay commits before it writes and answers after it: it loses its write, reads the replay\'s admission and is a duplicate answered nothing, one admitted for it', async () => {
         const link = await createWsReceiptedSendLink('in-sync');
         const releaseClaims = link.holdServerWorkClaims();
         const [first, second] = await sendTwoOrderedSideBySide(link);
@@ -392,7 +393,8 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
         // The replay committed while the copy's write waited after its reads; it has opened no head and answered nothing.
         expect(link.readReceiptsToOrigin(second)).toEqual([]);
         copyWrite.release();
-        expect(await copy).toBe('pending-admission');
+        // Its lost write is read again at once: the replay's commit makes it a duplicate, and only the replay answers.
+        expect(await copy).toBe('duplicate');
         replayCommit.release();
         expect(await link.writeCopy(first)).toBe('duplicate');
         await link.advance(0);

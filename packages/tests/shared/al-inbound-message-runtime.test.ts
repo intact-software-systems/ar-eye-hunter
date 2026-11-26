@@ -159,7 +159,9 @@ describe('ALInboundMessageRuntime', () => {
         });
     });
 
-    it('retains a stale optimistic write for fresh admission after runtime restart', async () => {
+    // Pins an arrival that keeps writing past its bounded attempts, or drops the message once they are spent: the first
+    // write loses to a real competing commit and the next two are lost too, so the third loss retains it.
+    it('retains a write lost on each of its three attempts for fresh admission after runtime restart', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const admission = stores.admissionStore;
@@ -174,7 +176,7 @@ describe('ALInboundMessageRuntime', () => {
             ).toBe('committed');
             return await commitBundle(bundle);
         });
-        // Were the owner to write again, that write would be lost too; the count below pins that it does not.
+        // Were the owner to write a fourth time, that write would be lost too; the count below pins that it does not.
         const restoreWrites = loseInboundWritesFromNowOn(admission);
         const first = createInboundHarness(stores);
         const enqueue = stores.workQueue.enqueueIfAbsent.bind(stores.workQueue);
@@ -193,7 +195,7 @@ describe('ALInboundMessageRuntime', () => {
         await disposal;
 
         expect(queued.right).toEqual({ kind: 'pending-admission' });
-        expect(conflict).toHaveBeenCalledTimes(1);
+        expect(conflict).toHaveBeenCalledTimes(3);
         expect(first.dispatchedTexts).toEqual([]);
         expect(first.forwardedIds).toEqual([]);
         expect(first.controlMessages).toEqual([]);
