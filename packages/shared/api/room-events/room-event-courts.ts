@@ -16,6 +16,15 @@ export function playerOffer(event: RoomEvent, principalId: string): RoomEvent.Of
     return null;
 }
 
+/** A late expiry worker cannot make an elapsed seat claimable in the private read model. */
+export function projectPlayerOffers(event: RoomEvent, principalId: string, now?: number): Pick<RoomEvent.View, 'offer' | 'lastExpiredOffer'> {
+    const offer = playerOffer(event, principalId);
+    if (offer && offer.deadline !== null && now !== undefined && now >= offer.deadline) {
+        return { offer: null, lastExpiredOffer: { ...offer, deadline: offer.deadline } };
+    }
+    return { offer, lastExpiredOffer: event.expiredOffers?.find(entry => entry.principalId === principalId)?.offer ?? null };
+}
+
 /** Queue order is the order of final consent, including when two commands share a clock reading. */
 export function offerCourts(event: RoomEvent, now: number): RoomEvent {
     const queue: RoomEvent.Party[] = [];
