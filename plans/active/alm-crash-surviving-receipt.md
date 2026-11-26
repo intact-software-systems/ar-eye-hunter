@@ -775,29 +775,30 @@ into their phases, with no change of behaviour, before they change.
   promotes the next buffered release (D190). Not prototyped. It answers the study's reading of the one-track limit
   below, which was not probed.
 
-**The limit that stays.** One ordered track keeps up at 2 messages a second through the WS server at +5 ms (40 of
-40 in every column, recipients reading 0.5 to 0.8 s behind) and does not at 5 a second or more. Nothing was run
-between. At 5 a second the head completes the track's first 16 to 17 messages and fresh attempts at ingress its
-first 33 to 38, half of them read 25 s after their send and the last 28.6 to 29.0 s after, at the edge of the 30 s
-lifetime; at 10 a second 3 to 5 and 4 to 7. With every lever and the arrivals in turn, the first 33 to 37 of 100, 31
-to 34 of 200 and 31 to 32 of 600 complete, the last of them read 28.6 to 29.9 s behind: about one message a second
-for as long as the lifetime allows, at 5, 10 and 30 a second alike, though at 5 and at 30 a second nothing contends
-by then (no send parked, at most two RETRY rows, no expiry conflict). The study read this as a ceiling of about 3.1
-messages a second, by halving the receipts read a second (6.2 to 6.6). Most of those receipts are `admitted`, so
-that figure is not a delivery rate, and the option put to the maintainer (ruling 15) carried it as "about 3 ordered
-messages a second". What the runs show is narrower: 2 a second keeps up, and a track offered 5 a second or more
-falls behind to about one a second and loses everything past its lifetime. Why a track that has fallen behind is
-slower than one that keeps up was not probed; the study's reading is that each in-order dispatch waits for its
-predecessor's completion and then for a later batch of the lane.
+**The limit that stays.** Measured on the built code ("Ordered room messages, with the fresh attempts built"), one
+ordered track keeps up at 2 messages a second through the WS server at +5 ms (40 of 40 in every run, the last
+message read 0.8 s behind), and at 3 a second in three of four runs (60 of 60, no send parked, the last read 0.7 to
+0.9 s behind); in the fourth one send was parked and the last message was read 13.2 s behind, though all 60
+completed. Without the fresh attempts 3 a second does not keep up in any run (21 to 30 sends parked, the last read
+9.8 to 18.8 s behind). At 4 a second no run keeps up on either: the built code completes 42 to 80 of 80, the last
+read 21.7 to 29.7 s behind; at 5 a second 11 and 65 of 100, at 10 a second 2 and 5 of 200. In every one-track run
+the messages completed are exactly the first of the track. The prototype study had read the limit as a ceiling of
+about 3.1 messages a second, by halving the receipts read a second (6.2 to 6.6). Most of those receipts are
+`admitted`, so that figure is not a delivery rate, and the option put to the maintainer (ruling 15) carried it as
+"about 3 ordered messages a second". What the built runs show: 2 a second keeps up in every run, 3 a second in most
+and not reliably, and a track offered 4 a second or more falls behind and loses what passes its lifetime. Why a
+track that has fallen behind is slower than one that keeps up was not probed; the study's reading is that each
+in-order dispatch waits for its predecessor's completion and then for a later batch of the lane.
 
 A track that falls behind ends as it does today: its waiting message expires, the next release finds a gap with no
-predecessor, and the track ends `resync-required`, a NACK to its sender. With fresh attempts at ingress that happened
-in each 5-a-second run, where the head had stalled without ending the track. A single retried row is still enough to
-hold a track: a dispatch that ran before its predecessor's completion, a release, or an admission that loses three
-writes waits for the rotation (cause 3). No such row arose in the four five-publisher runs with fresh attempts at
-ingress; the head made 4 to 26 a run. And under contention an arrival now costs up to three read-and-write rounds
-before it is parked, not one: at 10 a second the progress row's lost writes rose from 373-374 of 525-532 to 761-766
-of 914-926. Streams faster than one track carries are what ordering end to end in Rallar Web is for, planned as its
+predecessor, and the track ends `resync-required`, a NACK to its sender. On the built code that happened in each
+5-a-second run, where the code before it had stalled without ending the track. A single retried row is still enough
+to hold a track: a dispatch that ran before its predecessor's completion, a release, or an admission that loses
+three writes waits for the rotation (cause 3). No such row arose in the counted five-publisher runs of the built
+code, where the code before it made 9 to 15 a run; one built run taken beside another session's test suites (load
+7.5 rising to 13.1) made 14 such dispatch rows, none claimed again, and completed 108 of 200 with five tracks ended
+`resync-required`. And under contention an arrival now costs up to three read-and-write rounds before it is parked,
+not one: at 10 a second the progress row's lost writes rose from 433-444 of 597-613 to 813-814 of 981-982. Streams faster than one track carries are what ordering end to end in Rallar Web is for, planned as its
 own work in draft pull request #914.
 
 **For a browser receiver.** The same lane runs in the browser, over IndexedDB for the session's durable pair and
@@ -1282,6 +1283,59 @@ one 5 times) and the built tree 58 of 100, each once; at 10 a second both hand 1
   at an admitted message held waiting work, not lost work: a buffered message's release had lost its commit to an
   expiry rewrite, gone back as RETRY, and was not claimed again before its message expired.
 
+### Ordered room messages, with the fresh attempts built
+
+The cells of section 12 again, with its harness and shape (three WS server instances on PostgreSQL, every statement,
+BEGIN and COMMIT delayed 5 ms, fifteen sessions in one room, a 30 s lifetime, no copy re-sent), on three columns:
+the built code; the same code with only the arrival's fresh attempts (the replay's and the release's undone); and the
+code before any of them, the completion's three attempts kept. Each column is the built tree with a patch undone for
+the run and restored after it, and within a cell every run iterates its columns back to back, so load drift falls on
+each alike. No run started above a 1-minute load of 8; the runs taken beside another session's test suites that ended
+above 8 were repeated on a quiet machine with their whole iteration, and the counted runs started and ended at loads
+of 1.4 to 6.9; one track at 3 and at 4 a second was also run twice more on the quiet machine.
+
+| Cell, +5 ms                       | Before the fresh attempts                                             | The arrival's attempts only                                        | Built                                                                  |
+| --------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------- |
+| Five ordered, 20 s, 200, 3 runs   | 154-174 complete; 26-32 parked; read 7.1-21.0 s; 12.8-14.0 receipts/s | 200 each; none parked; read 0.6-0.7 s, at most 1.1 s; 19.3-19.4 /s | 200 each; none parked; read 0.6-0.7 s, at most 1.2 s; 19.3-19.4 /s     |
+| Five ordered, 45 s, 450, 1 run    | 131 complete; 39 parked; 308 timed-out; read 12.4 s; 13.3 /s          | 450; none parked; read 0.7 s, at most 20.7 s; 18.2 of 20.0 /s      | 450; none parked; read 0.6 s, at most 0.9 s; 19.7 of 20.0 /s           |
+| One track, 2 a second, 40, 2 runs | 40 each; last read 0.8 s behind                                       | not run                                                            | 40 each; last read 0.8 s behind                                        |
+| One track, 3 a second, 60, 4 runs | 60 each; 21-30 parked; last read 9.8-18.8 s behind                    | not run                                                            | 60 each; none parked in three, last read 0.7-0.9 s; one parked, 13.2 s |
+| One track, 4 a second, 80, 4 runs | 1, 37, 72, 66; last read up to 30.1 s behind                          | not run                                                            | 42, 47, 80, 45; last read 21.7-29.7 s behind                           |
+| One track, 5 a second, 100        | 51, 3                                                                 | 3, 8                                                               | 65, 11; the track ended `resync-required` in both                      |
+| One track, 10 a second, 200       | 3, 3, 1                                                               | not run                                                            | 5, 2                                                                   |
+| The two unordered cells, 200      | 200 each; read 0.5 s, at most 0.8 and 1.4 s; 19.4-19.5 receipts/s     | not run                                                            | 200 each; read 0.5 s, at most 0.6 and 0.8 s; 19.4-19.5 receipts/s      |
+
+"Read" is the recipients' read of a message, from its send to its last ACK offered: p50, and its largest; for one
+track, how far behind its send the last completed message was read. Receipts are read against 20.1 a second offered
+(20.0 over 45 s).
+
+- **The five ordered publishers keep up on the built code**, in every counted run: every message complete by its
+  deadline, no send parked, no `admitted` later than 8 s, the last ten's p50 no slower than the first ten's
+  (`admitted` 173 to 181 ms against 192 to 210 ms over 20 s, 172 against 274 ms over 45 s; `complete` 484 to 576 ms
+  against 489 to 597 ms, and 459 against 513 ms), receipts read at 96.0 to 98.5 % of the offered rate, no RETRY row,
+  no message handed to the subscriber twice, no frame read twice or out of order, and no track ended
+  `resync-required`. Completions took a second attempt 0 to 8 times a run, never a third, and none handed back.
+- **One built run did not keep up**, taken beside another session's suites (its load rose from 7.5 to 13.1): 108 of
+  200 complete, recipients reading 5.4 s behind at p50 and 27.5 s at most, 13.8 receipts read a second, 14 RETRY rows,
+  each a local dispatch that ran before its predecessor's completion and was never claimed again, and five tracks
+  ended `resync-required`. Its repeat on the quiet machine kept up. It shows the hold that stays: one retried row
+  waits for the rotation and its track waits with it.
+- **The arrival's attempts carry the five publishers; with the replay's and the release's they differ only over
+  45 s.** Over 20 s the two columns read alike, but over 45 s with the arrival's attempts alone one message was read 20.7 s behind its
+  send and receipts were read at 18.2 a second, where the built code read every message within 0.9 s and receipts at
+  19.7 a second (one run each, not attributed).
+- **What one track carries: 2 a second**, the highest rate at which every run kept up (all complete, the last read
+  within a second). 3 a second is the first that did not: three of four runs kept up and one read its last message
+  13.2 s after its send, held by one parked send. From 4 a second the track falls behind on
+  every column, and at 5 a second the built code ends the track `resync-required` where the code before it stalled
+  without ending it. In every one-track run the messages completed are exactly the first of the track and none was handed twice. At
+  10 a second the progress row's lost writes rose from 433-444 of 597-613 writes a run to 813-814 of 981-982, the cost
+  of three read-and-write rounds before a send is parked, and sends admitted more than 8 s late or never rose from 84
+  to 92 a run to 104 to 107, with as many parked (146 to 163). Recipients read 10 room frames twice in one run of the
+  code before the attempts and 15 in a run of the built code taken beside the other suites, though the subscriber was
+  handed each message once; neither was probed.
+- **The unordered cells read as before**: 200 of 200 in each, the read's p50 0.5 s on both columns.
+
 ## Established in slice 1
 
 - **Unfenced rows neither conflict nor wait.** Through `PSqlAdmissionWorkBackend`, 30 concurrent writes to
@@ -1417,12 +1471,11 @@ one 5 times) and the built tree 58 of 100, each once; at 10 a second both hand 1
   the ordered tracks stall on both trees behind admissions left `pending-admission`; and whether a sender's resend
   unblocks a track. Why such a replay lands late, and why two tracks stopped at an admitted message, is answered in
   section 12.
-- Of section 12: its fresh attempts are measured as prototypes, not as built code, until its measurement is run.
-  The replay's and the release's were never run without the progress-row lever. One track was run at 2 and at 5 a
-  second and not between, so the rate at which a track stops keeping up is not known. Why a track that has fallen
-  behind delivers about one message a second, why reading due retried rows with the new ones delivered 2 of 100 on
-  one track, and why recipients then read frames twice, were not probed. No cell ran in a browser, on IndexedDB or
-  over RTC.
+- Of section 12: why one track at 3 a second kept up in three runs of four and not in the fourth, and why a track
+  that has fallen behind delivers about one message a second, were not probed; nor why recipients read room frames
+  twice on one track at 10 a second (with the fresh attempts and without them) and when reading due retried rows with
+  the new ones, nor why that lever delivered 2 of 100 on one track. What separates the arrival's attempts alone from
+  all of them over 45 s rests on one run each. No cell ran in a browser, on IndexedDB or over RTC.
 - The sustained cost of an ACK that finds no head: the measurement through the WS server offers each ACK only
   after its recipient reads the message, and does not count how many found no head.
 - Leader resolution in a cluster: the group-leader case pins the cross-instance count, not how the leader is
