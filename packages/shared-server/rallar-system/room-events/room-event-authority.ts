@@ -1,3 +1,5 @@
+import { playerOffer } from '@shared/api/room-events/room-event-courts.ts';
+import { isLiveGroupPresenceSession } from '../group-state/policy/group-policy-primitives.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { readRallarGroupDirectorAppointment } from '@shared/api/group-director.ts';
 import type { RoomGuestLease } from '@shared/api/room-guests/invitation.ts';
@@ -59,8 +61,7 @@ export class RoomEventAuthority {
         const actor = active.find(member => member.principalId === input.principalId);
         if (!actor) throw new GroupMutationAuthorizationError('Event lobby access has ended.');
         const command = input.command;
-        const permitted = this.organizers.includes(input.principalId) || (Object.hasOwn(this.organizersByApplication, input.lobby.applicationId) &&
-            this.organizersByApplication[input.lobby.applicationId].includes(input.principalId));
+        const permitted = this.canOrganize(input.lobby.applicationId, input.principalId);
         if (command?.action === 'create' && (session.value.guestRoom || lobby.value.ownerPrincipalId !== input.principalId ||
             !permitted)) {
             throw new GroupMutationAuthorizationError('Configured organizer permission and control of the lobby are required.');
@@ -69,6 +70,16 @@ export class RoomEventAuthority {
             throw new GroupMutationAuthorizationError('A party can invite only current event players.');
         }
         const fences = [fence(GROUPS_NAMESPACE, lobby.entry), fence(AUTH_SESSIONS_BY_SESSION_NAMESPACE, session.entry)];
+        if (command?.action === 'offer-handover' || command?.action === 'accept-handover') {
+            const offering = command.action === 'offer-handover';
+            const recipientId = offering ? command.recipientId : input.principalId;
+            const recipient = active.find(member => member.principalId === recipientId);
+            if (!event || !recipient || recipient.guestLease || !this.canOrganize(input.lobby.applicationId, recipientId) ||
+                (offering ? event.organizerId !== input.principalId : event.handover?.recipientId !== input.principalId)) {
+                throw new GroupMutationAuthorizationError('Handover requires an eligible event organizer.');
+            }
+            fences.push(...await this.recipientPresence(event, recipientId, now, offering ? undefined : input.sessionId));
+        }
         if (command?.action === 'release' && input.principalId !== event?.organizerId) {
             const court = { ...input.lobby, groupId: command.groupId };
             if (!event?.courts.some(candidate => candidate.groupId === court.groupId) ||
@@ -81,6 +92,36 @@ export class RoomEventAuthority {
             throw new GroupMutationAuthorizationError('This guest credential belongs to another room.');
         }
         return { fences, audience, members: active, guestLease: actor.guestLease };
+    }
+
+    private canOrganize(applicationId: string, principalId: string): boolean {
+        return this.organizers.includes(principalId) || (Object.hasOwn(this.organizersByApplication, applicationId) &&
+            this.organizersByApplication[applicationId].includes(principalId));
+    }
+
+    private async recipientPresence(event: RoomEvent, recipientId: string, now: number, acceptingSession?: string): Promise<RuntimeStateGuardedBatchEffect[]> {
+        const { groups, authSessions } = this.dependencies;
+        const seat = playerOffer(event, recipientId);
+        const rooms = [event.lobby];
+        if (seat?.deadline === null) rooms.push({ ...event.lobby, groupId: seat.groupId });
+        for (const room of rooms) {
+            const admission = await groups.findPresenceAdmissionEntry({ ...room, principalId: recipientId });
+            if (!admission) continue;
+            for (const candidate of admission.value.admittedSessions) {
+                if (acceptingSession !== undefined && candidate.sessionId !== acceptingSession) continue;
+                const present = await groups.findPresenceEntry({ ...room, sessionId: candidate.sessionId });
+                if (!present || !isLiveGroupPresenceSession(present.value, now) || !isExactlyAdmitted(admission.value, present.value)) continue;
+                const fences = [fence(PRESENCE_ADMISSIONS_NAMESPACE, admission.entry), fence(SESSIONS_NAMESPACE, present.entry)];
+                // Acceptance already fences this issued session through the actor check.
+                if (acceptingSession === undefined) {
+                    const issued = await authSessions.findSessionBySessionIdEntry(candidate.sessionId);
+                    if (!issued || issued.value.guestRoom || issued.value.clientId !== recipientId || issued.value.expiresAtEpochMs <= now) continue;
+                    fences.push(fence(AUTH_SESSIONS_BY_SESSION_NAMESPACE, issued.entry));
+                }
+                return fences;
+            }
+        }
+        throw new GroupMutationAuthorizationError('The handover recipient must be present in the event.');
     }
 
     private async directorFences(court: GroupRef, actor: RoomEventActor, now: number): Promise<RuntimeStateGuardedBatchEffect[]> {

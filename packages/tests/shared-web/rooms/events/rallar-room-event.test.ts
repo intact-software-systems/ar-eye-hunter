@@ -15,7 +15,7 @@ const grant = { clientId: 'alice', username: 'Alice', sessionId: 'lobby-seat',
 const courtAccess = { clientId: 'alice', sessionId: 'court-seat', issuedAtEpochMs: 1,
     expiresAtEpochMs: 14_400_001, accessToken: 'court-proof' };
 const view: RoomEvent.View = {
-    principalId: 'alice', lobby, closesAt: 14_400_000, revision: 3, closed: false,
+    principalId: 'alice', handover: null, lobby, closesAt: 14_400_000, revision: 3, closed: false,
     courts: [{ groupId: 'court', capacity: 4, occurrence: 1, availableSeats: 3 }],
     queue: null, proposals: [], offer: { groupId: 'court', occurrence: 1, offerRevision: 3, partyId: 'friends', deadline: 1000 }
 };

@@ -13,6 +13,7 @@ import { computeMemberPresenceAdmission } from '../group-state/mutation/presence
 import { computeGroupMembershipWrite } from '../group-state/mutation/write/compute-group-membership-write.ts';
 
 export type RoomChange =
+    | { readonly kind: 'handover'; readonly priorOrganizer: string }
     | { readonly kind: 'open'; readonly capacity: number }
     | { readonly kind: 'attach' | 'close' }
     | { readonly kind: 'rotate'; readonly verifier: string }
@@ -44,6 +45,7 @@ export function computeEventRoomChange(input: EventRoomAccessEffects.Input, chan
             joinMode: 'invite-only', expiresAtEpochMs: input.after.closesAt, eventRoom: binding });
     }
     if (!stored.eventRoom || stored.eventRoom.lobbyGroupId !== binding.lobbyGroupId) throw new TypeError('Room belongs to another event.');
+    if (change.kind === 'handover') return transferEventRoom(input, data);
     if (change.kind === 'close') {
         const { guestInvitation: _retired, ...group } = stored;
         return publishGroup(data, { ...group, status: 'archived', archived: auditStamp(command, facts, undefined), deleted: null });
@@ -51,6 +53,28 @@ export function computeEventRoomChange(input: EventRoomAccessEffects.Input, chan
     if (change.kind === 'rotate') return publishGroup(data, { ...stored, guestInvitation: toRoomGuestInvitation(change.verifier, facts.attemptAtEpochMs) });
     if (!('principal' in change)) throw new TypeError('Invalid event room change.');
     return computeEventParticipantChange(input, change, data);
+}
+
+/** Transfer the administrative seat in every court. Claimed seats and their live sessions survive. */
+function transferEventRoom(input: EventRoomAccessEffects.Input, data: RoomChangeRead): GroupMutationComputed {
+    const { command, read, facts, ref } = data;
+    const previous = read.targetMember;
+    const successorId = input.after.organizerId;
+    const binding = read.group?.value.eventRoom;
+    if (!previous || previous.status !== 'active' || previous.role !== 'owner' || !binding ||
+        command.operation !== 'upsertMember' || command.input.actorPrincipalId !== successorId) {
+        throw new TypeError('Event management no longer matches the room owner.');
+    }
+    const lobby = ref.groupId === binding.lobbyGroupId;
+    const court = input.after.courts.find(candidate => candidate.groupId === ref.groupId);
+    const playing = court?.seats.some(seat => seat.principalId === successorId && seat.deadline === null) ?? false;
+    const former = createUpsertGroupMember({ command, facts, existing: previous, role: 'member',
+        status: lobby || binding.organizerPlaying ? 'active' : 'left', invitedByPrincipalId: null, invitationExpiresAtEpochMs: null });
+    const successor = createUpsertGroupMember({ command: { ...command, targetPrincipalId: successorId }, facts,
+        existing: read.actorMember ?? undefined, role: 'owner', status: 'active', invitedByPrincipalId: null, invitationExpiresAtEpochMs: null });
+    return computeGroupMembershipWrite({ command, facts, read, members: [former, successor], eventType: 'ownership-transferred',
+        eventMembership: { organizerPlaying: playing }, publicationGrantEffects: computeDepartureGrantEffects(read, former),
+        subscriptionEffects: computeMembershipSubscriptionEffects(ref, read, former) });
 }
 
 function computeEventParticipantChange(input: EventRoomAccessEffects.Input, change: Extract<RoomChange, { principal: string }>,

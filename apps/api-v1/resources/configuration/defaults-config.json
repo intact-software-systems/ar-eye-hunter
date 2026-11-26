@@ -66,6 +66,7 @@
   "group": {
     "roomOwnedAppDataBindings": [],
     "roomLobbyPoliciesByApplication": {},
+    "eventHandoverWindowMs": 600000,
     "eventOrganizerIdsByApplication": {},
     "temporaryRoomPoliciesByApplication": { "grumpy-town": {} },
     "defaultMaxMembers": 256,
