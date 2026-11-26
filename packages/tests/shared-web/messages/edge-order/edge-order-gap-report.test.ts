@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { RallarMessageOrderGap } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type {
+    RallarMessageOrderGap,
+    RallarRoomMessageChannelDefinition
+} from '@shared-web/browser/messages/rallar-message-contracts.ts';
 
 import {
     createEdgeOrderPage,
@@ -183,9 +186,11 @@ describe('an edge-ordered room channel: the gap report', () => {
         expect(() => page.messages.room({ ...EDGE_ORDER_TEST_MOVES, order: undefined, onOrderGap: () => {} })).toThrow(
             refused('unsupported')
         );
-        expect(() => page.messages.room({ ...EDGE_ORDER_TEST_MOVES, onOrderGap: 'log' as unknown as () => void })).toThrow(
-            refused('invalid-order-gap-handler')
+        // A JavaScript caller's definition: nothing checked its fields before the page did.
+        const unchecked: RallarRoomMessageChannelDefinition = JSON.parse(
+            JSON.stringify({ ...EDGE_ORDER_TEST_MOVES, onOrderGap: 'log' })
         );
+        expect(() => page.messages.room(unchecked)).toThrow(refused('invalid-order-gap-handler'));
     });
 });
 
