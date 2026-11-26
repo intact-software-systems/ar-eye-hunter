@@ -587,8 +587,9 @@ every session the page opens. The event's `data` is the event itself:
   origin, like the recipient's own, since it is the recipient's own; it reads the
   relay as `nackFromPeerId`, so a gap request a relay carried is the one whose
   `nackFromPeerId` differs from its `nackLogicalRecipientPeerId`. A lane wait
-  matches `"nackGapRequestNumber":<n>,"nackLogicalRecipientPeerId":"<peer>"` as
-  one run (`toGapRequestAdmissionWait`), and `"nackReason":"gap","nackOrderingKey":"<key>`
+  matches `"nackLogicalRecipientPeerId":"<peer>"` with `data.nackGapRequestNumber`
+  as a `payloadMinimums` floor (`toGapRequestAdmissionWait`), since commits are not
+  ordered across request numbers, and `"nackReason":"gap","nackOrderingKey":"<key>`
   still opens a gap NACK's fields. A `rejected` control whose receipt proof the origin
   refused also carries, straight after the NACK's fields, `proofRefusal`
   (`missing-proof`, `unknown-key`, `key-mismatch` or `invalid-signature`),

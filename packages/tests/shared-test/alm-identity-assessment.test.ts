@@ -954,7 +954,7 @@ function transcriptValue({ command, role, document, sender }: TranscriptValueInp
         return toTranscriptHttpValue(command, sender);
     }
     if (command.kind === 'wait' && command.match.payloadFields?.['data.nackReason'] === 'gap') {
-        return toTranscriptGapRequestValue(command.match.contains ?? '');
+        return toTranscriptGapRequestValue(command.match.payloadMinimums?.['data.nackGapRequestNumber'] ?? null);
     }
     const tracedDelta = command.kind === 'wait' ? command.match.payloadFields?.['data.traceId'] : undefined;
     if (typeof tracedDelta === 'string') {
@@ -1010,9 +1010,8 @@ function toTranscriptReceiptValue(handleId: string, sender: RallarBlackBoxTestRe
     };
 }
 
-/** A gap request wait's admitted NACK, as the middle of the path forwarded it for the receiver the wait names. */
-function toTranscriptGapRequestValue(contains: string): ApiJsonObject {
-    const requestNumber = Number(/"nackGapRequestNumber":(\d+)/.exec(contains)?.[1]);
+/** A gap request wait's admitted NACK at its floor, as the middle of the path forwarded it for the receiver the wait names. */
+function toTranscriptGapRequestValue(requestNumber: number | string | null): ApiJsonObject {
     return {
         matched: true,
         event: {

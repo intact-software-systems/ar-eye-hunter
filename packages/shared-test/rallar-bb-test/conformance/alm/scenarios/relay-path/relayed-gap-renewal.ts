@@ -41,7 +41,7 @@ import {
 interface RelayedGapRenewalStatement {
     readonly scenarioId: Extract<AlmConformanceScenarioId, 'relayed-gap-renewal' | 'relayed-unreceipted-gap-renewal'>;
     readonly ack: NonNullable<AlmConformanceOrderedSendOptions['ack']>;
-    /** The gap request each origin waits for from each of its receivers before it releases its hold. */
+    /** The lowest gap request each origin waits for from each of its receivers before it releases its hold. */
     readonly requestNumber: number;
     /** How an origin reads one of its handles once its hold is released. */
     readonly toHandleCommands: (step: AlmConformanceMessageStepInput) => readonly RallarBlackBoxTestCommand[];
@@ -50,7 +50,7 @@ interface RelayedGapRenewalStatement {
 interface AlmConformanceGapRequestAdmissionWaitInput {
     readonly step: AlmConformanceStepInput;
     readonly name: string;
-    /** Which request for its sequences the gap NACK is: 1 for the report an arrival causes, one more per renewal. */
+    /** The lowest request for its sequences the gap NACK may be: 1 for the report an arrival causes, one more per renewal. */
     readonly requestNumber: number;
     /** A result reference to an arrival the origin received from the receiver whose request the wait matches. */
     readonly logicalRecipientPeerId: string;
@@ -74,11 +74,12 @@ const SEQS = [1, 2, 3] as const;
  * through the middle, which forwards that receiver's gap NACKs. Each origin holds its own second send at its RTC
  * transport by message id, once both receivers entered its track at the first: the hold drops the original, every
  * gap repair and every receipt retry of it alike, so the gap stays open while each receiver renews its request. Each
- * origin releases the hold only once it admitted the gap request numbered 3 from each receiver, within half the held
- * send's lifetime so its repair has time to land. Request 3 is the proof:
+ * origin releases the hold only once it admitted a gap request numbered 3 or later from each receiver, within half the
+ * held send's lifetime so its repair has time to land. Request 3 is the proof:
  * it lands after the origin's 2 s receipt retry of the third send, the message that revealed the gap, so the relay
- * must still forward a renewal once that retry passed it. After the run the identity assessment fails the cell unless
- * at least one origin admitted a request 3 that a relay sent for its receiver; the cell asserts neither which page
+ * must still forward a renewal once that retry passed it; any later request lands later still. After the run the
+ * identity assessment fails the cell unless at least one origin admitted a request 3 or later that a relay sent for its
+ * receiver; the cell asserts neither which page
  * relays nor whose track. No step reads which page is the middle, so the server's RTT replan may move the middle once
  * the path is 15 s old without breaking a step: any path of three keeps one, and each admitted request names the peer
  * that sent it, which the assessment compares with the receiver it speaks for. Over `rtc` alone: a WS fallback would carry the held message or the renewal around the
@@ -97,9 +98,9 @@ export const relayedGapRenewal: AlmConformanceScenarioDefinition = toRelayedGapR
 });
 
 /**
- * The same path and holds with unreceipted sends: nothing retries the revealing message, so any committed request
- * proves the relayed renewal and each origin releases after request 2 from each receiver. Each handle is read once its
- * carrier took the send.
+ * The same path and holds with unreceipted sends: nothing retries the revealing message, so any committed renewal
+ * proves the relayed renewal and each origin releases after request 2 or later from each receiver. Each handle is read
+ * once its carrier took the send.
  */
 export const relayedUnreceiptedGapRenewal: AlmConformanceScenarioDefinition = toRelayedGapRenewal({
     scenarioId: 'relayed-unreceipted-gap-renewal',
@@ -109,9 +110,10 @@ export const relayedUnreceiptedGapRenewal: AlmConformanceScenarioDefinition = to
 });
 
 /**
- * The `control-admission` event in which the origin commits a gap NACK of one request number that speaks for one
- * receiver, whichever peer sent it: the receiver itself, or a relay that forwarded it. The request number and the
- * recipient follow the NACK's track in their emitted order, so the match reads them as one run.
+ * The `control-admission` event in which the origin commits a gap NACK numbered `requestNumber` or later that speaks
+ * for one receiver, whichever peer sent it: the receiver itself, or a relay that forwarded it. The number is a floor,
+ * not an exact match: the protocol does not order commits across request numbers, since every committed request or
+ * repair on the held message bumps its version fence and a loser is replayed, so a later request can commit first.
  */
 function toGapRequestAdmissionWait(
     { step, name, requestNumber, logicalRecipientPeerId }: AlmConformanceGapRequestAdmissionWaitInput
@@ -121,13 +123,17 @@ function toGapRequestAdmissionWait(
         name,
         topic: ALM_OUTBOUND_DIAGNOSTICS_TOPIC,
         historyFrom: 'cell',
-        contains: `"nackGapRequestNumber":${requestNumber},"nackLogicalRecipientPeerId":"${logicalRecipientPeerId}"`,
+        contains: `"nackLogicalRecipientPeerId":"${logicalRecipientPeerId}"`,
         payloadFields: { 'data.kind': 'control-admission', 'data.outcome': 'committed', 'data.nackReason': 'gap' }
     });
-    return { ...wait, timeoutMs: toBudgetMs(HELD_SEND_BUDGET_MS, toVerdictTimeoutMs(step.input.deadlineMs)) };
+    return {
+        ...wait,
+        match: { ...wait.match, payloadMinimums: { 'data.nackGapRequestNumber': requestNumber } },
+        timeoutMs: toBudgetMs(HELD_SEND_BUDGET_MS, toVerdictTimeoutMs(step.input.deadlineMs))
+    };
 }
 
-/** The name of an origin's wait for the gap request numbered `requestNumber` that speaks for `recipient`. */
+/** The name of an origin's wait for a gap request numbered `requestNumber` or later that speaks for `recipient`. */
 export function toGapRequestWaitName(recipient: AlmConformanceRole, requestNumber: number): string {
     return `gap-request-${requestNumber}-for-${recipient}`;
 }
@@ -210,8 +216,8 @@ function toMemberCommands(member: AlmConformanceStepInput): readonly RallarBlack
  * An origin sends its first, receives the other origin's first and enters that track as its receiver: the other origin
  * sends nothing more before this page's cue. It opens its own gap only once both of its receivers entered its track at
  * the first: a receiver whose first frame is the third would enter there and never report the gap (D630). It releases
- * its hold once each receiver's numbered request committed, reads its handles, and then proves the other origin's
- * track arrived in order.
+ * its hold once each receiver's request at or past the number committed, reads its handles, and then proves the other
+ * origin's track arrived in order.
  */
 function toOriginCommands(
     origin: AlmConformanceStepInput,

@@ -10,7 +10,7 @@ export interface AlmRelayedGapRenewalInput {
     readonly participants: readonly RecordedAlmConformanceParticipant[];
 }
 
-/** One origin of the cell, the request number it waits for, and its waits for that request from each receiver. */
+/** One origin of the cell, the lowest request number it waits for, and its waits for such a request from each receiver. */
 interface AlmRelayedGapRenewalOrigin {
     readonly role: AlmConformanceRole;
     readonly requestNumber: number;
@@ -23,8 +23,9 @@ export function hasAlmRelayedGapRenewalPin(recipe: RallarBlackBoxTestRecipe): bo
 }
 
 /**
- * A cell that pins a relayed gap renewal fails unless at least one origin's recorded wait admitted the numbered request
- * from a peer other than the receiver it speaks for: requests every receiver sent itself prove nothing about the relay.
+ * A cell that pins a relayed gap renewal fails unless at least one origin's recorded wait admitted a request at or past
+ * the pinned number from a peer other than the receiver it speaks for: requests every receiver sent itself prove
+ * nothing about the relay, and a later request is a later renewal, so it proves the same.
  */
 export function assessAlmRelayedGapRenewal(input: AlmRelayedGapRenewalInput): readonly string[] {
     const recipe = input.sender.participant.recipe;
@@ -41,7 +42,7 @@ export function assessAlmRelayedGapRenewal(input: AlmRelayedGapRenewalInput): re
     const requestNumbers = [...new Set(origins.map((origin) => origin.requestNumber))].join(' or ');
     return origins.some((origin) => isRelayedRequest(origin, input.participants))
         ? []
-        : [`${cell}: no origin admitted a gap request numbered ${requestNumbers} through a relay, so no renewal was relayed.`];
+        : [`${cell}: no origin admitted a gap request numbered ${requestNumbers} or later through a relay, so no renewal was relayed.`];
 }
 
 function isRelayedRequest(
@@ -54,7 +55,8 @@ function isRelayedRequest(
         const value = toRecordedAlmResultValue(participant, wait);
         const nack = toAlmJsonPathValue(value, 'event.payload.data');
         return isJsonRecordValue(value) && value.matched === true && isJsonRecordValue(nack) &&
-            nack.nackGapRequestNumber === origin.requestNumber && typeof nack.nackFromPeerId === 'string' &&
+            typeof nack.nackGapRequestNumber === 'number' &&
+            nack.nackGapRequestNumber >= origin.requestNumber && typeof nack.nackFromPeerId === 'string' &&
             typeof nack.nackLogicalRecipientPeerId === 'string' &&
             nack.nackFromPeerId !== nack.nackLogicalRecipientPeerId;
     });
