@@ -1,3 +1,4 @@
+import type { TemporaryRoomPolicy } from '@shared/api/room-guests/temporary-room-policy.ts';
 import type { RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import type { RoomOwnedAppData } from '@shared-server/app-data/room-owned-app-data.ts';
 import type { LoginClientData } from '@shared-server/rallar-system/auth/login/authenticate-auth-user.ts';
@@ -129,6 +130,8 @@ export interface ApiV1GroupAdmissionConfiguration {
 }
 
 export interface ApiV1GroupConfiguration {
+    readonly eventOrganizerIdsByApplication: Readonly<Record<string, readonly string[]>>;
+    readonly temporaryRoomPoliciesByApplication: Readonly<Record<string, TemporaryRoomPolicy>>;
     readonly roomLobbyPoliciesByApplication: Readonly<Record<string, RoomLobby.Policy>>;
     readonly roomOwnedAppDataBindings: readonly RoomOwnedAppData.Binding[];
     readonly defaultMaxMembers: number | null;

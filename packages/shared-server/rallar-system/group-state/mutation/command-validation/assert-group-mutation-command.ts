@@ -397,6 +397,7 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
         'maxSessionsPerMember',
         'metadata',
         'createdByPrincipalId',
+        'temporaryCreator',
         'expiresAtEpochMs',
         'purgeAfterEpochMs',
         'lifecyclePolicy',

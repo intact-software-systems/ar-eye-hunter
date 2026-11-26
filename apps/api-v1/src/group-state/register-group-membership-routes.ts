@@ -42,9 +42,9 @@ function registerRemoveGroupMemberRoute(
         `${GROUP_MEMBER_PATH}/remove/requests/:requestId`,
         async (context) => {
             try {
-                const authSession = await dependencies.requireApiAuthSession(context.req);
                 const scope = toGroupStateRouteScope(context);
                 const groupId = context.req.param('groupId');
+                const authSession = await requireRoomParticipantSession({ request: context.req, roomRef: { ...scope, groupId }, dependencies, guestScope: 'temporary-room' });
                 const principalId = context.req.param('principalId');
                 const written = toGroupStateResponse({
                     kind: 'mutation',
@@ -190,9 +190,9 @@ function registerTransferGroupOwnershipRoute(
         `${GROUP_PATH}/owner/transfer/requests/:requestId`,
         async (context) => {
             try {
-                const authSession = await dependencies.requireApiAuthSession(context.req);
                 const scope = toGroupStateRouteScope(context);
                 const groupId = context.req.param('groupId');
+                const authSession = await requireRoomParticipantSession({ request: context.req, roomRef: { ...scope, groupId }, dependencies, guestScope: 'temporary-room' });
                 const written = toGroupStateResponse({
                     kind: 'mutation',
                     written: await dependencies.processGroupAppInbox(
@@ -230,7 +230,7 @@ function registerUpsertSelfGroupMemberRoute(
                 const { groupId, principalId } = context.req.param();
                 const roomRef = { ...scope, groupId };
                 // A seated guest may leave its own room here; the AppInbox refuses every other guest change.
-                const authSession = await requireRoomParticipantSession(context.req, roomRef, dependencies);
+                const authSession = await requireRoomParticipantSession({ request: context.req, roomRef, dependencies });
                 requireJoinAdmissionQuota(dependencies, roomRef, authSession.clientId);
                 authorization.assertSelfPrincipal(authSession.clientId, principalId);
                 const request = await readGroupStateRouteRequest<UpsertGroupMemberRequest>(context);

@@ -1,3 +1,4 @@
+import { roomEventSignal } from '../../../room-events/room-event-deadline.ts';
 import { observeRoomDirectorLoss, observeRoomDirectorPresence } from '@shared/api/room-directors/room-director-succession-presence.ts';
 import { readRoomDirectorSuccession } from '@shared/api/room-directors/room-director-succession-record.ts';
 import { readRallarGroupDirectorAppointment } from '@shared/api/group-director.ts';
@@ -92,6 +93,14 @@ export function computeGroupPresenceWrite({
         publicationGrantEffects: [],
         subscriptionEffects: [],
         subscriptionOutcome: null,
+        extraOutboxEntries: current.eventRoom && session.disconnectedAtEpochMs !== null ? [
+            roomEventSignal({ kind: 'departure', causeId: command.commandId, lobby: {
+                ...command.aggregateRef, groupId: current.eventRoom.lobbyGroupId
+            }, dueAtEpochMs: Math.min(current.expiresAtEpochMs ?? Number.MAX_SAFE_INTEGER,
+                session.disconnectedAtEpochMs + current.eventRoom.emptyReturnWindowMs) }, {
+                createdAtEpochMs: facts.nowEpochMs, traceId: facts.traceId, serviceId: facts.serviceId
+            }).entry
+        ] : [],
         presenceAdmission,
         presenceSummaryWork: revised ? 'enqueue' : presenceSummaryWork
     });

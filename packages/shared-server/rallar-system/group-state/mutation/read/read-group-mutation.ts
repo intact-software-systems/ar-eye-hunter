@@ -10,6 +10,7 @@ import type {
     GroupMutationSnapshotRead
 } from '../group-mutation-contracts.ts';
 import { readsGroupActiveMemberPrincipalIds, readsGroupLifecyclePolicy } from './group-mutation-read-scope.ts';
+import { isTemporaryManagementTransfer } from './resolve-group-mutation-read-identities.ts';
 import { readExactGroupMutation } from './read-exact-group-mutation.ts';
 import { readSequentialGroupMutation } from './read-sequential-group-mutation.ts';
 
@@ -69,7 +70,7 @@ export async function readGroupMutationWithSnapshot(
 }
 
 function readsExactGroupMutation(command: GroupMutationCommand): boolean {
-    return command.operation !== 'appointDirector' && !readsGroupActiveMemberPrincipalIds(command.operation);
+    return command.operation !== 'appointDirector' && !isTemporaryManagementTransfer(command) && !readsGroupActiveMemberPrincipalIds(command.operation);
 }
 
 async function readSequentialGroupMutationWithPolicy(

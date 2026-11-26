@@ -1,3 +1,4 @@
+import type { RoomEventBinding } from './room-events/room-event-binding.ts';
 import type { RoomGuestInvitation, RoomGuestLease } from './room-guests/invitation.ts';
 import type { EcdsaP256PublicJwk } from '../signature/ecdsa-p256-signature.ts';
 import type { ApiJsonObject } from './api-json-value.ts';
@@ -136,6 +137,10 @@ type GroupBase =
         activationStatus: GroupActivationStatus | null;
         /** Present only for rooms for which the owner issued a guest invitation. */
         guestInvitation?: RoomGuestInvitation;
+        /** A room opened without an account, with one room-scoped guest acting as manager. */
+        temporaryPlayerRoom?: true;
+        /** Event-owned lobby or court; organizer membership is administrative until a court seat is claimed. */
+        eventRoom?: RoomEventBinding;
     }>;
 
 export type Group =

@@ -34,7 +34,7 @@ interface RootFamilyRegistration {
     readonly name: string;
     readonly sourcePath: string;
     readonly requiresAuthorization: boolean;
-    readonly readRoutePaths?: readonly string[];
+    readonly readRoutes?: readonly string[];
 }
 
 const ROOT_FAMILY_CALLS: readonly RootFamilyRegistration[] = [
@@ -44,20 +44,22 @@ const ROOT_FAMILY_CALLS: readonly RootFamilyRegistration[] = [
         name: 'registerGroupMoveRoutes',
         sourcePath: './register-group-move-routes.ts',
         requiresAuthorization: false,
-        readRoutePaths: ['/api/state/apps/:applicationId/workspaces/:workspaceId/group-moves']
+        readRoutes: ['get /api/state/apps/:applicationId/workspaces/:workspaceId/group-moves']
     },
     {
         name: 'registerGroupSessionRoutes',
         sourcePath: './register-group-session-routes.ts',
         requiresAuthorization: false,
-        readRoutePaths: [
-            '/api/state/apps/:applicationId/workspaces/:workspaceId/group-sessions',
-            '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/session'
+        readRoutes: [
+            'get /api/state/apps/:applicationId/workspaces/:workspaceId/group-sessions',
+            'get /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/session'
         ]
     },
     { name: 'registerGroupStateMutationRoutes', sourcePath: './register-group-state-mutation-routes.ts', requiresAuthorization: true },
     { name: 'registerGroupLifecycleRoutes', sourcePath: './register-group-lifecycle-routes.ts', requiresAuthorization: false },
-    { name: 'registerRoomGuestRedemptionRoute', sourcePath: './register-room-guest-redemption-route.ts', requiresAuthorization: false },
+    { name: 'registerTemporaryRoomRoutes', sourcePath: './guests/register-temporary-room-routes.ts', requiresAuthorization: false,
+        readRoutes: ['post /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/guests/preview'] },
+    { name: 'registerRoomGuestRedemptionRoute', sourcePath: './guests/register-room-guest-redemption-route.ts', requiresAuthorization: false },
     { name: 'registerGroupAdmissionRoutes', sourcePath: './register-group-admission-routes.ts', requiresAuthorization: false },
     { name: 'registerGroupMembershipRoutes', sourcePath: './register-group-membership-routes.ts', requiresAuthorization: true },
     { name: 'registerGroupPresenceRoutes', sourcePath: './register-group-presence-routes.ts', requiresAuthorization: true },
@@ -121,9 +123,9 @@ export function findDirectGroupRouteHandler({
     if (familyParameters.length !== expectedFamilyParameterCount(familyOwnerName) || familyParameters.some((name) => !name)) {
         return undefined;
     }
-    const readRoutePaths = ROOT_FAMILY_CALLS.find(({ name }) => name === familyOwnerName)?.readRoutePaths;
-    if (readRoutePaths) {
-        return findInlineFamilyHandler({ program, owner: familyOwner, method, routePath, expectedFamilyRouteCount, readRoutePaths });
+    const readRoutes = ROOT_FAMILY_CALLS.find(({ name }) => name === familyOwnerName)?.readRoutes;
+    if (readRoutes) {
+        return findInlineFamilyHandler({ program, owner: familyOwner, method, routePath, expectedFamilyRouteCount, readRoutes });
     }
     const direct = findDirectRegistration(program, familyOwner);
     if (direct) {
@@ -159,7 +161,7 @@ interface InlineFamilyHandlerInput {
     readonly method: string;
     readonly routePath: string;
     readonly expectedFamilyRouteCount: number | undefined;
-    readonly readRoutePaths: readonly string[];
+    readonly readRoutes: readonly string[];
 }
 
 function findInlineFamilyHandler(input: InlineFamilyHandlerInput): MutationRoutingAstNode | undefined {
@@ -167,11 +169,12 @@ function findInlineFamilyHandler(input: InlineFamilyHandlerInput): MutationRouti
     if (!registrations) {
         return undefined;
     }
-    const reads = registrations.filter((entry) => entry.method === 'get');
-    const mutations = registrations.filter((entry) => entry.method !== 'get');
+    const isRead = (entry: DirectRouteRegistration) => input.readRoutes.includes(entry.method + ' ' + entry.routePath);
+    const reads = registrations.filter(isRead);
+    const mutations = registrations.filter(entry => !isRead(entry));
     if (
-        reads.length !== input.readRoutePaths.length ||
-        !input.readRoutePaths.every((routePath) => reads.filter((entry) => entry.routePath === routePath).length === 1) ||
+        reads.length !== input.readRoutes.length ||
+        !input.readRoutes.every((routePath) => reads.filter((entry) => entry.method + ' ' + entry.routePath === routePath).length === 1) ||
         (input.expectedFamilyRouteCount !== undefined && mutations.length !== input.expectedFamilyRouteCount)
     ) {
         return undefined;

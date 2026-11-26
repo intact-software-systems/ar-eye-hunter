@@ -95,3 +95,34 @@ named revision triggers a durable read. Unchanged deadlines generate no periodic
 requests. Reconnect and page resume reread current authority. Transient transport failures retry while the watcher is active, with delays capped at 30 seconds.
 Other read failures have three retries per wakeup. An authoritative denial ends the retry cycle. Display countdowns locally using the calibrated
 clock and enforce time-sensitive actions at their receiving authority.
+
+An app enabled for temporary games can start a room before account sign-in.
+Configure the API client first, then construct `TemporaryRoomCreation` from
+`rooms/entry/temporary-room-creation.ts` with the application/workspace scope. Its `start({ capacity, displayName }, signal)` saves the
+request ID and private creation proof before sending. Both options may be omitted.
+Retry with the same scope on this device after a lost response or a reload. The SDK keeps the private proof in its encrypted browser credential store. Save
+the returned room, room-scoped guest access and invitation secret before awaiting
+`clear()`. Only the invitation secret belongs in the shared link.
+`previewRoomGuestInvitation(room, secret, signal)` reads the room name and seat
+availability without admitting the visitor. An uncapped room returns null for
+both seat counts. The visitor explicitly redeems the invitation to join.
+
+`RallarRoomEvent` from `rooms/events/rallar-room-event.ts` follows a specific
+event lobby. Construct it with the browser facade and lobby reference. Call
+`start()` on mount, subscribe with `onChange`, and call `stop()` on unmount.
+The initial read, a private WebSocket notice, reconnect or foreground return
+recovers the player's current event view. Before an organizer creates the event,
+an authorized lobby member sees an empty view. An idle watcher sends no timer reads.
+
+Send organizer and queue commands with `act(command)`. A proposed party enters
+the queue once every invited player consents. Pass the displayed proposal's
+`proposalRevision` when accepting and the offer's `offerRevision` when declining. `enterCourt()` claims the current
+offer and enters the matching court. Its saved request recovers a committed
+claim after transport loss or reload. `returnToLobby()` reselects the event
+lobby without surrendering its membership. A temporary player uses distinct
+room credentials for those two connections under the same player identity.
+Start a guest visit with `auth.activateGuest({room, access, username})` using
+the admission Rallar returned for that room. After a page reload, restore the same player
+by passing their previously saved room admission to `activateGuest` again. A signed-out event
+watcher waits for authentication. With an active court visit, the watcher retrieves the
+same player's lobby grant from the protected credential store before reading the event.

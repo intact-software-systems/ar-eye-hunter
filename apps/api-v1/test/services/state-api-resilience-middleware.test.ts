@@ -227,16 +227,18 @@ function createStateApiConfiguration(
     };
 }
 
-test('anonymous guest redemption shares its ingress limit across room names and caller-supplied client IDs', async () => {
-    const app = new Hono();
-    app.use('/api/state/*', createStateApiResilienceMiddleware({
-        namespace: crypto.randomUUID(),
-        configuration: createStateApiConfiguration({ request: 1, eventList: 1 })
-    }));
-    app.post('/api/state/*', context => context.text('admitted'));
-    const redeem = (room: string) => app.request('/api/state/apps/app/workspaces/ws/groups/' + room + '/guests/requests/abc', {
-        method: 'POST', headers: { 'x-client-id': room }
-    });
-    assert.equal((await redeem('market')).status, 200);
-    assert.equal((await redeem('square')).status, 429);
+test('anonymous room operations share the ingress budget across caller-supplied client IDs', async () => {
+    for (const path of ['groups/court/guests/requests/abc', 'groups/court/guests/preview', 'temporary-rooms/requests/abc']) {
+        const app = new Hono();
+        app.use('/api/state/*', createStateApiResilienceMiddleware({
+            namespace: crypto.randomUUID(),
+            configuration: createStateApiConfiguration({ request: 1, eventList: 1 })
+        }));
+        app.post('/api/state/*', context => context.text('admitted'));
+        const visit = (name: string) => app.request('/api/state/apps/app/workspaces/' + name + '/' + path, {
+            method: 'POST', headers: { 'x-client-id': name }
+        });
+        assert.equal((await visit('market')).status, 200);
+        assert.equal((await visit('square')).status, 429, path);
+    }
 });

@@ -1,13 +1,12 @@
 import { trackAccountTownRecovery } from './track-account-town-recovery.ts';
+import { issueTownInvitation } from './issue-town-invitation.ts';
 import { leaveCurrentTown } from './leave-current-town.ts';
 import type { AuthenticatedResource } from '@shared-web/browser/api/authenticated-resource.ts';
 import { RallarFriends } from '@shared-web/browser/friends/rallar-friends.ts';
 import { RallarMatchmaking } from '@shared-web/browser/matchmaking/rallar-matchmaking.ts';
 import type { RallarFacade, RallarRoomState } from '@shared-web/browser/rallar.ts';
-import { createRoomGuestSecret } from '@shared-web/browser/rooms/entry/redeem-guest-invitation.ts';
 import { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
 import type { LoginRequest } from '@shared/api/api-config.ts';
-import { hashRoomInvitationSecret } from '@shared/api/room-guests/invitation.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { FriendsView } from '@shared/api/friends/friends-view.ts';
 import type { MatchmakingSnapshot } from '@shared/api/matchmaking/matchmaking-snapshot.ts';
@@ -165,18 +164,9 @@ export class OnlineSession {
             }
             clearTimeout(this.invitationTimeout);
             this.invitation = undefined;
-            const secret = createRoomGuestSecret();
             const issuedAt = performance.now();
-            await this.browser.rooms.update({
-                roomRef: room,
-                guestInvitationVerifier: await hashRoomInvitationSecret(secret),
-                signal: this.lifetime.signal
-            });
-            if (this.lifetime.signal.aborted) {
-                return;
-            }
-            const link = new URL(`${import.meta.env.BASE_URL}guest`, location.origin);
-            link.hash = new URLSearchParams({ room: room.groupId, invite: secret }).toString();
+            const { link } = await issueTownInvitation(this.browser, room, this.lifetime.signal);
+            if (this.lifetime.signal.aborted) return;
             this.invitation = { groupId: room.groupId, owner, link };
             this.invitationTimeout = setTimeout(() => {
                 this.invitation = undefined;
