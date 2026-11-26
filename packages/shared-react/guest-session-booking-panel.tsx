@@ -1,6 +1,7 @@
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupSessionPreview } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { BrowserActivity } from '@shared-web/browser/browser-activity.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
@@ -25,7 +26,7 @@ export function GuestSessionBookingPanel({ room, entry }: { readonly room: Group
             const view = await booking.preview(controller.signal);
             if (!controller.signal.aborted) { setPreview(view); setError(null); }
         } catch (failure) {
-            if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : String(failure));
+            if (!controller.signal.aborted) setError(toError(failure).message);
         }
     }
     useEffect(() => {
@@ -55,7 +56,7 @@ export function GuestSessionBookingPanel({ room, entry }: { readonly room: Group
                 setPreview(await booking.preview(controller.signal));
             }
         } catch (failure) {
-            if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : String(failure));
+            if (!controller.signal.aborted) setError(toError(failure).message);
         } finally {
             changing.current = false;
             if (!controller.signal.aborted) setBusy(false);
