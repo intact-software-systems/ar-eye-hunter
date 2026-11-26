@@ -1333,15 +1333,6 @@
       }
     },
     {
-      "name": "match0deadline",
-      "type": "set",
-      "output": "match0waited",
-      "value": true,
-      "request": {
-        "delayMs": 4000
-      }
-    },
-    {
       "name": "match0resolved",
       "type": "http",
       "connection": "api",
@@ -1354,16 +1345,28 @@
         },
         "outputs": {
           "match0winner": "body.tournament.matches.0.resolution.winnerPrincipalId"
+        },
+        "poll": {
+          "maxAttempts": 61,
+          "maxDurationMs": 30000,
+          "backoffMs": 500,
+          "backoffMultiplier": 1
         }
       },
       "expect": {
         "status": 200,
         "body": {
           "tournament": {
-            "status": "active"
+            "status": "active",
+            "matches": [
+              {
+                "slot": "semifinal-1",
+                "status": "complete"
+              }
+            ]
           }
         },
-        "comparison": "compatible-complete"
+        "comparison": "compatible"
       }
     },
     {
@@ -1464,15 +1467,6 @@
       }
     },
     {
-      "name": "match1deadline",
-      "type": "set",
-      "output": "match1waited",
-      "value": true,
-      "request": {
-        "delayMs": 4000
-      }
-    },
-    {
       "name": "match1resolved",
       "type": "http",
       "connection": "api",
@@ -1485,16 +1479,28 @@
         },
         "outputs": {
           "match1winner": "body.tournament.matches.1.resolution.winnerPrincipalId"
+        },
+        "poll": {
+          "maxAttempts": 61,
+          "maxDurationMs": 30000,
+          "backoffMs": 500,
+          "backoffMultiplier": 1
         }
       },
       "expect": {
         "status": 200,
         "body": {
           "tournament": {
-            "status": "active"
+            "status": "active",
+            "matches": [
+              {
+                "slot": "semifinal-2",
+                "status": "complete"
+              }
+            ]
           }
         },
-        "comparison": "compatible-complete"
+        "comparison": "compatible"
       }
     },
     {
@@ -1595,15 +1601,6 @@
       }
     },
     {
-      "name": "match2deadline",
-      "type": "set",
-      "output": "match2waited",
-      "value": true,
-      "request": {
-        "delayMs": 4000
-      }
-    },
-    {
       "name": "match2resolved",
       "type": "http",
       "connection": "api",
@@ -1616,16 +1613,28 @@
         },
         "outputs": {
           "match2winner": "body.tournament.matches.2.resolution.winnerPrincipalId"
+        },
+        "poll": {
+          "maxAttempts": 61,
+          "maxDurationMs": 30000,
+          "backoffMs": 500,
+          "backoffMultiplier": 1
         }
       },
       "expect": {
         "status": 200,
         "body": {
           "tournament": {
-            "status": "complete"
+            "status": "complete",
+            "matches": [
+              {
+                "slot": "final",
+                "status": "complete"
+              }
+            ]
           }
         },
-        "comparison": "compatible-complete"
+        "comparison": "compatible"
       }
     },
     {

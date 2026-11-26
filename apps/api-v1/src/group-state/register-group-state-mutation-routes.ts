@@ -64,7 +64,7 @@ function registerUpdateGroupRoute(
         '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/requests/:requestId',
         async (context) => {
             try {
-                const authSession = await requireRoomParticipantSession(context.req, { ...toGroupStateRouteScope(context), groupId: context.req.param('groupId') }, dependencies);
+                const authSession = await requireRoomParticipantSession({ request: context.req, roomRef: { ...toGroupStateRouteScope(context), groupId: context.req.param('groupId') }, dependencies });
                 const scope = toGroupStateRouteScope(context);
                 const groupId = context.req.param('groupId');
                 const request = await readGroupStateRouteRequest<UpdateGroupRequest>(context);
@@ -103,7 +103,7 @@ function registerAppointGroupDirectorRoute(
         `${GROUP_PATH}/director/appoint/requests/:requestId`,
         async (context) => {
             try {
-                const authSession = await requireRoomParticipantSession(context.req, { ...toGroupStateRouteScope(context), groupId: context.req.param('groupId') }, dependencies);
+                const authSession = await requireRoomParticipantSession({ request: context.req, roomRef: { ...toGroupStateRouteScope(context), groupId: context.req.param('groupId') }, dependencies });
                 const scope = toGroupStateRouteScope(context);
                 const groupId = context.req.param('groupId');
                 const written = toGroupStateResponse({

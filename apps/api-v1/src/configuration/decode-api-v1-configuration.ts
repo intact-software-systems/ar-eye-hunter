@@ -1,5 +1,6 @@
 import { requireRecord } from '@shared/api/exact-object-decoding.ts';
 import { assertValidRallarRouteId } from '@shared/api/rallar-validation.ts';
+import { decodeTemporaryRoomPolicy } from '@shared/api/room-guests/temporary-room-policy.ts';
 import { decodeRoomLobbyPolicy } from '@shared/api/room-lobbies/room-lobby-policy.ts';
 import { decodeRoomOwnedAppDataBindings, type RoomOwnedAppData } from '@shared-server/app-data/room-owned-app-data.ts';
 import { DEFAULT_SERVER_SHUTDOWN_DEADLINE_MS } from '@shared-server/process/default-server-shutdown-deadline-ms.ts';
@@ -427,15 +428,18 @@ function decodeCircuitBreaker(
     };
 }
 
-function decodeRoomLobbyPolicies(decoder: ApiV1ConfigurationValueDecoder): ApiV1GroupConfiguration['roomLobbyPoliciesByApplication'] {
-    const path = 'group.roomLobbyPoliciesByApplication';
+function decodeApplicationPolicies<Policy>(
+    decoder: ApiV1ConfigurationValueDecoder,
+    path: string,
+    decodePolicy: (value: unknown) => Policy
+): Readonly<Record<string, Policy>> {
     try {
-        const policies = requireRecord(decoder.sourceValue(path), 'Room lobby application policies');
+        const policies = requireRecord(decoder.sourceValue(path), path);
         return Object.fromEntries(Object.entries(policies).map(([app, policy]) =>
-            [assertValidRallarRouteId(app), decodeRoomLobbyPolicy(policy)]));
+            [assertValidRallarRouteId(app), decodePolicy(policy)]));
     }
-    catch {
-        decoder.sourceIssue(path, 'invalid-room-lobby-policies', 'Each application needs a valid ID and complete lobby policy.');
+    catch (error) {
+        decoder.sourceIssue(path, 'invalid-application-policies', error instanceof Error ? error.message : 'Invalid application policy.');
         return {};
     }
 }
@@ -445,7 +449,17 @@ function decodeGroup(
 ): ApiV1GroupConfiguration {
     const defaultMaxMembers = decoder.integer('group.defaultMaxMembers', 0);
     return {
-        roomLobbyPoliciesByApplication: decodeRoomLobbyPolicies(decoder),
+        roomLobbyPoliciesByApplication: decodeApplicationPolicies(decoder, 'group.roomLobbyPoliciesByApplication', decodeRoomLobbyPolicy),
+        eventOrganizerIdsByApplication: decodeApplicationPolicies(decoder, 'group.eventOrganizerIdsByApplication', value => {
+            if (!Array.isArray(value) || !value.every(id => typeof id === 'string') || new Set(value).size !== value.length) {
+                throw new Error('Event organizer IDs must be a list of distinct principal IDs.');
+            }
+            return value.map(id => assertValidRallarRouteId(id));
+        }),
+        temporaryRoomPoliciesByApplication: decodeApplicationPolicies(decoder, 'group.temporaryRoomPoliciesByApplication', value => {
+            const policy = decodeTemporaryRoomPolicy(value);
+            return { ...policy, creationLimit: computeApiReplicaLimitShare(policy.creationLimit, decoder.replicaCount()) };
+        }),
         defaultMaxMembers: defaultMaxMembers === 0 ? null : defaultMaxMembers,
         currentSnapshotCacheMaxEntries: decoder.integer('group.currentSnapshotCacheMaxEntries', 1),
         roomOwnedAppDataBindings: decodeRoomOwnedBindings(decoder),

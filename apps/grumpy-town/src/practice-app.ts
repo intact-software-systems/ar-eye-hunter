@@ -1,3 +1,4 @@
+import { lastGuestVisitUrl } from './online/guest-visit.ts';
 import { PracticeControls, requirePracticeElement } from './practice-controls.ts';
 import {
     computePracticeTick,
@@ -32,9 +33,17 @@ export class PracticeApp {
     private paused = false;
     private stopped = false;
 
-    constructor(root: HTMLElement, onOnline: () => void) {
+    constructor(root: HTMLElement, onOnline: () => void, onStartGame: () => void) {
         this.root = root;
         root.innerHTML = createPracticeMarkup();
+        const actions = root.querySelector('.hud-actions')!;
+        void lastGuestVisitUrl().then(returnUrl => {
+            if (!returnUrl || !actions.isConnected) return;
+            const resume = document.createElement('a');
+            resume.href = returnUrl.href;
+            resume.textContent = 'Return to game';
+            actions.prepend(resume);
+        });
         const canvas = requirePracticeElement<HTMLCanvasElement>(root, 'canvas');
         this.scene = new PracticeScene(canvas);
         this.controls = new PracticeControls(root, canvas);
@@ -48,6 +57,7 @@ export class PracticeApp {
         this.pause = requirePracticeElement(root, '#pause');
         this.overlay = requirePracticeElement(root, '#pause-overlay');
         this.bindLifecycle(canvas);
+        requirePracticeElement(root, '#start-game').addEventListener('click', onStartGame, { signal: this.lifetime.signal });
         requirePracticeElement(root, '#online').addEventListener('click', onOnline, { signal: this.lifetime.signal });
         this.scene.engine.runRenderLoop(() => this.frame());
     }
@@ -195,7 +205,7 @@ function createPracticeMarkup(): string {
     return `<main class="practice" aria-label="Grumpy Town cutout market practice">
       <canvas aria-label="Market playfield: move with WASD or arrows, dash with Space, zoom with plus and minus"></canvas>
       <div id="scene-loading" class="scene-loading" role="status">Unpacking the market…</div>
-      <header class="hud"><div class="brand"><span>LOCAL PLAYGROUND + BOT PAL</span><h1>GRUMPY TOWN</h1></div><div class="hud-actions"><button id="online">Play with friends</button><button id="pause">Pause</button></div></header>
+      <header class="hud"><div class="brand"><span>LOCAL PLAYGROUND + BOT PAL</span><h1>GRUMPY TOWN</h1></div><div class="hud-actions"><button id="start-game">Start a game</button><button id="online">Play with friends</button><button id="pause">Pause</button></div></header>
       <div class="scoreboard"><span>POINTS <b id="points">0</b></span><span>TROUBLE <b id="heat">0</b></span><span>SAVES <b id="rescues">0</b></span></div>
       <div class="zoom" role="group" aria-label="Camera zoom"><button id="zoom-in" aria-label="Zoom in">+</button><button id="zoom-out" aria-label="Zoom out">−</button></div>
       <div class="play-hint"><span class="you" id="power">TEAL HOODIE / FART LOADED</span><p id="status">Dash into a stall. Make a mess.</p></div>

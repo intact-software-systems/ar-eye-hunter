@@ -83,3 +83,12 @@ it('names a server-pushed view by either half of its envelope, and only the serv
     }
     expect(hasServerPushedViewTopic(relabel('room.chat', 'chat.v1'))).toBe(false);
 });
+
+it('privately routes a room event notice to its exact participant and lobby', () => {
+    const scope = { applicationId: 'game', workspaceId: 'default' };
+    const data = { ...notice, resource: 'room-event', groupId: 'pickup', scope };
+    const targets: ALMessage['targets'] = { mode: 'broadcast', scope: 'principal', principalRef: { ...scope, principalId: 'alice' } };
+    const envelope = { ...message, targets, payload: { ...message.payload, resource: JSON.stringify(data) } };
+    expect(decodeViewInvalidationMessage(envelope)).toEqual(data);
+    expect(() => decodeViewInvalidationMessage({ ...envelope, targets: { mode: 'broadcast', scope: 'world' } })).toThrow();
+});

@@ -115,6 +115,11 @@ export type GroupMutationCommand =
                     maxSpectators: number | null;
                     maxSessionsPerMember: number | null;
                     metadata: Readonly<Group['metadata']>;
+                    temporaryCreator?: Readonly<{
+                        invitationVerifier: string;
+                        lifetimeMs: number;
+                        guestTransport: GroupGuestAdmission.Transport;
+                    }>;
                     createdByPrincipalId: string;
                     expiresAtEpochMs: number | null;
                     purgeAfterEpochMs: number | null;
@@ -577,6 +582,7 @@ export const GROUP_MUTATION_INTERNAL_AUTHORITY_MODES = [
     'session-cleanup',
     'formation-criterion',
     'guest-redemption',
+    'temporary-room-creation',
     'guest-expiry',
     'formation-automation',
     'topology-publication',

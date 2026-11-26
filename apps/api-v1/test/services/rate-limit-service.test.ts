@@ -74,6 +74,29 @@ test('readRateLimiter still treats keys as trimmed and case-insensitive', () => 
     assert.equal(readRateLimiter(namespace, '   ', policy), readRateLimiter(namespace, 'unknown', policy));
 });
 
+test('a spent hourly room creation allowance survives idle time until its refill boundary', () => {
+    const originalNow = Date.now;
+    let now = 1_000;
+    Date.now = () => now;
+    try {
+        const appId = crypto.randomUUID();
+        const policy = new RateLimiterPolicy(3_600_000, 1);
+        const create = () => readRateLimiter('temporary-room-creation', appId, policy).allow();
+        assert.equal(create(), true);
+        now += 660_000;
+        assert.equal(create(), false);
+        now = 0;
+        assert.equal(create(), false);
+        now = 3_600_999;
+        assert.equal(create(), false);
+        now++;
+        assert.equal(create(), true);
+    }
+    finally {
+        Date.now = originalNow;
+    }
+});
+
 test('readRateLimiter replaces an expired cached limiter for the same key', () => {
     const originalNow = Date.now;
     let nowMs = 1_000;

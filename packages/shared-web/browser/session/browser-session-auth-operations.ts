@@ -5,6 +5,7 @@ import type { RallarOnChangeOptions, RallarUnsubscribe } from '@shared-web/brows
 import type {
     RallarAuthChangeListener,
     RallarAuthFacade,
+    RallarGuestSessionInput,
     RallarRegisterOptions
 } from '@shared-web/browser/session/rallar-auth-facade.ts';
 import type {
@@ -32,6 +33,10 @@ export class BrowserSessionAuthOperations implements RallarAuthFacade {
 
     public constructor(input: BrowserSessionAuthOperations.Input) {
         this.input = input;
+    }
+
+    public async activateGuest({ room, access, username }: RallarGuestSessionInput): Promise<void> {
+        await this.input.authLifecycle.activateLoginSession({ ...access, guestRoom: room, username });
     }
 
     public async login(

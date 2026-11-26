@@ -1,5 +1,5 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
-import { configureAuthSessionStorage, readAuthSessionStorageKind, readSession, resetAuthSessionStorage, writeSession } from '@shared/api/auth.ts';
+import { clearSession, configureAuthSessionStorage, readAuthSessionStorageKind, readSession, resetAuthSessionStorage, writeSession } from '@shared/api/auth.ts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 describe('browser auth session storage', () => {
@@ -45,6 +45,22 @@ describe('browser auth session storage', () => {
         );
 
         expect(readSession()).toBeUndefined();
+    });
+
+    it('keeps a guest bearer in memory and respects the configured store on the next account login', () => {
+        const account: AuthSession = { clientId: 'player', sessionId: 'account', username: 'player', accessToken: 'account-token', expiresAtEpochMs: 2_000 };
+        const guest = { ...account, guestRoom: { applicationId: 'game', workspaceId: 'park', groupId: 'court' }, accessToken: 'court-token' };
+        configureAuthSessionStorage('session');
+        writeSession(account);
+        writeSession(guest, 'memory');
+        expect(readSession()).toEqual(guest);
+        expect(sessionStorage.getItem('auth.session')).toBe(JSON.stringify(account));
+        expect(localStorage.length).toBe(0);
+        clearSession();
+        expect(readSession()).toBeUndefined();
+        writeSession(account);
+        expect(readAuthSessionStorageKind()).toBe('session');
+        expect(readSession()).toEqual(account);
     });
 
     it('can isolate auth sessions in browser session storage', () => {

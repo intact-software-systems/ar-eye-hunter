@@ -77,6 +77,24 @@ describe('Rallar auth login, expiry, and registration contract', () => {
         expect(new Set(requestIds).size).toBe(1);
     });
 
+    it('exposes a room-scoped guest admission to auth observers during a room handoff', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const facade = createRallarFacade();
+        const room = { applicationId: 'event', workspaceId: 'park', groupId: 'court' };
+        const access = { clientId: 'alice', sessionId: 'court-seat', accessToken: 'court-proof',
+            issuedAtEpochMs: 1, expiresAtEpochMs: 14_400_001 };
+        const observations: RallarAuthState[] = [];
+        const stop = facade.auth.onChange(state => { observations.push(state); }, { emitCurrent: false });
+        try {
+            await facade.auth.activateGuest({ room, access, username: 'Alice' });
+            expect(observations.at(-1)).toMatchObject({
+                authenticated: true, session: { guestRoom: room, clientId: 'alice', sessionId: 'court-seat', username: 'Alice' }
+            });
+        } finally {
+            stop();
+        }
+    });
+
     it('emits the current auth state to auth change subscribers', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const authStates: RallarAuthState[] = [];

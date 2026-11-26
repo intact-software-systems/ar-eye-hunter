@@ -1,3 +1,4 @@
+import { toRoomGuestInvitation } from '@shared/api/room-guests/invitation.ts';
 import { ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
 import { ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
 import {
@@ -37,6 +38,7 @@ import type {
     GroupMutationRead
 } from '../group-mutation-contracts.ts';
 import {
+    type GroupMutationWriteInput,
     auditStamp,
     computeGroupMutationWriteResult,
     materializedRotateJoinCode,
@@ -58,6 +60,7 @@ interface GroupWriteInput {
     readonly group: Group;
     readonly eventType: GroupEventType | null;
     readonly revisedLobby?: RoomLobby;
+    readonly departure?: Pick<GroupMutationWriteInput, 'presenceAdmission' | 'publicationGrantEffects' | 'subscriptionEffects'>;
 }
 
 export function computeUpdate(
@@ -259,7 +262,7 @@ function rotateGuestInvitation({ command, read, facts, current, verifier }: Rota
     }
     const group: Group = {
         ...current,
-        guestInvitation: { verifier, expiresAtEpochMs: facts.attemptAtEpochMs + 15 * 60_000 },
+        guestInvitation: toRoomGuestInvitation(verifier, facts.attemptAtEpochMs),
         snapshotVersion: current.snapshotVersion + 1,
         metadataVersion: current.metadataVersion + 1,
         updated: auditStamp(command, facts, actor.principalId)
@@ -366,6 +369,7 @@ export function groupWrite(input: GroupWriteInput): GroupMutationComputed {
         publicationGrantEffects: [],
         subscriptionEffects: [],
         subscriptionOutcome: null,
+        ...input.departure,
         ...(input.revisedLobby ? { revisedLobby: input.revisedLobby } : {}),
         presenceSummaryWork: eventType === null ? 'none' : 'enqueue'
     });
