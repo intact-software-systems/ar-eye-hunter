@@ -6,7 +6,6 @@ import {
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
 import { NON_EXPIRING_SEND_TIMEOUT_MS, NON_EXPIRING_TTL_MS } from '../../alm-conformance-budgets.ts';
-import { ALM_CONFORMANCE_WORLD_SEND_CARRIERS } from '../../alm-conformance-carriers.ts';
 import {
     toAdmissionCommands,
     toResultAssertion,
@@ -19,6 +18,7 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 import { toStatsCommand } from '../../alm-conformance-session-commands.ts';
+import { resolveAlmWorldSendCarriers } from '../../carrier-matrix/resolve-alm-world-send-carriers.ts';
 import { toSettledStateCommands } from '../../to-settled-state-commands.ts';
 import {
     toBoundReconnectCommands,
@@ -46,7 +46,7 @@ export const capacityTracks: AlmConformanceScenarioDefinition = {
     scenarioId: 'capacity-tracks',
     scenarioKey: 'capacity-tracks',
     tags: FULL_TAGS,
-    carriers: ALM_CONFORMANCE_WORLD_SEND_CARRIERS,
+    carriers: resolveAlmWorldSendCarriers(),
     roles: ['sender', 'receiver'],
     laneFamily: 'addressed',
     toSenderCommands: toCapacityTracksSenderCommands,

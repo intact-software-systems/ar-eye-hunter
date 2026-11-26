@@ -75,7 +75,7 @@ export function readRallarGroupDirectorAppointment(
 }
 
 export function readRallarGroupDirectorFromSnapshot(
-    snapshot: GroupSnapshot | undefined
+    snapshot: Pick<GroupSnapshot, 'group'> | undefined
 ): RallarGroupDirectorAppointment | undefined {
     return readRallarGroupDirectorAppointment(snapshot?.group.metadata);
 }
@@ -121,7 +121,7 @@ export function mergeRallarGroupDirectorMetadata(
 }
 
 export function isRallarGroupDirectorSessionActive(
-    snapshot: GroupSnapshot | undefined,
+    snapshot: Pick<GroupSnapshot, 'group' | 'members' | 'activeSessions'> | undefined,
     appointment: RallarGroupDirectorAppointment | undefined,
     nowEpochMs?: number
 ): boolean {

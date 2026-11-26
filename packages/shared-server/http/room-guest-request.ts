@@ -9,6 +9,7 @@ import type { IssuedAuthSession } from '../rallar-system/auth/persistence/auth-s
 import { authenticationRequired, authorizationDenied } from './request-auth-service.ts';
 
 export interface RoomGuestRequest {
+    readonly courtClaim?: true;
     readonly roomRef: GroupRef;
     readonly clientId: string;
     readonly sessionId: string;
@@ -40,6 +41,8 @@ export function resolveRoomGuestSeat(
     nowEpochMs: number
 ): 'room' | 'finish-round' | 'expired' {
     const member = snapshot.members.find((candidate) => candidate.principalId === guest.clientId);
+    const courtSessionId = member?.guestLease?.courtSessionId;
+    if ((guest.courtClaim || courtSessionId !== undefined) && guest.sessionId !== courtSessionId) return 'expired';
     return member && isSameGroupRef(snapshot.group, guest.roomRef) && isSameGroupRef(member, guest.roomRef)
         ? roomGuestAccessMode(snapshot.group, member, nowEpochMs)
         : 'expired';
@@ -60,13 +63,14 @@ export function assertRoomGuestSeat(
 export interface RoomGuestSessionInput {
     readonly request: { header(name: string): string | undefined; };
     readonly readSnapshot: (ref: GroupRef) => Promise<GroupSnapshot | undefined>;
+    readonly temporaryRoomOnly?: boolean;
     readonly nowEpochMs: () => number;
     /** Present at a room-scoped route, where the credential must belong to that room. */
     readonly roomRef?: GroupRef;
 }
 
 export async function readRoomGuestSession(
-    { request, readSnapshot, nowEpochMs, roomRef }: RoomGuestSessionInput
+    { request, readSnapshot, nowEpochMs, roomRef, temporaryRoomOnly }: RoomGuestSessionInput
 ): Promise<IssuedAuthSession | undefined> {
     const guest = await readRoomGuestRequest(request, roomRef);
     if (!guest) {
@@ -75,6 +79,9 @@ export async function readRoomGuestSession(
     const snapshot = await readSnapshot(guest.roomRef);
     if (!snapshot) {
         throw authorizationDenied('Guest room is unavailable.');
+    }
+    if (temporaryRoomOnly && !snapshot.group.temporaryPlayerRoom) {
+        throw authenticationRequired('This room requires a registered account for management.');
     }
     assertRoomGuestSeat(guest, snapshot, nowEpochMs());
     const member = snapshot.members.find((member) => member.principalId === guest.clientId);

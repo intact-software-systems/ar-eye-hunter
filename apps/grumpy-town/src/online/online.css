@@ -19,3 +19,9 @@
 .online li { padding: 10px 0; overflow-wrap: anywhere; }
 .online .friend + .friend { border-top: 1px solid #b3b59a; }
 .online .friend > span { display: block; margin: 6px 0; }
+
+#manage-town { display: none; }
+.online[hidden] ~ #manage-town:not([hidden]) { display: block; position: fixed; z-index: 2; right: 12px; top: 82px; }
+#town-management { max-width: min(90vw, 420px); max-height: 80dvh; overflow: auto; background: #eee8d4; color: #30382d; }
+#town-management input { max-width: 100%; }
+#town-management img { display: block; margin: 10px auto; }

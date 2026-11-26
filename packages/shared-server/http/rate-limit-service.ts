@@ -1,7 +1,7 @@
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { RateLimiter, RateLimiterPolicy } from '@shared/resilience/rate-limiter.ts';
 
-const RATE_LIMITER_CACHE_TTL_MS = 10 * 60_000;
+const MINIMUM_RATE_LIMITER_RETENTION_MS = 10 * 60_000;
 const RATE_LIMITER_CACHE_DELETE_EXPIRED_INTERVAL_MS = 60_000;
 const UNKNOWN_CLIENT_KEY = 'unknown';
 const MAX_FORWARDED_CLIENT_KEY_LENGTH = 256;
@@ -11,7 +11,6 @@ type HeaderReader = Readonly<{
 }>;
 
 const rateLimiters = new LatestRepository<string, RateLimiter>({
-    ttlMs: RATE_LIMITER_CACHE_TTL_MS,
     deleteExpiredIntervalMs: RATE_LIMITER_CACHE_DELETE_EXPIRED_INTERVAL_MS
 });
 
@@ -21,11 +20,12 @@ export function readRateLimiter(
     policy: RateLimiterPolicy
 ): RateLimiter {
     const limiterKey = toLimiterKey(namespace, key, policy);
-    const limiter = rateLimiters.setIfAbsent(
-        limiterKey,
-        () => createRateLimiter(policy)
-    );
-    rateLimiters.touch(limiterKey);
+    const nowEpochMs = Date.now();
+    const entry = rateLimiters.latest(limiterKey);
+    const limiter = entry.readAt(nowEpochMs) ?? new RateLimiter(policy, nowEpochMs);
+    const retentionMs = Math.max(MINIMUM_RATE_LIMITER_RETENTION_MS, policy.timebasedFilterMs);
+    const expiresAt = Math.max(entry.readExpiresAtEpochMs() ?? 0, nowEpochMs + retentionMs);
+    entry.acceptAt(limiter, nowEpochMs, expiresAt);
 
     return limiter;
 }
@@ -36,10 +36,6 @@ export function readRequestClientKey(request: HeaderReader): string {
         readForwardedHeader(request, 'x-forwarded-for') ??
         readForwardedHeader(request, 'forwarded') ??
         UNKNOWN_CLIENT_KEY;
-}
-
-function createRateLimiter(policy: RateLimiterPolicy): RateLimiter {
-    return new RateLimiter(policy, Date.now());
 }
 
 function toLimiterKey(

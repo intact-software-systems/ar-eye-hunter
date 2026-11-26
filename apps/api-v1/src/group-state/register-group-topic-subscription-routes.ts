@@ -31,7 +31,7 @@ function registerSubscribeGroupTopicRoute(
         `${GROUP_SESSION_PATH}/subscribe/requests/:requestId`,
         async (context) => {
             try {
-                const authSession = await requireRoomParticipantSession(context.req, { ...toGroupStateRouteScope(context), groupId: context.req.param('groupId') }, dependencies);
+                const authSession = await requireRoomParticipantSession({ request: context.req, roomRef: { ...toGroupStateRouteScope(context), groupId: context.req.param('groupId') }, dependencies });
                 const sessionId = context.req.param('sessionId');
                 authorization.assertSelfSession(authSession, sessionId);
                 const receipt = await dependencies.processGroupAppInbox(
@@ -64,7 +64,7 @@ function registerUnsubscribeGroupTopicRoute(
         `${GROUP_SESSION_PATH}/unsubscribe/requests/:requestId`,
         async (context) => {
             try {
-                const authSession = await requireRoomParticipantSession(context.req, { ...toGroupStateRouteScope(context), groupId: context.req.param('groupId') }, dependencies);
+                const authSession = await requireRoomParticipantSession({ request: context.req, roomRef: { ...toGroupStateRouteScope(context), groupId: context.req.param('groupId') }, dependencies });
                 const sessionId = context.req.param('sessionId');
                 authorization.assertSelfSession(authSession, sessionId);
                 const receipt = await dependencies.processGroupAppInbox(

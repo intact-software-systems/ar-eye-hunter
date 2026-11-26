@@ -12,6 +12,7 @@ interface RoomGuestIdentity {
 }
 
 interface ScopedRoomGuestIdentity extends RoomGuestIdentity {
+    readonly courtClaim?: true;
     readonly roomRef: GroupRef;
 }
 
@@ -32,6 +33,19 @@ export async function toRoomGuestCredential(ref: GroupRef, guestSecret: string):
     };
 }
 
+/** Separate seat secret: knowledge of a court token cannot reconstruct the event lobby token. */
+export async function toEventCourtGuestCredential(room: GroupRef, clientId: string, secret: string): Promise<RoomGuestCredential> {
+    if (!/^guest-[0-9a-f]{64}$/u.test(clientId) || secret.length !== 64 || !GUEST_SECRET.test(secret)) {
+        throw new TypeError('Court admission requires an event guest and a distinct 32-byte seat secret.');
+    }
+    const payload = JSON.stringify([decodeExactGroupRef(room, 'Event court'), secret, clientId]);
+    return {
+        clientId,
+        sessionId: 'guest-session-' + await guestDigest('court', payload),
+        accessToken: ROOM_GUEST_TOKEN_PREFIX + toBase64Url(new TextEncoder().encode(payload))
+    };
+}
+
 /** Identifies a candidate guest. Authorization still requires a current matching seat in the scoped room. */
 export async function readRoomGuestCredential(token: string): Promise<ScopedRoomGuestIdentity | undefined> {
     if (!token.startsWith(ROOM_GUEST_TOKEN_PREFIX)) {
@@ -43,10 +57,15 @@ export async function readRoomGuestCredential(token: string): Promise<ScopedRoom
     }
     try {
         const fields: ApiJsonValue = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
-        if (!Array.isArray(fields) || fields.length !== 2 || typeof fields[1] !== 'string' || fields[1].length !== 64 || !GUEST_SECRET.test(fields[1])) {
+        if (!Array.isArray(fields) || (fields.length !== 2 && fields.length !== 3) || typeof fields[1] !== 'string' || fields[1].length !== 64 || !GUEST_SECRET.test(fields[1])) {
             return undefined;
         }
         const roomRef = decodeExactGroupRef(fields[0], 'Guest');
+        if (fields.length === 3) {
+            if (typeof fields[2] !== 'string') return undefined;
+            const { clientId, sessionId } = await toEventCourtGuestCredential(roomRef, fields[2], fields[1]);
+            return { roomRef, clientId, sessionId, courtClaim: true };
+        }
         return { ...await deriveRoomGuestIdentity(JSON.stringify([roomRef, fields[1]])), roomRef };
     }
     catch (error) {
@@ -67,7 +86,7 @@ export async function roomGuestTransportSessionId(principalId: string): Promise<
     return 'guest-session-' + await guestDigest('session', principalId);
 }
 
-async function guestDigest(purpose: 'principal' | 'session', payload: string): Promise<string> {
+async function guestDigest(purpose: 'principal' | 'session' | 'court', payload: string): Promise<string> {
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('rallar:guest:v1:' + purpose + ':' + payload));
     return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
 }

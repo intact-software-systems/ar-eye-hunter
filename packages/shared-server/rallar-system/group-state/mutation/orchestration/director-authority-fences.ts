@@ -9,7 +9,8 @@ export function directorAuthorityFences(command: GroupMutationCommand, read: Gro
     const managedDirectorChange = command.operation === 'appointDirector' && command.input.succession;
     const managedTimeChange = command.operation === 'updateGroup' &&
         (command.input.roomClock || command.input.roomDeadline?.expectedDirectorEpoch !== undefined) && readRoomDirectorSuccession(group.metadata);
-    if (!managedDirectorChange && !managedTimeChange) return [];
+    const managementTransfer = command.operation === 'transferGroupOwnership' && group.temporaryPlayerRoom === true;
+    if (!managementTransfer && !managedDirectorChange && !managedTimeChange) return [];
     const effects = new Map<string, RuntimeStateGuardedBatchEffect>();
     for (const row of [read.targetPresence, ...read.authorityPresenceSessionEntries]) {
         if (!row) continue;

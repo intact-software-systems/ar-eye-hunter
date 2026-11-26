@@ -135,6 +135,10 @@ observable event fields are defined by the
 The ALM conformance lane's own evidence — the per-cell runner regime and how to
 read a red against it — is described by the
 [ALM observation artifact](./rallar-bb-test/docs/alm-observation-artifact.md).
+What an ALM send comes to on each carrier, and what proves each such outcome, is
+stated once in the carrier matrix; the
+[ALM carrier matrix](./rallar-bb-test/docs/alm-carrier-matrix.md) page explains
+how to read and change it.
 These maps keep the independent command, control and analysis families directly
 locatable without moving unrelated owners merely to change a directory count.
 
