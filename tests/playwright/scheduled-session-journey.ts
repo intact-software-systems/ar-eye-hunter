@@ -129,7 +129,7 @@ export interface ScheduledSessionDestination {
     readonly startsAtEpochMs: number;
 }
 
-async function scheduleThroughControls(page: Page, delayMs: number, guestBooking = false): Promise<ScheduledSessionDestination> {
+export async function scheduleThroughControls(page: Page, delayMs: number, guestBooking = false): Promise<ScheduledSessionDestination> {
     const panel = page.getByRole('region', { name: 'Scheduled sessions', exact: true });
     await expect(panel).toBeVisible();
     await panel.getByText('Schedule a session', { exact: true }).click();
