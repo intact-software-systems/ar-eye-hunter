@@ -1,8 +1,9 @@
 # Edge order: ordered room sends, sorted at the two ends
 
 Status: a plan to decide on. Nothing is built. The verdict so far is **viable, with one measurement still owed**
-(section 2.5) and the maintainer's rulings in section 4: ruling 1 is made, rulings 2 to 6 are open. It builds on the unordered path, which keeps up under load
-only on the tree of PR 885, so it follows that pull request and does not replace it.
+(section 2.5) and the maintainer's rulings in section 4: rulings 1 and 2 are made, rulings 3 to 6 are open. It
+builds on the unordered path, which keeps up under load only on the tree of PR 885, so it follows that pull request
+and does not replace it.
 
 Working name: **edge order**. Today's ordered mode (`orderingKey`) is called **hop order** in this document, because
 every hop enforces it.
@@ -131,7 +132,7 @@ That last function is where a receive-side sorter sits, and the channel's `send`
 - Proposed rule: the stream starts at the first message the receiver gets. If that message is past position 1 and
   earlier ones can still arrive, the receiver waits a short entry window for them (the spike uses 500 ms) and then
   starts at the lowest it holds, with no gap report. Position 1, or a message whose `w` is empty, starts at once.
-- No history is replayed. The entry rule is ruling 2.
+- No history is replayed. Ruling 2 chose this rule.
 
 **Consumers on the server that rely on per-sender order.**
 
@@ -376,12 +377,20 @@ arrive (`f` and `w` in section 2.2), so the sender keeps one entry per open send
 never waited for; and a channel's optional cap is the only way a message that arrives in time can be dropped for
 order.
 
-**2. The entry rule (before slice 2).** A receiver's first message from a stream is number 57.
+**2. The entry rule (before slice 2). Ruled on 2026-11-26: a short entry window.** A receiver's first message from
+a stream is number 57.
 
-- _Start there, after a short entry window when earlier ones can still arrive_ (recommended; 500 ms in the spike).
+- _Start there, after a short entry window when earlier ones can still arrive_ (chosen; 500 ms in the spike).
   Covers a first message overtaken by the second. Costs a late joiner at most the window, once per stream.
-- _Start there at once._ No delay. A stream's first message is lost at a receiver that got the second one first.
-- _Wait as for any gap._ A late joiner could wait up to a message lifetime for messages that were never meant for it.
+- _Start there at once_ (not chosen). No delay. A stream's first message is lost at a receiver that got the second
+  one first.
+- _Wait as for any gap_ (not chosen). A late joiner could wait up to a message lifetime for messages that were never
+  meant for it.
+
+What follows from the ruling: position 1, or a message whose sender says nothing earlier can still arrive, starts at
+once; otherwise the receiver waits the window and starts at the lowest message it holds, with no gap report. The
+window's length is a channel option with a default that slice 1's measured reordering sets; a message that arrives
+after its receiver entered past it is dropped as late and counted.
 
 **3. Where the counter rides (before slice 3).**
 
