@@ -1,7 +1,7 @@
 # Edge order: ordered room sends, sorted at the two ends
 
 Status: a plan to decide on. Nothing is built. The verdict so far is **viable, with one measurement still owed**
-(section 2.5) and the maintainer's rulings in section 4: rulings 1 to 3 are made, rulings 4 to 6 are open. It
+(section 2.5) and the maintainer's rulings in section 4: rulings 1 to 4 are made, rulings 5 and 6 are open. It
 builds on the unordered path, which keeps up under load only on the tree of PR 885, so it follows that pull request
 and does not replace it.
 
@@ -15,7 +15,7 @@ application calls `send`, in memory. The message travels as an ordinary unordere
 and any relay. Rallar Web on each receiver puts one sender's messages back in the sender's order before the
 application's handler sees them. A counter can show that a message is missing, which a timestamp cannot.
 
-**How an app asks for it** (proposed; the names are for a ruling):
+**How an app asks for it** (the names are ruling 4):
 
 ```ts
 const moves = rallar.messages.room<Move>({
@@ -407,8 +407,16 @@ channel it declared edge-ordered, so a channel declared differently at the two e
 slice 3 reports. A topic with a server handler, and a send addressed to the server, are refused `order: 'edge'`
 until that handler unwraps.
 
-**4. The names (before slice 3).** `order: 'edge'` on the channel, "edge order" in the documents, and what the app
-sees on each message (stream and position) and in a gap report.
+**4. The names (before slice 3). Ruled on 2026-11-26: `order: 'edge'`, called "edge order".**
+
+- _`order: 'edge'` on the channel, "edge order" in the documents_ (chosen). The name says where the order is kept,
+  which is what separates it from `orderingKey`, and leaves room for other values.
+- _`order: 'sender'`, "sender order"_ (not chosen). Easier to guess, but hop order is per sender too.
+- _`ordered: true`_ (not chosen). Shortest, but it hides that order restarts at a reload and stops at the server.
+
+What follows from the ruling: the channel definition gains `order: 'edge'`; a received message carries
+`message.order` with the stream and the position; the channel's gap report is `onOrderGap`. Slice 3 adds the first
+two to the public surface and its API snapshot, and slice 4 adds the gap report.
 
 **5. A sender reload, as receivers see it (before slice 4).**
 
