@@ -221,7 +221,11 @@ export class ALInboundMessageAdmission {
         return Either.ofRight({ admitted, nowMs, prePlan, originAuthenticated, facts });
     }
 
-    /** The bundle the decision computes, with what may be forwarded and the recorded parent's presence read now. */
+    /**
+     * The bundle the decision computes. Besides the decision it reads, and reads now, two synchronous in-memory
+     * lookups the runtime was composed with, and no store: `canForwardMessage`, whether the message may be forwarded,
+     * and `isRoomPeerPresent`, whether the recorded parent is still in the room.
+     */
     private readAttemptBundle(decision: ALInboundAttemptDecision): ALInboundCommitBundle {
         const { preparation, read, plan } = decision;
         const { admitted } = preparation;

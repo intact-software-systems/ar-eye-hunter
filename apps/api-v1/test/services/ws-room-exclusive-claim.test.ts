@@ -59,7 +59,8 @@ test('two sessions claiming one free resource at once: one wins, and the loser i
             runtime.service.acceptIncomingMessage(first, 'session-1'),
             runtime.service.acceptIncomingMessage(second, 'session-2')
         ]);
-        // Until the loser's NACK, the winner's send to both other sessions and its admitted receipt have arrived.
+        // Waits until the loser's NACK, the winner's sends to both other sessions and its admitted receipt have all
+        // arrived.
         await waitForRoomSends(() =>
             readNackReasons(runtime.sent, 'session-2').length > 0 && readPickupSends(runtime.sent).length >= 2 &&
             readReceiptPhases(runtime.sent, 'session-1').length > 0

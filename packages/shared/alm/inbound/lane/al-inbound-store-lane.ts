@@ -202,10 +202,11 @@ export class ALInboundStoreLane {
     /**
      * Attempts the admission again at once while its write is lost, three attempts in all, under the source and the
      * authorization its caller read for this call: for a data message that authorization is a function of the
-     * envelope, the source and this runtime's own peer id, so a fresh read would answer the same. A diagnostic
-     * recorded while preparing an attempt, such as a failed receipt signature, is recorded once per attempt. A lane
-     * disposed during a later attempt answers `disposed`, as an arrival during disposal does, and the earlier lost
-     * write is not retained.
+     * envelope, the source and this runtime's own peer id, so a fresh read would answer the same. A diagnostic an
+     * attempt records before its write, such as a failed receipt signature, is recorded once per attempt. A lane
+     * disposed before a later attempt's shutdown check, which follows its store read, answers `disposed`, as an
+     * arrival during disposal does, and the earlier lost write is not retained; disposed after that check, the attempt
+     * either commits or loses its own write, which is then retained.
      */
     private async admitDataInStore(
         msg: ALMessage,

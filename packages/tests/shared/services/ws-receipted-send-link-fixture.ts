@@ -296,7 +296,7 @@ function createServerWorkHolds(
             const written = commitBundle(bundle);
             written.catch(() => next?.refuse(new Error(`The held admission write of ${next.msg.id.msgId} threw`)));
             const status = await written;
-            if (status === 'conflict' && losing === 'after-the-first-loss') {
+            if (status === 'conflict' && losing === 'after-the-first-loss' && bundle.admissionExpiresAtMs !== null) {
                 losing = 'yes';
                 lostMessage = { msgId: bundle.observations.msgId, senderId: bundle.observations.senderId };
             }
