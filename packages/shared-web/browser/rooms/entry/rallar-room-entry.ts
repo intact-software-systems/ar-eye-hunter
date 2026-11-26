@@ -335,11 +335,12 @@ export class RallarRoomEntry {
             return this.state;
         }
         try {
+            const admittedGuest = attempt.destination.participation !== 'spectator' && attempt.session.guestRoom &&
+                isSameGroupRef(attempt.session.guestRoom, attempt.destination.roomRef);
             await this.dependencies.rooms.join(attempt.destination.roomRef, {
-                ...(attempt.destination.participation === 'preserve' && attempt.session.guestRoom &&
-                    isSameGroupRef(attempt.session.guestRoom, attempt.destination.roomRef) && { presenceOnly: true }),
-                joinCode: attempt.destination.joinCode ?? undefined,
-                participation: attempt.destination.participation === 'preserve'
+                ...(admittedGuest && { presenceOnly: true }),
+                joinCode: admittedGuest ? undefined : attempt.destination.joinCode ?? undefined,
+                participation: admittedGuest || attempt.destination.participation === 'preserve'
                     ? undefined
                     : attempt.destination.participation,
                 signal: attempt.controller.signal,
