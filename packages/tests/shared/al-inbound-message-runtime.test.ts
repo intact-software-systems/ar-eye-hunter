@@ -333,6 +333,27 @@ describe('ALInboundMessageRuntime', () => {
         expect((await stores.admissionStore.readOrderedDelivery(trackKey, 3)).completedThrough).toBe(2);
     });
 
+    // A completion whose write lost its row versions answered `retry`, and its work handed the delivered message to
+    // the application again; it now reads and decides again first.
+    it('hands an ordered message to the application once when its completion\'s write loses to a concurrent write', async () => {
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const first = createOrderedMessage(1, 'one');
+        const trackKey = toALOrderingTrackKey(first)!;
+        vi.spyOn(stores.admissionStore, 'commitDeliveryCompletion').mockResolvedValueOnce('conflict');
+        const { runtime, dispatchedTexts } = createInboundHarness(stores);
+
+        await runtime.admitIncomingMessage(first, {
+            kind: 'ws-client',
+            peerId: 'peer-1',
+            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
+
+        await expect.poll(async () => (await stores.admissionStore.readOrderedDelivery(trackKey, 2)).completedThrough)
+            .toBe(1);
+        await waitForSettledALInboundWork(stores.workQueue);
+        expect(dispatchedTexts).toEqual(['one']);
+    });
+
     it('retains a conflicted control admission as work the inbound worker completes', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         const { backend, stores } = createInboundBackedStores(

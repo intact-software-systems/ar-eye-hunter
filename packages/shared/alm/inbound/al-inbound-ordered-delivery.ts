@@ -2,6 +2,7 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import { toALOrderingTrackKey, type ALOrderingObservation } from '../../al-contracts/al-runtime.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import { RetryableConflictError, TryWithExhaustedError, TryWithPolicy } from '../../resilience/try-with-policy.ts';
 import { computeALInboundDeliveryCompletion } from './admission/al-inbound-delivery-progress.ts';
 import {
     computeALInboundBufferedRelease,
@@ -23,6 +24,21 @@ import {
 } from './prepare-al-inbound-commit-bundle.ts';
 import { resolveALInboundSignFailurePolicy } from './receipt-proof/is-al-inbound-recipient-receipt.ts';
 import { signALInboundReceiptControls } from './receipt-proof/sign-al-inbound-receipt-controls.ts';
+
+/** One completion attempt: `conflict` when its write lost, so the next attempt reads and decides again. */
+type ALInboundCompletionAttempt = 'completed' | 'retry' | 'conflict';
+
+/**
+ * A completion runs after the application was handed the message, so a write that lost reads and decides again, as
+ * any conflict does, rather than send the work back to be dispatched again; bounded, so contention never holds the
+ * worker. The attempts follow at once: a lost write means the winner committed, so the fresh read sees it.
+ */
+const AL_INBOUND_COMPLETION_ATTEMPTS = 3;
+const AL_INBOUND_COMPLETION_CONFLICT_RETRY = TryWithPolicy.defaults()
+    .label('inbound completion conflict')
+    .maxAttempts(AL_INBOUND_COMPLETION_ATTEMPTS)
+    .retryIf((error) => error instanceof RetryableConflictError)
+    .waitBeforeRetry(() => Promise.resolve());
 
 export namespace ALInboundOrderedDelivery {
     export type Readiness =
@@ -218,12 +234,33 @@ export class ALInboundOrderedDelivery {
         }
     }
 
+    /** Only when every attempt's write lost does the work go back to be dispatched again. */
     async complete(msg: ALMessage): Promise<'completed' | 'retry'> {
         const trackKey = toALOrderingTrackKey(msg);
         const seq = msg.ordering?.seq;
         if (trackKey === undefined || seq === undefined) {
             return 'completed';
         }
+        try {
+            return await AL_INBOUND_COMPLETION_CONFLICT_RETRY.run(async () => {
+                const attempt = await this.completeOnce(msg, trackKey, seq);
+                if (attempt === 'conflict') {
+                    throw new RetryableConflictError('Inbound delivery completion conflict');
+                }
+                return attempt;
+            });
+        }
+        catch (error) {
+            const cause = error instanceof TryWithExhaustedError ? error.cause : error;
+            if (cause instanceof RetryableConflictError) {
+                return 'retry';
+            }
+            throw cause;
+        }
+    }
+
+    /** One fresh read of the slot and the progress, its decision, and its write. */
+    private async completeOnce(msg: ALMessage, trackKey: string, seq: number): Promise<ALInboundCompletionAttempt> {
         const read = await this.dependencies.admissionStore.readBufferedRelease({
             trackKey,
             seq,
@@ -239,12 +276,11 @@ export class ALInboundOrderedDelivery {
         if (progress === undefined) {
             throw new NonRetryableException('Inbound ordered delivery lost its retained progress');
         }
-        const completedThrough = progress.completedThrough;
-        if (seq <= completedThrough) {
+        if (seq <= progress.completedThrough) {
             return 'completed';
         }
         const completes = computeALInboundDeliveryCompletion({
-            completedThrough,
+            completedThrough: progress.completedThrough,
             seq,
             observation: read.snapshot.plan.orderingRuntime,
             completesThrough: read.snapshot.completesThrough
@@ -259,7 +295,7 @@ export class ALInboundOrderedDelivery {
             observedProgress: progress,
             completesThrough: completes
         });
-        return status === 'conflict' ? 'retry' : 'completed';
+        return status === 'conflict' ? 'conflict' : 'completed';
     }
 
     private async confirmCompletion(trackKey: string, seq: number): Promise<'completed'> {

@@ -590,9 +590,13 @@ inside the completion's read-to-commit window on every run.
 
 The completion is guarded on its position and its slot alone, in one write whose guard comes first: it commits when
 the stored `completedThrough` and the stored slot are the ones it read, keeps the larger of the stored and observed
-expiry, and writes nothing otherwise. A conflict that remains is a real move: another completion, a gap pass or a
-resynchronization moved the position, or the slot is gone or holds something else. Where the position moved, the
-work that comes back reads the message completed and dispatches nothing.
+expiry, and writes nothing otherwise. A write can still lose: another completion, a gap pass or a resynchronization
+moved the position, the slot is gone, or on PostgreSQL another commit moved a row version between the write's own read
+and its conditional statement. Because the application already has the message, a lost write is not handed back as
+work: the completion reads and decides again, as the doctrine has every conflict do, and writes again, three attempts
+in all with no wait between them. A copy arriving meanwhile cannot move the slot, since it records its carrier there
+only while its sequence is held behind a gap. A completion that loses every attempt hands the work back, and the
+application can then be handed the message again: the same class as a crash between dispatch and completion.
 
 Not changed: an admission's own guard still fences on the whole progress value, so a completion that commits first
 makes that admission conflict and replay, which has no external effect.

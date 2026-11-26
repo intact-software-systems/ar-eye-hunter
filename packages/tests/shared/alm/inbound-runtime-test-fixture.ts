@@ -30,6 +30,7 @@ import {
     type ALInboundRuntimeStores,
     type ALVolatileInboundRuntimeStores
 } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import { ALInboundOrderedDelivery } from '@shared/alm/inbound/al-inbound-ordered-delivery.ts';
 import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
 import type { ALInboundResyncRequired } from '@shared/alm/inbound/al-inbound-resync-required.ts';
 import type { ALInboundRuntimeDiagnosticsEvent, ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
@@ -416,6 +417,20 @@ export function createInboundTestAdmission(stores: ALInboundRuntimeStores): ALIn
     });
     onTestFinished(() => admission.dispose());
     return admission;
+}
+
+/** The ordered delivery the runtime composes, over the caller's own store, so a pin can complete a delivery directly. */
+export function createInboundTestOrderedDelivery(admissionStore: ALInboundAdmissionStore): ALInboundOrderedDelivery {
+    return new ALInboundOrderedDelivery({
+        admissionStore,
+        planIncomingMessage: planInboundTestMessage,
+        clock: { nowMs: Date.now },
+        effectPreparation: INBOUND_TEST_EFFECT_PREPARATION,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+        receiptProofs: CARRIER_AUTHENTICATED_RECEIPT_PROOFS,
+        diagnostics: undefined,
+        signal: new AbortController().signal
+    });
 }
 
 /**
