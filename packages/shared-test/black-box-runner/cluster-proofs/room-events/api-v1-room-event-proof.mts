@@ -61,7 +61,9 @@ async function runEventNight({ plans, controls }: ManagedClusterProof.ScenarioIn
         replacement = (await view(second.baseUrl, c.headers)).offer;
         if (!replacement) await new Promise(resolve => setTimeout(resolve, 75));
     } while (!replacement);
-    assert.equal(requireRecord(replacement,'replacement offer').groupId,'east');
+    const replacementOffer = requireRecord(replacement, 'replacement offer');
+    assert.equal(replacementOffer.groupId, 'east');
+    assert.equal(replacementOffer.occurrence, Number(east.occurrence) + 1);
     assert.equal(requireRecord((await view(first.baseUrl,b.headers)).offer,'retained west seat').deadline,null);
     const release = { action:'release', groupId:'west', occurrence:west.occurrence, requeue:false };
     const requestId = crypto.randomUUID();
@@ -87,7 +89,7 @@ async function runEventNight({ plans, controls }: ManagedClusterProof.ScenarioIn
     assert.ok(Array.isArray(current));
     const eastCourt = current.map(court => requireRecord(court, 'Court')).find(court => court.groupId === 'east');
     assert.ok(eastCourt);
-    assert.equal(eastCourt.occurrence, Number(east.occurrence) + 1);
+    assert.equal(eastCourt.occurrence, Number(replacementOffer.occurrence) + 1);
     const nextRelease = { ...eastRelease, occurrence: eastCourt.occurrence };
     const releaseId = crypto.randomUUID();
     const [firstAck,secondAck] = await Promise.all([first,second].map(node => command(node.baseUrl,adminHeaders,{body:nextRelease,id:releaseId})));

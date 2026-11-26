@@ -33,13 +33,16 @@ export function settleOffers(event: RoomEvent, now: number): RoomEvent {
     if (event.closesAt <= now) return closeEvent(event);
     const courts = event.courts.map(court => {
         const seats = court.seats.filter(seat => seat.deadline === null || seat.deadline > now);
-        return seats.length === court.seats.length ? court : { ...court, seats };
+        return afterSeatRemoval(court, seats);
     });
     return courts.some((court, i) => court !== event.courts[i]) ? offerCourts({ ...event, courts }, now) : event;
 }
 
 export function removeCourtPlayer(court: RoomEvent.Court, principalId: string): RoomEvent.Court {
-    const seats = court.seats.filter(seat => seat.principalId !== principalId);
+    return afterSeatRemoval(court, court.seats.filter(seat => seat.principalId !== principalId));
+}
+
+function afterSeatRemoval(court: RoomEvent.Court, seats: readonly RoomEvent.Seat[]): RoomEvent.Court {
     if (seats.length === court.seats.length) return court;
     // A surviving reservation remains valid. An emptied court starts a new occurrence before allocating again.
     return { ...court, seats, occurrence: seats.length ? court.occurrence : court.occurrence + 1 };
@@ -60,10 +63,9 @@ export function changeCourt(event: RoomEvent, command: Extract<RoomEvent.Command
     } else {
         const seat = court.seats.find(candidate => candidate.principalId === player && candidate.partyId === command.partyId && candidate.offerRevision === command.offerRevision);
         if (!seat || seat.deadline === null) throw new TypeError('No matching court offer.');
-        const seats = command.action === 'claim'
-            ? court.seats.map(current => current === seat ? { ...seat, deadline: null } : current)
-            : court.seats.filter(current => current !== seat);
-        next = { ...court, seats };
+        next = command.action === 'claim'
+            ? { ...court, seats: court.seats.map(current => current === seat ? { ...seat, deadline: null } : current) }
+            : removeCourtPlayer(court, player);
     }
     return { ...event, queue, courts: event.courts.map(current => current === court ? next : current) };
 }

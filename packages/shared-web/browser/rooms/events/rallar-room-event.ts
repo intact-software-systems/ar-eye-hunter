@@ -1,3 +1,4 @@
+import type { AuthSession } from '@shared/api/api-config.ts';
 import { isApiJsonObject, type ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -75,19 +76,10 @@ export class RallarRoomEvent extends AuthenticatedResource<RoomEvent.View | null
             const { signal } = attempt;
             const session = await this.grants.lobbySession(this.browser.session(), signal);
             const room = { ...this.lobby, groupId: offer.groupId };
-            const { requestId, courtSecret } = await this.grants.claim(session.clientId, offer);
-            signal.throwIfAborted();
-            const body = { action: 'claim', groupId: offer.groupId, occurrence: offer.occurrence, partyId: offer.partyId, offerRevision: offer.offerRevision,
-                ...(session.guestRoom && { courtSecret }) };
-            const result = await sendApiHttpRequest<typeof body, ApiJsonValue>({
-                baseUrl: readApiBaseUrl(), path: toApiMutationRequestPath(this.path, requestId), method: 'POST', body,
-                options: { signal, authSession: session }
-            });
+            const access = offer.deadline !== null || session.guestRoom
+                ? await this.claimCourt(room, offer, session, signal)
+                : undefined;
             if (!this.current(attempt)) throw new Error('The player has changed.');
-            if (!isApiJsonObject(result) || !Number.isSafeInteger(result.revision) ||
-                !isSameGroupRef(decodeExactGroupRef(result.room, 'Court admission'), room)) throw new TypeError('Invalid court admission.');
-            const access = isTemporaryRoomAdmission(result) ? result.access : undefined;
-            if (session.guestRoom && access?.clientId !== session.clientId) throw new TypeError('Invalid court admission.');
             const observed = await readPrivateEventView(this.lobby, this.path, { ...attempt, session });
             const latest = this.getState().view;
             const currentView = observed && latest && latest.revision > observed.revision ? latest : observed;
@@ -118,11 +110,27 @@ export class RallarRoomEvent extends AuthenticatedResource<RoomEvent.View | null
         } finally { this.finishOperation(attempt); }
     }
 
+    private async claimCourt(room: GroupRef, offer: RoomEvent.Offer, session: AuthSession, signal: AbortSignal) {
+        const { requestId, courtSecret } = await this.grants.claim(session.clientId, offer);
+        signal.throwIfAborted();
+        const body = { action: 'claim', groupId: offer.groupId, occurrence: offer.occurrence, partyId: offer.partyId, offerRevision: offer.offerRevision,
+            ...(session.guestRoom && { courtSecret }) };
+        const result = await sendApiHttpRequest<typeof body, ApiJsonValue>({
+            baseUrl: readApiBaseUrl(), path: toApiMutationRequestPath(this.path, requestId), method: 'POST', body,
+            options: { signal, authSession: session }
+        });
+        if (!isApiJsonObject(result) || !Number.isSafeInteger(result.revision) ||
+            !isSameGroupRef(decodeExactGroupRef(result.room, 'Court admission'), room)) throw new TypeError('Invalid court admission.');
+        const access = isTemporaryRoomAdmission(result) ? result.access : undefined;
+        if (session.guestRoom && access?.clientId !== session.clientId) throw new TypeError('Invalid court admission.');
+        return access;
+    }
+
     private async selectRoom(room: GroupRef, signal: AbortSignal): Promise<void> {
         signal.throwIfAborted();
         await this.browser.connect({ signal });
         signal.throwIfAborted();
-        await this.browser.rooms.join(room, { signal, presenceOnly: true });
+        await this.browser.rooms.join(room, { signal, presenceOnly: true, preserveCurrentMembership: true });
     }
 }
 

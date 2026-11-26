@@ -93,7 +93,8 @@ it('requeues seated players by party after waiting players, and removes a player
 
 it('fences delayed decisions after the same party receives another offer in the same occurrence', () => {
     const propose = { action: 'propose', partyId: 'friends', players: ['ann'] } as const;
-    let event = change(create([1]), 'ann', propose);
+    let event = change(create([2]), 'bo', { action: 'propose', partyId: 'solo', players: ['bo'] });
+    event = change(event, 'ann', propose);
     const old = projectRoomEvent(event, 'ann').offer!;
     const decision = { groupId: old.groupId, occurrence: old.occurrence, partyId: old.partyId, offerRevision: old.offerRevision };
     event = change(event, 'ann', { ...decision, action: 'decline-offer' });
@@ -121,17 +122,28 @@ it('requires fresh consent when the same party ID is used to invite a different 
     expect(event.proposals[0]!.accepted).toEqual(['ann', 'bo']);
 });
 
-it('rejects a delayed release after removal empties the court and its next player claims', () => {
+it.each(['remove', 'decline', 'expire'] as const)('rejects a delayed release after %s empties a court and its next player claims', departure => {
     let event = create([1]);
     event = change(event, 'a', { action: 'propose', partyId: 'a', players: ['a'] });
     const first = projectRoomEvent(event, 'a').offer!;
-    event = change(event, 'a', { ...first, action: 'claim' });
     const delayed = { action: 'release', groupId: first.groupId, occurrence: first.occurrence, requeue: false } as const;
     event = change(event, 'b', { action: 'propose', partyId: 'b', players: ['b'] });
-    event = change(event, 'organizer', { action: 'remove', targetId: 'a' });
+    const now = departure === 'expire' ? first.deadline! : 20;
+    switch (departure) {
+        case 'remove':
+            event = change(event, 'a', { ...first, action: 'claim' }, now);
+            event = change(event, 'organizer', { action: 'remove', targetId: 'a' }, now);
+            break;
+        case 'decline':
+            event = change(event, 'a', { ...first, action: 'decline-offer' }, now);
+            break;
+        case 'expire':
+            event = change(event, 'worker', { action: 'settle' }, now);
+            break;
+    }
     const next = projectRoomEvent(event, 'b').offer!;
-    event = change(event, 'b', { ...next, action: 'claim' });
-    expect(() => change(event, 'organizer', delayed)).toThrow(/occurrence/);
+    event = change(event, 'b', { ...next, action: 'claim' }, now);
+    expect(() => change(event, 'organizer', delayed, now)).toThrow(/occurrence/);
     expect(projectRoomEvent(event, 'b').offer).toMatchObject({ occurrence: first.occurrence + 1, deadline: null });
 });
 
