@@ -389,7 +389,9 @@ describe('a replay of a retained admission', () => {
         // retained, so the successor can be released only after the predecessor's replay commits.
         expect((await replay.fixture.runtime.admitIncomingMessage(SECOND, INBOUND_TEST_SOURCE)).right)
             .toEqual({ kind: 'admitted' });
-        expect(readDeliveredIds(replay.fixture)).toEqual([]);
+        // The successor's buffered slot: the copy a release reads once its predecessor completes.
+        expect((await admissionStore.readBufferedRelease({ trackKey: TRACK_KEY, seq: 2, nowMs: Date.now() }))?.snapshot.msg.id)
+            .toEqual(SECOND.id);
         await retainForReplay(replay, FIRST, () => loseNextInboundAdmissionWritesOf(admissionStore, { msg: FIRST, count: 1 }));
 
         await runInboundWorkDueNow(replay.fixture);
@@ -400,6 +402,8 @@ describe('a replay of a retained admission', () => {
         expect(readDeliveredIds(replay.fixture)).toEqual(['message-1', 'message-2']);
         expect((await admissionStore.readOrderedDelivery(TRACK_KEY, 3)).completedThrough).toBe(2);
         expect(replay.handedOver).toEqual(['message-1']);
+        // The claim's first attempt lost its write and its second, asking the authority again, admitted.
+        expect(replay.authorityReads).toEqual(['message-1', 'message-1']);
     });
 });
 

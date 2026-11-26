@@ -382,10 +382,11 @@ export class ALInboundMessageAdmission {
     /**
      * Replays a retained admission, and replays it again at once while its write is lost, three attempts in all. A
      * replay runs later than the arrival it replays, so each attempt asks its authority again and checks the deadline,
-     * the stored scope and the message's authorization again. Each attempt also verifies the publication proof and
-     * signs its receipt controls again, so a diagnostic an attempt records before its write, such as a failed receipt
-     * signature, is recorded once per attempt. A shutdown an attempt sees once it has read the store ends the attempts
-     * and answers `retry` with no verdict; a replay whose every write lost is retained still.
+     * the stored scope and the message's authorization again. Each attempt also verifies the publication proof, plans,
+     * mints its control ids, reads the store and signs its receipt controls again, so a diagnostic an attempt records
+     * before its write, such as a failed receipt signature, is recorded once per attempt; a lost attempt wrote nothing,
+     * since its bundle commits whole or not at all. A shutdown an attempt sees once it has read the store ends the
+     * attempts and answers `retry` with no verdict; a replay whose every write lost is retained still.
      */
     async replay(pending: ALInboundPendingAdmission): Promise<ALInboundMessageAdmission.ReplayResult> {
         const replayed = await retryALInboundLostWrite<ALInboundReplayAttempt>({
@@ -488,7 +489,6 @@ function toAttemptReplay(
     };
 }
 
-/** The admission retained to run again: its commit conflicted, or it waits on an earlier delivery of its message. */
 /** The bundle the decision computes under its routing. */
 function computeAttemptBundle(
     decision: ALInboundAttemptDecision,
@@ -507,6 +507,7 @@ function computeAttemptBundle(
     });
 }
 
+/** The admission retained to run again: its commit conflicted, or it waits on an earlier delivery of its message. */
 function toPendingAdmission(
     msg: ALMessage,
     deadline: number,

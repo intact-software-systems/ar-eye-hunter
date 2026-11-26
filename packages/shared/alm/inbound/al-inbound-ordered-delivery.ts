@@ -72,9 +72,10 @@ export class ALInboundOrderedDelivery {
     /**
      * A release whose write lost reads and decides again at once, rather than send the work back to wait out a retry
      * delay that can outlast its message: a completion, another release or an admission on the track committed, and
-     * the next read sees it. Each attempt reads the slot and the progress, checks the proof, plans, mints its control
-     * ids and signs again, so a diagnostic an attempt records before its write, such as a failed receipt signature, is
-     * recorded once per attempt; a lost attempt wrote nothing, since its bundle commits whole or not at all.
+     * the next read sees it. Each attempt reads the slot and the progress, verifies the publication proof, plans,
+     * mints its control ids and signs its receipt controls again, so a diagnostic an attempt records before its write,
+     * such as a failed receipt signature, is recorded once per attempt; a lost attempt wrote nothing, since its bundle
+     * commits whole or not at all.
      *
      * Hands the work back (`retry`) when every attempt's write lost, and when the plan asks for a retry or the
      * predecessor has not completed, which a second read would find the same. A shutdown signal aborted before the
