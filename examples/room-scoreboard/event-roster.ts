@@ -2,11 +2,15 @@ import type { RallarFacade } from '@shared-web/browser/rallar.ts';
 import { RallarRoomEvent } from '@shared-web/browser/rooms/events/rallar-room-event.ts';
 
 export function mountEventRoster(browser: RallarFacade, form: HTMLFormElement, output: HTMLElement): void {
+    const controls = document.createElement('section');
+    controls.setAttribute('aria-label', 'Event handover');
+    output.after(controls);
     let stop: (() => void) | undefined;
     function clear(): void {
         stop?.();
         stop = undefined;
         output.replaceChildren();
+        controls.replaceChildren();
     }
     window.addEventListener('pagehide', clear);
     form.onsubmit = event => {
@@ -18,8 +22,45 @@ export function mountEventRoster(browser: RallarFacade, form: HTMLFormElement, o
             return;
         }
         const lobby = { applicationId: selected.applicationId, workspaceId: selected.workspaceId, groupId: String(new FormData(form).get('lobby')).trim() };
-        const roster = new RallarRoomEvent(browser, lobby).organizerView();
+        const player = new RallarRoomEvent(browser, lobby);
+        const roster = player.organizerView();
+        function displayHandover(): void {
+            const { view, busy, error } = player.getState();
+            controls.replaceChildren();
+            if (!view) return;
+            const offer = view.handover;
+            const rosterView = roster.getState().view;
+            if (offer) {
+                const receiving = offer.recipientId === view.principalId;
+                const button = document.createElement('button');
+                button.textContent = receiving ? 'Accept handover' : 'Cancel handover';
+                button.disabled = busy;
+                button.onclick = () => void player.act({ action: receiving ? 'accept-handover' : 'cancel-handover', offerId: offer.offerId });
+                const deadline = document.createElement('p');
+                deadline.textContent = 'Handover to ' + offer.recipientId + ' expires at ' + new Date(offer.expiresAt).toLocaleTimeString();
+                controls.append(deadline, button);
+            } else if (rosterView) {
+                const candidates = rosterView.players.filter(member => member.principalId !== view.principalId);
+                const label = document.createElement('label');
+                label.textContent = 'Next organizer ';
+                const select = document.createElement('select');
+                for (const member of candidates) select.add(new Option(member.displayName, member.principalId));
+                label.append(select);
+                const button = document.createElement('button');
+                button.textContent = 'Offer handover';
+                button.disabled = busy || candidates.length === 0;
+                button.onclick = () => void player.act({ action: 'offer-handover', recipientId: select.value });
+                controls.append(label, button);
+            }
+            if (error) {
+                const message = document.createElement('p');
+                message.setAttribute('role', 'alert');
+                message.textContent = error;
+                controls.append(message);
+            }
+        }
         const unsubscribe = roster.onChange(({ view, error }) => {
+            displayHandover();
             if (!view) {
                 output.textContent = error ?? 'Loading roster…';
                 return;
@@ -39,7 +80,8 @@ export function mountEventRoster(browser: RallarFacade, form: HTMLFormElement, o
                 return paragraph;
             }));
         });
-        stop = () => { unsubscribe(); roster.stop(); };
-        void roster.start();
+        const unsubscribePlayer = player.onChange(displayHandover);
+        stop = () => { unsubscribe(); unsubscribePlayer(); roster.stop(); player.stop(); };
+        void Promise.all([player.start(), roster.start()]);
     };
 }

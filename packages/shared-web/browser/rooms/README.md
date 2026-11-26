@@ -133,3 +133,11 @@ Its snapshot contains event-local player names, parties in queue order, court oc
 and seats. A seat's numeric deadline is its claim cutoff; a null deadline identifies a
 claimed seat. Private changes, foreground return and reconnect refresh the roster.
 Watching another court preserves room selection. A denied read clears the roster.
+
+To hand over an event, the current organizer sends `offer-handover` with a
+`recipientId`. The recipient must be an app-authorized organizer with a live
+session in the lobby or their claimed court. The sender and recipient see the
+pending offer on their private event view. Pass its `offerId` to
+`cancel-handover` or `accept-handover`. Acceptance rechecks presence,
+authorization and server time. The former organizer then loses event management
+and roster access; occupied courts keep their existing clock and allocation.
