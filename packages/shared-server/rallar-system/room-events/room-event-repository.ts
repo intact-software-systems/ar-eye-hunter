@@ -1,3 +1,4 @@
+import { computeCourtAlertSignals } from './room-event-court-alert.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { decodeRoomEvent } from '@shared/api/room-events/decode-room-event.ts';
@@ -47,6 +48,6 @@ export class RoomEventRepository {
         const guard = before ? { ...row, operation: 'update' as const, expectedRevision: before.entry.revision }
             : { ...row, operation: 'insert' as const };
         return computeGuardedViewPublication({ guard, effects: [...fences, ...notice.provenance] },
-            [...notice.outbox, ...computeRoomEventWake(before?.value ?? null, after, facts)]);
+            [...notice.outbox, ...computeCourtAlertSignals(before?.value ?? null, after, facts), ...computeRoomEventWake(before?.value ?? null, after, facts)]);
     }
 }

@@ -7,5 +7,11 @@
     "build": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "web-push": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/web-push": "^3.6.4"
   }
 }

@@ -10,7 +10,7 @@ test('public event commands reject worker settlement and a caller-supplied actor
         requireSession: async () => createGroupStateRouteAuthSession('alice'),
         readRoom: async () => undefined,
         nowEpochMs: () => 10,
-        events: { read: async () => null, mutate: { submit: async () => { throw new Error('Unexpected event write'); } } }
+        events: { pushPublicKey: null, read: async () => null, mutate: { submit: async () => { throw new Error('Unexpected event write'); } } }
     });
     const path = '/api/state/apps/a/workspaces/w/groups/lobby/event';
     const get = await app.request(path);
@@ -22,4 +22,15 @@ test('public event commands reject worker settlement and a caller-supplied actor
         });
         assert.equal(response.status, 400);
     }
+});
+
+test('the client can discover the public application server key before requesting notification permission', async () => {
+    const app = new Hono();
+    registerRoomEventRoutes(app, {
+        requireSession: async () => createGroupStateRouteAuthSession('alice'), readRoom: async () => undefined, nowEpochMs: () => 10,
+        events: { pushPublicKey: 'public-key', read: async () => null, mutate: { submit: async () => { throw new Error('Unexpected write'); } } }
+    });
+    const response = await app.request('/api/room-event-alerts/public-key');
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { publicKey: 'public-key' });
 });

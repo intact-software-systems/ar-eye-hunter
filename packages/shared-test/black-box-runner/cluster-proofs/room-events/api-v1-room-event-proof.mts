@@ -33,6 +33,10 @@ async function runEventNight({ plans, controls }: ManagedClusterProof.ScenarioIn
         assert.ok(typeof seat.clientId === 'string' && typeof seat.accessToken === 'string');
         return { id: seat.clientId, headers: { 'x-client-id': seat.clientId, authorization: 'Bearer ' + seat.accessToken } };
     }));
+    for (const node of [first, second]) {
+        const capability = await requestJson(node.baseUrl, '/api/room-event-alerts/public-key', { method: 'GET' });
+        assert.deepEqual(capability, { publicKey: null });
+    }
     const [a,b,c] = players;
     assert.ok(a && b && c);
     for (const [i,player] of players.entries()) {
@@ -40,6 +44,7 @@ async function runEventNight({ plans, controls }: ManagedClusterProof.ScenarioIn
     }
     const east = requireRecord((await view(first.baseUrl, a.headers)).offer,'east offer');
     const west = requireRecord((await view(second.baseUrl, b.headers)).offer,'west offer');
+    assert.equal(Object.hasOwn(await view(first.baseUrl, a.headers), 'alerts'), false);
     assert.equal(east.groupId, 'east');
     assert.equal(west.groupId, 'west');
     const claimed = await command(second.baseUrl, b.headers, { body: { action: 'claim', groupId: west.groupId,

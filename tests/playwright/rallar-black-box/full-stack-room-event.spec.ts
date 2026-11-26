@@ -115,3 +115,34 @@ test('a signed-in player re-enters their claimed court from a second browser', a
         await returningPage.close();
     }
 });
+
+test('a guest opening a court alert sees the current allocation and can requeue after expiry', async ({ page, browser, baseURL }) => {
+    test.skip(!config.enabled, config.skipReason);
+    const lobby = { applicationId: 'club', workspaceId: crypto.randomUUID(), groupId: 'pickup' };
+    const operator = await openEvent(page, lobby, 'create');
+    const invitationSecret = await operator.evaluate(async ({ event, rallar, createRoomGuestSecret }, { lobby, invitationModule }) => {
+        const { hashRoomInvitationSecret }: typeof import('@shared/api/room-guests/invitation.ts') = await import(invitationModule);
+        const secret = createRoomGuestSecret();
+        await rallar.rooms.update({ roomRef: lobby, guestInvitationVerifier: await hashRoomInvitationSecret(secret) });
+        await event.act({ action: 'create', courts: [{ groupId: 'east', capacity: 1 }], closesAt: Date.now() + 120_000 });
+        return secret;
+    }, { lobby, invitationModule: '/@fs' + fileURLToPath(new URL('../../../packages/shared/api/room-guests/invitation.ts', import.meta.url)) });
+    const guest = await browser.newPage({ baseURL });
+    try {
+        await guest.route('**/event.json', route => route.fulfill({ json: { lobby, invitationSecret, apiBaseUrl: config.apiBaseUrl } }));
+        const exampleUrl = '/@fs' + fileURLToPath(new URL('../../../examples/pickup-event/index.html', import.meta.url));
+        await guest.goto(exampleUrl);
+        await guest.getByRole('button', { name: 'Join event' }).click();
+        await guest.getByRole('button', { name: 'Join queue' }).click();
+        await expect(guest.getByRole('button', { name: 'Enter east' })).toBeVisible();
+        const alert = { type:'rallar-court-ready', lobby, offerRevision:2, tag:'a'.repeat(32) };
+        const launch = exampleUrl + '#' + new URLSearchParams({courtAlert:JSON.stringify(alert)});
+        await guest.goto(launch);
+        await guest.reload();
+        await expect(guest.getByRole('button', { name: 'Enter east' })).toBeVisible();
+        await operator.evaluate(({ event }) => event.act({action:'release',groupId:'east',occurrence:1,requeue:false}));
+        await expect(guest.getByRole('status')).toContainText('Your earlier offer has expired.');
+        await guest.getByRole('button', {name:'Join queue'}).click();
+        await expect(guest.getByRole('button', {name:'Enter east'})).toBeVisible();
+    } finally { await guest.close(); }
+});

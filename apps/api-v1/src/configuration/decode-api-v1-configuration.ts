@@ -1,3 +1,4 @@
+import { decodeWebPushCredentials } from '@shared-server/rallar-system/room-events/event-web-push.ts';
 import { requireRecord } from '@shared/api/exact-object-decoding.ts';
 import { assertValidRallarRouteId } from '@shared/api/rallar-validation.ts';
 import { decodeTemporaryRoomPolicy } from '@shared/api/room-guests/temporary-room-policy.ts';
@@ -76,7 +77,13 @@ export function decodeApiV1Configuration(
         staticClientsSource: input.staticClientsSource,
         hardwareConcurrency: input.hardwareConcurrency
     });
+    let webPush = null;
+    if (secrets.webPushVapid !== undefined) {
+        try { webPush = decodeWebPushCredentials(secrets.webPushVapid); }
+        catch { decoder.secretIssue('webPushVapid', 'invalid-secret', 'Invalid Web Push VAPID configuration.'); }
+    }
     const configuration: ApiV1Configuration = {
+        webPush,
         profile: decodeProfile(decoder, structuredValues, input),
         http: decodeHttp(decoder, structuredValues),
         publicApi: decodePublicApi(decoder),

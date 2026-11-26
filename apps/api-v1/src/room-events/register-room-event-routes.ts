@@ -14,7 +14,7 @@ import { toApiMutationFailureResponse, toApiMutationRouteFailure } from '../rout
 import { readApiRequestTraceId } from '../services/read-api-request-trace-id.ts';
 
 export interface RoomEventRouteDependencies {
-    readonly events: Pick<TemporaryEventService, 'read'> & { readonly mutate: Pick<TemporaryEventService['mutate'], 'submit'> };
+    readonly events: Pick<TemporaryEventService, 'read' | 'pushPublicKey'> & { readonly mutate: Pick<TemporaryEventService['mutate'], 'submit'> };
     readonly readRoom: (room: GroupRef) => Promise<GroupSnapshot | undefined>;
     readonly nowEpochMs: () => number;
     readonly requireSession: (request: {header(name: string): string | undefined}) => Promise<IssuedAuthSession>;
@@ -33,6 +33,10 @@ async function roomEventSession(context: Context, lobby: GroupRef, dependencies:
 const EVENT_PATH = '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/event';
 
 export function registerRoomEventRoutes(app: Hono, dependencies: RoomEventRouteDependencies): void {
+    app.get('/api/room-event-alerts/public-key', context => {
+        context.header('Cache-Control', 'no-store');
+        return context.json({ publicKey: dependencies.events.pushPublicKey });
+    });
     app.get(EVENT_PATH, async context => {
         context.header('Cache-Control', 'no-store');
         try {
