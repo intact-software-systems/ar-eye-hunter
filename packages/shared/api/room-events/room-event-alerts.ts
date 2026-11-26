@@ -1,5 +1,6 @@
 import { requireExactKeys, requirePositiveInteger, requireRecord } from '../exact-object-decoding.ts';
 import { assertValidRallarRouteId } from '../rallar-validation.ts';
+import { isBase64UrlOfByteLength } from '../../encoding/base64url.ts';
 import type { RoomEvent } from './room-event.ts';
 
 export interface EventPushSubscription {
@@ -26,8 +27,8 @@ export function decodePushEndpoint(value: unknown): string {
 export function decodeEventPushSubscription(value: unknown): EventPushSubscription {
     const row = requireRecord(value, 'Push subscription');
     requireExactKeys(row, ['endpoint', 'p256dh', 'auth'], 'Push subscription');
-    if (typeof row.p256dh !== 'string' || !/^B[A-Za-z0-9_-]{86}$/.test(row.p256dh) ||
-        typeof row.auth !== 'string' || !/^[A-Za-z0-9_-]{22}$/.test(row.auth)) throw new TypeError('Invalid Web Push keys.');
+    if (typeof row.p256dh !== 'string' || row.p256dh.length !== 87 || !row.p256dh.startsWith('B') || !isBase64UrlOfByteLength(row.p256dh, 65) ||
+        typeof row.auth !== 'string' || row.auth.length !== 22 || !isBase64UrlOfByteLength(row.auth, 16)) throw new TypeError('Invalid Web Push keys.');
     return { endpoint: decodePushEndpoint(row.endpoint), p256dh: row.p256dh, auth: row.auth };
 }
 

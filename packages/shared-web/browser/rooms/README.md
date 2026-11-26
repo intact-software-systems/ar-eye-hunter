@@ -152,3 +152,19 @@ and that browser’s participation. Pass the displayed revision to `change('rese
 or `change('withdraw', revision)`. At arrival, `claim(revision)` returns the scoped guest
 admission used by `auth.activateGuest`. The SDK stores the browser proof separately from the link
 and can retry interrupted writes. A second browser needs its own available seat.
+
+### Court-ready notifications
+
+For optional device alerts, import `readCourtAlertPublicKey`, `enableCourtReadyNotifications`
+and `disableCourtReadyNotifications` from `events/court-ready-notifications.ts`.
+Read the public key while mounting the event. A null value means delivery is disabled.
+From the player's tap handler, call
+`enableCourtReadyNotifications(event, registration.pushManager, publicKey)`.
+The same operations apply to an admitted guest and a signed-in player. Disabling alerts
+withdraws consent for that device and event.
+
+In the service worker, use `courtReadyNotification` to display the generic alert and
+`courtAlertLaunchUrl` to open the original offer. When the app opens, compare
+`readCourtAlertLaunch` with the player's current event view using `courtAlertStatus`.
+The installable [pickup example](../../../../examples/pickup-event/README.md) shows the
+full journey.

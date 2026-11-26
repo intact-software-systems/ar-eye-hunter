@@ -97,6 +97,18 @@ const budgetedEntries: readonly BundleBoundary[] = [
         brotliBudgetKiB: budgetFor('browser/rallar-media-calls.ts')
     },
     {
+        label: 'browser/rooms/events/court-ready-notifications.ts',
+        entry: 'packages/shared-web/browser/rooms/events/court-ready-notifications.ts',
+        output: 'court-ready-notifications.min.js',
+        brotliBudgetKiB: budgetFor('browser/rooms/events/court-ready-notifications.ts')
+    },
+    {
+        label: 'browser/rooms/events/court-alert-notification.ts',
+        entry: 'packages/shared-web/browser/rooms/events/court-alert-notification.ts',
+        output: 'court-alert-notification.min.js',
+        brotliBudgetKiB: budgetFor('browser/rooms/events/court-alert-notification.ts')
+    },
+    {
         label: 'browser/rooms/events/rallar-room-event.ts',
         entry: 'packages/shared-web/browser/rooms/events/rallar-room-event.ts',
         output: 'rallar-room-event.min.js',
@@ -210,6 +222,8 @@ describe('shared-web browser bundle boundaries', () => {
     });
 
     it.each([
+        'browser/rooms/events/court-ready-notifications.ts',
+        'browser/rooms/events/court-alert-notification.ts',
         'browser/rooms/events/rallar-room-event.ts',
         'browser/rooms/entry/temporary-room-creation.ts',
         'browser/rooms/lobby/rallar-room-lobby.ts',

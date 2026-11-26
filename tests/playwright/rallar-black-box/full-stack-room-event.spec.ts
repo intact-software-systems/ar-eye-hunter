@@ -131,9 +131,11 @@ test('a guest opening a court alert sees the current allocation and can requeue 
     }, { lobby, invitationModule: '/@fs' + fileURLToPath(new URL('../../../packages/shared/api/room-guests/invitation.ts', import.meta.url)) });
     const guest = await browser.newPage({ baseURL });
     try {
+        await guest.route('**/api/room-event-alerts/public-key', route => route.fulfill({ status: 503 }));
         await guest.route('**/event.json', route => route.fulfill({ json: { lobby, invitationSecret, apiBaseUrl: config.apiBaseUrl } }));
         const exampleUrl = '/@fs' + fileURLToPath(new URL('../../../examples/pickup-event/index.html', import.meta.url));
         await guest.goto(exampleUrl);
+        await expect(guest.getByText('Alerts are unavailable in this browser. You can still join the queue.')).toBeVisible({ timeout: 3000 });
         await guest.getByRole('button', { name: 'Join event' }).click();
         await guest.getByRole('button', { name: 'Join queue' }).click();
         await expect(guest.getByRole('button', { name: 'Enter east' })).toBeVisible();
@@ -141,6 +143,7 @@ test('a guest opening a court alert sees the current allocation and can requeue 
         const launch = exampleUrl + '#' + new URLSearchParams({courtAlert:JSON.stringify(alert)});
         await guest.goto(launch);
         await guest.reload();
+        await expect(guest.getByRole('status')).toHaveText('Your court is ready: east');
         await expect(guest.getByRole('button', { name: 'Enter east' })).toBeVisible();
         await operator.evaluate(({ event }) => event.act({action:'release',groupId:'east',occurrence:1,requeue:false}));
         await expect(guest.getByRole('status')).toContainText('Your earlier offer has expired.');

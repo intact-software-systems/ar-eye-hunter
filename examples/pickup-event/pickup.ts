@@ -44,12 +44,14 @@ async function open(): Promise<void> {
     const needsInstall = isIphoneBrowser && !matchMedia('(display-mode: standalone)').matches;
     if (needsInstall) notice.textContent = 'For alerts on a future visit, add this app to your Home Screen and open it there before joining.';
     else if ('PushManager' in window && 'serviceWorker' in navigator && 'Notification' in window) {
-        publicKey = await readCourtAlertPublicKey(lifetime.signal);
-        if (publicKey) {
-            try {
+        try {
+            publicKey = await readCourtAlertPublicKey(lifetime.signal);
+            if (publicKey) {
                 await navigator.serviceWorker.register('./worker.js', { type: 'module', scope: './' });
                 registered = await navigator.serviceWorker.ready;
-            } catch { notice.textContent = 'Alerts are unavailable in this browser. You can still join the queue.'; }
+            }
+        } catch {
+            notice.textContent = 'Alerts are unavailable in this browser. You can still join the queue.';
         }
     }
 

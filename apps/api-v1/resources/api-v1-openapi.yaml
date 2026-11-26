@@ -1241,6 +1241,24 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
+  /api/room-event-alerts/public-key:
+    get:
+      tags: [Group State]
+      summary: Discover court-ready Web Push support
+      security: []
+      responses:
+        '200':
+          description: Public VAPID key, or null when the server has disabled delivery.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/NoStore' }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [publicKey]
+                properties:
+                  publicKey: { type: [string, 'null'] }
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/event:
     get:
       tags: [Group State]
@@ -10130,6 +10148,25 @@ components:
             deadline: { type: [integer, 'null'] }
     RoomEventCommand:
       oneOf:
+        - type: object
+          additionalProperties: false
+          required: [action, subscription]
+          properties:
+            action: { const: enable-court-alerts }
+            subscription:
+              type: object
+              additionalProperties: false
+              required: [endpoint, p256dh, auth]
+              properties:
+                endpoint: { type: string, format: uri, maxLength: 2048, writeOnly: true }
+                p256dh: { type: string, minLength: 87, maxLength: 87, writeOnly: true }
+                auth: { type: string, minLength: 22, maxLength: 22, writeOnly: true }
+        - type: object
+          additionalProperties: false
+          required: [action, endpoint]
+          properties:
+            action: { const: disable-court-alerts }
+            endpoint: { type: string, format: uri, maxLength: 2048, writeOnly: true }
         - type: object
           additionalProperties: false
           required: [action, closesAt, courts]

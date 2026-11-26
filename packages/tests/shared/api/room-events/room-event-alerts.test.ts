@@ -22,3 +22,9 @@ it('binds court alerts to a player and device until opt-out, removal or event cl
     expect(update(consent, 'admin', { action: 'close' }).alerts).toBeUndefined();
     expect(changeRoomEvent({ event: consent, command: { action: 'settle' }, principalId: 'admin', nowEpochMs: 500_000 }).alerts).toBeUndefined();
 });
+
+it('rejects noncanonical device authentication keys', () => {
+    expect(() => decodeRoomEventCommand({ action: 'enable-court-alerts', subscription: {
+        ...subscription, auth: 'A'.repeat(21) + 'B'
+    } })).toThrow('Invalid Web Push keys');
+});
