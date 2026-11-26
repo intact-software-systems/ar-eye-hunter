@@ -7,13 +7,13 @@ import { Either } from '../../resilience/Either.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import { computeALInboundAdmission } from './admission/compute-al-inbound-admission.ts';
-import { recordALInboundOrderingPosition } from './admission/record-al-inbound-ordering-position.ts';
 import {
     isALInboundOriginAuthenticated,
     isALInboundOriginAuthenticatedReadmission
 } from './admission/is-al-inbound-origin-authenticated-readmission.ts';
+import { recordALInboundOrderingPosition } from './admission/record-al-inbound-ordering-position.ts';
 import { validateALInboundCommitBundle } from './admission/validate-al-inbound-commit-bundle.ts';
-import type { ALInboundPlanner } from './al-inbound-admission-store.ts';
+import type { ALInboundAdmissionRead, ALInboundCommitBundle, ALInboundPlanner } from './al-inbound-admission-store.ts';
 import { toALInboundLocalDeliveryEffectId } from './al-inbound-effect-intent.ts';
 import { toALInboundMessageWithDeadline } from './al-inbound-message-deadline.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
@@ -23,7 +23,7 @@ import { toALInboundResyncCursor } from './al-inbound-resync-required.ts';
 import { isAuthorizedStoredWsClientDelivery, toALDeliveryCarrier } from './al-inbound-source-validation.ts';
 import { computeALInboundWorkEntry, decodeALInboundWorkEntry, toALInboundWorkKey } from './al-inbound-work-entry.ts';
 import { toALInboundGapRenewalsDueAt } from './gap-renewal/compute-al-inbound-gap-renewal.ts';
-import { readALInboundEffectFacts } from './prepare-al-inbound-commit-bundle.ts';
+import { readALInboundEffectFacts, type ALInboundEffectFacts } from './prepare-al-inbound-commit-bundle.ts';
 import { readALInboundMessageAuthorization, toALInboundReceiver } from './read-al-inbound-message-authorization.ts';
 import { resolveALInboundSignFailurePolicy } from './receipt-proof/is-al-inbound-recipient-receipt.ts';
 import { signALInboundReceiptControls } from './receipt-proof/sign-al-inbound-receipt-controls.ts';
@@ -108,6 +108,27 @@ export namespace ALInboundMessageAdmission {
         | { readonly kind: 'conflict'; readonly pending: ALInboundPendingAdmission; };
 }
 
+interface ALInboundAttemptPreparation {
+    /** The arriving message with the deadline its pre-plan resolves. */
+    readonly admitted: ALMessage;
+    /** The one clock reading the read, the plan and the effect facts share. */
+    readonly nowMs: number;
+    readonly prePlan: ALMessageHandlingPlan;
+    readonly originAuthenticated: boolean;
+    readonly facts: ALInboundEffectFacts;
+}
+
+interface ALInboundAttemptDecision {
+    /** The message as it arrived, which the records after a commit name. */
+    readonly msg: ALMessage;
+    readonly source: ALInboundMessageRuntime.Source;
+    readonly preparation: ALInboundAttemptPreparation;
+    readonly read: ALInboundAdmissionRead;
+    readonly plan: ALMessageHandlingPlan;
+    readonly readmission: boolean;
+    readonly deadline: number;
+}
+
 /** One conditional admission per call; the existing QueueBox worker owns retries. */
 export class ALInboundMessageAdmission {
     private readonly dependencies: ALInboundMessageAdmission.Dependencies;
@@ -126,9 +147,49 @@ export class ALInboundMessageAdmission {
         source: ALInboundMessageRuntime.Source,
         planner: ALInboundPlanner
     ): Promise<Either<ALMessageRejection, ALInboundMessageAdmission.Attempt>> {
-        const { admissionStore, clock, effectPreparation } = this.dependencies;
+        const prepared = await this.prepareAttempt(msg, source, planner);
+        if (prepared.left) {
+            return Either.ofLeft(prepared.left);
+        }
+        const preparation = prepared.right!;
+        const { admitted, nowMs, prePlan } = preparation;
+        const read = await this.dependencies.admissionStore.readIncomingMessage({
+            msg: admitted,
+            source,
+            nowMs,
+            prePlan,
+            selfPeerId: this.dependencies.effectPreparation.selfPeerId,
+            orderingObserver: this.dependencies.orderingObserver
+        });
+        if (this.shutdown.signal.aborted) {
+            return Either.ofRight({ kind: 'completed', acceptance: { kind: 'disposed' }, wroteWork: false });
+        }
+        const readmission = isALInboundOriginAuthenticatedReadmission({
+            msg: admitted,
+            ackAlgo: prePlan.ack.algo,
+            originAuthenticated: preparation.originAuthenticated,
+            owner: read.observations.messageOwner
+        });
+        const plan = planner(admitted, source, computeALInboundPlanningObservations(read, readmission));
+        const deadline = resolveALMessageExpireAtMs(admitted, plan.effective) ??
+            nowMs + read.retention.durableEffectTtlMs;
+        if (deadline <= this.dependencies.clock.nowMs()) {
+            return Either.ofRight(ATTEMPT_EXPIRED);
+        }
+        if (readmission && await this.isFirstDeliveryQueued(admitted)) {
+            return Either.ofRight(toPendingAttempt(admitted, deadline, source));
+        }
+        return await this.commitAttempt({ msg, source, preparation, read, plan, readmission, deadline });
+    }
+
+    /** What an attempt holds before its store read: the message with its deadline, decoded, and its effect facts. */
+    private async prepareAttempt(
+        msg: ALMessage,
+        source: ALInboundMessageRuntime.Source,
+        planner: ALInboundPlanner
+    ): Promise<Either<ALMessageRejection, ALInboundAttemptPreparation>> {
         await this.dependencies.verifyPublicationProof?.(msg);
-        const nowMs = clock.nowMs();
+        const nowMs = this.dependencies.clock.nowMs();
         const prePlan = planner(msg, source, { nowMs });
         const initialDeadline = resolveALMessageExpireAtMs(msg, prePlan.effective);
         const admitted = initialDeadline === undefined ? msg : toALInboundMessageWithDeadline(msg, initialDeadline);
@@ -140,52 +201,39 @@ export class ALInboundMessageAdmission {
         const originAuthenticated = isALInboundOriginAuthenticated({ source, proofVerified });
         const facts = readALInboundEffectFacts(
             nowMs,
-            effectPreparation,
+            this.dependencies.effectPreparation,
             () => this.dependencies.readGapNackRelayHops(admitted, [])
         );
-        const read = await admissionStore.readIncomingMessage({
-            msg: admitted,
-            source,
-            nowMs,
-            prePlan,
-            selfPeerId: effectPreparation.selfPeerId,
-            orderingObserver: this.dependencies.orderingObserver
-        });
-        if (this.shutdown.signal.aborted) {
-            return Either.ofRight({ kind: 'completed', acceptance: { kind: 'disposed' }, wroteWork: false });
-        }
-        const readmission = isALInboundOriginAuthenticatedReadmission({
-            msg: admitted,
-            ackAlgo: prePlan.ack.algo,
-            originAuthenticated,
-            owner: read.observations.messageOwner
-        });
-        const plan = planner(admitted, source, computeALInboundPlanningObservations(read, readmission));
-        const deadline = resolveALMessageExpireAtMs(admitted, plan.effective) ??
-            nowMs + read.retention.durableEffectTtlMs;
-        if (deadline <= clock.nowMs()) {
-            return Either.ofRight(ATTEMPT_EXPIRED);
-        }
-        if (readmission && await this.isFirstDeliveryQueued(admitted)) {
-            return Either.ofRight(toPendingAttempt(admitted, deadline, source));
-        }
+        return Either.ofRight({ admitted, nowMs, prePlan, originAuthenticated, facts });
+    }
+
+    private computeAttemptBundle(decision: ALInboundAttemptDecision): ALInboundCommitBundle {
+        const { preparation, read, plan } = decision;
+        const { admitted } = preparation;
         const canForward = !plan.dropReason && this.dependencies.forwardMessage !== undefined &&
             (this.dependencies.canForwardMessage?.(admitted) ?? true);
         const recordedParentPresent = read.pendingAck === undefined ||
             (this.dependencies.isRoomPeerPresent?.(admitted, read.pendingAck.toPeerId) ?? true);
-        const computed = computeALInboundAdmission({
+        return computeALInboundAdmission({
             read,
             plan,
             canForward,
             recordedParentPresent,
             retriedCopyNextHopPeerIds: this.dependencies.forwardRetriedCopy === undefined
                 ? []
-                : prePlan.forwarding.nextHopPeerIds,
-            originAuthenticated,
-            readmission,
-            facts
+                : preparation.prePlan.forwarding.nextHopPeerIds,
+            originAuthenticated: preparation.originAuthenticated,
+            readmission: decision.readmission,
+            facts: preparation.facts
         });
-        const validated = validateALInboundCommitBundle(computed, read.namespace);
+    }
+
+    /** The attempt's one conditional write; the records after it are made only once it committed. */
+    private async commitAttempt(
+        decision: ALInboundAttemptDecision
+    ): Promise<Either<ALMessageRejection, ALInboundMessageAdmission.Attempt>> {
+        const { msg, source, preparation, read, plan } = decision;
+        const validated = validateALInboundCommitBundle(this.computeAttemptBundle(decision), read.namespace);
         if (validated.left) {
             return Either.ofLeft(validated.left);
         }
@@ -194,18 +242,18 @@ export class ALInboundMessageAdmission {
                 bundle: validated.right!,
                 namespace: read.namespace,
                 receiptProofs: this.dependencies.receiptProofs,
-                signFailure: resolveALInboundSignFailurePolicy(admitted),
+                signFailure: resolveALInboundSignFailurePolicy(preparation.admitted),
                 diagnostics: this.dependencies.diagnostics
             }),
-            nowMs,
+            preparation.nowMs,
             this.dependencies.gapRenewalStretch
         );
-        const status = await admissionStore.commitBundle(signed);
+        const status = await this.dependencies.admissionStore.commitBundle(signed);
         if (status === 'expired') {
             return Either.ofRight(ATTEMPT_EXPIRED);
         }
         if (status === 'conflict') {
-            return Either.ofRight(toPendingAttempt(admitted, deadline, source));
+            return Either.ofRight(toPendingAttempt(preparation.admitted, decision.deadline, source));
         }
         this.recordResyncRequired(msg, source, plan);
         this.recordOrderingPosition(msg, source, plan);
