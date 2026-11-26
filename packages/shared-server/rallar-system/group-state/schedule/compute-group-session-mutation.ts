@@ -59,22 +59,12 @@ export function computeGroupSessionMutation(
         return rejectedByGroupPolicy({ command, read, facts, denial: active });
     }
     const schedule = readGroupSessionSchedule(stored.value.metadata);
-    const rejection = schedule === null
-        ? 'This room is not scheduled.'
-        : facts.internalAuthority === 'guest-booking' && !schedule.guestBooking
-        ? 'Guest booking is disabled for this session.'
-        : command.input.actorPrincipalId === null
-        ? 'An authenticated account is required.'
-        : command.input.expectedScheduleRevision !== schedule.revision
-        ? 'The schedule has changed. Review it again.'
-        : null;
-    if (rejection !== null) {
-        return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: rejection });
-    }
-    if (
-        schedule === null || command.input.actorPrincipalId === null || read.sessionReservations === null ||
-        read.activeMembers === null
-    ) {
+    const refuse = (message: string) => rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message });
+    if (schedule === null) return refuse('This room is not scheduled.');
+    if (facts.internalAuthority === 'guest-booking' && !schedule.guestBooking) return refuse('Guest booking is disabled for this session.');
+    if (command.input.actorPrincipalId === null) return refuse('An authenticated account is required.');
+    if (command.input.expectedScheduleRevision !== schedule.revision) return refuse('The schedule has changed. Review it again.');
+    if (!read.sessionReservations || !read.activeMembers) {
         throw new TypeError('Session changes require complete schedule, actor, reservation and member reads');
     }
     const mutation: GroupSessionMutation = {
