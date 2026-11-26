@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Browser, type Page } from '@playwright/test';
 import { assertIdleViewReads } from './assert-idle-view-reads.ts';
 import { localStartInput } from './local-start-input.ts';
 import {
@@ -129,7 +129,7 @@ export interface ScheduledSessionDestination {
     readonly startsAtEpochMs: number;
 }
 
-export async function scheduleThroughControls(page: Page, delayMs: number, guestBooking = false): Promise<ScheduledSessionDestination> {
+async function scheduleThroughControls(page: Page, delayMs: number, guestBooking = false): Promise<ScheduledSessionDestination> {
     const panel = page.getByRole('region', { name: 'Scheduled sessions', exact: true });
     await expect(panel).toBeVisible();
     await panel.getByText('Schedule a session', { exact: true }).click();
@@ -155,4 +155,31 @@ async function followSessionLink(page: Page, link: string, game: 'arena' | 'reli
         await openArenaOperations(page);
     }
     await expect(page.getByRole('article', { name: 'Session details', exact: true })).toBeVisible();
+}
+
+export async function guestSessionBookingJourney(page: Page, guest: Page, browser: Browser, game: 'arena' | 'relic'): Promise<void> {
+    await signInRoomPlayer(page, 'alice', game);
+    const session = await scheduleThroughControls(page, 300_000, true);
+    await guest.goto(session.link);
+    if (game === 'arena') await openArenaOperations(guest);
+    const booking = guest.getByRole('region', { name: 'Guest reservation' });
+    await guest.route('**/session/guest/requests/*', async route => {
+        await route.fetch();
+        await route.abort();
+    }, { times: 1 });
+    await booking.getByRole('button', { name: 'Reserve as a guest' }).click();
+    await expect(booking.getByRole('alert')).toBeVisible();
+    await guest.reload();
+    if (game === 'arena') await openArenaOperations(guest);
+    await expect(booking).toContainText('Your lobby seat is reserved.');
+    const other = await browser.newPage();
+    try {
+        await other.goto(session.link);
+        if (game === 'arena') await openArenaOperations(other);
+        await expect(other.getByRole('button', { name: 'Reserve as a guest' })).toBeDisabled();
+        await expect(other.getByRole('button', { name: 'Claim my lobby seat' })).toHaveCount(0);
+    } finally { await other.close(); }
+    await booking.getByRole('button', { name: 'Claim my lobby seat' }).click();
+    await expect(page.getByRole('region', { name: 'Scheduled sessions', exact: true })).toContainText('0 of 2 player seats available.');
+    await expect(guest.getByText(`Entered ${session.groupId}.`, { exact: true })).toBeVisible();
 }

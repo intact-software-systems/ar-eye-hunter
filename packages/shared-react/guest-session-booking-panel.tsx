@@ -46,10 +46,8 @@ export function GuestSessionBookingPanel({ room, entry }: { readonly room: Group
             if (action === 'claim') {
                 const access = await booking.claim(preview.schedule.revision, controller.signal);
                 controller.signal.throwIfAborted();
-                await rallar.auth.activateGuest({ room, access, username: 'Guest' });
                 entry.enterScheduledLobby();
-                await rallar.connect();
-                await entry.resume();
+                await rallar.auth.activateGuest({ room, access, username: 'Guest' });
             } else {
                 await booking.change(action, preview.schedule.revision, controller.signal);
                 setPreview(await booking.preview(controller.signal));

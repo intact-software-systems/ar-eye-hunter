@@ -1281,6 +1281,26 @@ paths:
                   - { $ref: '#/components/schemas/RoomEventView' }
                   - { type: 'null' }
         '403': { $ref: '#/components/responses/ApiMutationFailure' }
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/event/organizer:
+    get:
+      tags: [Group State]
+      summary: Read the current organizer's private event roster from any room
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/XRequestId'
+      responses:
+        '200':
+          description: Current allocation, including waiting parties in queue order.
+          headers:
+            x-request-id: { $ref: '#/components/headers/XRequestId' }
+            Cache-Control: { $ref: '#/components/headers/NoStore' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RoomEventOrganizerView' }
+        '401': { $ref: '#/components/responses/ApiMutationFailure' }
+        '403': { $ref: '#/components/responses/ApiMutationFailure' }
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/event/requests/{requestId}:
     post:
       tags: [Group State]
@@ -10106,9 +10126,48 @@ components:
       properties:
         id: { type: string }
         players: { type: array, items: { type: string }, uniqueItems: true }
+    RoomEventOrganizerView:
+      type: object
+      required: [lobby, organizerId, revision, closesAt, closed, players, queue, courts]
+      properties:
+        lobby: { $ref: '#/components/schemas/GroupRef' }
+        organizerId: { type: string }
+        revision: { type: integer, minimum: 1 }
+        closesAt: { type: integer }
+        closed: { type: boolean }
+        players:
+          type: array
+          items:
+            type: object
+            required: [principalId, displayName]
+            properties:
+              principalId: { type: string }
+              displayName: { type: string }
+        queue: { type: array, items: { $ref: '#/components/schemas/EventParty' } }
+        courts:
+          type: array
+          items:
+            allOf:
+              - { $ref: '#/components/schemas/EventCourtSetup' }
+              - type: object
+                required: [occurrence, seats]
+                properties:
+                  occurrence: { type: integer, minimum: 1 }
+                  seats:
+                    type: array
+                    items:
+                      type: object
+                      required: [principalId, partyId, offerRevision, deadline]
+                      properties:
+                        principalId: { type: string }
+                        partyId: { type: string }
+                        offerRevision: { type: integer, minimum: 1 }
+                        deadline:
+                          type: [integer, 'null']
+                          description: Claim deadline in Unix epoch milliseconds, or null for a claimed seat.
     RoomEventView:
       type: object
-      required: [lobby, principalId, revision, closesAt, closed, courts, queue, proposals, offer]
+      required: [lobby, principalId, revision, closesAt, closed, courts, queue, proposals, offer, handover]
       properties:
         lobby: { $ref: '#/components/schemas/GroupRef' }
         principalId: { type: string }
@@ -10146,6 +10205,16 @@ components:
             offerRevision: { type: integer, minimum: 1 }
             partyId: { type: string }
             deadline: { type: [integer, 'null'] }
+        handover:
+          description: Current organizer handover visible to its sender and recipient until the server deadline.
+          type: [object, 'null']
+          additionalProperties: false
+          required: [offerId, offeredBy, recipientId, expiresAt]
+          properties:
+            offerId: { type: string }
+            offeredBy: { type: string }
+            recipientId: { type: string }
+            expiresAt: { type: integer, minimum: 0, description: Unix epoch milliseconds. }
     RoomEventCommand:
       oneOf:
         - type: object
@@ -10167,6 +10236,24 @@ components:
           properties:
             action: { const: disable-court-alerts }
             endpoint: { type: string, format: uri, maxLength: 2048, writeOnly: true }
+        - type: object
+          additionalProperties: false
+          required: [action, recipientId]
+          properties:
+            action: { const: offer-handover }
+            recipientId: { type: string }
+        - type: object
+          additionalProperties: false
+          required: [action, offerId]
+          properties:
+            action: { const: accept-handover }
+            offerId: { type: string }
+        - type: object
+          additionalProperties: false
+          required: [action, offerId]
+          properties:
+            action: { const: cancel-handover }
+            offerId: { type: string }
         - type: object
           additionalProperties: false
           required: [action, closesAt, courts]
