@@ -22,8 +22,15 @@ import {
     toStoreRecoveryWait
 } from '../alm-conformance-session-commands.ts';
 import { toCommandId } from '../alm-conformance-step-identities.ts';
+import { toPauseCommand } from '../to-pause-command.ts';
 
 const HAND_OVER_POLL_INTERVAL_MS = 200;
+/**
+ * How long the owner keeps its page after the cancel, so the cancel reaches storage before the page dies: `cancel()`
+ * returns before its end is stored (D754), and a hosted runner closed the page 65 ms after it with nothing stored
+ * (D763). The page still closes inside the message's 2 s receipt timer, which the proof needs.
+ */
+const CANCEL_STORAGE_WINDOW_MS = 750;
 const ORIGINAL_MARKER = 'durable-takeover';
 const CANCELLED_MARKER = 'durable-takeover-cancelled';
 
@@ -63,9 +70,10 @@ function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBo
 }
 
 /**
- * The cancel is the owner's last command, and its page closes a few hundred milliseconds later, before the message's
- * 2 s receipt timer (`first-hop-timeout` over WS, `ack-timeout` over RTC) comes due. Only a stored end keeps that
- * timer row from the successor: it would find the cancelled send's row gone, charge the attempt and send it again.
+ * The cancel is the owner's last message command. Its page stays for `CANCEL_STORAGE_WINDOW_MS` and closes a few
+ * hundred milliseconds later, before the message's 2 s receipt timer (`first-hop-timeout` over WS, `ack-timeout` over
+ * RTC) comes due. Only a stored end keeps that timer row from the successor: it would find the cancelled send's row
+ * gone, charge the attempt and send it again.
  */
 function toCancelledBeforeCloseCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
@@ -79,7 +87,8 @@ function toCancelledBeforeCloseCommands(owner: AlmConformanceStepInput): readonl
             field: 'state',
             operator: 'equals',
             expected: 'cancelled'
-        })
+        }),
+        toPauseCommand(owner, 'cancel-reaches-storage', CANCEL_STORAGE_WINDOW_MS)
     ];
 }
 
