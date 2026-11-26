@@ -48,7 +48,7 @@ it.each(['hard close', 'empty return window'])('recovers the %s and closes both 
         original.queue.inbox.stop();
         if (cause === 'empty return window') {
             const lobby = (await groups.findGroup(RETENTION_REF))!;
-            expect(await groups.isTemporaryRoomAvailable(lobby, nowEpochMs() + 2000)).toBe(false);
+            expect(await groups.isTemporaryGroupAvailable(lobby, nowEpochMs() + 2000)).toBe(false);
         }
         const replacement = startWorker();
         await vi.waitFor(async () => {
@@ -93,15 +93,15 @@ it('holds the lobby open from an occupied court, then rejects a late reconnect b
         await commitMutation(fixture, requireMutationWrite((await prepareMutation(fixture, connect('first'))).computed));
         fixture.nowEpochMs += 1100;
         const lobby = (await groups.findGroup(RETENTION_REF))!;
-        expect(await groups.isTemporaryRoomAvailable(lobby, nowEpochMs())).toBe(true);
+        expect(await groups.isTemporaryGroupAvailable(lobby, nowEpochMs())).toBe(true);
         const departure = await prepareMutation(fixture, mutationDescriptor({ scope: court, groupId: court.groupId,
             operation: 'disconnectPresence', sessionId: fixture.owner.sessionId, request: {
                 actorPrincipalId: 'owner', generationId: 'first', requestId: 'depart', disconnectedAtEpochMs: nowEpochMs() } }));
         await commitMutation(fixture, requireMutationWrite(departure.computed));
         fixture.nowEpochMs += 999;
-        expect(await groups.isTemporaryRoomAvailable(lobby, nowEpochMs())).toBe(true);
+        expect(await groups.isTemporaryGroupAvailable(lobby, nowEpochMs())).toBe(true);
         fixture.nowEpochMs++;
-        expect(await groups.isTemporaryRoomAvailable(lobby, nowEpochMs())).toBe(false);
+        expect(await groups.isTemporaryGroupAvailable(lobby, nowEpochMs())).toBe(false);
         await expect(prepareMutation(fixture, connect('late'))).rejects.toThrow('event is no longer available');
         expect((await groups.findGroup(court))?.status).toBe('active');
     }

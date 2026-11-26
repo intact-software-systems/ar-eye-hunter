@@ -14,7 +14,7 @@ export async function verifyPausedGroupAdmission(
     const playerOperation = ingress.facts.internalAuthority === 'none' || ingress.facts.internalAuthority === 'guest-redemption';
     if (read.group.value.eventRoom || read.group.value.temporaryPlayerRoom) {
         if (playerOperation && operation !== 'disconnectPresence' &&
-            !await repository.isTemporaryRoomAvailable(read.group.value, now, read.group.entry.revision)) {
+            !await repository.isTemporaryGroupAvailable(read.group.value, now, read.group.entry.revision)) {
             throw new GroupMutationRejectedError('This temporary room or event is no longer available.');
         }
         return;

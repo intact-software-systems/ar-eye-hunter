@@ -81,7 +81,7 @@ export function registerTemporaryRoomRoutes(app: Hono, dependencies: GroupStateR
             if (!snapshot || !group || group.kind !== 'room' || group.status !== 'active' ||
                 group.guestInvitation?.verifier !== verifier || group.guestInvitation.expiresAtEpochMs <= now ||
                 (group.expiresAtEpochMs !== null && group.expiresAtEpochMs <= now) ||
-                (!await availableGuestSnapshot(snapshot, now, dependencies.isTemporaryRoomAvailable)) ||
+                (!await availableGuestSnapshot(snapshot, now, dependencies.isTemporaryGroupAvailable)) ||
                 (group.purgeAfterEpochMs !== null && group.purgeAfterEpochMs <= now)) {
                 return context.json({ error: 'Invitation unavailable.' }, 404);
             }

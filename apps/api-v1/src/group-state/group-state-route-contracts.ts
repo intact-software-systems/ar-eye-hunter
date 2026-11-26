@@ -371,7 +371,7 @@ export interface GroupStateRouteScopeContext {
 }
 
 export interface GroupStateRouteDependencies {
-    readonly isTemporaryRoomAvailable: GroupStateRepository['isTemporaryRoomAvailable'];
+    readonly isTemporaryGroupAvailable: GroupStateRepository['isTemporaryGroupAvailable'];
     readonly readLobbyOccupancy: GroupStateRepository['readLobbyOccupancy'];
     readonly sessionDirectory: Pick<GroupSessionDirectory, 'read' | 'listForPrincipal'>;
     readonly groupStateService: GroupStateRouteService;

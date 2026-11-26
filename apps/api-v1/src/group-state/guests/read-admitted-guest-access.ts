@@ -7,14 +7,14 @@ import { ApiMutationRouteFailure, createApiMutationFailure } from '../../routes/
 import type { GroupStateRouteDependencies } from '../group-state-route-contracts.ts';
 
 export async function readAdmittedGuestAccess(
-    dependencies: Pick<GroupStateRouteDependencies, 'groupStateService' | 'isTemporaryRoomAvailable' | 'nowEpochMs'>,
+    dependencies: Pick<GroupStateRouteDependencies, 'groupStateService' | 'isTemporaryGroupAvailable' | 'nowEpochMs'>,
     roomRef: GroupRef,
     credential: Awaited<ReturnType<typeof toRoomGuestCredential>>
 ): Promise<RoomGuestAccess> {
     // Replayed successes describe the original admission. A removed guest must not regain a credential.
     const snapshot = await dependencies.groupStateService.readCurrentSnapshot(roomRef);
     const now = dependencies.nowEpochMs();
-    const current = await availableGuestSnapshot(snapshot, now, dependencies.isTemporaryRoomAvailable);
+    const current = await availableGuestSnapshot(snapshot, now, dependencies.isTemporaryGroupAvailable);
     const member = current?.members.find(candidate => candidate.principalId === credential.clientId);
     if (!current || !member?.guestLease ||
         roomGuestAccessMode(current.group, member, now) === 'expired') {

@@ -28,7 +28,7 @@ import { GroupPresenceRepository } from './presence/group-presence-repository.ts
 import { RoomEventRepository } from '../../room-events/room-event-repository.ts';
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import { computeEmptyGroupLifetime, readArrivalRetention } from '../retention/compute-empty-group-lifetime.ts';
-import { readRoomEventLifetime } from '../../room-events/room-event-lifetime.ts';
+import { readRoomEventLifetime } from '../../room-events/read-room-event-lifetime.ts';
 
 export function createTransactionBoundGroupStateRepository(
     transaction: PSqlSql
@@ -51,7 +51,7 @@ export class GroupStateRepository extends GroupStateRepositoryReads {
         this.presence = new GroupPresenceRepository(repository);
     }
 
-    async isTemporaryRoomAvailable(group: Group, now: number, expectedRevision?: number): Promise<boolean> {
+    async isTemporaryGroupAvailable(group: Group, now: number, expectedRevision?: number): Promise<boolean> {
         if (group.status !== 'active' || (group.expiresAtEpochMs !== null && now >= group.expiresAtEpochMs)) return false;
         if (group.temporaryPlayerRoom) {
             const policy = readArrivalRetention(group);

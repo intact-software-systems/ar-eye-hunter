@@ -58,7 +58,7 @@ test('a valid invitation to a retired event stays unavailable while its room cle
     const snapshot = createGroupStateRouteSnapshotWithMember('park', 'owner', 'active');
     const guestInvitation = { verifier: await hashRoomInvitationSecret(invitationSecret), expiresAtEpochMs: 500 };
     const runtime = createGroupStateRouteTestRuntime({ installStateAuthentication: false, nowEpochMs: () => 100,
-        isTemporaryRoomAvailable: async () => false,
+        isTemporaryGroupAvailable: async () => false,
         groupService: { readCurrentSnapshot: async () => ({ ...snapshot, group: { ...snapshot.group, guestInvitation,
             eventRoom: { lobbyGroupId: 'park', organizerPlaying: false, emptyReturnWindowMs: 45_000 } } }) } });
     const response = await runtime.app.request(scopePath + '/groups/park/guests/preview', {
@@ -77,7 +77,7 @@ test('an empty private game ends previews, guest reads and replayed redemption a
     const snapshot = { ...previous, group: { ...previous.group, guestInvitation, temporaryPlayerRoom: true as const },
         members: previous.members.map(member => ({ ...member, guestLease: { admittedAtEpochMs: 0, expiresAtEpochMs: 14_400_000 } })) };
     const runtime = createGroupStateRouteTestRuntime({ installStateAuthentication: false, nowEpochMs: () => now,
-        isTemporaryRoomAvailable: async (_group, at) => at < 200,
+        isTemporaryGroupAvailable: async (_group, at) => at < 200,
         groupService: { readCurrentSnapshot: async () => snapshot },
         readGroupSnapshot: async () => ({ source: 'durable', status: 'found', snapshot }),
         processGuestAdmission: async () => Either.ofRight({ status: 'ok', result: { snapshot, event: null } }) });

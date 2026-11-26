@@ -90,10 +90,10 @@ it('ends an empty private room at its return cutoff before the retirement worker
         const room = (await fixture.repository.findGroup(RETENTION_REF))!;
         const redeem = await fixture.mutations.captureGuestMembershipMutationIngress(await commandFor(entrant), now);
         fixture.nowEpochMs += 999;
-        expect(await fixture.repository.isTemporaryRoomAvailable(room, fixture.nowEpochMs)).toBe(true);
+        expect(await fixture.repository.isTemporaryGroupAvailable(room, fixture.nowEpochMs)).toBe(true);
         expect((await retryMutation(fixture, redeem)).outcome).toBe('write');
         fixture.nowEpochMs++;
-        expect(await fixture.repository.isTemporaryRoomAvailable(room, fixture.nowEpochMs)).toBe(false);
+        expect(await fixture.repository.isTemporaryGroupAvailable(room, fixture.nowEpochMs)).toBe(false);
         await expect(retryMutation(fixture, redeem)).rejects.toThrow(/available/);
         expect((await fixture.repository.findGroup(RETENTION_REF))?.status).toBe('active');
     } finally { await fixture.storage.close(); }

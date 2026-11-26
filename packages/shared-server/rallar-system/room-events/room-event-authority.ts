@@ -50,7 +50,7 @@ export class RoomEventAuthority {
             event?.removed.includes(input.principalId)) {
             throw new GroupMutationAuthorizationError('A current lobby membership and session are required.');
         }
-        if (event && !await groups.isTemporaryRoomAvailable(lobby.value, now)) {
+        if (event && !await groups.isTemporaryGroupAvailable(lobby.value, now)) {
             throw new GroupMutationAuthorizationError('Event access has ended.');
         }
         const members = await groups.listMembers(input.lobby);

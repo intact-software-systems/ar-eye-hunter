@@ -322,7 +322,7 @@ function createTopology(): ApiV1RouteInstallerTopology {
         adminClientIds: ['admin'],
         readPlannedLayoutFingerprint: () => Promise.resolve(null),
         groupStateRepository: {
-            isTemporaryRoomAvailable: rejectUnusedOperation,
+            isTemporaryGroupAvailable: rejectUnusedOperation,
             readLobbyOccupancy: rejectUnusedOperation,
             findLobbyCommitmentEntry: async () => undefined,
             readLifecyclePolicy: () => Promise.resolve({ status: 'absent' as const })

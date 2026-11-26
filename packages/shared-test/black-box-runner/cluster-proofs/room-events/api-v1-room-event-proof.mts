@@ -80,8 +80,17 @@ async function runEventNight({ plans, controls }: ManagedClusterProof.ScenarioIn
     await command(second.baseUrl,adminHeaders,{body:{action:'remove',targetId:c.id}});
     await requestJson(first.baseUrl,event,{method:'GET',headers:c.headers,expectedStatus:403});
     const eastRelease = { ...release, groupId:'east', occurrence:east.occurrence };
+    await requestJson(second.baseUrl, toApiMutationRequestPath(event, crypto.randomUUID()), {
+        method: 'POST', headers: adminHeaders, body: eastRelease, expectedStatus: 400
+    });
+    const current = (await view(first.baseUrl, adminHeaders)).courts;
+    assert.ok(Array.isArray(current));
+    const eastCourt = current.map(court => requireRecord(court, 'Court')).find(court => court.groupId === 'east');
+    assert.ok(eastCourt);
+    assert.equal(eastCourt.occurrence, Number(east.occurrence) + 1);
+    const nextRelease = { ...eastRelease, occurrence: eastCourt.occurrence };
     const releaseId = crypto.randomUUID();
-    const [firstAck,secondAck] = await Promise.all([first,second].map(node => command(node.baseUrl,adminHeaders,{body:eastRelease,id:releaseId})));
+    const [firstAck,secondAck] = await Promise.all([first,second].map(node => command(node.baseUrl,adminHeaders,{body:nextRelease,id:releaseId})));
     assert.deepEqual(firstAck,secondAck);
     await command(first.baseUrl,adminHeaders,{body:{action:'close'}});
 }

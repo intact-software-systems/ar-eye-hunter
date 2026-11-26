@@ -74,7 +74,7 @@ test('temporary room management commands use the seated guest credential and sta
             guestLease: { admittedAtEpochMs: 100, expiresAtEpochMs: 14_400_100, temporaryManager: true as const } }))
     };
     const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
-    const { app } = createGroupStateRouteTestRuntime({ installStateAuthentication: false, nowEpochMs: () => 120, isTemporaryRoomAvailable: async () => true,
+    const { app } = createGroupStateRouteTestRuntime({ installStateAuthentication: false, nowEpochMs: () => 120, isTemporaryGroupAvailable: async () => true,
         requireApiAuthSession: async () => { throw authenticationRequired('Account sign-in required'); },
         processGroupAppInbox: captureGroupStateRouteWrite(enqueued, snapshot),
         readGroupSnapshot: async () => ({ source: 'durable', status: 'found', snapshot })

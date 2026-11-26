@@ -12,7 +12,7 @@ import type { AppInboxMessageContext } from '../app-inbox/app-inbox-contracts.ts
 import { writeAppOutboxInserts } from '../app-outbox/app-outbox-insert.ts';
 import { computeArchivePresenceFences } from '../group-state/retention/compute-group-retention-write.ts';
 import { groupStateUpdateGroupDescriptor } from '../group-state/persistence/aggregate/group-aggregate-write-descriptors.ts';
-import { readRoomEventLifetime } from './room-event-lifetime.ts';
+import { readRoomEventLifetime } from './read-room-event-lifetime.ts';
 import { AppOutboxType } from '../app-outbox/app-outbox-type.ts';
 import { installDurableDeadline, type DurableDeadlineDelivery } from '../app-outbox/install-durable-deadline.ts';
 import type { GroupMutationComputedWrite } from '../group-state/mutation/group-mutation-contracts.ts';

@@ -137,7 +137,7 @@ test(
             const createRouteApp = (service: TopologyInboxService) => {
                 const app = createTracedApiTestApp();
                 graphTopologyRoutes.registerGraphTopologyRoutes(app, {
-        isTemporaryRoomAvailable: async () => { throw new Error('Unexpected temporary room availability read'); },
+        isTemporaryGroupAvailable: async () => { throw new Error('Unexpected temporary room availability read'); },
                     strictReadAuthorization: false,
                     groupStateService: {
                         readCurrentSnapshot: (ref) => groupRepository.readSnapshot(ref)
