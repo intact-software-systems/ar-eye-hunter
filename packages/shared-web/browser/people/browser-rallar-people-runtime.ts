@@ -68,7 +68,8 @@ export class BrowserRallarPeopleRuntime implements RallarPeopleOperations {
             );
             const { clients, groups } = await refreshStateSnapshots(
                 operationScope,
-                toRallarWorkflowPolicies(operationOptions)
+                toRallarWorkflowPolicies(operationOptions),
+                context.session
             );
             await this.input.acceptSnapshots({
                 context,
