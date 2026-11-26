@@ -107,15 +107,17 @@ function toRelayResyncNackWait(sender: AlmConformanceStepInput): RallarBlackBoxT
 
 /**
  * Over the RTC carriers the receiver is the hop that refuses the gapped send, so it proves its own verdict (D44) and,
- * when the lane installed the recording owner on its channel, the owner's one invocation with the track's cursor.
+ * when the lane installed the recording owner on its channel, the owner's one invocation with the track's cursor. Over
+ * ws the relay refuses the send before the receiver sees it, so the same recording owner is proved never invoked.
  */
 function toOrderingResyncReceiverCommands(
     receiver: AlmConformanceStepInput
 ): readonly RallarBlackBoxTestCommand[] {
     const [delivered, absentSecond] = toSingleArrivalReceiverCommands(receiver);
     const refusal = RESYNC_CELLS[receiver.input.carrier].outcome;
+    const recordsOwner = receiver.input.recoveryOwner === 'record';
     if (refusal.by === 'trusted-server') {
-        return [delivered, absentSecond];
+        return [delivered, absentSecond, ...(recordsOwner ? [toNoRecoveryOwnerInvocationWait(receiver)] : [])];
     }
     return [
         delivered,
@@ -124,7 +126,7 @@ function toOrderingResyncReceiverCommands(
             contains: `"carrier":"rtc","outcome":"not-handled","reason":"${refusal.reason}"`,
             timeoutMs: toVerdictTimeoutMs(receiver.input.deadlineMs)
         }),
-        ...(receiver.input.recoveryOwner === 'record' ? toRecoveryOwnerWaits(receiver) : []),
+        ...(recordsOwner ? toRecoveryOwnerWaits(receiver) : []),
         absentSecond
     ];
 }
@@ -143,7 +145,7 @@ function toRecoveryOwnerWaits(receiver: AlmConformanceStepInput): readonly Ralla
             name: 'recovery-owner-invoked',
             topic: ALM_STORAGE_DIAGNOSTICS_TOPIC,
             historyFrom: 'cell',
-            contains: `"kind":"recovery-owner-invoked","orderingKey":"${toOrderingKey(receiver)}",`
+            contains: toRecoveryOwnerInvocationText(receiver)
         }),
         toDiagnosticWait({
             step: receiver,
@@ -153,4 +155,24 @@ function toRecoveryOwnerWaits(receiver: AlmConformanceStepInput): readonly Ralla
             contains: cursor
         })
     ];
+}
+
+/**
+ * The page states no invocation of the owner for the cell's track, from the cell's first event to the end of this
+ * wait's own window. The wait follows the window in which no second arrival came, so its history holds that window.
+ */
+function toNoRecoveryOwnerInvocationWait(receiver: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+    return toDiagnosticWait({
+        step: receiver,
+        name: 'no-recovery-owner-invoked',
+        topic: ALM_STORAGE_DIAGNOSTICS_TOPIC,
+        historyFrom: 'cell',
+        absent: true,
+        contains: toRecoveryOwnerInvocationText(receiver)
+    });
+}
+
+/** How the `recovery-owner-invoked` event of the cell's track begins: its kind, then the track's ordering key. */
+function toRecoveryOwnerInvocationText(receiver: AlmConformanceStepInput): string {
+    return `"kind":"recovery-owner-invoked","orderingKey":"${toOrderingKey(receiver)}",`;
 }

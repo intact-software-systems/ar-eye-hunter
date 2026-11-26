@@ -375,7 +375,6 @@ const UNPROVEN_CELLS = [
     ['reply', 'rtc', '`reply-correlated` over this carrier'],
     ['left-sender-send', 'rtc', LEFT_SENDER_CELL],
     ['left-sender-send', 'rtc-with-ws-fallback', LEFT_SENDER_CELL],
-    ['resync-recovery-owner', 'ws', 'an absent `recovery-owner-invoked` wait in `ordering-resync` over this carrier'],
     [
         'snapshot-floor-catch-up',
         'rtc-with-ws-fallback',

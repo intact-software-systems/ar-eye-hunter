@@ -525,8 +525,36 @@ describe('ordering-resync observes the recovery owner', () => {
         });
     });
 
-    it('leaves the ws receiver without an owner wait: the relay refuses the gapped send before the receiver sees it', () => {
+    it('reads that the ws receiver\'s recorded owner is never invoked, after the absence proof: the relay refuses the gapped send before the receiver sees it', () => {
         const { receiver } = findScenario({ ...toConformanceInput('ws'), recoveryOwner: 'record' }, 'ordering-resync');
+
+        expect(toCommandNames(receiver)).toEqual([
+            'ensure-group',
+            'ensure-member',
+            'connect',
+            'received-1',
+            'received-2',
+            'no-recovery-owner-invoked',
+            'stats'
+        ]);
+        // The wait reads the cell's whole history on the page, so it spans the absence window before it and its own.
+        expect(findCommand(receiver, 'no-recovery-owner-invoked')).toEqual({
+            kind: 'wait',
+            commandId: 'alm-ws-ordering-resync-receiver-no-recovery-owner-invoked',
+            match: {
+                kind: 'diagnostic',
+                topic: STORAGE_TOPIC,
+                payloadPath: 'data',
+                contains: '"kind":"recovery-owner-invoked","orderingKey":"alm-ws-ordering-resync",',
+                sinceCommandIdPrefix: 'alm-ws-ordering-resync-receiver-'
+            },
+            absent: true,
+            timeoutMs: 5_000
+        });
+    });
+
+    it('leaves the ws receiver as the hosted recipe records it when the lane names no owner', () => {
+        const { receiver } = findScenario(toConformanceInput('ws'), 'ordering-resync');
 
         expect(toCommandNames(receiver)).toEqual(['ensure-group', 'ensure-member', 'connect', 'received-1', 'received-2', 'stats']);
     });
@@ -535,7 +563,7 @@ describe('ordering-resync observes the recovery owner', () => {
         const { receiver } = findScenario(toConformanceInput(carrier), 'ordering-resync');
 
         expect(findCommand(receiver, 'connect')).not.toMatchObject({ rallar: { recoveryOwner: 'record' } });
-        expect(toCommandNames(receiver)).not.toContain('recovery-owner-invoked');
+        expect(toCommandNames(receiver).filter((name) => name.includes('recovery-owner'))).toEqual([]);
     });
 });
 

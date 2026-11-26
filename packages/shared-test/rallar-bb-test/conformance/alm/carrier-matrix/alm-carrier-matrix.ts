@@ -782,7 +782,7 @@ export const ALM_CARRIER_MATRIX = {
     },
     'resync-recovery-owner': {
         statement:
-            'A gap past the repair window is refused where the track is ordered; a receiver that orders it tells its recovery owner.',
+            'A gap past the repair window is refused where the track is ordered; a receiver that orders it tells its recovery owner, and one the WS server orders it for never sees the send, so its owner is told nothing.',
         cells: {
             ws: {
                 kind: 'stated',
@@ -795,10 +795,6 @@ export const ALM_CARRIER_MATRIX = {
                         testName: 'states the trusted server rejection of the gapped send with ack $ack',
                         because:
                             'The origin states the gapped send rejected by the trusted server, `resync-required`; without a receipt its handle stays `transport-accepted`.'
-                    },
-                    {
-                        kind: 'unproven',
-                        closedBy: 'an absent `recovery-owner-invoked` wait in `ordering-resync` over this carrier'
                     }
                 ]
             },

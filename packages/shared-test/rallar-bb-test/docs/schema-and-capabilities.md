@@ -829,7 +829,10 @@ RTC receivers add two waits on `rallar.browser.alm.storage` for the one `recover
 `recovery-owner-invoked` matches the event's kind and the cell's ordering key, `recovery-owner-cursor`
 the cursor it handed the owner (`lastContiguousSeq: 1`, `expectedSeq: 2`, `observedSeq: 300`, carrier
 `rtc`); the sender's peer id sits between them in the emitted order, so one `contains` cannot span both.
-Over `ws` the relay refuses the gapped send before the receiver sees it, so no owner is invoked there.
+Over `ws` the relay refuses the gapped send before the receiver sees it, so no owner is invoked there: the
+`ws` receiver ends on `no-recovery-owner-invoked`, an `absent: true` wait for the same kind and ordering
+key. It follows the receiver's absence window and reads the cell's history from its first event, so the
+page stated no invocation in that window or in the wait's own 5 s.
 The hosted combined recipe shares one connect across its cells and names no owner, so manifest 18 carries
 neither the field nor the waits.
 
