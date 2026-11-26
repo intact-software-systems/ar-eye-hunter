@@ -1,6 +1,6 @@
 // A lost write leaves no stored trace, so where a case must count attempts its record is the list its own seam appends
 // to; every other fact is read from stored state after a positive stored fact shows the step ran.
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
@@ -21,22 +21,30 @@ import {
     createInboundTestStores,
     INBOUND_TEST_SENDER_PEER_ID,
     INBOUND_TEST_SOURCE,
+    isInboundAdmissionWriteOf,
     planInboundTestMessage,
     readInboundTestWorkRows,
+    restoreInboundWritesOnRetention,
     runInboundWorkDueNow,
+    setNextInboundAdmissionParked,
+    type CreateInboundTestRuntimeInput,
     type InboundTestRuntime
 } from '../inbound-runtime-test-fixture.ts';
 
 afterEach(() => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
 });
 
 const FIRST = createInboundTestMessage({ msgId: 'message-1', seq: 1 });
 const SECOND = createInboundTestMessage({ msgId: 'message-2', seq: 2 });
 const TRACK_KEY = toALOrderingTrackKey(FIRST)!;
 
-function createRuntime(name: string, plan?: (msg: ALMessage) => void): InboundTestRuntime {
+type ReplayDependencies = Pick<CreateInboundTestRuntimeInput, 'readPendingAdmissionAuthority' | 'onReplayAdmitted'>;
+
+function createRuntime(name: string, plan?: (msg: ALMessage) => void, replay: ReplayDependencies = {}): InboundTestRuntime {
     return createInboundTestRuntime({
+        ...replay,
         carrier: 'ws',
         stores: createInboundTestStores({
             namespace: `inbound-lost-admission-write-${name}`,
@@ -62,7 +70,9 @@ function loseNextAdmissionWrites(admissionStore: ALInboundAdmissionStore, count:
 /** Each retained `admit-message` row the lane's store holds: the message it keeps and the row's status. */
 async function readRetainedAdmissions(stores: ALInboundRuntimeStores) {
     return (await readInboundTestWorkRows(stores)).flatMap((row) =>
-        row.payload.kind === 'admit-message' ? [{ msgId: row.payload.msg.id.msgId, status: row.entry.status }] : []
+        row.payload.kind === 'admit-message'
+            ? [{ msgId: row.payload.msg.id.msgId, status: row.entry.status, attempts: row.entry.dequeueAudit.attempts }]
+            : []
     );
 }
 
@@ -104,7 +114,7 @@ it('parks an admission that loses exactly three writes', async () => {
     expect((await fixture.runtime.admitIncomingMessage(FIRST, INBOUND_TEST_SOURCE)).right)
         .toEqual({ kind: 'pending-admission' });
 
-    expect(await readRetainedAdmissions(fixture.stores)).toEqual([{ msgId: 'message-1', status: EntityStatus.NEW }]);
+    expect(await readRetainedAdmissions(fixture.stores)).toEqual([{ msgId: 'message-1', status: EntityStatus.NEW, attempts: 0 }]);
     expect(fixture.delivered).toEqual([]);
 });
 
@@ -137,7 +147,7 @@ it('answers a readmission that waits for its first delivery as waiting, and reta
     plans.length = 0;
 
     expect((await fixture.runtime.admitIncomingMessage(origin, wsArrival)).right).toEqual({ kind: 'pending-admission' });
-    expect(await readRetainedAdmissions(fixture.stores)).toEqual([{ msgId: 'queued-first', status: EntityStatus.NEW }]);
+    expect(await readRetainedAdmissions(fixture.stores)).toEqual([{ msgId: 'queued-first', status: EntityStatus.NEW, attempts: 0 }]);
     // One attempt plans twice, before its read and against it; a lane that attempted again would plan twice more.
     expect(plans).toEqual(['plan queued-first', 'plan queued-first']);
 });
@@ -209,6 +219,208 @@ it('makes no further attempt once its runtime is disposed, and retains its lost 
         .toEqual({ kind: 'pending-admission' });
     await disposing;
 
-    expect(await readRetainedAdmissions(fixture.stores)).toEqual([{ msgId: 'message-1', status: EntityStatus.NEW }]);
+    expect(await readRetainedAdmissions(fixture.stores)).toEqual([{ msgId: 'message-1', status: EntityStatus.NEW, attempts: 0 }]);
     expect(steps).toEqual(['plan message-1', 'plan message-1', 'disposed']);
 });
+
+describe('a replay of a retained admission', () => {
+    // A replay that lost once went back to the work queue as a retry, where the rotation left it for tens of seconds
+    // while its track's later messages waited behind it.
+    it('a replay whose write is lost admits its message in the same claim and hands it to its owner once', async () => {
+        const replay = createReplayRuntime('replay-one-loss');
+        await retainForReplay(replay, FIRST, () => loseReplayWritesOf(replay, FIRST, 1));
+
+        await runInboundWorkDueNow(replay.fixture);
+
+        expect(await readRetainedAdmissions(replay.fixture.stores))
+            .toEqual([{ msgId: 'message-1', status: EntityStatus.COMPLETED, attempts: 1 }]);
+        expect(readDeliveredIds(replay.fixture)).toEqual(['message-1']);
+        expect(replay.handedOver).toEqual(['message-1']);
+        // Each attempt asks the authority again: the one whose write was lost and the one that admitted.
+        expect(replay.authorityReads).toEqual(['message-1', 'message-1']);
+    });
+
+    // The bound holds for a replay: a fourth attempt would commit, and a replay that lost three writes would admit.
+    it('a replay that loses three writes goes back as retry and states pending again', async () => {
+        const replay = createReplayRuntime('replay-three-losses');
+        await retainForReplay(replay, FIRST, () => loseReplayWritesOf(replay, FIRST, 3));
+
+        // One round only: the row it retries is due at once, and the next claim's write is the store's own.
+        void replay.fixture.queueEngine.executeOnce();
+
+        await expect.poll(async () => await readRetainedAdmissions(replay.fixture.stores))
+            .toEqual([{ msgId: 'message-1', status: EntityStatus.RETRY, attempts: 1 }]);
+        expect(readAdmissionOutcomes(replay.fixture, FIRST)).toEqual([
+            { outcome: 'pending', reason: 'pending-admission' },
+            { outcome: 'pending', reason: 'pending-admission' }
+        ]);
+        expect(replay.fixture.delivered).toEqual([]);
+        expect(replay.handedOver).toEqual([]);
+        expect(replay.authorityReads).toEqual(['message-1', 'message-1', 'message-1']);
+    });
+
+    // The last of a replay's bounded attempts still asks, reads, decides and writes.
+    it('a replay that loses two writes admits its message in the same claim and delivers it once', async () => {
+        const replay = createReplayRuntime('replay-two-losses');
+        await retainForReplay(replay, FIRST, () => loseReplayWritesOf(replay, FIRST, 2));
+
+        await runInboundWorkDueNow(replay.fixture);
+
+        expect(await readRetainedAdmissions(replay.fixture.stores))
+            .toEqual([{ msgId: 'message-1', status: EntityStatus.COMPLETED, attempts: 1 }]);
+        expect(readDeliveredIds(replay.fixture)).toEqual(['message-1']);
+        expect(replay.handedOver).toEqual(['message-1']);
+    });
+
+    // A fresh attempt that kept the authorization its first attempt was given would admit a message its authority
+    // now refuses.
+    it('a replay whose authority rejects the message after its first lost write answers the rejection', async () => {
+        const replay = createReplayRuntime('replay-rejected');
+        await retainForReplay(replay, FIRST, () =>
+            loseReplayWritesOf(replay, FIRST, 1, () => {
+                replay.authority.next = { kind: 'rejected' };
+            }));
+
+        await runInboundWorkDueNow(replay.fixture);
+
+        expect(await readRetainedAdmissions(replay.fixture.stores))
+            .toEqual([{ msgId: 'message-1', status: EntityStatus.COMPLETED, attempts: 1 }]);
+        expect(readAdmissionOutcomes(replay.fixture, FIRST).at(-1)).toEqual({ outcome: 'unauthorized', reason: 'unauthorized' });
+        expect(await replay.fixture.stores.admissionStore.readDeliverySurface(FIRST.id, Date.now())).toBeUndefined();
+        expect(replay.fixture.delivered).toEqual([]);
+        expect(replay.handedOver).toEqual([]);
+        expect(replay.authorityReads).toEqual(['message-1', 'message-1']);
+    });
+
+    // The same kept authorization: an authority that cannot judge the message yet must hold the fresh attempt back.
+    it('a replay whose authority asks for a retry after its first lost write answers not-ready and admits nothing', async () => {
+        const replay = createReplayRuntime('replay-not-ready');
+        await retainForReplay(replay, FIRST, () =>
+            loseReplayWritesOf(replay, FIRST, 1, () => {
+                replay.authority.next = { kind: 'retry', retryAfterMs: 60_000 };
+            }));
+
+        await runInboundWorkDueNow(replay.fixture);
+
+        // The claim's second attempt asked the authority, which answered that it cannot judge the message yet.
+        expect(replay.authorityReads).toEqual(['message-1', 'message-1']);
+        // A row not ready yet gives its claim back, so it counts no attempt; a lost write would have counted one.
+        expect(await readRetainedAdmissions(replay.fixture.stores))
+            .toEqual([{ msgId: 'message-1', status: EntityStatus.RETRY, attempts: 0 }]);
+        expect(readAdmissionOutcomes(replay.fixture, FIRST)).toEqual([{ outcome: 'pending', reason: 'pending-admission' }]);
+        expect(await replay.fixture.stores.admissionStore.readDeliverySurface(FIRST.id, Date.now())).toBeUndefined();
+        expect(replay.fixture.delivered).toEqual([]);
+        expect(replay.handedOver).toEqual([]);
+    });
+
+    // A fresh attempt that kept its first attempt's deadline check would admit a message past its deadline.
+    it('a replay whose deadline passes during its lost write answers expired', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(1_800_000_000_000);
+        const message = createInboundTestMessage({ msgId: 'expiring', seq: 1 });
+        const replay = createReplayRuntime('replay-expired');
+        await retainForReplay(replay, message, () =>
+            loseReplayWritesOf(replay, message, 1, () => {
+                // Past the message's 60 s lifetime.
+                vi.setSystemTime(Date.now() + 120_000);
+            }));
+
+        await runInboundWorkDueNow(replay.fixture);
+
+        expect(readAdmissionOutcomes(replay.fixture, message).at(-1)).toEqual({ outcome: 'rejected', reason: 'expired' });
+        // The verdict shows the claim ran; its row, past its deadline, is gone with it.
+        expect(await readRetainedAdmissions(replay.fixture.stores)).toEqual([]);
+        expect(replay.fixture.delivered).toEqual([]);
+        expect(replay.handedOver).toEqual([]);
+    });
+
+    // An owner that kept attempting after its disposal would ask, plan and write again for a lane going away.
+    it('a replay cut short by disposal during its lost write makes no further attempt and states nothing', async () => {
+        const replay = createReplayRuntime('replay-disposed');
+        let disposing: Promise<void> | undefined;
+        await retainForReplay(replay, FIRST, () =>
+            loseReplayWritesOf(replay, FIRST, 1, () => {
+                replay.steps.push('disposed');
+                disposing = replay.fixture.runtime.dispose();
+            }));
+        replay.steps.length = 0;
+
+        await runInboundWorkDueNow(replay.fixture);
+        await disposing;
+
+        // One attempt plans twice, before its read and against it; a replay that attempted again would plan twice more.
+        expect(replay.steps).toEqual(['plan message-1', 'plan message-1', 'disposed']);
+        expect(replay.authorityReads).toEqual(['message-1']);
+        expect(readAdmissionOutcomes(replay.fixture, FIRST)).toEqual([{ outcome: 'pending', reason: 'pending-admission' }]);
+        expect(replay.fixture.delivered).toEqual([]);
+    });
+});
+
+interface ReplayRuntime {
+    readonly fixture: InboundTestRuntime;
+    /** One entry per ask of the replay's authority, recorded by the authority this case composes. */
+    readonly authorityReads: string[];
+    /** Each message handed to the replay's owner, recorded by the owner this case composes. */
+    readonly handedOver: string[];
+    /** Each plan the runtime made and each step a case's seam took, in order. */
+    readonly steps: string[];
+    /** What the authority answers next; `undefined` authorizes the source the message was kept under. */
+    readonly authority: { next: ALInboundMessageRuntime.PendingAuthority | undefined; };
+}
+
+function createReplayRuntime(name: string): ReplayRuntime {
+    const authorityReads: string[] = [];
+    const handedOver: string[] = [];
+    const steps: string[] = [];
+    const authority: ReplayRuntime['authority'] = { next: undefined };
+    const fixture = createRuntime(name, (msg) => steps.push(`plan ${msg.id.msgId}`), {
+        readPendingAdmissionAuthority: async (msg, source) => {
+            authorityReads.push(msg.id.msgId);
+            return authority.next ?? { kind: 'authorized', source };
+        },
+        onReplayAdmitted: async (admitted) => {
+            handedOver.push(admitted.msg.id.msgId);
+        }
+    });
+    return { fixture, authorityReads, handedOver, steps, authority };
+}
+
+/**
+ * Retains `msg`'s arrival, every attempt's write lost, and runs `arrangeReplay` as its row is written, once the store's
+ * own commit is back: what the replay's writes meet is what the case arranges.
+ */
+async function retainForReplay(replay: ReplayRuntime, msg: ALMessage, arrangeReplay: () => void): Promise<void> {
+    const { stores, runtime } = replay.fixture;
+    const restoreWrites = setNextInboundAdmissionParked(stores.admissionStore);
+    restoreInboundWritesOnRetention(stores, () => {
+        restoreWrites();
+        arrangeReplay();
+    });
+
+    expect((await runtime.admitIncomingMessage(msg, INBOUND_TEST_SOURCE)).right).toEqual({ kind: 'pending-admission' });
+}
+
+/**
+ * The next `count` admission writes of `msg` lose, each after `onLoss` ran; every other write, and every later one, is
+ * the store's own.
+ */
+function loseReplayWritesOf(replay: ReplayRuntime, msg: ALMessage, count: number, onLoss: () => void = () => {}): void {
+    const { admissionStore } = replay.fixture.stores;
+    const commit = admissionStore.commitBundle.bind(admissionStore);
+    let lost = 0;
+    vi.spyOn(admissionStore, 'commitBundle').mockImplementation(async (bundle) => {
+        if (lost === count || !isInboundAdmissionWriteOf(bundle, msg.id)) {
+            return await commit(bundle);
+        }
+        lost += 1;
+        onLoss();
+        return 'conflict';
+    });
+}
+
+/** The `admission-outcome` events stated about `msg`, in the order they were stated. */
+function readAdmissionOutcomes(fixture: InboundTestRuntime, msg: ALMessage) {
+    return fixture.diagnostics.flatMap((event) =>
+        event.kind === 'admission-outcome' && event.msgId === msg.id.msgId ? [{ outcome: event.outcome, reason: event.reason }] : []
+    );
+}

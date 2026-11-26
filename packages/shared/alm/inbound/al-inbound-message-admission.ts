@@ -12,6 +12,7 @@ import {
     isALInboundOriginAuthenticatedReadmission
 } from './admission/is-al-inbound-origin-authenticated-readmission.ts';
 import { recordALInboundOrderingPosition } from './admission/record-al-inbound-ordering-position.ts';
+import { retryALInboundLostWrite } from './admission/retry-al-inbound-lost-write.ts';
 import { validateALInboundCommitBundle } from './admission/validate-al-inbound-commit-bundle.ts';
 import type { ALInboundAdmissionRead, ALInboundCommitBundle, ALInboundPlanner } from './al-inbound-admission-store.ts';
 import { toALInboundLocalDeliveryEffectId } from './al-inbound-effect-intent.ts';
@@ -47,6 +48,16 @@ const REPLAY_STORED_SCOPE_REFUSED: ALInboundMessageAdmission.ReplayResult = {
     wroteWork: false,
     admission: REPLAY_UNAUTHORIZED_ADMISSION
 };
+
+/** A replay whose every attempt lost its write is retained still, so it states pending again. */
+const REPLAY_LOST_EVERY_WRITE: ALInboundMessageAdmission.ReplayResult = {
+    outcome: 'retry',
+    wroteWork: false,
+    admission: Either.ofRight({ kind: 'pending-admission' })
+};
+
+/** One replay attempt's answer: `conflict` when its write lost, so the next attempt asks its authority and reads again. */
+type ALInboundReplayAttempt = ALInboundMessageAdmission.ReplayResult | 'conflict';
 
 /** A message past its deadline, found before its write or by the write itself: nothing was written for it. */
 const ATTEMPT_EXPIRED: ALInboundMessageAdmission.Attempt = {
@@ -368,7 +379,20 @@ export class ALInboundMessageAdmission {
             : { kind: 'not-admitted', reason: 'pending admission has terminated' };
     }
 
+    /**
+     * Replays a retained admission, and replays it again at once while its write is lost, three attempts in all. A
+     * replay runs later than the arrival it replays, so each attempt asks its authority, its deadline and its stored
+     * scope again; one whose every write lost is retained still.
+     */
     async replay(pending: ALInboundPendingAdmission): Promise<ALInboundMessageAdmission.ReplayResult> {
+        const replayed = await retryALInboundLostWrite<ALInboundReplayAttempt>({
+            attempt: () => this.replayOnce(pending),
+            isLostWrite: (answer) => answer === 'conflict'
+        });
+        return replayed === 'conflict' ? REPLAY_LOST_EVERY_WRITE : replayed;
+    }
+
+    private async replayOnce(pending: ALInboundPendingAdmission): Promise<ALInboundReplayAttempt> {
         const authority = await this.dependencies.readPendingAdmissionAuthority?.(pending.msg, pending.source) ??
             { kind: 'authorized', source: pending.source };
         if (pending.msg.constraints.expiresAtMs <= this.dependencies.clock.nowMs()) {
@@ -383,12 +407,15 @@ export class ALInboundMessageAdmission {
         return await this.replayAuthorized(pending.msg, authority, pending.source);
     }
 
-    /** One fresh attempt under the source its current authority answered with; an admission is handed to its owner. */
+    /**
+     * One fresh attempt under the source its current authority answered with: `conflict` when its write lost and the
+     * admission is not shut down, and an admission is handed to its owner.
+     */
     private async replayAuthorized(
         msg: ALMessage,
         authority: Extract<ALInboundMessageRuntime.PendingAuthority, { kind: 'authorized'; }>,
         pendingSource: ALInboundMessageRuntime.Source
-    ): Promise<ALInboundMessageAdmission.ReplayResult> {
+    ): Promise<ALInboundReplayAttempt> {
         const { source } = authority;
         const authorization = await readALInboundMessageAuthorization(
             msg,
@@ -407,6 +434,9 @@ export class ALInboundMessageAdmission {
             return toRejectedReplay(result.left);
         }
         const attempt = result.right!;
+        if (attempt.kind === 'conflict' && !this.shutdown.signal.aborted) {
+            return 'conflict';
+        }
         if (attempt.kind === 'completed' && attempt.acceptance.kind === 'admitted' && !this.shutdown.signal.aborted) {
             await this.dependencies.onReplayAdmitted?.({
                 msg,
@@ -441,10 +471,7 @@ function toRejectedReplay(rejection: ALMessageRejection): ALInboundMessageAdmiss
     };
 }
 
-/**
- * A replay that conflicts again, or waits for its first delivery, is retained still, so it states pending again;
- * shutdown reached no verdict.
- */
+/** A replay that waits for its first delivery is retained still, so it states pending again; shutdown reached no verdict. */
 function toAttemptReplay(
     attempt: ALInboundMessageAdmission.Attempt,
     shutDown: boolean

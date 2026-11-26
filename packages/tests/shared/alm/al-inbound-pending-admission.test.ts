@@ -328,20 +328,21 @@ const REPLAYS_THAT_HAND_NOTHING_OVER: readonly (readonly [string, EntityStatus |
         expect(delivered).toHaveLength(1);
         return stores;
     }],
-    ['a commit that conflicts again', EntityStatus.RETRY, async (onReplayAdmitted) => {
+    ['a commit that conflicts on each of its attempts', EntityStatus.RETRY, async (onReplayAdmitted) => {
         let authorityReads = 0;
         const { fixture } = await startReplayThatConflictsAgain({
-            // The first replay runs its attempt; every later one is held, so the row is read before its second replay.
+            // Each of the first replay's three attempts asks its authority and reaches its write; the next replay is
+            // held, so the row is read after the first replay released it.
             readPendingAdmissionAuthority: async (_msg, source) => {
                 authorityReads++;
-                return authorityReads === 1 ? { kind: 'authorized', source } : { kind: 'retry', retryAfterMs: 60_000 };
+                return authorityReads <= 3 ? { kind: 'authorized', source } : { kind: 'retry', retryAfterMs: 60_000 };
             },
             onReplayAdmitted
         });
         await expect.poll(async () => {
             await fixture.queueEngine.executeOnce();
             return authorityReads;
-        }).toBeGreaterThan(1);
+        }).toBeGreaterThan(3);
         return fixture.stores;
     }],
     ['a shutdown before its verdict', EntityStatus.RETRY, async (onReplayAdmitted) => {
@@ -765,7 +766,8 @@ it('a diagnostics sink that throws leaves a replay\'s delivery and its claim unc
     expect(withThrowingSink).toEqual(await deliveredWith(undefined));
 });
 
-it('a replay that conflicts again states pending again', async () => {
+// A replay whose every attempt lost its write is retained still: stating nothing, or an admission, would hide it.
+it('a replay that conflicts on each of its attempts states pending again', async () => {
     const { fixture, message } = await startReplayThatConflictsAgain({});
 
     await expect.poll(async () => {
@@ -853,7 +855,7 @@ interface StartedReplay {
     readonly message: ALMessage;
 }
 
-/** A conflicted admission retained, whose replay's own write meets the fence again. */
+/** A conflicted admission retained, whose first replay's own write meets the fence again on each of its attempts. */
 async function startReplayThatConflictsAgain(input: ReplayArrangementInput): Promise<StartedReplay> {
     const fixture = createInboundTestRuntime({
         carrier: 'rtc',
@@ -867,8 +869,12 @@ async function startReplayThatConflictsAgain(input: ReplayArrangementInput): Pro
     const restoreWrites = setNextInboundAdmissionParked(fixture.stores.admissionStore);
     restoreInboundWritesOnRetention(fixture.stores, () => {
         restoreWrites();
-        // The replay's own write meets the fence again, as when another arrival moved the surface once more.
-        vi.spyOn(fixture.stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
+        // The replay's own write meets the fence again on each of its three attempts, as when other arrivals moved the
+        // surface each time; the next replay's write is the store's own.
+        const commitBundle = vi.spyOn(fixture.stores.admissionStore, 'commitBundle');
+        for (let attempt = 0; attempt < 3; attempt++) {
+            commitBundle.mockResolvedValueOnce('conflict');
+        }
     });
 
     expect((await fixture.runtime.admitIncomingMessage(message, PENDING_SOURCE)).right).toEqual({ kind: 'pending-admission' });
