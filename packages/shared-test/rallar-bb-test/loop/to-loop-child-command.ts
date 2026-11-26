@@ -19,10 +19,13 @@ export interface LoopChildCommandInput {
     readonly deadlineEpochMs?: number;
 }
 
-type LoopPlaceholderName = 'index' | 'iteration' | 'elapsedMs' | 'atEpochMs' | 'commandIndex';
+const LOOP_PLACEHOLDER_NAMES = ['index', 'iteration', 'elapsedMs', 'atEpochMs', 'commandIndex'] as const;
 
-const LOOP_PLACEHOLDER_PATTERN = /\{loop\.(index|iteration|elapsedMs|atEpochMs|commandIndex)\}/g;
-const LOOP_EXACT_PLACEHOLDER_PATTERN = /^\{loop\.(index|iteration|elapsedMs|atEpochMs|commandIndex)\}$/;
+type LoopPlaceholderName = (typeof LOOP_PLACEHOLDER_NAMES)[number];
+
+const LOOP_PLACEHOLDER_PATTERN_SOURCE = `\\{loop\\.(${LOOP_PLACEHOLDER_NAMES.join('|')})\\}`;
+const LOOP_PLACEHOLDER_PATTERN = new RegExp(LOOP_PLACEHOLDER_PATTERN_SOURCE, 'g');
+const LOOP_EXACT_PLACEHOLDER_PATTERN = new RegExp(`^${LOOP_PLACEHOLDER_PATTERN_SOURCE}$`);
 
 export function toLoopChildCommand(input: LoopChildCommandInput): RallarBlackBoxTestCommand {
     const { template, context, deadlineEpochMs } = input;

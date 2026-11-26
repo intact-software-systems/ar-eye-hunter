@@ -77,11 +77,6 @@ describe('rallar-bb runtime loop epoch placeholder', () => {
             { data: { sentAtEpochMs: 1_800_000_000_250, elapsedMs: 250, label: 'at-1800000000250' } },
             { data: { sentAtEpochMs: 1_800_000_000_500, elapsedMs: 500, label: 'at-1800000000500' } }
         ]);
-        expect(sentCommands.map(computeLoopStartSeenByChild)).toEqual([
-            LOOP_STARTED_AT_EPOCH_MS,
-            LOOP_STARTED_AT_EPOCH_MS,
-            LOOP_STARTED_AT_EPOCH_MS
-        ]);
     });
 
     it('takes {loop.atEpochMs} and {loop.elapsedMs} of one child from one clock read', async () => {

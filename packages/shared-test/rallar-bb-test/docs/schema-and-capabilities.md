@@ -106,8 +106,9 @@ accepted layout at the readiness group revision, and a layout that settled earli
 the buffered events and released at once. The accepted overlay's `updatedAtEpochMs` is no anchor: it is
 the server's planning time, before the promotion. An epoch later than the wait's start counts from the
 start, so the wait never outlasts its own timeout. A recipe whose `timeoutFrom` is not one token, which a
-loop child may key by its `{loop.*}` placeholders, is refused when it is loaded; at run time a token
-naming no finite number fails the wait with `RALLAR_BLACK_BOX_WAIT_INVALID`.
+loop child may key by `{loop.index}`, `{loop.iteration}`, `{loop.elapsedMs}` or `{loop.commandIndex}` and
+by no other placeholder, is refused when it is loaded; at run time a token naming no finite number fails
+the wait with `RALLAR_BLACK_BOX_WAIT_INVALID`.
 
 `formation.readiness` reports `acceptedHeldSinceEpochMs` beside the formation summary and omits it while
 no layout is accepted, so the scale recipes gate the stable-layout loop on its presence and fail within
