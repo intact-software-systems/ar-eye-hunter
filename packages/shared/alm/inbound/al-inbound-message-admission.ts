@@ -182,7 +182,7 @@ export class ALInboundMessageAdmission {
         if (readmission && await this.isFirstDeliveryQueued(admitted)) {
             return Either.ofRight({ kind: 'waiting', pending: toPendingAdmission(admitted, deadline, source) });
         }
-        return await this.commitAttempt({ msg, source, preparation, read, plan, readmission, deadline });
+        return await this.writeAttempt({ msg, source, preparation, read, plan, readmission, deadline });
     }
 
     /** What an attempt holds before its store read: the message with its deadline, decoded, and its effect facts. */
@@ -210,7 +210,8 @@ export class ALInboundMessageAdmission {
         return Either.ofRight({ admitted, nowMs, prePlan, originAuthenticated, facts });
     }
 
-    private computeAttemptBundle(decision: ALInboundAttemptDecision): ALInboundCommitBundle {
+    /** The bundle the decision computes, with what may be forwarded and the recorded parent's presence read now. */
+    private readAttemptBundle(decision: ALInboundAttemptDecision): ALInboundCommitBundle {
         const { preparation, read, plan } = decision;
         const { admitted } = preparation;
         const canForward = !plan.dropReason && this.dependencies.forwardMessage !== undefined &&
@@ -232,11 +233,11 @@ export class ALInboundMessageAdmission {
     }
 
     /** The attempt's one conditional write; the records after it are made only once it committed. */
-    private async commitAttempt(
+    private async writeAttempt(
         decision: ALInboundAttemptDecision
     ): Promise<Either<ALMessageRejection, ALInboundMessageAdmission.Attempt>> {
         const { msg, source, preparation, read, plan } = decision;
-        const validated = validateALInboundCommitBundle(this.computeAttemptBundle(decision), read.namespace);
+        const validated = validateALInboundCommitBundle(this.readAttemptBundle(decision), read.namespace);
         if (validated.left) {
             return Either.ofLeft(validated.left);
         }
