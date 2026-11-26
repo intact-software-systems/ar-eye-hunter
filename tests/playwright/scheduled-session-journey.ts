@@ -179,7 +179,31 @@ export async function guestSessionBookingJourney(page: Page, guest: Page, browse
         await expect(other.getByRole('button', { name: 'Reserve as a guest' })).toBeDisabled();
         await expect(other.getByRole('button', { name: 'Claim my lobby seat' })).toHaveCount(0);
     } finally { await other.close(); }
-    await booking.getByRole('button', { name: 'Claim my lobby seat' }).click();
+    const claim = booking.getByRole('button', { name: 'Claim my lobby seat' });
+    const requests: string[] = [];
+    await guest.route('**/session/guest/requests/*', async route => {
+        const response = await route.fetch();
+        expect(response.status()).toBe(200);
+        requests.push(route.request().url());
+        if (requests.length === 1) {
+            await guest.evaluate(() => {
+                const getItem = Storage.prototype.getItem;
+                Storage.prototype.getItem = function (key: string) {
+                    if (key === 'auth.session') throw new DOMException('Browser session storage temporarily unavailable', 'SecurityError');
+                    return getItem.call(this, key);
+                };
+                window.addEventListener('restore-test-storage', () => { Storage.prototype.getItem = getItem; }, { once: true });
+            });
+        }
+        await route.fulfill({ response });
+    });
+    await claim.click();
+    await expect(booking.getByRole('alert')).toContainText('Browser session storage temporarily unavailable');
+    await guest.evaluate(() => { window.dispatchEvent(new Event('restore-test-storage')); });
+    await claim.click();
     await expect(page.getByRole('region', { name: 'Scheduled sessions', exact: true })).toContainText('0 of 2 player seats available.');
     await expect(guest.getByText(`Entered ${session.groupId}.`, { exact: true })).toBeVisible();
+    await expect(guest.getByRole('button', { name: 'Logout', exact: true })).toBeVisible();
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toBe(requests[0]);
 }

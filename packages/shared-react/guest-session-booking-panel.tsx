@@ -1,3 +1,4 @@
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupSessionPreview } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { BrowserActivity } from '@shared-web/browser/browser-activity.ts';
@@ -46,8 +47,9 @@ export function GuestSessionBookingPanel({ room, entry }: { readonly room: Group
             if (action === 'claim') {
                 const access = await booking.claim(preview.schedule.revision, controller.signal);
                 controller.signal.throwIfAborted();
-                entry.enterScheduledLobby();
                 await rallar.auth.activateGuest({ room, access, username: 'Guest' });
+                const destination = entry.getState().destination;
+                if (destination && isSameGroupRef(destination.roomRef, room)) entry.enterScheduledLobby();
             } else {
                 await booking.change(action, preview.schedule.revision, controller.signal);
                 setPreview(await booking.preview(controller.signal));
