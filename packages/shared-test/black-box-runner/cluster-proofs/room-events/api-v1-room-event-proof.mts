@@ -140,11 +140,11 @@ async function runEventNight({ plans, controls }: ManagedClusterProof.ScenarioIn
     }
     let offerId = (await offer()).offerId;
     let acceptanceId = crypto.randomUUID();
-    const decision = (origin: string, headers: Record<string,string>, action: string, id: string) =>
-        requestJson(origin, toApiMutationRequestPath(event, id), { method: 'POST', headers, body: { action, offerId }, expectedStatus: [200,400,403] });
+    const decision = (origin: string, headers: Record<string,string>, request: { action: string; id: string }) =>
+        requestJson(origin, toApiMutationRequestPath(event, request.id), { method: 'POST', headers, body: { action: request.action, offerId }, expectedStatus: [200,400,403] });
     const [cancel, accept] = await Promise.all([
-        decision(first.baseUrl, adminHeaders, 'cancel-handover', crypto.randomUUID()),
-        decision(second.baseUrl, successorHeaders, 'accept-handover', acceptanceId)
+        decision(first.baseUrl, adminHeaders, { action: 'cancel-handover', id: crypto.randomUUID() }),
+        decision(second.baseUrl, successorHeaders, { action: 'accept-handover', id: acceptanceId })
     ]);
     assert.equal(Number(typeof cancel.revision === 'number') + Number(typeof accept.revision === 'number'), 1);
     if (typeof cancel.revision === 'number') {
