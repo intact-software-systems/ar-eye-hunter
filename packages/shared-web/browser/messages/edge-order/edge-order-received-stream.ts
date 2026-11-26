@@ -25,32 +25,23 @@ export interface EdgeOrderReceivedStream<Message> {
     nextPosition: number | undefined;
     /** The highest `lowestOpenPosition` any of its stamps stated: every send below it has ended at the sender. */
     endedBelowPosition: number;
-    /**
-     * The latest instant anything the stream has heard of can still arrive: the deadline of each of its arrivals and
-     * what each stamp said of earlier sends. From then on no copy of its messages is handed over, so it is forgotten.
-     */
-    canArriveUntilMs: number;
     heldBytes: number;
     forgotten: boolean;
     cancelWake: (() => void) | undefined;
     readonly held: Map<number, EdgeOrderHeldMessage<Message>>;
 }
 
-/** What is kept of a stream the stream cap pushed out while a copy of its messages could still arrive. */
-export type EdgeOrderEvictedStream = Pick<EdgeOrderReceivedStream<never>, 'nextPosition' | 'canArriveUntilMs'>;
-
-/** A stream as its first arrival finds it: new, or back at the position its record kept. */
+/** A stream as its first arrival finds it: new, or back at the position the record of its eviction kept. */
 export function createEdgeOrderReceivedStream<Message>(
     origin: EdgeOrderStreamOrigin,
     firstSeenAtMs: number,
-    evicted: EdgeOrderEvictedStream | undefined
+    nextPosition: number | undefined
 ): EdgeOrderReceivedStream<Message> {
     return {
         origin,
         firstSeenAtMs,
-        nextPosition: evicted?.nextPosition,
+        nextPosition,
         endedBelowPosition: 0,
-        canArriveUntilMs: evicted?.canArriveUntilMs ?? 0,
         heldBytes: 0,
         forgotten: false,
         cancelWake: undefined,

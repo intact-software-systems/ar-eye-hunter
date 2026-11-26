@@ -53,7 +53,7 @@ function isEdgeOrderStamp(value: unknown): value is EdgeOrderWireStamp {
         typeof value.stream === 'string' && value.stream.length > 0 && value.stream.length <= MAX_STREAM_LENGTH &&
         isPosition(value.position) && isPosition(value.lowestOpenPosition) &&
         value.lowestOpenPosition <= value.position &&
-        (!('earlierCanArriveUntilMs' in value) || typeof value.earlierCanArriveUntilMs === 'number') &&
+        (!('earlierCanArriveUntilMs' in value) || Number.isFinite(value.earlierCanArriveUntilMs)) &&
         (!('holes' in value) || isHolesBetween(value.holes, value.lowestOpenPosition, value.position));
 }
 

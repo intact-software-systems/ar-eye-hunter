@@ -292,9 +292,12 @@ describe('EdgeOrderSender', () => {
         send(sender, 10_000).refuse();
         send(sender, 8_000);
 
-        expect(sender.countOpenSends(NOW_MS)).toBe(3);
+        sender.closeEndedSends(NOW_MS);
+        expect(sender.getOpenSendCount()).toBe(3);
         first.end();
-        expect(sender.countOpenSends(NOW_MS)).toBe(1);
-        expect(sender.countOpenSends(8_000)).toBe(0);
+        sender.closeEndedSends(NOW_MS);
+        expect(sender.getOpenSendCount()).toBe(1);
+        sender.closeEndedSends(8_000);
+        expect(sender.getOpenSendCount()).toBe(0);
     });
 });

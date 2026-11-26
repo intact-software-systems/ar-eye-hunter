@@ -83,8 +83,8 @@ export class BrowserRallarMessageSubscriptions {
     }
 
     /** What the page's edge-ordered channels keep on their receive side now, and what they did not hand over. */
-    public readEdgeOrderUsage(): EdgeOrderArrivals.Usage {
-        return this.edgeOrderArrivals.readUsage();
+    public getEdgeOrderUsage(): EdgeOrderArrivals.Usage {
+        return this.edgeOrderArrivals.getUsage();
     }
 
     /** The connect is going away: what edge order holds was judged by its clock, and is memory only. */

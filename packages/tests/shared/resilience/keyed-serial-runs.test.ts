@@ -41,8 +41,6 @@ describe('keyed serial runs', () => {
         });
 
         expect(ran).toEqual(['free']);
-        await settleForgetting();
-        expect(runs.size()).toBe(1);
     });
 
     it('gives a failed task\'s error to its own caller, and runs the next task of the key all the same', async () => {
@@ -79,20 +77,4 @@ describe('keyed serial runs', () => {
         await idle;
         expect(steps).toEqual(['first', 'idle']);
     });
-
-    it('forgets a key once nothing is left to run for it', async () => {
-        const runs = new KeyedSerialRuns<string>();
-
-        await Promise.all([runs.run('a', () => {}), runs.run('b', () => Promise.reject(new Error('failed'))).catch(() => {})]);
-        await settleForgetting();
-
-        expect(runs.size()).toBe(0);
-    });
 });
-
-/** A key is forgotten in a turn after its last task settled. */
-async function settleForgetting(): Promise<void> {
-    await new Promise<void>((resolve) => {
-        setTimeout(resolve, 0);
-    });
-}

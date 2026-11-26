@@ -140,14 +140,16 @@ function validateRallarChannelOrder(definition: RallarTypedChannelPolicyInput): 
                 message: 'Only an edge-ordered channel reports order gaps.'
             }];
     }
-    if (definition.onOrderGap !== undefined && typeof definition.onOrderGap !== 'function') {
-        return [{ path: '$.onOrderGap', code: 'invalid-order-gap-handler', message: 'onOrderGap must be a function.' }];
-    }
-    if (definition.order !== 'edge') {
-        return [{ path: '$.order', code: 'invalid-order', message: 'Order must be edge.' }];
-    }
-    const refusal = resolveRallarEdgeOrderRefusal(definition);
-    return refusal === undefined ? [] : [{ path: '$.order', code: 'unsupported', message: refusal }];
+    const refusal = definition.order === 'edge' ? resolveRallarEdgeOrderRefusal(definition) : undefined;
+    return [
+        ...(definition.order === 'edge'
+            ? []
+            : [{ path: '$.order', code: 'invalid-order', message: 'Order must be edge.' }]),
+        ...(refusal === undefined ? [] : [{ path: '$.order', code: 'unsupported', message: refusal }]),
+        ...(definition.onOrderGap === undefined || typeof definition.onOrderGap === 'function'
+            ? []
+            : [{ path: '$.onOrderGap', code: 'invalid-order-gap-handler', message: 'onOrderGap must be a function.' }])
+    ];
 }
 
 function resolveRallarEdgeOrderRefusal(definition: RallarTypedChannelPolicyInput): string | undefined {

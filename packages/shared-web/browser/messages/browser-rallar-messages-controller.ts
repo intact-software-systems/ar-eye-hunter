@@ -6,7 +6,10 @@ import { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser
 import { BrowserRallarMessageSubscriptions } from '@shared-web/browser/messages/browser-rallar-message-subscriptions.ts';
 import { BrowserTypedMessageChannels } from '@shared-web/browser/messages/browser-typed-message-channels.ts';
 import { EDGE_ORDER_RECEIVER_DEFAULT_LIMITS } from '@shared-web/browser/messages/edge-order/edge-order-receiver-limits.ts';
-import { EdgeOrderSendStreams } from '@shared-web/browser/messages/edge-order/edge-order-send-streams.ts';
+import {
+    EDGE_ORDER_MAX_SEND_STREAMS,
+    EdgeOrderSendStreams
+} from '@shared-web/browser/messages/edge-order/edge-order-send-streams.ts';
 import type { BrowserGrantedTopics } from '@shared-web/browser/messages/publication/browser-granted-topics.ts';
 import type {
     RallarMessageHandler,
@@ -82,7 +85,7 @@ export class BrowserRallarMessagesController {
         });
         const edgeOrderStreams = new EdgeOrderSendStreams({
             newStreamId: input.newEdgeOrderStreamId,
-            maxStreams: EDGE_ORDER_RECEIVER_DEFAULT_LIMITS.maxStreams
+            maxStreams: EDGE_ORDER_MAX_SEND_STREAMS
         });
         const sender = createMessageSender(input, inputValidator, edgeOrderStreams);
         this.sender = sender;
@@ -108,16 +111,14 @@ export class BrowserRallarMessagesController {
             input,
             () => {
                 const context = input.requireMiddleware();
+                edgeOrderStreams.closeEndedSends(readBrowserServerExpiryEpochMs(context.serverTime));
                 return {
                     ...context.middleware.volatileBudget.readReport(input.nowMs()),
                     ...input.deliveries.getReplyCounts(),
                     publication: input.publicationStages.readReport(context),
                     ordering: context.middleware.orderingCounters.readReport(),
                     congestionEpisodes: context.middleware.congestionEpisodes.readReport(),
-                    edgeOrder: {
-                        ...this.subscriptions.readEdgeOrderUsage(),
-                        ...edgeOrderStreams.readUsage(readBrowserServerExpiryEpochMs(context.serverTime))
-                    }
+                    edgeOrder: { ...this.subscriptions.getEdgeOrderUsage(), ...edgeOrderStreams.getUsage() }
                 };
             }
         );

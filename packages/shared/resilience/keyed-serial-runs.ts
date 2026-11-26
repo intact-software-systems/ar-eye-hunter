@@ -23,11 +23,6 @@ export class KeyedSerialRuns<K> {
     whenIdle(key: K): Promise<void> {
         return this.tails.get(key) ?? Promise.resolve();
     }
-
-    /** The keys with a task waiting or running. */
-    size(): number {
-        return this.tails.size;
-    }
 }
 
 function ignoreOutcome(): void {}

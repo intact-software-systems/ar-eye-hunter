@@ -106,6 +106,30 @@ describe('edge order: a sender reload', () => {
     });
 });
 
+describe('edge order: a stream that resumes after a long pause', () => {
+    it('is still followed: a missing message is waited for as before, whatever the page did in between', async () => {
+        const bob = createReceiver('bob-session');
+        const alice = createEdgeOrderPage({ sessionId: 'alice-session' });
+        const [first] = await sendMoves(alice, [1]);
+        await bob.page.deliver('ws', first);
+
+        // An hour passes. Bob's usage is read, and he hears a stream he did not know.
+        await vi.advanceTimersByTimeAsync(3_600_000);
+        bob.page.messages.readUsage();
+        const [fromCarol] = await sendMoves(createEdgeOrderPage({ sessionId: 'carol-session' }), [31]);
+        await bob.page.deliver('ws', fromCarol);
+
+        // Alice's second message is lost and comes back at its retry, two seconds after her third arrived.
+        const [second, third] = await sendMoves(alice, [2, 3]);
+        await bob.page.deliver('ws', third);
+        await vi.advanceTimersByTimeAsync(2_000);
+        await bob.page.deliver('ws', second);
+
+        expect(movesOf(bob)).toEqual([1, 31, 2, 3]);
+        expect(readEdgeOrderDrops(bob.page)).toEqual([]);
+    });
+});
+
 describe('edge order: two tabs of one login', () => {
     it('hands each tab\'s messages over in that tab\'s order, whatever order the two streams arrive in', async () => {
         const bob = createReceiver('bob-session');
@@ -161,7 +185,7 @@ describe('edge order: a receiver that joins mid-stream', () => {
         expect(readEdgeOrderDrops(joiner.page)).toEqual([]);
     });
 
-    it('starts when its entry window ends, and loses nothing sent after it joined, in order', async () => {
+    it('starts when its entry window ends, and hands over what reaches it from then on, in order', async () => {
         const alice = createEdgeOrderPage({ sessionId: 'alice-session' });
         // Moves 1 to 3 went to the room before the joiner was in it, and are still open at the sender.
         await sendMoves(alice, [1, 2, 3]);
@@ -202,22 +226,51 @@ describe('edge order: a receiver that joins mid-stream', () => {
 });
 
 describe('edge order: hand-over, one stream at a time', () => {
-    it('goes on handing over another sender\'s stream while one stream\'s handler never settles', async () => {
+    it('goes on handing over a stream that arrives over the other carrier while one stream\'s handler never settles', async () => {
         const bob = createReceiver('bob-session', (move) => move.n === 1 ? new Promise<void>(() => {}) : undefined);
         const alice = createEdgeOrderPage({ sessionId: 'alice-session' });
         const carol = createEdgeOrderPage({ sessionId: 'carol-session' });
-        const fromAlice = await sendMoves(alice, [1, 2]);
+        const fromAlice = await sendMoves(alice, [1]);
         const fromCarol = await sendMoves(carol, [31, 32]);
 
-        // Alice's stream arrives over WS and its first handler hangs: that arrival's hand-over never settles.
+        // Alice's message arrives over WS and its handler hangs: that arrival's hand-over never settles, and with
+        // it the WS lane, as for a handler of any channel. Carol's stream arrives over RTC.
         void bob.page.deliver('ws', fromAlice[0]);
-        void bob.page.deliver('ws', fromAlice[1]);
         await bob.page.deliver('rtc', fromCarol[0]);
         await bob.page.deliver('rtc', fromCarol[1]);
 
-        // Alice's second message waits behind her first; Carol's two are handed over, in her order.
         expect([...movesOf(bob)].sort((left, right) => left - right)).toEqual([1, 31, 32]);
         expect(movesOf(bob).filter((n) => n > 30)).toEqual([31, 32]);
+    });
+
+    it('does not hand over a message whose deadline passed while it waited behind its stream\'s handler', async () => {
+        const release = Promise.withResolvers<void>();
+        const bob = createReceiver('bob-session', async (move) => {
+            if (move.n === 1) {
+                await release.promise;
+            }
+        });
+        const alice = createEdgeOrderPage({ sessionId: 'alice-session' });
+        const channel = alice.messages.room<EdgeOrderTestMove>(EDGE_ORDER_TEST_MOVES);
+        await channel.sendWs({ n: 1 });
+        await channel.sendRtc({ n: 2 }, { ttlMs: 2_000 });
+        await channel.sendRtc({ n: 3 });
+        const delivered = [
+            bob.page.deliver('ws', alice.sent.ws[0]),
+            bob.page.deliver('rtc', alice.sent.rtc[0]),
+            bob.page.deliver('rtc', alice.sent.rtc[1])
+        ];
+
+        // The sorter released message 2 in time, but the handler of message 1 runs for three seconds.
+        await vi.advanceTimersByTimeAsync(3_000);
+        release.resolve();
+        await Promise.all(delivered);
+
+        expect(movesOf(bob)).toEqual([1, 3]);
+        expect(readEdgeOrderDrops(bob.page)).toEqual([
+            expect.objectContaining({ kind: 'edge-order-gap', fromPosition: 2, toPosition: 2, reason: 'held-message-expired' })
+        ]);
+        expect(bob.page.messages.readUsage().edgeOrder.gaps).toBe(1);
     });
 
     it('keeps one stream\'s messages one at a time, each handler finished before the next starts', async () => {

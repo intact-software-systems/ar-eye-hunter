@@ -80,15 +80,18 @@ export class EdgeOrderSender {
         this.slots.set(position, 'hole');
     }
 
-    /** What the stream still keeps at `nowMs`: its open sends and the holes it states. An idle stream keeps none. */
-    countOpenSends(nowMs: number): number {
-        this.closeEndedSends(nowMs);
+    /** The sends still open and the holes the stream still states, as of the last time its ended sends were closed. */
+    getOpenSendCount(): number {
         return this.slots.size;
     }
 
-    private closeEndedSends(nowMs: number): void {
+    /**
+     * Closes every send that has ended by `nowMs`, and every hole below the lowest send still open. Each stamp does
+     * this first; closing earlier changes no stamp, because a send that has ended stays ended.
+     */
+    closeEndedSends(nowMs: number): void {
         for (const [position, slot] of this.slots) {
-            const end = typeof slot === 'string' ? 'open' : computeSendEnd(slot, nowMs);
+            const end = typeof slot === 'string' ? 'open' : getSendEndAt(slot, nowMs);
             if (end === 'delivered') {
                 this.slots.delete(position);
             }
@@ -147,7 +150,7 @@ export class EdgeOrderSender {
 }
 
 /** A send past its deadline is over whatever its lifecycle says: no copy of it is handed over any more. */
-function computeSendEnd(send: EdgeOrderSender.OpenSend, nowMs: number): EdgeOrderSender.SendEnd {
+function getSendEndAt(send: EdgeOrderSender.OpenSend, nowMs: number): EdgeOrderSender.SendEnd {
     const end = send.getEnd();
     return end === 'open' && send.expiresAtMs <= nowMs ? 'undelivered' : end;
 }

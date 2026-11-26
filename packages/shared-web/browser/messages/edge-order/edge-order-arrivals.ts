@@ -85,9 +85,11 @@ export class EdgeOrderArrivals {
     private readonly dependencies: EdgeOrderArrivals.Dependencies;
     /**
      * Per stream, its hand-overs and gap reports in the stream's order: the next starts when the one before it
-     * settles, so an async handler finishes a message first. A handler that never settles stops its own stream only.
+     * settles, so an async handler finishes a message first, and one stream's turns do not wait for another's.
      */
     private readonly streamRuns = new KeyedSerialRuns<string>();
+    /** The runs of positions given up since the page loaded, whatever the reason. */
+    private gaps = 0;
 
     constructor(dependencies: EdgeOrderArrivals.Dependencies) {
         this.dependencies = dependencies;
@@ -97,8 +99,8 @@ export class EdgeOrderArrivals {
                 schedule: (run, delayMs) => dependencies.timers.schedule(() => this.runWake(run), delayMs)
             },
             handOver: (handOver) => {
-                const streamKey = toEdgeOrderStreamKey(toStreamOrigin(handOver.message, handOver.order.stream));
-                void this.streamRuns.run(streamKey, () => dependencies.handOver(handOver));
+                const origin = toStreamOrigin(handOver.message, handOver.order.stream);
+                this.runInStreamTurn(origin, async () => await this.handOverInTurn(origin, handOver));
             },
             reportGap: (gap) => this.reportGap(gap)
         });
@@ -140,16 +142,14 @@ export class EdgeOrderArrivals {
         this.recordArrival({ carrier, message, outcome, order });
     }
 
-    /** Forgets the streams that have gone quiet, then counts what is left. It reads the connect's clock. */
-    readUsage(): EdgeOrderArrivals.Usage {
-        this.receiver.forgetQuietStreams();
+    getUsage(): EdgeOrderArrivals.Usage {
         const counts = this.receiver.getCounts();
         return {
             streams: counts.streams,
             heldMessages: counts.heldMessages,
             evictedStreams: counts.evictedStreams,
             lateDrops: counts.lateMessages,
-            gaps: counts.gaps,
+            gaps: this.gaps,
             heldDropped: counts.droppedMessages
         };
     }
@@ -175,19 +175,66 @@ export class EdgeOrderArrivals {
         }
     }
 
-    /**
-     * States the gap, and gives it to its channel's handler in the stream's turn: after the handlers of the messages
-     * before it. What the handler throws is logged, and the stream goes on.
-     */
+    /** States the gap, and gives it to its channel's handler in the stream's turn. */
     private reportGap(gap: RallarMessageOrderGap): void {
-        recordALInboundDiagnostic(this.dependencies.readInboundDiagnostics(), { kind: 'edge-order-gap', ...gap });
-        const onOrderGap = this.declaredRoutes.get(toRouteKey(gap.topicId, gap.typeId));
-        if (onOrderGap === undefined) {
+        this.recordGap(gap);
+        this.runInStreamTurn(gap, async () => await this.notifyGap(gap));
+    }
+
+    /**
+     * A message's turn in its stream. It waited behind the handlers of the messages before it, so its deadline is
+     * judged again here, as the inbound runtime judges a hand-over: past it, the position is a gap.
+     */
+    private async handOverInTurn(origin: EdgeOrderStreamOrigin, handOver: EdgeOrderArrivals.HandOver): Promise<void> {
+        if (!this.isPastDeadline(handOver.message)) {
+            await this.dependencies.handOver(handOver);
             return;
         }
-        void this.streamRuns.run(toEdgeOrderStreamKey(gap), () => onOrderGap(gap)).catch((error) => {
-            console.error('Error notifying Rallar order gap handler', error);
+        const { position } = handOver.order;
+        const gap = {
+            ...origin,
+            fromPosition: position,
+            toPosition: position,
+            reason: 'held-message-expired'
+        } as const;
+        this.recordGap(gap);
+        await this.notifyGap(gap);
+    }
+
+    /** With the connect gone no clock judges the message: the sorter released it in time, so it is handed over. */
+    private isPastDeadline(message: ALMessage): boolean {
+        const expiresAtMs = message.constraints?.expiresAtMs;
+        if (expiresAtMs === undefined) {
+            return false;
+        }
+        try {
+            return expiresAtMs <= this.dependencies.timers.nowMs();
+        }
+        catch {
+            return false;
+        }
+    }
+
+    /** One stream's hand-overs and gap reports run one at a time, in the order the sorter released them. */
+    private runInStreamTurn(origin: EdgeOrderStreamOrigin, turn: () => Promise<void>): void {
+        void this.streamRuns.run(toEdgeOrderStreamKey(origin), turn).catch((error) => {
+            console.error('Error in a Rallar edge-order hand-over', error);
         });
+    }
+
+    private recordGap(gap: RallarMessageOrderGap): void {
+        this.gaps += 1;
+        recordALInboundDiagnostic(this.dependencies.readInboundDiagnostics(), { kind: 'edge-order-gap', ...gap });
+    }
+
+    /** What the application's handler throws, or rejects with, is logged, and the stream goes on. */
+    private async notifyGap(gap: RallarMessageOrderGap): Promise<void> {
+        try {
+            await this.declaredRoutes.get(toRouteKey(gap.topicId, gap.typeId))?.(gap);
+        }
+        catch (error) {
+            console.error('Error notifying Rallar order gap handler', error);
+        }
     }
 
     private recordArrival(arrival: UnhandedEdgeOrderArrival): void {

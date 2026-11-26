@@ -1,3 +1,4 @@
+import { EDGE_ORDER_RECEIVER_DEFAULT_LIMITS } from '@shared-web/browser/messages/edge-order/edge-order-receiver-limits.ts';
 import { EdgeOrderSender } from '@shared-web/browser/messages/edge-order/edge-order-sender.ts';
 import type { EdgeOrderStamp } from '@shared-web/browser/messages/edge-order/edge-order-stamp.ts';
 import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
@@ -6,11 +7,17 @@ import { isALDeliveryTerminal, type ALDeliveryLifecycle } from '@shared/alm/deli
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 
+/** The channel-and-room streams a page sends on at once: the figure a receiver follows, so neither end outruns the other. */
+export const EDGE_ORDER_MAX_SEND_STREAMS = EDGE_ORDER_RECEIVER_DEFAULT_LIMITS.maxStreams;
+
 export namespace EdgeOrderSendStreams {
     export interface Input {
         /** Mints a stream id in memory. Never the session id, which a reload keeps and every tab of a login shares. */
         readonly newStreamId: () => string;
-        /** Past this many channel-and-room streams the oldest is forgotten, and its next send starts a new stream. */
+        /**
+         * Past this many channel-and-room streams the one sent on least recently is forgotten, and its next send
+         * starts a new stream.
+         */
         readonly maxStreams: number;
     }
 
@@ -51,16 +58,24 @@ export class EdgeOrderSendStreams {
             return undefined;
         }
         const key = JSON.stringify([send.topicId ?? send.typeId, send.typeId, toALGroupTargetKey(roomRef)]);
-        const stream = this.streams.setIfAbsent(key, () => new EdgeOrderSender(this.newStreamId()));
+        // Taken out and put back, so the stream last sent on is the newest and the cap pushes out the one idle longest.
+        const stream = this.streams.take(key) ?? new EdgeOrderSender(this.newStreamId());
+        this.streams.set(key, stream);
         return new EdgeOrderOpenSend(stream, stream.openSend());
     }
 
-    /** Closes every send that has ended by `nowMs`, then counts what is left. A stream is kept once it is minted. */
-    readUsage(nowMs: number): EdgeOrderSendStreams.Usage {
+    /** Closes, in every stream, the sends that have ended by `nowMs`: an idle page then keeps no open send. */
+    closeEndedSends(nowMs: number): void {
+        for (const stream of this.streams.readAllValues()) {
+            stream.closeEndedSends(nowMs);
+        }
+    }
+
+    getUsage(): EdgeOrderSendStreams.Usage {
         const streams = this.streams.readAllValues();
         return {
             sendStreams: streams.length,
-            openSends: streams.reduce((openSends, stream) => openSends + stream.countOpenSends(nowMs), 0)
+            openSends: streams.reduce((openSends, stream) => openSends + stream.getOpenSendCount(), 0)
         };
     }
 }

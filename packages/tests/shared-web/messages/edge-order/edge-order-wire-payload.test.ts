@@ -64,6 +64,10 @@ describe('the edge-order wire payload', () => {
         ['a lowest open position below 1', wire({ ...STAMP, lowestOpenPosition: 0 })],
         ['a lowest open position above the position', wire({ ...STAMP, lowestOpenPosition: 8 })],
         ['a deadline that is not a number', wire({ ...STAMP, earlierCanArriveUntilMs: 'soon' })],
+        [
+            'a deadline that is not finite',
+            '{"edgeOrder":{"stream":"stream-a","position":7,"lowestOpenPosition":5,"earlierCanArriveUntilMs":1e999},"payload":1}'
+        ],
         ['holes that are not a list', wire({ ...HOLED_STAMP, holes: 6 })],
         ['a hole that is not a pair of positions', wire({ ...HOLED_STAMP, holes: [[6]] })],
         ['a hole whose end is below its start', wire({ ...HOLED_STAMP, holes: [[8, 6]] })],

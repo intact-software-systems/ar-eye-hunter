@@ -15,7 +15,8 @@ const ROUNDS = 6;
 const IDLE_MS = 31_000;
 
 /**
- * One round of traffic: Alice sends three moves in each of the round's rooms, which is one stream per room. Bob gets
+ * One round of traffic: Alice sends three moves in each of the round's rooms. She keeps 256 send streams and a round
+ * has more rooms than that, so every room's stream is a new one each round. Bob gets
  * move 1 and move 3 of every stream, and move 2 of every second stream only, so half of them end the round holding
  * a message for a move that never comes.
  */
@@ -51,20 +52,19 @@ afterEach(() => {
 });
 
 describe('edge order: memory over a long run', () => {
-    it('keeps what it holds within its caps under traffic, and nothing once its streams have gone idle', async () => {
+    it('holds nothing once its streams go idle, and what it keeps of them stays within its caps round after round', async () => {
         const alice = createEdgeOrderPage({ sessionId: 'alice-session' });
         const bob = createEdgeOrderPage({ sessionId: 'bob-session' });
         let handedOver = 0;
         bob.messages.room<EdgeOrderTestMove>(EDGE_ORDER_TEST_MOVES).onWs(() => {
             handedOver += 1;
         });
+        const idle: Array<ReturnType<EdgeOrderPage['messages']['readUsage']>['edgeOrder']> = [];
 
         for (let round = 1; round <= ROUNDS; round += 1) {
             await runRound(alice, bob);
 
             const busy = bob.messages.readUsage().edgeOrder;
-            expect(busy.streams).toBe(256);
-            expect(busy.evictedStreams).toBe(STREAMS_PER_ROUND - 256);
             expect(busy.heldMessages).toBeGreaterThan(0);
             expect(busy.heldMessages).toBeLessThanOrEqual(STREAMS_PER_ROUND / 2);
             // A page keeps at most 256 send streams; each of them still has its three sends open.
@@ -72,12 +72,20 @@ describe('edge order: memory over a long run', () => {
 
             await vi.advanceTimersByTimeAsync(IDLE_MS);
 
-            expect(bob.messages.readUsage().edgeOrder).toMatchObject({ streams: 0, heldMessages: 0, evictedStreams: 0 });
+            idle.push(bob.messages.readUsage().edgeOrder);
             expect(alice.messages.readUsage().edgeOrder).toMatchObject({ sendStreams: 256, openSends: 0 });
         }
 
+        // Every idle reading holds no message. A page follows 256 streams and keeps the position of 256 more it
+        // pushed out; with 300 new streams a round both are full from the second round on, and stay there.
+        expect(idle.map((usage) => usage.heldMessages)).toEqual(Array.from({ length: ROUNDS }, () => 0));
+        expect(idle.map((usage) => usage.streams)).toEqual(Array.from({ length: ROUNDS }, () => 256));
+        expect(idle.map((usage) => usage.evictedStreams)).toEqual([
+            STREAMS_PER_ROUND - 256,
+            ...Array.from({ length: ROUNDS - 1 }, () => 256)
+        ]);
         // The run did the work it was meant to: every stream handed over what it got, and stated what it did not.
         expect(handedOver).toBe(ROUNDS * (STREAMS_PER_ROUND * 2 + STREAMS_PER_ROUND / 2));
-        expect(bob.messages.readUsage().edgeOrder).toMatchObject({ gaps: ROUNDS * (STREAMS_PER_ROUND / 2), lateDrops: 0 });
+        expect(idle.at(-1)).toMatchObject({ gaps: ROUNDS * (STREAMS_PER_ROUND / 2), lateDrops: 0 });
     });
 });

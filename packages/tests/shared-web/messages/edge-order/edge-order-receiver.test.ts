@@ -352,7 +352,6 @@ describe('EdgeOrderReceiver: holes a stamp states', () => {
 
         expect(fixture.handedOver).toEqual(['m1', 'm3', 'm4']);
         expect(fixture.gaps).toEqual([{ ...ORIGIN, stream: 'A', fromPosition: 2, toPosition: 2, reason: 'ended-at-sender' }]);
-        expect(fixture.receiver.getCounts().gaps).toBe(1);
     });
 
     it('drops the late copy of a position it passed as a hole', () => {
@@ -500,7 +499,6 @@ describe('EdgeOrderReceiver: duplicates and bounds', () => {
             duplicateMessages: 1,
             expiredMessages: 0,
             droppedMessages: 0,
-            gaps: 0,
             evictedStreams: 0
         });
         accept(fixture, stampBehind(2, 2));
@@ -638,60 +636,20 @@ describe('EdgeOrderReceiver: duplicates and bounds', () => {
     });
 });
 
-describe('EdgeOrderReceiver: streams that go quiet', () => {
-    it('forgets a stream once nothing it has heard of can still arrive, and then takes it as a new stream', async () => {
+describe('EdgeOrderReceiver: a stream it has not heard from for long', () => {
+    it('is still followed: a missing message is waited for, and a late copy stays late', async () => {
         const fixture = createReceiverFixture();
         accept(fixture, stamp(1), { expiresAtMs: 5_000 });
-        accept(fixture, stampBehind(2, 1, 8_000), { expiresAtMs: 6_000 });
+        await fixture.timers.advanceTo(3_600_000);
 
-        await fixture.timers.advanceTo(7_999);
-        fixture.receiver.forgetQuietStreams();
-        // The sender said send 1 could arrive until 8 000: a copy of it must still be late until then.
-        expect(fixture.receiver.getCounts().streams).toBe(1);
+        // The sender goes on after an hour. Its third message arrives first: this is a gap, not an entry.
+        expect(accept(fixture, stampBehind(3, 2, 3_630_000), { expiresAtMs: 3_630_000 })).toBe('held');
+        await fixture.timers.advanceTo(3_602_000);
+        expect(accept(fixture, stampBehind(2, 2, 3_630_000), { expiresAtMs: 3_630_000 })).toBe('handed-over');
 
-        await fixture.timers.advanceTo(8_000);
-        fixture.receiver.forgetQuietStreams();
-        expect(fixture.receiver.getCounts().streams).toBe(0);
-
-        // A sender that goes on after a pause is heard as a stream that starts where its next message stands.
-        expect(accept(fixture, stamp(3), { expiresAtMs: 40_000 })).toBe('handed-over');
         expect(fixture.handedOver).toEqual(['m1', 'm2', 'm3']);
+        expect(accept(fixture, stamp(1), { expiresAtMs: 3_630_000 })).toBe('late');
         expect(fixture.gaps).toEqual([]);
-    });
-
-    it('keeps a stream that holds a message, however long ago it heard of anything else', async () => {
-        const fixture = createReceiverFixture();
-        accept(fixture, stamp(1), { expiresAtMs: 2_000 });
-        accept(fixture, stampBehind(3, 2, 90_000), { expiresAtMs: 90_000 });
-
-        await fixture.timers.advanceTo(60_000);
-        fixture.receiver.forgetQuietStreams();
-
-        expect(fixture.receiver.getCounts()).toMatchObject({ streams: 1, heldMessages: 1 });
-    });
-
-    it('forgets the quiet streams whenever a new stream is heard, with no read of its counts', async () => {
-        const fixture = createReceiverFixture();
-        accept(fixture, stamp(1, { stream: 'A' }), { message: 'a1', expiresAtMs: 2_000 });
-        accept(fixture, stamp(1, { stream: 'B' }), { message: 'b1', expiresAtMs: 2_000 });
-        await fixture.timers.advanceTo(2_000);
-
-        accept(fixture, stamp(1, { stream: 'C' }), { message: 'c1' });
-
-        expect(fixture.receiver.getCounts().streams).toBe(1);
-    });
-
-    it('forgets the quiet streams before the stream cap pushes a live one out', async () => {
-        const fixture = createReceiverFixture({ maxStreams: 2 });
-        accept(fixture, stamp(1, { stream: 'A' }), { message: 'a1', expiresAtMs: 2_000 });
-        accept(fixture, stamp(1, { stream: 'B' }), { message: 'b1' });
-        await fixture.timers.advanceTo(2_000);
-
-        accept(fixture, stamp(1, { stream: 'C' }), { message: 'c1' });
-
-        // Stream A went because it was quiet: B, though heard from before C, is still followed, and nothing was evicted.
-        expect(accept(fixture, stamp(1, { stream: 'B' }), { message: 'b1-again' })).toBe('late');
-        expect(fixture.receiver.getCounts()).toMatchObject({ streams: 2, evictedStreams: 0 });
     });
 });
 
@@ -733,17 +691,5 @@ describe('EdgeOrderReceiver: a stream the stream cap pushed out', () => {
         expect(accept(fixture, stamp(1, { stream: 'B' }), { message: 'b1-again' })).toBe('late');
         // The stated limit: stream A's record was pushed out, so its late copy is handed over again.
         expect(accept(fixture, stamp(1, { stream: 'A' }), { message: 'a1-again' })).toBe('handed-over');
-    });
-
-    it('drops a record once nothing of its stream can still arrive', async () => {
-        const fixture = createReceiverFixture({ maxStreams: 1 });
-        accept(fixture, stamp(1, { stream: 'A' }), { message: 'a1', expiresAtMs: 5_000 });
-        accept(fixture, stamp(1, { stream: 'B' }), { message: 'b1', expiresAtMs: 90_000 });
-        expect(fixture.receiver.getCounts().evictedStreams).toBe(1);
-
-        await fixture.timers.advanceTo(5_000);
-        fixture.receiver.forgetQuietStreams();
-
-        expect(fixture.receiver.getCounts()).toMatchObject({ streams: 1, evictedStreams: 0 });
     });
 });

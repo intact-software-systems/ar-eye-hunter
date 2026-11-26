@@ -110,10 +110,39 @@ describe('the page\'s edge-ordered send streams: what a send\'s lifecycle tells 
         openObservedSend(streams);
         streams.openSend({ order: 'edge', topicId: 'room.chat', typeId: 'chat.line', roomRef: EDGE_ORDER_TEST_ROOM });
 
-        expect(streams.readUsage(NOW_MS)).toEqual({ sendStreams: 2, openSends: 3 });
+        expect(streams.getUsage()).toEqual({ sendStreams: 2, openSends: 3 });
         first.setState('acknowledged');
-        expect(streams.readUsage(NOW_MS)).toEqual({ sendStreams: 2, openSends: 2 });
+        streams.closeEndedSends(NOW_MS);
+        expect(streams.getUsage()).toEqual({ sendStreams: 2, openSends: 2 });
         // The send that was never observed has no deadline yet, so it stays.
-        expect(streams.readUsage(DEADLINE_MS)).toEqual({ sendStreams: 2, openSends: 1 });
+        streams.closeEndedSends(DEADLINE_MS);
+        expect(streams.getUsage()).toEqual({ sendStreams: 2, openSends: 1 });
+    });
+
+    it('keeps the streams sent on most recently when a page sends on more than it may keep', () => {
+        const streams = createStreams();
+        const stampIn = (room: string): EdgeOrderStamp => {
+            const send = streams.openSend({
+                order: 'edge',
+                topicId: EDGE_ORDER_TEST_MOVES.topicId,
+                typeId: EDGE_ORDER_TEST_MOVES.typeId,
+                roomRef: { ...EDGE_ORDER_TEST_ROOM, groupId: room }
+            });
+            if (send === undefined) {
+                throw new Error('An edge-ordered channel\'s send has a position.');
+            }
+            return send.stamp(NOW_MS);
+        };
+        const first = stampIn('room-1');
+        for (const room of ['room-2', 'room-3', 'room-4']) {
+            stampIn(room);
+        }
+
+        // Room 1 is sent on again before a fifth room needs a stream, so room 2 is the one idle longest.
+        expect(stampIn('room-1')).toMatchObject({ stream: first.stream, position: 2 });
+        stampIn('room-5');
+
+        expect(stampIn('room-1')).toMatchObject({ stream: first.stream, position: 3 });
+        expect(stampIn('room-2')).toMatchObject({ position: 1 });
     });
 });

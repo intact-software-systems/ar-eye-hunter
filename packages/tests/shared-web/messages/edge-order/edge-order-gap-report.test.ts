@@ -191,6 +191,15 @@ describe('an edge-ordered room channel: the gap report', () => {
             JSON.stringify({ ...EDGE_ORDER_TEST_MOVES, onOrderGap: 'log' })
         );
         expect(() => page.messages.room(unchecked)).toThrow(refused('invalid-order-gap-handler'));
+        // A bad handler does not hide what else the definition gets wrong.
+        expect(() => page.messages.room({ ...unchecked, durability: 'local-outbox' })).toThrow(
+            expect.objectContaining({
+                issues: [
+                    expect.objectContaining({ path: '$.order', code: 'unsupported' }),
+                    expect.objectContaining({ path: '$.onOrderGap', code: 'invalid-order-gap-handler' })
+                ]
+            })
+        );
     });
 });
 
