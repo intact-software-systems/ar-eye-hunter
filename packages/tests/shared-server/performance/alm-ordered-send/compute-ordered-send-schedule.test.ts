@@ -4,7 +4,10 @@ import {
     computeOrderedSendSchedule,
     type OrderedSendScheduledSend
 } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/compute-ordered-send-schedule.ts';
-import { ORDERED_SEND_CELL_CONSTANTS } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/ordered-send-cell-constants.ts';
+import {
+    ORDERED_SEND_CELL_CONSTANTS,
+    ORDERED_SEND_REFERENCE_OBSERVATION_TAIL_MS
+} from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/ordered-send-cell-constants.ts';
 
 const ROOM_PEER_IDS = [
     'session-01-a',
@@ -157,7 +160,7 @@ describe('computeOrderedSendSchedule', () => {
 });
 
 describe('ORDERED_SEND_CELL_CONSTANTS', () => {
-    it('fixes fifteen sessions on three instances, a pool of ten, a 30 s lifetime and a 100 ms ACK spread', () => {
+    it('fixes fifteen sessions on three instances, a pool of ten, a 30 s lifetime, a 45 s grace and a 100 ms ACK spread', () => {
         expect(ORDERED_SEND_CELL_CONSTANTS).toEqual({
             sessionCount: 15,
             instanceCount: 3,
@@ -165,8 +168,12 @@ describe('ORDERED_SEND_CELL_CONSTANTS', () => {
             listenerPoolMaxConnections: 1,
             poolIdleTimeoutSeconds: 0,
             sendLifetimeMs: 30_000,
-            receiptGraceMs: 30_000,
+            receiptGraceMs: 45_000,
             ackSpreadMs: 100
         });
+    });
+
+    it('observes a reference run for 75 s after its last offer: a send\'s lifetime and a receipt\'s grace', () => {
+        expect(ORDERED_SEND_REFERENCE_OBSERVATION_TAIL_MS).toBe(75_000);
     });
 });

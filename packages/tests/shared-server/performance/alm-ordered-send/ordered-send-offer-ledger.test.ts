@@ -14,8 +14,6 @@ function toOffer(seq: number, sentAtMs: number): OrderedSendCellOffer {
     };
 }
 
-const NO_TERMINAL_RECEIPT = (): boolean => false;
-
 describe('OrderedSendOfferLedger', () => {
     it('joins each offer with the answer the entry gave it, in the order the sends were offered', () => {
         const ledger = new OrderedSendOfferLedger();
@@ -45,31 +43,8 @@ describe('OrderedSendOfferLedger', () => {
         expect(ledger.close()).toEqual(sends);
     });
 
-    it('is settled once every send is answered and every send the entry accepted has its terminal receipt', () => {
-        const ledger = new OrderedSendOfferLedger();
-        ledger.recordOffer(toOffer(1, 100));
-        ledger.recordOffer(toOffer(2, 600));
-        ledger.recordOffer(toOffer(3, 1_100));
-        const settledAfterNoAnswer = ledger.isSettled(() => true);
-        ledger.recordAnswer('session-01-a-send-1', { acceptance: 'admitted', answeredAtMs: 130 });
-        ledger.recordAnswer('session-01-a-send-2', { acceptance: 'pending-admission', answeredAtMs: 640 });
-        ledger.recordAnswer('session-01-a-send-3', {
-            acceptance: 'not-admitted',
-            answeredAtMs: 1_140,
-            notAdmittedReason: 'storage-unavailable'
-        });
-
-        expect(settledAfterNoAnswer).toBe(false);
-        expect(ledger.isSettled(NO_TERMINAL_RECEIPT)).toBe(false);
-        expect(ledger.isSettled((msgId) => msgId === 'session-01-a-send-1')).toBe(false);
-        expect(ledger.isSettled((msgId) => msgId !== 'session-01-a-send-3')).toBe(true);
-    });
-
-    it('is settled with no send offered, and reads no last offer then', () => {
-        const ledger = new OrderedSendOfferLedger();
-
-        expect(ledger.isSettled(NO_TERMINAL_RECEIPT)).toBe(true);
-        expect(ledger.getLastOfferAtMs()).toBeUndefined();
+    it('reads no last offer while no send was offered', () => {
+        expect(new OrderedSendOfferLedger().getLastOfferAtMs()).toBeUndefined();
     });
 
     it('reads the instant of the offer made last', () => {

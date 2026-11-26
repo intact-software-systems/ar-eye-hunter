@@ -4,7 +4,7 @@ import type { Either } from '@shared/resilience/Either.ts';
 
 import type { OrderedSendCellAnswer } from './ordered-send-cell-observations.ts';
 
-/** What the entry answered a send it answered at all; `unanswered` is the run's to say, when its drain ends. */
+/** What the entry answered a send it answered at all; `unanswered` is the run's to say, when its observation ends. */
 export type OrderedSendCellEntryAnswer = Exclude<OrderedSendCellAnswer, { readonly acceptance: 'unanswered'; }>;
 
 /** The answer of `acceptIncomingMessage` as the cell records it, read at `answeredAtMs`. */

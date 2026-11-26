@@ -1,7 +1,10 @@
 import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { computeOrderedSendReport } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/compute-ordered-send-report.ts';
-import { runOrderedSendCell } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/run-ordered-send-cell.ts';
+import {
+    createDefaultOrderedSendCellRunDependencies,
+    runOrderedSendCell
+} from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/run-ordered-send-cell.ts';
 import { requirePostgresDatabaseUrl } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
@@ -12,11 +15,13 @@ const SENDS = 8;
 const COPIES = 112;
 
 /**
- * A healthy run ends as soon as the last receipt completes, a few hundred milliseconds after its window. A run that
- * loses a receipt waits the send's 30 s lifetime and the receipt's 30 s grace before it gives the send up, and the
- * budget lets that run end and say what it lost.
+ * How long a run observes after its last offer. A reference run observes for the send's lifetime and the receipt's
+ * grace, 75 s, so that a receipt that times out is still read; these sends complete their receipts a few hundred
+ * milliseconds after their offer, and this tail is a few times that, so the three runs here end in seconds.
  */
-const RUN_BUDGET_MS = 90_000;
+const OBSERVATION_TAIL_MS = 1_500;
+
+const RUN_BUDGET_MS = 30_000;
 
 /** The tables an instance's stores and queues write. */
 const RUN_TABLES = ['resource_inbox', 'runtime_state_store'];
@@ -46,10 +51,13 @@ async function expectEverySendDeliveredAndReceipted(delayMs: number): Promise<vo
     const run = await runOrderedSendCell({
         shape: { publishers: PUBLISHERS, sendsPerSecond: 2, durationS: 2, delayMs },
         databaseUrl: await createRunSchema(runId),
-        runId
-    });
+        runId,
+        observationTailMs: OBSERVATION_TAIL_MS
+    }, createDefaultOrderedSendCellRunDependencies());
 
     expect(run.left).toBeUndefined();
+    const lastOfferAtMs = Math.max(...run.right!.sends.map((send) => send.sentAtMs));
+    expect(run.right!.observationEndedAtMs).toBeGreaterThanOrEqual(lastOfferAtMs + OBSERVATION_TAIL_MS);
     const report = computeOrderedSendReport(run.right!);
     expect(report.unmatched).toEqual({
         sendsWithARepeatedMsgId: 0,

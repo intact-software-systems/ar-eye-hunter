@@ -1,4 +1,3 @@
-import { AL_RECEIPT_DEADLINE_GRACE_MS } from '@shared/al-contracts/al-control.ts';
 import { AL_CHANNEL_SEND_DEFAULTS } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 
 /** What every run of the cell holds fixed, whatever its shape. The artifact records it beside the shape. */
@@ -22,8 +21,10 @@ export interface OrderedSendCellConstants {
      */
     readonly sendLifetimeMs: number;
     /**
-     * How long past a send's lifetime a run still waits for its terminal receipt before it gives the send up: as
-     * long as the server keeps a receipt's outbox row past the send's deadline, so no receipt can come later.
+     * How long past a send's lifetime a reference run still observes. The server writes a `timed-out` receipt only
+     * after the send's deadline and keeps its outbox row 30 s past it (`AL_RECEIPT_DEADLINE_GRACE_MS`), announcing it
+     * again meanwhile; one was read 64.8 s after its send's offer, so the grace is 45 s. A receipt may still come
+     * later than this: the report counts a send without a terminal receipt as such.
      */
     readonly receiptGraceMs: number;
     /** A recipient offers its ACK of a copy at most this long after it first read the copy. */
@@ -37,6 +38,13 @@ export const ORDERED_SEND_CELL_CONSTANTS: OrderedSendCellConstants = {
     listenerPoolMaxConnections: 1,
     poolIdleTimeoutSeconds: 0,
     sendLifetimeMs: AL_CHANNEL_SEND_DEFAULTS.notification.ttlMs,
-    receiptGraceMs: AL_RECEIPT_DEADLINE_GRACE_MS,
+    receiptGraceMs: 45_000,
     ackSpreadMs: 100
 };
+
+/**
+ * How long a reference run observes after its last offer, whatever it has read by then: every reference run has the
+ * same tail, so the receipts read again and the receipts read late are counted over the same time at every delay.
+ */
+export const ORDERED_SEND_REFERENCE_OBSERVATION_TAIL_MS = ORDERED_SEND_CELL_CONSTANTS.sendLifetimeMs +
+    ORDERED_SEND_CELL_CONSTANTS.receiptGraceMs;

@@ -171,18 +171,6 @@ describe('OrderedSendObservationLog', () => {
         });
     });
 
-    it('holds a send terminal once a complete or a timed-out receipt of it was read, and not on its admitted one', () => {
-        const log = new OrderedSendObservationLog(() => 1);
-
-        log.recordSocketFrame(PUBLISHER, toReceiptFrame(1, 'admitted'));
-        log.recordSocketFrame(PUBLISHER, toReceiptFrame(2, 'complete'));
-        log.recordSocketFrame(PUBLISHER, toReceiptFrame(3, 'timed-out'));
-
-        expect(['session-01-a-send-1', 'session-01-a-send-2', 'session-01-a-send-3', 'session-01-a-send-4']
-            .map((msgId) => log.hasTerminalReceipt(msgId)))
-            .toEqual([false, true, true, false]);
-    });
-
     it('records a hand-off with the instance that made it, in the order the hand-offs happened', () => {
         const clock: TestClock = { nowMs: 30 };
         const log = new OrderedSendObservationLog(() => clock.nowMs);
@@ -223,7 +211,6 @@ describe('OrderedSendObservationLog', () => {
         };
         expect(ended).toEqual({ ...recordedWhileObserving, observationEndedAtMs: 50 });
         expect(log.endObservation()).toMatchObject(recordedWhileObserving);
-        expect(log.hasTerminalReceipt('session-01-a-send-1')).toBe(false);
     });
 
     it('refuses a frame that is no AL envelope: the server writes nothing else to a session\'s socket', () => {

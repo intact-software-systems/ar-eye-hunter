@@ -1,5 +1,4 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 
 import type {
@@ -15,13 +14,6 @@ import { toOrderedSendSocketRead } from './to-ordered-send-socket-read.ts';
 /** What a run observes beside its sends. */
 export type OrderedSendObservedReads = Omit<OrderedSendCellObservations, 'sends'>;
 
-/** A phase added to the receipt contract has no key here, and fails to compile. */
-const ORDERED_SEND_TERMINAL_RECEIPT_PHASES: Readonly<Record<ALReceiptPayload['phase'], boolean>> = {
-    admitted: false,
-    complete: true,
-    'timed-out': true
-};
-
 /**
  * What the sockets of the sessions read and what the instances handed to their application, each appended as it
  * happened and stamped by one clock. It records while observation lasts and nothing after it.
@@ -35,7 +27,6 @@ export class OrderedSendObservationLog {
     private readonly unclassifiedControls: OrderedSendCellUnclassifiedControl[] = [];
     /** One entry for each copy a session read at least once. */
     private readonly copiesRead = new Set<string>();
-    private readonly terminalMsgIds = new Set<string>();
     private observing = true;
 
     constructor(nowMs: () => number) {
@@ -60,9 +51,6 @@ export class OrderedSendObservationLog {
                 return this.recordCopyRead(readerPeerId, message) ? message : undefined;
             case 'receipt':
                 this.receipts.push(read.receipt);
-                if (ORDERED_SEND_TERMINAL_RECEIPT_PHASES[read.receipt.phase]) {
-                    this.terminalMsgIds.add(read.receipt.msgId);
-                }
                 return undefined;
             case 'control':
                 this.controls.push(read.control);
@@ -81,11 +69,6 @@ export class OrderedSendObservationLog {
 
     isObserving(): boolean {
         return this.observing;
-    }
-
-    /** Whether a `complete` or a `timed-out` receipt of the send was read while observation lasted. */
-    hasTerminalReceipt(msgId: string): boolean {
-        return this.terminalMsgIds.has(msgId);
     }
 
     /** Stops observation at the instant it reads, and returns everything recorded up to it. */

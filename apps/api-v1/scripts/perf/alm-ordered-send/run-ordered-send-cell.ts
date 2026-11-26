@@ -15,6 +15,7 @@ import { createOrderedSendRoomAuthorizer } from './create-ordered-send-room-auth
 import { offerOrderedSendsWhenDue } from './offer-ordered-sends-when-due.ts';
 import { ORDERED_SEND_CELL_CONSTANTS } from './ordered-send-cell-constants.ts';
 import type { OrderedSendCellObservations } from './ordered-send-cell-observations.ts';
+import { createDefaultOrderedSendClock, type OrderedSendClock } from './ordered-send-clock.ts';
 import { OrderedSendObservationLog } from './ordered-send-observation-log.ts';
 import { OrderedSendOfferLedger } from './ordered-send-offer-ledger.ts';
 import { toOrderedSendAck } from './to-ordered-send-ack.ts';
@@ -40,13 +41,16 @@ export interface RunOrderedSendCellInput {
      * reads the rows an earlier run left in the same tables, and never hears another run's notices.
      */
     readonly runId: string;
+    /**
+     * How long the run observes after its last offer, in milliseconds. It observes for exactly this long whatever it
+     * has read by then, and never stops at the last terminal receipt: two runs with one tail count what they read
+     * again, and what they read late, over the same time.
+     */
+    readonly observationTailMs: number;
 }
 
-/** The clocks of a run: one for every instant it records, one for the epoch times its envelopes carry. */
-interface OrderedSendRunClock {
-    readonly nowMs: () => number;
-    readonly nowEpochMs: () => number;
-    readonly sleep: (delayMs: number) => Promise<void>;
+export interface OrderedSendCellRunDependencies {
+    readonly clock: OrderedSendClock;
 }
 
 /** One run in progress: `ledger` and `log` take what it offers and observes, and `acksInFlight` grows with each ACK. */
@@ -56,7 +60,7 @@ interface OrderedSendRun {
     readonly instances: readonly OrderedSendInstance[];
     readonly ledger: OrderedSendOfferLedger;
     readonly log: OrderedSendObservationLog;
-    readonly clock: OrderedSendRunClock;
+    readonly clock: OrderedSendClock;
     readonly acksInFlight: Promise<void>[];
 }
 
@@ -72,8 +76,8 @@ const RUN_ID = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 /** The application and workspace of every run's room, and of every session's proven scope. */
 const ORDERED_SEND_SCOPE = { applicationId: 'ordered-send-cell', workspaceId: 'default' };
 
-/** How often the drain looks whether every send is settled. */
-const DRAIN_POLL_MS = 25;
+/** How often the run looks, while it observes its tail, whether an offer threw. */
+const TAIL_POLL_MS = 25;
 
 /** A room presence outlasts any run by far. */
 const ROOM_PRESENCE_LIFETIME_MS = 24 * 60 * 60 * 1_000;
@@ -88,7 +92,8 @@ const ROOM_PRESENCE_LIFETIME_MS = 24 * 60 * 60 * 1_000;
  *   its work row hands it to the router, which publishes one NOTIFY that carries the message, sends the copies of
  *   the sessions on that instance once the publish returned, and the other instances send theirs as the NOTIFY
  *   reaches them. No copy is a row of the WS outbox: one an instance missed is written again only when the send is
- *   handed to a router again or its publisher sends it again, and the cell's publishers never do;
+ *   handed to a router again. A publisher that sends it again changes nothing: the entry answers `duplicate`, hands
+ *   nothing off and publishes nothing;
  * - a receipt: a row the instance that admitted the send writes to the shared WS outbox. The instance whose worker
  *   takes the row writes it to the origin's socket when that socket is its own, and otherwise announces the row's
  *   key to the others by a NOTIFY, again and again until the row expires;
@@ -112,7 +117,8 @@ const ROOM_PRESENCE_LIFETIME_MS = 24 * 60 * 60 * 1_000;
  * failure.
  */
 export async function runOrderedSendCell(
-    input: RunOrderedSendCellInput
+    input: RunOrderedSendCellInput,
+    dependencies: OrderedSendCellRunDependencies
 ): Promise<Either<readonly OrderedSendShapeIssue[], OrderedSendCellObservations>> {
     const issues = validateOrderedSendShape(input.shape);
     if (issues.length > 0) {
@@ -121,11 +127,10 @@ export async function runOrderedSendCell(
     if (!RUN_ID.test(input.runId)) {
         throw new TypeError('runId must be a lower-case UUID.');
     }
-    const clock: OrderedSendRunClock = {
-        nowMs: () => performance.now(),
-        nowEpochMs: Date.now,
-        sleep: (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs))
-    };
+    if (!Number.isFinite(input.observationTailMs) || input.observationTailMs < 0) {
+        throw new TypeError('observationTailMs must be a finite number of at least 0.');
+    }
+    const { clock } = dependencies;
     const schedule = computeOrderedSendSchedule(input.shape);
     const roomRef = { ...ORDERED_SEND_SCOPE, groupId: `room-${input.runId}` };
     const log = new OrderedSendObservationLog(clock.nowMs);
@@ -140,12 +145,16 @@ export async function runOrderedSendCell(
                 log,
                 clock,
                 acksInFlight: []
-            })
+            }, input.observationTailMs)
         );
     }
     finally {
         await stopOrderedSendInstances(instances);
     }
+}
+
+export function createDefaultOrderedSendCellRunDependencies(): OrderedSendCellRunDependencies {
+    return { clock: createDefaultOrderedSendClock() };
 }
 
 /** The three instances, each on pools of its own. One that cannot be created closes those created before it. */
@@ -164,15 +173,19 @@ async function createOrderedSendInstances(
     try {
         for (let instanceIndex = 0; instanceIndex < ORDERED_SEND_CELL_CONSTANTS.instanceCount; instanceIndex += 1) {
             instances.push(
-                await createDefaultOrderedSendInstance({
-                    instanceIndex,
-                    delayMs: input.shape.delayMs,
-                    runId: input.runId,
-                    scope: ORDERED_SEND_SCOPE,
-                    authorizeRoomMessage,
-                    recordHandOff: (message, handingInstanceIndex) =>
-                        run.log.recordHandOff(message.id.msgId, handingInstanceIndex)
-                }, input.databaseUrl)
+                await createDefaultOrderedSendInstance(
+                    {
+                        instanceIndex,
+                        delayMs: input.shape.delayMs,
+                        runId: input.runId,
+                        scope: ORDERED_SEND_SCOPE,
+                        authorizeRoomMessage,
+                        recordHandOff: (message, handingInstanceIndex) =>
+                            run.log.recordHandOff(message.id.msgId, handingInstanceIndex)
+                    },
+                    input.databaseUrl,
+                    run.clock
+                )
             );
         }
         return instances;
@@ -183,8 +196,11 @@ async function createOrderedSendInstances(
     }
 }
 
-/** The phases of a run, in order: start, warm, connect, the send window, the drain, and the end of observation. */
-async function observeOrderedSends(run: OrderedSendRun): Promise<OrderedSendCellObservations> {
+/** The phases of a run, in order: start, warm, connect, the send window, the tail, and the end of observation. */
+async function observeOrderedSends(
+    run: OrderedSendRun,
+    observationTailMs: number
+): Promise<OrderedSendCellObservations> {
     await openOrderedSendRoom(run);
     const sessionByPeerId = new Map(run.schedule.sessions.map((session) => [session.peerId, session]));
 
@@ -199,7 +215,7 @@ async function observeOrderedSends(run: OrderedSendRun): Promise<OrderedSendCell
         sleep: run.clock.sleep,
         offer: (due) => offerOrderedSend(due, run)
     });
-    await drainOrderedSends(run, run.ledger.getLastOfferAtMs() ?? windowStartedAtMs);
+    await observeOrderedSendTail(run, (run.ledger.getLastOfferAtMs() ?? windowStartedAtMs) + observationTailMs);
 
     const reads = run.log.endObservation();
     const sends = run.ledger.close();
@@ -287,18 +303,16 @@ async function offerOrderedSendAck(
 }
 
 /**
- * Waits until every send is answered and every send the entry accepted has read a terminal receipt, or until the
- * send's lifetime and the receipt's grace have passed since the last offer, after which no receipt can come.
+ * Waits until `endAtMs`, whatever the sessions have read by then: a send whose receipt is complete may still read
+ * that receipt again, and the server may write a `timed-out` receipt long after its send's deadline. Nothing says
+ * that no receipt comes after `endAtMs` either; a send without a terminal receipt by then is counted as such. Only an
+ * offer that threw ends the wait early, since its run fails.
  */
-async function drainOrderedSends(run: OrderedSendRun, lastOfferAtMs: number): Promise<void> {
-    const { sendLifetimeMs, receiptGraceMs } = ORDERED_SEND_CELL_CONSTANTS;
-    const giveUpAtMs = lastOfferAtMs + sendLifetimeMs + receiptGraceMs;
-    const hasTerminalReceipt = (msgId: string): boolean => run.log.hasTerminalReceipt(msgId);
-    while (
-        run.ledger.getFailures().length === 0 && !run.ledger.isSettled(hasTerminalReceipt) &&
-        run.clock.nowMs() < giveUpAtMs
-    ) {
-        await run.clock.sleep(DRAIN_POLL_MS);
+async function observeOrderedSendTail(run: OrderedSendRun, endAtMs: number): Promise<void> {
+    let remainingMs = endAtMs - run.clock.nowMs();
+    while (run.ledger.getFailures().length === 0 && remainingMs > 0) {
+        await run.clock.sleep(Math.min(remainingMs, TAIL_POLL_MS));
+        remainingMs = endAtMs - run.clock.nowMs();
     }
 }
 

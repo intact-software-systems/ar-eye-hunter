@@ -1,4 +1,3 @@
-import { isOrderedSendReceiptExpected } from './compute-ordered-send-receipt-figures.ts';
 import type { OrderedSendCellOffer, OrderedSendCellSend } from './ordered-send-cell-observations.ts';
 import type { OrderedSendCellEntryAnswer } from './to-ordered-send-cell-answer.ts';
 
@@ -34,18 +33,6 @@ export class OrderedSendOfferLedger {
     /** The instant the last send was offered at; undefined while none was. */
     getLastOfferAtMs(): number | undefined {
         return this.offers.at(-1)?.sentAtMs;
-    }
-
-    /**
-     * Whether nothing is left to wait for: every send is answered, and every send the entry accepted has the
-     * terminal receipt `hasTerminalReceipt` answers for its msgId.
-     */
-    isSettled(hasTerminalReceipt: (msgId: string) => boolean): boolean {
-        return this.offers.every((offer) => {
-            const answer = this.answers.get(offer.msgId);
-            return answer !== undefined &&
-                (!isOrderedSendReceiptExpected({ ...offer, ...answer }) || hasTerminalReceipt(offer.msgId));
-        });
     }
 
     /** Stops taking answers, and returns every send with its answer, or as unanswered, in the order offered. */

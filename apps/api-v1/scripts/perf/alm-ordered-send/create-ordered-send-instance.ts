@@ -16,6 +16,7 @@ import { createDelayedDatabaseNotificationPort } from './create-delayed-database
 import { createDelayedPSqlSql } from './create-delayed-p-sql-sql.ts';
 import { createOrderedSendWsServer, type OrderedSendWsServer } from './create-ordered-send-ws-server.ts';
 import { ORDERED_SEND_CELL_CONSTANTS } from './ordered-send-cell-constants.ts';
+import type { OrderedSendClock } from './ordered-send-clock.ts';
 
 /** What tells one instance of a run from the others, and what every instance of the run shares. */
 export interface OrderedSendInstanceInput {
@@ -34,8 +35,8 @@ export interface OrderedSendInstanceInput {
 export interface OrderedSendInstanceDependencies {
     /** The instance's own pools on the run's database. The instance closes it. */
     readonly lifecycle: ApiV1DatabaseLifecycle;
-    readonly sleep: (delayMs: number) => Promise<void>;
-    readonly nowEpochMs: () => number;
+    /** The run's clock: the delays wait through it, and the connects and the notices take their epoch time from it. */
+    readonly clock: OrderedSendClock;
 }
 
 /** One API instance of a run: its own pools, its own WS server, and the sessions whose sockets are on it. */
@@ -63,7 +64,8 @@ const SESSION_LIFETIME_MS = 24 * 60 * 60 * 1_000;
 /** The instance's lifecycle as the API's own factory builds it, with the cell's pool sizes, on the run's database. */
 export async function createDefaultOrderedSendInstance(
     input: OrderedSendInstanceInput,
-    databaseUrl: string
+    databaseUrl: string,
+    clock: OrderedSendClock
 ): Promise<OrderedSendInstance> {
     const { applicationPoolMaxConnections, listenerPoolMaxConnections, poolIdleTimeoutSeconds } =
         ORDERED_SEND_CELL_CONSTANTS;
@@ -82,11 +84,7 @@ export async function createDefaultOrderedSendInstance(
         pgliteEvidence: { mode: 'disabled', pollIntervalMs: 1_000 },
         statementCensus: undefined
     });
-    return createOrderedSendInstance(input, {
-        lifecycle,
-        sleep: (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)),
-        nowEpochMs: Date.now
-    });
+    return createOrderedSendInstance(input, { lifecycle, clock });
 }
 
 /**
@@ -97,7 +95,8 @@ export function createOrderedSendInstance(
     input: OrderedSendInstanceInput,
     dependencies: OrderedSendInstanceDependencies
 ): OrderedSendInstance {
-    const { lifecycle, sleep, nowEpochMs } = dependencies;
+    const { lifecycle } = dependencies;
+    const { sleep, nowEpochMs } = dependencies.clock;
     const { instanceIndex, delayMs } = input;
     const server = createOrderedSendWsServer({
         sql: createDelayedPSqlSql({ sql: lifecycle.database, delayMs, sleep }),

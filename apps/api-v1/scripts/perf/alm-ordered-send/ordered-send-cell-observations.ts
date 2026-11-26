@@ -26,7 +26,7 @@ export interface OrderedSendCellOffer {
 
 /**
  * What `acceptIncomingMessage` answered, read at `answeredAtMs` as soon as it resolved: the kind it accepted the send
- * as, `rejected` for a rejection, or `unanswered` for a send still pending when the drain ended.
+ * as, `rejected` for a rejection, or `unanswered` for a send still pending when observation ended.
  */
 export type OrderedSendCellAnswer =
     | {
