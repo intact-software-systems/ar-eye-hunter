@@ -10,6 +10,10 @@ export interface PublicationWorkloadPlan {
     readonly expectedInboundMessages: number;
     /** The fewest of them that reach `minReceiveRatio`, again for one subscriber. */
     readonly minExpectedInboundMessages: number;
+    /**
+     * The fewest frames that reach `minSendSuccessRatio`. A send is accepted when the publisher's publication stage
+     * handed its value to a carrier, the stage's `admitted` counter; a send the harness submitted is not yet one.
+     */
     readonly minAcceptedSends: number;
     readonly logicalFanoutMessages: number;
 }

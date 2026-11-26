@@ -29,6 +29,10 @@ export interface PublicationWorkloadParameters {
     readonly payloadBytes: number;
     readonly ttlMs: number;
     readonly minReceiveRatio: number;
+    /**
+     * The share of the frames the publisher's publication stage must hand to a carrier. A frame the stage refused,
+     * displaced or let expire is no success, though its send command returned.
+     */
     readonly minSendSuccessRatio: number;
     readonly readyTimeoutMs: number;
 }

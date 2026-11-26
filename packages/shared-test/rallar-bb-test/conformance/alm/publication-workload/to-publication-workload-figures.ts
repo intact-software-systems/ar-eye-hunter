@@ -67,8 +67,11 @@ export interface PublicationWorkloadMeasuredFigures {
 }
 
 export interface PublicationWorkloadPublisherFigures {
-    /** The loop's `passed`: the family's loop holds one send, so each child that passed is one accepted send. */
-    readonly acceptedSends: number;
+    /**
+     * The loop's `passed`: the sends the harness submitted. A live send returns as soon as its value is staged or
+     * refused, so this is not what the stage handed to a carrier; `publicationStage.counters.admitted` is.
+     */
+    readonly submittedSends: number;
     readonly completedIterations: number;
     readonly elapsedMs: number;
     /**
@@ -155,13 +158,13 @@ function decodeLoopFigures(
 ): Either<readonly string[], PublicationWorkloadLoopFigures> {
     const record = decodeRecord(loop);
     const pacing = decodeRecord(record.pacing);
-    const acceptedSends = decodeNonNegativeInteger(record.passed);
+    const submittedSends = decodeNonNegativeInteger(record.passed);
     const childResultCount = decodeNonNegativeInteger(record.childResultCount);
     const completedIterations = decodeNonNegativeInteger(pacing.completedIterations);
     const elapsedMs = decodeFiniteNumber(pacing.elapsedMs);
     const achievedRateHz = decodeFiniteNumber(pacing.achievedRateHz);
     const issues = [
-        ...(acceptedSends === undefined ? [`${LOOP_PATH}.passed must be a whole number of at least 0`] : []),
+        ...(submittedSends === undefined ? [`${LOOP_PATH}.passed must be a whole number of at least 0`] : []),
         ...validateLoopChildResultCount(childResultCount, completedIterations),
         ...(completedIterations === undefined
             ? [`${LOOP_PATH}.pacing.completedIterations must be a whole number of at least 0`]
@@ -174,12 +177,13 @@ function decodeLoopFigures(
             : [])
     ];
     if (
-        issues.length > 0 || acceptedSends === undefined || completedIterations === undefined || elapsedMs === undefined
+        issues.length > 0 || submittedSends === undefined || completedIterations === undefined ||
+        elapsedMs === undefined
     ) {
         return Either.ofLeft(issues);
     }
     return Either.ofRight({
-        acceptedSends,
+        submittedSends,
         completedIterations,
         elapsedMs,
         achievedIterationRateHz: achievedRateHz ?? null
@@ -188,7 +192,7 @@ function decodeLoopFigures(
 
 /**
  * The family's loop holds one send, so it ran one child per iteration. A loop that ran another number is not the
- * family's, and its `passed` would not count accepted sends.
+ * family's, and its `passed` would not count submitted sends.
  */
 function validateLoopChildResultCount(
     childResultCount: number | undefined,

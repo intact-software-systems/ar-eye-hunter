@@ -8,7 +8,7 @@ import type {
     RallarBlackBoxTestRecipe
 } from '../../../rallar-black-box-test-contracts.ts';
 
-import { RESPONSE_MARGIN_MS, STATS_TIMEOUT_MS } from '../alm-conformance-budgets.ts';
+import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS, STATS_TIMEOUT_MS } from '../alm-conformance-budgets.ts';
 import { computeCommandsTimeoutMs } from '../cell/compute-commands-timeout-ms.ts';
 import { createAlmCohortBarrier } from '../cohort/create-alm-cohort-barrier.ts';
 import {
@@ -16,6 +16,7 @@ import {
     type AlmCohortRole,
     type AlmCohortSetupInput
 } from '../cohort/create-alm-cohort-setup-commands.ts';
+import { toAlmCohortCommandPrefix } from '../cohort/to-alm-cohort-command-prefix.ts';
 import { toPauseWait } from '../to-pause-command.ts';
 import { computePublicationWorkloadPlan, type PublicationWorkloadPlan } from './compute-publication-workload-plan.ts';
 import {
@@ -39,15 +40,19 @@ export interface PublicationWorkloadRecipes {
     readonly subscriber: PublicationWorkloadRoleRecipe;
 }
 
+type PublicationWorkloadRole = keyof PublicationWorkloadRecipes;
+
 const SCOPE = 'publication-workload';
-const ROLE_NAMES = { owner: 'publisher', member: 'subscriber' } as const;
+/** The publisher writes the group and connects before any peer exists; a subscriber joins it. */
+const COHORT_ROLES: Readonly<Record<PublicationWorkloadRole, AlmCohortRole>> = {
+    publisher: 'owner',
+    subscriber: 'member'
+};
 const TOPIC_ID = 'room.publication-workload';
-/** No other command of a run sends this type: a subscriber counts every copy of it on its page's inbound log. */
+/** No other command of a run sends this type: a subscriber counts every message of it on its page's inbound log. */
 const FRAME_TYPE_ID = 'room.publication-workload.frame.v1';
 /** A live send names its stream; the one publisher of a point publishes one. */
 const STREAM_RESOURCE_ID = 'publication-workload';
-/** The publisher's loop of sends: its result's `passed` is what the assert on the accepted sends reads. */
-const PUBLISH_LOOP_COMMAND_ID = `${SCOPE}-${ROLE_NAMES.owner}-frames`;
 /**
  * A page's ALM diagnostics put an event per send and per arrival on the page whose load a point measures, so the
  * family's pages connect without them.
@@ -75,13 +80,11 @@ export function createPublicationWorkloadRecipes(
         publisher: {
             agentCount: 1,
             recipe: {
-                ...toRecipeIdentity('owner'),
-                // The gate on the accepted sends comes last: a publisher that fails it has already met the
-                // subscribers at the complete barrier, so they still count what did arrive.
+                ...toRecipeIdentity('publisher'),
                 commands: [
-                    ...createSetupCommands(parameters, 'owner'),
+                    ...createSetupCommands(parameters, 'publisher'),
                     ...window,
-                    createBarrier('owner', 'complete', completeTimeoutMs),
+                    createBarrier('publisher', 'complete', completeTimeoutMs),
                     createAcceptedSendsAssert(plan)
                 ]
             }
@@ -89,12 +92,12 @@ export function createPublicationWorkloadRecipes(
         subscriber: {
             agentCount: plan.subscriberCount,
             recipe: {
-                ...toRecipeIdentity('member'),
+                ...toRecipeIdentity('subscriber'),
                 // The count reads the page's whole inbound log, so the page keeps all of it.
                 eventHistory: { mode: 'full' },
                 commands: [
-                    ...createSetupCommands(parameters, 'member'),
-                    createBarrier('member', 'complete', completeTimeoutMs),
+                    ...createSetupCommands(parameters, 'subscriber'),
+                    createBarrier('subscriber', 'complete', completeTimeoutMs),
                     ...createSubscriberCountCommands(parameters, plan)
                 ]
             }
@@ -103,31 +106,37 @@ export function createPublicationWorkloadRecipes(
 }
 
 function toRecipeIdentity(
-    role: AlmCohortRole
+    role: PublicationWorkloadRole
 ): Pick<RallarBlackBoxTestRecipe, 'schemaVersion' | 'recipeId' | 'name' | 'continueOnFailure'> {
     return {
         schemaVersion: 1,
         recipeId: toCommandPrefix(role),
-        name: `Publication workload ${ROLE_NAMES[role]}`,
+        name: `Publication workload ${role}`,
         continueOnFailure: false
     };
 }
 
-function toCommandPrefix(role: AlmCohortRole): string {
-    return `${SCOPE}-${ROLE_NAMES[role]}`;
+/** A role's commands, its connection and its recipe carry the prefix the cohort's setup gives that role. */
+function toCommandPrefix(role: PublicationWorkloadRole): string {
+    return toAlmCohortCommandPrefix(SCOPE, role);
 }
 
-function createBarrier(role: AlmCohortRole, phase: string, timeoutMs: number): RallarBlackBoxTestBarrierCommand {
-    return createAlmCohortBarrier({ scope: SCOPE, roleName: ROLE_NAMES[role], phase, timeoutMs });
+function createBarrier(
+    role: PublicationWorkloadRole,
+    phase: string,
+    timeoutMs: number
+): RallarBlackBoxTestBarrierCommand {
+    return createAlmCohortBarrier({ scope: SCOPE, roleName: role, phase, timeoutMs });
 }
 
 /**
  * The cohort settles on one layout whatever the carrier, and its setup-complete barrier is the one gate before the
- * window: the publisher's first send and a subscriber's wait both follow it directly.
+ * window: the publisher's first send and a subscriber's wait both follow it directly. Each role's connect opens the
+ * one typed channel of the frame, under the connection its send or its count names.
  */
 function createSetupCommands(
     parameters: PublicationWorkloadParameters,
-    role: AlmCohortRole
+    role: PublicationWorkloadRole
 ): readonly RallarBlackBoxTestCommand[] {
     const cohort: AlmCohortSetupInput = {
         group: parameters.group,
@@ -135,10 +144,10 @@ function createSetupCommands(
         readyTimeoutMs: parameters.readyTimeoutMs,
         almDiagnostics: ALM_DIAGNOSTICS,
         scope: SCOPE,
-        roleNames: ROLE_NAMES,
+        roleNames: { owner: 'publisher', member: 'subscriber' },
         channel: { typeId: FRAME_TYPE_ID, topicId: TOPIC_ID }
     };
-    const setup = createAlmCohortSetupCommands(cohort, role);
+    const setup = createAlmCohortSetupCommands(cohort, COHORT_ROLES[role]);
     return [...setup.entry, ...setup.gathering, ...setup.settling];
 }
 
@@ -151,7 +160,7 @@ function createPublisherWindowCommands(
     parameters: PublicationWorkloadParameters,
     plan: PublicationWorkloadPlan
 ): readonly RallarBlackBoxTestCommand[] {
-    const prefix = toCommandPrefix('owner');
+    const prefix = toCommandPrefix('publisher');
     return [
         createPublishLoop(parameters, plan),
         toPauseWait(`${prefix}-drain`, parameters.publication.cadenceMs + parameters.ttlMs),
@@ -159,30 +168,38 @@ function createPublisherWindowCommands(
     ];
 }
 
-/** A loop's thresholds read `rtc.send` and `ws.send` alone, so the accepted sends are judged by an assert of their own. */
+/**
+ * The gate on the publisher: its stage's `admitted`, the values its opportunities handed to a carrier, counted over
+ * the connect, which sends nothing but the window's frames. The loop's `passed` is no such count: a live send returns
+ * as soon as its value is staged or refused, so a frame the stage refused, displaced or let expire still passed. The
+ * gate comes after the complete barrier: a publisher that fails it has already met the subscribers there, so they
+ * still count what did arrive.
+ */
 function createAcceptedSendsAssert(plan: PublicationWorkloadPlan): RallarBlackBoxTestCommand {
+    const prefix = toCommandPrefix('publisher');
     return {
         kind: 'assert',
-        commandId: `${toCommandPrefix('owner')}-assert-accepted-sends`,
-        source: `resultCache.${PUBLISH_LOOP_COMMAND_ID}.value.passed`,
+        commandId: `${prefix}-assert-accepted-sends`,
+        source: `resultCache.${prefix}-stats.value.rallar.alm.publication.counters.admitted`,
         operator: 'gte',
         expected: plan.minAcceptedSends
     };
 }
 
 /**
- * One child, so each iteration is one frame and the loop's `passed` counts accepted sends. The loop stays at the top
- * level of its recipe: inside another loop, that loop would resolve the payload's placeholders with its own position.
- * A send is bounded by its own lifetime, as an expiring send of the conformance lane is.
+ * One child, so each iteration is one frame. The loop stays at the top level of its recipe: inside another loop, that
+ * loop would resolve the payload's placeholders with its own position. A send's budget is the harness's own, as a live
+ * send of the conformance lane has: the command returns once its value is staged, and a budget of the frame's lifetime
+ * would have the harness abort, under a short lifetime, sends the product still publishes.
  */
 function createPublishLoop(
     parameters: PublicationWorkloadParameters,
     plan: PublicationWorkloadPlan
 ): RallarBlackBoxTestLoopCommand {
-    const prefix = toCommandPrefix('owner');
+    const prefix = toCommandPrefix('publisher');
     return {
         kind: 'loop',
-        commandId: PUBLISH_LOOP_COMMAND_ID,
+        commandId: `${prefix}-frames`,
         count: plan.frameCount,
         intervalMs: parameters.publishIntervalMs,
         continueOnFailure: true,
@@ -200,21 +217,23 @@ function createPublishLoop(
             resourceId: STREAM_RESOURCE_ID,
             ttlMs: parameters.ttlMs,
             payload: toPublicationWorkloadPayload(parameters),
-            timeoutMs: parameters.ttlMs
+            timeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS
         }]
     };
 }
 
 /**
- * The count starts once the publisher has drained and settles at once when enough copies are on the log; short of
- * them it waits one more lifetime, the longest a copy still on its way is worth waiting for. Its two guards need no
- * arithmetic: no copy without an age, and as many ages as copies.
+ * The count starts once the publisher has drained and settles at once when enough messages are on the log; short of
+ * them it waits one more lifetime, the longest a message still on its way is worth waiting for. Its three guards need
+ * no arithmetic: no message without an age, as many ages as messages, and no more messages than the publisher has
+ * frames. A page's one inbound store delivers a message once whichever carriers brought it, so a count above the frames
+ * holds another sender's messages or another run's.
  */
 function createSubscriberCountCommands(
     parameters: PublicationWorkloadParameters,
     plan: PublicationWorkloadPlan
 ): readonly RallarBlackBoxTestCommand[] {
-    const prefix = toCommandPrefix('member');
+    const prefix = toCommandPrefix('subscriber');
     const received = `resultCache.${prefix}-received.value`;
     return [
         {
@@ -240,6 +259,13 @@ function createSubscriberCountCommands(
             source: `${received}.sampleAge.ageMs.count`,
             operator: 'equals',
             comparisonSource: `${received}.observed`
+        },
+        {
+            kind: 'assert',
+            commandId: `${prefix}-assert-copies-within-frames`,
+            source: `${received}.observed`,
+            operator: 'lte',
+            expected: plan.frameCount
         },
         { kind: 'stats', commandId: `${prefix}-stats`, timeoutMs: STATS_TIMEOUT_MS }
     ];

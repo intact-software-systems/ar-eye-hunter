@@ -15,6 +15,7 @@ import type {
 import { RESTORED_SESSION_RALLAR } from '../alm-conformance-session-commands.ts';
 import { computeCommandsTimeoutMs } from '../cell/compute-commands-timeout-ms.ts';
 import { createAlmCohortBarrier } from './create-alm-cohort-barrier.ts';
+import { toAlmCohortCommandPrefix } from './to-alm-cohort-command-prefix.ts';
 
 /** The one agent that writes the group and connects before any peer exists, or one of the agents that join it. */
 export type AlmCohortRole = 'owner' | 'member';
@@ -115,7 +116,7 @@ export function computeAlmCohortGroupRequestTimeoutMs(
 }
 
 function toCommandPrefix(input: AlmCohortSetupInput, role: AlmCohortRole): string {
-    return `${input.scope}-${input.roleNames[role]}`;
+    return toAlmCohortCommandPrefix(input.scope, input.roleNames[role]);
 }
 
 /**

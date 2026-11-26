@@ -29,7 +29,7 @@ const POINT: PublicationWorkloadParameters = {
 };
 
 /**
- * Sixty iterations of one send each, 59 of them accepted. The loop's own rate for them over 30,260 ms is its 59
+ * Sixty iterations of one send each, 59 of them submitted. The loop's own rate for them over 30,260 ms is its 59
  * intervals: 59 x 1,000 / 30,260, to four places.
  */
 const LOOP_RESULT = {
@@ -283,7 +283,7 @@ describe('toPublicationWorkloadFigures', () => {
             },
             measured: {
                 publisher: {
-                    acceptedSends: 59,
+                    submittedSends: 59,
                     completedIterations: 60,
                     elapsedMs: 30_260,
                     achievedIterationRateHz: 1.9498,
@@ -348,7 +348,7 @@ describe('toPublicationWorkloadFigures', () => {
 
         expect(figures.left).toBeUndefined();
         expect(figures.right?.measured.publisher).toEqual({
-            acceptedSends: 1,
+            submittedSends: 1,
             completedIterations: 1,
             elapsedMs: 12,
             achievedIterationRateHz: null,

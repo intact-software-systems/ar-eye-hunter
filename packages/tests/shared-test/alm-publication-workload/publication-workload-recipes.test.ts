@@ -17,8 +17,13 @@ import {
     type RallarBlackBoxTestMessagesSendCommand,
     type RallarBlackBoxTestRecipe
 } from '@shared-test/rallar-bb-test/mod.ts';
+import type { RallarBlackBoxTestAlmUsage } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
 import { isJsonRecordValue, validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
+import { toIdleALOutboundCongestionEpisodeFigures } from '@shared/alm/outbound/congestion/al-outbound-congestion-episodes.ts';
+import { toIdleALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
+import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
 import { toNestedCommands } from '../to-nested-commands.ts';
 
@@ -78,7 +83,10 @@ function toCommandsAfterBarrier(
     afterBarrierId: string
 ): readonly RallarBlackBoxTestCommand[] {
     const start = recipe.commands.findIndex((command) => command.kind === 'barrier' && command.barrierId === afterBarrierId);
-    return start < 0 ? [] : recipe.commands.slice(start + 1);
+    if (start < 0) {
+        throw new Error(`The recipe ${recipe.recipeId} holds no barrier ${afterBarrierId}.`);
+    }
+    return recipe.commands.slice(start + 1);
 }
 
 function toBarrierIds(recipe: RallarBlackBoxTestRecipe): readonly string[] {
@@ -89,7 +97,6 @@ describe('the recipes of one point of the publication workload family', () => {
     it('gives the publisher one loop of 60 frames 500 ms apart whose one child is the stamped live send, and has a subscriber count 57 copies and read their age', () => {
         const { publisher, subscriber } = createRecipes(POINT);
 
-        expect(toSendLoops(publisher.recipe)).toHaveLength(1);
         const loop = toSoleSendLoop(publisher.recipe);
         expect(loop).toMatchObject({ count: 60, intervalMs: 500, continueOnFailure: true });
         expect(loop.commands).toEqual([{
@@ -105,7 +112,8 @@ describe('the recipes of one point of the publication workload family', () => {
             resourceId: 'publication-workload',
             ttlMs: 5_000,
             payload: { seq: '{loop.iteration}', sentAtEpochMs: '{loop.atEpochMs}', pad: FILLER },
-            timeoutMs: 5_000
+            // The harness's own budget for a send, not the frame's lifetime of 5,000 ms.
+            timeoutMs: 10_000
         }]);
         expect(toNestedCommands(subscriber.recipe.commands).filter((command) => command.kind === 'messages.received'))
             .toEqual([{
@@ -119,6 +127,28 @@ describe('the recipes of one point of the publication workload family', () => {
                 timeoutMs: 6_000
             }]);
     });
+
+    it.each(
+        [
+            { role: 'publisher', connection: 'publication-workload-publisher' },
+            { role: 'subscriber', connection: 'publication-workload-subscriber' }
+        ] as const
+    )(
+        'connects the $role once, under the connection its send or its count names, on the one typed channel of the frame',
+        ({ role, connection }) => {
+            const { recipe } = createRecipes(POINT)[role];
+
+            const connects = recipe.commands.filter((command) => command.kind === 'rtc.connect');
+            expect(connects).toHaveLength(1);
+            expect(connects[0]).toMatchObject({ connection, transport: 'messages.rtc', roomRef: GROUP });
+            expect(connects[0]?.rallar).toMatchObject({
+                typeId: 'room.publication-workload.frame.v1',
+                topicId: 'room.publication-workload'
+            });
+            expect(Object.keys(connects[0]?.rallar ?? {})).not.toContain('messageSelector');
+            expect(Object.keys(connects[0]?.rallar ?? {})).not.toContain('messageTypeIds');
+        }
+    );
 
     it('returns the issues of a point that breaks its bounds and builds no recipe, though sizing its payload would throw', () => {
         const created = createPublicationWorkloadRecipes({ ...POINT, participantCount: 1, payloadBytes: 10 });
@@ -200,16 +230,49 @@ describe('the recipes of one point of the publication workload family', () => {
             'publication-workload-publisher-assert-accepted-sends'
         ]);
         expect(publisherWindow[3]).toMatchObject(completeBarrier);
+        // The stage's own count of the values it handed to a carrier, against 95 % of 60 frames.
+        expect(publisherWindow[4]).toEqual({
+            kind: 'assert',
+            commandId: 'publication-workload-publisher-assert-accepted-sends',
+            source: 'resultCache.publication-workload-publisher-stats.value.rallar.alm.publication.counters.admitted',
+            operator: 'gte',
+            expected: 57
+        });
         expect(toCommandsAfterBarrier(subscriber.recipe, 'publication-workload-setup-complete')[0])
             .toMatchObject(completeBarrier);
         expect(subscriber.recipe.eventHistory).toEqual({ mode: 'full' });
     });
 });
 
+/**
+ * The ALM usage of a page that is idle but for its publication stage: of the 60 values it staged, it handed
+ * `admitted` to a carrier and let the others expire.
+ */
+function toPublisherAlmUsage(admitted: number): RallarBlackBoxTestAlmUsage {
+    const stage = toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS);
+    return {
+        usage: { admissions: 0, bytes: 0, oldestAgeMs: 0, tracks: 0 },
+        own: { admissions: 0, bytes: 0 },
+        inbound: { admissions: 0, bytes: 0 },
+        limits: AL_VOLATILE_SESSION_LIMITS,
+        overloaded: false,
+        orderingTracks: 0,
+        deliveredMarkers: 0,
+        repliesHeld: 0,
+        replyWaitsOpen: 0,
+        publication: {
+            ...stage,
+            lanes: 1,
+            counters: { ...stage.counters, staged: 60, admitted, expired: 60 - admitted }
+        },
+        ordering: { entered: 0, omitted: 0, witnessed: 0, beforeEntry: 0 },
+        congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures()
+    };
+}
+
 describe('the publisher\'s commands after the setup-complete barrier, run by the runtime', () => {
     interface PublisherWindowRun {
         readonly ok: boolean;
-        /** The failures outside the loop: a refused send fails under its loop's id and is the loop's to count. */
         readonly failedCommandIds: readonly string[];
         /** Every command of the recipe that returned a result, in the order it ran. */
         readonly ranCommands: readonly Readonly<{ commandId: string; ok: boolean; }>[];
@@ -218,10 +281,12 @@ describe('the publisher\'s commands after the setup-complete barrier, run by the
     }
 
     /**
-     * Sends take no time and every sleep advances the clock, so the clock reads the schedule alone. The executor
-     * releases a barrier as soon as the publisher arrives at it, as a control server whose subscribers already wait.
+     * Sends take no time and every sleep advances the clock, so the clock reads the schedule alone. Every send returns
+     * as a live send does, whatever its stage does with the value afterwards, and the page's ALM usage says how many
+     * values the stage handed to a carrier. The executor releases a barrier as soon as the publisher arrives at it, as
+     * a control server whose subscribers already wait.
      */
-    async function runPublisherWindow(refusedSendCount: number): Promise<PublisherWindowRun> {
+    async function runPublisherWindow(admittedByStage: number): Promise<PublisherWindowRun> {
         let now = WINDOW_STARTED_AT_EPOCH_MS;
         const sends: RallarBlackBoxTestMessagesSendCommand[] = [];
         const runtime = createDefaultRallarBlackBoxTestRuntime({
@@ -229,6 +294,7 @@ describe('the publisher\'s commands after the setup-complete barrier, run by the
             sleep: async (ms) => {
                 now += ms;
             },
+            readAlmUsage: async () => toPublisherAlmUsage(admittedByStage),
             commandExecutor: (command, context) => {
                 if (command.kind === 'barrier') {
                     return {
@@ -241,9 +307,7 @@ describe('the publisher\'s commands after the setup-complete barrier, run by the
                     return undefined;
                 }
                 sends.push(command);
-                return sends.length <= refusedSendCount
-                    ? { status: 'failed', error: { code: 'REFUSED', message: 'The stage refused the send.' } }
-                    : { status: 'ok', value: {}, nextStatus: context.state().status };
+                return { status: 'ok', value: {}, nextStatus: context.state().status };
             }
         });
         const result = await runtime.execute({
@@ -264,16 +328,14 @@ describe('the publisher\'s commands after the setup-complete barrier, run by the
                     ? [{ commandId: entry.commandId, ok: entry.ok }]
                     : []
             ),
-            failedCommandIds: runtime.state().failures
-                .map((failure) => failure.commandId)
-                .filter((commandId) => !commandId.startsWith('publication-workload-publisher-frames:')),
+            failedCommandIds: runtime.state().failures.map((failure) => failure.commandId),
             sends,
             statsReadAtEpochMs: runtime.state().resultCache['publication-workload-publisher-stats']?.startedAtEpochMs
         };
     }
 
     it('sends frame n as the number n stamped with the clock of its send, the last one in exactly the declared 256 bytes', async () => {
-        const run = await runPublisherWindow(0);
+        const run = await runPublisherWindow(60);
 
         expect(run.ok).toBe(true);
         expect(run.sends.map((send) => isJsonRecordValue(send.payload) ? send.payload.seq : undefined))
@@ -287,17 +349,18 @@ describe('the publisher\'s commands after the setup-complete barrier, run by the
     });
 
     it('reads the publisher\'s stats one cadence and one lifetime after the last send: 100 ms and 5,000 ms', async () => {
-        const run = await runPublisherWindow(0);
+        const run = await runPublisherWindow(60);
 
         expect(run.statsReadAtEpochMs).toBe(1_800_000_029_500 + 5_100);
     });
 
-    it('passes with 57 of 60 sends accepted, and with 56 fails its own assert only after it read its stats and met the subscribers at the complete barrier', async () => {
-        const atThreshold = await runPublisherWindow(3);
-        const belowThreshold = await runPublisherWindow(4);
+    it('passes when its stage handed 57 of the 60 frames to a carrier; with 56, though all 60 sends returned, it fails its own assert, and only after it read its stats and met the subscribers at the complete barrier', async () => {
+        const atThreshold = await runPublisherWindow(57);
+        const belowThreshold = await runPublisherWindow(56);
 
         expect({ ok: atThreshold.ok, failedCommandIds: atThreshold.failedCommandIds })
             .toEqual({ ok: true, failedCommandIds: [] });
+        expect(belowThreshold.sends).toHaveLength(60);
         expect(belowThreshold.ok).toBe(false);
         expect(belowThreshold.failedCommandIds)
             .toEqual(['publication-workload-publisher-assert-accepted-sends', 'publisher-window']);
@@ -312,7 +375,7 @@ describe('the publisher\'s commands after the setup-complete barrier, run by the
     });
 });
 
-describe('a subscriber\'s count and its two guards, run by the browser runtime on a log of copies', () => {
+describe('a subscriber\'s count and its three guards, run by the browser runtime on a log of copies', () => {
     interface SubscriberCountRun {
         readonly observed: number | undefined;
         readonly passed: readonly string[];
@@ -365,27 +428,38 @@ describe('a subscriber\'s count and its two guards, run by the browser runtime o
         return Array.from({ length: count }, (_, index) => WINDOW_STARTED_AT_EPOCH_MS + index * 500);
     }
 
-    it('passes the count and both guards on 58 copies that each carry a numeric stamp', async () => {
+    it('passes the count and its three guards on 58 copies that each carry a numeric stamp', async () => {
         expect(await runSubscriberCount(toStamps(58))).toEqual({
             observed: 58,
             passed: [
                 'publication-workload-subscriber-received',
                 'publication-workload-subscriber-assert-every-copy-aged',
-                'publication-workload-subscriber-assert-ages-cover-copies'
+                'publication-workload-subscriber-assert-ages-cover-copies',
+                'publication-workload-subscriber-assert-copies-within-frames'
             ],
             failed: []
         });
     });
 
-    it('fails both guards, not the count, when one of 57 copies still carries its unresolved stamp', async () => {
+    it('fails both age guards, not the count, when one of 57 copies still carries its unresolved stamp', async () => {
         expect(await runSubscriberCount([...toStamps(56), '{loop.atEpochMs}'])).toEqual({
             observed: 57,
-            passed: ['publication-workload-subscriber-received'],
+            passed: [
+                'publication-workload-subscriber-received',
+                'publication-workload-subscriber-assert-copies-within-frames'
+            ],
             failed: [
                 'publication-workload-subscriber-assert-every-copy-aged',
                 'publication-workload-subscriber-assert-ages-cover-copies'
             ]
         });
+    });
+
+    it('fails on 61 copies, one more than the publisher has frames: a page delivers each message once, so the log holds another sender\'s or another run\'s', async () => {
+        const run = await runSubscriberCount(toStamps(61));
+
+        expect(run.observed).toBe(61);
+        expect(run.failed).toEqual(['publication-workload-subscriber-assert-copies-within-frames']);
     });
 
     it('fails the count on 56 copies, one short of the 57 that 95 % of 60 frames asks for', async () => {

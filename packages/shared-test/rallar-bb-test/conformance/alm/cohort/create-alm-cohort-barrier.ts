@@ -1,5 +1,7 @@
 import type { RallarBlackBoxTestBarrierCommand } from '../../../rallar-black-box-test-contracts.ts';
 
+import { toAlmCohortCommandPrefix } from './to-alm-cohort-command-prefix.ts';
+
 export interface AlmCohortBarrierInput {
     /** The cohort's name: every role of it meets at the barrier `<scope>-<phase>`. */
     readonly scope: string;
@@ -13,7 +15,7 @@ export interface AlmCohortBarrierInput {
 export function createAlmCohortBarrier(barrier: AlmCohortBarrierInput): RallarBlackBoxTestBarrierCommand {
     return {
         kind: 'barrier',
-        commandId: `${barrier.scope}-${barrier.roleName}-${barrier.phase}`,
+        commandId: `${toAlmCohortCommandPrefix(barrier.scope, barrier.roleName)}-${barrier.phase}`,
         barrierId: `${barrier.scope}-${barrier.phase}`,
         timeoutMs: barrier.timeoutMs
     };

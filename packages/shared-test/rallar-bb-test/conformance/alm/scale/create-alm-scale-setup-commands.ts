@@ -6,6 +6,7 @@ import {
     createAlmCohortSetupCommands,
     type AlmCohortSetupInput
 } from '../cohort/create-alm-cohort-setup-commands.ts';
+import { toAlmCohortCommandPrefix } from '../cohort/to-alm-cohort-command-prefix.ts';
 import type { AlmScaleRecipeInput } from './create-alm-scale-recipes.ts';
 
 const SCOPE = 'alm-scale';
@@ -18,7 +19,7 @@ export function createAlmScaleSetupCommands(
     input: AlmScaleRecipeInput,
     role: 'director' | 'player'
 ): readonly RallarBlackBoxTestCommand[] {
-    const prefix = `${SCOPE}-${role}`;
+    const prefix = toAlmCohortCommandPrefix(SCOPE, role);
     const cohort = toAlmScaleCohort(input);
     const setup = createAlmCohortSetupCommands(cohort, role === 'director' ? 'owner' : 'member');
     return [
