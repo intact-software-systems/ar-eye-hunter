@@ -726,12 +726,15 @@ Web and API deploy together.
 **A delivery's completion.** After the application is handed an ordered message, its completion moves the track's
 delivery progress and deletes the slot in one write guarded on its position and its slot alone
 (`commitDeliveryCompletion`), keeping the later of the stored and observed expiry, so an admission's expiry refresh or
-a control row written meanwhile does not conflict it. A write that still loses, to a moved position or slot, or on
-PostgreSQL to a row version another commit moved inside the write's own round trip, starts a fresh attempt: the
-completion reads the slot and the progress again, decides again (a position already past the message reads it
-completed), and writes again, three attempts in all, one after another with no wait. A copy that arrives while the
-completion runs cannot move the slot: a copy records its carrier there only while its sequence is held behind a gap,
-and a released sequence is not. Only a completion that loses every attempt hands the work back, and the application
+a control row written meanwhile does not conflict it. The write places the new position itself, from the stored slot
+and the stored `completedThrough` (`computeALInboundDeliveryCompletion`), and writes nothing when they place none. The
+slot is compared whole, the retention its message row gives it (`ownerRetainUntilMs`) included, so any rewrite of the
+slot between the completion's read and its write, a retention extension among them, costs the completion one attempt.
+A write that loses, to a moved position or slot, or on PostgreSQL to a row version another commit moved inside the
+write's own round trip, starts a fresh attempt: the completion reads the slot and the progress again as they then are,
+decides again (a position already past the message reads it completed), and writes again, three attempts in all, one
+after another with no wait. The completion hands the work back (`retry`) in three cases: every attempt lost, the
+shutdown signal aborted it, or its predecessor has not completed, so no completion can be placed yet. The application
 can then be handed the message again, as after a crash between dispatch and completion.
 
 `validateALInboundControlAdmission` returns every reason an acknowledgement is

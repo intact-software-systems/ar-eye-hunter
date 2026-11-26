@@ -590,13 +590,15 @@ inside the completion's read-to-commit window on every run.
 
 The completion is guarded on its position and its slot alone, in one write whose guard comes first: it commits when
 the stored `completedThrough` and the stored slot are the ones it read, keeps the larger of the stored and observed
-expiry, and writes nothing otherwise. A write can still lose: another completion, a gap pass or a resynchronization
-moved the position, the slot is gone, or on PostgreSQL another commit moved a row version between the write's own read
-and its conditional statement. Because the application already has the message, a lost write is not handed back as
-work: the completion reads and decides again, as the doctrine has every conflict do, and writes again, three attempts
-in all with no wait between them. A copy arriving meanwhile cannot move the slot, since it records its carrier there
-only while its sequence is held behind a gap. A completion that loses every attempt hands the work back, and the
-application can then be handed the message again: the same class as a crash between dispatch and completion.
+expiry, places the new position itself from the stored slot and `completedThrough`, and writes nothing otherwise or
+when those facts place no completion. A write can still lose: another completion, a gap pass or a witness moved the
+position, the slot is gone or was rewritten (it is compared whole, so a retention extension of its message counts), or
+on PostgreSQL another commit moved a row version between the write's own read and its conditional statement. Because
+the application already has the message, a lost write is not handed back as work: the completion reads the slot and
+the progress again as they then are, decides again, as the doctrine has every conflict do, and writes again, three
+attempts in all with no wait between them. The completion hands the work back in three cases: every attempt lost, the
+shutdown signal aborted it, or its predecessor has not completed so no completion can be placed yet. The application
+can then be handed the message again: the same class as a crash between dispatch and completion.
 
 Not changed: an admission's own guard still fences on the whole progress value, so a completion that commits first
 makes that admission conflict and replay, which has no external effect.

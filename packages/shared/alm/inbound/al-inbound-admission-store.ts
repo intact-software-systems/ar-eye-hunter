@@ -477,9 +477,10 @@ export interface ALInboundAdmissionStore extends ALReadyable {
     readMessageProvenance(reference: ALInboundMessageReference): Promise<ALInboundMessageOwner | undefined>;
 
     /**
-     * Moves a track's delivery progress to `completesThrough` and deletes the delivered slot, when the stored
-     * `completedThrough` and the stored slot are the ones the completion read. An expiry another commit extended is
-     * kept: the larger of the stored and the observed. `conflict` when either fact moved; nothing is written then.
+     * Moves a track's delivery progress to the position the stored slot and `completedThrough` place the completion at,
+     * and deletes the delivered slot, when both are the ones the completion read. An expiry another commit extended is
+     * kept: the larger of the stored and the observed. `conflict` when either fact moved or they place no completion;
+     * nothing is written then.
      */
     commitDeliveryCompletion(completion: ALInboundDeliveryCompletion): Promise<'committed' | 'conflict'>;
 
@@ -804,11 +805,11 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
 
     /** It names no deadline, so its write never expires. */
     async commitDeliveryCompletion(completion: ALInboundDeliveryCompletion): Promise<'committed' | 'conflict'> {
-        const written = await this.writeConditionally(
+        const written = await this.writeUnlessConflicted(
             (transaction) => this.writeDeliveryCompletion(transaction, completion),
             null
         );
-        if (written === 'conflict' || written === 'expired') {
+        if (written === 'conflict') {
             return 'conflict';
         }
         this.recordDeliveredMarkers(written);
@@ -905,12 +906,24 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         executionExpiresAtMs: number | null
     ): Promise<T | 'conflict' | 'expired'> {
         try {
-            return await this.backend.write(write, executionExpiresAtMs);
+            return await this.writeUnlessConflicted(write, executionExpiresAtMs);
         }
         catch (error) {
             if (error instanceof PersistenceWriteExpiredError) {
                 return 'expired';
             }
+            throw error;
+        }
+    }
+
+    private async writeUnlessConflicted<T>(
+        write: (transaction: ALAdmissionWorkWriteContext) => Promise<T>,
+        executionExpiresAtMs: number | null
+    ): Promise<T | 'conflict'> {
+        try {
+            return await this.backend.write(write, executionExpiresAtMs);
+        }
+        catch (error) {
             if (error instanceof ALAdmissionBackendConflictError) {
                 return 'conflict';
             }

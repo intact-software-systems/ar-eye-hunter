@@ -234,7 +234,10 @@ export class ALInboundOrderedDelivery {
         }
     }
 
-    /** Only when every attempt's write lost does the work go back to be dispatched again. */
+    /**
+     * Hands the work back (`retry`), to be dispatched again, when every attempt's write lost, when the shutdown signal
+     * aborted it, or when the predecessor has not completed, so no completion can be placed yet.
+     */
     async complete(msg: ALMessage): Promise<'completed' | 'retry'> {
         const trackKey = toALOrderingTrackKey(msg);
         const seq = msg.ordering?.seq;
@@ -292,8 +295,7 @@ export class ALInboundOrderedDelivery {
             trackKey,
             seq,
             observedSlot: read.snapshot,
-            observedProgress: progress,
-            completesThrough: completes
+            observedProgress: progress
         });
         return status === 'conflict' ? 'conflict' : 'completed';
     }

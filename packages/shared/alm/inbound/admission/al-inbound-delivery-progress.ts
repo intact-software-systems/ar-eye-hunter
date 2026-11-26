@@ -5,7 +5,7 @@ import type { ALInboundAdmissionMutation, ALInboundDeliveryProgress } from '../a
 import type { ALInboundResolvedDeliverySnapshot } from '../al-inbound-ordering-validation.ts';
 import type { ALInboundIndexedMarker } from './al-inbound-delivered-marker-index.ts';
 
-/** One ordered delivery's completion: what it read, and the position it completes through. */
+/** One ordered delivery's completion: what it read. */
 export interface ALInboundDeliveryCompletion {
     readonly trackKey: string;
     readonly seq: number;
@@ -13,13 +13,13 @@ export interface ALInboundDeliveryCompletion {
     readonly observedSlot: ALInboundResolvedDeliverySnapshot;
     /** The progress as the completion read it; the write requires the stored `completedThrough` to equal its. */
     readonly observedProgress: ALInboundDeliveryProgress;
-    readonly completesThrough: number;
 }
 
 /**
- * The completion's write against what the store holds now: the progress moved to `completesThrough` and the delivered
- * slot deleted, keeping the later of the stored and observed expiry. `conflict` when the stored `completedThrough` or
- * the stored slot is not the one the completion read.
+ * The completion's write against what the store holds now: the progress moved to the position the stored slot and the
+ * stored `completedThrough` place it at (`computeALInboundDeliveryCompletion`), and the delivered slot deleted, keeping
+ * the later of the stored and observed expiry. `conflict` when the stored `completedThrough` or the stored slot is not
+ * the one the completion read, or when those facts place no completion; nothing is written then.
  */
 export function computeALInboundDeliveryCompletionMutations(
     completion: ALInboundDeliveryCompletion,
@@ -28,16 +28,26 @@ export function computeALInboundDeliveryCompletionMutations(
 ): Either<'conflict', readonly ALInboundAdmissionMutation[]> {
     const { trackKey, seq, observedProgress } = completion;
     if (
-        storedProgress === undefined || storedProgress.completedThrough !== observedProgress.completedThrough ||
+        storedSlot === undefined || storedProgress === undefined ||
+        storedProgress.completedThrough !== observedProgress.completedThrough ||
         !jsonEquals(storedSlot, completion.observedSlot)
     ) {
+        return Either.ofLeft('conflict');
+    }
+    const completes = computeALInboundDeliveryCompletion({
+        completedThrough: storedProgress.completedThrough,
+        seq,
+        observation: storedSlot.plan.orderingRuntime,
+        completesThrough: storedSlot.completesThrough
+    });
+    if (completes === undefined) {
         return Either.ofLeft('conflict');
     }
     return Either.ofRight([{
         kind: 'set-delivery-progress',
         trackKey,
         value: {
-            completedThrough: completion.completesThrough,
+            completedThrough: completes,
             expireAtTimestamp: Math.max(storedProgress.expireAtTimestamp, observedProgress.expireAtTimestamp)
         }
     }, { kind: 'delete-buffered', trackKey, seq }]);

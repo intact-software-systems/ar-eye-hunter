@@ -97,8 +97,7 @@ describe('Postgres inbound ordered work recovery', () => {
             trackKey,
             seq: 1,
             observedSlot: observed.snapshot,
-            observedProgress: observed.observations.deliveryProgress!.value!,
-            completesThrough: 1
+            observedProgress: observed.observations.deliveryProgress!.value!
         };
         expect(await first.commitDeliveryCompletion(completion)).toBe('committed');
         expect(await second.commitDeliveryCompletion(completion)).toBe('conflict');
@@ -130,8 +129,7 @@ describe('Postgres inbound ordered work recovery', () => {
                 trackKey,
                 seq: 1,
                 observedSlot: observed.snapshot,
-                observedProgress: original,
-                completesThrough: 1
+                observedProgress: original
             })
         ).toBe('committed');
         expect(await first.readBufferedRelease({ trackKey, seq: 1, nowMs: Date.now() })).toBeUndefined();
