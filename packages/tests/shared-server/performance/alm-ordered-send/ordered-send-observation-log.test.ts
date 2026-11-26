@@ -87,6 +87,8 @@ describe('OrderedSendObservationLog', () => {
                 { msgId: 'session-01-a-send-1', phase: 'admitted', atMs: 20 },
                 { msgId: 'session-01-a-send-1', phase: 'complete', atMs: 95.75 }
             ],
+            controls: [],
+            unclassifiedControls: [],
             observationEndedAtMs: 95.75
         });
     });
@@ -136,6 +138,8 @@ describe('OrderedSendObservationLog', () => {
             arrivals: [{ msgId: 'session-01-a-send-1', recipientPeerId: 'session-02-b', atMs: 40 }],
             handOffs: [],
             receipts: [],
+            controls: [],
+            unclassifiedControls: [],
             observationEndedAtMs: 50
         });
         expect(log.hasTerminalReceipt('session-01-a-send-1')).toBe(false);

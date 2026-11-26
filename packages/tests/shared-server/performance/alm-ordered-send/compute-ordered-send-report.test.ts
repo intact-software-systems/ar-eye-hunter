@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { computeOrderedSendReport } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/compute-ordered-send-report.ts';
 import type {
     OrderedSendCellAnswer,
+    OrderedSendCellControl,
     OrderedSendCellObservations,
     OrderedSendCellOffer
 } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/ordered-send-cell-observations.ts';
@@ -12,6 +13,8 @@ const NO_OBSERVATIONS: OrderedSendCellObservations = {
     arrivals: [],
     handOffs: [],
     receipts: [],
+    controls: [],
+    unclassifiedControls: [],
     observationEndedAtMs: 0
 };
 
@@ -26,6 +29,25 @@ const SEND = {
 } satisfies Omit<OrderedSendCellOffer, 'msgId'> & OrderedSendCellAnswer;
 
 const DELAY_BOUNDS_MS = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1_000, 2_000, 5_000, 10_000, 20_000, 30_000, 60_000];
+
+const NO_NACKS_BY_REASON = {
+    duplicate: 0,
+    gap: 0,
+    'resync-required': 0,
+    expired: 0,
+    unauthorized: 0,
+    'no-route': 0,
+    overloaded: 0,
+    stale: 0,
+    'not-yet-in-sync': 0,
+    'membership-fenced': 0,
+    'no-leader': 0,
+    'held-by-other': 0,
+    unsupported: 0,
+    'no-publish-grant': 0,
+    'not-subscribed': 0,
+    'before-entry': 0
+};
 
 const NO_SAMPLES = {
     count: 0,
@@ -174,6 +196,22 @@ describe('computeOrderedSendReport', () => {
             expect(report.sends.notAdmittedByReason).toEqual({ expired: 2, 'storage-unavailable': 1 });
         });
 
+        it('counts a refusal whose reason is the name of a property every object inherits', () => {
+            const report = computeOrderedSendReport({
+                ...NO_OBSERVATIONS,
+                sends: [
+                    { ...SEND, msgId: 'refused-1', acceptance: 'not-admitted', notAdmittedReason: 'constructor' },
+                    { ...SEND, msgId: 'refused-2', acceptance: 'not-admitted', notAdmittedReason: '__proto__' },
+                    { ...SEND, msgId: 'refused-3', acceptance: 'not-admitted', notAdmittedReason: 'constructor' }
+                ]
+            });
+
+            expect(Object.entries(report.sends.notAdmittedByReason).toSorted()).toEqual([
+                ['__proto__', 1],
+                ['constructor', 2]
+            ]);
+        });
+
         it('keeps a send offered before its due time out of every lateness figure and counts it apart', () => {
             const report = computeOrderedSendReport({
                 ...NO_OBSERVATIONS,
@@ -248,13 +286,13 @@ describe('computeOrderedSendReport', () => {
             });
         });
 
-        it('counts a message handed to the application more than once or by two instances, and a copy read twice', () => {
+        it('counts a message handed more than once or by two instances and a copy read twice, and times the first hand-off from the offer', () => {
             const report = computeOrderedSendReport({
                 ...NO_OBSERVATIONS,
                 sends: [
-                    { ...SEND, msgId: 'handed-once', seq: 1 },
-                    { ...SEND, msgId: 'handed-twice', seq: 2 },
-                    { ...SEND, msgId: 'handed-three-times', seq: 3 },
+                    { ...SEND, msgId: 'handed-once', seq: 1, dueAtMs: 0, sentAtMs: 0.5 },
+                    { ...SEND, msgId: 'handed-twice', seq: 2, dueAtMs: 0, sentAtMs: 1 },
+                    { ...SEND, msgId: 'handed-three-times', seq: 3, dueAtMs: 0, sentAtMs: 1 },
                     { ...SEND, msgId: 'never-handed', seq: 4 }
                 ],
                 handOffs: [
@@ -278,7 +316,7 @@ describe('computeOrderedSendReport', () => {
                 handedMoreThanOnce: 2,
                 handedByMoreThanOneInstance: 1,
                 largestHandOffMultiplicity: 3,
-                offerToFirstHandOffMs: { count: 3, p50: 2, p95: 4, p99: 4, max: 4, unrecordedSamples: 0 },
+                offerToFirstHandOffMs: { count: 3, p50: 1, p95: 3, p99: 3, max: 3, unrecordedSamples: 0 },
                 copiesRead: 3,
                 copiesReadMoreThanOnce: 1
             });
@@ -577,7 +615,7 @@ describe('computeOrderedSendReport', () => {
             });
         });
 
-        it('takes the first ten and the last ten sends, each with the copies of both its recipients', () => {
+        it('takes the first ten and the last ten sends, each with the copies of both its recipients, from their due times', () => {
             const delaysMsOfEachSend = [
                 [1, 11],
                 [2, 12],
@@ -608,7 +646,7 @@ describe('computeOrderedSendReport', () => {
                     msgId: `send-${index + 1}`,
                     seq: index + 1,
                     dueAtMs: (index + 1) * 100,
-                    sentAtMs: (index + 1) * 100
+                    sentAtMs: (index + 1) * 100 + 0.5
                 })),
                 arrivals: delaysMsOfEachSend.flatMap(([firstDelayMs, secondDelayMs], index) => [
                     { msgId: `send-${index + 1}`, recipientPeerId: 'recipient-1', atMs: (index + 1) * 100 + firstDelayMs },
@@ -651,7 +689,7 @@ describe('computeOrderedSendReport', () => {
     });
 
     describe('receipts', () => {
-        it('counts a receipt by its send\'s first terminal phase and does not take admitted for one', () => {
+        it('counts a receipt by its send\'s first terminal phase, times that phase alone, and does not take admitted for one', () => {
             const report = computeOrderedSendReport({
                 ...NO_OBSERVATIONS,
                 sends: [
@@ -659,7 +697,8 @@ describe('computeOrderedSendReport', () => {
                     { ...SEND, msgId: 'timed-out', sentAtMs: 100 },
                     { ...SEND, msgId: 'admitted-only', sentAtMs: 200 },
                     { ...SEND, msgId: 'no-receipt', sentAtMs: 300 },
-                    { ...SEND, msgId: 'completed-then-timed-out', sentAtMs: 400 }
+                    { ...SEND, msgId: 'completed-then-timed-out', sentAtMs: 400 },
+                    { ...SEND, msgId: 'timed-out-then-completed', sentAtMs: 500 }
                 ],
                 receipts: [
                     { msgId: 'completed', phase: 'admitted', atMs: 5 },
@@ -669,23 +708,63 @@ describe('computeOrderedSendReport', () => {
                     { msgId: 'completed-then-timed-out', phase: 'admitted', atMs: 409 },
                     { msgId: 'completed-then-timed-out', phase: 'complete', atMs: 440 },
                     { msgId: 'timed-out', phase: 'timed-out', atMs: 30_100 },
-                    { msgId: 'completed-then-timed-out', phase: 'timed-out', atMs: 30_400 }
+                    { msgId: 'completed-then-timed-out', phase: 'timed-out', atMs: 30_400 },
+                    { msgId: 'timed-out-then-completed', phase: 'admitted', atMs: 508 },
+                    { msgId: 'timed-out-then-completed', phase: 'timed-out', atMs: 30_520 },
+                    { msgId: 'timed-out-then-completed', phase: 'complete', atMs: 30_530 }
                 ]
             });
 
             expect(report.receipts).toMatchObject({
-                expected: 5,
+                expected: 6,
                 complete: 2,
-                timedOut: 1,
+                timedOut: 2,
                 admittedWithoutTerminal: 1,
                 noReceipt: 1,
-                moreThanOneTerminal: 1,
-                offerToAdmittedMs: { count: 4, p50: 6, p95: 9, p99: 9, max: 9 },
+                moreThanOneTerminal: 2,
+                offerToAdmittedMs: { count: 5, p50: 7, p95: 9, p99: 9, max: 9 },
                 offerToCompleteMs: { count: 2, p50: 30, p95: 40, p99: 40, max: 40 },
-                offerToTimedOutMs: { count: 1, p50: 30_000, p95: 30_000, p99: 30_000, max: 30_000 }
+                offerToTimedOutMs: { count: 2, p50: 30_000, p95: 30_020, p99: 30_020, max: 30_020 }
             });
             const { complete, timedOut, admittedWithoutTerminal, noReceipt } = report.receipts;
             expect(complete + timedOut + admittedWithoutTerminal + noReceipt).toBe(report.receipts.expected);
+        });
+
+        it('counts a receipt read again apart, and takes each state and each delay from the first read of its phase', () => {
+            const report = computeOrderedSendReport({
+                ...NO_OBSERVATIONS,
+                sends: [
+                    { ...SEND, msgId: 'both-read-twice', sentAtMs: 0 },
+                    { ...SEND, msgId: 'each-read-once', sentAtMs: 100 },
+                    { ...SEND, msgId: 'admitted-read-twice', sentAtMs: 200 },
+                    { ...SEND, msgId: 'admitted-read-last', sentAtMs: 300 }
+                ],
+                receipts: [
+                    { msgId: 'both-read-twice', phase: 'admitted', atMs: 4 },
+                    { msgId: 'both-read-twice', phase: 'complete', atMs: 50 },
+                    { msgId: 'both-read-twice', phase: 'admitted', atMs: 60 },
+                    { msgId: 'both-read-twice', phase: 'complete', atMs: 70 },
+                    { msgId: 'each-read-once', phase: 'admitted', atMs: 103 },
+                    { msgId: 'each-read-once', phase: 'complete', atMs: 120 },
+                    { msgId: 'admitted-read-twice', phase: 'admitted', atMs: 205 },
+                    { msgId: 'admitted-read-twice', phase: 'admitted', atMs: 215 },
+                    { msgId: 'admitted-read-last', phase: 'complete', atMs: 330 },
+                    { msgId: 'admitted-read-last', phase: 'admitted', atMs: 340 }
+                ]
+            });
+
+            expect(report.receipts).toMatchObject({
+                expected: 4,
+                complete: 3,
+                timedOut: 0,
+                admittedWithoutTerminal: 1,
+                noReceipt: 0,
+                moreThanOneTerminal: 1,
+                sendsWithARepeatedAdmittedReceipt: 2,
+                sendsWithAnAdmittedAfterTheirTerminal: 2,
+                offerToAdmittedMs: { count: 4, p50: 4, p95: 40, p99: 40, max: 40 },
+                offerToCompleteMs: { count: 3, p50: 30, p95: 50, p99: 50, max: 50 }
+            });
         });
 
         it('expects a receipt of the sends the entry accepted only, so a rejected send is not one without a receipt', () => {
@@ -728,8 +807,43 @@ describe('computeOrderedSendReport', () => {
         });
     });
 
+    describe('controls', () => {
+        it('counts the NACKs and the repair requests of known sends by type and by reason, and the sends that drew one', () => {
+            const report = computeOrderedSendReport({
+                ...NO_OBSERVATIONS,
+                sends: [
+                    { ...SEND, msgId: 'repaired', seq: 1 },
+                    { ...SEND, msgId: 'revealed-a-gap', seq: 2 },
+                    { ...SEND, msgId: 'refused', seq: 3 },
+                    { ...SEND, msgId: 'drew-nothing', seq: 4 }
+                ],
+                controls: [
+                    { type: 'nack', msgId: 'revealed-a-gap', reason: 'gap', atMs: 10 },
+                    { type: 'nack', msgId: 'revealed-a-gap', reason: 'gap', atMs: 20 },
+                    { type: 'repair', msgId: 'revealed-a-gap', reason: 'missing-seq', atMs: 21 },
+                    { type: 'repair', msgId: 'repaired', reason: 'retransmit', atMs: 30 },
+                    { type: 'repair', msgId: 'repaired', reason: 'missing-seq', atMs: 31 },
+                    { type: 'nack', msgId: 'refused', reason: 'expired', atMs: 40 },
+                    { type: 'nack', msgId: 'unknown', reason: 'gap', atMs: 50 },
+                    { type: 'repair', msgId: 'unknown', reason: 'resync', atMs: 51 }
+                ]
+            });
+
+            expect(report.controls).toEqual({
+                byType: { nack: 3, repair: 3 },
+                nacksByReason: { ...NO_NACKS_BY_REASON, gap: 2, expired: 1 },
+                repairsByReason: { 'missing-seq': 2, retransmit: 1, resync: 0 },
+                sendsWithANack: 2,
+                sendsWithARepairRequest: 2
+            });
+            expect(report.unmatched.controlsOfUnknownMessage).toBe(2);
+        });
+    });
+
     describe('what matches no send', () => {
         it('counts apart whatever matched no send, no expected recipient or no accepted send, and drops none of it', () => {
+            const controlsOfUnknownMessages: readonly OrderedSendCellControl[] = [31, 32, 33, 34, 35, 36, 37]
+                .map((atMs) => ({ type: 'repair', msgId: 'unknown-1', reason: 'missing-seq', atMs }));
             const report = computeOrderedSendReport({
                 ...NO_OBSERVATIONS,
                 sends: [
@@ -772,7 +886,10 @@ describe('computeOrderedSendReport', () => {
                     { msgId: 'unknown-2', phase: 'complete', atMs: 24 },
                     { msgId: 'unknown-3', phase: 'admitted', atMs: 25 },
                     { msgId: 'unknown-3', phase: 'timed-out', atMs: 26 }
-                ]
+                ],
+                controls: [{ type: 'nack', msgId: 'known', reason: 'gap', atMs: 30 }, ...controlsOfUnknownMessages],
+                unclassifiedControls: [41, 42, 43, 44, 45, 46, 47, 48]
+                    .map((atMs) => ({ typeId: 'al.control.ack.v3', atMs }))
             });
 
             expect(report.unmatched).toEqual({
@@ -781,11 +898,14 @@ describe('computeOrderedSendReport', () => {
                 arrivalsAtUnexpectedRecipient: 3,
                 arrivalsOfUnknownMessage: 4,
                 handOffsOfUnknownMessage: 5,
-                receiptsOfUnknownMessage: 6
+                receiptsOfUnknownMessage: 6,
+                controlsOfUnknownMessage: 7,
+                unclassifiedControls: 8
             });
             expect(report.sends.attempted).toBe(2);
             expect(report.delivery).toMatchObject({ handedToApplication: 1, copiesExpected: 3, copiesRead: 1 });
             expect(report.receipts).toMatchObject({ expected: 1, admittedWithoutTerminal: 1 });
+            expect(report.controls).toMatchObject({ byType: { nack: 1, repair: 0 }, sendsWithANack: 1 });
         });
     });
 
@@ -840,9 +960,18 @@ describe('computeOrderedSendReport', () => {
                 admittedWithoutTerminal: 0,
                 noReceipt: 0,
                 moreThanOneTerminal: 0,
+                sendsWithARepeatedAdmittedReceipt: 0,
+                sendsWithAnAdmittedAfterTheirTerminal: 0,
                 offerToAdmittedMs: NO_SAMPLES,
                 offerToCompleteMs: NO_SAMPLES,
                 offerToTimedOutMs: NO_SAMPLES
+            },
+            controls: {
+                byType: { nack: 0, repair: 0 },
+                nacksByReason: NO_NACKS_BY_REASON,
+                repairsByReason: { 'missing-seq': 0, retransmit: 0, resync: 0 },
+                sendsWithANack: 0,
+                sendsWithARepairRequest: 0
             },
             unmatched: {
                 sendsWithARepeatedMsgId: 0,
@@ -850,7 +979,9 @@ describe('computeOrderedSendReport', () => {
                 arrivalsAtUnexpectedRecipient: 0,
                 handOffsOfUnknownMessage: 0,
                 receiptsOfUnknownMessage: 0,
-                receiptsOfASendNotAccepted: 0
+                receiptsOfASendNotAccepted: 0,
+                controlsOfUnknownMessage: 0,
+                unclassifiedControls: 0
             }
         });
     });

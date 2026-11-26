@@ -57,7 +57,9 @@ async function expectEverySendDeliveredAndReceipted(delayMs: number): Promise<vo
         arrivalsAtUnexpectedRecipient: 0,
         handOffsOfUnknownMessage: 0,
         receiptsOfUnknownMessage: 0,
-        receiptsOfASendNotAccepted: 0
+        receiptsOfASendNotAccepted: 0,
+        controlsOfUnknownMessage: 0,
+        unclassifiedControls: 0
     });
     expect(report.sends.attempted).toBe(SENDS);
     expect(report.sends.byAcceptance.admitted + report.sends.byAcceptance['pending-admission']).toBe(SENDS);

@@ -6,7 +6,11 @@ import type { ObservedOrderedSend } from './to-observed-ordered-sends.ts';
 
 /**
  * What the publishers read of their receipts. A receipt is expected of a send the entry answered `admitted` or
- * `pending-admission`, and every figure here is over those sends only; the others are in `sends.byAcceptance`.
+ * `pending-admission`, and every figure here is over those sends only; the others are in `sends.byAcceptance`. A
+ * publisher may read one receipt more than once: a send's state and each of its delays come from the first read of
+ * the phase, and `moreThanOneTerminal`, `sendsWithARepeatedAdmittedReceipt` and
+ * `sendsWithAnAdmittedAfterTheirTerminal` count the sends that read one again, each of them in one of the four
+ * states as well.
  */
 export interface OrderedSendReceiptFigures {
     /** The sends a receipt is expected of; the next four counts split them, one state each. */
@@ -19,8 +23,15 @@ export interface OrderedSendReceiptFigures {
     readonly admittedWithoutTerminal: number;
     /** Sends that read no receipt at all. */
     readonly noReceipt: number;
-    /** Sends that read a second terminal receipt; each is also in `complete` or `timedOut`, under its first. */
+    /**
+     * Sends that read a second terminal receipt, of the same phase or of the other; each is also in `complete` or
+     * `timedOut`, under its first.
+     */
     readonly moreThanOneTerminal: number;
+    /** Sends that read more than one `admitted` receipt. */
+    readonly sendsWithARepeatedAdmittedReceipt: number;
+    /** Sends that read an `admitted` receipt after their first terminal one, in the order they read them. */
+    readonly sendsWithAnAdmittedAfterTheirTerminal: number;
     /** Every send that read an `admitted` receipt, from its offer at the entry to the first one. */
     readonly offerToAdmittedMs: OrderedSendDelaySummary;
     /** Every send counted `complete`, from its offer at the entry to that receipt. */
@@ -54,6 +65,10 @@ export function computeOrderedSendReceiptFigures(
         admittedWithoutTerminal: expectedByState.get('admittedWithoutTerminal')?.length ?? 0,
         noReceipt: expectedByState.get('noReceipt')?.length ?? 0,
         moreThanOneTerminal: expected.filter(({ receipts }) => receipts.filter(isTerminal).length > 1).length,
+        sendsWithARepeatedAdmittedReceipt: expected
+            .filter(({ receipts }) => receipts.filter((receipt) => !isTerminal(receipt)).length > 1).length,
+        sendsWithAnAdmittedAfterTheirTerminal: expected
+            .filter(({ receipts }) => isAdmittedReadAfterFirstTerminal(receipts)).length,
         offerToAdmittedMs: computeOrderedSendDelaySummary(computeOfferToFirstReceiptMs(expected, 'admitted')),
         offerToCompleteMs: computeOrderedSendDelaySummary(computeOfferToFirstReceiptMs(complete, 'complete')),
         offerToTimedOutMs: computeOrderedSendDelaySummary(computeOfferToFirstReceiptMs(timedOut, 'timed-out'))
@@ -66,6 +81,12 @@ export function isOrderedSendReceiptExpected(send: OrderedSendCellSend): boolean
 
 function isTerminal(receipt: OrderedSendCellReceipt): boolean {
     return ORDERED_SEND_RECEIPT_STATE_BY_PHASE[receipt.phase] !== 'admittedWithoutTerminal';
+}
+
+function isAdmittedReadAfterFirstTerminal(receipts: readonly OrderedSendCellReceipt[]): boolean {
+    const firstTerminalPosition = receipts.findIndex(isTerminal);
+    return firstTerminalPosition !== -1 &&
+        receipts.slice(firstTerminalPosition + 1).some((receipt) => !isTerminal(receipt));
 }
 
 /** The first terminal receipt decides; `receipts` is in the order the publisher read them. */

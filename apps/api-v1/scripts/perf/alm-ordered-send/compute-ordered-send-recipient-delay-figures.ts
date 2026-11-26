@@ -21,6 +21,8 @@ export interface OrderedSendExpectedCopyDelayFigures {
 /**
  * Whether the delay grew over the run: the p50 from due time to first read over the expected copies of the ten
  * sends due first and of the ten due last. All three are null under twenty sends, where the two tens would overlap.
+ * Each p50 ranks its ten sends' expected copies, read or not, so it is null as well when its rank lands on a copy
+ * never read.
  */
 export interface OrderedSendEdgeDelayFigures {
     readonly firstTenSendsP50Ms: number | null;

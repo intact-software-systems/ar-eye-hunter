@@ -1,4 +1,8 @@
 import {
+    computeOrderedSendControlFigures,
+    type OrderedSendControlFigures
+} from './compute-ordered-send-control-figures.ts';
+import {
     computeOrderedSendDeliveryFigures,
     type OrderedSendDeliveryFigures
 } from './compute-ordered-send-delivery-figures.ts';
@@ -30,6 +34,7 @@ export interface OrderedSendReport {
     readonly delivery: OrderedSendDeliveryFigures;
     readonly recipientDelays: OrderedSendRecipientDelayFigures;
     readonly receipts: OrderedSendReceiptFigures;
+    readonly controls: OrderedSendControlFigures;
     readonly unmatched: OrderedSendUnmatchedFigures;
 }
 
@@ -40,6 +45,7 @@ export function computeOrderedSendReport(observations: OrderedSendCellObservatio
         delivery: computeOrderedSendDeliveryFigures(observedSends),
         recipientDelays: computeOrderedSendRecipientDelayFigures(observedSends),
         receipts: computeOrderedSendReceiptFigures(observedSends),
+        controls: computeOrderedSendControlFigures(observedSends),
         unmatched: computeOrderedSendUnmatchedFigures(observations)
     };
 }

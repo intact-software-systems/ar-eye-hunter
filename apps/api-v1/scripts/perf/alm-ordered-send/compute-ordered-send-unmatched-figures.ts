@@ -19,6 +19,10 @@ export interface OrderedSendUnmatchedFigures {
     readonly receiptsOfUnknownMessage: number;
     /** Receipts of a known send the entry did not answer `admitted` or `pending-admission`. */
     readonly receiptsOfASendNotAccepted: number;
+    /** NACKs and repair requests whose msgId no send carries. */
+    readonly controlsOfUnknownMessage: number;
+    /** Control frames that are no receipt, no NACK and no repair request. */
+    readonly unclassifiedControls: number;
 }
 
 export function computeOrderedSendUnmatchedFigures(
@@ -37,6 +41,8 @@ export function computeOrderedSendUnmatchedFigures(
         receiptsOfASendNotAccepted: observations.receipts.filter(({ msgId }) => {
             const send = sendByMsgId.get(msgId);
             return send !== undefined && !isOrderedSendReceiptExpected(send);
-        }).length
+        }).length,
+        controlsOfUnknownMessage: observations.controls.filter(({ msgId }) => !sendByMsgId.has(msgId)).length,
+        unclassifiedControls: observations.unclassifiedControls.length
     };
 }

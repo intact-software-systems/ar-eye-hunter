@@ -1,5 +1,6 @@
 import type { ALMessageRejection } from '@shared/al-contracts/al-message-persistence-validation.ts';
 
+import { computeOrderedSendCountByKey } from './compute-ordered-send-count-by-key.ts';
 import { computeOrderedSendDelaySummary, type OrderedSendDelaySummary } from './compute-ordered-send-delay-summary.ts';
 import type { OrderedSendCellSend } from './ordered-send-cell-observations.ts';
 
@@ -39,12 +40,12 @@ const NO_SENDS_BY_REJECTION_CODE: OrderedSendSendFigures['rejectedByCode'] = {
 export function computeOrderedSendSendFigures(sends: readonly OrderedSendCellSend[]): OrderedSendSendFigures {
     return {
         attempted: sends.length,
-        byAcceptance: computeCountByKey(sends.map((send) => send.acceptance), NO_SENDS_BY_ACCEPTANCE),
-        rejectedByCode: computeCountByKey(
+        byAcceptance: computeOrderedSendCountByKey(sends.map((send) => send.acceptance), NO_SENDS_BY_ACCEPTANCE),
+        rejectedByCode: computeOrderedSendCountByKey(
             sends.flatMap((send) => send.acceptance === 'rejected' ? [send.rejectionCode] : []),
             NO_SENDS_BY_REJECTION_CODE
         ),
-        notAdmittedByReason: computeCountByKey(
+        notAdmittedByReason: computeOrderedSendCountByKey(
             sends.flatMap((send) => send.acceptance === 'not-admitted' ? [send.notAdmittedReason] : []),
             {}
         ),
@@ -53,14 +54,4 @@ export function computeOrderedSendSendFigures(sends: readonly OrderedSendCellSen
             sends.flatMap((send) => send.answeredAtMs === null ? [] : [send.answeredAtMs - send.sentAtMs])
         )
     };
-}
-
-function computeCountByKey<Key extends string>(
-    keys: readonly Key[],
-    countOfNoKeys: Readonly<Record<Key, number>>
-): Readonly<Record<Key, number>> {
-    return keys.reduce<Readonly<Record<Key, number>>>(
-        (counts, key) => ({ ...counts, [key]: (counts[key] ?? 0) + 1 }),
-        countOfNoKeys
-    );
 }

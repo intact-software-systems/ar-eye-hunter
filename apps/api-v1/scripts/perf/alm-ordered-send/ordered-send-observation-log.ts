@@ -33,10 +33,10 @@ export class OrderedSendObservationLog {
 
     /**
      * Records one frame a session's socket read: a receipt as a receipt, and every message that is no control as
-     * an arrival, whoever read it. Any other control, a NACK or a repair request, is recorded nowhere: the
-     * observations have no list for it. Returns the copy when the reader now owes its ACK: the session's first read
-     * of a message another session sent that asks for a receipt. Throws on a frame that is no AL envelope, which
-     * the server never writes to a session's socket.
+     * an arrival, whoever read it. Any other control, a NACK or a repair request, is not recorded: the lists the
+     * observations have for it stay empty. Returns the copy when the reader now owes its ACK: the session's first
+     * read of a message another session sent that asks for a receipt. Throws on a frame that is no AL envelope,
+     * which the server never writes to a session's socket.
      */
     recordSocketFrame(readerPeerId: string, frame: string): ALMessage | undefined {
         const message = decodePersistedALMessage(frame);
@@ -77,6 +77,8 @@ export class OrderedSendObservationLog {
             arrivals: [...this.arrivals],
             handOffs: [...this.handOffs],
             receipts: [...this.receipts],
+            controls: [],
+            unclassifiedControls: [],
             observationEndedAtMs: this.nowMs()
         };
     }
