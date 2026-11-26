@@ -34,7 +34,7 @@ function registerCreateGroupRoute(
                 const authSession = await dependencies.requireApiAuthSession(context.req);
                 const scope = toGroupStateRouteScope(context);
                 const request = await readGroupStateRouteRequest<CreateGroupRequest>(context);
-                if (request.guestBooking) requireGuestBookingApplication(dependencies, scope.applicationId);
+                requireGuestBookingApplication(dependencies, scope.applicationId, request.guestBooking === true);
                 const written = toGroupStateResponse({
                     kind: 'mutation',
                     written: await dependencies.processGroupAppInbox(

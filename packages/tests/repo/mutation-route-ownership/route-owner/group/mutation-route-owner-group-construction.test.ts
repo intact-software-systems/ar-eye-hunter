@@ -17,6 +17,17 @@ const ROOT_PRESENCE_CALL = '  registerGroupPresenceRoutes(app, dependencies, aut
 const PRIVATE_PRESENCE_CALL = '  registerConnectGroupPresenceRoute(app, dependencies, authorization);';
 
 describe('group HTTP mutation route construction', () => {
+    it('traces the scheduled guest route to its guest AppInbox and rejects a disconnected handoff', () => {
+        const entry = MUTATION_ROUTE_INVENTORY.find(candidate => candidate.entrypoint.endsWith('/session/guest/requests/:requestId'));
+        expect(entry?.type).toBe('GROUP_GUEST_ADMIT');
+        if (!entry) throw new Error('Missing guest booking mutation route.');
+        const source = readFileSync(entry.sourcePath, 'utf8');
+        const disconnected = source.replace('dependencies.processGuestBooking(', 'dependencies.unrelatedOperation(');
+        expect(disconnected).not.toBe(source);
+        expect(validateMutationRouteInventory(MUTATION_ROUTE_INVENTORY, { sourceOverrides: new Map([[entry.sourcePath, disconnected]]) }))
+            .toEqual(expect.arrayContaining([expect.stringContaining(entry.entrypoint)]));
+    });
+
     it('traces the single Quick Join route to its dedicated AppInbox owner', () => {
         expect(MUTATION_ROUTE_INVENTORY.find((entry) => entry.type === 'GROUP_QUICK_JOIN')).toMatchObject({
             sourcePath: QUICK_JOIN_ROUTE,
