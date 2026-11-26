@@ -14,10 +14,14 @@ export namespace EdgeOrderSendStreams {
         readonly maxStreams: number;
     }
 
-    export interface ChannelRoom {
-        readonly topicId: string;
+    /** A channel's send, as far as its order is concerned: what its channel declares and where it is going. */
+    export interface ChannelSend {
+        readonly order: 'edge' | undefined;
+        /** Absent, the channel's topic is its type. */
+        readonly topicId: string | undefined;
         readonly typeId: string;
-        readonly roomRef: GroupRef;
+        /** Absent only for a send that names no room, which no edge-ordered channel makes. */
+        readonly roomRef: GroupRef | undefined;
     }
 }
 
@@ -31,11 +35,35 @@ export class EdgeOrderSendStreams {
         this.newStreamId = input.newStreamId;
     }
 
-    /** Takes the next position of the channel-and-room's stream. Called before the send awaits anything. */
-    openSend(channelRoom: EdgeOrderSendStreams.ChannelRoom): EdgeOrderOpenSend {
-        const key = JSON.stringify([channelRoom.topicId, channelRoom.typeId, toALGroupTargetKey(channelRoom.roomRef)]);
+    /**
+     * Takes the next position of the channel-and-room's stream; absent for a channel that declares no order.
+     * Called once the send's options passed validation and before the send awaits anything.
+     */
+    openSend(send: EdgeOrderSendStreams.ChannelSend): EdgeOrderOpenSend | undefined {
+        const { roomRef } = send;
+        if (send.order !== 'edge' || roomRef === undefined) {
+            return undefined;
+        }
+        const key = JSON.stringify([send.topicId ?? send.typeId, send.typeId, toALGroupTargetKey(roomRef)]);
         const stream = this.streams.setIfAbsent(key, () => new EdgeOrderSender(this.newStreamId()));
         return new EdgeOrderOpenSend(stream, stream.openSend());
+    }
+}
+
+/**
+ * A send that fails before it has a handle closes its position, so no receiver waits for it. A send with a handle
+ * states its own end through it.
+ */
+export async function endEdgeOrderSendOnFailure(
+    edgeOrderSend: EdgeOrderOpenSend | undefined,
+    delivery: Promise<RallarMessageHandle>
+): Promise<RallarMessageHandle> {
+    try {
+        return await delivery;
+    }
+    catch (error) {
+        edgeOrderSend?.end();
+        throw error;
     }
 }
 

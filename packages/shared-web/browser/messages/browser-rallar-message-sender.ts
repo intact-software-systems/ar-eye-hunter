@@ -1,11 +1,15 @@
-import { toBrowserRtcCaptureIntent } from '@shared-web/browser/connection/browser-rtc-capture-intent.ts';
+import {
+    toBrowserRtcCaptureIntent,
+    type BrowserRtcCaptureIntent
+} from '@shared-web/browser/connection/browser-rtc-capture-intent.ts';
 import type {
     BrowserMessageInputValidator,
     ResolvedWsMessageInput
 } from '@shared-web/browser/messages/browser-message-input-validator.ts';
-import type {
-    EdgeOrderOpenSend,
-    EdgeOrderSendStreams
+import {
+    endEdgeOrderSendOnFailure,
+    type EdgeOrderOpenSend,
+    type EdgeOrderSendStreams
 } from '@shared-web/browser/messages/edge-order/edge-order-send-streams.ts';
 import { toEdgeOrderWireJson } from '@shared-web/browser/messages/edge-order/edge-order-wire-payload.ts';
 import type {
@@ -108,6 +112,16 @@ interface ScopedSend<T> {
     readonly actions: ALActions | undefined;
 }
 
+/** A scoped send whose audience is resolved and whose options are validated: what is left is its connect and its message. */
+interface ScopedMessageSend<T> {
+    readonly scoped: ScopedSend<T>;
+    readonly capture: BrowserRtcCaptureIntent;
+    readonly room: string | GroupRef | undefined;
+    readonly resolved: ResolvedWsMessageInput<T>;
+    readonly captured: CapturedMessagePayload;
+    readonly edgeOrderSend: EdgeOrderOpenSend | undefined;
+}
+
 interface ResolvedWsAudience<T> {
     readonly room: string | GroupRef | undefined;
     readonly resolved: ResolvedWsMessageInput<T>;
@@ -116,6 +130,7 @@ interface ResolvedWsAudience<T> {
 /** A room send whose target is resolved and whose options are validated: what is left is its connect and its message. */
 interface RoomMessageSend<T> {
     readonly input: RallarRtcSendInput<T>;
+    readonly capture: BrowserRtcCaptureIntent;
     readonly target: ResolvedRtcMessageTarget;
     readonly carrier: 'rtc' | 'ws';
     readonly canFallback: boolean;
@@ -179,8 +194,10 @@ export class BrowserRallarMessageSender {
         if (input.scope === 'world') {
             return await this.sendScoped({ send: input, carrier: 'rtc', channel, actions: toSendActions(input) });
         }
+        const capture = toBrowserRtcCaptureIntent(input);
         return await this.sendRoomMessage({
             input,
+            capture,
             target: this.resolveRtcMessageTarget(input),
             carrier: 'rtc',
             canFallback: false,
@@ -213,7 +230,7 @@ export class BrowserRallarMessageSender {
     }
 
     private async sendScoped<T>(scoped: ScopedSend<T>): Promise<RallarMessageHandle> {
-        const { send, carrier, channel } = scoped;
+        const { send, channel } = scoped;
         const capture = toBrowserRtcCaptureIntent(send);
         const { room, resolved } = this.resolveWsAudience(send);
         const { roomRef } = resolved;
@@ -224,42 +241,53 @@ export class BrowserRallarMessageSender {
             ...validateBrowserPeerInput({ send, roomRef })
         ]);
 
-        const captured = this.capturePayload(send.payload);
-        const edgeOrderSend = this.openEdgeOrderSend(channel, send, roomRef);
-        try {
-            const context = await this.input.connect(capture.options);
-            const rtcCapture = this.input.sessionDeliveries.readRtcCapture(context);
-            throwIfMessageIssues(validateBrowserPeerServer({
-                peerId: send.peerId,
-                strategy: 'ws',
-                serverPeerId: context.middleware.webSocketQueueBox.serverPeerId
-            }));
-            const payloadValidation = this.stampPayload(captured, edgeOrderSend, context);
-            const message = this.createWsSendMessage({
-                createdAtEpochMs: readBrowserServerCreationEpochMs(context.serverTime),
-                resolved,
-                room,
-                payloadValidation,
-                session: this.input.requireSession(),
-                channel,
-                actions: scoped.actions
-            });
-            return this.startDelivery({
-                requestedConfiguration: capture.requestedConfiguration,
-                rtcCapture,
-                context,
-                carrier,
-                message,
-                canFallback: false,
-                payloadIssues: payloadValidation.issues,
-                channel,
-                edgeOrderSend
-            });
-        }
-        catch (error) {
-            edgeOrderSend?.end();
-            throw error;
-        }
+        const scopedMessage: ScopedMessageSend<T> = {
+            scoped,
+            capture,
+            room,
+            resolved,
+            captured: this.capturePayload(send.payload),
+            edgeOrderSend: this.input.edgeOrderStreams.openSend({
+                order: channel?.order,
+                topicId: send.topicId,
+                typeId: send.typeId,
+                roomRef
+            })
+        };
+        return await endEdgeOrderSendOnFailure(scopedMessage.edgeOrderSend, this.deliverScopedMessage(scopedMessage));
+    }
+
+    private async deliverScopedMessage<T>(scopedMessage: ScopedMessageSend<T>): Promise<RallarMessageHandle> {
+        const { scoped, capture, resolved, edgeOrderSend } = scopedMessage;
+        const { send, channel } = scoped;
+        const context = await this.input.connect(capture.options);
+        const rtcCapture = this.input.sessionDeliveries.readRtcCapture(context);
+        throwIfMessageIssues(validateBrowserPeerServer({
+            peerId: send.peerId,
+            strategy: 'ws',
+            serverPeerId: context.middleware.webSocketQueueBox.serverPeerId
+        }));
+        const payloadValidation = this.stampPayload(scopedMessage.captured, edgeOrderSend, context);
+        const message = this.createWsSendMessage({
+            createdAtEpochMs: readBrowserServerCreationEpochMs(context.serverTime),
+            resolved,
+            room: scopedMessage.room,
+            payloadValidation,
+            session: this.input.requireSession(),
+            channel,
+            actions: scoped.actions
+        });
+        return this.startDelivery({
+            requestedConfiguration: capture.requestedConfiguration,
+            rtcCapture,
+            context,
+            carrier: scoped.carrier,
+            message,
+            canFallback: false,
+            payloadIssues: payloadValidation.issues,
+            channel,
+            edgeOrderSend
+        });
     }
 
     /**
@@ -369,6 +397,7 @@ export class BrowserRallarMessageSender {
         firstCarrier: 'rtc' | 'ws',
         channel: BrowserTypedChannelPolicy | undefined
     ): Promise<RallarMessageHandle> {
+        const capture = toBrowserRtcCaptureIntent(input);
         const target = this.resolveRtcMessageTarget(input);
         throwIfMessageIssues(
             this.input.inputValidator.validateWs({
@@ -378,64 +407,64 @@ export class BrowserRallarMessageSender {
                 roomRef: target.roomRef
             })
         );
-        return await this.sendRoomMessage({ input, target, carrier: firstCarrier, canFallback: true, channel });
+        return await this.sendRoomMessage({
+            input,
+            capture,
+            target,
+            carrier: firstCarrier,
+            canFallback: true,
+            channel
+        });
     }
 
     /**
      * The room message both carriers take, from its payload to its handle. An edge-ordered send takes its position
-     * before the connect is awaited and is stamped once the connect's clock can say which earlier sends are over;
-     * a send that fails before it has a handle closes its position, so no receiver waits for it.
+     * here, before the connect is awaited, and is stamped once the connect's clock can say which earlier sends are
+     * over.
      */
     private async sendRoomMessage<T>(send: RoomMessageSend<T>): Promise<RallarMessageHandle> {
         const { input, target, channel } = send;
-        const capture = toBrowserRtcCaptureIntent(input);
         const captured = this.capturePayload(input.payload);
-        const edgeOrderSend = this.openEdgeOrderSend(channel, input, target.roomRef);
-        try {
-            const context = await this.input.connect(capture.options);
-            const rtcCapture = this.input.sessionDeliveries.readRtcCapture(context);
-            const payloadValidation = this.stampPayload(captured, edgeOrderSend, context);
-            const message = toRoomFallbackMessage(
-                this.createRtcMessage({
-                    createdAtEpochMs: readBrowserServerCreationEpochMs(context.serverTime),
-                    input,
-                    payloadValidation,
-                    target,
-                    session: this.input.requireSession(),
-                    channel
-                }),
-                input
-            );
-            return this.startDelivery({
-                requestedConfiguration: capture.requestedConfiguration,
-                rtcCapture,
-                context,
-                carrier: send.carrier,
-                message,
-                canFallback: send.canFallback,
-                payloadIssues: payloadValidation.issues,
-                channel,
-                edgeOrderSend
-            });
-        }
-        catch (error) {
-            edgeOrderSend?.end();
-            throw error;
-        }
+        const edgeOrderSend = this.input.edgeOrderStreams.openSend({
+            order: channel?.order,
+            topicId: input.topicId,
+            typeId: input.typeId,
+            roomRef: target.roomRef
+        });
+        return await endEdgeOrderSendOnFailure(edgeOrderSend, this.deliverRoomMessage(send, captured, edgeOrderSend));
     }
 
-    private openEdgeOrderSend(
-        channel: BrowserTypedChannelPolicy | undefined,
-        send: Pick<RallarMessageSendBase<never>, 'topicId' | 'typeId'>,
-        roomRef: GroupRef | undefined
-    ): EdgeOrderOpenSend | undefined {
-        return channel?.order === 'edge' && roomRef !== undefined
-            ? this.input.edgeOrderStreams.openSend({
-                topicId: send.topicId ?? send.typeId,
-                typeId: send.typeId,
-                roomRef
-            })
-            : undefined;
+    private async deliverRoomMessage<T>(
+        send: RoomMessageSend<T>,
+        captured: CapturedMessagePayload,
+        edgeOrderSend: EdgeOrderOpenSend | undefined
+    ): Promise<RallarMessageHandle> {
+        const { input, capture, target, channel } = send;
+        const context = await this.input.connect(capture.options);
+        const rtcCapture = this.input.sessionDeliveries.readRtcCapture(context);
+        const payloadValidation = this.stampPayload(captured, edgeOrderSend, context);
+        const message = toRoomFallbackMessage(
+            this.createRtcMessage({
+                createdAtEpochMs: readBrowserServerCreationEpochMs(context.serverTime),
+                input,
+                payloadValidation,
+                target,
+                session: this.input.requireSession(),
+                channel
+            }),
+            input
+        );
+        return this.startDelivery({
+            requestedConfiguration: capture.requestedConfiguration,
+            rtcCapture,
+            context,
+            carrier: send.carrier,
+            message,
+            canFallback: send.canFallback,
+            payloadIssues: payloadValidation.issues,
+            channel,
+            edgeOrderSend
+        });
     }
 
     /** Wraps an edge-ordered send's payload with its stamp; the payload limit counts the wrapper. */
@@ -454,7 +483,7 @@ export class BrowserRallarMessageSender {
         return { serialized, issues: this.input.inputValidator.validateSerializedPayload(serialized) };
     }
 
-    private capturePayload(payload: unknown): CapturedMessagePayload {
+    private capturePayload<T>(payload: T): CapturedMessagePayload {
         const validation = this.input.inputValidator.readPayloadValidation(payload);
         throwIfMessageIssues(validation.issues.filter((issue) => issue.code !== 'payload-too-large'));
         if (validation.serialized === undefined) {
