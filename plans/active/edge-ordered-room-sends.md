@@ -2,9 +2,8 @@
 
 Status: a plan to decide on. No product code is built. The verdict is **viable**: the measurement the plan owed is
 run (section 2.5, slice 1), and it holds up to 10 messages a second from one sender. What remains is the maintainer's
-rulings in section 4: rulings 1 and 2 are made, rulings 3 to 6 are open. It
-builds on the unordered path, which keeps up under load only on the tree of PR 885, so it follows that pull request
-and does not replace it.
+rulings in section 4: rulings 1 and 2 are made, rulings 3 to 6 are open. It builds on the unordered path, which
+keeps up under load only on the tree of PR 885, so it follows that pull request and does not replace it.
 
 Working name: **edge order**. Today's ordered mode (`orderingKey`) is called **hop order** in this document, because
 every hop enforces it.
