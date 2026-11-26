@@ -118,8 +118,6 @@ describe('promotion of a buffered track\'s next release', () => {
 });
 
 describe('delivery progress on a recorded track', () => {
-    // A completion that loses its commit to a concurrent admission is dispatched again (at least once), so each pin
-    // reads the order of first deliveries.
     it('opens its progress at the entry, so the entered copy and its successor deliver in order', async () => {
         const deliveredSeqs: (number | undefined)[] = [];
         const fixture = await startInboundRuntime('progress-entry', {
@@ -129,10 +127,10 @@ describe('delivery progress on a recorded track', () => {
         });
 
         await admitRecorded(fixture, 300, {});
-        await vi.waitFor(() => expect(new Set(deliveredSeqs)).toEqual(new Set([300])), WAIT);
+        await vi.waitFor(() => expect(deliveredSeqs).toEqual([300]), WAIT);
         await admitRecorded(fixture, 301, {});
 
-        await vi.waitFor(() => expect([...new Set(deliveredSeqs)]).toEqual([300, 301]), WAIT);
+        await vi.waitFor(() => expect(deliveredSeqs).toEqual([300, 301]), WAIT);
         await vi.waitFor(async () => expect(await readCompletedThrough(fixture, 301)).toBe(301), WAIT);
     }, TEST_TIMEOUT_MS);
 
@@ -152,14 +150,14 @@ describe('delivery progress on a recorded track', () => {
         });
 
         await admitRecorded(fixture, 1, {});
-        await vi.waitFor(() => expect(new Set(deliveredSeqs)).toEqual(new Set([1])), WAIT);
+        await vi.waitFor(() => expect(deliveredSeqs).toEqual([1]), WAIT);
         await admitRecorded(fixture, 2, {});
         await admitRecorded(fixture, 5, { [INBOUND_TEST_SELF_PEER_ID]: 2 });
         await vi.waitFor(async () => expect(await readCompletedThrough(fixture, 5)).toBe(1), WAIT);
-        expect([...new Set(deliveredSeqs)]).toEqual([1]);
+        expect(deliveredSeqs).toEqual([1]);
         releaseSecond();
 
-        await vi.waitFor(() => expect([...new Set(deliveredSeqs)]).toEqual([1, 2, 5]), WAIT);
+        await vi.waitFor(() => expect(deliveredSeqs).toEqual([1, 2, 5]), WAIT);
         await vi.waitFor(async () => expect(await readCompletedThrough(fixture, 5)).toBe(5), WAIT);
     }, TEST_TIMEOUT_MS);
 });
@@ -222,9 +220,7 @@ describe('a fresh receiver whose first copy of a recorded track is not the track
             }
         });
 
-        // Copy 2's delivery completes before copy 3 is admitted, so no completion loses its commit and is dispatched again.
         await admitRecorded(fixture, 2, {});
-        await vi.waitFor(async () => expect(await readCompletedThrough(fixture, 2)).toBe(2), WAIT);
         await admitRecorded(fixture, 3, {});
 
         await vi.waitFor(async () => expect(await readCompletedThrough(fixture, 3)).toBe(3), WAIT);

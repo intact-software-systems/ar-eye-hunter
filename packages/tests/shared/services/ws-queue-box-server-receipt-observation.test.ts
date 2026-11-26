@@ -634,6 +634,27 @@ describe('private upstream receipt observation', () => {
         expect(readReceiptAggregationVerdicts(events, 'subject')).toEqual(['ack-count:complete', 'receipt-outbox:complete:admitted']);
     });
 
+    // Pins an admitted written to an origin's socket whose filter refuses the frame, or left on neither that socket nor
+    // a row.
+    it('keeps the row of an admitted whose origin\'s socket refuses the frame', async () => {
+        const events: WsQueueBoxServerReceiptObservation[] = [];
+        const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
+        const service = await createObservedServer((event) => events.push(event), undefined, {
+            inboundStores: createObservedInboundStores(),
+            outboundStores
+        });
+        service.socket.connections.get('origin')!.socket.acceptsOutbound = () => false;
+
+        expect((await service.acceptIncomingMessage(createRoomSubjectMessage(), 'origin')).right?.kind).toBe('admitted');
+
+        const queued = events.filter((event) => event.kind === 'receipt-outbox');
+        expect(queued).toMatchObject([{ receipt: { phase: 'admitted', msgId: 'subject' }, verdict: { kind: 'admitted', durable: true } }]);
+        const stored = await outboundStores.admissionStore.readSentMessage(queued[0]!.receiptControlMsgId);
+        expect(decodeALControlMessage(stored!.msg).right).toMatchObject({ type: 'receipt', payload: { phase: 'admitted', msgId: 'subject' } });
+        expect(events.filter((event) => event.kind === 'receipt-transport')).toEqual([]);
+        expect(readOriginSocket(service).sent).toEqual([]);
+    });
+
     it('observes missing connections and disposed ordinary submissions without inventing scope or business facts for controls', async () => {
         const events: WsQueueBoxServerReceiptObservation[] = [];
         const service = await createObservedServer((event) => events.push(event));

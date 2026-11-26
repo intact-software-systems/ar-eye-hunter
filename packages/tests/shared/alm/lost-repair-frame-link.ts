@@ -121,11 +121,8 @@ export function createLossyLink(store: WsClientCarrierStoreKind, input: LossyLin
     const exchange = async (): Promise<void> => {
         for (let round = 0; round < LINK_EXCHANGE_LIMIT; round += 1) {
             const receipts: ALMessage[] = [];
-            // One frame at a time, its work drained first: a completion that loses its commit to the next arrival's
-            // admission is dispatched again, at least once (al-inbound-release-promotion.test.ts states it).
             for (const frame of inFlight.splice(0)) {
                 await receiver.runtime.admitIncomingMessage(toWireMessage(frame), WS_CLIENT_SOURCE);
-                await runInboundWorkDueNow(receiver);
                 if (frame.delivery !== undefined && frame.delivery.ack !== 'none') {
                     receipts.push(createServerReceipt(frame, 'admitted', []));
                 }
