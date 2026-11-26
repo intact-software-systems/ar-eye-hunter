@@ -98,7 +98,10 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
             'compares against an expected count. A presence claim settles as soon as the count is ' +
             'reached; absent holds the whole windowMs and then passes only if fewer than count ' +
             '(at least one) arrived. ascendingBy names a payload field that must be a number in every matched copy ' +
-            'and ascend strictly in arrival order; the result then carries ascending, and an absence claim takes none.',
+            'and ascend strictly in arrival order; the result then carries ascending, and an absence claim takes none. ' +
+            'stallMs also fails a presence claim once that long passes with no new copy since the count started or ' +
+            'since its latest copy, so a count that keeps arriving may take its whole windowMs; the result then ' +
+            'carries stall, and an absence claim takes none.',
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: ['api-v1'],

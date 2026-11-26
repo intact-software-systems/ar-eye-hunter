@@ -449,6 +449,11 @@ export type RallarBlackBoxTestMessagesReceivedCommand =
         absent?: boolean;
         /** A payload field that must ascend strictly in arrival order; an absence claim takes none. */
         ascendingBy?: string;
+        /**
+         * Without it, only `windowMs` ends a presence count short. With it, the count also fails once this long passes with
+         * no new copy since the count started or since its latest copy; an absence claim takes none.
+         */
+        stallMs?: number;
         windowMs: number;
     }>;
 
