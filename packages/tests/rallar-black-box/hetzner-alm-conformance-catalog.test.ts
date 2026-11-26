@@ -180,7 +180,7 @@ describe('Hetzner ALM conformance catalog', () => {
         expect(
             commandIds.some((commandId) => /^alm-rtc(-with-ws-fallback)?-server-command-/.test(commandId))
         ).toBe(false);
-        expect(entry?.manifest.metadata?.recommendedTerminalTimeoutSeconds).toBe(1_800);
+        expect(entry?.manifest.metadata?.recommendedTerminalTimeoutSeconds).toBe(1_845);
         // A capacity block closes and reconnects its sender, so only the other carriers' capacity blocks follow it.
         for (const selection of entry?.manifest.recipes ?? []) {
             const roleCommandIds = (selection.recipe?.commands ?? [])

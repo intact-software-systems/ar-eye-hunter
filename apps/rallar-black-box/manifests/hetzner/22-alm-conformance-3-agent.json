@@ -3278,7 +3278,6 @@
     "diagnostic": false,
     "expectedFailure": false,
     "family": "alm-conformance",
-    "recommendedTerminalTimeoutSeconds": 300,
     "carriers": [
       "ws",
       "rtc",
@@ -3286,7 +3285,8 @@
     ],
     "scenarios": [
       "receipted-audience"
-    ]
+    ],
+    "recommendedTerminalTimeoutSeconds": 2247
   },
   "description": "ALM conformance three-peer family (the aggregated receipt, the retry to the missing recipient, the unknown ACK version, and the frozen audience after a recipient leaves) across ws, rtc, and rtc-with-ws-fallback carriers, with one sender and two recipients."
 }

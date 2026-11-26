@@ -73,6 +73,8 @@ describe('Hetzner SPA public env wiring', () => {
 
         const [apiOrigins, controlOrigins] = result.stdout.trim().split('\n');
         expect(apiOrigins).toContain('https://fixture.example.test');
+        expect(apiOrigins.split(',')).toContain('https://grumpy-town.intact-software-systems.workers.dev');
+        expect(controlOrigins.split(',')).not.toContain('https://grumpy-town.intact-software-systems.workers.dev');
         expect(controlOrigins).toContain('https://fixture.example.test');
         const builds = (await readFile(buildLog, 'utf8')).trim().split('\n');
         expect(builds).toHaveLength(2);

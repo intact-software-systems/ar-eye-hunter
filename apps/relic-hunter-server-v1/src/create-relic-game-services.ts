@@ -31,7 +31,6 @@ export interface CreateRelicGameServicesInput {
     readonly serviceId: string;
     readonly appInbox: RallarServerAppInbox;
     readonly outbox: OutboxQueueReader;
-    readonly wakeQueue: () => void;
     readonly wsRuntimeName: string;
     readonly nowEpochMs: () => number;
     readonly timing: RallarTimingSink;
@@ -50,8 +49,7 @@ export function createRelicGameServices(input: CreateRelicGameServicesInput): Re
     });
     const relicGameInboxService = new RelicGameInboxService({
         service: relicGameMutations,
-        appInbox: input.appInbox,
-        wakeQueue: input.wakeQueue
+        appInbox: input.appInbox
     }, {
         serviceId: input.serviceId,
         serverPeerId: input.wsRuntimeName,

@@ -6,6 +6,15 @@ import type {
     RtcNativeAcquisitionProof,
     RtcNativeCapturedConnection
 } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
+import { GROUP_MEMBERSHIP_REQUEST_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/group-membership-waits.ts';
+import {
+    FORMATION_CONNECT_TIMING,
+    FORMATION_GROUP_READ_RESULT_POLL_TIMEOUT_MS,
+    FORMATION_PLANNED_LAYOUT_POLL_TIMEOUT_MS,
+    FORMATION_PRESENCE_POLL_TIMEOUT_MS,
+    FORMATION_TOPOLOGY_CONFIG_TIMEOUT_MS
+} from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-formation-waits.ts';
+import { RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS } from '@shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRtcConnectCommand
@@ -30,6 +39,11 @@ import { jsonRecord, stringArrayValue } from './live-rtc-evidence-json.ts';
 import type { LiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
 
 type TransportUnderTest = 'realtime' | 'messages.rtc';
+
+/**
+ * How long each topology read of the planned layout poll is polled for its result; the outer poll's limit bounds it.
+ */
+const FORMATION_TOPOLOGY_READ_RESULT_POLL_TIMEOUT_MS = 15_000;
 
 type AgentPrefix = 'A' | 'B' | 'C';
 
@@ -73,7 +87,6 @@ interface GroupFormationLifecycleRun {
 
 interface ReconnectFormationAgentInput {
     readonly control: LiveRtcControlPort;
-    readonly nativeAcquisition?: RtcNativeAcquisition;
     readonly runId: string;
     readonly reconnectingAgent: LiveRtcControlClient.FormationAgent;
     readonly survivingAgents: readonly [
@@ -330,7 +343,6 @@ async function reconnectFormationAgent(
     const startedAtMs = performance.now();
     const connection = await connectFormationAgent(config, {
         control: input.control,
-        nativeAcquisition: input.nativeAcquisition,
         runId: input.runId,
         agent: input.reconnectingAgent,
         transport: input.transport,
@@ -636,8 +648,7 @@ async function connectFormationAgent(
         runId: input.runId,
         agentId: input.agent.agentId,
         commandId,
-        command,
-        timeoutMs: 60_000
+        command
     };
     const result = await input.control.executeOk(execution);
     const appliedAlmDiagnostics = input.control.resultValue(result).almDiagnostics;
@@ -678,6 +689,7 @@ function toFormationConnectCommand(
     captureOptions: ReturnType<typeof toBrowserRtcCaptureIntent>['options']
 ): FormationConnectCommand {
     return {
+        ...FORMATION_CONNECT_TIMING,
         kind: 'rtc.connect',
         connection: `${input.agent.connection}-${input.transport.replace('.', '-')}`,
         actor: input.agent.actor,
@@ -695,9 +707,9 @@ function toFormationConnectCommand(
             leaveRoomOnClose: false,
             ...(input.transport === 'messages.rtc'
                 ? { typeId: config.messagesRtcTypeId, topicId: config.messagesRtcTopicId }
-                : {})
-        },
-        timeoutMs: 45_000
+                : {}),
+            timeoutMs: RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS
+        }
     };
 }
 
@@ -794,7 +806,7 @@ async function configureMeshTopology(
                 body: 'json',
                 acceptedStatusCodes: [200]
             },
-            timeoutMs: 10_000
+            timeoutMs: FORMATION_TOPOLOGY_CONFIG_TIMEOUT_MS
         }
     });
     return commandId;
@@ -810,7 +822,7 @@ async function enterGroupConnectionCycle(
         agentId: input.owner.agentId,
         commandId: readCommandId,
         command: groupReadCommand(config, input.groupId),
-        timeoutMs: 15_000
+        timeoutMs: FORMATION_GROUP_READ_RESULT_POLL_TIMEOUT_MS
     });
     const lifecycleState = toFormationEntryLifecycleState(
         input.control.resultValue(current)
@@ -929,7 +941,7 @@ async function waitForPlannedLayout(
                         agentId: input.owner.agentId,
                         commandId,
                         command: topologyReadCommand(config, input.groupId),
-                        timeoutMs: 15_000
+                        timeoutMs: FORMATION_TOPOLOGY_READ_RESULT_POLL_TIMEOUT_MS
                     })
                     .catch(() => undefined);
                 if (!result?.ok) {
@@ -955,7 +967,7 @@ async function waitForPlannedLayout(
                             ', '
                         )
                     }`,
-                timeout: 30_000
+                timeout: FORMATION_PLANNED_LAYOUT_POLL_TIMEOUT_MS
             }
         )
         .toBe(true);
@@ -985,7 +997,7 @@ async function waitForActiveSessions(
                         agentId: input.owner.agentId,
                         commandId,
                         command: groupReadCommand(config, input.groupId),
-                        timeoutMs: 15_000
+                        timeoutMs: FORMATION_GROUP_READ_RESULT_POLL_TIMEOUT_MS
                     })
                     .catch(() => undefined);
                 if (!result?.ok) {
@@ -995,7 +1007,7 @@ async function waitForActiveSessions(
             },
             {
                 message: `Expected exactly the active sessions ${expectedSessionIds.join(', ')} for ${input.groupId}`,
-                timeout: 30_000
+                timeout: FORMATION_PRESENCE_POLL_TIMEOUT_MS
             }
         )
         .toEqual(expectedSessionIds);
@@ -1240,7 +1252,7 @@ async function setupGroupMembership(
                     body: 'json',
                     acceptedStatusCodes: [200]
                 },
-                timeoutMs: 10_000
+                timeoutMs: GROUP_MEMBERSHIP_REQUEST_TIMEOUT_MS
             }
         });
     }
@@ -1280,6 +1292,6 @@ function toGroupCreationCommand(
             body: 'json',
             acceptedStatusCodes: [201]
         },
-        timeoutMs: 10_000
+        timeoutMs: GROUP_MEMBERSHIP_REQUEST_TIMEOUT_MS
     };
 }

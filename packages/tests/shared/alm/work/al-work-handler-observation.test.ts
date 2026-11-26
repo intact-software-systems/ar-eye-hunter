@@ -83,7 +83,7 @@ function observedHandler(input: ObservationCase): ObservedHandlerFixture {
         },
         diagnostics: (event) => {
             if (event.kind === 'work-batch') {
-                order.push(`batch:${nowMs}`);
+                order.push(`batch:${event.end}:${nowMs}`);
             }
         }
     });
@@ -97,8 +97,8 @@ describe('AL work observation boundary', () => {
             await fixture.handler.ready();
             expect(fixture.order).toEqual(
                 enabled
-                    ? ['capture-present', 'release:retry:1000', 'batch:1000', 'sink']
-                    : ['capture-absent', 'release:retry:1000', 'batch:1000']
+                    ? ['capture-present', 'release:retry:1000', 'batch:drained:1000', 'sink']
+                    : ['capture-absent', 'release:retry:1000', 'batch:drained:1000']
             );
         }
         finally {
@@ -117,7 +117,7 @@ describe('AL work observation boundary', () => {
             expect(fixture.order).toEqual([
                 'capture-present',
                 'release:completed:1000',
-                'batch:1000',
+                'batch:drained:1000',
                 'sink',
                 'second-sink',
                 'reentrant-sink'
@@ -137,7 +137,7 @@ describe('AL work observation boundary', () => {
         const fixture = observedHandler({ enabled: true, result: { status: 'completed' }, releaseError: original });
         try {
             await expect(fixture.handler.ready()).rejects.toBe(original);
-            expect(fixture.order).toEqual(['capture-present', 'release:completed:1000', 'sink']);
+            expect(fixture.order).toEqual(['capture-present', 'release:completed:1000', 'batch:failed:1000', 'sink']);
         }
         finally {
             const cleanup = await Promise.allSettled([fixture.handler.dispose(), fixture.engine.stop()]);
@@ -165,8 +165,8 @@ describe('AL work observation boundary', () => {
             }
             expect(fixture.order).toEqual(
                 releaseFails
-                    ? ['capture-present', 'release:retry:1000']
-                    : ['capture-present', 'release:retry:1000', 'batch:1000']
+                    ? ['capture-present', 'release:retry:1000', 'batch:failed:1000']
+                    : ['capture-present', 'release:retry:1000', 'batch:drained:1000']
             );
         }
         finally {
@@ -187,7 +187,7 @@ describe('AL work observation boundary', () => {
         const fixture = observedHandler({ enabled: true, result: { status: 'retained', settled } });
         try {
             await fixture.handler.ready();
-            expect(fixture.order).toEqual(['capture-present', 'batch:1000', 'sink']);
+            expect(fixture.order).toEqual(['capture-present', 'batch:drained:1000', 'sink']);
             complete?.({ status: 'completed' });
             await settled;
             await Promise.resolve();

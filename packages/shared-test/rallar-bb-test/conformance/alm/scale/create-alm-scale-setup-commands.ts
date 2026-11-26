@@ -2,13 +2,17 @@ import {
     createStableRtcLayoutWait,
     toStableRtcLayoutWaitTimeoutMs
 } from '../../../fixtures/create-stable-rtc-layout-wait.ts';
-import { createRallarBlackBoxEnsureGroupCommands } from '../../../fixtures/live-rtc-setup.ts';
+import {
+    computeRtcConnectOwnTimeoutMs,
+    createRallarBlackBoxEnsureGroupCommands
+} from '../../../fixtures/live-rtc-setup.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRtcConnectReadiness
 } from '../../../rallar-black-box-test-contracts.ts';
 
 import { RESTORED_SESSION_RALLAR } from '../alm-conformance-session-commands.ts';
+import { computeCommandsTimeoutMs } from '../cell/compute-commands-timeout-ms.ts';
 import type { AlmScaleRecipeInput } from './create-alm-scale-recipes.ts';
 
 /** A readiness whose layout is replaced is read again this soon, since its quiet window may already have elapsed. */
@@ -22,15 +26,11 @@ const LAYOUT_READINESS_TIMEOUT_MS = 5_000;
  */
 const GROUP_REQUEST_BASE_TIMEOUT_MS = 5_000;
 const GROUP_REQUEST_TIMEOUT_PER_PARTICIPANT_MS = 250;
-/** The hosted lane serves about 1.5 joining players per second at 50 members, so the cohort's connects wait in line. */
-const PLAYER_CONNECT_TIMEOUT_PER_PARTICIPANT_MS = 650;
-/** The connect's own deadline outlasts its readiness wait, so the wait reports its own outcome. */
-const CONNECT_COMPLETION_MARGIN_MS = 5_000;
-
-interface ConnectDeadline {
-    readonly timeoutMs: number;
-    readonly readiness: RallarBlackBoxTestRtcConnectReadiness | undefined;
-}
+/**
+ * The hosted lane serves about 1.5 joining players per second at 50 members, and a player's readiness waits for peers
+ * whose joins queue on that same lane, so it grows with the cohort.
+ */
+const PLAYER_READINESS_TIMEOUT_PER_PARTICIPANT_MS = 650;
 
 export function createAlmScaleSetupCommands(
     input: AlmScaleRecipeInput,
@@ -38,20 +38,19 @@ export function createAlmScaleSetupCommands(
 ): readonly RallarBlackBoxTestCommand[] {
     const prefix = `alm-scale-${role}`;
     const created = createSetupBarrier(prefix, 'group-created', input.readyTimeoutMs);
+    // Every role's connected barrier waits for the players' connects.
+    const playerConnect = createPlayerConnectCommand(input, 'alm-scale-player');
     return [
         createSignInCommand(input, prefix),
         ...(role === 'director'
             ? [
                 ...createDirectorEnsureGroupCommands(input, prefix),
-                createConnectCommand(input, prefix, {
-                    timeoutMs: input.readyTimeoutMs + CONNECT_COMPLETION_MARGIN_MS,
-                    readiness: undefined
-                }),
+                createConnectCommand(input, prefix, undefined),
                 createAppointCommand(input, prefix),
                 created
             ]
-            : [created, createPlayerConnectCommand(input, prefix)]),
-        createSetupBarrier(prefix, 'connected', computePlayerConnectTimeoutMs(input)),
+            : [created, playerConnect]),
+        createSetupBarrier(prefix, 'connected', computeCommandsTimeoutMs([playerConnect], 'the connected barrier')),
         createAudienceWait(input, prefix),
         createSetupBarrier(prefix, 'appointed', input.readyTimeoutMs),
         createDirectorWait(input, prefix),
@@ -135,24 +134,22 @@ function createAppointCommand(input: AlmScaleRecipeInput, prefix: string): Ralla
     };
 }
 
-/** Only a player connects after a peer exists: the director's readiness would wait on players the barrier still holds. */
+/**
+ * Only a player connects after a peer exists: the director's readiness would wait on players the barrier still holds.
+ * The runtime connects under the connect's own timeout and only then waits for readiness under the readiness's, so the
+ * connected barrier, which waits for every player's connect, covers both, one after the other.
+ */
 function createPlayerConnectCommand(input: AlmScaleRecipeInput, prefix: string): RallarBlackBoxTestCommand {
-    const timeoutMs = computePlayerConnectTimeoutMs(input);
-    return createConnectCommand(input, prefix, {
-        timeoutMs,
-        readiness: { minReadyPeers: 1, timeoutMs: timeoutMs - CONNECT_COMPLETION_MARGIN_MS, intervalMs: 100 }
-    });
+    const readinessTimeoutMs = input.readyTimeoutMs +
+        PLAYER_READINESS_TIMEOUT_PER_PARTICIPANT_MS * input.participantCount;
+    return createConnectCommand(input, prefix, { minReadyPeers: 1, timeoutMs: readinessTimeoutMs, intervalMs: 100 });
 }
 
-/** The connected barrier waits for every player's connect, so it shares the players' connect allowance. */
-function computePlayerConnectTimeoutMs(input: AlmScaleRecipeInput): number {
-    return input.readyTimeoutMs + PLAYER_CONNECT_TIMEOUT_PER_PARTICIPANT_MS * input.participantCount;
-}
-
+/** Every connect joins the room, each under the SDK timeout, so a slow join reports the SDK's own outcome. */
 function createConnectCommand(
     input: AlmScaleRecipeInput,
     prefix: string,
-    deadline: ConnectDeadline
+    readiness: RallarBlackBoxTestRtcConnectReadiness | undefined
 ): RallarBlackBoxTestCommand {
     return {
         kind: 'rtc.connect',
@@ -164,8 +161,8 @@ function createConnectCommand(
         workspaceId: input.group.workspaceId,
         roomRef: { ...input.group },
         transport: 'messages.rtc',
-        timeoutMs: deadline.timeoutMs,
-        ...(deadline.readiness === undefined ? {} : { readiness: deadline.readiness }),
+        timeoutMs: computeRtcConnectOwnTimeoutMs({ sdkTimeoutMs: input.readyTimeoutMs, joinsRoom: true }),
+        ...(readiness === undefined ? {} : { readiness }),
         rallar: {
             ...RESTORED_SESSION_RALLAR,
             almDiagnostics: input.almDiagnostics,

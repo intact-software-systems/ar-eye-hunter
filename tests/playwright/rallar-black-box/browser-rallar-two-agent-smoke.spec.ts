@@ -2,17 +2,24 @@ import { expect, test } from '@playwright/test';
 
 import { readBrowserRallarSmokeConfig, type SmokeTransport } from './browser-rallar-smoke-config.ts';
 import { BrowserRallarTwoAgentSmoke } from './browser-rallar-two-agent-smoke.ts';
+import {
+    TWO_AGENT_DELIVERY_SMOKE_TEST_TIMEOUT_MS,
+    TWO_AGENT_DISCONNECT_SMOKE_TEST_TIMEOUT_MS,
+    TWO_AGENT_PEER_READINESS,
+    TWO_AGENT_RELOAD_SMOKE_TEST_TIMEOUT_MS,
+    TWO_AGENT_SEND_AFTER_RELOAD_TIMEOUT_MS,
+    TWO_AGENT_SEND_TIMEOUT_MS
+} from './two-agent-smoke-test-timeouts.ts';
 
 const config = readBrowserRallarSmokeConfig();
 const hasTwoAgentConfig = Boolean(config.apiBaseUrl && config.roomId && config.agentAAuth && config.agentBAuth);
-const peerReadiness = { minReadyPeers: 1, timeoutMs: 30_000, intervalMs: 250 };
 const transports: readonly SmokeTransport[] = ['realtime', 'messages.rtc'];
 
 for (const transport of transports) {
     test(
         `browser-rallar provider delivers ${transport} payloads between two real agents`,
         async ({ browser, request }, testInfo) => {
-            test.setTimeout(120_000);
+            test.setTimeout(TWO_AGENT_DELIVERY_SMOKE_TEST_TIMEOUT_MS);
             test.skip(
                 !hasTwoAgentConfig,
                 `Set VITE_RALLAR_API_BASE_URL, VITE_RALLAR_ROOM_ID, and two-agent Rallar login or restore config to run the live two-agent ${transport} smoke.`
@@ -32,8 +39,14 @@ for (const transport of transports) {
                 await smoke.joinRoom(agentA);
                 const connectConfig = { ...smoke.toConnectConfig(), logoutOnClose: false };
                 const [connectedA, connectedB] = await Promise.all([
-                    smoke.connect(agentA, `connect-a-${suffix}`, { rallar: connectConfig, readiness: peerReadiness }),
-                    smoke.connect(agentB, `connect-b-${suffix}`, { rallar: connectConfig, readiness: peerReadiness })
+                    smoke.connect(agentA, `connect-a-${suffix}`, {
+                        rallar: connectConfig,
+                        readiness: TWO_AGENT_PEER_READINESS
+                    }),
+                    smoke.connect(agentB, `connect-b-${suffix}`, {
+                        rallar: connectConfig,
+                        readiness: TWO_AGENT_PEER_READINESS
+                    })
                 ]);
                 expect(connectedA.sessionId).not.toBe(connectedB.sessionId);
 
@@ -44,7 +57,7 @@ for (const transport of transports) {
                     smokeId: `a-to-b-${suffix}`,
                     direction: 'a-to-b',
                     topic: 'rallar.black-box.two-agent',
-                    timeoutMs: 30_000,
+                    timeoutMs: TWO_AGENT_SEND_TIMEOUT_MS,
                     visibleInbox: true
                 });
                 await smoke.deliver({
@@ -54,7 +67,7 @@ for (const transport of transports) {
                     smokeId: `b-to-a-${suffix}`,
                     direction: 'b-to-a',
                     topic: 'rallar.black-box.two-agent',
-                    timeoutMs: 30_000,
+                    timeoutMs: TWO_AGENT_SEND_TIMEOUT_MS,
                     visibleInbox: true
                 });
                 await Promise.all([smoke.finalizeAgent(agentA), smoke.finalizeAgent(agentB)]);
@@ -71,7 +84,7 @@ for (const transport of transports) {
     test(
         `browser-rallar provider delivers ${transport} after reloading one real agent`,
         async ({ browser, request }, testInfo) => {
-            test.setTimeout(180_000);
+            test.setTimeout(TWO_AGENT_RELOAD_SMOKE_TEST_TIMEOUT_MS);
             test.skip(
                 !hasTwoAgentConfig,
                 `Set VITE_RALLAR_API_BASE_URL, VITE_RALLAR_ROOM_ID, and two-agent Rallar login or restore config to run the live reload ${transport} smoke.`
@@ -91,8 +104,14 @@ for (const transport of transports) {
                 await smoke.joinRoom(agentA);
                 const connectConfig = { ...smoke.toConnectConfig(), logoutOnClose: false };
                 const [connectedA, connectedB] = await Promise.all([
-                    smoke.connect(agentA, `connect-a-${suffix}`, { rallar: connectConfig, readiness: peerReadiness }),
-                    smoke.connect(agentB, `connect-b-${suffix}`, { rallar: connectConfig, readiness: peerReadiness })
+                    smoke.connect(agentA, `connect-a-${suffix}`, {
+                        rallar: connectConfig,
+                        readiness: TWO_AGENT_PEER_READINESS
+                    }),
+                    smoke.connect(agentB, `connect-b-${suffix}`, {
+                        rallar: connectConfig,
+                        readiness: TWO_AGENT_PEER_READINESS
+                    })
                 ]);
                 expect(connectedA.sessionId).not.toBe(connectedB.sessionId);
 
@@ -103,7 +122,7 @@ for (const transport of transports) {
                     smokeId: `before-reload-${suffix}`,
                     direction: 'a-to-b-before-reload',
                     topic: 'rallar.black-box.reload',
-                    timeoutMs: 30_000,
+                    timeoutMs: TWO_AGENT_SEND_TIMEOUT_MS,
                     visibleInbox: false
                 });
                 await smoke.expectHealth(connectedA, {
@@ -126,7 +145,7 @@ for (const transport of transports) {
                     reconnectSuppressed: false
                 });
                 const reconnectedB = await smoke.connect(agentB, `connect-b-after-reload-${suffix}`, {
-                    readiness: peerReadiness,
+                    readiness: TWO_AGENT_PEER_READINESS,
                     rallar: {
                         ...connectConfig,
                         password: '',
@@ -149,7 +168,7 @@ for (const transport of transports) {
                     smokeId: `after-reload-a-to-b-${suffix}`,
                     direction: 'a-to-b-after-reload',
                     topic: 'rallar.black-box.reload',
-                    timeoutMs: 45_000,
+                    timeoutMs: TWO_AGENT_SEND_AFTER_RELOAD_TIMEOUT_MS,
                     visibleInbox: true
                 });
                 await smoke.deliver({
@@ -159,7 +178,7 @@ for (const transport of transports) {
                     smokeId: `after-reload-b-to-a-${suffix}`,
                     direction: 'b-to-a-after-reload',
                     topic: 'rallar.black-box.reload',
-                    timeoutMs: 45_000,
+                    timeoutMs: TWO_AGENT_SEND_AFTER_RELOAD_TIMEOUT_MS,
                     visibleInbox: true
                 });
                 await smoke.expectHealth(connectedA, {
@@ -188,6 +207,7 @@ test('browser-rallar provider suppresses WS reconnect after intentional disconne
     browser,
     request
 }, testInfo) => {
+    test.setTimeout(TWO_AGENT_DISCONNECT_SMOKE_TEST_TIMEOUT_MS);
     test.skip(
         !hasTwoAgentConfig,
         'Set VITE_RALLAR_API_BASE_URL, VITE_RALLAR_ROOM_ID, and two-agent Rallar login or restore config to run the live disconnect/reconnect smoke.'
@@ -208,8 +228,11 @@ test('browser-rallar provider suppresses WS reconnect after intentional disconne
         await smoke.joinRoom(agentA);
         const connectConfig = smoke.toConnectConfig();
         const [connectedA, connectedB] = await Promise.all([
-            smoke.connect(agentA, `connect-a-${suffix}`, { rallar: connectConfig, readiness: peerReadiness }),
-            smoke.connect(agentB, `connect-b-${suffix}`, { rallar: connectConfig, readiness: peerReadiness })
+            smoke.connect(agentA, `connect-a-${suffix}`, {
+                rallar: connectConfig,
+                readiness: TWO_AGENT_PEER_READINESS
+            }),
+            smoke.connect(agentB, `connect-b-${suffix}`, { rallar: connectConfig, readiness: TWO_AGENT_PEER_READINESS })
         ]);
         expect(connectedA.sessionId).not.toBe(connectedB.sessionId);
 
@@ -220,7 +243,7 @@ test('browser-rallar provider suppresses WS reconnect after intentional disconne
             smokeId: `before-close-${suffix}`,
             direction: 'a-to-b-before-close',
             topic: 'rallar.black-box.disconnect',
-            timeoutMs: 30_000,
+            timeoutMs: TWO_AGENT_SEND_TIMEOUT_MS,
             visibleInbox: false
         });
         await smoke.expectHealth(connectedB, {
@@ -237,7 +260,7 @@ test('browser-rallar provider suppresses WS reconnect after intentional disconne
             reconnectSuppressed: true
         });
         const reconnectedB = await smoke.connect(agentB, `reconnect-b-${suffix}`, {
-            readiness: peerReadiness,
+            readiness: TWO_AGENT_PEER_READINESS,
             rallar: {
                 ...connectConfig,
                 password: '',
@@ -254,7 +277,7 @@ test('browser-rallar provider suppresses WS reconnect after intentional disconne
             smokeId: `after-reconnect-${suffix}`,
             direction: 'a-to-b-after-reconnect',
             topic: 'rallar.black-box.disconnect',
-            timeoutMs: 30_000,
+            timeoutMs: TWO_AGENT_SEND_TIMEOUT_MS,
             visibleInbox: false
         });
         await smoke.expectHealth(connectedB, {

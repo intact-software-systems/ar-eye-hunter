@@ -13,14 +13,14 @@ import { createHetznerProviderParityRecipe } from './create-hetzner-provider-par
 import { createHetznerRtcAbsenceWaitRecipe } from './create-hetzner-rtc-absence-wait-recipe.ts';
 import type { HetznerDistributedManifestEntry } from './hetzner-manifest-entry.ts';
 import {
-    createManifestEntry,
+    createBudgetedManifestEntry,
     HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER,
     HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER,
     HETZNER_DISTRIBUTED_MANIFEST_GROUP
 } from './hetzner-manifest-entry.ts';
 
 export function createDiagnosticRtcRealtime2Agent20hzStressEntry(): HetznerDistributedManifestEntry {
-    return createManifestEntry({
+    return createBudgetedManifestEntry({
         filePath: 'apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-realtime-2-agent-20hz-stress.json',
         title: 'RTC realtime 2-agent 20 Hz stress',
         description: 'Strict 20 Hz RTC realtime stress run for stream pacing and in-flight backlog diagnostics.',
@@ -53,7 +53,7 @@ export function createDiagnosticRtcRealtime2Agent20hzStressEntry(): HetznerDistr
 }
 
 export function createDiagnosticExpectedFailure1AgentEntry(): HetznerDistributedManifestEntry {
-    return createManifestEntry({
+    return createBudgetedManifestEntry({
         filePath: 'apps/rallar-black-box/manifests/hetzner/diagnostic/expected-failure-1-agent.json',
         title: 'Expected failure 1-agent',
         description: 'Diagnostic run that intentionally fails to verify artifact analyzer fix proposals.',
@@ -76,7 +76,7 @@ export function createDiagnosticExpectedFailure1AgentEntry(): HetznerDistributed
 }
 
 export function createDiagnosticBarrierHealth2AgentEntry(): HetznerDistributedManifestEntry {
-    return createManifestEntry({
+    return createBudgetedManifestEntry({
         filePath: 'apps/rallar-black-box/manifests/hetzner/diagnostic/barrier-health-2-agent.json',
         title: 'Barrier health 2-agent',
         description: 'Diagnostic run that validates synchronized barrier orchestration before start.',
@@ -99,7 +99,7 @@ export function createDiagnosticBarrierHealth2AgentEntry(): HetznerDistributedMa
 }
 
 export function createGroupAssertions2AgentEntry(): HetznerDistributedManifestEntry {
-    return createManifestEntry({
+    return createBudgetedManifestEntry({
         filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[16],
         title: 'Group assertions 2-agent',
         description: 'Coordinator-evaluated group assertions: allEqual convergence over the ' +
@@ -123,7 +123,7 @@ export function createGroupAssertions2AgentEntry(): HetznerDistributedManifestEn
 }
 
 export function createRtcAbsenceWait2AgentEntry(): HetznerDistributedManifestEntry {
-    return createManifestEntry({
+    return createBudgetedManifestEntry({
         filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[15],
         title: 'RTC absence wait 2-agent',
         description: 'Same-room positive control delivery followed by absence waits proving ' +
@@ -147,7 +147,7 @@ export function createRtcAbsenceWait2AgentEntry(): HetznerDistributedManifestEnt
 }
 
 export function createRtcRealtime3Agent15sEntry(): HetznerDistributedManifestEntry {
-    return createManifestEntry({
+    return createBudgetedManifestEntry({
         filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[5],
         title: 'RTC realtime 3-agent 15s',
         description: 'Heavier 10 Hz RTC realtime run for three-agent load and percentile baselines.',
@@ -180,7 +180,7 @@ export function createRtcRealtime3Agent15sEntry(): HetznerDistributedManifestEnt
 }
 
 export function createRtcRealtimeStability2Agent30s20hzEntry(): HetznerDistributedManifestEntry {
-    return createManifestEntry({
+    return createBudgetedManifestEntry({
         filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[4],
         title: 'RTC realtime stability 2-agent 30s 20 Hz',
         description:
@@ -204,7 +204,7 @@ export function createRtcRealtimeStability2Agent30s20hzEntry(): HetznerDistribut
 }
 
 export function createRtcRealtimeStability2Agent30s15hzEntry(): HetznerDistributedManifestEntry {
-    return createManifestEntry({
+    return createBudgetedManifestEntry({
         filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[3],
         title: 'RTC realtime stability 2-agent 30s 15 Hz',
         description: 'Higher-rate 15 Hz RTC realtime stability stream for sustained pacing evidence.',
@@ -239,7 +239,7 @@ export function createRtcRealtimeStability2Agent30s15hzEntry(): HetznerDistribut
 }
 
 export function createRtcRealtimeStability2Agent30s10hzEntry(): HetznerDistributedManifestEntry {
-    return createManifestEntry({
+    return createBudgetedManifestEntry({
         filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[2],
         title: 'RTC realtime stability 2-agent 30s 10 Hz',
         description: 'Longer 10 Hz RTC realtime stability stream for sustained pacing evidence.',
@@ -274,7 +274,7 @@ export function createRtcRealtimeStability2Agent30s10hzEntry(): HetznerDistribut
 }
 
 export function createRtcRealtimeStability2Agent30sEntry(): HetznerDistributedManifestEntry {
-    return createManifestEntry({
+    return createBudgetedManifestEntry({
         filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[1],
         title: 'RTC realtime stability 2-agent 30s',
         description: 'Longer 5 Hz RTC realtime stability stream for sustained pacing evidence.',
@@ -302,7 +302,7 @@ export function createRtcRealtimeStability2Agent30sEntry(): HetznerDistributedMa
 }
 
 export function createRtcRealtime2Agent5sEntry(): HetznerDistributedManifestEntry {
-    return createManifestEntry({
+    return createBudgetedManifestEntry({
         filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[0],
         title: 'RTC realtime 2-agent 5s',
         description: 'Short 10 Hz RTC realtime run for first-pass RTT and event-rate performance baseline.',
@@ -335,7 +335,7 @@ export function createRtcRealtime2Agent5sEntry(): HetznerDistributedManifestEntr
 }
 
 export function createRtcRealtimeStability2Agent5sEntry(): HetznerDistributedManifestEntry {
-    return createManifestEntry({
+    return createBudgetedManifestEntry({
         filePath: HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER[4],
         title: 'RTC realtime stability 2-agent 5s',
         description: 'Lower-risk 5 Hz RTC realtime stream for green stability and first-pass pacing evidence.',
@@ -362,7 +362,7 @@ export function createRtcRealtimeStability2Agent5sEntry(): HetznerDistributedMan
 }
 
 export function createProviderParity2AgentEntry(): HetznerDistributedManifestEntry {
-    return createManifestEntry({
+    return createBudgetedManifestEntry({
         filePath: HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER[3],
         title: 'Provider parity 2-agent',
         description:
@@ -386,7 +386,7 @@ export function createProviderParity2AgentEntry(): HetznerDistributedManifestEnt
 }
 
 export function createRtcSmoke2AgentEntry(): HetznerDistributedManifestEntry {
-    return createManifestEntry({
+    return createBudgetedManifestEntry({
         filePath: HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER[2],
         title: 'RTC smoke 2-agent',
         description: 'Live RTC connect/send/stats smoke against the Hetzner headless room.',
@@ -413,7 +413,7 @@ export function createRtcSmoke2AgentEntry(): HetznerDistributedManifestEntry {
 }
 
 export function createCompositeEvidence2AgentEntry(): HetznerDistributedManifestEntry {
-    return createManifestEntry({
+    return createBudgetedManifestEntry({
         filePath: HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER[1],
         title: 'Composite evidence 2-agent',
         description: 'Loop, parallel, wait, and assert evidence without relying on live RTC delivery.',
@@ -436,7 +436,7 @@ export function createCompositeEvidence2AgentEntry(): HetznerDistributedManifest
 }
 
 export function createHealth2AgentEntry(): HetznerDistributedManifestEntry {
-    return createManifestEntry({
+    return createBudgetedManifestEntry({
         filePath: HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER[0],
         title: 'Health 2-agent',
         description: 'Cheap headless control-agent reachability check using health and stats commands.',

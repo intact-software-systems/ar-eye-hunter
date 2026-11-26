@@ -9,6 +9,7 @@ export interface TownMatchInput {
     readonly sessionId: string;
     readonly sequence: number;
     readonly controls: PracticeInput;
+    readonly receivedAt: number;
     readonly expiresAt: number;
 }
 export interface TownMatchInputRequest {
@@ -33,6 +34,7 @@ export function computeTownMatchInput(request: TownMatchInputRequest): Either<re
         sessionId: request.sessionId,
         sequence: request.sequence,
         controls: { ...request.controls },
+        receivedAt: request.now,
         expiresAt: request.now + 250
     });
 }

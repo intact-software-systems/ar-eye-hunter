@@ -3,6 +3,7 @@ import { decodeALPeerControlMessage, type ALPeerControlMessage } from '../../al-
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import { RetryableConflictError } from '../../resilience/try-with-policy.ts';
 import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
+import type { ALWorkClaimRun } from '../work/al-work-handler.ts';
 import type { ALWorkOutcome } from '../work/al-work-queue-port.ts';
 import type {
     ALOutboundAdmissionStore,
@@ -108,7 +109,8 @@ export class ALOutboundRepairAdmission<TPrepared> {
         writeALOutboundControlAdmissionDiagnostic(this.dependencies.diagnostics, {
             control: msg,
             parsed: control,
-            admitted
+            admitted,
+            claimRun: undefined
         });
         if (admitted.kind === 'committed') {
             await this.scheduleNotYetInSyncRetryIfRequired(control);
@@ -118,9 +120,10 @@ export class ALOutboundRepairAdmission<TPrepared> {
 
     /**
      * A retained control admission owes the same post-commit retry schedule the direct path writes, and states its
-     * verdict as the direct path does: a control whose first admission lost its commit is admitted here.
+     * verdict as the direct path does, with the run of the claim that replays it: a control whose first admission lost
+     * its commit is admitted here.
      */
-    async replayControlAdmission(payload: ALOutboundPendingControl): Promise<ALWorkOutcome> {
+    async replayControlAdmission(payload: ALOutboundPendingControl, claimRun: ALWorkClaimRun): Promise<ALWorkOutcome> {
         const replayed = await this.dependencies.controlAdmission.replay(payload);
         const control = decodeALPeerControlMessage(payload.msg).right;
         if (replayed.admitted === null || control === undefined) {
@@ -129,7 +132,8 @@ export class ALOutboundRepairAdmission<TPrepared> {
         writeALOutboundControlAdmissionDiagnostic(this.dependencies.diagnostics, {
             control: payload.msg,
             parsed: control,
-            admitted: replayed.admitted
+            admitted: replayed.admitted,
+            claimRun
         });
         if (replayed.admitted.kind === 'committed') {
             await this.scheduleNotYetInSyncRetryIfRequired(control);

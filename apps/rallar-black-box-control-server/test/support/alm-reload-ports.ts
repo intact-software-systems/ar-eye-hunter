@@ -1224,6 +1224,7 @@ export class AlmReloadPorts {
             targetMsgId: message.msgId,
             outcome,
             reason: 'none',
+            admission: 'direct',
             ...toPortControlTrace(message, `${message.msgId}-nack`)
         });
     }
@@ -1368,6 +1369,7 @@ export class AlmReloadPorts {
             targetMsgId: message.msgId,
             outcome: 'committed',
             reason: 'none',
+            admission: 'direct',
             ...toPortControlTrace(message, `${message.msgId}-ack`)
         });
     }
@@ -1386,6 +1388,7 @@ export class AlmReloadPorts {
                 outcome: 'committed',
                 reason: 'none',
                 phase,
+                admission: 'direct',
                 ...toPortControlTrace(message, `${message.msgId}-receipt-${phase}`)
             });
         }

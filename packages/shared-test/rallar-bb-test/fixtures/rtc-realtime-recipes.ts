@@ -5,11 +5,12 @@ import type {
     RallarBlackBoxTestRecord
 } from '../rallar-black-box-test-contracts.ts';
 import {
-    computeRtcConnectCommandTimeoutMs,
     createRallarBlackBoxEnsureGroupCommands,
     defaultRallarBlackBoxGroup,
     groupRoomRef,
     RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS,
+    RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS,
+    RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS,
     rtcConnectReadiness
 } from './live-rtc-setup.ts';
 
@@ -305,7 +306,8 @@ function toRealtimeConnectCommand(context: RealtimeRecipeContext): RallarBlackBo
         workspaceId: group.workspaceId,
         roomRef,
         transport: 'realtime',
-        timeoutMs: computeRtcConnectCommandTimeoutMs(options, 10_000),
+        timeoutMs: RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS,
+        rallar: { timeoutMs: RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS },
         readiness: rtcConnectReadiness(options),
         metadata: {
             realtime: {

@@ -6,6 +6,8 @@ import {
     type Page
 } from '@playwright/test';
 
+import { computeCommandResultPollTimeoutMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
+import { CONTROL_AGENT_OPENING_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-agent-opening-timeout-ms.ts';
 import {
     parseControlServerMessage,
     RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
@@ -15,6 +17,7 @@ import {
 } from '../../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 import { type RallarBlackBoxDistributedGroupRef } from '../../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 import { createRallarBlackBoxEnsureGroupRequestId } from '../../../../packages/shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
+import type { RallarBlackBoxTestCommand } from '../../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { decodeRecord } from '../../../../packages/shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 import type { AuthSession } from '../../../../packages/shared/api/api-config.ts';
 
@@ -23,6 +26,7 @@ import {
     FULL_STACK_SPA_ORIGIN,
     readFullStackConfig
 } from '../full-stack-helpers.ts';
+import { RESTORED_SESSION_LIFETIME_MS } from '../restored-session-lifetime-ms.ts';
 import { executeOk } from './distributed-control.ts';
 
 type ProviderUnderTest = 'simulated' | 'browser-rallar';
@@ -103,6 +107,28 @@ interface SetupGroupMembershipInput {
 }
 
 export const config = readFullStackConfig();
+
+/** Opening a control agent waits for its Advanced tab, then for its registration. */
+export const CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS = 2 * CONTROL_AGENT_OPENING_TIMEOUT_MS;
+
+/** How long a control agent's configuration for the distributed group is polled for its result. */
+export const DISTRIBUTED_AGENT_CONFIGURE_RESULT_POLL_TIMEOUT_MS = 20_000;
+
+/** Each group creation or membership request's own budget. */
+export const DISTRIBUTED_GROUP_REQUEST_TIMEOUT_MS = 15_000;
+
+/** How long a command with a budget of its own is polled for its result once that budget is spent. */
+const DISTRIBUTED_COMMAND_RESULT_POLL_MARGIN_MS = 30_000;
+
+/** How long a group creation or membership request is polled for its result: its budget, then the poll margin. */
+export const DISTRIBUTED_GROUP_REQUEST_RESULT_POLL_TIMEOUT_MS = DISTRIBUTED_GROUP_REQUEST_TIMEOUT_MS +
+    DISTRIBUTED_COMMAND_RESULT_POLL_MARGIN_MS;
+
+/** How long a scripted control agent reports each of its commands took. */
+const SCRIPTED_RESULT_DURATION_MS = 1;
+
+/** How long a scripted control agent's WebSocket may take to open. */
+export const SCRIPTED_CONTROL_AGENT_OPEN_TIMEOUT_MS = 10_000;
 
 const liveDistributedEnabled = booleanEnv('RALLAR_BLACK_BOX_DISTRIBUTED_RECIPES') ||
     booleanEnv('RALLAR_BLACK_BOX_LIVE_DISTRIBUTED_RECIPES');
@@ -213,7 +239,7 @@ function readRestoredAgentAuth(prefix: AgentPrefix): AgentAuth | undefined {
             sessionId,
             expiresAtEpochMs: numberEnv(`VITE_RALLAR_AGENT_${prefix}_EXPIRES_AT_EPOCH_MS`) ??
                 numberEnv(`VITE_RALLAR_${prefix}_EXPIRES_AT_EPOCH_MS`) ??
-                Date.now() + 30 * 60 * 1000
+                Date.now() + RESTORED_SESSION_LIFETIME_MS
         }
     };
 }
@@ -248,16 +274,18 @@ export async function openControlAgent(
 
         await page.goto(`${FULL_STACK_SPA_ORIGIN}/?${query.toString()}`);
         if (input.auth?.kind === 'login') {
-            await expect(page.getByRole('heading', { name: 'Rallar Server Login' })).toBeVisible();
+            await expect(page.getByRole('heading', { name: 'Rallar Server Login' })).toBeVisible({
+                timeout: CONTROL_AGENT_OPENING_TIMEOUT_MS
+            });
             await page.getByRole('button', { name: 'Sign in' }).click();
         }
         await expect(page.getByRole('tab', { name: 'Advanced' })).toHaveAttribute(
             'aria-selected',
             'true',
-            { timeout: 30_000 }
+            { timeout: CONTROL_AGENT_OPENING_TIMEOUT_MS }
         );
         await expect(page.locator('#panel-local-workbench .control-panel'))
-            .toContainText('registered', { timeout: 30_000 });
+            .toContainText('registered', { timeout: CONTROL_AGENT_OPENING_TIMEOUT_MS });
 
         return {
             context,
@@ -317,7 +345,7 @@ export async function openScriptedControlAgent(
             cleanup();
             socket.close();
             reject(new Error(`Scripted control agent ${input.agentId} did not open.`));
-        }, 10_000);
+        }, SCRIPTED_CONTROL_AGENT_OPEN_TIMEOUT_MS);
         socket.addEventListener('open', handleOpen);
         socket.addEventListener('error', handleError);
     });
@@ -347,8 +375,8 @@ export function scriptedControlResult(
             status: input.ok ? 'ok' : 'failed',
             ok: input.ok,
             startedAtEpochMs: now,
-            endedAtEpochMs: now + 1,
-            durationMs: 1,
+            endedAtEpochMs: now + SCRIPTED_RESULT_DURATION_MS,
+            durationMs: SCRIPTED_RESULT_DURATION_MS,
             value: {
                 scripted: true,
                 commandKind: input.command.command.kind
@@ -403,7 +431,7 @@ async function configureAgentForDistributedGroup(input: ConfigureAgentForDistrib
                 }
             }
         },
-        timeout: 20_000
+        timeout: DISTRIBUTED_AGENT_CONFIGURE_RESULT_POLL_TIMEOUT_MS
     });
 }
 
@@ -425,28 +453,29 @@ export async function setupGroupMembership(
     await createDistributedGroup(request, runId, input);
     const groupSegment = pathSegment(input.group.groupId);
     for (const member of input.members) {
+        const command: RallarBlackBoxTestCommand = {
+            kind: 'http.request',
+            request: {
+                path: `/api/state/apps/${pathSegment(input.group.applicationId)}/workspaces/${
+                    pathSegment(input.group.workspaceId)
+                }/groups/${groupSegment}/members/{auth.clientId}/requests/${crypto.randomUUID()}`,
+                method: 'PUT',
+                body: {
+                    status: 'active'
+                }
+            },
+            response: {
+                body: 'json'
+            },
+            timeoutMs: DISTRIBUTED_GROUP_REQUEST_TIMEOUT_MS
+        };
         const joinResult = await executeOk({
             request,
             runId,
             agentId: member.agentId,
             commandId: `group-join-${member.agentId}-${input.suffix}`,
-            command: {
-                kind: 'http.request',
-                request: {
-                    path: `/api/state/apps/${pathSegment(input.group.applicationId)}/workspaces/${
-                        pathSegment(input.group.workspaceId)
-                    }/groups/${groupSegment}/members/{auth.clientId}/requests/${crypto.randomUUID()}`,
-                    method: 'PUT',
-                    body: {
-                        status: 'active'
-                    }
-                },
-                response: {
-                    body: 'json'
-                },
-                timeoutMs: 15_000
-            },
-            timeout: 45_000
+            command,
+            timeout: computeCommandResultPollTimeoutMs(command, DISTRIBUTED_COMMAND_RESULT_POLL_MARGIN_MS)
         });
         expect(Number(decodeRecord(joinResult.result?.value).status)).toBeLessThan(400);
     }
@@ -513,43 +542,48 @@ async function createDistributedGroup(
     runId: string,
     input: SetupGroupMembershipInput
 ): Promise<void> {
+    const command = toGroupCreationCommand(input);
     const createResult = await executeOk({
         request,
         runId,
         agentId: input.owner.agentId,
         commandId: `group-create-${input.suffix}`,
-        command: {
-            kind: 'http.request',
-            request: {
-                path: `/api/state/apps/${pathSegment(input.group.applicationId)}/workspaces/${
-                    pathSegment(input.group.workspaceId)
-                }/groups/requests/${
-                    createRallarBlackBoxEnsureGroupRequestId({
-                        requestPrefix: 'rtc-realtime',
-                        group: input.group
-                    })
-                }`,
-                method: 'POST',
-                body: {
-                    groupId: input.group.groupId,
-                    displayName: input.group.groupId,
-                    description: 'Created by rallar-black-box distributed recipe QA',
-                    kind: 'room',
-                    joinMode: 'open',
-                    createdByPrincipalId: '{auth.clientId}',
-                    metadata: {
-                        source: 'rallar-black-box',
-                        matrix: 'distributed-recipes',
-                        suffix: input.suffix
-                    }
-                }
-            },
-            response: {
-                body: 'json'
-            },
-            timeoutMs: 15_000
-        },
-        timeout: 45_000
+        command,
+        timeout: computeCommandResultPollTimeoutMs(command, DISTRIBUTED_COMMAND_RESULT_POLL_MARGIN_MS)
     });
     expect(Number(decodeRecord(createResult.result?.value).status)).toBe(201);
+}
+
+function toGroupCreationCommand(input: SetupGroupMembershipInput): RallarBlackBoxTestCommand {
+    return {
+        kind: 'http.request',
+        request: {
+            path: `/api/state/apps/${pathSegment(input.group.applicationId)}/workspaces/${
+                pathSegment(input.group.workspaceId)
+            }/groups/requests/${
+                createRallarBlackBoxEnsureGroupRequestId({
+                    requestPrefix: 'rtc-realtime',
+                    group: input.group
+                })
+            }`,
+            method: 'POST',
+            body: {
+                groupId: input.group.groupId,
+                displayName: input.group.groupId,
+                description: 'Created by rallar-black-box distributed recipe QA',
+                kind: 'room',
+                joinMode: 'open',
+                createdByPrincipalId: '{auth.clientId}',
+                metadata: {
+                    source: 'rallar-black-box',
+                    matrix: 'distributed-recipes',
+                    suffix: input.suffix
+                }
+            }
+        },
+        response: {
+            body: 'json'
+        },
+        timeoutMs: DISTRIBUTED_GROUP_REQUEST_TIMEOUT_MS
+    };
 }

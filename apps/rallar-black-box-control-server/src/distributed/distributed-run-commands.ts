@@ -1,4 +1,7 @@
-import { bindAlmReloadPair } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
+import {
+    bindAlmReloadPair,
+    hasAuthoredAlmReloadCheckpoints
+} from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import {
     RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
     type ControlCommandEnvelope
@@ -11,6 +14,7 @@ import type {
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
+import { computeDistributedRunRootBudgetMs } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/distributed-run-root-budget.ts';
 import { toDistributedRecipeKey } from '@shared-test/rallar-bb-test/distributed/resolve-distributed-run-targets.ts';
 import { toCommandIdSegment } from '../control-command-queue-policy.ts';
 import type { ControlDistributedRunState, ControlRunState } from '../control-service-state.ts';
@@ -76,29 +80,24 @@ export function bindDistributedAlmReloadCommands(
     distributedRun: ControlDistributedRunState,
     commands: readonly DistributedPhaseCommand[]
 ): Either<readonly string[], readonly DistributedPhaseCommand[]> {
-    const reloads = commands.filter((entry) =>
-        entry.command.kind === 'recipe.run' &&
-        Object.hasOwn(entry.command.recipe?.metadata ?? {}, 'almReloadCheckpoints')
-    );
+    const reloads = commands.filter((entry) => hasAuthoredAlmReloadCheckpoints(entry.command));
     if (reloads.length === 0) {
         return Either.ofRight(commands);
     }
     const sender = reloads.find((entry) => entry.selection?.role === 'sender');
     const receiver = reloads.find((entry) => entry.selection?.role === 'receiver');
-    const terminalSeconds = distributedRun.manifest.metadata?.recommendedTerminalTimeoutSeconds;
+    const rootBudgetMs = toDistributedReloadRootBudgetMs(distributedRun);
     if (
         reloads.length !== 2 || !sender || !receiver ||
-        !sender.command.commandId || !receiver.command.commandId ||
-        typeof terminalSeconds !== 'number' || terminalSeconds <= 0 ||
-        !Number.isSafeInteger(terminalSeconds * 1_000)
+        !sender.command.commandId || !receiver.command.commandId || rootBudgetMs === undefined
     ) {
         return Either.ofLeft([
             'Authored distributed ALM reload requires two exact sender/receiver roots and its finite terminal budget.'
         ]);
     }
     const bound = bindAlmReloadPair({
-        sender: toDistributedReloadRoot(distributedRun, sender, terminalSeconds * 1_000),
-        receiver: toDistributedReloadRoot(distributedRun, receiver, terminalSeconds * 1_000)
+        sender: toDistributedReloadRoot(distributedRun, sender, rootBudgetMs),
+        receiver: toDistributedReloadRoot(distributedRun, receiver, rootBudgetMs)
     });
     return bound.mapRight((pair) =>
         commands.map((entry) => {
@@ -195,6 +194,25 @@ export function toReconciledDistributedRunFields(
 export function toDistributedBarrierTimeoutMs(distributedRun: ControlDistributedRunState): number | undefined {
     const barrier = distributedRun.manifest.barrier;
     return barrier.enabled ? barrier.timeoutMs : undefined;
+}
+
+/**
+ * The controllers stage the run, wait for its ack and barrier, and only then call `/start` and begin their terminal
+ * wait, so a reload root bound to the terminal timeout less the ack and barrier ends with that much of the wait left
+ * over; absent when the manifest names no terminal timeout that leaves the roots any time.
+ */
+function toDistributedReloadRootBudgetMs(distributedRun: ControlDistributedRunState): number | undefined {
+    const { manifest } = distributedRun;
+    const terminalTimeoutSeconds = manifest.metadata?.recommendedTerminalTimeoutSeconds;
+    if (typeof terminalTimeoutSeconds !== 'number') {
+        return undefined;
+    }
+    const rootBudgetMs = computeDistributedRunRootBudgetMs({
+        terminalTimeoutSeconds,
+        ackTimeoutMs: manifest.ackTimeoutMs,
+        barrier: manifest.barrier
+    });
+    return Number.isSafeInteger(rootBudgetMs) && rootBudgetMs > 0 ? rootBudgetMs : undefined;
 }
 
 function toDistributedReloadRoot(

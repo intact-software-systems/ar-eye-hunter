@@ -14,7 +14,14 @@ it.each([
     {
         timed: true,
         clockReadCount: 2,
-        runs: [{ payloadKind: 'send-prepared', effectId: 'effect-1', expedited: true, run: 2, durationMs: 6 }]
+        runs: [{
+            payloadKind: 'send-prepared',
+            effectId: 'effect-1',
+            expedited: true,
+            run: 2,
+            startedAtMs: 1_006,
+            durationMs: 6
+        }]
     }
 ])('reads the clock $clockReadCount times for a claim whose timing is wanted: $timed', async ({ timed, clockReadCount, runs }) => {
     // The clock read is itself the requirement: a lane with no diagnostics sink pays for no timing.

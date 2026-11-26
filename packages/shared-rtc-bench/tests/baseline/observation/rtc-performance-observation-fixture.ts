@@ -1,3 +1,5 @@
+import { resolveRtcBaselineAcceptedArtifactPath } from '../../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
+import { buildRtcBaselineJobBudgetNotStartedSequence } from '../../../baseline/acceptance/rtc-baseline-job-budget-not-started.ts';
 import {
     computeRtcBaselineExpectedSampleIdentities,
     computeRtcBaselineMetricObservations,
@@ -104,15 +106,7 @@ export async function createRtcB06FinalizedArtifacts(
             samples: identity.memberSampleIds.map((sampleId) => sampleById.get(sampleId)!)
         })
     );
-    const environment: RtcBaselineEnvironmentDto = {
-        schema: 'rallar.rtc-baseline.environment.v1',
-        baselineId,
-        workloadIds: ['RTC-B06'],
-        environmentId: 'E3-memory',
-        repeatLink,
-        conditionalEnvironmentDecisions: [e4NotRequired],
-        observation: runtimeObservation
-    };
+    const environment = toB06Environment(baselineId, runtimeObservation, repeatLink);
     const summary = toB06Summary(manifest, samples, cohorts);
     return withChecksums(
         new Map([
@@ -133,6 +127,87 @@ export async function createRtcB06FinalizedArtifacts(
             ['summary.json', toJson(summary)]
         ])
     );
+}
+
+/**
+ * The B06 evidence a capture finalizes when its job budget cannot cover the first every-scenario attempt: the default
+ * attempts passed, and that attempt and every later one were recorded as not started, which blocks the retention cohort.
+ */
+export async function createRtcB06JobBudgetIncompleteArtifacts(baselineId: string) {
+    const runtimeObservation = toB06RuntimeObservation();
+    const manifest = createB06Manifest(baselineId, null);
+    const samples = createB06Samples(manifest, runtimeObservation);
+    const locators = deriveRtcBaselineExternalAttempts(manifest, 'RTC-B06');
+    const firstUnstarted = locators.findIndex((locator) => locator.caseId === 'all-scenarios');
+    const attempts = locators.slice(0, firstUnstarted).map((locator) => toB06ExternalAttempt(locator, samples));
+    const startedSamples = attempts.flatMap((attempt) => attempt.samples);
+    const owner = toB06ExternalAttempt(locators[firstUnstarted]!, samples).samples[0]!;
+    const notStarted = buildRtcBaselineJobBudgetNotStartedSequence(manifest, {
+        kind: 'sample',
+        identity: owner.identity
+    });
+    const summary = toJobBudgetIncompleteSummary(toB06Summary(manifest, startedSamples, []), notStarted);
+    return withChecksums(
+        new Map([
+            ['environment.json', toJson(toB06Environment(baselineId, runtimeObservation, null))],
+            ['manifest.json', toJson(manifest)],
+            ...attempts.map((attempt) =>
+                [
+                    `results/external-attempts/${attempt.locator.rawResultRelativePath.split('/').at(-1)}`,
+                    toJson(attempt)
+                ] as const
+            ),
+            ...notStarted.map((artifact) => [toAcceptedArtifactPath(artifact), toJson(artifact)] as const),
+            ['summary.json', toJson(summary)]
+        ])
+    );
+}
+
+/** The passed attempts' summary, with every not-started sample and the cohort it blocks among its outcomes. */
+function toJobBudgetIncompleteSummary(
+    summary: RtcBaselineSummaryArtifactRecord,
+    notStarted: ReturnType<typeof buildRtcBaselineJobBudgetNotStartedSequence>
+): RtcBaselineSummaryArtifactRecord {
+    const notStartedSampleOutcomes = notStarted.flatMap((artifact) =>
+        'sampleId' in artifact.identity
+            ? [{ identity: artifact.identity, outcome: artifact.outcome, issues: artifact.issues }]
+            : []
+    );
+    const blockedCohortOutcomes = notStarted.flatMap((artifact) =>
+        'cohortId' in artifact.identity
+            ? [{ identity: artifact.identity, outcome: 'failed' as const, issues: artifact.issues }]
+            : []
+    );
+    return {
+        ...summary,
+        sampleOutcomes: [...summary.sampleOutcomes, ...notStartedSampleOutcomes]
+            .sort((left, right) => left.identity.sampleId.localeCompare(right.identity.sampleId)),
+        cohortOutcomes: blockedCohortOutcomes
+    };
+}
+
+function toAcceptedArtifactPath(artifact: Parameters<typeof resolveRtcBaselineAcceptedArtifactPath>[0]): string {
+    const resolved = resolveRtcBaselineAcceptedArtifactPath(artifact);
+    if (!resolved.ok) {
+        throw new Error('B06 observation fixture artifacts must resolve to a stored path.');
+    }
+    return resolved.value;
+}
+
+function toB06Environment(
+    baselineId: string,
+    observation: RtcBaselineRuntimeObservationDto,
+    repeatLink: RtcBaselineRepeatLinkDto | null
+): RtcBaselineEnvironmentDto {
+    return {
+        schema: 'rallar.rtc-baseline.environment.v1',
+        baselineId,
+        workloadIds: ['RTC-B06'],
+        environmentId: 'E3-memory',
+        repeatLink,
+        conditionalEnvironmentDecisions: [e4NotRequired],
+        observation
+    };
 }
 
 function createB06Manifest(

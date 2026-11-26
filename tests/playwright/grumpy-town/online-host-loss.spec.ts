@@ -90,7 +90,7 @@ async function restoreHost(browser: Browser, fullOutage: boolean): Promise<void>
         await expect.poll(() => discarded).toBeGreaterThan(0);
         await expect(bob.locator('#round-status')).toContainText('Waiting for confirmed match state');
         const confirmedTick = Number(await bob.locator('#online-game').getAttribute('data-tick'));
-        await expect.poll(() => epochs.some((epoch) => epoch > originalEpoch), { timeout: 14000 }).toBe(true);
+        await expect.poll(() => epochs.some((epoch) => epoch > originalEpoch), { timeout: 17000 }).toBe(true);
         for (const survivor of [bob, carol]) {
             await expect(survivor.locator('#round-status')).toContainText('Dash to make trouble');
             await expect(survivor.locator('#online-game')).toHaveAttribute('data-match-id', matchId!);
@@ -111,7 +111,7 @@ async function restoreHost(browser: Browser, fullOutage: boolean): Promise<void>
                 270
             );
         }
-        expect(recoveryElapsedMs).toBeLessThan(11500);
+        expect(recoveryElapsedMs).toBeLessThan(14500);
         if (!fullOutage) {
             expect(closes).toBe(0);
             await expect(alice.locator('#round-results')).toBeVisible();

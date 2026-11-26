@@ -72,6 +72,20 @@ portrait and scaled by aspect in landscape. The default width is 13. The walkabl
 units with six interactive shops, five street objects, fountain/cart, six
 creatures, eight additional residents, civic/shop/house facades and street furniture; the camera follows through the streets.
 
+## Production deployment
+
+[Play Grumpy Town](https://grumpy-town.intact-software-systems.workers.dev). Cloudflare serves the static app and handles navigation to `/guest`. The standard Rallar API on Hetzner handles sign-in, guest invitations, presence and signaling. A player hosts each match.
+
+From the repository root, build for the public API and deploy the assets using the Cloudflare CLI.
+
+```sh
+cd apps/grumpy-town
+VITE_RALLAR_API_BASE_URL=https://api.rallar.intactss.com npm run build
+cf deploy ./dist
+```
+
+Verify a release by opening an invitation in a separate browser session, readying both players, and confirming each sees the other move after the host starts the round.
+
 ## Optional online lobby
 
 The Rallar application ID is `grumpy-town`. When switching from the prototype build, reload all devices and create a fresh town and invitation.
@@ -110,8 +124,8 @@ The shared town uses the same movement, dash/drop and zoom controls. The three-m
 round targets 100 individual points and permits several qualifiers. Online players
 are real human sessions; BOT PAL remains only in solo.
 Ready submits your username for the round's player labels. The host associates it
-with your authenticated seat and retains it through results. This trial uses wire
-build `grumpy-town-v6`; refresh every open trial tab before playing together.
+with your authenticated seat and retains it through results. The current match build is `grumpy-town-v7`. If players have different versions,
+refresh Grumpy Town on every device before starting a round.
 Leaving hands ownership to another active member, or closes the town when its
 last member leaves. Lost action replies expose a retry button. Returning to solo
 opens the playground immediately while the online session finishes cancelling
@@ -141,11 +155,11 @@ while the older dash diagnostics count consumed attempts. These are developer
 observations, not new gameplay controls.
 
 The healthy shared-match flow and temporary checkpoint-loss pause/resume are implemented.
-If confirmation stops for 1.5 seconds, the game shows a pause while retrying checkpoints;
-movement and dash pressed during that pause are discarded. With three players, closing
+If confirmation stops for 4.5 seconds, the game pauses while retrying checkpoints.
+Movement and dash pressed during that pause are discarded. With three players, closing
 the host can appoint an eligible survivor and continue the same confirmed round with
-a backup. Losing either member of a two-player match pauses, then interrupts after
-the ten-second recovery window. Confirmed points remain visible and every player can
+a backup. Losing either member of a two-player match pauses play. It interrupts after at most
+14.5 seconds without a confirmed checkpoint. Confirmed points remain visible and every player can
 leave. After agreement returns, the director can open a fresh ready cycle.
 A newcomer during play interrupts the round. In a continuing three-player round,
 an original player can close and reopen their browser and rejoin within a ten-second

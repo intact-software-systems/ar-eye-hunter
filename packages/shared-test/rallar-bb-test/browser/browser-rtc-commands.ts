@@ -9,6 +9,7 @@ import type {
     RallarBlackBoxTestRecord,
     RallarBlackBoxTestSendObservation
 } from '../rallar-black-box-test-contracts.ts';
+import { computeRtcConnectReadinessTimeoutMs } from '../recipe/compute-rtc-connect-readiness-timeout-ms.ts';
 import { computeWaitDeadlineEpochMs } from '../wait/wait-for-event.ts';
 
 import { decodeRtcSendObserve, type RtcSendExpectation } from '../schema/decode-rtc-send-observe.ts';
@@ -76,7 +77,7 @@ interface RtcSendDiagnostic {
     readonly sendObservation: RallarBlackBoxTestSendObservation;
 }
 
-const DEFAULT_READINESS_OPTIONS: RtcConnectReadinessOptions = { minReadyPeers: 1, timeoutMs: 5_000, intervalMs: 100 };
+const DEFAULT_READINESS_OPTIONS: Omit<RtcConnectReadinessOptions, 'timeoutMs'> = { minReadyPeers: 1, intervalMs: 100 };
 
 export class BrowserRtcCommands {
     private readonly environment: BrowserCommandEnvironment;
@@ -171,7 +172,7 @@ export class BrowserRtcCommands {
         const { command, context, connectionConfig } = connected;
         const options: RtcConnectReadinessOptions = {
             minReadyPeers: toPositiveInteger(command.readiness?.minReadyPeers, DEFAULT_READINESS_OPTIONS.minReadyPeers),
-            timeoutMs: toPositiveInteger(command.readiness?.timeoutMs, DEFAULT_READINESS_OPTIONS.timeoutMs),
+            timeoutMs: computeRtcConnectReadinessTimeoutMs(command),
             intervalMs: toPositiveInteger(command.readiness?.intervalMs, DEFAULT_READINESS_OPTIONS.intervalMs)
         };
         recordRtcReadinessDiagnostic(connected, {

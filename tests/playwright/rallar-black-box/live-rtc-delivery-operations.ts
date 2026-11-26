@@ -5,6 +5,19 @@ import type {
     RtcNativeAcquisitionProof,
     RtcNativeCapturedConnection
 } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
+import {
+    LIVE_RTC_CLOSE_RESULT_POLL_TIMEOUT_MS,
+    LIVE_RTC_RESET_RESULT_POLL_TIMEOUT_MS
+} from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-control-waits.ts';
+import {
+    MATRIX_INBOX_TIMEOUT_MS,
+    MATRIX_SEND_TIMEOUT_MS,
+    NACK_PROBE_SEND_TIMEOUT_MS,
+    NACK_RECEIPT_POLL_TIMEOUT_MS,
+    STALE_SEND_TIMEOUT_MS,
+    WS_OPEN_TIMEOUT_MS
+} from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-delivery-waits.ts';
+import { REALTIME_SEND_OPEN_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/realtime-send-open-timeout-ms.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import type { BlackBoxRallarSendInput } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
@@ -305,7 +318,7 @@ function toRtcSendInput(
     return {
         roomId: input.groupId,
         ...(input.targetSessionIds ? { peerIds: input.targetSessionIds } : {}),
-        openTimeoutMs: 20_000,
+        openTimeoutMs: REALTIME_SEND_OPEN_TIMEOUT_MS,
         data: input.payload
     };
 }
@@ -370,9 +383,8 @@ async function runWebSocketOpenSendCloseMatrix(
                 kind: 'ws.open',
                 connection,
                 url: toApiWebSocketUrl(readLiveRtcAgentApiUrls(runtime.apiBaseUrl)[agent.prefix]),
-                timeoutMs: 15_000
-            },
-            timeoutMs: 30_000
+                timeoutMs: WS_OPEN_TIMEOUT_MS
+            }
         });
         await input.control.executeOk({
             runId: input.runId,
@@ -415,7 +427,7 @@ async function sendMatrixPayload(
                 workspaceId: runtime.workspaceId,
                 groupId: input.groupId
             },
-            timeoutMs: 60_000,
+            timeoutMs: MATRIX_SEND_TIMEOUT_MS,
             send: toRtcSendInput(runtime, {
                 transport: input.transport,
                 groupId: input.groupId,
@@ -429,8 +441,7 @@ async function sendMatrixPayload(
                     groupId: input.groupId
                 }
             })
-        },
-        timeoutMs: 70_000
+        }
     });
     return commandId;
 }
@@ -544,8 +555,7 @@ async function runNackProbe(
             runId: input.runId,
             agentId: input.agent.agentId,
             commandId,
-            command: toNackProbeCommand(runtime, input),
-            timeoutMs: 60_000
+            command: toNackProbeCommand(runtime, input)
         });
         stage = 'message-identity';
         messageId = input.control.requireSentMessageId(result);
@@ -614,7 +624,7 @@ async function waitForReceivedNack(
                 return observation.matchingFrames.length > 0;
             },
             {
-                timeout: 15_000,
+                timeout: NACK_RECEIPT_POLL_TIMEOUT_MS,
                 message: 'Expected a received not-yet-in-sync NACK for the probe message.'
             }
         )
@@ -667,7 +677,7 @@ async function expectClosedTransportFailure(
         agentId: input.agent.agentId,
         commandId: closeCommandId,
         command: { kind: 'close' },
-        timeoutMs: 45_000
+        timeoutMs: LIVE_RTC_CLOSE_RESULT_POLL_TIMEOUT_MS
     });
 
     const staleSendCommandId = `stale-send-${input.agent.prefix.toLowerCase()}-${input.suffix}`;
@@ -679,7 +689,7 @@ async function expectClosedTransportFailure(
             kind: 'rtc.send',
             connection: `${input.agent.connection}-messages-rtc`,
             transport: 'messages.rtc',
-            timeoutMs: 10_000,
+            timeoutMs: STALE_SEND_TIMEOUT_MS,
             send: toRtcSendInput(runtime, {
                 transport: 'messages.rtc',
                 groupId: input.groupId,
@@ -692,8 +702,7 @@ async function expectClosedTransportFailure(
                     runId: input.runId
                 }
             })
-        },
-        timeoutMs: 30_000
+        }
     });
     expect(staleResult.ok).toBe(false);
     expect(JSON.stringify(staleResult).toLowerCase()).toMatch(
@@ -715,14 +724,14 @@ async function closeAndResetAgents(
             agentId: agent.agentId,
             commandId: closeCommandId,
             command: { kind: 'close' },
-            timeoutMs: 45_000
+            timeoutMs: LIVE_RTC_CLOSE_RESULT_POLL_TIMEOUT_MS
         });
         await input.control.executeResult({
             runId: input.runId,
             agentId: agent.agentId,
             commandId: resetCommandId,
             command: { kind: 'reset' },
-            timeoutMs: 30_000
+            timeoutMs: LIVE_RTC_RESET_RESULT_POLL_TIMEOUT_MS
         });
     }
     return commandIds;
@@ -743,14 +752,14 @@ async function closeAndResetSettledAgentTrio(
             agentId: agent.agentId,
             commandId: closeCommandId,
             command: { kind: 'close' },
-            timeoutMs: 45_000
+            timeoutMs: LIVE_RTC_CLOSE_RESULT_POLL_TIMEOUT_MS
         });
         await input.control.executeOk({
             runId: input.runId,
             agentId: agent.agentId,
             commandId: resetCommandId,
             command: { kind: 'reset' },
-            timeoutMs: 30_000
+            timeoutMs: LIVE_RTC_RESET_RESULT_POLL_TIMEOUT_MS
         });
     };
 
@@ -984,7 +993,7 @@ async function observeVisibleInbox(
     await expect(
         agent.page.locator('#panel-manual-rallar .received-inbox-panel')
     ).toContainText(matrixId, {
-        timeout: 30_000
+        timeout: MATRIX_INBOX_TIMEOUT_MS
     });
 }
 function toReadinessTimings(
@@ -1070,7 +1079,7 @@ function toNackProbeCommand(
             groupId: input.groupId
         },
         minSnapshotVersion: 9_999_999,
-        timeoutMs: 45_000,
+        timeoutMs: NACK_PROBE_SEND_TIMEOUT_MS,
         send: toRtcSendInput(runtime, {
             transport: 'messages.rtc',
             groupId: input.groupId,

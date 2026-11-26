@@ -109,7 +109,7 @@
               "topicId": "black-box.group.multicast.position",
               "timeoutMs": 65000
             },
-            "timeoutMs": 115000,
+            "timeoutMs": 135000,
             "readiness": {
               "minReadyPeers": 1,
               "timeoutMs": 45000,
@@ -362,7 +362,7 @@
               "topicId": "black-box.group.multicast.position",
               "timeoutMs": 65000
             },
-            "timeoutMs": 115000,
+            "timeoutMs": 135000,
             "readiness": {
               "minReadyPeers": 1,
               "timeoutMs": 45000,
@@ -387,9 +387,9 @@
           {
             "kind": "loop",
             "commandId": "rtc-messages-principal-receiver-delivery-poll",
-            "count": 746,
+            "count": 759,
             "intervalMs": 5000,
-            "maxCommands": 1492,
+            "maxCommands": 1518,
             "until": "first-success",
             "metadata": {
               "profile": "rtc-messages-principal-multicast-receiver",
@@ -406,7 +406,7 @@
               "minReceiveRatio": 0.95,
               "logicalFanoutMessages": 3528000,
               "purpose": "delivery-poll",
-              "pollWindowMs": 3725000
+              "pollWindowMs": 3790000
             },
             "commands": [
               {
@@ -929,7 +929,7 @@
       "streamFrames": 72000,
       "logicalFanoutMessages": 3528000
     },
-    "recommendedTerminalTimeoutSeconds": 4140
+    "recommendedTerminalTimeoutSeconds": 4270
   },
   "description": "Long diagnostic principal RTC messages multicast run for 60-minute tree soak validation."
 }

@@ -25,7 +25,7 @@ import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 
 import defaults from '@api-v1/resources/configuration/defaults-config.json' with { type: 'json' };
-import { createApiV1AppInbox, type CreateApiV1AppInboxInput } from '@api-v1/src/composition/create-api-v1-app-inbox.ts';
+import { createApiV1AppInbox } from '@api-v1/src/composition/create-api-v1-app-inbox.ts';
 import {
     createApiV1MutationRuntime,
     type ApiV1MutationRuntime
@@ -47,6 +47,7 @@ export interface RelicTestStack {
 export interface RelicTestQueueRuntime {
     readonly inboxQueueReader: InboxQueueReader;
     readonly qboxEngine: InboxOutboxEngine;
+    readonly wakeQueueEngine: () => void;
     readonly outboxQueueReader: OutboxQueueReader;
 }
 
@@ -74,7 +75,6 @@ export async function createRelicTestStack(database: PSqlSql): Promise<RelicTest
         roomOwnedAppDataBindings: [RELIC_ROOM_DATA_BINDING],
         appInbox,
         outbox: runtime.outboxQueueReader,
-        wakeQueue: () => {},
         wsRuntimeName: 'default-qbox-server',
         nowEpochMs: () => now,
         timing: () => {}
@@ -161,12 +161,17 @@ export function createRelicTestQueueRuntime(mutation: ApiV1MutationRuntime): Rel
         // Manual passes must settle their handlers before assertions or PGlite shutdown; no engine joins a standing flight.
         newLaneHeldRows: undefined
     });
-    return { inboxQueueReader, qboxEngine, outboxQueueReader: new OutboxQueueReader(mutation.queueBox) };
+    return {
+        inboxQueueReader,
+        qboxEngine,
+        wakeQueueEngine: () => qboxEngine.wake(),
+        outboxQueueReader: new OutboxQueueReader(mutation.queueBox)
+    };
 }
 
 export function createRelicTestApplication(
     mutation: ApiV1MutationRuntime,
-    runtime: CreateApiV1AppInboxInput['runtime'],
+    runtime: RelicTestQueueRuntime,
     appInbox: RallarServerAppInbox
 ): RallarServerApplication<RallarServerRuntime, void> {
     return createRallarServerApplication<RallarServerRuntime, void>({

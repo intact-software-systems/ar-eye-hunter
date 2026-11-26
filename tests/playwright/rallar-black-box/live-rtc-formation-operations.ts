@@ -1,5 +1,6 @@
 import { expect } from '@playwright/test';
 
+import { FORMATION_READINESS_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-formation-waits.ts';
 import { arrayEquals } from '@shared/repository/state-utils.ts';
 import { settleAll } from '@shared/resilience/settle-all.ts';
 import { toError } from '@shared/resilience/to-error.ts';
@@ -34,7 +35,7 @@ export interface FormationCommandIdInput {
 
 export interface FormationAgentInput extends FormationCommandIdInput {
     readonly timeoutMs?: number;
-    readonly control: LiveRtcControlClient;
+    readonly control: Pick<LiveRtcControlClient, 'executeOk' | 'executeResult' | 'resultValue' | 'fetchRun'>;
     readonly runId: string;
     readonly agent: LiveRtcControlClient.Agent;
     readonly roomRef: GroupRef;
@@ -100,7 +101,9 @@ export interface FormationReopenInput extends Pick<FormationAgentInput, 'runId' 
 }
 
 const PEER_CREATED_TOPIC = 'rallar.browser.rtc.lifecycle';
-const READINESS_TIMEOUT_MS = 60_000;
+
+/** How long a formation readiness pauses before it reads the room again; its deadline bounds the reads. */
+const FORMATION_READINESS_RETRY_INTERVAL_MS = 100;
 
 export class LiveRtcFormationOperations {
     private issuedCommandCount = 0;
@@ -147,7 +150,7 @@ export class LiveRtcFormationOperations {
     }
 
     async readiness(input: FormationReadinessInput): Promise<FormationReadiness> {
-        const timeoutMs = input.timeoutMs ?? READINESS_TIMEOUT_MS;
+        const timeoutMs = input.timeoutMs ?? FORMATION_READINESS_TIMEOUT_MS;
         const deadlineMs = performance.now() + timeoutMs;
         await input.agent.refreshRoom({ refresh: 'always', timeoutMs });
         return await this.waitForFormationPeers(input, deadlineMs);
@@ -163,7 +166,10 @@ export class LiveRtcFormationOperations {
             nowEpochMs: () => performance.now(),
             randomUnit: () => 0.5,
             wait: (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs))
-        }).retryIntervalMsecs(100).maxRetryIntervalMsecs(100).backoffFactor(1).jitterRatio(0)
+        }).retryIntervalMsecs(FORMATION_READINESS_RETRY_INTERVAL_MS).maxRetryIntervalMsecs(
+            FORMATION_READINESS_RETRY_INTERVAL_MS
+        )
+            .backoffFactor(1).jitterRatio(0)
             .maxElapsedMsecs(Math.max(0, deadlineMs - performance.now())).fitDelayToElapsedBudget()
             .retryIf((failure) => failure instanceof FormationPeerMismatch);
         try {
@@ -242,8 +248,7 @@ export class LiveRtcFormationOperations {
                     equals: input.stage,
                     sinceEpochMs: input.sinceEpochMs
                 }
-            },
-            timeoutMs: input.timeoutMs + 15_000
+            }
         });
     }
 
@@ -315,8 +320,7 @@ async function readFormationReadiness(
         runId: input.runId,
         agentId: input.agent.agentId,
         commandId,
-        command: { kind: 'formation.readiness', commandId, ...toWireRoom(input), timeoutMs },
-        timeoutMs: timeoutMs + 30_000
+        command: { kind: 'formation.readiness', commandId, ...toWireRoom(input), timeoutMs }
     });
     const value = record(input.control.resultValue(result));
     return {

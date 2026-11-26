@@ -84,12 +84,9 @@ class SeatDeadlineTrial {
                 await this.waitForPromotion(observer);
             } else if (this.timing === 'restart') {
                 await this.recoverOverdueOffer(deadline, offer, observer);
-                await this.claimSeat(deadline);
+                await this.claimSeat(deadline, await this.readClaimantGeneration());
             } else {
-                await this.waitForClaimTime(deadline + (this.timing === 'before' ? -1_500 : 100));
-                const after = await this.claimSeat(deadline);
-                await delay(Math.max(0, deadline + 100 - after));
-                if (this.timing === 'after') await this.waitForPromotion(observer);
+                await this.claimBeforeOrAfterDeadline(deadline, observer);
             }
             const allocation = await this.readFinalAllocation(claim.origin);
             assert.deepEqual(await this.readFinalAllocation(expiry.origin), allocation);
@@ -180,6 +177,16 @@ class SeatDeadlineTrial {
         await delay(Math.max(0, target - await this.claimTime()));
     }
 
+    private async claimBeforeOrAfterDeadline(deadline: number, observer: ViewPushProofSocket) {
+        const connectionGenerationId = await this.readClaimantGeneration();
+        // The early claim leaves at once. The expiry node may take its whole idle ceiling to notice a command the claim
+        // node enqueued, so a claim held back until shortly before the deadline can be answered after it.
+        if (this.timing === 'after') await this.waitForClaimTime(deadline + 100);
+        const after = await this.claimSeat(deadline, connectionGenerationId);
+        await delay(Math.max(0, deadline + 100 - after));
+        if (this.timing === 'after') await this.waitForPromotion(observer);
+    }
+
     private async claimWithExpiryWakeHeld(deadline: number, offer: NonNullable<RoomLobbyAccountView['seat']>) {
         // Hold only this immutable offer's wake. The AppInbox workers must remain live to return the real claim disposition.
         const database = postgres(this.input.databaseUrl, { max: 1, connect_timeout: 5 });
@@ -202,7 +209,7 @@ class SeatDeadlineTrial {
                 assert.deepEqual(await this.readSeat(claim.origin, player), offer);
                 const successor = await this.readSeat(claim.origin, next);
                 assert.equal(successor?.status, 'waiting');
-                await this.claimSeat(deadline);
+                await this.claimSeat(deadline, await this.readClaimantGeneration());
                 console.log(JSON.stringify({ kind: 'overdue-offer-refused', workspaceId: this.workspaceId, deadline,
                     claimPeer: claim.peerId, expiryPeer: this.input.expiry.peerId, priorOffer: offer, priorSuccessor: successor }));
             });
@@ -226,20 +233,24 @@ class SeatDeadlineTrial {
         console.log(JSON.stringify({ kind: 'worker-recovery', workspaceId: this.workspaceId, peerId: expiry.peerId, deadline }));
     }
 
-    private async claimSeat(deadline: number) {
+    private async readClaimantGeneration() {
         const { claim, player } = this.input;
-        const path = toApiMutationRequestPath(this.room + '/sessions/' + encodeURIComponent(player.sessionId), crypto.randomUUID());
         const state = await requestJson(claim.origin, '/api/state' + this.scope + '/clients/' + encodeURIComponent(player.clientId),
             { method: 'GET', session: player, signal: AbortSignal.timeout(5_000) });
         const snapshot = parseAuthoritativeClientSnapshot(JSON.stringify(state), { applicationId: 'seat-qualification', workspaceId: this.workspaceId });
         const connected = snapshot.activeSessions.find(session => session.sessionId === player.sessionId);
         assert.ok(connected, 'The claimant must use its live connection generation');
+        return connected.generationId;
+    }
+
+    private async claimSeat(deadline: number, connectionGenerationId: string) {
+        const { claim, player } = this.input;
+        const path = toApiMutationRequestPath(this.room + '/sessions/' + encodeURIComponent(player.sessionId), crypto.randomUUID());
         const before = await this.claimTime();
         const response = await fetch(claim.origin + path, {
             method: 'PUT', redirect: 'error', signal: AbortSignal.timeout(5_000),
             headers: { 'content-type': 'application/json', authorization: 'Bearer ' + player.accessToken, 'x-client-id': player.clientId },
-            body: JSON.stringify({ generationId: this.workspaceId, connectionGenerationId: connected.generationId,
-                publicationKey: null, principalId: player.clientId })
+            body: JSON.stringify({ generationId: this.workspaceId, connectionGenerationId, publicationKey: null, principalId: player.clientId })
         });
         const after = await this.claimTime();
         const phase = classifyClaimReceipt({ before, after, deadline });

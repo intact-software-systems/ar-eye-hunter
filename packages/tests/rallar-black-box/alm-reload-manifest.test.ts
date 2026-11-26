@@ -17,7 +17,7 @@ describe('hosted ALM reload composition', () => {
         const checkpoints = toAlmReloadCheckpoints(sender.metadata?.almReloadCheckpoints);
         expect(checkpoints, 'combined recipe must retain executable authored checkpoint boundaries').toHaveLength(3);
         expect(receiver.metadata?.almReloadCheckpoints).toEqual(checkpoints);
-        expect(manifest.metadata?.recommendedTerminalTimeoutSeconds).toBe(1_800);
+        expect(manifest.metadata?.recommendedTerminalTimeoutSeconds).toBe(1_845);
         expect(
             bindAlmReloadPair({
                 sender: {

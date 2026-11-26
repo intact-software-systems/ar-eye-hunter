@@ -6,12 +6,17 @@ import {
     createRtcPerformanceObservationArchive,
     verifyRtcPerformanceObservationArchive
 } from '../../../baseline/observation/rtc-performance-observation-archive.ts';
+import { createVerifiedRtcPerformanceObservationArchive } from '../../../baseline/observation/rtc-performance-observation-bun-support.ts';
 import {
     decodeRtcPerformanceObservationIndexEntry,
     type RtcPerformanceObservation,
     type RtcPerformanceObservationIndexEntryDto
 } from '../../../baseline/observation/rtc-performance-observation.ts';
-import { createRtcB05FinalizedArtifacts, createRtcB06FinalizedArtifacts } from './rtc-performance-observation-fixture.ts';
+import {
+    createRtcB05FinalizedArtifacts,
+    createRtcB06FinalizedArtifacts,
+    createRtcB06JobBudgetIncompleteArtifacts
+} from './rtc-performance-observation-fixture.ts';
 
 const encoder = new TextEncoder();
 const observation: RtcPerformanceObservation = {
@@ -168,6 +173,43 @@ describe('RTC performance observation archive', () => {
             indexEntry: written.indexEntry
         })).resolves.toEqual({ ok: true, value: repeatedObservation });
     });
+
+    // The evidence contract derived only passed or failed, so an incomplete capture's archive was refused and not published.
+    it('archives and verifies an RTC-B06 capture the job budget left incomplete as incomplete', async () => {
+        const incompleteObservation: RtcB06PerformanceObservation = {
+            ...b06Observation,
+            primary: { outcome: 'incomplete', acceptedMetrics: false }
+        };
+
+        const written = await createVerifiedRtcPerformanceObservationArchive({
+            observation: incompleteObservation,
+            primaryArtifacts: await createRtcB06JobBudgetIncompleteArtifacts(b06Observation.observationId)
+        });
+
+        expect(written.ok && written.value.indexEntry.observation.primary).toEqual({
+            outcome: 'incomplete',
+            acceptedMetrics: false
+        });
+    });
+
+    it.each(['passed', 'failed'] as const)(
+        'rejects a %s declaration over evidence the job budget left incomplete',
+        async (outcome) => {
+            const written = await createRtcPerformanceObservationArchive({
+                observation: { ...b06Observation, primary: { outcome, acceptedMetrics: outcome === 'passed' } },
+                primaryArtifacts: await createRtcB06JobBudgetIncompleteArtifacts(b06Observation.observationId)
+            });
+
+            expect(
+                await verifyRtcPerformanceObservationArchive({ bytes: written.bytes, indexEntry: written.indexEntry })
+            ).toMatchObject({
+                ok: false,
+                issues: expect.arrayContaining([
+                    expect.objectContaining({ path: '$.primary.outcome', code: 'archive-evidence-outcome-mismatch' })
+                ])
+            });
+        }
+    );
 
     it('decodes one canonical index entry from repository JSON', () => {
         expect(decodeRtcPerformanceObservationIndexEntry(indexEntry)).toEqual({ ok: true, value: indexEntry });

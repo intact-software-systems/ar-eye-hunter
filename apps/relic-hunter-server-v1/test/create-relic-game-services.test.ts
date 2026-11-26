@@ -42,7 +42,6 @@ test('a passive Relic producer admits new work and pending/completed replay whil
             roomOwnedAppDataBindings: [RELIC_ROOM_DATA_BINDING],
             appInbox: firstAppInbox,
             outbox: firstRuntime.outboxQueueReader,
-            wakeQueue: () => firstRuntime.qboxEngine.wake(),
             wsRuntimeName: 'default-qbox-server',
             nowEpochMs: () => now,
             timing: () => {}
@@ -68,7 +67,6 @@ test('a passive Relic producer admits new work and pending/completed replay whil
             roomOwnedAppDataBindings: [RELIC_ROOM_DATA_BINDING],
             appInbox: coldAppInbox,
             outbox: coldRuntime.outboxQueueReader,
-            wakeQueue: () => coldRuntime.qboxEngine.wake(),
             wsRuntimeName: 'default-qbox-server',
             nowEpochMs: () => now,
             timing: () => {}

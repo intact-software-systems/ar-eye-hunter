@@ -11,7 +11,8 @@ import type { PracticeCloud } from '../practice-rules.ts';
 import type { TownMatchIdentity } from './town-match.ts';
 
 export const TOWN_MATCH_PROTOCOL = 'grumpy-town.match.v1';
-export const TOWN_MATCH_BUILD = 'grumpy-town-v6';
+export const TOWN_MATCH_BUILD = 'grumpy-town-v7';
+export const TOWN_MATCH_BUILD_MISMATCH = 'Players are using different game versions. Reload Grumpy Town on every device to play together.';
 export interface TownMatchPose {
     readonly id: string;
     readonly x: number;
@@ -45,7 +46,7 @@ export type TownMatchAction =
     };
 export interface TownMatchFrame {
     readonly protocol: typeof TOWN_MATCH_PROTOCOL;
-    readonly build: typeof TOWN_MATCH_BUILD;
+    readonly build: string;
     readonly roomRef: GroupRef;
     readonly epoch: number;
     readonly matchId: string;
@@ -70,7 +71,7 @@ const matchesFrame = new Ajv({ strict: true }).compile<TownMatchFrame>({
     required: ['protocol', 'build', 'roomRef', 'epoch', 'matchId', 'sequence', 'action'],
     properties: {
         protocol: { const: TOWN_MATCH_PROTOCOL },
-        build: { const: TOWN_MATCH_BUILD },
+        build: { type: 'string', pattern: '^grumpy-town-v[1-9][0-9]*$', maxLength: 32 },
         roomRef: {
             type: 'object',
             additionalProperties: false,
@@ -228,7 +229,7 @@ export function decodeTownMatchFrame(serialized: unknown): Either<readonly strin
     }
     return matchesFrame(value)
         ? Either.ofRight(value)
-        : Either.ofLeft(['The match message is invalid or uses an incompatible build. Refresh before playing.']);
+        : Either.ofLeft(['The match message is invalid.']);
 }
 
 export function validateTownMatchFrame(frame: TownMatchFrame, reception: TownMatchReception): readonly string[] {
@@ -252,6 +253,9 @@ export function validateTownMatchFrame(frame: TownMatchFrame, reception: TownMat
     }
     if (reception.matchId === undefined ? frame.action.kind !== 'proposal' : frame.matchId !== reception.matchId) {
         issues.push('The message does not belong to the current match.');
+    }
+    if (issues.length === 0 && frame.build !== TOWN_MATCH_BUILD) {
+        issues.push(TOWN_MATCH_BUILD_MISMATCH);
     }
     return issues;
 }

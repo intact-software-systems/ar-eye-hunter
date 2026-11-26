@@ -58,14 +58,14 @@ describe('fresh host poses independent of checkpoint agreement', () => {
         const poses = new TownMatchLivePoses();
         const committed = { ...match, tick: 75 };
         const pending = { ...match, tick: 108 };
-        const moving = { ...frame, action: { ...frame.action, tick: 150 } };
+        const moving = { ...frame, action: { ...frame.action, tick: 225 } };
         const reception = { frame: moving, match: committed, pending, now: 1000, transport: 'ws' as const };
         expect(poses.accept({ ...reception, pending: { ...pending, matchId: 'another-round' } })).toBe(false);
         expect(poses.accept(reception)).toBe(true);
-        expect(poses.resolve(committed, 1000)?.tick).toBe(150);
+        expect(poses.resolve(committed, 1000)?.tick).toBe(225);
         expect(committed.tick).toBe(75);
         expect(poses.accept({
-            ...reception, frame: { ...moving, sequence: moving.sequence + 1, action: { ...moving.action, tick: 180 } }
+            ...reception, frame: { ...moving, sequence: moving.sequence + 1, action: { ...moving.action, tick: 247 } }
         })).toBe(false);
     });
 

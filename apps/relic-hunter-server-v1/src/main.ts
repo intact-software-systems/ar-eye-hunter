@@ -61,7 +61,6 @@ const relicServices = createRelicGameServices({
     roomOwnedAppDataBindings: configuration.apiV1.group.roomOwnedAppDataBindings,
     serviceId: myServerId,
     wsRuntimeName: rallar.ws.serverPeerId,
-    wakeQueue: () => rallar.runtime.qboxEngine.wake(),
     nowEpochMs: Date.now,
     timing: createApiTimingSink(configuration.apiV1.observability)
 });

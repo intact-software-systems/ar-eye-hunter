@@ -8,6 +8,19 @@ import type {
     RtcNativeAcquisitionProof,
     RtcNativeCapturedConnection
 } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
+import { LIVE_RTC_CLOSE_RESULT_POLL_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-control-waits.ts';
+import {
+    CLUSTER_DIRECT_EXCHANGE_BOUNDED_WAITS_MS,
+    GROUP_STATE_READBACK_REQUEST_TIMEOUT_MS,
+    LIVE_RTC_ALL_SCENARIOS_TEST_TIMEOUT_MS,
+    LIVE_RTC_CLEANUP_CLOSE_RESULT_POLL_TIMEOUT_MS,
+    LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS,
+    LIVE_RTC_RETENTION_SOAK_TEST_TIMEOUT_MS,
+    MATRIX_RUN_RESULTS_POLL_TIMEOUT_MS,
+    RETENTION_CHECKPOINT_INTERVAL_CYCLES,
+    RETENTION_RECONNECT_CYCLES
+} from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-matrix-test-timeouts.ts';
+import { LIVE_RTC_MATRIX_NATIVE_ACQUISITION_BOUNDED_WAITS_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-recorder-read-waits.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import { LiveRtcFormationFailure } from './create-group-formation-lifecycle-driver.ts';
@@ -157,7 +170,7 @@ async function verifyGroupStateReadback(
             response: {
                 body: 'json'
             },
-            timeoutMs: 10_000
+            timeoutMs: GROUP_STATE_READBACK_REQUEST_TIMEOUT_MS
         }
     });
     expect(input.control.resultValue(readResult).status).toBe(200);
@@ -179,7 +192,7 @@ async function verifyGroupStateReadback(
             response: {
                 body: 'json'
             },
-            timeoutMs: 10_000
+            timeoutMs: GROUP_STATE_READBACK_REQUEST_TIMEOUT_MS
         }
     });
     expect(input.control.resultValue(eventsResult).status).toBe(200);
@@ -289,7 +302,7 @@ async function closeLiveRtcAttemptResources(input: FinalizeLiveRtcAttemptInput):
                 agentId: agent.agentId,
                 commandId: `best-effort-close-${agent.prefix.toLowerCase()}-${input.suffix}`,
                 command: { kind: 'close' },
-                timeoutMs: 15_000
+                timeoutMs: LIVE_RTC_CLEANUP_CLOSE_RESULT_POLL_TIMEOUT_MS
             });
             if (!result.ok) {
                 throw new Error(
@@ -390,7 +403,10 @@ test.describe('full-stack live three-browser RTC matrix', () => {
         browser,
         request
     }, testInfo) => {
-        test.setTimeout(360_000);
+        test.setTimeout(
+            LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS +
+                (readLiveRtcClusterApiOrigins() ? CLUSTER_DIRECT_EXCHANGE_BOUNDED_WAITS_MS : 0)
+        );
 
         const evidenceContext = await loadLiveRtcPerformanceAttempt({
             repoRoot: process.cwd(),
@@ -417,6 +433,9 @@ test.describe('full-stack live three-browser RTC matrix', () => {
         const timings: LiveRtcPerformanceTiming[] = [];
         const diagnostics: LiveRtcDiagnosticsCheckpoint[] = [];
         const nativeAcquisition = rtcCaptureMode === 'native' && evidenceContext === null ? control : undefined;
+        if (nativeAcquisition) {
+            test.setTimeout(testInfo.timeout + LIVE_RTC_MATRIX_NATIVE_ACQUISITION_BOUNDED_WAITS_MS);
+        }
         const failureDiagnostics: LiveRtcNackFailureDiagnostic[] = [];
         const rtcConnectCaptures: RtcNativeCapturedConnection[] = [];
         const nativeAcquisitions: RtcNativeAcquisitionProof[] = [];
@@ -616,7 +635,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                         };
                     },
                     {
-                        timeout: 20_000
+                        timeout: MATRIX_RUN_RESULTS_POLL_TIMEOUT_MS
                     }
                 )
                 .toEqual({
@@ -684,7 +703,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             !liveAllScenariosEnabled,
             'Set RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS=1 to run the exhaustive three-browser live matrix.'
         );
-        test.setTimeout(720_000);
+        test.setTimeout(LIVE_RTC_ALL_SCENARIOS_TEST_TIMEOUT_MS);
 
         const evidenceContext = await loadLiveRtcPerformanceAttempt({
             repoRoot: process.cwd(),
@@ -712,6 +731,9 @@ test.describe('full-stack live three-browser RTC matrix', () => {
         const timings: LiveRtcPerformanceTiming[] = [];
         const diagnostics: LiveRtcDiagnosticsCheckpoint[] = [];
         const nativeAcquisition = rtcCaptureMode === 'native' && evidenceContext === null ? control : undefined;
+        if (nativeAcquisition) {
+            test.setTimeout(testInfo.timeout + LIVE_RTC_MATRIX_NATIVE_ACQUISITION_BOUNDED_WAITS_MS);
+        }
         const failureDiagnostics: LiveRtcNackFailureDiagnostic[] = [];
         const rtcConnectCaptures: RtcNativeCapturedConnection[] = [];
         const nativeAcquisitions: RtcNativeAcquisitionProof[] = [];
@@ -885,9 +907,6 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             if (reconnectC.rtcCapture) {
                 rtcConnectCaptures.push(reconnectC.rtcCapture);
             }
-            if (reconnectC.nativeAcquisition) {
-                nativeAcquisitions.push(reconnectC.nativeAcquisition);
-            }
             timings.push({
                 kind: 'reconnect-ready',
                 transport: 'messages.rtc',
@@ -975,7 +994,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                             scenarioCount: scenarios.length
                         };
                     },
-                    { timeout: 20_000 }
+                    { timeout: MATRIX_RUN_RESULTS_POLL_TIMEOUT_MS }
                 )
                 .toEqual({
                     agents: allHandles.length,
@@ -1043,7 +1062,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             !liveRetentionSoakEnabled,
             'Set RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK=1 and RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES=100 to run retention evidence.'
         );
-        test.setTimeout(1_800_000);
+        test.setTimeout(LIVE_RTC_RETENTION_SOAK_TEST_TIMEOUT_MS);
 
         const evidenceContext = await loadLiveRtcPerformanceAttempt({
             repoRoot: process.cwd(),
@@ -1176,7 +1195,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             );
 
             let currentSessionId = initialFormation.sessions.C;
-            for (let cycle = 1; cycle <= 100; cycle += 1) {
+            for (let cycle = 1; cycle <= RETENTION_RECONNECT_CYCLES; cycle += 1) {
                 currentRetentionCycle = cycle;
                 currentCycleStartedAtEpochMs = Date.now();
                 const closeCommandId = `retention-close-c-${cycle}-${suffix}`;
@@ -1188,7 +1207,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                             agentId: agents[2].agentId,
                             commandId: closeCommandId,
                             command: { kind: 'close' },
-                            timeoutMs: 45_000
+                            timeoutMs: LIVE_RTC_CLOSE_RESULT_POLL_TIMEOUT_MS
                         });
                         commandIds.push(closeCommandId);
                     }
@@ -1228,9 +1247,6 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                         if (reconnected.rtcCapture) {
                             rtcConnectCaptures.push(reconnected.rtcCapture);
                         }
-                        if (reconnected.nativeAcquisition) {
-                            nativeAcquisitions.push(reconnected.nativeAcquisition);
-                        }
                         timings.push({
                             kind: 'reconnect-ready',
                             transport: 'messages.rtc',
@@ -1241,7 +1257,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                         currentSessionId = reconnected.sessionId;
                     }
                 );
-                if (cycle % 10 === 0) {
+                if (cycle % RETENTION_CHECKPOINT_INTERVAL_CYCLES === 0) {
                     await runRetentionPhase(
                         `retention-100 cycle ${cycle}: capture every-tenth checkpoint`,
                         async () => captureCheckpoint(agents, cycle)

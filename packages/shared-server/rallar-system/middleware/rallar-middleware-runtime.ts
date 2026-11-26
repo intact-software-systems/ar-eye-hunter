@@ -28,6 +28,11 @@ export interface RtcTopologyReplayRuntime {
 
 export interface RallarMiddlewareRuntime {
     readonly qboxEngine: InboxOutboxEngine;
+    /**
+     * Announces rows an AppInbox-pipeline writer made durable in the inbox, outbox or WS outbox: every owner of
+     * those queues drops its remembered readiness and the engine passes at once. A writer calls it after its commit.
+     */
+    readonly wakeQueueEngine: () => void;
     readonly wsQBoxServerService: WsQueueBoxServerService;
     readonly inboxQueueReader: InboxQueueReader;
     readonly outboxQueueReader: OutboxQueueReader;

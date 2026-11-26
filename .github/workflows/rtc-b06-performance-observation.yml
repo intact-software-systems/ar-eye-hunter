@@ -113,6 +113,10 @@ jobs:
     timeout-minutes: 360
     permissions:
       contents: read
+    env:
+      # How long the capture may keep starting attempts: the job's 360 minutes less 10 for its setup and 10 for its
+      # upload and report (derived-test-timeout-job-limits.test.ts holds each part's evidence).
+      RTC_B06_CAPTURE_JOB_BUDGET_SECONDS: '20400'
     steps:
       - uses: actions/checkout@v7
         with:
@@ -209,6 +213,7 @@ jobs:
             --github-run-id="$GITHUB_RUN_ID" \
             --github-run-attempt="$GITHUB_RUN_ATTEMPT" \
             --github-run-url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --job-budget-seconds="$RTC_B06_CAPTURE_JOB_BUDGET_SECONDS" \
             --output="$RTC_OBSERVATION_OUTPUT"
 
       - name: Capture RTC-B06 governed branch baseline
@@ -242,6 +247,7 @@ jobs:
             --github-run-id="$GITHUB_RUN_ID" \
             --github-run-attempt="$GITHUB_RUN_ATTEMPT" \
             --github-run-url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --job-budget-seconds="$RTC_B06_CAPTURE_JOB_BUDGET_SECONDS" \
             --output="$RTC_OBSERVATION_OUTPUT" \
             2> "$RTC_OBSERVATION_OUTPUT/capture-stderr.log" | tee "$RTC_OBSERVATION_OUTPUT/capture.log"
 
@@ -286,11 +292,13 @@ jobs:
           retention-days: 30
 
   diagnostic:
-    name: Diagnose RTC-B06 E3-memory runner ${{ matrix.runner }}
+    name: Diagnose RTC-B06 E3-memory ${{ matrix.case }} runner ${{ matrix.runner }}
     if: ${{ inputs.mode == 'diagnostic' }}
     needs: source
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    # A case's leg needs its setup and the tests its one Playwright invocation runs;
+    # derived-test-timeout-job-limits.test.ts checks each limit against those derivations.
+    timeout-minutes: ${{ matrix.timeout-minutes }}
     permissions:
       contents: read
     strategy:
@@ -300,6 +308,17 @@ jobs:
           - 1
           - 2
           - 3
+        case:
+          - default
+          - all-scenarios
+          - retention-100
+        include:
+          - case: default
+            timeout-minutes: 120
+          - case: all-scenarios
+            timeout-minutes: 300
+          - case: retention-100
+            timeout-minutes: 305
     steps:
       - uses: actions/checkout@v7
         with:
@@ -332,93 +351,66 @@ jobs:
       - name: Check RTC observation tooling
         run: npm run check --workspace=packages/shared-rtc-bench
 
-      - name: Exercise RTC-B06 diagnostic cases
+      - name: Exercise RTC-B06 diagnostic case
         env:
+          RTC_B06_DIAGNOSTIC_CASE: ${{ matrix.case }}
           RTC_CAPTURE_MODE: ${{ needs.source.outputs.rtc_capture_mode }}
           ALM_DIAGNOSTICS: ${{ inputs.alm_diagnostics }}
           ROUTINE_BROWSER_DIAGNOSTICS: ${{ inputs.routine_browser_diagnostics }}
           RELEASE_RESULTS_AFTER_CAPTURE: ${{ inputs.release_results_after_capture }}
         run: |
           set -o pipefail
-          diagnostic_status=0
+          case "$RTC_B06_DIAGNOSTIC_CASE" in
+            default)
+              case_environment=(
+                RALLAR_BLACK_BOX_ALM_DIAGNOSTICS=true
+                RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS=enabled
+              )
+              ;;
+            all-scenarios)
+              case_environment=(
+                RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS=1
+                RALLAR_BLACK_BOX_ALM_DIAGNOSTICS=true
+                RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS=enabled
+              )
+              ;;
+            retention-100)
+              case_environment=(
+                RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK=1
+                RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES=100
+                RALLAR_BLACK_BOX_ALM_DIAGNOSTICS="$ALM_DIAGNOSTICS"
+                RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS="$ROUTINE_BROWSER_DIAGNOSTICS"
+                RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE="$RELEASE_RESULTS_AFTER_CAPTURE"
+              )
+              ;;
+            *)
+              echo "::error::RTC-B06 diagnostic case must be default, all-scenarios, or retention-100"
+              exit 1
+              ;;
+          esac
 
-          mkdir -p "$RTC_DIAGNOSTIC_OUTPUT/default"
-          recorder_storage=$(mktemp -d "$RTC_DIAGNOSTIC_OUTPUT/rtc-b06-recorder-default-XXXXXX")
-          if env -u DATABASE_URL -u RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE \
+          case_output="$RTC_DIAGNOSTIC_OUTPUT/$RTC_B06_DIAGNOSTIC_CASE"
+          mkdir -p "$case_output"
+          recorder_storage=$(mktemp -d "$RTC_DIAGNOSTIC_OUTPUT/rtc-b06-recorder-$RTC_B06_DIAGNOSTIC_CASE-XXXXXX")
+          env -u DATABASE_URL -u RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE \
             -u RALLAR_ICE_MODE \
             -u RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS \
             -u RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK \
             -u RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES \
-            RALLAR_BLACK_BOX_ALM_DIAGNOSTICS=true \
-            RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS=enabled \
+            "${case_environment[@]}" \
             RALLAR_BLACK_BOX_RTC_CAPTURE_MODE="$RTC_CAPTURE_MODE" \
             RALLAR_BLACK_BOX_STORAGE_DIR="$recorder_storage" \
-            RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR="$RTC_DIAGNOSTIC_OUTPUT/default/failure-diagnostics" \
+            RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR="$case_output/failure-diagnostics" \
             npm run test:rallar:full-stack:memory:live-rtc-3 -- \
             --retries=0 \
-            --output="$RTC_DIAGNOSTIC_OUTPUT/default/playwright-results" \
-            2>&1 | tee "$RTC_DIAGNOSTIC_OUTPUT/default/diagnostic.log"; then
-            :
-          else
-            diagnostic_status=$?
-          fi
-
-          mkdir -p "$RTC_DIAGNOSTIC_OUTPUT/all-scenarios"
-          recorder_storage=$(mktemp -d "$RTC_DIAGNOSTIC_OUTPUT/rtc-b06-recorder-all-scenarios-XXXXXX")
-          if env -u DATABASE_URL -u RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE \
-            -u RALLAR_ICE_MODE \
-            -u RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK \
-            -u RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES \
-            RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS=1 \
-            RALLAR_BLACK_BOX_ALM_DIAGNOSTICS=true \
-            RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS=enabled \
-            RALLAR_BLACK_BOX_RTC_CAPTURE_MODE="$RTC_CAPTURE_MODE" \
-            RALLAR_BLACK_BOX_STORAGE_DIR="$recorder_storage" \
-            RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR="$RTC_DIAGNOSTIC_OUTPUT/all-scenarios/failure-diagnostics" \
-            npm run test:rallar:full-stack:memory:live-rtc-3 -- \
-            --retries=0 \
-            --output="$RTC_DIAGNOSTIC_OUTPUT/all-scenarios/playwright-results" \
-            2>&1 | tee "$RTC_DIAGNOSTIC_OUTPUT/all-scenarios/diagnostic.log"; then
-            :
-          else
-            case_status=$?
-            if [[ "$diagnostic_status" -eq 0 ]]; then
-              diagnostic_status="$case_status"
-            fi
-          fi
-
-          mkdir -p "$RTC_DIAGNOSTIC_OUTPUT/retention-100"
-          recorder_storage=$(mktemp -d "$RTC_DIAGNOSTIC_OUTPUT/rtc-b06-recorder-retention-100-XXXXXX")
-          if env -u DATABASE_URL -u RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE \
-            -u RALLAR_ICE_MODE \
-            -u RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS \
-            RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK=1 \
-            RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES=100 \
-            RALLAR_BLACK_BOX_ALM_DIAGNOSTICS="$ALM_DIAGNOSTICS" \
-            RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS="$ROUTINE_BROWSER_DIAGNOSTICS" \
-            RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE="$RELEASE_RESULTS_AFTER_CAPTURE" \
-            RALLAR_BLACK_BOX_RTC_CAPTURE_MODE="$RTC_CAPTURE_MODE" \
-            RALLAR_BLACK_BOX_STORAGE_DIR="$recorder_storage" \
-            RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR="$RTC_DIAGNOSTIC_OUTPUT/retention-100/failure-diagnostics" \
-            npm run test:rallar:full-stack:memory:live-rtc-3 -- \
-            --retries=0 \
-            --output="$RTC_DIAGNOSTIC_OUTPUT/retention-100/playwright-results" \
-            2>&1 | tee "$RTC_DIAGNOSTIC_OUTPUT/retention-100/diagnostic.log"; then
-            :
-          else
-            case_status=$?
-            if [[ "$diagnostic_status" -eq 0 ]]; then
-              diagnostic_status="$case_status"
-            fi
-          fi
-
-          exit "$diagnostic_status"
+            --output="$case_output/playwright-results" \
+            2>&1 | tee "$case_output/diagnostic.log"
 
       - name: Retain RTC-B06 diagnostic output
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
-          name: rtc-b06-diagnostic-r${{ matrix.runner }}-gh${{ github.run_id }}-a${{ github.run_attempt }}
+          name: rtc-b06-diagnostic-r${{ matrix.runner }}-${{ matrix.case }}-gh${{ github.run_id }}-a${{ github.run_attempt }}
           path: ${{ runner.temp }}/rtc-b06-diagnostic-${{ matrix.runner }}
           if-no-files-found: error
           retention-days: 14
