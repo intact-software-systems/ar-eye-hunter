@@ -10,7 +10,7 @@ import {
 import type { OrderedSendShape } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/validate-ordered-send-shape.ts';
 import { requirePostgresDatabaseUrl } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 
-/** The API's own defaults: each instance of a run takes its application pool's size from them. */
+/** The API's own defaults: each run here gives its instances the application pool an API instance starts with. */
 const API_V1_DEFAULTS = JSON.parse(
     readFileSync(
         new URL('../../../../../apps/api-v1/resources/configuration/defaults-config.json', import.meta.url),
@@ -81,7 +81,13 @@ async function runSmallCell(
     const runId = crypto.randomUUID();
 
     const run = await runOrderedSendCell({
-        shape: { publishers: PUBLISHERS, sendsPerSecond: 2, durationS: 2, ...shape },
+        shape: {
+            publishers: PUBLISHERS,
+            sendsPerSecond: 2,
+            durationS: 2,
+            applicationPoolMaxConnections: API_V1_DEFAULTS.database.applicationPool.maxConnections,
+            ...shape
+        },
         databaseUrl: await createRunSchema(runId),
         runId,
         observationTailMs: OBSERVATION_TAIL_MS

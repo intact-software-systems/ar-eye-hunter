@@ -6,7 +6,6 @@ import { toError } from '@shared/resilience/to-error.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import type { ConnectionContext } from '@shared/websocket/json-web-socket-server.ts';
 
-import apiV1Defaults from '../../../resources/configuration/defaults-config.json' with { type: 'json' };
 import type { ApiV1CircuitBreakerConfiguration } from '../../../src/configuration/api-v1-configuration.ts';
 import {
     createDefaultApiV1DatabaseLifecycle,
@@ -17,6 +16,7 @@ import { connectOrderedSendSession, type OrderedSendSessionDisconnect } from './
 import { createDelayedDatabaseNotificationPort } from './create-delayed-database-notification-port.ts';
 import { createDelayedPSqlSql } from './create-delayed-p-sql-sql.ts';
 import { createOrderedSendWsServer, type OrderedSendWsServer } from './create-ordered-send-ws-server.ts';
+import { ORDERED_SEND_API_V1_DEFAULTS } from './ordered-send-api-v1-defaults.ts';
 import { ORDERED_SEND_CELL_CONSTANTS } from './ordered-send-cell-constants.ts';
 import type { OrderedSendClock } from './ordered-send-clock.ts';
 
@@ -26,6 +26,8 @@ export interface OrderedSendInstanceInput {
     readonly instanceIndex: number;
     /** What each round trip of the instance to the database waits first, in milliseconds; 0 adds nothing. */
     readonly delayMs: number;
+    /** The most connections the instance's application pool opens: its statements and transactions share them. */
+    readonly applicationPoolMaxConnections: number;
     readonly runId: string;
     /** The application and workspace of the run's room. */
     readonly scope: StateScope;
@@ -36,8 +38,6 @@ export interface OrderedSendInstanceInput {
 
 /** What an instance takes from the API's configuration. */
 export interface OrderedSendInstanceConfig {
-    /** The most connections the instance's application pool opens: its statements and transactions share them. */
-    readonly applicationPoolMaxConnections: number;
     /** The circuit breaker of the instance's queue reads. */
     readonly queueResilience: ApiV1CircuitBreakerConfiguration;
 }
@@ -75,9 +75,8 @@ const SESSION_LIFETIME_MS = 24 * 60 * 60 * 1_000;
 
 /**
  * One instance on the run's database, over a lifecycle the API's own factory builds. The size of its application
- * pool and the circuit breaker of its queue reads are the API's defaults, read from the `defaults-config.json` the
- * API starts from; a deployment's profile or environment may override either, and a run does not. The listener
- * pool's size and the idle time of both pools are the cell's own.
+ * pool is its input's, which is the run's shape's. The circuit breaker of its queue reads is the API's default. The
+ * listener pool's size and the idle time of both pools are the cell's own.
  */
 export async function createDefaultOrderedSendInstance(
     input: OrderedSendInstanceInput,
@@ -85,10 +84,6 @@ export async function createDefaultOrderedSendInstance(
     clock: OrderedSendClock
 ): Promise<OrderedSendInstance> {
     const { listenerPoolMaxConnections, poolIdleTimeoutSeconds } = ORDERED_SEND_CELL_CONSTANTS;
-    const config: OrderedSendInstanceConfig = {
-        applicationPoolMaxConnections: apiV1Defaults.database.applicationPool.maxConnections,
-        queueResilience: apiV1Defaults.topology.queueResilience
-    };
     const lifecycle = await createDefaultApiV1DatabaseLifecycle({
         database: {
             mode: 'postgres',
@@ -96,7 +91,7 @@ export async function createDefaultOrderedSendInstance(
             schemaInitialization: 'disabled',
             pubSub: 'postgres',
             applicationPool: {
-                maxConnections: config.applicationPoolMaxConnections,
+                maxConnections: input.applicationPoolMaxConnections,
                 idleTimeoutSeconds: poolIdleTimeoutSeconds
             },
             listenerPool: { maxConnections: listenerPoolMaxConnections, idleTimeoutSeconds: poolIdleTimeoutSeconds }
@@ -104,7 +99,11 @@ export async function createDefaultOrderedSendInstance(
         pgliteEvidence: { mode: 'disabled', pollIntervalMs: 1_000 },
         statementCensus: undefined
     });
-    return await createOrderedSendInstance(input, config, { lifecycle, clock });
+    return await createOrderedSendInstance(
+        input,
+        { queueResilience: ORDERED_SEND_API_V1_DEFAULTS.queueResilience },
+        { lifecycle, clock }
+    );
 }
 
 /**
@@ -146,9 +145,9 @@ function wireOrderedSendInstance(
     const disconnects: OrderedSendSessionDisconnect[] = [];
     return {
         instanceIndex,
-        applicationPoolMaxConnections: config.applicationPoolMaxConnections,
+        applicationPoolMaxConnections: input.applicationPoolMaxConnections,
         acceptIncomingMessage: (value, connectionId) => server.service.acceptIncomingMessage(value, connectionId),
-        warmApplicationPool: () => warmApplicationPool(lifecycle.database, config.applicationPoolMaxConnections),
+        warmApplicationPool: () => warmApplicationPool(lifecycle.database, input.applicationPoolMaxConnections),
         start: () => startOrderedSendWsServer(server),
         connectSession: (sessionPeerId, socket) => {
             disconnects.push(connectOrderedSendSession({

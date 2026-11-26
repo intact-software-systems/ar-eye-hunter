@@ -66,7 +66,7 @@ export interface OrderedSendCellRunDependencies {
 /** What a run read of the process it ran in. It is for the artifact, and no part of what the report computes. */
 export interface OrderedSendCellRuntime {
     readonly sendWindow: OrderedSendSendWindowFigures;
-    /** The most connections each instance's application pool opened: the API's default. */
+    /** The most connections each instance's application pool opened: the shape's. */
     readonly applicationPoolMaxConnections: number;
 }
 
@@ -244,6 +244,7 @@ async function createOrderedSendInstances(
                     {
                         instanceIndex,
                         delayMs: input.shape.delayMs,
+                        applicationPoolMaxConnections: input.shape.applicationPoolMaxConnections,
                         runId: input.runId,
                         scope: ORDERED_SEND_SCOPE,
                         authorizeRoomMessage,

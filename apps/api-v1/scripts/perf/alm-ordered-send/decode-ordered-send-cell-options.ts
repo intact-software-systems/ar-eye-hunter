@@ -1,5 +1,6 @@
 import { Either } from '@shared/resilience/Either.ts';
 
+import { ORDERED_SEND_API_V1_DEFAULTS } from './ordered-send-api-v1-defaults.ts';
 import {
     ORDERED_SEND_SENDER_RECOVERIES,
     validateOrderedSendShape,
@@ -34,13 +35,17 @@ export interface OrderedSendCellOptionIssue {
     readonly message: string;
 }
 
-/** The shape of the reference run. A shape flag the command line leaves out takes its value from here. */
+/**
+ * The shape of the reference run. A shape flag the command line leaves out takes its value from here; the
+ * application pool's is the API's own default, so a run that names no pool has the pool an API instance starts with.
+ */
 export const ORDERED_SEND_REFERENCE_SHAPE: OrderedSendShape = {
     publishers: 5,
     sendsPerSecond: 2,
     durationS: 20,
     delayMs: 0,
-    senderRecovery: 'client-stand-in'
+    senderRecovery: 'client-stand-in',
+    applicationPoolMaxConnections: ORDERED_SEND_API_V1_DEFAULTS.applicationPoolMaxConnections
 };
 
 interface OptionValuesRead {
@@ -70,11 +75,12 @@ const OPTION_NAMES = [
     'duration-s',
     'delay-ms',
     'sender-recovery',
+    'application-pool',
     'database-url',
     'out'
 ];
 const OPTION_LIST = '--publishers, --sends-per-second, --duration-s, --delay-ms, --sender-recovery, ' +
-    '--database-url and --out';
+    '--application-pool, --database-url and --out';
 const ONE_TOKEN_OPTION = /^--([^=]+)=(.*)$/s;
 const DECIMAL_NUMBER = /^-?\d+(\.\d+)?$/;
 
@@ -137,12 +143,18 @@ function decodeShape(values: ReadonlyMap<string, string>): ShapeDecoded {
     const durationS = decodeNumber(values, 'duration-s', ORDERED_SEND_REFERENCE_SHAPE.durationS);
     const delayMs = decodeNumber(values, 'delay-ms', ORDERED_SEND_REFERENCE_SHAPE.delayMs);
     const senderRecovery = decodeSenderRecovery(values.get('sender-recovery'));
+    const applicationPool = decodeNumber(
+        values,
+        'application-pool',
+        ORDERED_SEND_REFERENCE_SHAPE.applicationPoolMaxConnections
+    );
     const shape = {
         publishers: publishers.value,
         sendsPerSecond: sendsPerSecond.value,
         durationS: durationS.value,
         delayMs: delayMs.value,
-        senderRecovery: senderRecovery.value
+        senderRecovery: senderRecovery.value,
+        applicationPoolMaxConnections: applicationPool.value
     };
     return {
         shape,
@@ -152,6 +164,7 @@ function decodeShape(values: ReadonlyMap<string, string>): ShapeDecoded {
             ...durationS.issues,
             ...delayMs.issues,
             ...senderRecovery.issues,
+            ...applicationPool.issues,
             ...validateOrderedSendShape(shape)
         ]
     };

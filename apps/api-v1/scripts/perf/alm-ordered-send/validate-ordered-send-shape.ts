@@ -8,8 +8,8 @@ import { ORDERED_SEND_CELL_CONSTANTS } from './ordered-send-cell-constants.ts';
 export type OrderedSendSenderRecovery = 'none' | 'client-stand-in';
 
 /**
- * What one run of the cell varies: how many sessions publish, how fast, for how long, at what database latency, and
- * what a publisher does to recover a send.
+ * What one run of the cell varies: how many sessions publish, how fast, for how long, at what database latency, what
+ * a publisher does to recover a send, and how many connections each instance's application pool may open.
  */
 export interface OrderedSendShape {
     /** The sessions that publish, each on a track of its own. */
@@ -21,6 +21,8 @@ export interface OrderedSendShape {
     /** What each round trip to the database costs on top of its own time, in milliseconds. */
     readonly delayMs: number;
     readonly senderRecovery: OrderedSendSenderRecovery;
+    /** The most connections each instance's application pool opens: its statements and transactions share them. */
+    readonly applicationPoolMaxConnections: number;
 }
 
 /** An issue of a number repeats the number; an issue of the sender recovery never repeats the text it was given. */
@@ -30,7 +32,8 @@ export interface OrderedSendShapeIssue {
         | 'invalid-sends-per-second'
         | 'invalid-duration-s'
         | 'invalid-delay-ms'
-        | 'invalid-sender-recovery';
+        | 'invalid-sender-recovery'
+        | 'invalid-application-pool';
     readonly message: string;
 }
 
@@ -40,7 +43,7 @@ export const ORDERED_SEND_SENDER_RECOVERIES: readonly OrderedSendSenderRecovery[
  * Every issue of a shape; none means the cell can run it. Each number is whole, so every publisher offers a whole
  * number of sends, the rate times the duration, and nothing is rounded. All the sessions of the room may publish: a
  * send still has every other session as its audience. The sender recovery is one of the two the cell knows, which a
- * shape decoded from JSON or from a command line may fail to be.
+ * shape decoded from JSON or from a command line may fail to be. An application pool opens at least one connection.
  */
 export function validateOrderedSendShape(shape: OrderedSendShape): readonly OrderedSendShapeIssue[] {
     const { sessionCount } = ORDERED_SEND_CELL_CONSTANTS;
@@ -72,6 +75,13 @@ export function validateOrderedSendShape(shape: OrderedSendShape): readonly Orde
     }
     if (!ORDERED_SEND_SENDER_RECOVERIES.includes(shape.senderRecovery)) {
         issues.push({ code: 'invalid-sender-recovery', message: 'senderRecovery must be none or client-stand-in' });
+    }
+    if (!isWholeNumberOfAtLeast(shape.applicationPoolMaxConnections, 1)) {
+        issues.push({
+            code: 'invalid-application-pool',
+            message: 'applicationPoolMaxConnections must be a whole number of at least 1; ' +
+                `received ${shape.applicationPoolMaxConnections}`
+        });
     }
     return issues;
 }

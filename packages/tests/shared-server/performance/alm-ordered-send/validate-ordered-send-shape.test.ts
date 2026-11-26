@@ -10,12 +10,14 @@ const REFERENCE_SHAPE: OrderedSendShape = {
     sendsPerSecond: 2,
     durationS: 20,
     delayMs: 0,
-    senderRecovery: 'client-stand-in'
+    senderRecovery: 'client-stand-in',
+    applicationPoolMaxConnections: 5
 };
 
 /** A shape as decoded JSON hands it over, wrong in each field; the validator never repeats a text it was given. */
 const SHAPE_WRONG_IN_EACH_FIELD: OrderedSendShape = JSON.parse(
-    '{"publishers":16,"sendsPerSecond":0,"durationS":2.5,"delayMs":-1,"senderRecovery":"postgres://app:s3cret-pw@db"}'
+    '{"publishers":16,"sendsPerSecond":0,"durationS":2.5,"delayMs":-1,"senderRecovery":"postgres://app:s3cret-pw@db",' +
+        '"applicationPoolMaxConnections":0}'
 );
 
 describe('validateOrderedSendShape', () => {
@@ -25,6 +27,7 @@ describe('validateOrderedSendShape', () => {
         expect(validateOrderedSendShape({ ...REFERENCE_SHAPE, publishers: 15, sendsPerSecond: 1, durationS: 1 }))
             .toEqual([]);
         expect(validateOrderedSendShape({ ...REFERENCE_SHAPE, senderRecovery: 'none' })).toEqual([]);
+        expect(validateOrderedSendShape({ ...REFERENCE_SHAPE, applicationPoolMaxConnections: 1 })).toEqual([]);
     });
 
     it('returns every issue of a shape that is wrong in each field', () => {
@@ -39,7 +42,11 @@ describe('validateOrderedSendShape', () => {
             },
             { code: 'invalid-duration-s', message: 'durationS must be a whole number of at least 1; received 2.5' },
             { code: 'invalid-delay-ms', message: 'delayMs must be a whole number of at least 0; received -1' },
-            { code: 'invalid-sender-recovery', message: 'senderRecovery must be none or client-stand-in' }
+            { code: 'invalid-sender-recovery', message: 'senderRecovery must be none or client-stand-in' },
+            {
+                code: 'invalid-application-pool',
+                message: 'applicationPoolMaxConnections must be a whole number of at least 1; received 0'
+            }
         ]);
     });
 
@@ -50,7 +57,12 @@ describe('validateOrderedSendShape', () => {
         ['a rate that gives a fraction of a send', { ...REFERENCE_SHAPE, sendsPerSecond: 0.5 }, 'invalid-sends-per-second'],
         ['an endless window', { ...REFERENCE_SHAPE, durationS: Number.POSITIVE_INFINITY }, 'invalid-duration-s'],
         ['no window', { ...REFERENCE_SHAPE, durationS: 0 }, 'invalid-duration-s'],
-        ['a fraction of a millisecond of delay', { ...REFERENCE_SHAPE, delayMs: 0.5 }, 'invalid-delay-ms']
+        ['a fraction of a millisecond of delay', { ...REFERENCE_SHAPE, delayMs: 0.5 }, 'invalid-delay-ms'],
+        [
+            'a fraction of a connection',
+            { ...REFERENCE_SHAPE, applicationPoolMaxConnections: 2.5 },
+            'invalid-application-pool'
+        ]
     ])('refuses %s', (_name, shape, code) => {
         expect(validateOrderedSendShape(shape).map((issue) => issue.code)).toEqual([code]);
     });

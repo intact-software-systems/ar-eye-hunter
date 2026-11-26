@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -20,7 +21,14 @@ function readIssues(argv: readonly string[]): readonly OrderedSendCellOptionIssu
 describe('decodeOrderedSendCellOptions', () => {
     it('decodes the reference invocation, and gives a flag left out the value the reference invocation gives it', () => {
         const reference = {
-            shape: { publishers: 5, sendsPerSecond: 2, durationS: 20, delayMs: 0, senderRecovery: 'client-stand-in' },
+            shape: {
+                publishers: 5,
+                sendsPerSecond: 2,
+                durationS: 20,
+                delayMs: 0,
+                senderRecovery: 'client-stand-in',
+                applicationPoolMaxConnections: 5
+            },
             databaseUrl: DATABASE_URL,
             artifactDestination: { kind: 'named-by-run' }
         };
@@ -31,10 +39,23 @@ describe('decodeOrderedSendCellOptions', () => {
             '--duration-s=20',
             '--delay-ms=0',
             '--sender-recovery=client-stand-in',
+            '--application-pool=5',
             `--database-url=${DATABASE_URL}`
         ])).toEqual(reference);
         expect(readOptions([`--database-url=${DATABASE_URL}`])).toEqual(reference);
         expect(ORDERED_SEND_REFERENCE_SHAPE).toEqual(reference.shape);
+    });
+
+    it('gives an application pool left out the size the API\'s own defaults give it', () => {
+        const apiV1Defaults = JSON.parse(
+            readFileSync(
+                new URL('../../../../../apps/api-v1/resources/configuration/defaults-config.json', import.meta.url),
+                'utf8'
+            )
+        );
+
+        expect(readOptions([`--database-url=${DATABASE_URL}`])?.shape.applicationPoolMaxConnections)
+            .toBe(apiV1Defaults.database.applicationPool.maxConnections);
     });
 
     it('decodes each flag it is given, in any order, and a file to write the artifact to', () => {
@@ -45,9 +66,17 @@ describe('decodeOrderedSendCellOptions', () => {
             '--duration-s=45',
             '--sends-per-second=10',
             '--sender-recovery=none',
+            '--application-pool=10',
             '--publishers=1'
         ])).toEqual({
-            shape: { publishers: 1, sendsPerSecond: 10, durationS: 45, delayMs: 5, senderRecovery: 'none' },
+            shape: {
+                publishers: 1,
+                sendsPerSecond: 10,
+                durationS: 45,
+                delayMs: 5,
+                senderRecovery: 'none',
+                applicationPoolMaxConnections: 10
+            },
             databaseUrl: DATABASE_URL,
             artifactDestination: { kind: 'file', path: 'tmp/perf/alm-ordered-send/one-track.json' }
         });
@@ -75,7 +104,7 @@ describe('decodeOrderedSendCellOptions', () => {
             {
                 code: 'unknown-option',
                 message: 'argument 3 names no option of this command: it takes --publishers, --sends-per-second, ' +
-                    '--duration-s, --delay-ms, --sender-recovery, --database-url and --out'
+                    '--duration-s, --delay-ms, --sender-recovery, --application-pool, --database-url and --out'
             },
             { code: 'repeated-option', message: '--delay-ms is given more than once' },
             { code: 'malformed-argument', message: 'argument 6 is not one --name=value token' },
@@ -94,6 +123,7 @@ describe('decodeOrderedSendCellOptions', () => {
     it.each([
         ['a fraction', '--duration-s=2.5', 'invalid-duration-s'],
         ['more publishers than the room has sessions', '--publishers=16', 'invalid-publishers'],
+        ['an application pool of no connection', '--application-pool=0', 'invalid-application-pool'],
         ['an exponent', '--sends-per-second=1e1', 'invalid-number'],
         ['no value', '--delay-ms=', 'invalid-number']
     ])('refuses %s', (_name, argument, code) => {

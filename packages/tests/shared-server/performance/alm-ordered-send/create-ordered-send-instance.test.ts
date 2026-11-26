@@ -13,6 +13,7 @@ import type { ApiV1DatabaseLifecycle } from '../../../../../apps/api-v1/src/db/a
 const INPUT: OrderedSendInstanceInput = {
     instanceIndex: 1,
     delayMs: 0,
+    applicationPoolMaxConnections: 7,
     runId: '0f0e0d0c-0b0a-4908-8706-050403020100',
     scope: { applicationId: 'ordered-send-cell', workspaceId: 'default' },
     authorizeRoomMessage: () => false,
@@ -20,7 +21,6 @@ const INPUT: OrderedSendInstanceInput = {
 };
 
 const CONFIG: OrderedSendInstanceConfig = {
-    applicationPoolMaxConnections: 5,
     queueResilience: { failureThreshold: 10, openDurationMs: 10_000, resetDurationMs: 10_000, samplingDurationMs: 10_000 }
 };
 
@@ -40,7 +40,44 @@ function createUnusedSql(): PSqlSql {
     });
 }
 
+/** A handle that takes a statement and answers no rows; `statements` counts the statements sent through it. */
+function createCountingSql(): { readonly sql: PSqlSql; readonly statements: () => number; } {
+    let statements = 0;
+    function sql<Result>(strings: TemplateStringsArray, ...values: readonly PSqlParameter[]): Promise<Result>;
+    function sql(values: readonly PSqlParameter[]): object;
+    function sql(): object {
+        statements += 1;
+        return Promise.resolve([]);
+    }
+    const counting = Object.assign(sql, {
+        begin: async (): Promise<never> => {
+            throw new Error('A transaction was opened on a handle that only counts statements.');
+        }
+    });
+    return { sql: counting, statements: () => statements };
+}
+
 describe('createOrderedSendInstance', () => {
+    it('opens as many connections of its application pool as its input states, when it warms the pool', async () => {
+        const database = createCountingSql();
+        const instance = await createOrderedSendInstance(INPUT, CONFIG, {
+            lifecycle: {
+                database: database.sql,
+                notification: { notify: async () => undefined, listen: async () => undefined },
+                readiness: Promise.resolve(),
+                close: async () => undefined
+            },
+            clock: CLOCK
+        });
+
+        await instance.warmApplicationPool();
+        await instance.stop();
+        await instance.close();
+
+        expect(instance.applicationPoolMaxConnections).toBe(7);
+        expect(database.statements()).toBe(7);
+    });
+
     it('closes the lifecycle it was given when it cannot wire an instance over it, and fails with the reason', async () => {
         let closes = 0;
         const lifecycleWithoutNotifications: ApiV1DatabaseLifecycle = {
