@@ -72,11 +72,15 @@ export class ALInboundOrderedDelivery {
     /**
      * A release whose write lost reads and decides again at once, rather than send the work back to wait out a retry
      * delay that can outlast its message: a completion, another release or an admission on the track committed, and
-     * the next read sees it.
+     * the next read sees it. Each attempt reads the slot and the progress, checks the proof, plans, mints its control
+     * ids and signs again, so a diagnostic an attempt records before its write, such as a failed receipt signature, is
+     * recorded once per attempt; a lost attempt wrote nothing, since its bundle commits whole or not at all.
      *
-     * Hands the work back (`retry`) when every attempt's write lost or the shutdown signal aborted it, and when the
-     * plan asks for a retry or the predecessor has not completed, which a second read would find the same. Nothing has
-     * been dispatched then: the caller dispatches only the delivery a committed release answers.
+     * Hands the work back (`retry`) when every attempt's write lost, and when the plan asks for a retry or the
+     * predecessor has not completed, which a second read would find the same. A shutdown signal aborted before the
+     * write answers `retry` without writing; aborted by the time the write answers, `retry` whether it committed or
+     * lost, and no further attempt is made. Nothing has been dispatched then: the caller dispatches only the delivery
+     * a committed release answers.
      */
     async release(input: ALInboundOrderedDelivery.ReleaseInput): Promise<ALInboundOrderedDelivery.ReleaseResult> {
         const released = await retryALInboundLostWrite({
@@ -111,7 +115,7 @@ export class ALInboundOrderedDelivery {
         if (plan.dropReason || !plan.localDelivery.enabled) {
             return await this.complete(read.snapshot.msg);
         }
-        return await this.commitRelease(read, plan);
+        return await this.writeRelease(read, plan);
     }
 
     /** The plan of a slot this work still owns, under its stored scope, before the message expired. */
@@ -135,8 +139,8 @@ export class ALInboundOrderedDelivery {
         return plan;
     }
 
-    /** The release's one conditional write; the delivery it answers is dispatched only once it committed. */
-    private async commitRelease(
+    /** The release's signing and its one conditional write; the delivery it answers is dispatched only once it committed. */
+    private async writeRelease(
         read: ALInboundBufferedReleaseReadDto,
         plan: ALMessageHandlingPlan
     ): Promise<ALInboundReleaseAttempt> {

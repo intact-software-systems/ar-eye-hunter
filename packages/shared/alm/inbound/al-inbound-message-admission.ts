@@ -143,6 +143,15 @@ interface ALInboundAttemptDecision {
     readonly deadline: number;
 }
 
+interface ALInboundAttemptRouting {
+    /** The plan does not drop the message, a forwarder is composed, and the carrier may forward the message now. */
+    readonly canForward: boolean;
+    /** No parent is recorded, or the recorded parent is still in the room. */
+    readonly recordedParentPresent: boolean;
+    /** A forwarder of retried copies is composed, so a retried copy goes to the pre-plan's next hops. */
+    readonly forwardsRetriedCopy: boolean;
+}
+
 /** One conditional admission per `attempt`; its owner looks again after a lost write, and QueueBox replays the rest. */
 export class ALInboundMessageAdmission {
     private readonly dependencies: ALInboundMessageAdmission.Dependencies;
@@ -221,30 +230,16 @@ export class ALInboundMessageAdmission {
         return Either.ofRight({ admitted, nowMs, prePlan, originAuthenticated, facts });
     }
 
-    /**
-     * The bundle the decision computes. Besides the decision it reads, and reads now, two synchronous in-memory
-     * lookups the runtime was composed with, and no store: `canForwardMessage`, whether the message may be forwarded,
-     * and `isRoomPeerPresent`, whether the recorded parent is still in the room.
-     */
-    private readAttemptBundle(decision: ALInboundAttemptDecision): ALInboundCommitBundle {
-        const { preparation, read, plan } = decision;
-        const { admitted } = preparation;
-        const canForward = !plan.dropReason && this.dependencies.forwardMessage !== undefined &&
-            (this.dependencies.canForwardMessage?.(admitted) ?? true);
-        const recordedParentPresent = read.pendingAck === undefined ||
-            (this.dependencies.isRoomPeerPresent?.(admitted, read.pendingAck.toPeerId) ?? true);
-        return computeALInboundAdmission({
-            read,
-            plan,
-            canForward,
-            recordedParentPresent,
-            retriedCopyNextHopPeerIds: this.dependencies.forwardRetriedCopy === undefined
-                ? []
-                : preparation.prePlan.forwarding.nextHopPeerIds,
-            originAuthenticated: preparation.originAuthenticated,
-            readmission: decision.readmission,
-            facts: preparation.facts
-        });
+    /** Where the decision's message may go, read now from the in-memory lookups the runtime was composed with. */
+    private getAttemptRouting(decision: ALInboundAttemptDecision): ALInboundAttemptRouting {
+        const { preparation: { admitted }, read, plan } = decision;
+        return {
+            canForward: !plan.dropReason && this.dependencies.forwardMessage !== undefined &&
+                (this.dependencies.canForwardMessage?.(admitted) ?? true),
+            recordedParentPresent: read.pendingAck === undefined ||
+                (this.dependencies.isRoomPeerPresent?.(admitted, read.pendingAck.toPeerId) ?? true),
+            forwardsRetriedCopy: this.dependencies.forwardRetriedCopy !== undefined
+        };
     }
 
     /** The attempt's one conditional write; the records after it are made only once it committed. */
@@ -252,7 +247,8 @@ export class ALInboundMessageAdmission {
         decision: ALInboundAttemptDecision
     ): Promise<Either<ALMessageRejection, ALInboundMessageAdmission.Attempt>> {
         const { msg, source, preparation, read, plan } = decision;
-        const validated = validateALInboundCommitBundle(this.readAttemptBundle(decision), read.namespace);
+        const bundle = computeAttemptBundle(decision, this.getAttemptRouting(decision));
+        const validated = validateALInboundCommitBundle(bundle, read.namespace);
         if (validated.left) {
             return Either.ofLeft(validated.left);
         }
@@ -493,6 +489,24 @@ function toAttemptReplay(
 }
 
 /** The admission retained to run again: its commit conflicted, or it waits on an earlier delivery of its message. */
+/** The bundle the decision computes under its routing. */
+function computeAttemptBundle(
+    decision: ALInboundAttemptDecision,
+    routing: ALInboundAttemptRouting
+): ALInboundCommitBundle {
+    const { preparation, read, plan } = decision;
+    return computeALInboundAdmission({
+        read,
+        plan,
+        canForward: routing.canForward,
+        recordedParentPresent: routing.recordedParentPresent,
+        retriedCopyNextHopPeerIds: routing.forwardsRetriedCopy ? preparation.prePlan.forwarding.nextHopPeerIds : [],
+        originAuthenticated: preparation.originAuthenticated,
+        readmission: decision.readmission,
+        facts: preparation.facts
+    });
+}
+
 function toPendingAdmission(
     msg: ALMessage,
     deadline: number,

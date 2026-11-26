@@ -389,8 +389,8 @@ it('delivers a held message once when its release\'s first write is lost', async
     ).toEqual([{ status: 'COMPLETED', attempts: 1 }]);
 });
 
-// Only a lost write is attempted again: a store that fails otherwise fails the release from any attempt, as the very
-// error it threw, and nothing is written.
+// Only a lost write is attempted again: a store that fails otherwise fails the release from any attempt as the very
+// error it threw, not wrapped by the retry's exhaustion at the third, and nothing is written.
 it('lets a store failure that is no conflict out of the release, from the first attempt and from the third', async () => {
     const { stores, admissionStore, release } = await createReleasableStore('completed');
     const before = await readReleaseFacts(stores);
