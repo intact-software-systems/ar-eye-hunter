@@ -13,6 +13,7 @@ function createSeventhSend() {
         send: {
             msgId: 'session-04-a-send-7',
             publisherPeerId: 'session-04-a',
+            publisherInstanceIndex: 0,
             seq: 7,
             dueOffsetMs: 3_100,
             expectedRecipientPeerIds: ['session-01-a', 'session-02-b']

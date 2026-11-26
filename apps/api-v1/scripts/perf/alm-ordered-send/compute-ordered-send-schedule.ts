@@ -24,6 +24,8 @@ export interface OrderedSendScheduledSend {
     /** The publisher's peer id and the send's place on its track: `session-04-a-send-7`. No two sends share one. */
     readonly msgId: string;
     readonly publisherPeerId: string;
+    /** The instance the publisher's socket is on: the one the send is offered to. */
+    readonly publisherInstanceIndex: number;
     /** The send's place on its publisher's track, from 1. */
     readonly seq: number;
     /** When the send falls due, in unrounded milliseconds from the start of the send window. */
@@ -55,9 +57,10 @@ export function computeOrderedSendSchedule(shape: OrderedSendShape): OrderedSend
         (_, sessionIndex) => toScheduledSession(sessionIndex, shape.publishers)
     );
     const roomPeerIds = sessions.map(({ peerId }) => peerId);
-    const tracks = roomPeerIds.slice(0, shape.publishers).map((publisherPeerId) => ({
-        publisherPeerId,
-        expectedRecipientPeerIds: roomPeerIds.filter((peerId) => peerId !== publisherPeerId)
+    const tracks = sessions.slice(0, shape.publishers).map((publisher) => ({
+        publisherPeerId: publisher.peerId,
+        publisherInstanceIndex: publisher.instanceIndex,
+        expectedRecipientPeerIds: roomPeerIds.filter((peerId) => peerId !== publisher.peerId)
     }));
     const slotsPerSecond = shape.sendsPerSecond * shape.publishers;
     const sends = Array.from({ length: shape.sendsPerSecond * shape.durationS * shape.publishers }, (_, slot) => {
@@ -66,6 +69,7 @@ export function computeOrderedSendSchedule(shape: OrderedSendShape): OrderedSend
         return {
             msgId: `${track.publisherPeerId}-send-${seq}`,
             publisherPeerId: track.publisherPeerId,
+            publisherInstanceIndex: track.publisherInstanceIndex,
             seq,
             // Each slot is placed from the window's start, never from the slot before it, so no error adds up.
             dueOffsetMs: (slot * MS_PER_SECOND) / slotsPerSecond,

@@ -1,7 +1,9 @@
 import { Either } from '@shared/resilience/Either.ts';
 
 import {
+    ORDERED_SEND_SENDER_RECOVERIES,
     validateOrderedSendShape,
+    type OrderedSendSenderRecovery,
     type OrderedSendShape,
     type OrderedSendShapeIssue
 } from './validate-ordered-send-shape.ts';
@@ -37,7 +39,8 @@ export const ORDERED_SEND_REFERENCE_SHAPE: OrderedSendShape = {
     publishers: 5,
     sendsPerSecond: 2,
     durationS: 20,
-    delayMs: 0
+    delayMs: 0,
+    senderRecovery: 'client-stand-in'
 };
 
 interface OptionValuesRead {
@@ -56,8 +59,22 @@ interface NumberDecoded {
     readonly issues: readonly OrderedSendCellOptionIssue[];
 }
 
-const OPTION_NAMES = ['publishers', 'sends-per-second', 'duration-s', 'delay-ms', 'database-url', 'out'];
-const OPTION_LIST = '--publishers, --sends-per-second, --duration-s, --delay-ms, --database-url and --out';
+interface SenderRecoveryDecoded {
+    readonly value: OrderedSendSenderRecovery;
+    readonly issues: readonly OrderedSendCellOptionIssue[];
+}
+
+const OPTION_NAMES = [
+    'publishers',
+    'sends-per-second',
+    'duration-s',
+    'delay-ms',
+    'sender-recovery',
+    'database-url',
+    'out'
+];
+const OPTION_LIST = '--publishers, --sends-per-second, --duration-s, --delay-ms, --sender-recovery, ' +
+    '--database-url and --out';
 const ONE_TOKEN_OPTION = /^--([^=]+)=(.*)$/s;
 const DECIMAL_NUMBER = /^-?\d+(\.\d+)?$/;
 
@@ -113,17 +130,19 @@ function toOptionValues(argv: readonly string[]): OptionValuesRead {
     return { values, issues };
 }
 
-/** A flag that is no number is an issue of its own, and the shape is then checked with the reference value in its place. */
+/** A flag that does not decode is an issue of its own, and the shape is then checked with the reference value in its place. */
 function decodeShape(values: ReadonlyMap<string, string>): ShapeDecoded {
     const publishers = decodeNumber(values, 'publishers', ORDERED_SEND_REFERENCE_SHAPE.publishers);
     const sendsPerSecond = decodeNumber(values, 'sends-per-second', ORDERED_SEND_REFERENCE_SHAPE.sendsPerSecond);
     const durationS = decodeNumber(values, 'duration-s', ORDERED_SEND_REFERENCE_SHAPE.durationS);
     const delayMs = decodeNumber(values, 'delay-ms', ORDERED_SEND_REFERENCE_SHAPE.delayMs);
+    const senderRecovery = decodeSenderRecovery(values.get('sender-recovery'));
     const shape = {
         publishers: publishers.value,
         sendsPerSecond: sendsPerSecond.value,
         durationS: durationS.value,
-        delayMs: delayMs.value
+        delayMs: delayMs.value,
+        senderRecovery: senderRecovery.value
     };
     return {
         shape,
@@ -132,6 +151,7 @@ function decodeShape(values: ReadonlyMap<string, string>): ShapeDecoded {
             ...sendsPerSecond.issues,
             ...durationS.issues,
             ...delayMs.issues,
+            ...senderRecovery.issues,
             ...validateOrderedSendShape(shape)
         ]
     };
@@ -148,6 +168,20 @@ function decodeNumber(values: ReadonlyMap<string, string>, name: string, referen
             value: referenceValue,
             issues: [{ code: 'invalid-number', message: `--${name} must be a number written in digits` }]
         };
+}
+
+function decodeSenderRecovery(text: string | undefined): SenderRecoveryDecoded {
+    const referenceValue = ORDERED_SEND_REFERENCE_SHAPE.senderRecovery;
+    if (text === undefined) {
+        return { value: referenceValue, issues: [] };
+    }
+    const value = ORDERED_SEND_SENDER_RECOVERIES.find((senderRecovery) => senderRecovery === text);
+    return value === undefined
+        ? {
+            value: referenceValue,
+            issues: [{ code: 'invalid-sender-recovery', message: '--sender-recovery must be none or client-stand-in' }]
+        }
+        : { value, issues: [] };
 }
 
 function validateTextOptions(values: ReadonlyMap<string, string>): readonly OrderedSendCellOptionIssue[] {

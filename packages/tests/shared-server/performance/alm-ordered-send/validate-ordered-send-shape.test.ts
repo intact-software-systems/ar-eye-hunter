@@ -1,8 +1,22 @@
 import { describe, expect, it } from 'vitest';
 
-import { validateOrderedSendShape } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/validate-ordered-send-shape.ts';
+import {
+    validateOrderedSendShape,
+    type OrderedSendShape
+} from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/validate-ordered-send-shape.ts';
 
-const REFERENCE_SHAPE = { publishers: 5, sendsPerSecond: 2, durationS: 20, delayMs: 0 };
+const REFERENCE_SHAPE: OrderedSendShape = {
+    publishers: 5,
+    sendsPerSecond: 2,
+    durationS: 20,
+    delayMs: 0,
+    senderRecovery: 'client-stand-in'
+};
+
+/** A shape as decoded JSON hands it over, wrong in each field; the validator never repeats a text it was given. */
+const SHAPE_WRONG_IN_EACH_FIELD: OrderedSendShape = JSON.parse(
+    '{"publishers":16,"sendsPerSecond":0,"durationS":2.5,"delayMs":-1,"senderRecovery":"postgres://app:s3cret-pw@db"}'
+);
 
 describe('validateOrderedSendShape', () => {
     it('finds no issue in the reference shape, in one publisher, or in all fifteen sessions publishing', () => {
@@ -10,10 +24,11 @@ describe('validateOrderedSendShape', () => {
         expect(validateOrderedSendShape({ ...REFERENCE_SHAPE, publishers: 1, delayMs: 5 })).toEqual([]);
         expect(validateOrderedSendShape({ ...REFERENCE_SHAPE, publishers: 15, sendsPerSecond: 1, durationS: 1 }))
             .toEqual([]);
+        expect(validateOrderedSendShape({ ...REFERENCE_SHAPE, senderRecovery: 'none' })).toEqual([]);
     });
 
     it('returns every issue of a shape that is wrong in each field', () => {
-        expect(validateOrderedSendShape({ publishers: 16, sendsPerSecond: 0, durationS: 2.5, delayMs: -1 })).toEqual([
+        expect(validateOrderedSendShape(SHAPE_WRONG_IN_EACH_FIELD)).toEqual([
             {
                 code: 'invalid-publishers',
                 message: 'publishers must be a whole number from 1 to 15, the sessions of the room; received 16'
@@ -23,7 +38,8 @@ describe('validateOrderedSendShape', () => {
                 message: 'sendsPerSecond must be a whole number of at least 1; received 0'
             },
             { code: 'invalid-duration-s', message: 'durationS must be a whole number of at least 1; received 2.5' },
-            { code: 'invalid-delay-ms', message: 'delayMs must be a whole number of at least 0; received -1' }
+            { code: 'invalid-delay-ms', message: 'delayMs must be a whole number of at least 0; received -1' },
+            { code: 'invalid-sender-recovery', message: 'senderRecovery must be none or client-stand-in' }
         ]);
     });
 

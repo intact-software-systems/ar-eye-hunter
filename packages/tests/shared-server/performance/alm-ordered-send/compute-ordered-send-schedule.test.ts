@@ -37,7 +37,7 @@ function toRoomWithout(peerId: string): string[] {
 
 describe('computeOrderedSendSchedule', () => {
     it('places five publishers on instances a, b, c, a, b and offers 200 sends in 20 s', () => {
-        const schedule = computeOrderedSendSchedule({ publishers: 5, sendsPerSecond: 2, durationS: 20, delayMs: 0 });
+        const schedule = computeOrderedSendSchedule({ publishers: 5, sendsPerSecond: 2, durationS: 20, delayMs: 0, senderRecovery: 'none' });
 
         expect(schedule.sessions.map(({ peerId }) => peerId)).toEqual(ROOM_PEER_IDS);
         expect(schedule.sessions.map(({ instanceIndex }) => instanceIndex)).toEqual(
@@ -63,16 +63,18 @@ describe('computeOrderedSendSchedule', () => {
 
         expect(schedule.sends).toHaveLength(200);
         expect(new Set(schedule.sends.map(({ msgId }) => msgId)).size).toBe(200);
-        const firstAndLastDueOffsetsMs = [
-            ['session-01-a', 0, 19_500],
-            ['session-02-b', 100, 19_600],
-            ['session-03-c', 200, 19_700],
-            ['session-04-a', 300, 19_800],
-            ['session-05-b', 400, 19_900]
+        const tracks = [
+            ['session-01-a', 0, 0, 19_500],
+            ['session-02-b', 1, 100, 19_600],
+            ['session-03-c', 2, 200, 19_700],
+            ['session-04-a', 0, 300, 19_800],
+            ['session-05-b', 1, 400, 19_900]
         ] as const;
-        for (const [publisherPeerId, firstDueOffsetMs, lastDueOffsetMs] of firstAndLastDueOffsetsMs) {
+        for (const [publisherPeerId, instanceIndex, firstDueOffsetMs, lastDueOffsetMs] of tracks) {
             const track = toSendsOf(schedule.sends, publisherPeerId);
             expect(track.map(({ seq }) => seq)).toEqual(Array.from({ length: 40 }, (_, index) => index + 1));
+            expect(new Set(track.map(({ publisherInstanceIndex }) => publisherInstanceIndex)))
+                .toEqual(new Set([instanceIndex]));
             expect(track[0].dueOffsetMs).toBe(firstDueOffsetMs);
             expect(track[39].dueOffsetMs).toBe(lastDueOffsetMs);
             expect(track.map(({ expectedRecipientPeerIds }) => expectedRecipientPeerIds)).toEqual(
@@ -82,7 +84,7 @@ describe('computeOrderedSendSchedule', () => {
     });
 
     it('lists the sends in the order they fall due and names each after its publisher and its place on the track', () => {
-        const schedule = computeOrderedSendSchedule({ publishers: 5, sendsPerSecond: 2, durationS: 20, delayMs: 0 });
+        const schedule = computeOrderedSendSchedule({ publishers: 5, sendsPerSecond: 2, durationS: 20, delayMs: 0, senderRecovery: 'none' });
 
         expect(schedule.sends.slice(0, 6).map(({ msgId, dueOffsetMs }) => [msgId, dueOffsetMs])).toEqual([
             ['session-01-a-send-1', 0],
@@ -95,6 +97,7 @@ describe('computeOrderedSendSchedule', () => {
         expect(schedule.sends[199]).toEqual({
             msgId: 'session-05-b-send-40',
             publisherPeerId: 'session-05-b',
+            publisherInstanceIndex: 1,
             seq: 40,
             dueOffsetMs: 19_900,
             expectedRecipientPeerIds: toRoomWithout('session-05-b')
@@ -102,7 +105,7 @@ describe('computeOrderedSendSchedule', () => {
     });
 
     it('gives one publisher a track of its own that the fourteen other sessions read', () => {
-        const schedule = computeOrderedSendSchedule({ publishers: 1, sendsPerSecond: 5, durationS: 2, delayMs: 5 });
+        const schedule = computeOrderedSendSchedule({ publishers: 1, sendsPerSecond: 5, durationS: 2, delayMs: 5, senderRecovery: 'none' });
 
         expect(schedule.sessions.filter(({ role }) => role === 'publisher').map(({ peerId }) => peerId)).toEqual([
             'session-01-a'
@@ -124,7 +127,7 @@ describe('computeOrderedSendSchedule', () => {
     });
 
     it('lets all fifteen sessions publish: each send still goes to the fourteen others, never to its publisher', () => {
-        const schedule = computeOrderedSendSchedule({ publishers: 15, sendsPerSecond: 1, durationS: 2, delayMs: 0 });
+        const schedule = computeOrderedSendSchedule({ publishers: 15, sendsPerSecond: 1, durationS: 2, delayMs: 0, senderRecovery: 'none' });
 
         expect(schedule.sessions.map(({ role }) => role)).toEqual(Array.from({ length: 15 }, () => 'publisher'));
         expect(schedule.sends).toHaveLength(30);
@@ -138,15 +141,15 @@ describe('computeOrderedSendSchedule', () => {
     });
 
     it('places a send at its own multiple of the period, so a period that is no whole millisecond never drifts', () => {
-        const schedule = computeOrderedSendSchedule({ publishers: 1, sendsPerSecond: 3, durationS: 3, delayMs: 0 });
+        const schedule = computeOrderedSendSchedule({ publishers: 1, sendsPerSecond: 3, durationS: 3, delayMs: 0, senderRecovery: 'none' });
 
         expect(schedule.sends.filter(({ seq }) => [1, 4, 7].includes(seq)).map(({ dueOffsetMs }) => dueOffsetMs))
             .toEqual([0, 1_000, 2_000]);
     });
 
     it('gives each session one ACK offset inside the spread, the same on every call and under every shape', () => {
-        const reference = computeOrderedSendSchedule({ publishers: 5, sendsPerSecond: 2, durationS: 20, delayMs: 0 });
-        const onePublisher = computeOrderedSendSchedule({ publishers: 1, sendsPerSecond: 5, durationS: 2, delayMs: 5 });
+        const reference = computeOrderedSendSchedule({ publishers: 5, sendsPerSecond: 2, durationS: 20, delayMs: 0, senderRecovery: 'none' });
+        const onePublisher = computeOrderedSendSchedule({ publishers: 1, sendsPerSecond: 5, durationS: 2, delayMs: 5, senderRecovery: 'none' });
 
         expect(reference.sessions.map(({ ackOffsetMs }) => ackOffsetMs)).toEqual(
             [0, 6, 13, 20, 26, 33, 40, 46, 53, 60, 66, 73, 80, 86, 93]
@@ -154,7 +157,7 @@ describe('computeOrderedSendSchedule', () => {
         expect(onePublisher.sessions.map(({ peerId, ackOffsetMs }) => [peerId, ackOffsetMs])).toEqual(
             reference.sessions.map(({ peerId, ackOffsetMs }) => [peerId, ackOffsetMs])
         );
-        expect(computeOrderedSendSchedule({ publishers: 5, sendsPerSecond: 2, durationS: 20, delayMs: 0 }))
+        expect(computeOrderedSendSchedule({ publishers: 5, sendsPerSecond: 2, durationS: 20, delayMs: 0, senderRecovery: 'none' }))
             .toEqual(reference);
     });
 });

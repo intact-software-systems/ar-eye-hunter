@@ -10,6 +10,7 @@ import type {
 
 const NO_OBSERVATIONS: OrderedSendCellObservations = {
     sends: [],
+    resends: [],
     arrivals: [],
     handOffs: [],
     receipts: [],
@@ -47,6 +48,18 @@ const NO_NACKS_BY_REASON = {
     'no-publish-grant': 0,
     'not-subscribed': 0,
     'before-entry': 0
+};
+
+const NO_OFFERS_BY_ACCEPTANCE = {
+    admitted: 0,
+    duplicate: 0,
+    'resync-required': 0,
+    disposed: 0,
+    'pending-admission': 0,
+    'not-admitted': 0,
+    control: 0,
+    rejected: 0,
+    unanswered: 0
 };
 
 const NO_SAMPLES = {
@@ -840,6 +853,82 @@ describe('computeOrderedSendReport', () => {
         });
     });
 
+    describe('resends', () => {
+        it('counts the later offers of known sends by cause and by the entry\'s answer, and the sends offered again', () => {
+            const report = computeOrderedSendReport({
+                ...NO_OBSERVATIONS,
+                sends: [
+                    { ...SEND, msgId: 'repaired-and-resent', seq: 1 },
+                    { ...SEND, msgId: 'resent', seq: 2 },
+                    { ...SEND, msgId: 'offered-once', seq: 3 }
+                ],
+                resends: [
+                    { msgId: 'repaired-and-resent', cause: 'repair', attempt: 1, sentAtMs: 300, acceptance: 'duplicate', answeredAtMs: 310 },
+                    { msgId: 'repaired-and-resent', cause: 'repair', attempt: 2, sentAtMs: 900, acceptance: 'admitted', answeredAtMs: 930 },
+                    { msgId: 'repaired-and-resent', cause: 'first-hop', attempt: 1, sentAtMs: 2_000, acceptance: 'duplicate', answeredAtMs: 2_010 },
+                    { msgId: 'resent', cause: 'first-hop', attempt: 1, sentAtMs: 2_100, acceptance: 'pending-admission', answeredAtMs: 2_150 },
+                    { msgId: 'resent', cause: 'first-hop', attempt: 2, sentAtMs: 4_100, acceptance: 'duplicate', answeredAtMs: 4_110 },
+                    { msgId: 'resent', cause: 'first-hop', attempt: 3, sentAtMs: 6_100, acceptance: 'unanswered', answeredAtMs: null },
+                    { msgId: 'unknown', cause: 'repair', attempt: 1, sentAtMs: 6_200, acceptance: 'duplicate', answeredAtMs: 6_210 }
+                ]
+            });
+
+            expect(report.resends).toEqual({
+                count: 6,
+                byAcceptance: { ...NO_OFFERS_BY_ACCEPTANCE, admitted: 1, duplicate: 3, 'pending-admission': 1, unanswered: 1 },
+                sendsResent: 2,
+                byCause: {
+                    repair: {
+                        count: 2,
+                        byAcceptance: { ...NO_OFFERS_BY_ACCEPTANCE, admitted: 1, duplicate: 1 },
+                        sendsResent: 1,
+                        largestAttempt: 2
+                    },
+                    'first-hop': {
+                        count: 4,
+                        byAcceptance: { ...NO_OFFERS_BY_ACCEPTANCE, duplicate: 2, 'pending-admission': 1, unanswered: 1 },
+                        sendsResent: 2,
+                        largestAttempt: 3
+                    }
+                }
+            });
+            expect(report.unmatched.resendsOfUnknownMessage).toBe(1);
+            expect(report.sends.attempted).toBe(3);
+        });
+
+        it('measures a send offered again from its first offer and its due time, never from a later offer', () => {
+            const report = computeOrderedSendReport({
+                ...NO_OBSERVATIONS,
+                sends: [{
+                    ...SEND,
+                    msgId: 'resent',
+                    dueAtMs: 100,
+                    sentAtMs: 104,
+                    answeredAtMs: 150,
+                    acceptance: 'pending-admission',
+                    expectedRecipientPeerIds: ['recipient-1']
+                }],
+                resends: [
+                    { msgId: 'resent', cause: 'first-hop', attempt: 1, sentAtMs: 2_104, acceptance: 'admitted', answeredAtMs: 2_140 }
+                ],
+                handOffs: [{ msgId: 'resent', instanceIndex: 0, atMs: 2_150 }],
+                arrivals: [{ msgId: 'resent', recipientPeerId: 'recipient-1', atMs: 2_160 }],
+                receipts: [
+                    { msgId: 'resent', phase: 'admitted', atMs: 2_145 },
+                    { msgId: 'resent', phase: 'complete', atMs: 2_304 }
+                ]
+            });
+
+            expect(report.sends.byAcceptance['pending-admission']).toBe(1);
+            expect(report.sends.offerToAnswerMs).toMatchObject({ count: 1, max: 46 });
+            expect(report.delivery.offerToFirstHandOffMs.max).toBe(2_046);
+            expect(report.recipientDelays.dueToFirstReadMs.max).toBe(2_060);
+            expect(report.recipientDelays.offerToFirstReadMs.max).toBe(2_056);
+            expect(report.receipts.offerToAdmittedMs.max).toBe(2_041);
+            expect(report.receipts.offerToCompleteMs.max).toBe(2_200);
+        });
+    });
+
     describe('what matches no send', () => {
         it('counts apart whatever matched no send, no expected recipient or no accepted send, and drops none of it', () => {
             const controlsOfUnknownMessages: readonly OrderedSendCellControl[] = [31, 32, 33, 34, 35, 36, 37]
@@ -889,7 +978,15 @@ describe('computeOrderedSendReport', () => {
                 ],
                 controls: [{ type: 'nack', msgId: 'known', reason: 'gap', atMs: 30 }, ...controlsOfUnknownMessages],
                 unclassifiedControls: [41, 42, 43, 44, 45, 46, 47, 48]
-                    .map((atMs) => ({ typeId: 'al.control.ack.v3', atMs }))
+                    .map((atMs) => ({ typeId: 'al.control.ack.v3', atMs })),
+                resends: [51, 52, 53, 54, 55, 56, 57, 58, 59].map((sentAtMs) => ({
+                    msgId: 'unknown-1',
+                    cause: 'repair',
+                    attempt: 1,
+                    sentAtMs,
+                    acceptance: 'duplicate',
+                    answeredAtMs: sentAtMs + 1
+                }))
             });
 
             expect(report.unmatched).toEqual({
@@ -900,12 +997,14 @@ describe('computeOrderedSendReport', () => {
                 handOffsOfUnknownMessage: 5,
                 receiptsOfUnknownMessage: 6,
                 controlsOfUnknownMessage: 7,
-                unclassifiedControls: 8
+                unclassifiedControls: 8,
+                resendsOfUnknownMessage: 9
             });
             expect(report.sends.attempted).toBe(2);
             expect(report.delivery).toMatchObject({ handedToApplication: 1, copiesExpected: 3, copiesRead: 1 });
             expect(report.receipts).toMatchObject({ expected: 1, admittedWithoutTerminal: 1 });
             expect(report.controls).toMatchObject({ byType: { nack: 1, repair: 0 }, sendsWithANack: 1 });
+            expect(report.resends).toMatchObject({ count: 0, sendsResent: 0 });
         });
     });
 
@@ -973,6 +1072,15 @@ describe('computeOrderedSendReport', () => {
                 sendsWithANack: 0,
                 sendsWithARepairRequest: 0
             },
+            resends: {
+                count: 0,
+                byAcceptance: NO_OFFERS_BY_ACCEPTANCE,
+                sendsResent: 0,
+                byCause: {
+                    repair: { count: 0, byAcceptance: NO_OFFERS_BY_ACCEPTANCE, sendsResent: 0, largestAttempt: null },
+                    'first-hop': { count: 0, byAcceptance: NO_OFFERS_BY_ACCEPTANCE, sendsResent: 0, largestAttempt: null }
+                }
+            },
             unmatched: {
                 sendsWithARepeatedMsgId: 0,
                 arrivalsOfUnknownMessage: 0,
@@ -981,7 +1089,8 @@ describe('computeOrderedSendReport', () => {
                 receiptsOfUnknownMessage: 0,
                 receiptsOfASendNotAccepted: 0,
                 controlsOfUnknownMessage: 0,
-                unclassifiedControls: 0
+                unclassifiedControls: 0,
+                resendsOfUnknownMessage: 0
             }
         });
     });

@@ -23,6 +23,8 @@ export interface OrderedSendUnmatchedFigures {
     readonly controlsOfUnknownMessage: number;
     /** Control frames that are no receipt, no NACK and no repair request. */
     readonly unclassifiedControls: number;
+    /** Later offers whose msgId no send carries. */
+    readonly resendsOfUnknownMessage: number;
 }
 
 export function computeOrderedSendUnmatchedFigures(
@@ -43,6 +45,7 @@ export function computeOrderedSendUnmatchedFigures(
             return send !== undefined && !isOrderedSendReceiptExpected(send);
         }).length,
         controlsOfUnknownMessage: observations.controls.filter(({ msgId }) => !sendByMsgId.has(msgId)).length,
-        unclassifiedControls: observations.unclassifiedControls.length
+        unclassifiedControls: observations.unclassifiedControls.length,
+        resendsOfUnknownMessage: observations.resends.filter(({ msgId }) => !sendByMsgId.has(msgId)).length
     };
 }

@@ -20,7 +20,7 @@ function readIssues(argv: readonly string[]): readonly OrderedSendCellOptionIssu
 describe('decodeOrderedSendCellOptions', () => {
     it('decodes the reference invocation, and gives a flag left out the value the reference invocation gives it', () => {
         const reference = {
-            shape: { publishers: 5, sendsPerSecond: 2, durationS: 20, delayMs: 0 },
+            shape: { publishers: 5, sendsPerSecond: 2, durationS: 20, delayMs: 0, senderRecovery: 'client-stand-in' },
             databaseUrl: DATABASE_URL,
             artifactDestination: { kind: 'named-by-run' }
         };
@@ -30,6 +30,7 @@ describe('decodeOrderedSendCellOptions', () => {
             '--sends-per-second=2',
             '--duration-s=20',
             '--delay-ms=0',
+            '--sender-recovery=client-stand-in',
             `--database-url=${DATABASE_URL}`
         ])).toEqual(reference);
         expect(readOptions([`--database-url=${DATABASE_URL}`])).toEqual(reference);
@@ -43,9 +44,10 @@ describe('decodeOrderedSendCellOptions', () => {
             '--delay-ms=5',
             '--duration-s=45',
             '--sends-per-second=10',
+            '--sender-recovery=none',
             '--publishers=1'
         ])).toEqual({
-            shape: { publishers: 1, sendsPerSecond: 10, durationS: 45, delayMs: 5 },
+            shape: { publishers: 1, sendsPerSecond: 10, durationS: 45, delayMs: 5, senderRecovery: 'none' },
             databaseUrl: DATABASE_URL,
             artifactDestination: { kind: 'file', path: 'tmp/perf/alm-ordered-send/one-track.json' }
         });
@@ -66,17 +68,19 @@ describe('decodeOrderedSendCellOptions', () => {
             '--delay-ms=5',
             '--duration-s',
             '--sends-per-second=0',
+            '--sender-recovery=browser',
             '--out='
         ])).toEqual([
             { code: 'malformed-argument', message: 'argument 1 is not one --name=value token' },
             {
                 code: 'unknown-option',
                 message: 'argument 3 names no option of this command: it takes --publishers, --sends-per-second, ' +
-                    '--duration-s, --delay-ms, --database-url and --out'
+                    '--duration-s, --delay-ms, --sender-recovery, --database-url and --out'
             },
             { code: 'repeated-option', message: '--delay-ms is given more than once' },
             { code: 'malformed-argument', message: 'argument 6 is not one --name=value token' },
             { code: 'invalid-number', message: '--publishers must be a number written in digits' },
+            { code: 'invalid-sender-recovery', message: '--sender-recovery must be none or client-stand-in' },
             {
                 code: 'invalid-sends-per-second',
                 message: 'sendsPerSecond must be a whole number of at least 1; received 0'
@@ -108,6 +112,7 @@ describe('decodeOrderedSendCellOptions', () => {
             `--databse-url=${DATABASE_URL}`,
             `--${DATABASE_URL}`,
             `--publishers=${DATABASE_URL}`,
+            `--sender-recovery=${DATABASE_URL}`,
             `--database-url=${DATABASE_URL}`,
             `--database-url=${DATABASE_URL}`,
             `--out=`
@@ -119,6 +124,7 @@ describe('decodeOrderedSendCellOptions', () => {
             'unknown-option',
             'repeated-option',
             'invalid-number',
+            'invalid-sender-recovery',
             'empty-option'
         ]);
         const issueText = JSON.stringify(issues);

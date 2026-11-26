@@ -1,6 +1,16 @@
 import { ORDERED_SEND_CELL_CONSTANTS } from './ordered-send-cell-constants.ts';
 
-/** What one run of the cell varies: how many sessions publish, how fast, for how long, and at what database latency. */
+/**
+ * What a publisher does beyond offering each send once at its due instant. `none`: nothing, so the run shows the
+ * server alone, and a track the server stalls stays stalled. `client-stand-in`: it answers the server's gap NACKs
+ * and repair requests and re-offers a send its server has not answered for, as `OrderedSendClientStandIn` states.
+ */
+export type OrderedSendSenderRecovery = 'none' | 'client-stand-in';
+
+/**
+ * What one run of the cell varies: how many sessions publish, how fast, for how long, at what database latency, and
+ * what a publisher does to recover a send.
+ */
 export interface OrderedSendShape {
     /** The sessions that publish, each on a track of its own. */
     readonly publishers: number;
@@ -10,12 +20,21 @@ export interface OrderedSendShape {
     readonly durationS: number;
     /** What each round trip to the database costs on top of its own time, in milliseconds. */
     readonly delayMs: number;
+    readonly senderRecovery: OrderedSendSenderRecovery;
 }
 
+/** An issue of a number repeats the number; an issue of the sender recovery never repeats the text it was given. */
 export interface OrderedSendShapeIssue {
-    readonly code: 'invalid-publishers' | 'invalid-sends-per-second' | 'invalid-duration-s' | 'invalid-delay-ms';
+    readonly code:
+        | 'invalid-publishers'
+        | 'invalid-sends-per-second'
+        | 'invalid-duration-s'
+        | 'invalid-delay-ms'
+        | 'invalid-sender-recovery';
     readonly message: string;
 }
+
+export const ORDERED_SEND_SENDER_RECOVERIES: readonly OrderedSendSenderRecovery[] = ['none', 'client-stand-in'];
 
 /**
  * Every issue of a shape; none means the cell can run it. Each field is a whole number, so every publisher offers a
@@ -49,6 +68,9 @@ export function validateOrderedSendShape(shape: OrderedSendShape): readonly Orde
             code: 'invalid-delay-ms',
             message: `delayMs must be a whole number of at least 0; received ${shape.delayMs}`
         });
+    }
+    if (!ORDERED_SEND_SENDER_RECOVERIES.includes(shape.senderRecovery)) {
+        issues.push({ code: 'invalid-sender-recovery', message: 'senderRecovery must be none or client-stand-in' });
     }
     return issues;
 }

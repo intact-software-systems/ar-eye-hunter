@@ -1,6 +1,6 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { isALControlTypeId } from '@shared/al-contracts/al-control-type-ids.ts';
-import { decodeALControlMessage } from '@shared/al-contracts/al-control.ts';
+import { decodeALControlMessage, type ALPeerRepairControlMessage } from '@shared/al-contracts/al-control.ts';
 
 import type {
     OrderedSendCellArrival,
@@ -18,11 +18,19 @@ export interface ToOrderedSendSocketReadInput {
     readonly atMs: number;
 }
 
-/** What one frame a session's socket read is to the cell: the one observation it is recorded as. */
+/**
+ * What one frame a session's socket read is to the cell: the one observation it is recorded as. A NACK or a repair
+ * request also carries all it asks, `request`: the track, the missing ranges and the request's number, which a
+ * publisher that answers it reads.
+ */
 export type OrderedSendSocketRead =
     | { readonly kind: 'arrival'; readonly arrival: OrderedSendCellArrival; }
     | { readonly kind: 'receipt'; readonly receipt: OrderedSendCellReceipt; }
-    | { readonly kind: 'control'; readonly control: OrderedSendCellControl; }
+    | {
+        readonly kind: 'control';
+        readonly control: OrderedSendCellControl;
+        readonly request: ALPeerRepairControlMessage;
+    }
     | { readonly kind: 'unclassified-control'; readonly unclassifiedControl: OrderedSendCellUnclassifiedControl; };
 
 /**
@@ -42,12 +50,14 @@ export function toOrderedSendSocketRead(input: ToOrderedSendSocketReadInput): Or
         case 'nack':
             return {
                 kind: 'control',
-                control: { type: 'nack', msgId: control.payload.msgId, reason: control.payload.reason, atMs }
+                control: { type: 'nack', msgId: control.payload.msgId, reason: control.payload.reason, atMs },
+                request: control
             };
         case 'repair':
             return {
                 kind: 'control',
-                control: { type: 'repair', msgId: control.payload.msgId, reason: control.payload.reason, atMs }
+                control: { type: 'repair', msgId: control.payload.msgId, reason: control.payload.reason, atMs },
+                request: control
             };
         case 'ack':
         case undefined:

@@ -13,6 +13,7 @@ describe('toOrderedSendAck', () => {
             send: {
                 msgId: 'session-01-a-send-3',
                 publisherPeerId: 'session-01-a',
+                publisherInstanceIndex: 0,
                 seq: 3,
                 dueOffsetMs: 1_000,
                 expectedRecipientPeerIds: ['session-02-b']

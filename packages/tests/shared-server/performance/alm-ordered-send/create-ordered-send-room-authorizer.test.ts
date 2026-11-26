@@ -20,7 +20,14 @@ function createAuthorizer() {
 
 function toAuthorizationInput(publisherPeerId: string, roomRef: GroupRef): RallarServerWsRoomAuthorizationInput {
     const message = toOrderedSendMessage({
-        send: { msgId: `${publisherPeerId}-send-1`, publisherPeerId, seq: 1, dueOffsetMs: 0, expectedRecipientPeerIds: [] },
+        send: {
+            msgId: `${publisherPeerId}-send-1`,
+            publisherPeerId,
+            publisherInstanceIndex: 0,
+            seq: 1,
+            dueOffsetMs: 0,
+            expectedRecipientPeerIds: []
+        },
         roomRef,
         createdAtEpochMs: 1_800_000_000_500
     });

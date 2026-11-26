@@ -1,10 +1,12 @@
 import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { computeOrderedSendReport } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/compute-ordered-send-report.ts';
+import type { OrderedSendCellObservations } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/ordered-send-cell-observations.ts';
 import {
     createDefaultOrderedSendCellRunDependencies,
     runOrderedSendCell
 } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/run-ordered-send-cell.ts';
+import type { OrderedSendShape } from '../../../../../apps/api-v1/scripts/perf/alm-ordered-send/validate-ordered-send-shape.ts';
 import { requirePostgresDatabaseUrl } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
@@ -28,9 +30,12 @@ const RUN_TABLES = ['resource_inbox', 'runtime_state_store'];
 
 describe('ALM ordered-send cell on PostgreSQL', () => {
     postgresIt(
-        'delivers every ordered send of two publishers once, in order, and completes its receipt across three instances',
+        'delivers every ordered send of two publishers in order and completes its receipt across three instances',
         async () => {
-            await expectEverySendDeliveredAndReceipted(0);
+            const run = await runSmallCell({ delayMs: 0, senderRecovery: 'none' });
+
+            expectEverySendDeliveredAndReceipted(run);
+            expect(run.resends).toEqual([]);
         },
         RUN_BUDGET_MS
     );
@@ -39,26 +44,48 @@ describe('ALM ordered-send cell on PostgreSQL', () => {
     postgresIt(
         'delivers and receipts the same sends when every round trip to the database waits 1 ms first',
         async () => {
-            await expectEverySendDeliveredAndReceipted(1);
+            const run = await runSmallCell({ delayMs: 1, senderRecovery: 'none' });
+
+            expectEverySendDeliveredAndReceipted(run);
+            expect(run.resends).toEqual([]);
+        },
+        RUN_BUDGET_MS
+    );
+
+    // The server answers for each of these sends well inside its 2 s first-hop wait and reports no gap, so a
+    // publisher that stands in for a client has nothing to offer again.
+    postgresIt(
+        'delivers and receipts the same sends, and offers none again, when its publishers stand in for a client',
+        async () => {
+            const run = await runSmallCell({ delayMs: 0, senderRecovery: 'client-stand-in' });
+
+            expectEverySendDeliveredAndReceipted(run);
+            expect(run.resends).toEqual([]);
         },
         RUN_BUDGET_MS
     );
 });
 
-async function expectEverySendDeliveredAndReceipted(delayMs: number): Promise<void> {
+async function runSmallCell(
+    shape: Pick<OrderedSendShape, 'delayMs' | 'senderRecovery'>
+): Promise<OrderedSendCellObservations> {
     const runId = crypto.randomUUID();
 
     const run = await runOrderedSendCell({
-        shape: { publishers: PUBLISHERS, sendsPerSecond: 2, durationS: 2, delayMs },
+        shape: { publishers: PUBLISHERS, sendsPerSecond: 2, durationS: 2, ...shape },
         databaseUrl: await createRunSchema(runId),
         runId,
         observationTailMs: OBSERVATION_TAIL_MS
     }, createDefaultOrderedSendCellRunDependencies());
 
     expect(run.left).toBeUndefined();
-    const lastOfferAtMs = Math.max(...run.right!.sends.map((send) => send.sentAtMs));
-    expect(run.right!.observationEndedAtMs).toBeGreaterThanOrEqual(lastOfferAtMs + OBSERVATION_TAIL_MS);
-    const report = computeOrderedSendReport(run.right!);
+    return run.right!;
+}
+
+function expectEverySendDeliveredAndReceipted(observations: OrderedSendCellObservations): void {
+    const lastOfferAtMs = Math.max(...observations.sends.map((send) => send.sentAtMs));
+    expect(observations.observationEndedAtMs).toBeGreaterThanOrEqual(lastOfferAtMs + OBSERVATION_TAIL_MS);
+    const report = computeOrderedSendReport(observations);
     expect(report.unmatched).toEqual({
         sendsWithARepeatedMsgId: 0,
         arrivalsOfUnknownMessage: 0,
@@ -67,18 +94,21 @@ async function expectEverySendDeliveredAndReceipted(delayMs: number): Promise<vo
         receiptsOfUnknownMessage: 0,
         receiptsOfASendNotAccepted: 0,
         controlsOfUnknownMessage: 0,
-        unclassifiedControls: 0
+        unclassifiedControls: 0,
+        resendsOfUnknownMessage: 0
     });
     expect(report.sends.attempted).toBe(SENDS);
     expect(report.sends.byAcceptance.admitted + report.sends.byAcceptance['pending-admission']).toBe(SENDS);
     expect(report.sends.latenessMs.unrecordedSamples).toBe(0);
+    // Exactly-once is no part of what a run must show. The server hands a send to its application before the
+    // compare-and-set that completes the delivery, hands it off again when that write lost, and its router then
+    // publishes the copies again; a client drops the repeat. So neither `handedMoreThanOnce` nor
+    // `copiesReadMoreThanOnce` is asserted: each depends on which write wins.
     expect(report.delivery).toMatchObject({
         handedToApplication: SENDS,
-        handedMoreThanOnce: 0,
         deliveredToEveryRecipient: SENDS,
         copiesExpected: COPIES,
         copiesRead: COPIES,
-        copiesReadMoreThanOnce: 0,
         copiesReadOutOfTrackOrder: 0,
         copiesReadPastAnUnreadPredecessor: 0
     });

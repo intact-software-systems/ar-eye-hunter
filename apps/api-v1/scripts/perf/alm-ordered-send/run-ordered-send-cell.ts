@@ -4,6 +4,7 @@ import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { ConnectionContext } from '@shared/websocket/json-web-socket-server.ts';
 
+import { OrderedSendClientStandIn } from './client-stand-in/ordered-send-client-stand-in.ts';
 import {
     computeOrderedSendSchedule,
     type OrderedSendSchedule,
@@ -12,6 +13,7 @@ import {
 } from './compute-ordered-send-schedule.ts';
 import { createDefaultOrderedSendInstance, type OrderedSendInstance } from './create-ordered-send-instance.ts';
 import { createOrderedSendRoomAuthorizer } from './create-ordered-send-room-authorizer.ts';
+import { ORDERED_SEND_SERVER_PEER_ID } from './create-ordered-send-ws-server.ts';
 import { offerOrderedSendsWhenDue } from './offer-ordered-sends-when-due.ts';
 import { ORDERED_SEND_CELL_CONSTANTS } from './ordered-send-cell-constants.ts';
 import type { OrderedSendCellObservations } from './ordered-send-cell-observations.ts';
@@ -53,7 +55,7 @@ export interface OrderedSendCellRunDependencies {
     readonly clock: OrderedSendClock;
 }
 
-/** One run in progress: `ledger` and `log` take what it offers and observes, and `acksInFlight` grows with each ACK. */
+/** One run in progress: `ledger` and `log` take what it offers and observes. */
 interface OrderedSendRun {
     readonly schedule: OrderedSendSchedule;
     readonly roomRef: GroupRef;
@@ -61,7 +63,10 @@ interface OrderedSendRun {
     readonly ledger: OrderedSendOfferLedger;
     readonly log: OrderedSendObservationLog;
     readonly clock: OrderedSendClock;
-    readonly acksInFlight: Promise<void>[];
+    /** What a publisher does to recover a send; undefined under the sender recovery `none`. */
+    readonly clientStandIn: OrderedSendClientStandIn | undefined;
+    /** It grows with each ACK and each answer to a repair request: the run waits for them all before it returns. */
+    readonly answersInFlight: Promise<void>[];
 }
 
 interface DueOrderedSend {
@@ -78,6 +83,12 @@ const ORDERED_SEND_SCOPE = { applicationId: 'ordered-send-cell', workspaceId: 'd
 
 /** How often the run looks, while it observes its tail, whether an offer threw. */
 const TAIL_POLL_MS = 25;
+
+/**
+ * How often the run looks for a first-hop resend that has come due: a resend leaves at most this long after its
+ * deadline, 2 s after the offer before it. The product's client finds its deadline by its own work timer.
+ */
+const FIRST_HOP_POLL_MS = 10;
 
 /** A room presence outlasts any run by far. */
 const ROOM_PRESENCE_LIFETIME_MS = 24 * 60 * 60 * 1_000;
@@ -106,12 +117,22 @@ const ROOM_PRESENCE_LIFETIME_MS = 24 * 60 * 60 * 1_000;
  * protocol round trip inside one statement (describe before execute, a first use of a prepared statement); the
  * `set local` pair around a custom-planned statement; the warm-up of the pools.
  *
- * What differs from a deployment: one event loop runs the three instances and the load; a session is a socket
- * object the server writes to, with no WebSocket and no client runtime, so a publisher sends nothing again, answers
- * no NACK and no repair request, and reads a receipt each time it is written; the room authorizer admits a fixed
- * audience and reads nothing, where the API's reads the room's current snapshot for each of the three decisions a
- * send takes; no group and no client is in the database, so the target resolver has no snapshot to read and no
- * connect, presence or heartbeat is written; none of the API's other workers run.
+ * What differs from a deployment:
+ * - one event loop runs the three instances and the load, where a deployment gives each instance a process;
+ * - a frame enters at `acceptIncomingMessage`, below the socket bridge, so its size check and its JSON parse are no
+ *   part of a run, and a session is a socket object the server writes to, with no WebSocket;
+ * - a recipient has no client runtime: its socket takes every frame the server writes, a repeated copy and a copy
+ *   ahead of its predecessor alike, where a client drops the first and holds the second back, and it sends no gap
+ *   NACK of its own; it ACKs its first read of a copy and nothing else;
+ * - a publisher reads a receipt each time it is written. What it does to recover a send is the shape's sender
+ *   recovery: nothing under `none`; under `client-stand-in` what `OrderedSendClientStandIn` states, a stand-in for
+ *   the product's WS client whose comment also says what of that client it leaves out;
+ * - the room authorizer admits a fixed audience and reads nothing, where the API's reads the room's current snapshot
+ *   for each of the three decisions a send takes, and once more for each replay and each second dispatch;
+ * - the envelope carries no room send fence, which a browser's room send carries;
+ * - no group and no client is in the database, so the target resolver has no snapshot to read and no connect,
+ *   presence or heartbeat is written; none of the API's other workers run, no AppInbox reader among them, and no
+ *   diagnostics sink is installed.
  *
  * An offer that throws, of a send or of an ACK, fails the run once it has stopped; what the entry answers is never a
  * failure.
@@ -144,11 +165,16 @@ export async function runOrderedSendCell(
                 ledger: new OrderedSendOfferLedger(),
                 log,
                 clock,
-                acksInFlight: []
+                clientStandIn: input.shape.senderRecovery === 'client-stand-in'
+                    ? new OrderedSendClientStandIn(ORDERED_SEND_SERVER_PEER_ID)
+                    : undefined,
+                answersInFlight: []
             }, input.observationTailMs)
         );
     }
     finally {
+        // A phase that threw left observation open: ending it here stops whatever still offers for the run.
+        log.endObservation();
         await stopOrderedSendInstances(instances);
     }
 }
@@ -202,13 +228,15 @@ async function observeOrderedSends(
     observationTailMs: number
 ): Promise<OrderedSendCellObservations> {
     await openOrderedSendRoom(run);
-    const sessionByPeerId = new Map(run.schedule.sessions.map((session) => [session.peerId, session]));
 
     const windowStartedAtMs = run.clock.nowMs();
+    const firstHopResends = run.clientStandIn === undefined
+        ? Promise.resolve()
+        : offerFirstHopResendsWhenDue(run.clientStandIn, run);
     await offerOrderedSendsWhenDue({
         sends: run.schedule.sends.map((send): DueOrderedSend => ({
             send,
-            publisherInstance: run.instances[sessionByPeerId.get(send.publisherPeerId)?.instanceIndex ?? 0],
+            publisherInstance: run.instances[send.publisherInstanceIndex],
             dueAtMs: windowStartedAtMs + send.dueOffsetMs
         })),
         nowMs: run.clock.nowMs,
@@ -218,12 +246,12 @@ async function observeOrderedSends(
     await observeOrderedSendTail(run, (run.ledger.getLastOfferAtMs() ?? windowStartedAtMs) + observationTailMs);
 
     const reads = run.log.endObservation();
-    const sends = run.ledger.close();
-    await Promise.all(run.acksInFlight);
+    const offers = run.ledger.close();
+    await Promise.all([...run.answersInFlight, firstHopResends]);
     if (run.ledger.getFailures().length > 0) {
         throw new AggregateError(run.ledger.getFailures(), 'An offer of the ordered-send cell threw.');
     }
-    return { sends, ...reads };
+    return { ...offers, ...reads };
 }
 
 /** Every instance subscribed and working, every application pool fully open, every session connected. */
@@ -238,16 +266,23 @@ async function openOrderedSendRoom(run: OrderedSendRun): Promise<void> {
 }
 
 /**
- * What the server writes a session's frames to. A frame is read the moment the server writes it, and the session
- * then owes at most one ACK, which it offers its own instance after its ACK offset.
+ * What the server writes a session's frames to. A frame is read the moment the server writes it. The session then
+ * owes at most one ACK, which it offers its own instance after its ACK offset, and under the sender recovery
+ * `client-stand-in` whatever its stand-in answers the frame.
  */
 function toSessionSocket(session: OrderedSendScheduledSession, run: OrderedSendRun): ConnectionContext.Socket {
     return {
         readyState: WebSocket.OPEN,
         send: (frame) => {
-            const copy = run.log.recordSocketFrame(session.peerId, frame);
-            if (copy !== undefined) {
-                run.acksInFlight.push(offerOrderedSendAck(copy, session, run));
+            const recorded = run.log.recordSocketFrame(session.peerId, frame);
+            if (recorded?.ackOwedCopy !== undefined) {
+                run.answersInFlight.push(offerOrderedSendAck(recorded.ackOwedCopy, session, run));
+            }
+            if (recorded !== undefined && run.clientStandIn !== undefined) {
+                const answer = run.clientStandIn.acceptSocketRead(session.peerId, recorded.read);
+                if (answer.reoffers.length > 0 || answer.followUp !== undefined) {
+                    run.answersInFlight.push(offerRepairAnswer(answer, run.clientStandIn, run));
+                }
             }
             return frame.length;
         },
@@ -255,16 +290,13 @@ function toSessionSocket(session: OrderedSendScheduledSession, run: OrderedSendR
     };
 }
 
-/** The offer of one send on its publisher's instance. Its answer is recorded when it comes and waited for by nobody. */
+/** The first offer of one send on its publisher's instance. Its answer is recorded when it comes and waited for by nobody. */
 function offerOrderedSend(due: DueOrderedSend, run: OrderedSendRun): void {
     const { send } = due;
-    const frame = toWireValue(toOrderedSendMessage({
-        send,
-        roomRef: run.roomRef,
-        createdAtEpochMs: run.clock.nowEpochMs()
-    }));
+    const message = toOrderedSendMessage({ send, roomRef: run.roomRef, createdAtEpochMs: run.clock.nowEpochMs() });
+    const frame = JSON.stringify(message);
     const sentAtMs = run.clock.nowMs();
-    const answered = due.publisherInstance.acceptIncomingMessage(frame, send.publisherPeerId);
+    const answered = due.publisherInstance.acceptIncomingMessage(toWireValue(frame), send.publisherPeerId);
     run.ledger.recordOffer({
         msgId: send.msgId,
         publisherPeerId: send.publisherPeerId,
@@ -273,10 +305,65 @@ function offerOrderedSend(due: DueOrderedSend, run: OrderedSendRun): void {
         sentAtMs,
         expectedRecipientPeerIds: send.expectedRecipientPeerIds
     });
+    run.clientStandIn?.recordFirstOffer({ send, message, frame, offeredAtMs: sentAtMs });
     answered.then(
         (answer) => run.ledger.recordAnswer(send.msgId, toOrderedSendCellAnswer(answer, run.clock.nowMs())),
         (error) => run.ledger.recordFailure(toError(error))
     );
+}
+
+/**
+ * One later offer of a send: the frame of its first offer again, at the same entry of its publisher's instance. Its
+ * answer is recorded when it comes and waited for by nobody.
+ */
+function reofferOrderedSend(reoffer: OrderedSendClientStandIn.Reoffer, run: OrderedSendRun): void {
+    const { send } = reoffer;
+    const sentAtMs = run.clock.nowMs();
+    const answered = run.instances[send.publisherInstanceIndex]
+        .acceptIncomingMessage(toWireValue(reoffer.frame), send.publisherPeerId);
+    const resendPosition = run.ledger.recordResend({
+        msgId: send.msgId,
+        cause: reoffer.cause,
+        attempt: reoffer.attempt,
+        sentAtMs
+    });
+    answered.then(
+        (answer) => run.ledger.recordResendAnswer(resendPosition, toOrderedSendCellAnswer(answer, run.clock.nowMs())),
+        (error) => run.ledger.recordFailure(toError(error))
+    );
+}
+
+/**
+ * Offers what a repair request asked for, while observation lasts: one turn of the event loop after its publisher
+ * read the request, as a client that took it from a socket would, and each later execution of the request a turn
+ * after the one before it.
+ */
+async function offerRepairAnswer(
+    firstAnswer: OrderedSendClientStandIn.RepairAnswer,
+    clientStandIn: OrderedSendClientStandIn,
+    run: OrderedSendRun
+): Promise<void> {
+    let answer: OrderedSendClientStandIn.RepairAnswer | undefined = firstAnswer;
+    while (answer !== undefined) {
+        await run.clock.sleep(0);
+        if (!run.log.isObserving()) {
+            return;
+        }
+        answer.reoffers.forEach((reoffer) => reofferOrderedSend(reoffer, run));
+        answer = answer.followUp === undefined ? undefined : clientStandIn.serveRepairFollowUp(answer.followUp);
+    }
+}
+
+/** Offers each first-hop resend within one poll of its deadline, while observation lasts. */
+async function offerFirstHopResendsWhenDue(
+    clientStandIn: OrderedSendClientStandIn,
+    run: OrderedSendRun
+): Promise<void> {
+    await run.clock.sleep(FIRST_HOP_POLL_MS);
+    while (run.log.isObserving()) {
+        clientStandIn.takeFirstHopResendsDue(run.clock.nowMs()).forEach((reoffer) => reofferOrderedSend(reoffer, run));
+        await run.clock.sleep(FIRST_HOP_POLL_MS);
+    }
 }
 
 /** One ACK of one copy, offered on the reader's own instance once its ACK offset passed, while observation lasts. */
@@ -295,7 +382,8 @@ async function offerOrderedSendAck(
         observedAtEpochMs: run.clock.nowEpochMs()
     });
     try {
-        await run.instances[session.instanceIndex].acceptIncomingMessage(toWireValue(ack), session.peerId);
+        await run.instances[session.instanceIndex]
+            .acceptIncomingMessage(toWireValue(JSON.stringify(ack)), session.peerId);
     }
     catch (error) {
         run.ledger.recordFailure(toError(error));
@@ -327,7 +415,7 @@ async function stopOrderedSendInstances(instances: readonly OrderedSendInstance[
     }
 }
 
-/** A message as the server's socket bridge hands it to the entry: the JSON of a frame, parsed. */
-function toWireValue(message: ALMessage): object {
-    return JSON.parse(JSON.stringify(message));
+/** A frame as the server's socket bridge hands it to the entry: its JSON, parsed. */
+function toWireValue(frame: string): object {
+    return JSON.parse(frame);
 }

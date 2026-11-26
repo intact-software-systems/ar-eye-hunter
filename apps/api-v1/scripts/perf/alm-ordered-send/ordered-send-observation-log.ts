@@ -9,10 +9,21 @@ import type {
     OrderedSendCellReceipt,
     OrderedSendCellUnclassifiedControl
 } from './ordered-send-cell-observations.ts';
-import { toOrderedSendSocketRead } from './to-ordered-send-socket-read.ts';
+import { toOrderedSendSocketRead, type OrderedSendSocketRead } from './to-ordered-send-socket-read.ts';
 
-/** What a run observes beside its sends. */
-export type OrderedSendObservedReads = Omit<OrderedSendCellObservations, 'sends'>;
+/** What a run observes beside what it offers. */
+export type OrderedSendObservedReads = Omit<OrderedSendCellObservations, 'sends' | 'resends'>;
+
+/** One frame a session's socket read while observation lasted. */
+export interface OrderedSendRecordedFrame {
+    /** The one observation the frame was recorded as. */
+    readonly read: OrderedSendSocketRead;
+    /**
+     * The copy its reader now owes an ACK for: the session's first read of a message another session sent that asks
+     * for a receipt. Undefined for every other frame.
+     */
+    readonly ackOwedCopy: ALMessage | undefined;
+}
 
 /**
  * What the sockets of the sessions read and what the instances handed to their application, each appended as it
@@ -35,11 +46,10 @@ export class OrderedSendObservationLog {
 
     /**
      * Records one frame a session's socket read in the one list `toOrderedSendSocketRead` puts it in, at the instant
-     * read here. Returns the copy when the reader now owes its ACK: the session's first read of a message another
-     * session sent that asks for a receipt. Throws on a frame that is no AL envelope, which the server never writes
-     * to a session's socket.
+     * read here, and returns what it recorded; nothing once observation ended. Throws on a frame that is no AL
+     * envelope, which the server never writes to a session's socket.
      */
-    recordSocketFrame(readerPeerId: string, frame: string): ALMessage | undefined {
+    recordSocketFrame(readerPeerId: string, frame: string): OrderedSendRecordedFrame | undefined {
         const message = decodePersistedALMessage(frame);
         if (!this.observing) {
             return undefined;
@@ -48,16 +58,16 @@ export class OrderedSendObservationLog {
         switch (read.kind) {
             case 'arrival':
                 this.arrivals.push(read.arrival);
-                return this.recordCopyRead(readerPeerId, message) ? message : undefined;
+                return { read, ackOwedCopy: this.recordCopyRead(readerPeerId, message) ? message : undefined };
             case 'receipt':
                 this.receipts.push(read.receipt);
-                return undefined;
+                return { read, ackOwedCopy: undefined };
             case 'control':
                 this.controls.push(read.control);
-                return undefined;
+                return { read, ackOwedCopy: undefined };
             case 'unclassified-control':
                 this.unclassifiedControls.push(read.unclassifiedControl);
-                return undefined;
+                return { read, ackOwedCopy: undefined };
         }
     }
 

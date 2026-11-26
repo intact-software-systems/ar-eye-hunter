@@ -15,6 +15,10 @@ import {
     type OrderedSendRecipientDelayFigures
 } from './compute-ordered-send-recipient-delay-figures.ts';
 import {
+    computeOrderedSendResendFigures,
+    type OrderedSendResendFigures
+} from './compute-ordered-send-resend-figures.ts';
+import {
     computeOrderedSendSendFigures,
     type OrderedSendSendFigures
 } from './compute-ordered-send-send-figures.ts';
@@ -35,6 +39,7 @@ export interface OrderedSendReport {
     readonly recipientDelays: OrderedSendRecipientDelayFigures;
     readonly receipts: OrderedSendReceiptFigures;
     readonly controls: OrderedSendControlFigures;
+    readonly resends: OrderedSendResendFigures;
     readonly unmatched: OrderedSendUnmatchedFigures;
 }
 
@@ -46,6 +51,7 @@ export function computeOrderedSendReport(observations: OrderedSendCellObservatio
         recipientDelays: computeOrderedSendRecipientDelayFigures(observedSends),
         receipts: computeOrderedSendReceiptFigures(observedSends),
         controls: computeOrderedSendControlFigures(observedSends),
+        resends: computeOrderedSendResendFigures(observedSends),
         unmatched: computeOrderedSendUnmatchedFigures(observations)
     };
 }

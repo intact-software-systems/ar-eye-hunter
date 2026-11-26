@@ -35,6 +35,7 @@ function toCopyFrame(seq: number): string {
             msgId: `${PUBLISHER}-send-${seq}`,
             publisherPeerId: PUBLISHER,
             seq,
+            publisherInstanceIndex: 0,
             dueOffsetMs: 0,
             expectedRecipientPeerIds: ['session-02-b', 'session-03-c']
         },
@@ -107,9 +108,13 @@ describe('OrderedSendObservationLog', () => {
         clock.nowMs = 12;
         const otherSessionRead = log.recordSocketFrame('session-03-c', toCopyFrame(1));
 
-        expect(firstRead?.id.msgId).toBe('session-01-a-send-1');
-        expect(repeatedRead).toBeUndefined();
-        expect(otherSessionRead?.id.msgId).toBe('session-01-a-send-1');
+        expect(firstRead?.ackOwedCopy?.id.msgId).toBe('session-01-a-send-1');
+        expect(repeatedRead?.ackOwedCopy).toBeUndefined();
+        expect(repeatedRead?.read).toEqual({
+            kind: 'arrival',
+            arrival: { msgId: 'session-01-a-send-1', recipientPeerId: 'session-02-b', atMs: 11.25 }
+        });
+        expect(otherSessionRead?.ackOwedCopy?.id.msgId).toBe('session-01-a-send-1');
         expect(log.endObservation().arrivals).toEqual([
             { msgId: 'session-01-a-send-1', recipientPeerId: 'session-02-b', atMs: 10.5 },
             { msgId: 'session-01-a-send-1', recipientPeerId: 'session-02-b', atMs: 11.25 },
@@ -120,7 +125,7 @@ describe('OrderedSendObservationLog', () => {
     it('records a copy its own publisher read, and owes no ACK for it', () => {
         const log = new OrderedSendObservationLog(() => 5);
 
-        expect(log.recordSocketFrame(PUBLISHER, toCopyFrame(2))).toBeUndefined();
+        expect(log.recordSocketFrame(PUBLISHER, toCopyFrame(2))?.ackOwedCopy).toBeUndefined();
         expect(log.endObservation().arrivals)
             .toEqual([{ msgId: 'session-01-a-send-2', recipientPeerId: 'session-01-a', atMs: 5 }]);
     });
@@ -133,7 +138,11 @@ describe('OrderedSendObservationLog', () => {
         clock.nowMs = 95.75;
         const complete = log.recordSocketFrame(PUBLISHER, toReceiptFrame(1, 'complete'));
 
-        expect([admitted, complete]).toEqual([undefined, undefined]);
+        expect([admitted?.ackOwedCopy, complete?.ackOwedCopy]).toEqual([undefined, undefined]);
+        expect(complete?.read).toEqual({
+            kind: 'receipt',
+            receipt: { msgId: 'session-01-a-send-1', phase: 'complete', atMs: 95.75 }
+        });
         expect(log.endObservation()).toEqual({
             arrivals: [],
             handOffs: [],
@@ -157,7 +166,9 @@ describe('OrderedSendObservationLog', () => {
         clock.nowMs = 71;
         const repair = log.recordSocketFrame(PUBLISHER, toRepairFrame(1));
 
-        expect([nack, ack, repair]).toEqual([undefined, undefined, undefined]);
+        expect([nack?.ackOwedCopy, ack?.ackOwedCopy, repair?.ackOwedCopy]).toEqual([undefined, undefined, undefined]);
+        expect([nack?.read.kind, ack?.read.kind, repair?.read.kind])
+            .toEqual(['control', 'unclassified-control', 'control']);
         expect(log.endObservation()).toEqual({
             arrivals: [],
             handOffs: [],
@@ -185,7 +196,7 @@ describe('OrderedSendObservationLog', () => {
         ]);
     });
 
-    it('records nothing that happens after observation ended, and owes no ACK for it', () => {
+    it('records nothing that happens after observation ended, and returns no read of it', () => {
         const clock: TestClock = { nowMs: 40 };
         const log = new OrderedSendObservationLog(() => clock.nowMs);
         log.recordSocketFrame('session-02-b', toCopyFrame(1));
@@ -195,13 +206,13 @@ describe('OrderedSendObservationLog', () => {
         clock.nowMs = 60;
 
         const lateCopy = log.recordSocketFrame('session-03-c', toCopyFrame(1));
-        log.recordSocketFrame(PUBLISHER, toReceiptFrame(1, 'complete'));
-        log.recordSocketFrame(PUBLISHER, toNackFrame(1));
+        const lateReceipt = log.recordSocketFrame(PUBLISHER, toReceiptFrame(1, 'complete'));
+        const lateNack = log.recordSocketFrame(PUBLISHER, toNackFrame(1));
         log.recordSocketFrame(PUBLISHER, toAckFrame(1));
         log.recordHandOff('session-01-a-send-1', 1);
 
         expect([observingBeforeItsEnd, log.isObserving()]).toEqual([true, false]);
-        expect(lateCopy).toBeUndefined();
+        expect([lateCopy, lateReceipt, lateNack]).toEqual([undefined, undefined, undefined]);
         const recordedWhileObserving = {
             arrivals: [{ msgId: 'session-01-a-send-1', recipientPeerId: 'session-02-b', atMs: 40 }],
             handOffs: [],

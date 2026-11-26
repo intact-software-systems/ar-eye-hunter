@@ -2,7 +2,11 @@ import type { ALNackReason, ALReceiptPayload, ALRepairReason } from '@shared/al-
 import type { ALMessageRejection } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 
-/** One ordered, receipted room send as its publisher offered it at the server's entry. */
+/**
+ * One ordered, receipted room send as its publisher first offered it at the server's entry. A send is in the list
+ * once, with its first offer and that offer's answer, however often its publisher offered it again: every later
+ * offer is in `resends`.
+ */
 export interface OrderedSendCellOffer {
     /**
      * Unique among the sends of one run: everything else the run records names its send by it. The report takes a
@@ -42,6 +46,24 @@ export type OrderedSendCellAnswer =
     | { readonly acceptance: 'unanswered'; readonly answeredAtMs: null; };
 
 export type OrderedSendCellSend = OrderedSendCellOffer & OrderedSendCellAnswer;
+
+/**
+ * One later offer of a send by its publisher: the frame of its first offer again, to the same entry of the same
+ * instance. Only a run whose shape states the sender recovery `client-stand-in` makes one, for one of two causes:
+ * `repair`, the server asked for the send by a gap NACK or a repair request its publisher read; `first-hop`, the
+ * publisher read no receipt of the send, of any phase, within its first-hop wait. `sentAtMs` is read immediately
+ * before the offer, and is never before the control frame or the end of the wait that caused it.
+ */
+export interface OrderedSendCellResendOffer {
+    /** The send offered again; `sends` holds its first offer. */
+    readonly msgId: string;
+    readonly cause: 'repair' | 'first-hop';
+    /** Which offer of the send for this cause it is, from 1: a repair has at most 4, a first-hop resend at most 3. */
+    readonly attempt: number;
+    readonly sentAtMs: number;
+}
+
+export type OrderedSendCellResend = OrderedSendCellResendOffer & OrderedSendCellAnswer;
 
 /**
  * A session's socket read a copy; every read is recorded, at whichever session. A read at a session the send did not
@@ -87,7 +109,8 @@ export interface OrderedSendCellReceipt {
  * A session's socket read a NACK or a repair request: the server's word to the sender of the message `msgId` names,
  * with the reason it gave. Of a gap in a track the server tells the sender twice, by a `gap` NACK and by a
  * `missing-seq` repair request, and both name the message whose arrival showed the gap, never one that is missing.
- * A session of the cell answers neither and sends nothing again.
+ * Under the sender recovery `none` a session of the cell answers neither and sends nothing again; under
+ * `client-stand-in` its publisher answers both as `OrderedSendClientStandIn` states, and each answer is in `resends`.
  */
 export type OrderedSendCellControl =
     | { readonly type: 'nack'; readonly msgId: string; readonly reason: ALNackReason; readonly atMs: number; }
@@ -105,12 +128,15 @@ export interface OrderedSendCellUnclassifiedControl {
 
 /**
  * What one run of the cell recorded. Every instant is an unrounded `performance.now()` reading of one clock. Every
- * list but `sends` is in the order observed, appended as it happened, and the report takes "first" and "before" from
- * that order, never from comparing instants. Every frame a session's socket read is in exactly one of `arrivals`,
- * `receipts`, `controls` and `unclassifiedControls`. What the entry answered a recipient's ACK is in no list.
+ * list but `sends` and `resends` is in the order observed, appended as it happened, and the report takes "first" and
+ * "before" from that order, never from comparing instants. `sends` and `resends` are each in the order offered. Every
+ * frame a session's socket read is in exactly one of `arrivals`, `receipts`, `controls` and `unclassifiedControls`.
+ * What the entry answered a recipient's ACK is in no list.
  */
 export interface OrderedSendCellObservations {
     readonly sends: readonly OrderedSendCellSend[];
+    /** Empty in a run under the sender recovery `none`. */
+    readonly resends: readonly OrderedSendCellResend[];
     readonly arrivals: readonly OrderedSendCellArrival[];
     readonly handOffs: readonly OrderedSendCellHandOff[];
     readonly receipts: readonly OrderedSendCellReceipt[];

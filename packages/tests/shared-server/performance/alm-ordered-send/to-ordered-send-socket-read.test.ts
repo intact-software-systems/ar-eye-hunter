@@ -51,6 +51,7 @@ describe('toOrderedSendSocketRead', () => {
                 msgId: SEND_MSG_ID,
                 publisherPeerId: PUBLISHER,
                 seq: 3,
+                publisherInstanceIndex: 0,
                 dueOffsetMs: 0,
                 expectedRecipientPeerIds: ['session-02-b']
             },
@@ -82,14 +83,32 @@ describe('toOrderedSendSocketRead', () => {
         });
     });
 
-    it('reads a NACK as a control of the message it names, never of its own envelope, with its reason', () => {
+    it('reads a NACK as a control of the message it names, never of its own envelope, with all it asks', () => {
         expect(toRead(GAP_NACK)).toEqual({
             kind: 'control',
-            control: { type: 'nack', msgId: SEND_MSG_ID, reason: 'gap', atMs: 41.625 }
+            control: { type: 'nack', msgId: SEND_MSG_ID, reason: 'gap', atMs: 41.625 },
+            request: {
+                type: 'nack',
+                payload: {
+                    msgId: SEND_MSG_ID,
+                    fromPeerId: SERVER,
+                    toPeerId: PUBLISHER,
+                    logicalRecipientPeerId: SERVER,
+                    originPeerId: PUBLISHER,
+                    reason: 'gap',
+                    observedAtEpochMs: OBSERVED_AT_EPOCH_MS,
+                    orderingKey: 'room-track',
+                    expectedSeq: 2,
+                    missingRanges: [{ from: 2, to: 2 }],
+                    gapRequestNumber: 1,
+                    relayHopsLeft: 0,
+                    proof: null
+                }
+            }
         });
     });
 
-    it('reads a repair request as a control of the message it names, with its reason', () => {
+    it('reads a repair request as a control of the message it names, with all it asks', () => {
         const repair = newALRepairControlMessage(CONTROL_ID, {
             msgId: SEND_MSG_ID,
             fromPeerId: SERVER,
@@ -101,7 +120,21 @@ describe('toOrderedSendSocketRead', () => {
 
         expect(toRead(repair)).toEqual({
             kind: 'control',
-            control: { type: 'repair', msgId: SEND_MSG_ID, reason: 'missing-seq', atMs: 41.625 }
+            control: { type: 'repair', msgId: SEND_MSG_ID, reason: 'missing-seq', atMs: 41.625 },
+            request: {
+                type: 'repair',
+                payload: {
+                    msgId: SEND_MSG_ID,
+                    fromPeerId: SERVER,
+                    toPeerId: PUBLISHER,
+                    reason: 'missing-seq',
+                    observedAtEpochMs: OBSERVED_AT_EPOCH_MS,
+                    orderingKey: 'room-track',
+                    expectedSeq: 2,
+                    missingRanges: [{ from: 2, to: 2 }],
+                    gapRequestNumber: 1
+                }
+            }
         });
     });
 

@@ -4,6 +4,7 @@ import type {
     OrderedSendCellHandOff,
     OrderedSendCellObservations,
     OrderedSendCellReceipt,
+    OrderedSendCellResend,
     OrderedSendCellSend
 } from './ordered-send-cell-observations.ts';
 
@@ -31,6 +32,8 @@ export interface ObservedOrderedSend {
     readonly receipts: readonly OrderedSendCellReceipt[];
     /** In the order observed. */
     readonly controls: readonly OrderedSendCellControl[];
+    /** The later offers of the send, in the order offered. */
+    readonly resends: readonly OrderedSendCellResend[];
 }
 
 interface PositionedOrderedSendArrival {
@@ -49,12 +52,14 @@ export function toObservedOrderedSends(observations: OrderedSendCellObservations
     const handOffsByMsgId = Map.groupBy(observations.handOffs, (handOff) => handOff.msgId);
     const receiptsByMsgId = Map.groupBy(observations.receipts, (receipt) => receipt.msgId);
     const controlsByMsgId = Map.groupBy(observations.controls, (control) => control.msgId);
+    const resendsByMsgId = Map.groupBy(observations.resends, (resend) => resend.msgId);
     return [...toOrderedSendByMsgId(observations.sends).values()].map((send) => ({
         send,
         copies: toObservedOrderedSendCopies(send, arrivalsByMsgId.get(send.msgId) ?? []),
         handOffs: handOffsByMsgId.get(send.msgId) ?? [],
         receipts: receiptsByMsgId.get(send.msgId) ?? [],
-        controls: controlsByMsgId.get(send.msgId) ?? []
+        controls: controlsByMsgId.get(send.msgId) ?? [],
+        resends: resendsByMsgId.get(send.msgId) ?? []
     }));
 }
 
