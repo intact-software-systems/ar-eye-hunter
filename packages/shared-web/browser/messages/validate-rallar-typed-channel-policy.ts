@@ -17,6 +17,7 @@ export interface RallarTypedChannelPolicyInput {
     readonly onStorageUnavailable?: string;
     readonly recovery?: unknown;
     readonly publication?: unknown;
+    readonly order?: string;
 }
 
 const RALLAR_STORAGE_UNAVAILABLE_POLICIES: readonly RallarStorageUnavailablePolicy[] = ['refuse', 'volatile'];
@@ -56,6 +57,7 @@ export function validateRallarTypedChannelPolicy(
     }
     issues.push(...validateRallarChannelRecovery(definition.recovery));
     issues.push(...validateRallarChannelPublication(definition));
+    issues.push(...validateRallarChannelOrder(definition));
     return issues;
 }
 
@@ -120,4 +122,32 @@ function validateRallarChannelPublication(definition: RallarTypedChannelPolicyIn
         }];
     }
     return decodeALPublicationPolicy(definition.publication).left ?? [];
+}
+
+/**
+ * Edge order lives in memory at the two ends and waits only for a send that is retried, so its channel is a
+ * volatile command or notification channel. A granted topic's audience is the sessions that elected to receive
+ * it, which changes while a stream runs: it is refused until a stream can start at a late subscriber.
+ */
+function validateRallarChannelOrder(definition: RallarTypedChannelPolicyInput): readonly RallarValidationIssue[] {
+    if (definition.order === undefined) {
+        return [];
+    }
+    if (definition.order !== 'edge') {
+        return [{ path: '$.order', code: 'invalid-order', message: 'Order must be edge.' }];
+    }
+    const refusal = resolveRallarEdgeOrderRefusal(definition);
+    return refusal === undefined ? [] : [{ path: '$.order', code: 'unsupported', message: refusal }];
+}
+
+function resolveRallarEdgeOrderRefusal(definition: RallarTypedChannelPolicyInput): string | undefined {
+    if (definition.purpose === 'live') {
+        return 'A live channel is not edge-ordered: nothing retries its sends.';
+    }
+    if (definition.access === 'granted') {
+        return 'A granted channel is not edge-ordered: its audience changes while a stream runs.';
+    }
+    return definition.durability !== undefined && definition.durability !== 'volatile'
+        ? 'An edge-ordered channel is volatile: its order lives in memory only.'
+        : undefined;
 }

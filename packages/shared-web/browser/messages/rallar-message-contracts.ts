@@ -16,6 +16,13 @@ export type RallarMessageTransport = 'rtc' | 'ws' | 'replay';
 
 export type RallarMessagePayload = object | string | number | boolean | null;
 
+/** Where a message stands in its sender page's edge-ordered stream; positions count from 1. */
+export interface RallarMessageOrder {
+    /** Minted in memory by the sender's page for the channel and room, so a reload or another tab is a new stream. */
+    readonly stream: string;
+    readonly position: number;
+}
+
 export interface RallarMessage<T = never> {
     readonly transport: RallarMessageTransport;
     readonly typeId: string;
@@ -27,8 +34,11 @@ export interface RallarMessage<T = never> {
     /** The sender's trace, `raw.id.traceId`. */
     readonly traceId: string;
     readonly payload: T;
+    /** The envelope as it travelled: on an edge-ordered channel its `payload.resource` is the wrapped payload. */
     readonly raw: ALMessage;
     readonly receivedAtEpochMs: number;
+    /** Present exactly on a message of a channel this page declared `order: 'edge'`. */
+    readonly order?: RallarMessageOrder;
     /** A WS unicast to the sender's session under this message's correlation; its handle observes the reply's delivery. */
     reply<R>(payload: R, options?: RallarMessageReplyOptions): Promise<RallarMessageHandle>;
 }
@@ -218,6 +228,13 @@ export interface RallarTypedMessageChannelDefinition {
      * the drain budget its sends are paced by before admission. There is no default for any field.
      */
     readonly publication?: ALPublicationPolicy;
+    /**
+     * `edge`, on a room channel: one sender page's messages reach this page's handlers in the order that page called
+     * `send`, whichever carrier each came over. Rallar Web numbers each send, wraps the payload with the number and
+     * sorts at the receiver in memory, so both ends declare it; a message that can no longer arrive is skipped. Its
+     * sends are whole-room, at-least-once, receipted and volatile: every other shape is refused `unsupported`.
+     */
+    readonly order?: 'edge';
 }
 
 export type RallarTypedPayloadHandler<T> = (

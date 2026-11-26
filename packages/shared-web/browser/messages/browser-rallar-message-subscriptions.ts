@@ -1,3 +1,5 @@
+import { EdgeOrderArrivals } from '@shared-web/browser/messages/edge-order/edge-order-arrivals.ts';
+import type { EdgeOrderReceiverLimits } from '@shared-web/browser/messages/edge-order/edge-order-receiver-limits.ts';
 import type {
     RallarMessage,
     RallarMessageHandler,
@@ -11,7 +13,11 @@ import {
     type RallarMessageSelectorInput
 } from '@shared-web/browser/messages/rallar-message-selectors.ts';
 import { toBrowserReplyDropDiagnostic } from '@shared-web/browser/messages/reply/to-browser-reply-drop-diagnostic.ts';
-import { toRallarMessage, type RallarMessageReplySender } from '@shared-web/browser/messages/to-rallar-message.ts';
+import {
+    toEdgeOrderedRallarMessage,
+    toRallarMessage,
+    type RallarMessageReplySender
+} from '@shared-web/browser/messages/to-rallar-message.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { BrowserWebSocketInbox } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
@@ -21,12 +27,17 @@ import {
     type ALInboundRuntimeDiagnosticsSink
 } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { AsyncNotifications, notifyConcurrentListeners } from '@shared/cache/async-notifications.ts';
+import type { Timers } from '@shared/resilience/timers.ts';
+import { readBrowserServerExpiryEpochMs } from '../connection/server-clock/browser-server-clock-session.ts';
 
 interface BrowserRallarMessageSubscriptionsInput {
     readonly wsInbox: BrowserWebSocketInbox;
     readonly sendReply: RallarMessageReplySender;
     readMiddleware(): ApiMiddleware | undefined;
     readInboundDiagnostics(): ALInboundRuntimeDiagnosticsSink;
+    /** The bounds of what the page holds for edge order, and the timers that release it. */
+    readonly edgeOrderLimits: EdgeOrderReceiverLimits;
+    readonly timers: Pick<Timers, 'schedule'>;
 }
 
 type RallarInboundMessageTransport = Extract<RallarMessageTransport, 'rtc' | 'ws'>;
@@ -42,9 +53,35 @@ export class BrowserRallarMessageSubscriptions {
     private readonly registeredRtcMessageTypes = new Set<string>();
     private stopWsInbox: RallarUnsubscribe | undefined;
     private readonly input: BrowserRallarMessageSubscriptionsInput;
+    private readonly edgeOrderArrivals: EdgeOrderArrivals;
 
     public constructor(input: BrowserRallarMessageSubscriptionsInput) {
         this.input = input;
+        this.edgeOrderArrivals = new EdgeOrderArrivals({
+            limits: input.edgeOrderLimits,
+            timers: { nowMs: () => this.readConnectExpiryEpochMs(), schedule: input.timers.schedule },
+            readInboundDiagnostics: input.readInboundDiagnostics,
+            handOver: async (handOver) =>
+                await this.notifyListeners(
+                    this.matchingListeners(handOver.carrier, handOver.message),
+                    toEdgeOrderedRallarMessage<never>(handOver, input.sendReply)
+                )
+        });
+    }
+
+    /**
+     * From here every message of the channel's topic and type is sorted before a handler sees it. One sender's
+     * stream can arrive over both carriers, so the page listens on both, whichever the application handles.
+     */
+    public declareEdgeOrder(route: EdgeOrderArrivals.Route): void {
+        this.edgeOrderArrivals.declare(route);
+        this.subscribe('rtc', route, ignoreMessage);
+        this.subscribe('ws', route, ignoreMessage);
+    }
+
+    /** The connect is going away: what edge order holds was judged by its clock, and is memory only. */
+    public dropHeldEdgeOrderMessages(): void {
+        this.edgeOrderArrivals.dropHeldMessages();
     }
 
     public subscribe<T>(
@@ -207,14 +244,29 @@ export class BrowserRallarMessageSubscriptions {
             }
             return;
         }
-        const listeners = this.matchingListeners(transport, message);
-        if (listeners.size === 0) {
+        if (this.edgeOrderArrivals.isDeclared(message)) {
+            await this.edgeOrderArrivals.accept(transport, message);
             return;
         }
-        const rallarMessage = toRallarMessage<never>(transport, message, this.input.sendReply);
-        await notifyConcurrentListeners(listeners, rallarMessage, (error) => {
+        const listeners = this.matchingListeners(transport, message);
+        if (listeners.size > 0) {
+            await this.notifyListeners(listeners, toRallarMessage<never>(transport, message, this.input.sendReply));
+        }
+    }
+
+    private async notifyListeners(listeners: Set<RallarMessageHandler>, message: RallarMessage): Promise<void> {
+        await notifyConcurrentListeners(listeners, message, (error) => {
             console.error('Error notifying Rallar message listener', error);
         });
+    }
+
+    /** The clock the inbound runtime judges a hand-over deadline by; it throws once the connect is gone. */
+    private readConnectExpiryEpochMs(): number {
+        const context = this.input.readMiddleware();
+        if (context === undefined) {
+            throw new Error('Edge order reads the server clock of a connect, and none is attached.');
+        }
+        return readBrowserServerExpiryEpochMs(context.serverTime);
     }
 
     private matchingListeners(
@@ -233,3 +285,5 @@ export class BrowserRallarMessageSubscriptions {
         return listeners;
     }
 }
+
+function ignoreMessage(): void {}

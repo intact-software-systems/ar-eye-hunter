@@ -141,13 +141,22 @@ describe('EdgeOrderSender', () => {
         });
     });
 
-    it('closes the position of a send that ended before it had a lifecycle to read', () => {
+    it('gives the position of a send that never set out to the next send, so it leaves no hole', () => {
         const sender = new EdgeOrderSender('stream-a');
+        send(sender, 10_000);
         const refused = sender.openSend();
         sender.endSend(refused);
         sender.endSend(refused);
 
+        expect(sender.openSend()).toBe(2);
+    });
+
+    it('closes the position of a send that never set out once a later send has taken the next one', () => {
+        const sender = new EdgeOrderSender('stream-a');
+        // Two calls in one turn: the second has its position before the first is found refused.
+        const refused = sender.openSend();
         const next = sender.openSend();
+        sender.endSend(refused);
 
         expect(sender.stampSend(next, NOW_MS)).toEqual({
             stream: 'stream-a',
@@ -155,6 +164,7 @@ describe('EdgeOrderSender', () => {
             lowestOpenPosition: 2,
             earlierCanArriveUntilMs: undefined
         });
+        expect(sender.openSend()).toBe(3);
     });
 
     it('does not count a later send that was built first among the earlier ones', () => {

@@ -8,6 +8,7 @@ import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/brow
 import { BrowserRallarMessageDispatch } from '@shared-web/browser/messages/browser-rallar-message-dispatch.ts';
 import { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
 import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
+import { EdgeOrderSendStreams } from '@shared-web/browser/messages/edge-order/edge-order-send-streams.ts';
 import { BrowserPublicationStages } from '@shared-web/browser/messages/publication/browser-publication-stages.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -59,6 +60,7 @@ export function createBrowserMessageSenderFixture(
     const roomRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
     const connect = vi.fn<() => Promise<ApiMiddleware>>().mockResolvedValue(middleware);
     const sender = new BrowserRallarMessageSender({
+        edgeOrderStreams: new EdgeOrderSendStreams({ newStreamId: () => crypto.randomUUID(), maxStreams: 256 }),
         sessionDeliveries,
         creation: {
             createUnicast: newALUnicastMessage,

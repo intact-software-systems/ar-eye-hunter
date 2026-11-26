@@ -51,9 +51,14 @@ export class EdgeOrderSender {
         }
     }
 
-    /** Closes a send that will never have a lifecycle to read: it threw before it was handed to a carrier. */
+    /**
+     * Closes a send of which nothing set out: it failed, or was refused, before any carrier took it. While no
+     * later send has taken a position, the next send gets this one, so the stream has no hole at all.
+     */
     endSend(position: number): void {
-        this.openSends.delete(position);
+        if (this.openSends.delete(position) && position === this.lastPosition) {
+            this.lastPosition -= 1;
+        }
     }
 
     private endFinishedSends(nowMs: number): void {

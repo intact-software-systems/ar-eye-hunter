@@ -5,6 +5,8 @@ import { BrowserMessageInputValidator } from '@shared-web/browser/messages/brows
 import { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
 import { BrowserRallarMessageSubscriptions } from '@shared-web/browser/messages/browser-rallar-message-subscriptions.ts';
 import { BrowserTypedMessageChannels } from '@shared-web/browser/messages/browser-typed-message-channels.ts';
+import { EDGE_ORDER_RECEIVER_DEFAULT_LIMITS } from '@shared-web/browser/messages/edge-order/edge-order-receiver-limits.ts';
+import { EdgeOrderSendStreams } from '@shared-web/browser/messages/edge-order/edge-order-send-streams.ts';
 import type { BrowserGrantedTopics } from '@shared-web/browser/messages/publication/browser-granted-topics.ts';
 import type {
     RallarMessageHandler,
@@ -26,6 +28,7 @@ import type { BrowserWebSocketInbox } from '@shared-web/browser/websocket/browse
 import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import type { Timers } from '@shared/resilience/timers.ts';
 
 import type { BrowserRallarDeliveryRegistry } from './browser-rallar-delivery-registry.ts';
 import { BrowserRallarMessageDispatch } from './browser-rallar-message-dispatch.ts';
@@ -39,6 +42,10 @@ export namespace BrowserRallarMessagesController {
         readonly sessionDeliveries: BrowserSessionDeliveries;
         readonly publicationStages: BrowserPublicationStages;
         readonly nowMs: () => number;
+        /** The page's timers: edge order releases what it holds by them. */
+        readonly timers: Pick<Timers, 'schedule'>;
+        /** Mints an edge-ordered send stream's id in memory; never derived from the session. */
+        readonly newEdgeOrderStreamId: () => string;
         readonly wsInbox: BrowserWebSocketInbox;
         /** Where `channel(...)` registers a definition's recovery owner, for the resync recovery to find. */
         readonly recoveryOwners: BrowserChannelRecoveryOwners;
@@ -80,7 +87,9 @@ export class BrowserRallarMessagesController {
             wsInbox: input.wsInbox,
             sendReply,
             readMiddleware: input.readMiddleware,
-            readInboundDiagnostics: input.readInboundDiagnostics
+            readInboundDiagnostics: input.readInboundDiagnostics,
+            edgeOrderLimits: EDGE_ORDER_RECEIVER_DEFAULT_LIMITS,
+            timers: input.timers
         });
         new BrowserMessageReplyInbox({
             wsInbox: input.wsInbox,
@@ -135,7 +144,8 @@ export class BrowserRallarMessagesController {
             ws,
             recoveryOwners: channelOwners.recoveryOwners,
             topicSubscriptions: channelOwners.topicSubscriptions,
-            grantedTopics: channelOwners.grantedTopics
+            grantedTopics: channelOwners.grantedTopics,
+            edgeOrder: this.subscriptions
         });
         return {
             rtc,
@@ -167,6 +177,10 @@ function createMessageSender(
         }),
         sessionDeliveries: input.sessionDeliveries,
         inputValidator,
+        edgeOrderStreams: new EdgeOrderSendStreams({
+            newStreamId: input.newEdgeOrderStreamId,
+            maxStreams: EDGE_ORDER_RECEIVER_DEFAULT_LIMITS.maxStreams
+        }),
         connect: input.connect,
         requireSession: input.requireSession,
         resolveDefaultRoom: input.resolveDefaultRoom,
