@@ -171,7 +171,7 @@ describe('toOrderedSendArtifact', () => {
             sends: [admitted, thrownSend],
             resends: [resend],
             acks: [
-                { ...ack, acceptance: 'control', answeredAtMs: 1_060, handled: true } as const,
+                { ...ack, acceptance: 'control', answeredAtMs: 1_060 } as const,
                 { ...ack, ...threw }
             ],
             handOffs: [{ msgId: admitted.msgId, instanceIndex: 1, atMs: 1_030 }],

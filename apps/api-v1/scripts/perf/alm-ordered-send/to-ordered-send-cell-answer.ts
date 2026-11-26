@@ -15,16 +15,10 @@ export function toOrderedSendCellAnswer(
 ): OrderedSendCellEntryAnswer {
     return answer.fold<OrderedSendCellEntryAnswer>(
         (rejection) => ({ acceptance: 'rejected', answeredAtMs, rejectionCode: rejection.code }),
-        (acceptance) => {
-            switch (acceptance.kind) {
-                case 'not-admitted':
-                    return { acceptance: 'not-admitted', answeredAtMs, notAdmittedReason: acceptance.reason };
-                case 'control':
-                    return { acceptance: 'control', answeredAtMs, handled: acceptance.handled };
-                default:
-                    return { acceptance: acceptance.kind, answeredAtMs };
-            }
-        }
+        (acceptance) =>
+            acceptance.kind === 'not-admitted'
+                ? { acceptance: 'not-admitted', answeredAtMs, notAdmittedReason: acceptance.reason }
+                : { acceptance: acceptance.kind, answeredAtMs }
     );
 }
 

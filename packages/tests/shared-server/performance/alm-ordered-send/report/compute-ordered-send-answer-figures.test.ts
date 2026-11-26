@@ -73,7 +73,6 @@ describe('computeOrderedSendReport: what the entry answered each kind of offer',
             byAcceptance: { ...NO_OFFERS_BY_ACCEPTANCE, admitted: 1, threw: 3, 'not-admitted': 1 },
             rejectedByCode: NO_REJECTIONS_BY_CODE,
             notAdmittedByReason: { 'storage-unavailable': 1 },
-            controlsNotHandled: 0,
             threwByErrorName: { ALAdmissionCorruptionError: 2, PostgresError: 1 },
             firstThrownMessageByErrorName: {
                 ALAdmissionCorruptionError: CORRUPTION,
@@ -144,14 +143,14 @@ describe('computeOrderedSendReport: what the entry answered each kind of offer',
             ...NO_OBSERVATIONS,
             sends: [toSend(1, { acceptance: 'admitted', answeredAtMs: 110 })],
             acks: [
-                { ...ack, sentAtMs: 150, acceptance: 'control', answeredAtMs: 160, handled: true },
-                { ...ack, sentAtMs: 151, acceptance: 'control', answeredAtMs: 161, handled: false },
-                { ...ack, sentAtMs: 152, acceptance: 'control', answeredAtMs: 162, handled: false },
+                { ...ack, sentAtMs: 150, acceptance: 'control', answeredAtMs: 160 },
+                { ...ack, sentAtMs: 151, acceptance: 'control', answeredAtMs: 161 },
+                { ...ack, sentAtMs: 152, acceptance: 'control', answeredAtMs: 162 },
                 { ...ack, sentAtMs: 153, acceptance: 'rejected', answeredAtMs: 163, rejectionCode: 'unauthorized' },
                 { ...ack, sentAtMs: 154, acceptance: 'rejected', answeredAtMs: 164, rejectionCode: 'malformed' },
                 { ...ack, sentAtMs: 155, ...threw(165, 'PostgresError', 'connection ended') },
                 { ...ack, sentAtMs: 156, acceptance: 'unanswered', answeredAtMs: null },
-                { ...ack, msgId: 'unknown', sentAtMs: 157, acceptance: 'control', answeredAtMs: 167, handled: true }
+                { ...ack, msgId: 'unknown', sentAtMs: 157, acceptance: 'control', answeredAtMs: 167 }
             ]
         });
 
@@ -160,7 +159,6 @@ describe('computeOrderedSendReport: what the entry answered each kind of offer',
             byAcceptance: { ...NO_OFFERS_BY_ACCEPTANCE, control: 3, rejected: 2, threw: 1, unanswered: 1 },
             rejectedByCode: { ...NO_REJECTIONS_BY_CODE, unauthorized: 1, malformed: 1 },
             notAdmittedByReason: {},
-            controlsNotHandled: 2,
             threwByErrorName: { PostgresError: 1 },
             firstThrownMessageByErrorName: { PostgresError: 'connection ended' }
         });

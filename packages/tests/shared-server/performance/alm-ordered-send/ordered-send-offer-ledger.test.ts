@@ -149,31 +149,30 @@ describe('OrderedSendOfferLedger', () => {
 
     it('keeps every ACK a recipient offered with the answer the entry gave it, in the order offered', () => {
         const ledger = new OrderedSendOfferLedger();
-        const relayed = ledger.recordAck({ msgId: 'session-01-a-send-1', recipientPeerId: 'session-02-b', sentAtMs: 150 });
+        const rejected = ledger.recordAck({ msgId: 'session-01-a-send-1', recipientPeerId: 'session-02-b', sentAtMs: 150 });
         const counted = ledger.recordAck({ msgId: 'session-01-a-send-1', recipientPeerId: 'session-04-a', sentAtMs: 160 });
         const unanswered = ledger.recordAck({ msgId: 'session-01-a-send-1', recipientPeerId: 'session-03-c', sentAtMs: 170 });
-        ledger.recordAckAnswer(counted, { acceptance: 'control', answeredAtMs: 165, handled: true });
-        ledger.recordAckAnswer(relayed, { acceptance: 'control', answeredAtMs: 180, handled: false });
+        ledger.recordAckAnswer(counted, { acceptance: 'control', answeredAtMs: 165 });
+        ledger.recordAckAnswer(rejected, { acceptance: 'rejected', answeredAtMs: 180, rejectionCode: 'unauthorized' });
 
         const closed = ledger.close();
-        ledger.recordAckAnswer(unanswered, { acceptance: 'control', answeredAtMs: 90_000, handled: true });
+        ledger.recordAckAnswer(unanswered, { acceptance: 'control', answeredAtMs: 90_000 });
 
         expect(closed.acks).toEqual([
             {
                 msgId: 'session-01-a-send-1',
                 recipientPeerId: 'session-02-b',
                 sentAtMs: 150,
-                acceptance: 'control',
+                acceptance: 'rejected',
                 answeredAtMs: 180,
-                handled: false
+                rejectionCode: 'unauthorized'
             },
             {
                 msgId: 'session-01-a-send-1',
                 recipientPeerId: 'session-04-a',
                 sentAtMs: 160,
                 acceptance: 'control',
-                answeredAtMs: 165,
-                handled: true
+                answeredAtMs: 165
             },
             {
                 msgId: 'session-01-a-send-1',

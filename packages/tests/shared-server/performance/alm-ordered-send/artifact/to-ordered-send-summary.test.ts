@@ -132,8 +132,8 @@ const STALLED_RUN: OrderedSendSummarySource = {
         acks: {
             ...NO_FIGURES.acks,
             offered: 434,
-            byAcceptance: { ...NO_FIGURES.acks.byAcceptance, control: 434 },
-            controlsNotHandled: 290
+            byAcceptance: { ...NO_FIGURES.acks.byAcceptance, control: 431, rejected: 3 },
+            rejectedByCode: { ...NO_FIGURES.acks.rejectedByCode, unauthorized: 3 }
         },
         standIn: {
             sendsEnded: 197,
@@ -171,8 +171,7 @@ describe('toOrderedSendSummary', () => {
             '(the most hand-offs of one send: 3); answered pending-admission and never handed 16',
             'receipts, of the 200 sends that expect one: complete 23, timed out 158, admitted only 10, none 9',
             'offer to admitted receipt: p50 180.0 ms, p95 2.80 s; offer to complete receipt: p50 5.83 s, p95 7.00 s',
-            'ACKs the recipients offered: 434; the entry answered control 434, ' +
-            '290 of them not handled by the instance offered',
+            'ACKs the recipients offered: 434; the entry answered control 431, rejected 3 (unauthorized 3)',
             'controls the server sent its publishers: 12 nack (gap 12), 12 repair (missing-seq 12); ' +
             'sends that drew a nack 12, a repair request 12',
             'resends: repair 12 (answered duplicate 12), first-hop 570 (answered admitted 2, duplicate 568); ' +
@@ -318,6 +317,18 @@ describe('toOrderedSendSummary', () => {
             `offers that threw: sends ALAdmissionCorruptionError 2 ("${corruption}"), ` +
                 `PostgresError 1 ("connection ended"); resends ALAdmissionCorruptionError 4 ("${corruption}")`
         );
+    });
+
+    it('prints the ACKs by answer alone when the entry rejected none', () => {
+        const noAckRejected: OrderedSendSummarySource = {
+            ...STALLED_RUN,
+            report: {
+                ...STALLED_RUN.report,
+                acks: { ...NO_FIGURES.acks, offered: 434, byAcceptance: { ...NO_FIGURES.acks.byAcceptance, control: 434 } }
+            }
+        };
+
+        expect(toOrderedSendSummary(noAckRejected)[12]).toBe('ACKs the recipients offered: 434; the entry answered control 434');
     });
 
     it('says a delay has no sample when no send reached it', () => {

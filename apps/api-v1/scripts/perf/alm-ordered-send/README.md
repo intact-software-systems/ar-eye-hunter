@@ -197,9 +197,9 @@ first offer, however often its publisher offered it again.
   after the send's lifetime. `admitted only` read an `admitted` receipt and no terminal one before
   observation ended; `none` read no receipt at all.
 - **ACKs.** Each recipient offers one ACK for its first read of a copy, and the entry answers it as
-  a `control`: handled by the instance offered when that instance holds the send, and not handled
-  when it relayed the ACK to the others. An ACK the entry rejected, or whose offer threw, counted
-  for nothing: it would explain a receipt that never completes.
+  a `control`, whether the instance counted it for a receipt it holds or relayed it to the others;
+  the answer does not say which. An ACK the entry rejected, by the code of the rejection, or whose
+  offer threw, counted for nothing: it would explain a receipt that never completes.
 - **Controls.** The NACKs and repair requests the publishers' sockets read, by reason. A control
   about a gap names the send whose arrival showed the gap, never a missing one, so a send that
   "drew" a control is not a send that was lost.

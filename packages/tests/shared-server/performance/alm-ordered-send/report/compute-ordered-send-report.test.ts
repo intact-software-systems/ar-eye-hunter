@@ -70,7 +70,6 @@ const NO_OFFERS_BY_ACCEPTANCE = {
 const NO_ANSWER_DETAILS = {
     rejectedByCode: { malformed: 0, oversized: 0, unauthorized: 0, unsupported: 0 },
     notAdmittedByReason: {},
-    controlsNotHandled: 0,
     threwByErrorName: {},
     firstThrownMessageByErrorName: {}
 };

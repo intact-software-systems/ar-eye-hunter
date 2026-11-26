@@ -11,11 +11,6 @@ export interface OrderedSendAnswerFigures {
     readonly rejectedByCode: Readonly<Record<ALMessageRejection['code'], number>>;
     /** The `not-admitted` offers, by the reason the entry gave; a reason no offer was refused for has no key. */
     readonly notAdmittedByReason: Readonly<Record<string, number>>;
-    /**
-     * The `control` answers of an instance that did not handle the control itself: an ACK it relayed to the other
-     * instances because it does not hold the send, or a control its store could not persist.
-     */
-    readonly controlsNotHandled: number;
     /** The offers that threw, by the name of the error; a name no offer threw has no key. */
     readonly threwByErrorName: Readonly<Record<string, number>>;
     /** Under each of those names, the message of the first offer in the list that threw it. */
@@ -55,7 +50,6 @@ export function computeOrderedSendAnswerFigures(answers: readonly OrderedSendCel
             answers.flatMap((answer) => answer.acceptance === 'not-admitted' ? [answer.notAdmittedReason] : []),
             {}
         ),
-        controlsNotHandled: answers.filter((answer) => answer.acceptance === 'control' && !answer.handled).length,
         threwByErrorName: computeOrderedSendCountByKey(thrown.map((answer) => answer.errorName), {}),
         firstThrownMessageByErrorName: thrown.reduce<Readonly<Record<string, string>>>(
             (messages, answer) =>

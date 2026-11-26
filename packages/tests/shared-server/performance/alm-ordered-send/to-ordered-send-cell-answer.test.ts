@@ -53,11 +53,11 @@ describe('toOrderedSendCellAnswer', () => {
             .toEqual({ acceptance: kind, answeredAtMs: 1_234.5625 });
     });
 
-    it('answers an offer the entry took for a control as a control, with whether that instance handled it', () => {
+    it('answers an offer the entry took for a control as a control, without the flag that says nothing of an ACK', () => {
         expect(toOrderedSendCellAnswer(accepted({ kind: 'control', handled: false }), ANSWERED_AT_MS))
-            .toEqual({ acceptance: 'control', answeredAtMs: 1_234.5625, handled: false });
+            .toEqual({ acceptance: 'control', answeredAtMs: 1_234.5625 });
         expect(toOrderedSendCellAnswer(accepted({ kind: 'control', handled: true }), ANSWERED_AT_MS))
-            .toEqual({ acceptance: 'control', answeredAtMs: 1_234.5625, handled: true });
+            .toEqual({ acceptance: 'control', answeredAtMs: 1_234.5625 });
     });
 });
 

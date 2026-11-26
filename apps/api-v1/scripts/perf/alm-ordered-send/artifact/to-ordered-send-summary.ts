@@ -113,8 +113,8 @@ function toReceiptLines(report: OrderedSendReport): readonly string[] {
         `none ${receipts.noReceipt}`,
         `offer to admitted receipt: ${toP50AndP95(receipts.offerToAdmittedMs)}; ` +
         `offer to complete receipt: ${toP50AndP95(receipts.offerToCompleteMs)}`,
-        `ACKs the recipients offered: ${acks.offered}; the entry answered ${toCountsAboveZero(acks.byAcceptance)}, ` +
-        `${acks.controlsNotHandled} of them not handled by the instance offered`
+        `ACKs the recipients offered: ${acks.offered}; the entry answered ${toCountsAboveZero(acks.byAcceptance)}` +
+        (acks.byAcceptance.rejected === 0 ? '' : ` (${toCountsAboveZero(acks.rejectedByCode)})`)
     ];
 }
 

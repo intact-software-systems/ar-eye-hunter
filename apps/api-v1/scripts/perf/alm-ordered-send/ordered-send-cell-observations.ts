@@ -32,18 +32,18 @@ export interface OrderedSendCellOffer {
  * What came of one offer at `acceptIncomingMessage`, read at `answeredAtMs` as soon as it was known: the kind the
  * entry accepted the offer as; `rejected` for a rejection; `threw` for an offer whose call threw, with the error's
  * name and its message, cut at 240 characters with anything URL-shaped removed; or `unanswered` for an offer still
- * pending when observation ended. A `control` answer says whether the instance offered handled the control itself:
- * it answers `handled: false` for an ACK it relayed to the other instances because it does not hold the send, and for
- * a control its store could not persist. An offer that threw says nothing of what the server did with the frame: it
- * may have admitted the send before it threw.
+ * pending when observation ended. An offer that threw says nothing of what the server did with the frame: it may
+ * have admitted the send before it threw. An instance answers a recipient's ACK `control` whether it counted the ACK
+ * for a receipt it holds or relayed it to the other instances: the answer does not say which. Its `handled` flag says
+ * whether the instance's own outbound owner took the control, is false for a recipient's ACK either way, and is not
+ * kept.
  */
 export type OrderedSendCellAnswer =
     | {
-        readonly acceptance: Exclude<ALInboundMessageRuntime.Acceptance['kind'], 'not-admitted' | 'control'>;
+        readonly acceptance: Exclude<ALInboundMessageRuntime.Acceptance['kind'], 'not-admitted'>;
         readonly answeredAtMs: number;
     }
     | { readonly acceptance: 'not-admitted'; readonly answeredAtMs: number; readonly notAdmittedReason: string; }
-    | { readonly acceptance: 'control'; readonly answeredAtMs: number; readonly handled: boolean; }
     | {
         readonly acceptance: 'rejected';
         readonly answeredAtMs: number;
