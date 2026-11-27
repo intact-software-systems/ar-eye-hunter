@@ -66,6 +66,7 @@ import {
     type ALInboundWorkSelector
 } from '../read-al-inbound-work-selection.ts';
 import type { ALInboundRotationPage } from './al-inbound-rotation-page.ts';
+import { toALInboundPromotionResult } from './claim-al-inbound-promoted-release.ts';
 import {
     AL_INBOUND_ROTATION_WINDOW_UNOPENED,
     computeALInboundRotationWindow,
@@ -121,7 +122,7 @@ export class ALInboundStoreLane {
     private readonly delivery: ALInboundAdmittedDelivery;
     private readonly gapRenewal: ALInboundGapRenewal;
     private readonly workSelector: ALInboundWorkSelector;
-    private readonly work: ALWorkHandler;
+    private readonly work: ALWorkHandler<ALWorkClaim>;
     private readonly storageRecovery: ALStorageRecoveryReporter | undefined;
     private readonly removeForeignCommitListener: (() => void) | undefined;
     private nextEvictionAtMs = Number.NEGATIVE_INFINITY;
@@ -639,9 +640,9 @@ export class ALInboundStoreLane {
         return handedOver?.kind === 'storage-unavailable' ? { status: 'retry' } : replayed.outcome;
     }
 
-    private createWorkHandler(workPort: ALWorkQueuePort, workType: string): ALWorkHandler {
+    private createWorkHandler(workPort: ALWorkQueuePort, workType: string): ALWorkHandler<ALWorkClaim> {
         const { input, dependencies } = this;
-        return new ALWorkHandler({
+        return new ALWorkHandler<ALWorkClaim>({
             workerId: input.workerId,
             port: workPort,
             queueEngine: dependencies.queueEngine,
@@ -656,7 +657,8 @@ export class ALInboundStoreLane {
             selectReady: (port, pageSize) => this.selectInboundWork(port, pageSize),
             claimSuccessor: (port, completed) => this.workSelector.claimPromotedRelease(port, completed),
             batchObservations: dependencies.diagnostics?.acknowledgementCapture?.batchObservations,
-            runClaim: (claim, batchStartedAtMs, defer) => this.runInboundClaim(claim, batchStartedAtMs, defer),
+            runClaim: async (claim, batchStartedAtMs, defer) =>
+                toALInboundPromotionResult(claim, await this.runInboundClaim(claim, batchStartedAtMs, defer)),
             diagnostics: (event) => this.recordWorkDiagnostics(event),
             storageHealth: input.stores.storageHealth,
             durableOwnership: toALDurableWorkLaneOwnership(input.durableWorkOwnership, workType)

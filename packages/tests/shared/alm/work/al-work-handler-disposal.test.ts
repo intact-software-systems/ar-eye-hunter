@@ -124,7 +124,7 @@ it('releases a successor returned after disposal without starting its attempt', 
     const resume = Promise.withResolvers<void>();
     const releases: ALWorkRelease[] = [];
     const attempted: string[] = [];
-    const handler = createHandler({
+    const handler = createHandler<string>({
         port: {
             ...fakePort({ claims: ['first'], onRelease: () => {} }),
             releaseAll: async (batch) => {
@@ -138,7 +138,7 @@ it('releases a successor returned after disposal without starting its attempt', 
         },
         runClaim: async (claim) => {
             attempted.push(claim.entry.key.contextId);
-            return { status: 'completed' };
+            return { status: 'completed-with-succession', succession: 'successor' };
         }
     });
     onTestFinished(() => {
@@ -155,10 +155,12 @@ it('releases a successor returned after disposal without starting its attempt', 
         .toEqual([['first', 'completed'], ['successor', 'not-ready']]);
 });
 
-function createHandler(overrides: Partial<ALWorkHandlerDependencies>): ALWorkHandler {
+function createHandler<TSuccession = never>(
+    overrides: Partial<ALWorkHandlerDependencies<TSuccession>>
+): ALWorkHandler<TSuccession> {
     const engine = new InboxOutboxEngine();
     onTestFinished(() => engine.stop());
-    const handler = new ALWorkHandler({
+    const handler = new ALWorkHandler<TSuccession>({
         workerId: 'disposal-worker',
         port: fakePort({ claims: [], onRelease: () => {} }),
         queueEngine: engine,

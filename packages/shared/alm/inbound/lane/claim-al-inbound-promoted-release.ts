@@ -1,7 +1,8 @@
 import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
 import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
-import type { ALWorkClaim, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
+import type { ALWorkClaimResult } from '../../work/al-work-handler.ts';
+import type { ALWorkClaim, ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
 import { resolveALWorkEntryReadyAt } from '../../work/read-al-work-ready-at.ts';
 import type { ALInboundAdmittedDelivery } from '../al-inbound-admitted-delivery.ts';
 import { toALInboundReleaseEffectId } from '../al-inbound-effect-intent.ts';
@@ -46,6 +47,14 @@ export async function claimALInboundPromotedRelease(
     }
     const [claim] = await input.port.claimObserved([entry]);
     return claim === undefined ? undefined : { claim, effectId };
+}
+
+/**
+ * A completed inbound claim names itself, so the batch asks the release promotion for the release after it: the
+ * promotion reads the completed claim's own row to find its track's next release.
+ */
+export function toALInboundPromotionResult(claim: ALWorkClaim, outcome: ALWorkOutcome): ALWorkClaimResult<ALWorkClaim> {
+    return outcome.status === 'completed' ? { status: 'completed-with-succession', succession: claim } : outcome;
 }
 
 /** A row that cannot be decoded or delivered is left to the rotation, whose page claims it to reject it. */

@@ -14,10 +14,11 @@ import type {
     ALWorkAttemptResult,
     ALWorkBatchDiagnostics,
     ALWorkDiagnostics,
+    ALWorkHandlerDependencies,
     ALWorkReadinessProbeDiagnostics,
     ALWorkReadySelection
 } from '@shared/alm/work/al-work-handler.ts';
-import { AL_WORK_READINESS_MEMORY_MS, ALWorkHandler } from '@shared/alm/work/al-work-handler.ts';
+import { AL_WORK_READINESS_MEMORY_MS, ALWorkHandler, toALWorkOutcome } from '@shared/alm/work/al-work-handler.ts';
 import { createALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import type {
     ALWorkClaim,
@@ -49,6 +50,9 @@ const PHASE_CLAIM_MS = 3;
 const PHASE_RUN_MS = 11;
 const PHASE_RELEASE_MS = 5;
 const PHASE_QUEUE_WAIT_MS = 40;
+
+/** The succession the successor cases' claims name when the case reads no particular one. */
+const TEST_SUCCESSION = 'succession';
 
 describe('ALWorkHandler', () => {
     it('runs one batch per wake and releases each claim once', async () => {
@@ -1401,12 +1405,14 @@ describe('ALWorkHandler', () => {
 });
 
 describe('ALWorkHandler successor claims', () => {
+    // Pins that a successor found by the succession its completed predecessor named runs in the same batch, flush
+    // and counts, and that every release is written completed.
     it('runs the successor a completed claim hands its place to in the same batch, flush and counts', async () => {
         const flushes: ALWorkRelease[][] = [];
         const batches: ALWorkBatchDiagnostics[] = [];
         const runs: string[] = [];
         const successors: Record<string, string> = { 'chain-1': 'chain-2', 'chain-2': 'chain-3' };
-        const handler = new ALWorkHandler({
+        const handler = new ALWorkHandler<string>({
             workerId: 'successor-worker',
             port: recordingPort(['chain-1'], flushes),
             queueEngine: createEngine(),
@@ -1416,13 +1422,13 @@ describe('ALWorkHandler successor claims', () => {
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: async () => undefined,
             selectReady: async (port, size) => toTestALWorkReadySelection(await port.claim({ maxCount: size, observedEntries: undefined })),
-            claimSuccessor: async (_port, completed) => {
-                const successor = successors[completed.entry.key.contextId];
+            claimSuccessor: async (_port, contextId) => {
+                const successor = successors[contextId];
                 return successor === undefined ? undefined : toFakeALWorkClaim(successor);
             },
             runClaim: async (claim) => {
                 runs.push(claim.entry.key.contextId);
-                return { status: 'completed' };
+                return { status: 'completed-with-succession', succession: claim.entry.key.contextId };
             },
             diagnostics: (event) => {
                 if (event.kind === 'work-batch') {
@@ -1441,12 +1447,13 @@ describe('ALWorkHandler successor claims', () => {
         expect(batches[0]).toMatchObject({ claimedCount: 3, completedCount: 3 });
     });
 
+    // Pins that a claim that did not complete hands nothing on, whatever succession its owner would have found.
     it.each(['retry', 'non-retryable', 'not-ready', 'thrown'] as const)(
         'asks no successor of a claim that ended %s',
         async (ending) => {
             const asked: string[] = [];
             const runs: string[] = [];
-            const handler = new ALWorkHandler({
+            const handler = new ALWorkHandler<string>({
                 workerId: 'successor-worker',
                 port: recordingPort(['ended'], []),
                 queueEngine: createEngine(),
@@ -1456,11 +1463,11 @@ describe('ALWorkHandler successor claims', () => {
                 readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
                 readNextReadyAtMs: async () => undefined,
                 selectReady: async (port, size) => toTestALWorkReadySelection(await port.claim({ maxCount: size, observedEntries: undefined })),
-                claimSuccessor: async (_port, completed) => {
-                    asked.push(completed.entry.key.contextId);
+                claimSuccessor: async (_port, succession) => {
+                    asked.push(succession);
                     return toFakeALWorkClaim('never-run');
                 },
-                runClaim: async (claim): Promise<ALWorkAttemptResult> => {
+                runClaim: async (claim): Promise<ALWorkAttemptResult<string>> => {
                     runs.push(claim.entry.key.contextId);
                     switch (ending) {
                         case 'thrown':
@@ -1483,10 +1490,11 @@ describe('ALWorkHandler successor claims', () => {
         }
     );
 
+    // Pins that a throwing successor claim is stated as a storage failure and strands none of the selected claims.
     it('runs the claims it selected when a successor cannot be claimed, and states the failure', async () => {
         const runs: string[] = [];
         const events: ALStorageEvent[] = [];
-        const handler = new ALWorkHandler({
+        const handler = new ALWorkHandler<string>({
             workerId: 'successor-worker',
             port: recordingPort(['first', 'second'], []),
             queueEngine: createEngine(),
@@ -1501,7 +1509,7 @@ describe('ALWorkHandler successor claims', () => {
             },
             runClaim: async (claim) => {
                 runs.push(claim.entry.key.contextId);
-                return { status: 'completed' };
+                return { status: 'completed-with-succession', succession: TEST_SUCCESSION };
             },
             diagnostics: undefined,
             storageHealth: new ALStorageHealth({ storeId: 'store-1', storage: (event) => events.push(event) })
@@ -1514,11 +1522,12 @@ describe('ALWorkHandler successor claims', () => {
         expect(events.some((event) => event.kind === 'health' && event.status === 'failing')).toBe(true);
     });
 
+    // Pins the page bound: successors count toward the page, so no batch runs more than a page.
     it('runs at most a page per batch, its successors included', async () => {
         const runs: string[] = [];
         let promoted = 0;
         const claimSuccessor = async () => toFakeALWorkClaim(`promoted-${(promoted += 1)}`);
-        const handler = new ALWorkHandler({
+        const handler = new ALWorkHandler<string>({
             workerId: 'successor-worker',
             port: recordingPort(['page-1', 'page-2'], []),
             queueEngine: createEngine(),
@@ -1531,7 +1540,7 @@ describe('ALWorkHandler successor claims', () => {
             claimSuccessor,
             runClaim: async (claim) => {
                 runs.push(claim.entry.key.contextId);
-                return { status: 'completed' };
+                return { status: 'completed-with-succession', succession: TEST_SUCCESSION };
             },
             diagnostics: undefined
         });
@@ -1542,7 +1551,130 @@ describe('ALWorkHandler successor claims', () => {
         expect(runs).toEqual(['page-1', 'page-2', 'promoted-1', 'promoted-2']);
         expect(promoted).toBe(2);
     });
+
+    // Pins that a plain completion names nothing to hand on, so its owner is asked for no successor.
+    it('asks no successor of a claim that completed naming no succession', async () => {
+        const asked: string[] = [];
+        const runs: string[] = [];
+        const handler = new ALWorkHandler<string>({
+            ...createSuccessionDependencies<string>(['plain']),
+            claimSuccessor: async (_port, succession) => {
+                asked.push(succession);
+                return toFakeALWorkClaim('never-run');
+            },
+            runClaim: async (claim) => {
+                runs.push(claim.entry.key.contextId);
+                return { status: 'completed' };
+            }
+        });
+        onTestFinished(() => handler.dispose());
+
+        await handler.ready();
+
+        expect(runs).toEqual(['plain']);
+        expect(asked).toEqual([]);
+    });
+
+    // Pins that the handler passes on the owner's own value, not a copy or the claim it came from.
+    it('hands the owner the very succession the completed claim named', async () => {
+        const succession = { trackKey: 'track-1', completedThrough: 3 };
+        const asked: (typeof succession)[] = [];
+        const handler = new ALWorkHandler<typeof succession>({
+            ...createSuccessionDependencies<typeof succession>(['named']),
+            claimSuccessor: async (_port, named) => {
+                asked.push(named);
+                return undefined;
+            },
+            runClaim: async () => ({ status: 'completed-with-succession', succession })
+        });
+        onTestFinished(() => handler.dispose());
+
+        await handler.ready();
+
+        expect(asked).toHaveLength(1);
+        expect(asked[0]).toBe(succession);
+    });
+
+    // Pins that the release a claim naming a succession is written with is the plain completed outcome.
+    it('writes the release of a claim that named a succession as completed', async () => {
+        const flushes: ALWorkRelease[][] = [];
+        const handler = new ALWorkHandler<string>({
+            ...createSuccessionDependencies<string>(['named']),
+            port: recordingPort(['named'], flushes),
+            claimSuccessor: async () => undefined,
+            runClaim: async () => ({ status: 'completed-with-succession', succession: TEST_SUCCESSION })
+        });
+        onTestFinished(() => handler.dispose());
+
+        await handler.ready();
+
+        expect(flushes.map((flush) => flush.map((release) => release.outcome))).toEqual([[{ status: 'completed' }]]);
+    });
+
+    // Pins that a claim its group ran hands its succession on as one run alone does.
+    it('asks the successor of a grouped claim that named a succession', async () => {
+        const asked: string[] = [];
+        const runs: string[] = [];
+        const handler = new ALWorkHandler<string>({
+            ...createSuccessionDependencies<string>(['grouped']),
+            claimSuccessor: async (_port, succession) => {
+                asked.push(succession);
+                return succession === 'grouped' ? toFakeALWorkClaim('successor') : undefined;
+            },
+            runClaimGroup: (claims) =>
+                new Map(claims.map((claim) => [
+                    claim,
+                    Promise.resolve({ status: 'completed-with-succession', succession: claim.entry.key.contextId } as const)
+                ])),
+            runClaim: async (claim) => {
+                runs.push(claim.entry.key.contextId);
+                return { status: 'completed' };
+            }
+        });
+        onTestFinished(() => handler.dispose());
+
+        await handler.ready();
+
+        expect(asked).toEqual(['grouped']);
+        expect(runs).toEqual(['successor']);
+    });
 });
+
+describe('toALWorkOutcome', () => {
+    // Pins the one translation from a claim's result to the outcome its release is written with.
+    it('answers completed for a claim that named a succession, and any other outcome as it is', () => {
+        const outcomes: readonly ALWorkOutcome[] = [
+            { status: 'completed' },
+            { status: 'retry' },
+            { status: 'non-retryable' },
+            { status: 'not-ready', readyAtMs: 2_000 }
+        ];
+
+        expect(toALWorkOutcome({ status: 'completed-with-succession', succession: TEST_SUCCESSION }))
+            .toEqual({ status: 'completed' });
+        for (const outcome of outcomes) {
+            expect(toALWorkOutcome(outcome)).toBe(outcome);
+        }
+    });
+});
+
+/** A handler's dependencies over a port that holds `claims`, for the cases that state only their owner's part. */
+function createSuccessionDependencies<TSuccession>(claims: readonly string[]): ALWorkHandlerDependencies<TSuccession> {
+    return {
+        workerId: 'successor-worker',
+        port: recordingPort(claims, []),
+        queueEngine: createEngine(),
+        ownsQueueEngine: false,
+        clock: { nowMs: () => 1_000 },
+        pageSize: 16,
+        readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
+        readNextReadyAtMs: async () => undefined,
+        selectReady: async (port, size) => toTestALWorkReadySelection(await port.claim({ maxCount: size, observedEntries: undefined })),
+        claimSuccessor: undefined,
+        runClaim: async () => ({ status: 'completed' }),
+        diagnostics: undefined
+    };
+}
 
 function createEngine(): InboxOutboxEngine {
     const engine = new InboxOutboxEngine();
