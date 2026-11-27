@@ -279,18 +279,22 @@ the last bullet's are ordered, which is what a browser's room send is by default
   30.1 s. At +10 ms on a quiet machine all 200 complete in both runs at a read of 7.2 and 8.1 s (p50), against 75 and 70
   before. The stall was in the inbound ordered delivery on the server, not in the record; what remains of it is in
   `plans/backlog.md` ("What stays of the limit of one ordered track", D784, D785).
+- **The ordered-send cell on the record.** The API's ordered-send measurement cell was run once with its instances
+  counting in the record (one run); its README states that reading
+  (`apps/api-v1/scripts/perf/alm-ordered-send/README.md`, "What a publisher hears of its own send").
 
 ## Stated limits
 
 - **One ordered track.** A browser's room send is ordered by default. One ordered track through the WS server at
-  +5 ms keeps up at 3 messages a second in every run. At 4 a second it completes 80 of 80 in both runs but reads its
-  last message 5.8 and 6.4 s behind; at 5 a second it completed 31 and 63 of 100 and the track ended
-  `resync-required`, a NACK to its sender, in both runs (the code before the hand-on completed 72 and 68); at 10 a
-  second it keeps up in none. Above the rate a track carries, only the first messages of the track complete and the
-  rest pass their 30 s lifetime and end `timed-out`. A track whose sender keeps its rate is handed on at most a page of
-  16 a batch and waits for the work rotation between batches, so its lag climbs while the rate holds (under load the
-  worst of each of three runs was 1.3, 5.1 and 7.7 s); a lane whose batches are already full of other claimable work hands nothing on and behaves as before, a case
-  no run covered. Faster streams are what ordering end to end in Rallar Web is planned for.
+  +5 ms keeps up at 3 messages a second in both runs. At 4 a second every message still completes (80 of 80 in both
+  runs) but the track runs seconds behind, its last message read 5.8 and 6.4 s after its send. From 5 a second the
+  track ends `resync-required`, a NACK to its sender, and only its first messages complete, the rest passing their 30 s
+  lifetime and ending `timed-out`: 31 and 63 of 100 at 5 a second (the code before the hand-on completed 72 and 68),
+  and at 10 a second it keeps up in none. A track whose sender keeps its rate is handed on at most a page of 16 a batch
+  and waits for the work rotation between batches, so its lag climbs while the rate holds (under load the worst of
+  each of three runs was 1.3, 5.1 and 7.7 s); a lane whose batches are already full of other claimable work hands
+  nothing on and behaves as before, a case no run covered. Faster streams are what ordering end to end in Rallar Web
+  is planned for.
 - **The sender's version still moves.** A message end through the message-end bundle (a spent repair budget, a
   re-plan refused for good, a receipt control's included) and each ACK window fence the sender, so a server
   publication's own receipt windows keep competing for the server's version row.
@@ -346,11 +350,12 @@ rate at which the receipts stop keeping up; `main` in the five-publisher cell; g
 measurement stood in for with one sequenced publication every 500 ms, and a higher server publication rate; for ordered
 sends, a lane whose pages are full of other claimable work, more than one over-driven track, an over-driven track on a
 loaded host, and whether a batch at the page stays inside its 10 s lease beyond the 8.0 s measured at +10 ms; why one
-ordered track at 4 a second parks 6 to 13 sends at admission; why the WS server's room fan-out writes two closely
-spaced hand-offs of one track out of order at a raw socket (14 frames in one loaded run; a Rallar receiver's ordered
-delivery restores the order); across two server instances, the room fan-out leaving from the instance that completed
-the predecessor, that instance's readiness read asking its own dispatch port, and an arrival's commit against a
-completion's commit; a release handed on reading its slot a second time, on PostgreSQL; why recipients read room
+ordered track at 3 a second kept up in three runs of four before the hand-on was built (it kept up in both runs since);
+why one ordered track at 4 a second parks 6 to 13 sends at admission; why the WS server's room fan-out writes two
+closely spaced hand-offs of one track out of order at a raw socket (14 frames in one loaded run; a Rallar receiver's
+ordered delivery restores the order); across two server instances, the room fan-out leaving from the instance that
+completed the predecessor, that instance's readiness read asking its own dispatch port, and an arrival's commit against
+a completion's commit; a release handed on reading its slot a second time, on PostgreSQL; why recipients read room
 frames twice on one track at 10 a second, with the inbound's fresh attempts and without them, though the subscriber was
 handed each message once; any ordered cell in a browser, on IndexedDB or over RTC; whether a sender's resend unblocks
 a stalled track (the harness resends nothing); the recovery of a lost live `admitted` by the

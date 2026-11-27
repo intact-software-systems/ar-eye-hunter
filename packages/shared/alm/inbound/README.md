@@ -772,19 +772,20 @@ application twice and every track's hand-offs were in order, the largest batch r
 the slowest read of a run was 5.4, 1.7 and 8.0 s; the code before completed 141, 145 and 200 of 200, ended four tracks
 in each of the two runs that failed, and its slowest read was 24.0 to 30.1 s. The quiet cells read the same on both. At
 +10 ms on a quiet host the built code completed 200 and 200 with no track ended, at a read of 8.1 and 7.2 s (p50, at
-most 25.6 s), its batches running at the page for 7.5 to 8.0 s of their 10 s lease; the code before completed 75 and 70
-and ended tracks. So five ordered publishers keep up on a host and a database fast enough that a message completes
-before its sender's next one arrives. When one does not, the track no longer stalls, but while its sender keeps its
-rate the batches run at the page and a lagging track's lag climbs (to 1.3, 5.1 and 7.7 s, the worst of each loaded
-run), falling only once the sends end; a prototype of the rule, measured under the same load before it was built,
-caught up between batches and peaked at 0.8 to 5.1 s. One ordered track keeps up at 3 messages a second in every run.
-At 4 a second it completed 80 of 80 in both runs but read its last message 5.8 and 6.4 s behind (the prototype: 1.5
-and 3.8 s; the code before completed 52 and 47 and ended the track); at 5 a second it completed 31 and 63 of 100 and
-ended the track `resync-required` in both, fewer than the 72 and 68 the code before completed in those runs; at 10 a
-second neither keeps up. One track at 5 a second beside five unordered publishers on the same server left the unordered
-publishers complete (200 of 200 in both runs) at a read of 0.715 and 0.862 s (p50) against 0.454 s without it, since a
-message arriving on that lane waits for the track's full batch. The levers not built and their known problems are in
-`plans/backlog.md` ("What stays of the limit of one ordered track").
+most 25.6 s), its longest batches running at the page for 7.8 and 8.0 s of their 10 s lease; the code before completed
+75 and 70 and ended tracks. So five ordered publishers keep up on a host and a database fast enough that a message
+completes before its sender's next one arrives. When one does not, the track no longer stalls, but while its sender
+keeps its rate the batches run at the page and a lagging track's lag climbs (to 1.3, 5.1 and 7.7 s, the worst of each
+loaded run), falling only once the sends end; a prototype of the rule, measured under the same load before it was built,
+caught up between batches and peaked at 0.8 to 5.1 s. One ordered track keeps up at 3 messages a second in both runs. At
+4 a second every message still completes (80 of 80 in both runs) but the track runs seconds behind: its last message was
+read 5.8 and 6.4 s after its send (the prototype read no message later than 1.5 and 3.8 s after its send; the code
+before completed 52 and 47 and ended the track). From 5 a second the track ends `resync-required` and only its first
+messages complete: 31 and 63 of 100 at 5 a second, fewer than the 72 and 68 the code before completed in those runs, and
+at 10 a second neither keeps up. One track at 5 a second beside five unordered publishers on the same server left the
+unordered publishers complete (200 of 200 in both runs) at a read of 0.715 and 0.862 s (p50) against 0.454 s without it,
+since a message arriving on that lane waits for the track's full batch. The levers not built and their known problems
+are in `plans/backlog.md` ("What stays of the limit of one ordered track").
 
 `validateALInboundControlAdmission` returns every reason an acknowledgement is
 inadmissible; the caller joins them into one rejection reason. Only an absent pending

@@ -944,13 +944,15 @@ and it has no status list.
   the track is now carried a page a batch.
 
   What remains, each enough to resume from:
-  - One sender above 3 messages a second, the highest rate at which every
-    built run kept up. At 4 a second the built code completed 80 of 80 in both
-    runs but read its last message 5.8 and 6.4 s behind, with 13 and 6 sends
+  - One sender above 3 messages a second, the highest rate at which the built
+    code kept up in both of its runs. At 4 a second every message still
+    completes (80 of 80 in both runs) but the track runs seconds behind: its
+    last message was read 5.8 and 6.4 s after its send, with 13 and 6 sends
     parked at admission (a prototype of the hand-on, measured before it was
-    built, read it 1.5 and 3.8 s behind; the code before completed 52 and 47
-    and ended the track). At 5 a second it completed 31 and 63 of 100 and ended
-    the track `resync-required` in both runs, fewer than the 72 and 68 the code
+    built, read no message later than 1.5 and 3.8 s after its send; the code
+    before completed 52 and 47 and ended the track). From 5 a second the track
+    ends `resync-required` and only its first messages complete: 31 and 63 of
+    100 at 5 a second in the built runs, fewer than the 72 and 68 the code
     before completed in those runs; at 10 a second neither keeps up (4 and 0 of
     200 against 0 and 4), and there the sends parked at admission dominate,
     which the hand-on does not touch: three attempts cost more writes on one
@@ -1030,24 +1032,28 @@ and it has no status list.
   fresh attempts):
   - A head read when a hand-on stops at the page, so that the track's next
     row is found by the next batch rather than by the rotation. Named, not
-    measured; it would answer the climbing lag above, and it puts the track
-    ahead of the rotation's next page once more.
-  - A bound on hand-ons per track per batch. It would cap what one
-    over-driven track costs the lane's other traffic (above, 0.26 to 0.41 s on
-    the unordered p50); its problem is a new parameter that lowers what a
-    lagging track is carried per batch.
+    tried and not measured; the climbing lag above fits it. Its expected
+    problem, reasoned from the code and not measured, is that it puts the
+    track ahead of the rotation's next page once more.
+  - A bound on hand-ons per track per batch. Not tried and not measured. It
+    would cap what one over-driven track costs the lane's other traffic
+    (above, 0.26 to 0.41 s on the unordered p50); its expected problem,
+    reasoned and not measured, is a new parameter that lowers what a lagging
+    track is carried per batch.
   - Carrying the readiness read's surface into the handed-on delivery, as a
     page's claim carries its own. A hand-on spends 10 statements on its row on
     PostgreSQL against the rotation's 6; this would save the second read of
-    the message and its owner row. Not measured; it is a second path for the
-    delivery's surface beside the page's.
+    the message and its owner row. Not tried and not measured; its expected
+    problem, reasoned from the code, is a second path for the delivery's
+    surface beside the page's.
   - The cheaper form, which brings the successor's row due through
-    `expedite()` instead of claiming it. It removed the loaded stall too (200
-    of 200 in three loaded runs) but broke the page bound: an expedited claim
-    is taken before the batch's next claim and outside the page count, so a
-    64-message track drained in one batch, ahead of every claim the batch held;
-    it needed the lane to hand the delivery a callback, and one track at 4 a
-    second read its last message 14.3 and 15.3 s behind.
+    `expedite()` instead of claiming it, measured as a prototype before the
+    hand-on was built. It removed the loaded stall too (200 of 200 in three
+    loaded runs) but broke the page bound: an expedited claim is taken before
+    the batch's next claim and outside the page count, so a 64-message track
+    drained in one batch, ahead of every claim the batch held; it needed the
+    lane to hand the delivery a callback, and one track at 4 a second read no
+    message later than 14.3 and 15.3 s after its send.
   - Writing the progress row only when it is new, when a witness moves its
     position, or when its stored expiry is earlier than what the track needs
     (the later of `now + orderingTrackTtlMs` and the expiry of every slot the
@@ -1057,12 +1063,13 @@ and it has no status list.
     (`isALOrderingSnapshotLive`). Every admission on a track rewrites the row
     only to extend its expiry today (`computeDeliveryProgressRetention`,
     `packages/shared/alm/inbound/prepare-al-inbound-commit-bundle.ts`), so every
-    other writer on the track that read it loses its compare-and-set. The lever
-    removes every expiry conflict (every completion in one attempt), but alone
-    it is not enough (two of three 20 s five-publisher runs still parked 20 to
-    23 sends and read 7.5 to 9.5 s behind), and on top of fresh attempts it
-    changed no figure a publisher or a recipient reads. Its problem is the
-    browser's delivered-marker cap (`ALInboundDeliveredMarkerIndex`,
+    other writer on the track that read it loses its compare-and-set. Writing
+    the row only then removes every expiry conflict (every completion in one
+    attempt), but alone it is not enough (two of three 20 s five-publisher runs
+    still parked 20 to 23 sends and read 7.5 to 9.5 s behind), and on top of
+    fresh attempts it changed no figure a publisher or a recipient reads. Its
+    problem is the browser's delivered-marker cap
+    (`ALInboundDeliveredMarkerIndex`,
     `packages/shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts`;
     256 markers on the session's IndexedDB and volatile pairs, which an RTC
     receiver uses too; the server passes no cap): it ranks a track by when its
