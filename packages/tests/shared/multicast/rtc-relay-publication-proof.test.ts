@@ -197,7 +197,8 @@ describe('a granted RTC publication at its relays and receivers', () => {
     });
 
     it('drops a frame forged to another member under that member\'s registered key id as invalid-signature, never forwarding it', async () => {
-        const chain = await createOriginRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
+        // `c` may publish and the relay subscribes, so the signature alone stands between this frame and both effects.
+        const chain = await createOriginRelayChain({ ...GRANTS_WITH_SUBSCRIBED_RELAY, c: PUBLISH_AND_SUBSCRIBE });
         const relay = createRelayHop(chain, { selfPeerId: 'r', subscribed: true });
         const signed = await publishFromOrigin(chain, 'feed-1');
 

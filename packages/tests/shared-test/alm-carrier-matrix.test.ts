@@ -362,7 +362,7 @@ const UNPROVEN_CELLS = [
     [
         'room-audience-over-frame-limit',
         'ws',
-        'a server test that delivers a granted publication to more than 256 subscribed sessions'
+        'a server test that delivers a granted publication to more than 256 subscribed sessions; it waits for the merge of pull request 885, which changes the test file that holds the harness'
     ],
     ['relay-payload-confidentiality', 'rtc-with-ws-fallback', '`granted-rtc-relay-only` over this carrier'],
     [

@@ -532,7 +532,7 @@ export const ALM_CARRIER_MATRIX = {
                     {
                         kind: 'unproven',
                         closedBy:
-                            'a server test that delivers a granted publication to more than 256 subscribed sessions'
+                            'a server test that delivers a granted publication to more than 256 subscribed sessions; it waits for the merge of pull request 885, which changes the test file that holds the harness'
                     }
                 ]
             },
