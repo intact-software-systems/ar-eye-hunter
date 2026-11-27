@@ -934,6 +934,18 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
         }
     },
     {
+        filePath: 'packages/shared-web/browser/rooms/events/court-alert-click.ts',
+        expected: { values: ['COURT_ALERT_OPENED', 'clearCourtAlertClick', 'openCourtAlertClick', 'readCourtAlertClick'], types: [], starExports: [], namespaceExports: [] }
+    },
+    {
+        filePath: 'packages/shared-web/browser/rooms/events/court-ready-notifications.ts',
+        expected: { values: ['disableCourtReadyNotifications', 'enableCourtReadyNotifications', 'readCourtAlertPublicKey'], types: [], starExports: [], namespaceExports: [] }
+    },
+    {
+        filePath: 'packages/shared-web/browser/rooms/events/court-alert-notification.ts',
+        expected: { values: ['courtAlertLaunchUrl', 'courtAlertStatus', 'courtReadyNotification', 'readCourtAlertLaunch'], types: [], starExports: [], namespaceExports: [] }
+    },
+    {
         filePath: 'packages/shared-web/browser/rooms/events/rallar-room-event.ts',
         expected: { values: ['RallarRoomEvent'], types: [], starExports: [], namespaceExports: [] }
     },
