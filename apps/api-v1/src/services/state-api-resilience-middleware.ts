@@ -32,7 +32,7 @@ export function createStateApiResilienceMiddleware(
     return async (c, next) => {
         const isClientMutation = isClientStateMutationRoute(c.req.method, c.req.path);
         const anonymousRoomRequest = c.req.method === 'POST' &&
-            /\/(?:guests\/preview|(?:guests|temporary-rooms)\/requests\/[^/]+)$/.test(c.req.path);
+            /\/(?:(?:guests|session\/guest)\/preview|(?:guests|temporary-rooms|session\/guest)\/requests\/[^/]+)$/.test(c.req.path);
         const limiter = readRateLimiter(
             anonymousRoomRequest ? namespace + ':anonymous-room' : toRateLimiterNamespace(namespace, c.req.path),
             anonymousRoomRequest ? readRequestClientKey(c.req) : readAuthenticatedClientKey(c),

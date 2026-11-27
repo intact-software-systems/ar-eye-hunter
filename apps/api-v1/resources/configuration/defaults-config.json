@@ -66,7 +66,9 @@
   "group": {
     "roomOwnedAppDataBindings": [],
     "roomLobbyPoliciesByApplication": {},
+    "eventHandoverWindowMs": 600000,
     "eventOrganizerIdsByApplication": {},
+    "guestBookingByApplication": { "ar-eye-hunter": true, "rallar-server": true },
     "temporaryRoomPoliciesByApplication": { "grumpy-town": {} },
     "defaultMaxMembers": 256,
     "currentSnapshotCacheMaxEntries": 512,

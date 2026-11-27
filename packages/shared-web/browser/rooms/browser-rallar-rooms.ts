@@ -481,7 +481,8 @@ async function refreshAuthenticatedRooms(
     const scope = input.resolveOperationScope(options.scope);
     const { clients, groups } = await refreshStateSnapshots(
         scope,
-        toRallarWorkflowPolicies(operationOptions)
+        toRallarWorkflowPolicies(operationOptions),
+        context.session
     );
     await input.acceptSnapshots({ context, clients, groups, scope });
     return input.stateStore.state();

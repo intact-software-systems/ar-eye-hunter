@@ -245,7 +245,8 @@ function createIngressCaptureOperations(
         captureGuestMembershipMutationIngress: async (command, atEpochMs) =>
             captureInternalMutationIngress(
                 command,
-                command.operation === 'createGroup' ? 'temporary-room-creation' : command.operation === 'removeGroupMember' ? 'guest-expiry' : 'guest-redemption',
+                command.operation === 'createGroup' ? 'temporary-room-creation' : command.operation === 'removeGroupMember' ? 'guest-expiry' :
+                    command.operation === 'changeGroupSession' ? 'guest-booking' : 'guest-redemption',
                 atEpochMs
             ),
         captureTimelineDeadlineMutationIngress: async (command, atEpochMs) =>

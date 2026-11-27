@@ -1,3 +1,4 @@
+import { GuestSessionBookingPanel } from '@shared-react/guest-session-booking-panel.tsx';
 import {
     useEffect,
     useState,
@@ -49,6 +50,9 @@ export function RelicRoomEntry({ game }: RelicRoomEntryProps) {
     return (
         <section className="panel stack" aria-label="Shared room entry">
             <h3>Enter a shared expedition</h3>
+            {!game.session && entry.destination?.intent === 'preview-session' && (
+                <GuestSessionBookingPanel key={JSON.stringify(entry.destination.roomRef)} room={entry.destination.roomRef} entry={owner} />
+            )}
             <RelicRoomEntryForm
                 draft={draft}
                 setDraft={setDraft}

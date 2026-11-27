@@ -195,6 +195,8 @@ Operators grant organizer rights per application through `group.eventOrganizerId
 
 An organizer can watch the whole event while playing on one court. The private roster shows event-local player names, parties in queue order, occupied courts and individual claim deadlines. After a dropped connection the organizer recovers the current roster over the same observation. Players continue to see their own event commitments.
 
+An event organizer can offer control to another authorized organizer present in the event. The recipient accepts from the lobby or a claimed court. Offers expire after the configurable `group.eventHandoverWindowMs`, ten minutes by default. The sender can cancel. Disconnecting leaves an offered handover available until expiry; without an offer, the original organizer retains control.
+
 ## Sharing rooms
 
 AR Eye Hunter and Relic Hunters let hosts create code-protected or invite-only
@@ -308,6 +310,13 @@ and change or cancel the schedule before its lobby opens. Following the link pre
 without leaving the current game. Signed-in accounts can reserve one player seat, withdraw that
 reservation, and find their sessions again after reload. The organizer occupies one player seat.
 Rescheduling releases reservations and asks interested accounts to review and confirm the new time.
+
+Applications can enable guest booking with `group.guestBookingByApplication`. The organizer then
+selects **Allow guest reservations** when scheduling. A signed-out visitor with the session link
+can reserve a lobby seat weeks ahead, withdraw it, or return in the same browser to review a changed
+time. Forwarding the link lets another visitor book an available seat with their own browser.
+At lobby opening the guest explicitly claims the reservation to receive room access. Booking
+provides no court assignment. Existing sessions continue to accept signed-in reservations only.
 
 The lobby opens ten minutes before the scheduled start. Entry claims the account's reserved seat;
 accounts without reservations can enter only if an unreserved seat is available. The current host

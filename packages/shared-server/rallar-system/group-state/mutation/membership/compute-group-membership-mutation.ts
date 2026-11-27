@@ -1,3 +1,4 @@
+import { readGroupSessionSchedule, toGroupSessionTiming } from '@shared/api/group-sessions/group-session-schedule.ts';
 import { isLiveGroupPresenceSession } from '../../policy/group-policy-primitives.ts';
 import { roomGuestAccessMode } from '@shared/api/room-guests/access.ts';
 import { ROOM_GUEST_LIFETIME_MS } from '@shared/api/room-guests/invitation.ts';
@@ -56,6 +57,15 @@ export function computeJoin(
     const stored = requireGroup(read, command.aggregateRef);
     const snapshot = toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs);
     const existing = read.targetMember ?? undefined;
+    if (command.input.guestBookingRevision !== undefined) {
+        const schedule = readGroupSessionSchedule(stored.value.metadata);
+        const phase = schedule && toGroupSessionTiming(schedule, facts.attemptAtEpochMs).phase;
+        if (!schedule?.guestBooking || schedule.revision !== command.input.guestBookingRevision ||
+            (phase !== 'lobby' && phase !== 'start-ready') ||
+            !read.sessionReservations?.value.principalIds.includes(command.targetPrincipalId)) {
+            throw new GroupMutationRejectedError('Claim requires an open lobby and a current guest reservation.');
+        }
+    }
     const joinCodeMetadata = readJoinCode(stored.value.metadata);
     assertAllowed(
         canJoinGroup({
@@ -64,6 +74,7 @@ export function computeJoin(
                 principalId: command.targetPrincipalId,
                 sessionId: command.input.actorSessionId ?? undefined
             },
+            guestBooking: guestAdmission && command.input.guestBookingRevision !== undefined,
             guestInvitationVerifier: guestAdmission ? command.input.inviteToken ?? undefined : undefined,
             nowEpochMs: facts.attemptAtEpochMs,
             capacity: facts.capacity,
