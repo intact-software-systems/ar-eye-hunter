@@ -1,6 +1,7 @@
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
 import { NON_EXPIRING_SEND_TIMEOUT_MS } from '../../alm-conformance-budgets.ts';
+import type { AlmConformanceCarrier } from '../../alm-conformance-carriers.ts';
 import {
     ALM_OUTBOUND_DIAGNOSTICS_TOPIC,
     toDiagnosticWait,
@@ -30,21 +31,22 @@ import {
 
 const ONE_REPAIR: AlmConformanceOrderedSendOptions = { maxRepairs: 1 };
 
-/** The failure the held second send's handle ends with once a requester's budget is spent, as the matrix states it. */
-const EXHAUSTED_FAILURE = ALM_CARRIER_MATRIX['repair-budget-exhausted'].cells.rtc.outcome.failure;
+/** What the held second send comes to on each carrier once a requester's budget is spent, as the matrix states it. */
+const EXHAUSTED_CELLS = ALM_CARRIER_MATRIX['repair-budget-exhausted'].cells;
 
 /**
- * A repair budget that runs out ends on the handle: every send states a budget of one retransmit per receiver, the
- * sender's second frame stays held through every retransmission, and each receiver orders the track itself and reports
- * the gap once the third frame arrives. Each receiver's first report spends its own one retransmit; the range stays
- * missing, so the receiver renews it 1 to 1.5 s later, and that renewal, its request numbered 2, finds its budget
+ * A repair budget that runs out ends on the handle: every send states a budget of one retransmit per requester, the
+ * sender's second frame stays held through every retransmission, and the hop that orders the track reports the gap once
+ * the third frame arrives. Over `rtc` each receiver orders the track itself, so there are two requesters; over `ws` the
+ * server orders it and is the one requester. A requester's first report spends its one retransmit; the range stays
+ * missing, so the requester renews it 1 to 1.5 s later, and that renewal, its request numbered 2, finds its budget
  * spent: the sender settles the second frame `skipped` with reason `repair-exhausted`, and the settlement ends the
  * message, so no repair of it commits in the window after its handle read `failed`. Both receivers delivered the
- * first send only: the third and fourth wait for a second that never arrives. The cell is not run over `ws`, where the
- * server orders the track and requests its gaps; it is untested there since the budget became per requester. Over
+ * first send only: the third and fourth wait for a second that never arrives, in each receiver's own buffer over `rtc`
+ * and in the server's over `ws`, which delivers no frame of a track past a sequence it still waits for. Over
  * `rtc-with-ws-fallback` the held frame's run of `not-ready` attempts hands it to WS (D56), where it is no longer the
  * RTC repair's to exhaust; held there too, it sends nothing and ends `expired` at its 30 s deadline, while the cell
- * observes it for at most 10 s (`handed-over-send-held-on-ws.test.ts`), so the cell asserts `rtc` alone.
+ * observes it for at most 10 s (`handed-over-send-held-on-ws.test.ts`), so the cell runs over `ws` and `rtc`.
  */
 export const repairExhausted: AlmConformanceScenarioDefinition = {
     scenarioId: 'repair-exhausted',
@@ -58,7 +60,7 @@ export const repairExhausted: AlmConformanceScenarioDefinition = {
 };
 
 /**
- * Each receiver reports the gap again once the fourth frame arrives. That report repeats its requester's first
+ * Each requester reports the gap again once the fourth frame arrives. That report repeats its requester's first
  * request number and charges nothing (D573), so the exhausting request is a renewal. The hold is never released: a
  * late second frame would reach a receiver inside its absence window. The gap is opened only once both receivers
  * delivered the first frame: a receiver whose first frame is the third enters the track there, reads the first as
@@ -69,7 +71,7 @@ function toRepairExhaustedSenderCommands(
 ): readonly RallarBlackBoxTestCommand[] {
     const cue = toCueStep(sender);
     const observation = 'observe-failed-2';
-    const failure = [['failure.kind', EXHAUSTED_FAILURE.kind], ['failure.reason', EXHAUSTED_FAILURE.reason]] as const;
+    const failure = toExhaustedFailureFields(sender.input.carrier);
     return [
         ...toCueListenCommands(cue),
         ...toOrderedSendCommands(sender, 1, ONE_REPAIR),
@@ -89,6 +91,18 @@ function toRepairExhaustedSenderCommands(
         ),
         toNoRepairCommitAfterFailedWait(sender)
     ];
+}
+
+/**
+ * The failure the held second send's handle ends with over `carrier`, field by field. The scenario runs only over a
+ * carrier whose cell names it as a lane proof, and each such cell states that failure.
+ */
+function toExhaustedFailureFields(carrier: AlmConformanceCarrier): readonly (readonly [string, string])[] {
+    const { outcome } = EXHAUSTED_CELLS[carrier];
+    if (outcome.kind !== 'undelivered') {
+        throw new Error(`repair-exhausted has no failure to assert over ${carrier}: its cell states ${outcome.kind}.`);
+    }
+    return [['failure.kind', outcome.failure.kind], ['failure.reason', outcome.failure.reason]];
 }
 
 /**

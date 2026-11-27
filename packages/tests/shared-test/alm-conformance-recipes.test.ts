@@ -87,10 +87,10 @@ const CLAIM_KEYS_BY_CARRIER = {
     'rtc-with-ws-fallback': ['claim-first-wins']
 } as const;
 
-/** The reply cells (D445): the addressed ones over WS, the correlated one on the fallback cell too, first-wins on three agents. */
+/** The reply cells (D445): the addressed ones over WS, the correlated one on every carrier, first-wins on three agents. */
 const REPLY_ADDRESSED_KEYS_BY_CARRIER = {
     ws: ['reply-correlated', 'reply-timeout-late', 'reply-undelivered'],
-    rtc: [],
+    rtc: ['reply-correlated'],
     'rtc-with-ws-fallback': ['reply-correlated']
 } as const;
 
@@ -293,10 +293,16 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'checkpoint-lag',
         'ordering-resync',
         'ordering-gap-repair',
+        'repair-exhausted',
         'seeded-loss-stream',
         'seeded-loss-unreceipted-stream',
         'lost-stream-start',
         'seeded-jitter-stream',
+        'edge-order-stream',
+        'edge-order-jitter-stream',
+        'edge-order-loss-stream',
+        'edge-order-reload',
+        'edge-order-late-join',
         'ws-unicast-receipt',
         'server-command',
         'server-originated',
@@ -334,10 +340,15 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'seeded-loss-stream',
         'lost-stream-start',
         'lost-stream-start-bounded',
+        'edge-order-stream',
+        'edge-order-loss-stream',
+        'edge-order-reload',
+        'edge-order-late-join',
         'not-yet-in-sync-expires',
         'ws-unicast-receipt',
         'capacity',
         'capacity-age',
+        ...REPLY_ADDRESSED_KEYS_BY_CARRIER.rtc,
         'paced-latest',
         'paced-newest-n',
         'paced-expiry',
@@ -365,6 +376,10 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'checkpoint-recovery',
         'checkpoint-lag',
         'ordering-resync',
+        'edge-order-stream',
+        'edge-order-loss-stream',
+        'edge-order-reload',
+        'edge-order-late-join',
         'cross-carrier-duplicate-rtc-then-ws',
         'not-yet-in-sync-expires',
         'fallback-within-deadline',
@@ -476,7 +491,7 @@ describe('alm-conformance recipe family', () => {
                 carrier === 'ws'
                     ? ['ws-unicast-receipt', 'server-command', ...VOLATILE_BOUND_KEYS, ...REPLY_ADDRESSED_KEYS_BY_CARRIER.ws]
                     : carrier === 'rtc'
-                    ? ['ws-unicast-receipt', 'capacity', 'capacity-age']
+                    ? ['ws-unicast-receipt', 'capacity', 'capacity-age', ...REPLY_ADDRESSED_KEYS_BY_CARRIER.rtc]
                     : [
                         'ws-unicast-receipt',
                         'unicast-fallback',
@@ -490,8 +505,7 @@ describe('alm-conformance recipe family', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             expect(toAllRoleRecipes(createAlmConformanceRecipes(toConformanceInput(carrier))).map((recipe) => recipe.recipeId), carrier)
                 .toEqual([
-                    // The exhausted repair sits among the ordering cells on the RTC carriers, its second receiver
-                    // reporting the held gap.
+                    // The exhausted repair sits among the ordering cells over `ws` and `rtc`, with a second receiver.
                     // The paced list-isolation cell sits among the paced cells, the one of them with a second recipient;
                     // the server-ordered entry cell sits beside the server-originated one, with the principal's sibling.
                     ...SCENARIO_KEYS_BY_CARRIER[carrier].flatMap((key) => toInterleavedRoles(key).map((role) => `alm-${carrier}-${key}-${role}`)),
@@ -874,6 +888,10 @@ describe('alm-conformance recipe family', () => {
             'checkpoint-recovery',
             'checkpoint-lag',
             'ordering-resync',
+            'edge-order-stream',
+            'edge-order-loss-stream',
+            'edge-order-reload',
+            'edge-order-late-join',
             'cross-carrier-duplicate',
             'not-yet-in-sync',
             'receipt-exhausted-fallback',
@@ -918,7 +936,13 @@ describe('alm-conformance recipe family', () => {
             ['full'],
             ['full'],
             ['full'],
-            // The paced cells, after the volatile bound cells.
+            ['full'],
+            // The edge order cells after the swapped stream.
+            ['full'],
+            ['full'],
+            ['full'],
+            ...REPLY_ADDRESSED_KEYS_BY_CARRIER.rtc.map(() => ['full']),
+            // The paced cells, after the volatile bound cells and the correlated reply.
             ['smoke', 'full'],
             ['smoke', 'full'],
             ['smoke', 'full'],
@@ -1785,6 +1809,7 @@ describe('alm-conformance recipe family', () => {
         }
         expect(held).toEqual([
             'ws ordering-gap-repair sender alm-ws-ordering-gap-repair-sender-hold-ws',
+            'ws repair-exhausted sender alm-ws-repair-exhausted-sender-hold-ws',
             'ws seeded-jitter-stream sender alm-ws-seeded-jitter-stream-sender-hold-ws',
             'ws buffered-track-drains sender alm-ws-buffered-track-drains-sender-hold-ws',
             'rtc ordering-resync sender alm-rtc-ordering-resync-sender-hold-rtc',

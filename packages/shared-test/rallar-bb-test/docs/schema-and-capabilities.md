@@ -333,12 +333,15 @@ no connected session fails with `RALLAR_BLACK_BOX_ALM_RAW_CONTROL_UNAVAILABLE`.
 `messages.awaitReply` names `handleId`, an earlier `messages.send` handle, and `timeoutMs`, which it requires,
 and optionally `connection`. It waits for the one reply to that request, matched on the reply's `replyToMsgId`, and
 returns a payload-free value: `{ handleId, status, state, corrId }`, with `status` one of `replied`, `timeout`,
-`aborted` and `undelivered`, `state` the request's lifecycle state when the wait ended and `corrId` its correlation;
+`aborted`, `undelivered` and `unanswerable`, `state` the request's lifecycle state when the wait ended and `corrId` its
+correlation;
 `replied` adds `reply: { msgId, replyToMsgId, corrId, senderId, typeId, traceId }`. What the reply carried stays in the page.
 The page ends its wait 250 ms before `timeoutMs`, so a `timeout` is the command's value and never its failure, unlike
 `messages.observe`; the first timeout ends every wait of the request, and a reply arriving after it is dropped with a
 `reply-late` inbound diagnostic whose `cause` is `timed-out`. A request whose lifecycle ends terminal in any state other
-than `acknowledged`, or `transport-accepted` with no receipt to wait for, reads `undelivered`. A handle the
+than `acknowledged`, or `transport-accepted` with no receipt to wait for, reads `undelivered`. A request on a topic WS
+cannot carry reads `unanswerable` at the call, whatever its state and before any wait: its reply would travel WS on that
+topic. The value does not carry the issues the product states with it. A handle the
 page never sent, or no longer retains, fails the command as invalid input. Replies travel over WS only.
 
 `messages.reply` names `typeId`, `index`, `payload` and `handleId`, and optionally `connection`. The typed channel
@@ -563,7 +566,7 @@ room id. The sender reads the identity of a reply from the value its `messages.a
 adapter's `rallar.bb.messages.reply_awaited` diagnostic for that command, whose `contains` names the request's
 `{resultCache…}` msgId, since an `assert` compares with no token.
 
-- `reply-correlated` (`ws`, `rtc-with-ws-fallback`, the addressed family): the sender's `command` to `toPeer:
+- `reply-correlated` (`ws`, `rtc`, `rtc-with-ws-fallback`, the addressed family): the sender's `command` to `toPeer:
   'receiver'` reads `replied`; the reply's `replyToMsgId` and `corrId` and the request's `corrId` are the request's
   msgId, the reply takes the request's type, and its `senderId` is the session the request's receipt confirmed. The
   receiver replies to its one arrival and reads its reply `acknowledged`.
@@ -863,25 +866,29 @@ own to show). The cell has no `rtc-with-ws-fallback` variant: a hand-over moves
 one message of an ordering track to WS, whose relay never saw the track's other messages and gates the one it
 receives as its own gap, so the hand-over of an ordered message is a carried limit, not a cell.
 
-The `repair-exhausted` conformance scenario runs over `rtc` alone, on
-three agents: two receivers, each ordering the track itself. It is the gap repair whose message hold is never
+The `repair-exhausted` conformance scenario runs over `ws` and `rtc`, on
+three agents: a sender and two receivers. Over `rtc` each receiver orders the track itself and is a requester of its
+own; over `ws` the server orders the track and is the one requester. It is the gap repair whose message hold is never
 released. The sender opens the gap only once both receivers cued that they delivered seq 1 (D630): that cue is its
 ordering point, and it waits for no carrier acceptance of seq 1. Every send states `maxRepairs: 1`, a budget of one
-retransmit per receiver. Each receiver reports the gap once seq 3 arrives, and each first report spends that
-receiver's own one retransmit, still held. The sender sends seq 4 too, whose arrival reports the gap again at both
-receivers; that report repeats its requester's first request number and charges nothing (D573). The range stays
-missing, so each receiver renews it 1 to 1.5 s after it went missing; the first renewal, a request numbered 2, finds
-its receiver's budget spent, and the sender settles seq 2. The sender observes seq 2's handle `failed` within its
-10 s observation budget and asserts `failure.kind: 'skipped'` with `failure.reason: 'repair-exhausted'`. The
+retransmit per requester. Each requester reports the gap once seq 3 arrives, and each first report spends that
+requester's own one retransmit, still held. The sender sends seq 4 too, whose arrival reports the gap again at each
+requester; that report repeats its requester's first request number and charges nothing (D573). The range stays
+missing, so each requester renews it 1 to 1.5 s after it went missing; the first renewal, a request numbered 2, finds
+its requester's budget spent, and the sender settles seq 2. The sender observes seq 2's handle `failed` within its
+10 s observation budget and asserts `failure.kind: 'skipped'` with `failure.reason: 'repair-exhausted'`, read from the
+carrier matrix's cell of the carrier the cell runs over. The
 settlement ends the message: its last command, `no-repair-commit-after-failed-2`, an absent wait on
 `rallar.browser.alm.outbound_diagnostics`, reads no `commit-phases` event of seq 2 with `origin: 'repair'` and
 `commitOutcome: 'committed'` in the 5 s from the wait's own start, a few events after the handle read `failed`. The
 exhausting renewal's own commit, which ends the message, precedes the settlement, so the wait starts its history at
 its own first event (`sinceCommandIdPrefix` is its own command id). The lane sees a dispatch's commit, not its frame:
 whether a frame left the page is not in the snapshot. Both receivers receive the first send once and prove the
-absence of a second, since seq 3 and seq 4 wait for a seq 2 that never arrives. The hold stays until the page ends: a release would let the second frame reach a receiver inside its
-absence window. The cell is not run over `ws`, where the server orders the track and requests its gaps; it is
-untested there since the repair budget became per requester. Both cells are withheld from the hosted
+absence of a second, since seq 3 and seq 4 wait for a seq 2 that never arrives: in each receiver's own buffer over
+`rtc`, and in the server's over `ws`, which delivers no frame of a track past a sequence it
+still waits for. The hold stays
+until the page ends: a release would let the second frame reach a receiver inside its
+absence window. Both cells are withheld from the hosted
 manifests, as the checkpoint cells are; they run in the local lane and in the observation's full read.
 
 Five fault stream cells run in the full scope of the two-agent family (D669), withheld from the hosted manifests too.
@@ -1850,7 +1857,7 @@ A browser agent's `stats` result also carries its page's session ledger under
 `stats.rallar.alm`: `{ usage: { admissions, bytes, oldestAgeMs, tracks },
 own: { admissions, bytes }, inbound: { admissions, bytes },
 limits: { maxAdmissions, maxBytes, maxAgeMs, maxTracks }, overloaded,
-repliesHeld, replyWaitsOpen, publication, ordering, orderingTracks, deliveredMarkers }`. All but the last two are read at the
+repliesHeld, replyWaitsOpen, publication, ordering, congestionEpisodes, edgeOrder, orderingTracks, deliveredMarkers }`. All but the last two are read at the
 command from `rallar.messages.readUsage()` (D180): `usage` holds the totals of the ledger's
 two pools, `own` and `inbound` each pool (D189), and `overloaded` says the
 smallest next own send would be refused at the count or byte limit.
@@ -1880,6 +1887,13 @@ connect and counted per event, not per distinct copy.
 settlement of the attempt that was not deferred again; `openEpisodes`, the deferred messages no settlement has ended;
 and `unrecordedSamples`, the episodes the connect could not measure. It is cumulative over the connect and across both
 carriers. A page answer whose histogram has other bounds, or whose counts are not counts, fails the stats command.
+`edgeOrder` is `readUsage().edgeOrder`, required: what the page's edge-ordered channels keep at the read — `streams`
+(the sender streams it follows, at most 256), `heldMessages` (messages held for their turn, at most 256 a stream),
+`evictedStreams` (records of the streams the stream cap pushed out, at most 256), `sendStreams` (the streams it minted
+as a sender, at most 256) and `openSends` (its open sends and stated holes, each gone by its send's deadline) — and
+three counts cumulative since the page loaded, across its connects: `lateDrops`, `gaps` and `heldDropped`. An `assert`
+reads one as `latestStats.rallar.alm.edgeOrder.heldMessages`. A page answer whose block is absent or holds a value that
+is not a count fails the stats command.
 `orderingTracks` is the page's own, not the facade's: the sum of the latest
 `ordering-tracks` count each inbound store stated on the `storage` diagnostics
 port since the page's last `close` (D191; 0 before a store opened a track) — the same block reaches

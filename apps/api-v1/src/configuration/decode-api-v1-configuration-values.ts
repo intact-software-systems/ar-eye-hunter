@@ -15,6 +15,7 @@ export interface ApiV1ConfigurationSecrets {
     readonly authenticationCredentialSecret: string | undefined;
     readonly blackBoxOperatorTokenSecret: string | undefined;
     readonly databaseUrl: string | undefined;
+    readonly webPushVapid: string | undefined;
     readonly meteredApiKey: string | undefined;
 }
 
@@ -22,6 +23,7 @@ const SECRET_ENVIRONMENT_NAME_BY_KEY = {
     authenticationCredentialSecret: 'RALLAR_AUTH_CREDENTIAL_SECRET',
     blackBoxOperatorTokenSecret: 'RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET',
     databaseUrl: 'DATABASE_URL',
+    webPushVapid: 'RALLAR_WEB_PUSH_VAPID_JSON',
     meteredApiKey: 'METERED_API_KEY'
 } as const;
 
@@ -29,6 +31,7 @@ const SECRET_PATH_BY_KEY = {
     authenticationCredentialSecret: 'authentication.credentialSecret',
     blackBoxOperatorTokenSecret: 'blackBox.operatorToken.secret',
     databaseUrl: 'database.url',
+    webPushVapid: 'webPush',
     meteredApiKey: 'ice.apiKey'
 } as const;
 
@@ -47,6 +50,7 @@ export function readApiV1ConfigurationSecrets(
             authenticationCredentialSecret: undefined,
             blackBoxOperatorTokenSecret: undefined,
             databaseUrl: undefined,
+            webPushVapid: undefined,
             meteredApiKey: undefined
         };
     }
@@ -70,6 +74,7 @@ export function readApiV1ConfigurationSecrets(
             source.blackBoxOperatorTokenSecret
         ),
         databaseUrl: decoder.optionalSecret('databaseUrl', source.databaseUrl),
+        webPushVapid: decoder.optionalSecret('webPushVapid', source.webPushVapid),
         meteredApiKey: decoder.optionalSecret('meteredApiKey', source.meteredApiKey)
     };
 }

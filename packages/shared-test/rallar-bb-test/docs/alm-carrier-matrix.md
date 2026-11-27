@@ -23,7 +23,9 @@ A capability is one row: a `statement` and one cell for each of `ws`, `rtc` and
 
 Who refuses (`by`):
 
-- `call`: the send call throws a validation issue, at `path` with `code`. No handle exists.
+- `call`: the send call throws a validation issue, at `path` with `code`. No handle exists. A reply
+  wait's refusal is its call's resolved value instead: the request has a handle, whose `awaitReply`
+  never throws and resolves `unanswerable` with that issue.
 - `origin`: the sender's page ends the handle `rejected` before any carrier attempt.
 - `trusted-server`: the WS server refuses the send at its own admission and answers the sender with a
   NACK.
@@ -56,7 +58,9 @@ Where a send is handed to WS (`at`):
 ## Proofs
 
 - `lane-cell`: a scenario of the conformance catalogue, by its `scenarioKey`. It runs over that
-  carrier in the lane's `full` scope and asserts the outcome there.
+  carrier in the lane's `full` scope and asserts the outcome there. When the scenario shows only a
+  part of the outcome, its `because` names that part and what the run leaves open, and another proof
+  of the cell covers the rest.
 - `unit-test`: a test file, a part of one test's title, and a sentence on what that test pins. Use it
   for an outcome the lane cannot stage or witness, such as a call that throws.
 - `documented-limit`: a document and the phrase in it that states the limit. Use it for a property
@@ -96,6 +100,9 @@ The second check runs in the lane. The others, and the tests of the second's val
 5. **Document phrases.** Every `documented-limit` proof's `limit` must appear in its `document`.
 6. **The unproven list.** The test pins every `unproven` proof by capability, carrier and `closedBy`.
    Nobody adds or removes one without changing that list.
+7. **The partial lane cells.** The test pins every `lane-cell` proof that carries a `because`, by
+   capability, carrier, scenario and sentence. Nobody narrows what a lane cell is said to show
+   without changing that list.
 
 ## Add a capability
 
@@ -105,8 +112,8 @@ The second check runs in the lane. The others, and the tests of the second's val
    word the vocabulary lacks, add it to `AlmCarrierOutcome`, and only then.
 3. Give each stated cell its proofs. Name what exists today, and add an `unproven` proof for each
    part nothing shows yet.
-4. Write the same outcomes, by hand, into the test's `EXPECTED_OUTCOMES`, and each `unproven` proof
-   into `UNPROVEN_CELLS`.
+4. Write the same outcomes, by hand, into the test's `EXPECTED_OUTCOMES`, each `unproven` proof
+   into `UNPROVEN_CELLS`, and each lane cell that carries a `because` into `PARTIAL_LANE_CELLS`.
 5. For each scenario a cell newly names, make its definition take
    `resolveAlmCarrierMatrixCellCarriers('<scenarioKey>')`, delete the carriers it stated, and add it
    to the test's `EXPECTED_CELL_CARRIERS`. The scenario must carry the `full` tag.

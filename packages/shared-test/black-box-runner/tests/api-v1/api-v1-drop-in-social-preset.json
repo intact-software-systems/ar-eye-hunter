@@ -490,7 +490,7 @@
           "route": {
             "topicId": "room.match",
             "resourceId": "drop-in-live-resource-{runId}",
-            "contextId": "{applicationId}:{workspaceId}"
+            "contextId": "{groupId}"
           },
           "targets": {
             "mode": "broadcast",

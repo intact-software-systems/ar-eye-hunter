@@ -474,6 +474,153 @@
       }
     },
     {
+      "name": "roomMulticastNamingAnotherRoomIsRefused",
+      "type": "ws.send",
+      "connection": "wsAlice",
+      "request": {
+        "send": {
+          "id": {
+            "v": 4,
+            "msgId": "multicast-naming-another-room-{runId}",
+            "ts": 0,
+            "senderId": "{aliceSessionId}",
+            "sessionId": "{aliceSessionId}",
+            "traceId": "multicast-naming-another-room-trace-{runId}"
+          },
+          "route": {
+            "topicId": "room.chat",
+            "resourceId": "multicast-naming-another-room-{runId}",
+            "contextId": "another-room-{runId}"
+          },
+          "targets": {
+            "mode": "multicast",
+            "groupRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupId}"
+            }
+          },
+          "delivery": { "reliability": "best-effort", "ack": "none" },
+          "payload": {
+            "typeId": "chat.another-room.v1",
+            "contentType": "application/json",
+            "resource": "{\"text\":\"labelled as another room\",\"runId\":\"{runId}\"}"
+          }
+        },
+        "outputs": {
+          "multicastNamingAnotherRoomNackResource": "matchedMessage.data.payload.resource"
+        }
+      },
+      "expect": {
+        "connection": "wsAlice",
+        "withinMs": 10000,
+        "message": {
+          "route": { "topicId": "al-control" },
+          "targets": { "mode": "unicast", "toPeerId": "{aliceSessionId}" },
+          "payload": { "typeId": "al.control.nack.v5" }
+        },
+        "consume": true
+      }
+    },
+    {
+      "name": "parseMulticastNamingAnotherRoomNack",
+      "type": "set",
+      "output": "multicastNamingAnotherRoomNack",
+      "transform": { "jsonParse": { "path": "outputs.multicastNamingAnotherRoomNackResource" } }
+    },
+    {
+      "name": "assertMulticastNamingAnotherRoomNackShape",
+      "type": "assert",
+      "actual": {
+        "msgId": "{multicastNamingAnotherRoomNack.msgId}",
+        "reason": "{multicastNamingAnotherRoomNack.reason}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "body": { "msgId": "multicast-naming-another-room-{runId}", "reason": "unauthorized" }
+      }
+    },
+    {
+      "name": "roomBroadcastNamingAnotherRoomIsRefused",
+      "type": "ws.send",
+      "connection": "wsAlice",
+      "request": {
+        "send": {
+          "id": {
+            "v": 4,
+            "msgId": "broadcast-naming-another-room-{runId}",
+            "ts": 0,
+            "senderId": "{aliceSessionId}",
+            "sessionId": "{aliceSessionId}",
+            "traceId": "broadcast-naming-another-room-trace-{runId}"
+          },
+          "route": {
+            "topicId": "room.chat",
+            "resourceId": "broadcast-naming-another-room-{runId}",
+            "contextId": "another-room-{runId}"
+          },
+          "targets": {
+            "mode": "broadcast",
+            "scope": "room",
+            "groupRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupId}"
+            }
+          },
+          "delivery": { "reliability": "best-effort", "ack": "none" },
+          "payload": {
+            "typeId": "chat.another-room.v1",
+            "contentType": "application/json",
+            "resource": "{\"text\":\"labelled as another room\",\"runId\":\"{runId}\"}"
+          }
+        },
+        "outputs": {
+          "broadcastNamingAnotherRoomNackResource": "matchedMessage.data.payload.resource"
+        }
+      },
+      "expect": {
+        "connection": "wsAlice",
+        "withinMs": 10000,
+        "message": {
+          "route": { "topicId": "al-control" },
+          "targets": { "mode": "unicast", "toPeerId": "{aliceSessionId}" },
+          "payload": { "typeId": "al.control.nack.v5" }
+        },
+        "consume": true
+      }
+    },
+    {
+      "name": "parseBroadcastNamingAnotherRoomNack",
+      "type": "set",
+      "output": "broadcastNamingAnotherRoomNack",
+      "transform": { "jsonParse": { "path": "outputs.broadcastNamingAnotherRoomNackResource" } }
+    },
+    {
+      "name": "assertBroadcastNamingAnotherRoomNackShape",
+      "type": "assert",
+      "actual": {
+        "msgId": "{broadcastNamingAnotherRoomNack.msgId}",
+        "reason": "{broadcastNamingAnotherRoomNack.reason}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "body": { "msgId": "broadcast-naming-another-room-{runId}", "reason": "unauthorized" }
+      }
+    },
+    {
+      "name": "bobReceivesNoSendNamingAnotherRoom",
+      "type": "ws.wait",
+      "connection": "wsBob",
+      "expect": {
+        "connection": "wsBob",
+        "withinMs": 1000,
+        "absent": {
+          "payload": { "typeId": "chat.another-room.v1" }
+        }
+      }
+    },
+    {
       "name": "commandAddressedToTheServerIsAcknowledgedByTheServer",
       "type": "ws.send",
       "connection": "wsAlice",

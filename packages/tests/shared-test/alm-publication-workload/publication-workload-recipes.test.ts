@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
     createPublicationWorkloadRecipes,
-    type PublicationWorkloadRecipes
+    type PublicationWorkloadRoleRecipe,
+    type PublicationWorkloadRoomRecipes
 } from '@shared-test/rallar-bb-test/conformance/alm/publication-workload/create-publication-workload-recipes.ts';
 import type { PublicationWorkloadParameters } from '@shared-test/rallar-bb-test/conformance/alm/publication-workload/validate-publication-workload-parameters.ts';
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
@@ -25,17 +26,20 @@ import { toIdleALOutboundCongestionEpisodeFigures } from '@shared/alm/outbound/c
 import { toIdleALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
+import { IDLE_RALLAR_EDGE_ORDER_USAGE } from '../idle-rallar-edge-order-usage.ts';
 import { toNestedCommands } from '../to-nested-commands.ts';
 
 const GROUP = { applicationId: 'workload-app', workspaceId: 'workload-workspace', groupId: 'workload-room' };
+const SECOND_GROUP = { ...GROUP, groupId: 'workload-room-2' };
 
 /**
- * Three agents, one send every 500 ms for 30 seconds on rtc: 30,000 / 500 = 60 frames, and 95 % of 60 is 57 for both
- * ratios.
+ * One room of three agents, one of them sending every 500 ms for 30 seconds on rtc: 30,000 / 500 = 60 frames, and 95 %
+ * of 60 is 57 for both ratios.
  */
 const POINT: PublicationWorkloadParameters = {
-    group: GROUP,
+    groups: [GROUP],
     participantCount: 3,
+    publisherCount: 1,
     carrier: 'rtc',
     publishIntervalMs: 500,
     windowMs: 30_000,
@@ -54,12 +58,30 @@ const FRAME_TYPE_ID = 'room.publication-workload.frame.v1';
 
 const WINDOW_STARTED_AT_EPOCH_MS = 1_800_000_000_000;
 
-function createRecipes(parameters: PublicationWorkloadParameters): PublicationWorkloadRecipes {
+function createRooms(parameters: PublicationWorkloadParameters): readonly PublicationWorkloadRoomRecipes[] {
     const created = createPublicationWorkloadRecipes(parameters);
     if (created.right === undefined) {
         throw new Error(`The point is not valid: ${JSON.stringify(created.left)}`);
     }
-    return created.right;
+    return created.right.rooms;
+}
+
+/** The roles of the point's first room, in the order the family gives them. */
+function createRoles(parameters: PublicationWorkloadParameters): readonly PublicationWorkloadRoleRecipe[] {
+    return createRooms(parameters)[0].roles;
+}
+
+/** The first room's publisher that writes the group, and its subscriber. */
+function createRecipes(
+    parameters: PublicationWorkloadParameters
+): Readonly<Record<'publisher' | 'subscriber', PublicationWorkloadRoleRecipe>> {
+    const roles = createRoles(parameters);
+    const publisher = roles.find((role) => role.kind === 'publisher');
+    const subscriber = roles.find((role) => role.kind === 'subscriber');
+    if (publisher === undefined || subscriber === undefined) {
+        throw new Error(`The room holds no publisher or no subscriber: ${roles.map((role) => role.kind).join(', ')}`);
+    }
+    return { publisher, subscriber };
 }
 
 /** The loops at the top level of a recipe whose children send: a loop nested in another would be missing here. */
@@ -91,6 +113,19 @@ function toCommandsAfterBarrier(
 
 function toBarrierIds(recipe: RallarBlackBoxTestRecipe): readonly string[] {
     return recipe.commands.flatMap((command) => command.kind === 'barrier' ? [command.barrierId] : []);
+}
+
+/** The requests of a recipe that write: only the agent that creates the room's group has any. */
+function toWriteRequests(recipe: RallarBlackBoxTestRecipe): readonly RallarBlackBoxTestCommand[] {
+    return recipe.commands.filter((command) => command.kind === 'http.request' && command.request.method !== 'GET');
+}
+
+/** What an agent's recipe passes before it runs: the recipe schema, the control validation and the preflight. */
+function expectRecipeAdmitted(recipe: RallarBlackBoxTestRecipe): void {
+    expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipe)).toEqual({ ok: true, errors: [] });
+    expect(toNestedCommands(recipe.commands).map((command) => validateRallarBlackBoxTestCommand(command)))
+        .toEqual(toNestedCommands(recipe.commands).map(() => ({ ok: true })));
+    expect(distributedRecipePreflight(recipe).errors).toEqual([]);
 }
 
 describe('the recipes of one point of the publication workload family', () => {
@@ -165,12 +200,8 @@ describe('the recipes of one point of the publication workload family', () => {
         (carrier) => {
             const { publisher, subscriber } = createRecipes({ ...POINT, carrier });
 
-            for (const recipe of [publisher.recipe, subscriber.recipe]) {
-                expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipe)).toEqual({ ok: true, errors: [] });
-                expect(toNestedCommands(recipe.commands).map((command) => validateRallarBlackBoxTestCommand(command)))
-                    .toEqual(toNestedCommands(recipe.commands).map(() => ({ ok: true })));
-                expect(distributedRecipePreflight(recipe).errors).toEqual([]);
-            }
+            expectRecipeAdmitted(publisher.recipe);
+            expectRecipeAdmitted(subscriber.recipe);
             expect(
                 toNestedCommands(publisher.recipe.commands).flatMap((command) =>
                     command.kind === 'messages.send' && 'carrier' in command ? [command.carrier] : []
@@ -179,26 +210,143 @@ describe('the recipes of one point of the publication workload family', () => {
         }
     );
 
-    it.each([
-        { participantCount: 3, subscriberAgents: 2 },
-        { participantCount: 50, subscriberAgents: 49 }
-    ])(
-        'splits $participantCount agents into one publisher, which alone writes the group, and $subscriberAgents subscribers',
-        ({ participantCount, subscriberAgents }) => {
-            const { publisher, subscriber } = createRecipes({ ...POINT, participantCount });
+    it.each(['ws', 'rtc', 'rtc-with-ws-fallback'] as const)(
+        'gives a point of two publishers on %s three recipes the schema, the control validation and the preflight all admit',
+        (carrier) => {
+            const roles = createRoles({ ...POINT, publisherCount: 2, carrier });
 
-            expect({ publisher: publisher.agentCount, subscriber: subscriber.agentCount })
-                .toEqual({ publisher: 1, subscriber: subscriberAgents });
-            expect(publisher.recipe.commands.find((command) => command.kind === 'http.request' && command.request.method !== 'GET'))
+            expect(roles).toHaveLength(3);
+            roles.forEach(({ recipe }) => expectRecipeAdmitted(recipe));
+        }
+    );
+
+    it.each([
+        {
+            split: '3 agents with 1 publisher into that publisher and 2 subscribers',
+            point: { participantCount: 3, publisherCount: 1 },
+            roleAgents: [['publisher', 1], ['subscriber', 2]]
+        },
+        {
+            split: '50 agents with 1 publisher into that publisher and 49 subscribers',
+            point: { participantCount: 50, publisherCount: 1 },
+            roleAgents: [['publisher', 1], ['subscriber', 49]]
+        },
+        {
+            split: '3 agents with 2 publishers into one publisher, 1 joining publisher and 1 subscriber',
+            point: { participantCount: 3, publisherCount: 2 },
+            roleAgents: [['publisher', 1], ['publisher', 1], ['subscriber', 1]]
+        },
+        {
+            split: '15 agents with 5 publishers into one publisher, 4 joining publishers and 10 subscribers',
+            point: { participantCount: 15, publisherCount: 5 },
+            roleAgents: [['publisher', 1], ['publisher', 4], ['subscriber', 10]]
+        }
+    ])(
+        'splits $split: the first publisher alone writes the group, and every role waits for all the agents',
+        ({ point, roleAgents }) => {
+            const { participantCount } = point;
+            const [publisher, ...joining] = createRoles({ ...POINT, ...point });
+
+            expect([publisher, ...joining].map((role) => [role.kind, role.agentCount])).toEqual(roleAgents);
+            expect(toWriteRequests(publisher.recipe)[0])
                 .toMatchObject({ request: { body: { groupId: 'workload-room', maxMembers: participantCount } } });
-            expect(subscriber.recipe.commands.filter((command) => command.kind === 'http.request' && command.request.method !== 'GET'))
-                .toEqual([]);
-            for (const { recipe } of [publisher, subscriber]) {
+            expect(joining.flatMap(({ recipe }) => toWriteRequests(recipe))).toEqual([]);
+            for (const { recipe } of [publisher, ...joining]) {
                 expect(recipe.commands.find((command) => command.kind === 'wait' && command.absent !== true))
                     .toMatchObject({ match: { payloadFields: { 'data.activeSessionCount': participantCount } } });
             }
         }
     );
+
+    it('gives a point of two publishers a joining publisher: it writes no group, connects once a peer exists under the publisher\'s connection, and runs the first publisher\'s window, barrier and gate', () => {
+        const [publisher, joiningPublisher, subscriber] = createRoles({ ...POINT, publisherCount: 2 });
+
+        expect([publisher, joiningPublisher, subscriber].map((role) => role.recipe.recipeId)).toEqual([
+            'publication-workload-room-1-publisher',
+            'publication-workload-room-1-joining-publisher',
+            'publication-workload-room-1-subscriber'
+        ]);
+        const joining = joiningPublisher.recipe;
+        expect(toWriteRequests(joining)).toEqual([]);
+        const connects = joining.commands.filter((command) => command.kind === 'rtc.connect');
+        expect(connects).toHaveLength(1);
+        expect(connects[0]).toMatchObject({
+            commandId: 'publication-workload-publisher-connect',
+            connection: 'publication-workload-publisher',
+            readiness: { minReadyPeers: 1 }
+        });
+        // The publisher that writes the group connects before any peer exists, so its connect waits for none.
+        expect(publisher.recipe.commands.find((command) => command.kind === 'rtc.connect')).not.toHaveProperty('readiness');
+        expect(toBarrierIds(joining)).toEqual([
+            'publication-workload-group-created',
+            'publication-workload-connected',
+            'publication-workload-setup-complete',
+            'publication-workload-complete'
+        ]);
+        const window = toCommandsAfterBarrier(joining, 'publication-workload-setup-complete');
+        expect(window.map((command) => command.commandId)).toEqual([
+            'publication-workload-publisher-frames',
+            'publication-workload-publisher-drain',
+            'publication-workload-publisher-stats',
+            'publication-workload-publisher-complete',
+            'publication-workload-publisher-assert-accepted-sends'
+        ]);
+        // Each publisher's gate is its own stage's count against 95 % of its own 60 frames.
+        expect(window[4]).toMatchObject({ operator: 'gte', expected: 57 });
+        expect(window).toEqual(toCommandsAfterBarrier(publisher.recipe, 'publication-workload-setup-complete'));
+        expect(joining.eventHistory).toBeUndefined();
+    });
+
+    it('runs in a second room the commands of the same point in that room alone, under recipe ids of its own', () => {
+        const [first, second] = createRooms({ ...POINT, groups: [GROUP, SECOND_GROUP] });
+        const [alone] = createRooms({ ...POINT, groups: [SECOND_GROUP] });
+        const toRecipes = (room: PublicationWorkloadRoomRecipes): readonly RallarBlackBoxTestRecipe[] => room.roles.map((role) => role.recipe);
+
+        expect([first.group, second.group]).toEqual([GROUP, SECOND_GROUP]);
+        expect([first, second].flatMap(toRecipes).map(({ recipeId, name }) => ({ recipeId, name }))).toEqual([
+            { recipeId: 'publication-workload-room-1-publisher', name: 'Publication workload room 1 publisher' },
+            { recipeId: 'publication-workload-room-1-subscriber', name: 'Publication workload room 1 subscriber' },
+            { recipeId: 'publication-workload-room-2-publisher', name: 'Publication workload room 2 publisher' },
+            { recipeId: 'publication-workload-room-2-subscriber', name: 'Publication workload room 2 subscriber' }
+        ]);
+        expect(second.roles.map(({ kind, agentCount, recipe }) => ({ kind, agentCount, commands: recipe.commands })))
+            .toEqual(alone.roles.map(({ kind, agentCount, recipe }) => ({ kind, agentCount, commands: recipe.commands })));
+        expect(toSoleSendLoop(toRecipes(second)[0]).commands[0]).toMatchObject({ roomRef: SECOND_GROUP });
+        // Each room's commands name its own group id and never the other's.
+        expect(JSON.stringify(toRecipes(second).map((recipe) => recipe.commands))).not.toContain('"workload-room"');
+        expect(JSON.stringify(toRecipes(first).map((recipe) => recipe.commands))).not.toContain('"workload-room-2"');
+    });
+
+    it('meets every role of both rooms at the same four barriers with the same timeouts', () => {
+        const recipes = createRooms({ ...POINT, publisherCount: 2, groups: [GROUP, SECOND_GROUP] })
+            .flatMap((room) => room.roles.map((role) => role.recipe));
+
+        expect(recipes).toHaveLength(6);
+        for (const recipe of recipes) {
+            expect(
+                recipe.commands.flatMap((command) => command.kind === 'barrier' ? [{ barrierId: command.barrierId, timeoutMs: command.timeoutMs }] : []),
+                recipe.recipeId
+            ).toEqual([
+                { barrierId: 'publication-workload-group-created', timeoutMs: 45_000 },
+                // A joining agent's connect: the SDK connect and the room join at 45,000 ms each with a 5,000 ms
+                // margin, then its readiness of 45,000 ms and 650 ms for each of the room's 3 agents.
+                { barrierId: 'publication-workload-connected', timeoutMs: 141_950 },
+                // The 45,000 ms to settle and one held reshape of 60,000 ms.
+                { barrierId: 'publication-workload-setup-complete', timeoutMs: 105_000 },
+                // Twice the 30,000 ms window for the loop, the 5,100 ms drain and the 3,000 ms stats read.
+                { barrierId: 'publication-workload-complete', timeoutMs: 68_100 }
+            ]);
+        }
+    });
+
+    it('gives the stretch rung of five rooms of ten ten recipes for its 50 agents, each one the schema, the control validation and the preflight admit', () => {
+        const groups = ['a', 'b', 'c', 'd', 'e'].map((room) => ({ ...GROUP, groupId: `workload-room-${room}` }));
+        const roles = createRooms({ ...POINT, groups, participantCount: 10 }).flatMap((room) => room.roles);
+
+        expect(roles.map((role) => role.agentCount)).toEqual([1, 9, 1, 9, 1, 9, 1, 9, 1, 9]);
+        expect(new Set(roles.map((role) => role.recipe.recipeId)).size).toBe(10);
+        roles.forEach(({ recipe }) => expectRecipeAdmitted(recipe));
+    });
 
     it('meets both roles at the same four barriers, in order, under command ids of their own', () => {
         const { publisher, subscriber } = createRecipes(POINT);
@@ -266,7 +414,8 @@ function toPublisherAlmUsage(admitted: number): RallarBlackBoxTestAlmUsage {
             counters: { ...stage.counters, staged: 60, admitted, expired: 60 - admitted }
         },
         ordering: { entered: 0, omitted: 0, witnessed: 0, beforeEntry: 0 },
-        congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures()
+        congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures(),
+        edgeOrder: IDLE_RALLAR_EDGE_ORDER_USAGE
     };
 }
 
@@ -383,7 +532,10 @@ describe('a subscriber\'s count and its three guards, run by the browser runtime
     }
 
     /** One copy per stamp, each recorded 20 ms after the instant a numeric stamp names. */
-    async function runSubscriberCount(stamps: readonly (number | string)[]): Promise<SubscriberCountRun> {
+    async function runSubscriberCount(
+        point: PublicationWorkloadParameters,
+        stamps: readonly (number | string)[]
+    ): Promise<SubscriberCountRun> {
         let now = WINDOW_STARTED_AT_EPOCH_MS;
         const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
             now: () => now,
@@ -410,7 +562,7 @@ describe('a subscriber\'s count and its three guards, run by the browser runtime
                 }
             });
         });
-        const commands = toCommandsAfterBarrier(createRecipes(POINT).subscriber.recipe, 'publication-workload-complete')
+        const commands = toCommandsAfterBarrier(createRecipes(point).subscriber.recipe, 'publication-workload-complete')
             .filter((command) => command.kind !== 'stats');
         const results = [];
         for (const command of commands) {
@@ -429,7 +581,7 @@ describe('a subscriber\'s count and its three guards, run by the browser runtime
     }
 
     it('passes the count and its three guards on 58 copies that each carry a numeric stamp', async () => {
-        expect(await runSubscriberCount(toStamps(58))).toEqual({
+        expect(await runSubscriberCount(POINT, toStamps(58))).toEqual({
             observed: 58,
             passed: [
                 'publication-workload-subscriber-received',
@@ -442,7 +594,7 @@ describe('a subscriber\'s count and its three guards, run by the browser runtime
     });
 
     it('fails both age guards, not the count, when one of 57 copies still carries its unresolved stamp', async () => {
-        expect(await runSubscriberCount([...toStamps(56), '{loop.atEpochMs}'])).toEqual({
+        expect(await runSubscriberCount(POINT, [...toStamps(56), '{loop.atEpochMs}'])).toEqual({
             observed: 57,
             passed: [
                 'publication-workload-subscriber-received',
@@ -456,17 +608,38 @@ describe('a subscriber\'s count and its three guards, run by the browser runtime
     });
 
     it('fails on 61 copies, one more than the publisher has frames: a page delivers each message once, so the log holds another sender\'s or another run\'s', async () => {
-        const run = await runSubscriberCount(toStamps(61));
+        const run = await runSubscriberCount(POINT, toStamps(61));
 
         expect(run.observed).toBe(61);
         expect(run.failed).toEqual(['publication-workload-subscriber-assert-copies-within-frames']);
     });
 
     it('fails the count on 56 copies, one short of the 57 that 95 % of 60 frames asks for', async () => {
-        const run = await runSubscriberCount(toStamps(56));
+        const run = await runSubscriberCount(POINT, toStamps(56));
 
         expect(run.observed).toBe(56);
         expect(run.failed).toContain('publication-workload-subscriber-received');
+    });
+
+    it('has a subscriber of two publishers count 114 of their 120 frames and refuse a 121st', async () => {
+        // Two publishers of 60 frames each: 120 frames, and 114 of 120 is 0.95.
+        const twoPublishers = { ...POINT, publisherCount: 2 };
+        const guards = [
+            'publication-workload-subscriber-assert-every-copy-aged',
+            'publication-workload-subscriber-assert-ages-cover-copies',
+            'publication-workload-subscriber-assert-copies-within-frames'
+        ];
+
+        expect(await runSubscriberCount(twoPublishers, toStamps(113)))
+            .toMatchObject({ observed: 113, passed: guards });
+        expect(await runSubscriberCount(twoPublishers, toStamps(114)))
+            .toEqual({ observed: 114, passed: ['publication-workload-subscriber-received', ...guards], failed: [] });
+        expect(await runSubscriberCount(twoPublishers, toStamps(120)))
+            .toEqual({ observed: 120, passed: ['publication-workload-subscriber-received', ...guards], failed: [] });
+        expect(await runSubscriberCount(twoPublishers, toStamps(121))).toMatchObject({
+            observed: 121,
+            failed: ['publication-workload-subscriber-assert-copies-within-frames']
+        });
     });
 });
 

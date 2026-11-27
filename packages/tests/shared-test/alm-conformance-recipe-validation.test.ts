@@ -31,7 +31,7 @@ import { toNestedCommands } from './to-nested-commands.ts';
  * server-ordered-entry run there.
  * The membership fence runs where one hop judges the roster, its rejection only where the WS server does.
  * The leader refusal runs where one carrier judges the leader, its list refusal only where the WS server does.
- * Replies travel over WS only: the correlated reply runs on the fallback cell too, every other reply cell over ws.
+ * Replies travel over WS only: the correlated reply runs on every carrier, every other reply cell over ws.
  * The buffered track drains over rtc alone: over ws the server's gap NACKs spend the held frame's one retransmit.
  * The topic subscription cells run on every carrier, the successor's over ws alone; a granted topic rides RTC as a
  * signed room multicast, whose cells run over rtc, the revoked publisher over the fallback carrier too.
@@ -60,10 +60,16 @@ const CARRIER_SCENARIO_IDS = {
         'checkpoint-lag',
         'ordering-resync',
         'ordering-gap-repair',
+        'repair-exhausted',
         'seeded-loss-stream',
         'seeded-loss-unreceipted-stream',
         'lost-stream-start',
         'seeded-jitter-stream',
+        'edge-order-stream',
+        'edge-order-jitter-stream',
+        'edge-order-loss-stream',
+        'edge-order-reload',
+        'edge-order-late-join',
         'ws-unicast-receipt',
         'server-command',
         'server-originated',
@@ -119,10 +125,15 @@ const CARRIER_SCENARIO_IDS = {
         'seeded-loss-stream',
         'lost-stream-start',
         'lost-stream-start-bounded',
+        'edge-order-stream',
+        'edge-order-loss-stream',
+        'edge-order-reload',
+        'edge-order-late-join',
         'not-yet-in-sync',
         'ws-unicast-receipt',
         'capacity',
         'capacity-age',
+        'reply-correlated',
         'paced-latest',
         'paced-newest-n',
         'paced-expiry',
@@ -178,6 +189,10 @@ const CARRIER_SCENARIO_IDS = {
         'checkpoint-recovery',
         'checkpoint-lag',
         'ordering-resync',
+        'edge-order-stream',
+        'edge-order-loss-stream',
+        'edge-order-reload',
+        'edge-order-late-join',
         'cross-carrier-duplicate',
         'not-yet-in-sync',
         'fallback-within-deadline',

@@ -26,6 +26,13 @@ import { claimRefusedOnRtc } from '@shared-test/rallar-bb-test/conformance/alm/s
 import { backpressureDeferred } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/congestion/backpressure-deferred.ts';
 import { backpressureHandsOver } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/congestion/backpressure-hands-over.ts';
 import { backpressureRefused } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/congestion/backpressure-refused.ts';
+import { edgeOrderLateJoin } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/edge-order/edge-order-late-join.ts';
+import { edgeOrderLossStream } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/edge-order/edge-order-loss-stream.ts';
+import { edgeOrderReload } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/edge-order/edge-order-reload.ts';
+import {
+    edgeOrderJitterStream,
+    edgeOrderStream
+} from '@shared-test/rallar-bb-test/conformance/alm/scenarios/edge-order/edge-order-stream.ts';
 import { bufferedTrackDrains } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/fairness/buffered-track-drains.ts';
 import { churnBoundedTracks } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/fairness/churn-bounded-tracks.ts';
 import { ownShareUnderInbound } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/fairness/own-share-under-inbound.ts';
@@ -121,6 +128,12 @@ const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
     { scenarioKey: 'lost-stream-start', carriers: lostStreamStart.carriers },
     { scenarioKey: 'lost-stream-start-bounded', carriers: lostStreamStartBounded.carriers },
     { scenarioKey: 'seeded-jitter-stream', carriers: seededJitterStream.carriers },
+    // The edge order cells' lane evidence is local too: a combined recipe shares one connect, which declares no order.
+    { scenarioKey: 'edge-order-stream', carriers: edgeOrderStream.carriers },
+    { scenarioKey: 'edge-order-jitter-stream', carriers: edgeOrderJitterStream.carriers },
+    { scenarioKey: 'edge-order-loss-stream', carriers: edgeOrderLossStream.carriers },
+    { scenarioKey: 'edge-order-reload', carriers: edgeOrderReload.carriers },
+    { scenarioKey: 'edge-order-late-join', carriers: edgeOrderLateJoin.carriers },
     // The membership fence cells' lane evidence is local and the hosted full read's; manifest 22 stays as recorded.
     { scenarioKey: 'fenced-delivery', carriers: fencedDelivery.carriers },
     // A combined recipe keeps only its first prologue, so the recipient that leaves here would miss every later cell.

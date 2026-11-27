@@ -1,3 +1,4 @@
+import { EventWebPush } from '@shared-server/rallar-system/room-events/event-web-push.ts';
 import { TemporaryEventService } from '@shared-server/rallar-system/room-events/temporary-event-service.ts';
 import { EventRoomAccessEffects } from '@shared-server/rallar-system/room-events/event-room-access-effects.ts';
 import type { Hono } from 'hono';
@@ -359,6 +360,7 @@ function createDefaultApiV1RestServices(rest: DefaultApiV1RestInput) {
         organizerIdsByApplication: configuration.group.eventOrganizerIdsByApplication,
         organizerIds: configuration.authentication.adminClientIds };
     const roomEvents = new TemporaryEventService({
+        webPush: configuration.webPush ? new EventWebPush(configuration.webPush, fetch, nowEpochMs) : undefined,
         appInbox: runtime.appInbox, runtime: runtimeStateRepository, groups: eventGroups, authSessions: runtime.authSessionRepository,
         roomAccess: new EventRoomAccessEffects({ ...eventConfig, groups: eventGroups, sessions: runtime.authSessionRepository }),
         nowEpochMs

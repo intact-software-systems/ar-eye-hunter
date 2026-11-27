@@ -93,7 +93,8 @@ const ALM_REPLY_WAIT_STATUSES: readonly RallarBlackBoxTestMessagesAwaitReplyResu
     'replied',
     'timeout',
     'aborted',
-    'undelivered'
+    'undelivered',
+    'unanswerable'
 ];
 
 /** Keyed by every fallback reason, so a new reason fails to compile here instead of decoding as an invalid result. */

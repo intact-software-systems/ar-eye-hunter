@@ -19,6 +19,7 @@ export type RelicPlanningRequestFallback =
     | 'timeout'
     | 'aborted'
     | 'undelivered'
+    | 'unanswerable'
     | 'invalid-reply';
 
 export interface RelicPlanningRequestInput {

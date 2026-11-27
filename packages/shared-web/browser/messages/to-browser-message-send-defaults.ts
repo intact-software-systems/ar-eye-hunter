@@ -22,6 +22,8 @@ export interface BrowserTypedChannelPolicy {
     readonly onStorageUnavailable: RallarStorageUnavailablePolicy;
     /** Defined exactly on a `live` channel: the policy its sends are staged under. */
     readonly publication: ALPublicationPolicy | undefined;
+    /** `edge` on a channel whose sends are numbered at the call and sorted at each receiver. */
+    readonly order: RallarTypedMessageChannelDefinition['order'];
 }
 
 export interface BrowserMessageSendDefaults {

@@ -202,14 +202,19 @@ describe('ALM conformance hosted lane families', () => {
             ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.map((carrier) => `alm-${carrier}-lost-stream-start`),
             'alm-rtc-lost-stream-start-bounded',
             'alm-ws-seeded-jitter-stream',
+            // The edge order cells' evidence is the local full lane's too.
+            ...ALM_CONFORMANCE_CARRIERS.map((carrier) => `alm-${carrier}-edge-order-stream`),
+            'alm-ws-edge-order-jitter-stream',
+            ...['edge-order-loss-stream', 'edge-order-reload', 'edge-order-late-join'].flatMap((key) =>
+                ALM_CONFORMANCE_CARRIERS.map((carrier) => `alm-${carrier}-${key}`)
+            ),
             'alm-rtc-with-ws-fallback-backpressure-hands-over',
             'alm-rtc-backpressure-refused',
             ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.map((carrier) => `alm-${carrier}-backpressure-deferred`),
             ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.map((carrier) => `alm-${carrier}-own-share-under-inbound`),
             ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.map((carrier) => `alm-${carrier}-buffered-track-drains`),
             'alm-rtc-churn-bounded-tracks',
-            'alm-ws-reply-correlated',
-            'alm-rtc-with-ws-fallback-reply-correlated',
+            ...ALM_CONFORMANCE_CARRIERS.map((carrier) => `alm-${carrier}-reply-correlated`),
             'alm-ws-reply-timeout-late',
             'alm-ws-reply-undelivered',
             // The combined connect's one selector is the scenario topic's, so no hosted page hears a group-state delta.
@@ -252,6 +257,7 @@ describe('ALM conformance hosted lane families', () => {
             // A hosted run proves the paced send shape on three agents first (D481).
             ...ALM_CONFORMANCE_CARRIERS.map((carrier) => `alm-${carrier}-paced-isolation-lists`),
             // The exhausted repair's lane evidence is local and the hosted full read's; manifest 22 stays as recorded.
+            'alm-ws-repair-exhausted',
             'alm-rtc-repair-exhausted',
             'alm-rtc-unsigned-ack-refused',
             'alm-rtc-with-ws-fallback-unsigned-ack-refused',

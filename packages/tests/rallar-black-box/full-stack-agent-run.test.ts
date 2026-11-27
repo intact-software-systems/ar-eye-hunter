@@ -72,6 +72,7 @@ describe('ALM run on an agent per role', () => {
         const fallbackScenarioKeys = rtcScenarioKeys.filter((key) => key !== 'forged-recipient-ack');
         const expectedKeys = {
             ws: [
+                'repair-exhausted',
                 'paced-isolation-lists',
                 'aggregated-receipt',
                 'missing-recipient-retry',

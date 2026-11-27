@@ -40,7 +40,7 @@ const RESPONDER = ['received-1', 'reply-1', 'observe-reply-acknowledged-1', 'ass
 type ReplyScenarioId = (typeof REPLY_SCENARIO_IDS)[number];
 
 const REPLY_CELLS: Readonly<Record<ReplyScenarioId, Readonly<{ carriers: readonly AlmConformanceCarrier[]; laneFamily: string; }>>> = {
-    'reply-correlated': { carriers: ['ws', 'rtc-with-ws-fallback'], laneFamily: 'addressed' },
+    'reply-correlated': { carriers: ['ws', 'rtc', 'rtc-with-ws-fallback'], laneFamily: 'addressed' },
     'reply-timeout-late': { carriers: ['ws'], laneFamily: 'addressed' },
     'reply-undelivered': { carriers: ['ws'], laneFamily: 'addressed' },
     'reply-first-wins': { carriers: ['ws'], laneFamily: 'three-agent' }

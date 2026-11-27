@@ -1,3 +1,4 @@
+import type { EdgeOrderArrivals } from '@shared-web/browser/messages/edge-order/edge-order-arrivals.ts';
 import type {
     RallarMessage,
     RallarMessageHandle,
@@ -26,9 +27,30 @@ export function toRallarMessage<T>(
     };
 }
 
+/** An edge-ordered message as its handler sees it: the application's payload out of the wrapper, and its place. */
+export function toEdgeOrderedRallarMessage<T>(
+    handOver: EdgeOrderArrivals.HandOver,
+    sendReply: RallarMessageReplySender
+): RallarMessage<T> {
+    const { carrier, message } = handOver;
+    return {
+        ...toReceivedMessage(carrier, message, handOver.payload as T),
+        order: handOver.order,
+        reply: async (payload, options) => await sendReply(message, payload, options)
+    };
+}
+
 export function toRallarStateEventMessage<T>(
     transport: RallarMessageTransport,
     message: ALMessage
+): RallarStateEventMessage<T> {
+    return toReceivedMessage(transport, message, decodeMessagePayload<T>(message));
+}
+
+function toReceivedMessage<T>(
+    transport: RallarMessageTransport,
+    message: ALMessage,
+    payload: T
 ): RallarStateEventMessage<T> {
     return {
         transport,
@@ -39,7 +61,7 @@ export function toRallarStateEventMessage<T>(
         roomId: readRallarMessageRoomId(message),
         senderId: message.id.senderId,
         traceId: message.id.traceId,
-        payload: decodeMessagePayload<T>(message),
+        payload,
         raw: message,
         receivedAtEpochMs: Date.now()
     };

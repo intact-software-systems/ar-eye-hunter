@@ -56,6 +56,7 @@ interface EnvironmentSetting {
 const SECRET_SETTING_KEYS = [
     ['DATABASE_URL', 'databaseUrl'],
     ['RALLAR_AUTH_CREDENTIAL_SECRET', 'authenticationCredentialSecret'],
+    ['RALLAR_WEB_PUSH_VAPID_JSON', 'webPushVapid'],
     ['METERED_API_KEY', 'meteredApiKey'],
     ['RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET', 'blackBoxOperatorTokenSecret']
 ] as const;
