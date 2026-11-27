@@ -1622,38 +1622,109 @@ what the first hosted campaign must show (D643).
 ALM is product-complete when all of the following are true. Every capability is
 in scope by roadmap decision D5.
 
+Each criterion carries a mark read on `e8620c06c` (`main` after PR #944) on 2026-11-27. **Met**:
+every clause has evidence in the tree. **Partial**: the mark names what is evidenced and what is
+not. **Open**: there is no evidence either way. The roadmap's
+[requirement matrix](./alm-improvement-plan.md#requirement-to-evidence-matrix) holds the evidence
+by release.
+
 1. The same scenario suite runs over RTC and WS and produces equivalent logical
    admission, ordering, reliability, ACK, repair, expiry, and terminal outcomes.
+
+   **Partial.** Evidenced: one scenario catalogue runs over `ws`, `rtc` and
+   `rtc-with-ws-fallback` and asserts the same logical outcome on every carrier a scenario names
+   (`tests/playwright/rallar-black-box/full-stack-alm-conformance.spec.ts`), and its `smoke`
+   scope is required (D702). Not evidenced: 8 proofs of the carrier matrix are `unproven`
+   (`packages/shared-test/rallar-bb-test/conformance/alm/carrier-matrix/alm-carrier-matrix.ts`),
+   and the `full` scope is an observation that gates nothing (D702).
 2. Every live/persisted envelope and control message is bounded, decoded, and
    identity-bound before admitted-state mutation. Pure compute/validate and
    immutable write/send candidates preserve the same decisions across carriers.
+
+   **Partial.** Evidenced: one envelope decoder with the resource ceilings at every ingress
+   (`decodeALMessageValue`), the control decoder (`decodeALControlMessage`) and the
+   persisted-envelope decoders on every stored row. Not evidenced: the origin of an RTC room
+   send that asks no logical receipt. It is unsigned, so a room member can deliver content
+   under another session's id (D759, limit 1).
 3. At-least-once cannot be selected without an effective receipt strategy, and
    data-channel drops cannot be reported as successful sends. Partial progress
    and non-delivery uncertainty remain visible, including after cancellation.
+
+   **Partial.** Evidenced: the handle lifecycle (S1, #570), receipted audiences (S2c, #591 and
+   #595), the purpose's receipt and the fallback inside the deadline (S3a to S3c-ii, #597 to
+   #606). Not evidenced: an explicit at-least-once send with `ack: 'none'` is accepted and
+   retried without a receipt ("At-least-once", above); and a granted unicast whose grant holder
+   the room authority does not admit reads `acknowledged` with zero recipients (D789).
 4. Volatile ALM send/receive/retry performs zero AL-owned IndexedDB work on the
    common path, including reliable volatile policy when selected, and a
    `local-checkpoint` send performs none on its send path.
+
+   **Met.** A volatile send and a volatile inbound message spend 0 `al-admission` and 0
+   non-probe `al-work` operations, and a `local-checkpoint` send spends none on its send path,
+   pinned in `packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts`. Stated beside
+   the zero: the durable owners' idle probes, and a room send that names an ordering key, which
+   is sequenced on the durable lane whatever its durability (D529).
 5. Durable messages have one existing QueueBox/ResourceInbox work owner and bounded indexed queries;
    transaction/row/byte budgets do not grow with unrelated messages or old
    sessions, and each durability tier meets its recorded storage budget.
+
+   **Met.** One work owner per side on the QueueBox port
+   (`packages/shared/alm/work/al-work-queue-port.ts`; F2, #559) and one durable owner per
+   session (`packages/shared/alm/work/al-durable-work-ownership.ts`; I2a-ii, #630); index-range
+   reads bounded by `maxToRead` (`packages/shared/queuebox/indexed-db-queue-box-store.ts`); an
+   ended session's rows purged
+   (`packages/tests/shared-web/al-runtime/browser-al-runtime-stores.test.ts`); and each tier's
+   storage cost pinned as an exact count
+   (`packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts`). Stated beside it: no
+   store orders RESERVED rows by lease end, so past one page a lapsed lease is advertised late
+   (`plans/backlog.md`).
 6. Room multicast requires matching server-provided room authority, preserves
    bounded evidence catch-up/bootstrap and optimistic room progress, enforces
    authoritative membership fencing on every room send, respects required
    snapshot floors, and freezes the reliable intended audience at admission.
+
+   **Partial.** Evidenced: a reliable room send's audience is frozen at admission on both
+   carriers (S2c-ii, #595), and every room send carries the roster fence and is refused
+   `membership-fenced` past it (R2, #642). Not evidenced: a room send whose `contextId` names
+   another room. The WS server refuses it, no RTC receiver checks it, and the browser's
+   refusal at the call is ruled and not built on this commit (D788).
 7. Every target/ACK mode, including principal, world, all, and fixed audiences
    and the group-leader mode, has one documented semantic proven by the
    conformance lane over both carriers and exercised by one of the two games. A
    guarantee a carrier cannot provide rejects explicitly.
+
+   **Partial.** Evidenced: principal, fixed-list and `world` sends run in the lane over three
+   carriers (the `same-principal` family, D161), the leader ACK over three (the `leader-ack`
+   family, D169), and the games send to a principal and to the group leader (D162, D167,
+   D168). Not evidenced: no game sends a `world` broadcast, and a client's `all` is refused at
+   the call, which unit tests pin and no lane cell witnesses (D161).
 8. Ordering, diagnostic, control, retry, repair, and storage work is bounded and
    has clean resync/terminal behavior, aggregate memory bounds, and bounded
    audience/snapshot paging without an accidental room-size restriction.
+
+   **Partial.** Evidenced: the browser session's four bounds and bounded retention (V1a, #649),
+   backpressure as a congestion input (V1b-i, #650), the 15, 30 and 50 agent runs (V1c, #652
+   to #694) and the 75-minute run (V1d, #698). Not evidenced: bounds on the WS server, whose
+   memory pair is unbudgeted (`packages/shared/alm/inbound/README.md`) and for which no
+   per-topic or per-sender rate limit is marked built ("Resource and abuse limits", above).
 9. One message identity and lifecycle spans transport fallback; correlation,
    tracing, staged outcomes, and payload-safe observability work across retry,
    repair, restart, and every carrier attempt.
+
+   **Partial.** Evidenced: one envelope, identity, deadline and trace across a fallback (S3b,
+   #604; I1b-i), and reply correlation on the handle (I1a). Not evidenced: a durable RTC
+   message resumed after a reload has no handle and never hands over (D64); a handed-over
+   message leaves its ordering and supersedence track on the first carrier ("Transport
+   selection and parity", above); and replies travel over WS only (D441 to D446).
 10. Runtime disposal, multi-tab claims, quota/eviction, blocked upgrades, and
     restart are deterministic and externally observable. Recovery reports its
     outcome and freshness, and no tier degrades without a typed outcome or a
     note on the handle.
+
+    **Partial.** Evidenced: one durable owner per session, typed storage outcomes and one
+    recovery outcome per store per connect (I2a, #629 and #630), and the checkpoint restore
+    (I2b, #640). Not evidenced: a browser store whose schema differs is refused and kept, and
+    nothing reclaims it (D663).
 
 ## Complete-product summary
 
