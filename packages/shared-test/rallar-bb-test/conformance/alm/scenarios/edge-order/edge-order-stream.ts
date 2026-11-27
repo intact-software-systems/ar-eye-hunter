@@ -5,15 +5,13 @@ import type {
 
 import { toBudgetMs } from '../../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '../../alm-conformance-carriers.ts';
-import { ALM_INBOUND_DIAGNOSTICS_TOPIC, toDiagnosticWait } from '../../alm-conformance-diagnostic-waits.ts';
 import {
     FAULT_TIMEOUT_MS,
     toHeldMessageFaultCommands,
     toHeldSendCommands
 } from '../../alm-conformance-fault-commands.ts';
-import { toAdmissionCommands, toResultAssertion, toSendCommand } from '../../alm-conformance-message-commands.ts';
+import { toResultAssertion } from '../../alm-conformance-message-commands.ts';
 import { toSentCommands } from '../../alm-conformance-ordering-commands.ts';
-import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
@@ -21,6 +19,12 @@ import {
 } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId, toScenarioTypeId } from '../../alm-conformance-step-identities.ts';
 import { toSettledStateCommands } from '../../to-settled-state-commands.ts';
+import { toSequences } from '../fault-streams/ordered-stream.ts';
+import {
+    toEdgeOrderArrivalWait,
+    toEdgeOrderedArrivalCommands,
+    toEdgeOrderSendCommands
+} from './edge-order-commands.ts';
 
 /** The sends of an edge-ordered stream cell: enough for one swap and a run on either side of it. */
 export const EDGE_ORDER_STREAM_SENDS = 8;
@@ -80,19 +84,6 @@ export const edgeOrderJitterStream: AlmConformanceScenarioDefinition = {
     toRecipientCommands: toEdgeOrderStreamReceiverCommands
 };
 
-/** One whole-room, at-least-once, receipted send with no ordering key; its number names it and its payload. */
-function toEdgeOrderSendCommands(sender: AlmConformanceStepInput, seq: number): readonly RallarBlackBoxTestCommand[] {
-    return [
-        toSendCommand({
-            ...sender,
-            index: seq,
-            payload: { marker: sender.scenarioId, seq },
-            delivery: { reliability: 'at-least-once', ack: 'receiver' }
-        }),
-        ...toAdmissionCommands({ ...sender, index: seq })
-    ];
-}
-
 /**
  * The stream's sends, of which send 2 leaves the page after send 3 reached every recipient. The hold arms once send 1
  * has left, so it meets send 2 alone, and keeps it by its message id until send 3 is acknowledged: a recipient
@@ -107,8 +98,10 @@ function toSwappedEdgeOrderSendCommands(sender: AlmConformanceStepInput): readon
         ...toEdgeOrderSendCommands(sender, OVERTAKING_SEND),
         ...toSettledStateCommands({ ...sender, index: OVERTAKING_SEND }, 'acknowledged'),
         ...toHeldMessageFaultCommands(held, `release-message-${HELD_SEND}`, 0),
-        ...toSendNumbers(OVERTAKING_SEND + 1).flatMap((seq) => toEdgeOrderSendCommands(sender, seq)),
-        ...toSendNumbers(1)
+        ...toSequences(OVERTAKING_SEND + 1, EDGE_ORDER_STREAM_SENDS).flatMap((seq) =>
+            toEdgeOrderSendCommands(sender, seq)
+        ),
+        ...toSequences(1, EDGE_ORDER_STREAM_SENDS)
             .filter((seq) => seq !== OVERTAKING_SEND)
             .flatMap((seq) => toSettledStateCommands({ ...sender, index: seq }, 'acknowledged'))
     ];
@@ -120,43 +113,9 @@ function toSwappedEdgeOrderSendCommands(sender: AlmConformanceStepInput): readon
  */
 function toEdgeOrderStreamReceiverCommands(receiver: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
-        toDiagnosticWait({
-            step: receiver,
-            name: 'held-overtaking-send',
-            topic: ALM_INBOUND_DIAGNOSTICS_TOPIC,
-            payloadFields: {
-                'data.kind': 'edge-order-arrival',
-                'data.outcome': 'held',
-                'data.typeId': toScenarioTypeId(receiver)
-            },
-            historyFrom: 'cell'
-        }),
-        toReceivedCommand({
-            ...receiver,
-            index: EDGE_ORDER_STREAM_SENDS,
-            count: EDGE_ORDER_STREAM_SENDS,
-            absent: false,
-            ascendingBy: 'seq'
-        }),
-        toReceivedCommand({
-            ...receiver,
-            index: EDGE_ORDER_STREAM_SENDS + 1,
-            count: EDGE_ORDER_STREAM_SENDS + 1,
-            absent: true
-        }),
-        toDiagnosticWait({
-            step: receiver,
-            name: 'no-order-gap',
-            topic: ALM_INBOUND_DIAGNOSTICS_TOPIC,
-            payloadFields: { 'data.kind': 'edge-order-gap' },
-            absent: true,
-            historyFrom: 'cell'
-        })
+        toEdgeOrderArrivalWait(receiver, 'held-overtaking-send', 'held'),
+        ...toEdgeOrderedArrivalCommands(receiver, EDGE_ORDER_STREAM_SENDS)
     ];
-}
-
-function toSendNumbers(from: number): readonly number[] {
-    return Array.from({ length: EDGE_ORDER_STREAM_SENDS - from + 1 }, (_, offset) => from + offset);
 }
 
 /** Held on the data frames of the cell's type until its release. A control frame carries another type and passes. */

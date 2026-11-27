@@ -62,6 +62,8 @@ export type {
     RallarMessageHandler,
     RallarMessageLane,
     RallarMessageOrder,
+    RallarMessageOrderGap,
+    RallarMessageOrderGapReason,
     RallarMessageReplyOptions,
     RallarMessageReplyOutcome,
     RallarMessageReplyWaitOptions,

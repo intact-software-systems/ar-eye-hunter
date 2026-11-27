@@ -7,6 +7,7 @@ import { BrowserRallarMessagesController } from '@shared-web/browser/messages/br
 import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import { BrowserGrantedTopics } from '@shared-web/browser/messages/publication/browser-granted-topics.ts';
 import { BrowserPublicationStages } from '@shared-web/browser/messages/publication/browser-publication-stages.ts';
+import type { RallarRoomMessageChannelDefinition } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import { BrowserTopicSubscriptions } from '@shared-web/browser/messages/topic-subscription/browser-topic-subscriptions.ts';
 import type { BrowserWebSocketInboxHandler } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
@@ -29,6 +30,23 @@ import { toQueuedMessageAdmission } from '../browser-message-sender-fixture.ts';
 
 export const EDGE_ORDER_TEST_ROOM: GroupRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 
+/** The one recipient an acknowledgement in these tests names: who it is does not matter to the order. */
+const RECIPIENT_PEER_ID = 'recipient-session';
+
+export interface EdgeOrderTestMove {
+    readonly n: number;
+}
+
+/** The edge-ordered room channel the two-page tests send and receive on. */
+export const EDGE_ORDER_TEST_MOVES: RallarRoomMessageChannelDefinition = {
+    roomRef: EDGE_ORDER_TEST_ROOM,
+    topicId: 'room.moves',
+    typeId: 'game.move',
+    purpose: 'command',
+    access: 'members',
+    order: 'edge'
+};
+
 /**
  * One browser page's messaging stack over a middleware double. What the page hands a carrier is recorded, in
  * admission order, for a test to carry to another page in whatever order its case needs.
@@ -39,6 +57,11 @@ export interface EdgeOrderPage {
     readonly diagnostics: ALInboundRuntimeDiagnosticsEvent[];
     /** An arrival at this page over one carrier, as its inbound runtime hands an admitted message over. */
     deliver(carrier: ALDeliveryCarrier, message: ALMessage): Promise<void>;
+    /**
+     * Every recipient's receipt for a message this page sent reaches it: its handle reads `acknowledged`. A recipient
+     * acknowledges when it admits a message, so a test can say this before it delivers the message to that page.
+     */
+    acknowledge(carrier: ALDeliveryCarrier, message: ALMessage): void;
     /** The connect goes away: what the lifecycle composition runs at detach. */
     detach(): void;
     /** Each call to connect waits for the next resolver a test queued here; with none queued it resolves at once. */
@@ -83,7 +106,7 @@ export function createEdgeOrderPage(input: EdgeOrderPageInput): EdgeOrderPage {
         readRtcCaptureReceipt: () => undefined
     }, () => context.session);
     sessionDeliveries.beginSession(context.session);
-    feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
+    const settlementEpoch = feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
     const diagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
     const heldConnects: Array<Promise<void>> = [];
     const controller = new BrowserRallarMessagesController({
@@ -152,6 +175,22 @@ export function createEdgeOrderPage(input: EdgeOrderPageInput): EdgeOrderPage {
                 await handler.onMessage(message);
             }
         },
+        acknowledge: (carrier, message) =>
+            settlementEpoch.settlements[carrier]({
+                kind: 'acknowledgement',
+                msgId: message.id.msgId,
+                carrier,
+                atMs: Date.now(),
+                mode: 'receiver',
+                confirmedHopPeerIds: [RECIPIENT_PEER_ID],
+                unconfirmedHopPeerIds: [],
+                expectedRecipientPeerIds: [RECIPIENT_PEER_ID],
+                confirmedRecipientPeerIds: [RECIPIENT_PEER_ID],
+                unconfirmedRecipientPeerIds: [],
+                outsideAudienceRecipientPeerIds: [],
+                complete: true,
+                traceId: message.id.traceId
+            }),
         detach: () => controller.subscriptions.dropHeldEdgeOrderMessages()
     };
 }
@@ -159,4 +198,9 @@ export function createEdgeOrderPage(input: EdgeOrderPageInput): EdgeOrderPage {
 /** Lets what an already resolved promise unblocked run: the page's sends are a few awaits deep. */
 export async function settleTurns(): Promise<void> {
     await vi.advanceTimersByTimeAsync(0);
+}
+
+/** What the page stated it did not hand over: gaps, dropped arrivals and held messages it gave up. */
+export function readEdgeOrderDrops(page: EdgeOrderPage): ALInboundRuntimeDiagnosticsEvent[] {
+    return page.diagnostics.filter((event) => event.kind.startsWith('edge-order-') && !(event.kind === 'edge-order-arrival' && event.outcome === 'held'));
 }

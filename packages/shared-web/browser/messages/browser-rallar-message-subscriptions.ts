@@ -73,10 +73,18 @@ export class BrowserRallarMessageSubscriptions {
      * From here every message of the channel's topic and type is sorted before a handler sees it. One sender's
      * stream can arrive over both carriers, so the page listens on both, whichever the application handles.
      */
-    public declareEdgeOrder(route: EdgeOrderArrivals.Route): void {
-        this.edgeOrderArrivals.declare(route);
+    public declareEdgeOrder(
+        route: EdgeOrderArrivals.Route,
+        onOrderGap: EdgeOrderArrivals.GapHandler | undefined
+    ): void {
+        this.edgeOrderArrivals.declare(route, onOrderGap);
         this.subscribe('rtc', route, ignoreMessage);
         this.subscribe('ws', route, ignoreMessage);
+    }
+
+    /** What the page's edge-ordered channels keep on their receive side now, and what they did not hand over. */
+    public getEdgeOrderUsage(): EdgeOrderArrivals.Usage {
+        return this.edgeOrderArrivals.getUsage();
     }
 
     /** The connect is going away: what edge order holds was judged by its clock, and is memory only. */

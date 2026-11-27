@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import { bindAlmReloadPair, toAlmReloadCheckpoints } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import {
     createAlmConformanceRecipes,
     type AlmConformanceScenario
@@ -129,7 +130,7 @@ describe('the edge order lane cells', () => {
             expect(findCommand(receiver, 'no-order-gap')).toMatchObject({
                 kind: 'wait',
                 absent: true,
-                match: { kind: 'diagnostic', payloadFields: { 'data.kind': 'edge-order-gap' } }
+                match: { kind: 'diagnostic', payloadFields: { 'data.kind': 'edge-order-gap', 'data.typeId': typeId } }
             });
         }
     );
@@ -153,4 +154,240 @@ describe('the edge order lane cells', () => {
             expected: STREAM_SENDS
         }));
     });
+});
+
+const LOSS_STREAM_SENDS = 20;
+const NEW_EDGE_ORDER_KEYS = ['edge-order-loss-stream', 'edge-order-reload', 'edge-order-late-join'] as const;
+const NEW_EDGE_ORDER_CELLS = NEW_EDGE_ORDER_KEYS.flatMap((key) => ALM_CONFORMANCE_CARRIERS.map((carrier) => [key, carrier] as const));
+const RELOAD_KEYS = ['edge-order-reload', 'edge-order-late-join'] as const;
+const RELOAD_CELLS = RELOAD_KEYS.flatMap((key) => ALM_CONFORMANCE_CARRIERS.map((carrier) => [key, carrier] as const));
+
+function toNumbers(from: number, to: number): readonly number[] {
+    return Array.from({ length: to - from + 1 }, (_, offset) => from + offset);
+}
+
+function toTypeId(key: string, carrier: Carrier): string {
+    return `alm.conformance.${carrier}.${key}`;
+}
+
+function toRoot(recipe: RallarBlackBoxTestRecipe, agentId: string) {
+    return {
+        kind: 'command' as const,
+        protocolVersion: 1 as const,
+        runId: 'run',
+        agentId,
+        commandId: `${agentId}-root`,
+        command: { kind: 'recipe.run' as const, recipe, timeoutMs: 180_000 }
+    };
+}
+
+describe('the edge order lane cells beyond the swapped stream', () => {
+    it.each(NEW_EDGE_ORDER_CELLS)('%s over %s runs in the full scope with both pages edge-ordered', (key, carrier) => {
+        const cell = requireCell(key, carrier);
+
+        expect(cell.tags).toEqual(['full']);
+        for (const recipe of [cell.sender, cell.receiver]) {
+            expect(findCommand(recipe, 'connect')).toMatchObject({ kind: 'rtc.connect', rallar: { channelOrder: 'edge' } });
+        }
+    });
+
+    it.each(NEW_EDGE_ORDER_CELLS)('%s over %s: every send is a receipted room send that states no hop order', (key, carrier) => {
+        const cell = requireCell(key, carrier);
+
+        for (const send of [...toSends(cell.sender), ...toSends(cell.receiver)]) {
+            expect(send).toMatchObject({ carrier, typeId: toTypeId(key, carrier), reliability: 'at-least-once', ack: 'receiver' });
+            expect(send).not.toHaveProperty('orderingKey');
+            expect(send).not.toHaveProperty('seq');
+        }
+    });
+});
+
+describe('edge-order-loss-stream', () => {
+    it.each(ALM_CONFORMANCE_CARRIERS)('over %s sends 1 acknowledged, then 2 to 20 under the held seeded loss, released after the last', (carrier) => {
+        const sender = requireCell('edge-order-loss-stream', carrier).sender;
+        const lossCarrier = carrier === 'ws' ? 'ws' : 'rtc';
+        const arm = findCommand(sender, 'loss-arm');
+
+        expect(toSends(sender).map((send) => send.payload)).toEqual(
+            toNumbers(1, LOSS_STREAM_SENDS).map((seq) => ({ marker: 'edge-order-loss-stream', seq }))
+        );
+        expect(arm).toMatchObject({
+            kind: 'fault.inject',
+            carrier: lossCarrier,
+            match: { typeId: toTypeId('edge-order-loss-stream', carrier) },
+            action: { loss: { ratio: expect.any(Number), seed: expect.any(Number) } },
+            remaining: 'until-cleared'
+        });
+        expect(findCommand(sender, 'loss-release')).toMatchObject({ faultId: (arm as { faultId: string; }).faultId, remaining: 0 });
+        expect(toPlace(sender, 'assert-acknowledged-1')).toBeGreaterThan(toPlace(sender, 'send-1'));
+        expect(toPlace(sender, 'loss-arm')).toBeGreaterThan(toPlace(sender, 'assert-acknowledged-1'));
+        expect(toPlace(sender, 'send-2')).toBeGreaterThan(toPlace(sender, 'loss-arm'));
+        expect(toPlace(sender, 'loss-release')).toBeGreaterThan(toPlace(sender, `send-${LOSS_STREAM_SENDS}`));
+        expect(findCommand(sender, 'assert-loss-dropped')).toMatchObject({
+            kind: 'assert',
+            source: `resultCache.${sender.recipeId}-loss-release.value.acted.drop`,
+            operator: 'gte',
+            expected: 1
+        });
+        for (const seq of toNumbers(2, LOSS_STREAM_SENDS)) {
+            expect(toPlace(sender, `assert-acknowledged-${seq}`)).toBeGreaterThan(toPlace(sender, 'assert-loss-dropped'));
+            expect(findCommand(sender, `assert-acknowledged-${seq}`)).toMatchObject({ expected: 'acknowledged' });
+        }
+    });
+
+    it.each(ALM_CONFORMANCE_CARRIERS)(
+        'over %s the receiver held a later send, then recorded all twenty in send order, none twice, and no gap of its type',
+        (carrier) => {
+            const receiver = requireCell('edge-order-loss-stream', carrier).receiver;
+            const typeId = toTypeId('edge-order-loss-stream', carrier);
+
+            expect(findCommand(receiver, 'held-after-lost-send')).toMatchObject({
+                kind: 'wait',
+                match: { payloadFields: { 'data.kind': 'edge-order-arrival', 'data.outcome': 'held', 'data.typeId': typeId } }
+            });
+            expect(findCommand(receiver, `received-${LOSS_STREAM_SENDS}`)).toMatchObject({
+                typeId,
+                count: LOSS_STREAM_SENDS,
+                absent: false,
+                ascendingBy: 'seq'
+            });
+            expect(findCommand(receiver, `received-${LOSS_STREAM_SENDS + 1}`)).toMatchObject({ count: LOSS_STREAM_SENDS + 1, absent: true });
+            expect(findCommand(receiver, 'no-order-gap')).toMatchObject({
+                absent: true,
+                match: { payloadFields: { 'data.kind': 'edge-order-gap', 'data.typeId': typeId } }
+            });
+        }
+    );
+});
+
+describe('the edge order reload cells', () => {
+    it.each(RELOAD_CELLS)('%s over %s binds as a reload pair whose sender reloads right after its prefix', (key, carrier) => {
+        const { sender, receiver } = requireCell(key, carrier);
+        const checkpoints = toAlmReloadCheckpoints(sender.metadata?.almReloadCheckpoints);
+        const checkpoint = checkpoints?.[0];
+
+        expect(checkpoints).toHaveLength(1);
+        expect(receiver.metadata?.almReloadCheckpoints).toEqual(checkpoints);
+        expect(bindAlmReloadPair({ sender: toRoot(sender, 'sender'), receiver: toRoot(receiver, 'receiver') }).left).toBeUndefined();
+        expect(checkpoint?.senderReload).toBe(`${sender.recipeId}-reload`);
+        expect(toPlace(sender, 'reload')).toBe(sender.commands.findIndex((command) => command.commandId === checkpoint?.senderPrefixEnd) + 1);
+        expect(findCommand(sender, 'reconnect')).toMatchObject({
+            kind: 'rtc.connect',
+            rallar: { restoreSession: true, username: '', password: '', channelOrder: 'edge' }
+        });
+        expect(toPlace(sender, 'reconnect')).toBe(toPlace(sender, 'reload') + 1);
+    });
+});
+
+describe('edge-order-reload', () => {
+    it.each(ALM_CONFORMANCE_CARRIERS)(
+        'over %s the old document holds send 2 under a deadline-long lifetime until it ends, and the new one sends 4 to 8',
+        (carrier) => {
+            const sender = requireCell('edge-order-reload', carrier).sender;
+            const holdCarrier = carrier === 'ws' ? 'ws' : 'rtc';
+            const sends = toSends(sender);
+            const send2 = sends.find((send) => send.commandId === `${sender.recipeId}-send-2`);
+            const send3 = sends.find((send) => send.commandId === `${sender.recipeId}-send-3`);
+            const reload = toPlace(sender, 'reload');
+
+            expect(sends.map((send) => (send.payload as { seq: number; }).seq)).toEqual(toNumbers(1, STREAM_SENDS));
+            expect(send2?.ttlMs).toBe(18_000);
+            expect(send3?.ttlMs).toBeGreaterThan(18_000);
+            expect(findCommand(sender, `hold-message-2-${holdCarrier}`)).toMatchObject({ remaining: 'until-cleared' });
+            expect(sender.commands.some((command) => command.commandId?.startsWith(`${sender.recipeId}-release-message-2`))).toBe(false);
+            expect(toPlace(sender, 'hold-message-2-' + holdCarrier)).toBeLessThan(toPlace(sender, 'send-3'));
+            expect(toPlace(sender, 'assert-acknowledged-1')).toBeLessThan(toPlace(sender, 'send-2'));
+            expect(toPlace(sender, 'assert-acknowledged-3')).toBe(reload - 1);
+            for (const seq of toNumbers(4, STREAM_SENDS)) {
+                expect(toPlace(sender, `send-${seq}`)).toBeGreaterThan(toPlace(sender, 'reconnect'));
+                expect(findCommand(sender, `assert-acknowledged-${seq}`)).toMatchObject({ expected: 'acknowledged' });
+            }
+        }
+    );
+
+    it.each(ALM_CONFORMANCE_CARRIERS)('over %s the receiver holds 3 before the reload, records 1, 4 to 8, then 3, and states 2 cannot arrive', (carrier) => {
+        const { sender, receiver } = requireCell('edge-order-reload', carrier);
+        const typeId = toTypeId('edge-order-reload', carrier);
+        const [checkpoint] = toAlmReloadCheckpoints(sender.metadata?.almReloadCheckpoints) ?? [];
+        const handedOver = [1, 4, 5, 6, 7, 8, 3];
+        const turnBySeq = new Map(
+            toSends(sender).map((send) => {
+                const payload = send.payload as { seq: number; turn?: number; };
+                return [payload.seq, payload.turn];
+            })
+        );
+
+        expect(handedOver.map((seq) => turnBySeq.get(seq))).toEqual(toNumbers(1, handedOver.length));
+        expect(turnBySeq.get(2)).toBeUndefined();
+        expect(checkpoint?.receiverAbsenceEnd).toBe(`${receiver.recipeId}-held-overtaking-send`);
+        expect(findCommand(receiver, 'held-overtaking-send')).toMatchObject({
+            match: { payloadFields: { 'data.kind': 'edge-order-arrival', 'data.outcome': 'held', 'data.typeId': typeId } }
+        });
+        expect(findCommand(receiver, 'received-7')).toMatchObject({ typeId, count: 7, absent: false, ascendingBy: 'turn' });
+        expect(findCommand(receiver, 'held-send-cannot-arrive')).toMatchObject({
+            kind: 'wait',
+            match: {
+                payloadFields: {
+                    'data.kind': 'edge-order-gap',
+                    'data.typeId': typeId,
+                    'data.fromPosition': 2,
+                    'data.toPosition': 2,
+                    'data.reason': 'cannot-arrive'
+                }
+            }
+        });
+        expect(findCommand(receiver, 'held-send-cannot-arrive')).not.toHaveProperty('absent');
+        expect(findCommand(receiver, 'received-8')).toMatchObject({ count: 8, absent: true });
+    });
+});
+
+describe('edge-order-late-join', () => {
+    it.each(ALM_CONFORMANCE_CARRIERS)(
+        'over %s the receiver role sends the stream: 1 to 3 acknowledged and 4 held before the reload, 5 to 8 after it, then cancels 4',
+        (carrier) => {
+            const { sender, receiver } = requireCell('edge-order-late-join', carrier);
+            const [checkpoint] = toAlmReloadCheckpoints(sender.metadata?.almReloadCheckpoints) ?? [];
+            const holdCarrier = carrier === 'ws' ? 'ws' : 'rtc';
+            const absenceEnd = receiver.commands.findIndex((command) => command.commandId === checkpoint?.receiverAbsenceEnd);
+            const recoveryEnd = receiver.commands.findIndex((command) => command.commandId === checkpoint?.receiverRecoveryEnd);
+
+            expect(toSends(sender)).toEqual([]);
+            expect(toSends(receiver).map((send) => send.payload)).toEqual(
+                toNumbers(1, STREAM_SENDS).map((seq) => ({ marker: 'edge-order-late-join', seq }))
+            );
+            expect(toPlace(receiver, 'hold-message-4-' + holdCarrier)).toBeGreaterThan(toPlace(receiver, 'assert-acknowledged-3'));
+            expect(toPlace(receiver, 'hold-message-4-' + holdCarrier)).toBeLessThan(absenceEnd);
+            expect(toPlace(receiver, 'assert-acknowledged-3')).toBeLessThan(absenceEnd);
+            for (const seq of toNumbers(5, STREAM_SENDS)) {
+                expect(toPlace(receiver, `send-${seq}`)).toBeGreaterThan(recoveryEnd);
+                expect(findCommand(receiver, `assert-acknowledged-${seq}`)).toMatchObject({ expected: 'acknowledged' });
+            }
+            expect(receiver.commands.some((command) => command.commandId === `${receiver.recipeId}-assert-acknowledged-4`)).toBe(false);
+            expect(toPlace(receiver, 'cancel-4')).toBeGreaterThan(toPlace(receiver, `assert-acknowledged-${STREAM_SENDS}`));
+            expect(findCommand(receiver, 'assert-cancelled-4')).toMatchObject({ operator: 'equals', expected: 'cancelled' });
+            expect(toPlace(receiver, `release-message-4-${holdCarrier}`)).toBeGreaterThan(toPlace(receiver, 'assert-cancelled-4'));
+        }
+    );
+
+    it.each(ALM_CONFORMANCE_CARRIERS)(
+        'over %s the reloaded page held its first arrival for entry, then recorded 5 to 8 alone in send order and no gap',
+        (carrier) => {
+            const { sender } = requireCell('edge-order-late-join', carrier);
+            const [checkpoint] = toAlmReloadCheckpoints(sender.metadata?.almReloadCheckpoints) ?? [];
+            const typeId = toTypeId('edge-order-late-join', carrier);
+            const secondRun = toNumbers(5, STREAM_SENDS).length;
+
+            expect(checkpoint?.senderSuffixEnd).toBe(`${sender.recipeId}-reconnect`);
+            expect(findCommand(sender, 'held-at-entry')).toMatchObject({
+                match: { payloadFields: { 'data.kind': 'edge-order-arrival', 'data.outcome': 'held', 'data.typeId': typeId } }
+            });
+            expect(toPlace(sender, 'held-at-entry')).toBeGreaterThan(toPlace(sender, 'reconnect'));
+            expect(findCommand(sender, `received-${secondRun}`)).toMatchObject({ typeId, count: secondRun, absent: false, ascendingBy: 'seq' });
+            expect(findCommand(sender, `received-${secondRun + 1}`)).toMatchObject({ count: secondRun + 1, absent: true });
+            expect(findCommand(sender, 'no-order-gap')).toMatchObject({
+                absent: true,
+                match: { payloadFields: { 'data.kind': 'edge-order-gap', 'data.typeId': typeId } }
+            });
+        }
+    );
 });

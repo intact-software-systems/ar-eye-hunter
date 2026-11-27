@@ -35,6 +35,7 @@ import { decodeJsonValue } from '../../shared-test/rallar-bb-test/runtime/decode
 import { isJsonRecordValue } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 import { createBrowserRallarRequiredMethodsTestDouble } from './browser-rallar-required-methods-test-double.ts';
+import { IDLE_RALLAR_EDGE_ORDER_USAGE } from './idle-rallar-edge-order-usage.ts';
 
 interface SamplerExecution {
     readonly result: RallarBlackBoxTestResult;
@@ -78,7 +79,8 @@ const HEALTHY: RallarBlackBoxTestAlmUsage = {
     replyWaitsOpen: 0,
     publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS),
     ordering: createALInboundOrderingCounters(),
-    congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures()
+    congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures(),
+    edgeOrder: IDLE_RALLAR_EDGE_ORDER_USAGE
 };
 const EMPTY: RallarBlackBoxTestAlmUsage = {
     ...HEALTHY,

@@ -1,3 +1,5 @@
+import type { EdgeOrderArrivals } from '@shared-web/browser/messages/edge-order/edge-order-arrivals.ts';
+import type { EdgeOrderSendStreams } from '@shared-web/browser/messages/edge-order/edge-order-send-streams.ts';
 import type {
     RallarMessageHandle,
     RallarMessageHandler,
@@ -31,10 +33,18 @@ export interface RallarWsMessageLane {
 }
 
 /**
+ * What the page's edge-ordered channels keep and what they did not hand over. `streams`, `heldMessages`,
+ * `evictedStreams`, `sendStreams` and `openSends` are what is kept at the read; the others count since the page
+ * loaded, across its connects.
+ */
+export interface RallarEdgeOrderUsage extends EdgeOrderArrivals.Usage, EdgeOrderSendStreams.Usage {}
+
+/**
  * The volatile ledger beside the matched replies this page's retained deliveries hold, its reply waits in flight,
  * the connect's publication stage: what its live channels hold against the stage's limits and what it settled,
- * the ordering positions the connect's arrivals stated, by status, and its congestion episodes: how long each message
- * a carrier deferred waited, across both carriers, cumulative over the connect.
+ * the ordering positions the connect's arrivals stated, by status, its congestion episodes: how long each message
+ * a carrier deferred waited, across both carriers, cumulative over the connect, and what the page's edge-ordered
+ * channels keep and gave up.
  */
 export interface RallarMessagesUsage extends ALVolatileSessionReport {
     readonly repliesHeld: number;
@@ -43,6 +53,7 @@ export interface RallarMessagesUsage extends ALVolatileSessionReport {
     /** Cumulative over the connect, across both carriers; counts events, not distinct copies. */
     readonly ordering: ALInboundOrderingCounters;
     readonly congestionEpisodes: ALOutboundCongestionEpisodes.Figures;
+    readonly edgeOrder: RallarEdgeOrderUsage;
 }
 
 export interface RallarMessagesOperations {

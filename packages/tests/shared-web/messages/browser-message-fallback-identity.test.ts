@@ -657,7 +657,11 @@ function createChannel(input: ChannelInput): ChannelFixture {
     sessionDeliveries.beginSession(context.session);
     const epoch = feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
     const sender = new BrowserRallarMessageSender({
-        edgeOrderStreams: new EdgeOrderSendStreams({ newStreamId: () => crypto.randomUUID(), maxStreams: 256 }),
+        edgeOrderStreams: new EdgeOrderSendStreams({
+            newStreamId: () => crypto.randomUUID(),
+            maxStreams: 256,
+            acknowledgedSettleMs: 500
+        }),
         sessionDeliveries,
         creation: {
             createUnicast: newALUnicastMessage,

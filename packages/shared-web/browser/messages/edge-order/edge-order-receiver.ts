@@ -3,18 +3,21 @@ import type { Timers } from '@shared/resilience/timers.ts';
 import { scheduleAtDeadline } from '@shared/resilience/timing/schedule-at-deadline.ts';
 
 import { computeEdgeOrderStreamStep } from '@shared-web/browser/messages/edge-order/compute-edge-order-stream-step.ts';
-import type { EdgeOrderGap } from '@shared-web/browser/messages/edge-order/edge-order-gap.ts';
 import {
     createEdgeOrderReceivedStream,
+    toEdgeOrderStreamKey,
     type EdgeOrderHeldMessage,
-    type EdgeOrderReceivedStream
+    type EdgeOrderReceivedStream,
+    type EdgeOrderStreamOrigin
 } from '@shared-web/browser/messages/edge-order/edge-order-received-stream.ts';
 import type { EdgeOrderReceiverLimits } from '@shared-web/browser/messages/edge-order/edge-order-receiver-limits.ts';
 import type { EdgeOrderStamp } from '@shared-web/browser/messages/edge-order/edge-order-stamp.ts';
+import type { RallarMessageOrderGap } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 
 export namespace EdgeOrderReceiver {
     export interface Arrival<Message> {
-        readonly senderId: string;
+        /** The channel the message came on and its sender; with the stamp's stream they name the stream. */
+        readonly origin: Omit<EdgeOrderStreamOrigin, 'stream'>;
         readonly stamp: EdgeOrderStamp;
         readonly expiresAtMs: number;
         readonly byteLength: number;
@@ -25,7 +28,7 @@ export namespace EdgeOrderReceiver {
     export interface Dependencies<Message> {
         readonly timers: Timers;
         handOver(message: Message): void;
-        reportGap(gap: EdgeOrderGap): void;
+        reportGap(gap: RallarMessageOrderGap): void;
     }
 
     /** `expired`: the arrival was already past its own deadline, so its position was given up, not handed over. */
@@ -40,6 +43,8 @@ export namespace EdgeOrderReceiver {
         readonly expiredMessages: number;
         /** Held messages given up by `dropHeldMessages`. */
         readonly droppedMessages: number;
+        /** The streams the stream cap pushed out whose position is still kept. */
+        readonly evictedStreams: number;
     }
 }
 
@@ -47,6 +52,12 @@ export namespace EdgeOrderReceiver {
 export class EdgeOrderReceiver<Message> {
     /** Oldest first by last arrival: an arrival takes its stream out and puts it back as the newest. */
     private readonly streams = new LatestRepository<string, EdgeOrderReceivedStream<Message>>();
+    /**
+     * The next position of each stream the stream cap pushed out, oldest eviction first. A stream that is heard
+     * again takes its record back, so it goes on where it stood: a late copy stays late, and a message that is
+     * missing is waited for as in any stream it follows.
+     */
+    private readonly evictedStreams: LatestRepository<string, number>;
     private readonly limits: EdgeOrderReceiverLimits;
     private readonly dependencies: EdgeOrderReceiver.Dependencies<Message>;
     private heldMessages = 0;
@@ -58,20 +69,22 @@ export class EdgeOrderReceiver<Message> {
     constructor(limits: EdgeOrderReceiverLimits, dependencies: EdgeOrderReceiver.Dependencies<Message>) {
         this.limits = limits;
         this.dependencies = dependencies;
+        this.evictedStreams = new LatestRepository({ maxEntries: limits.maxEvictedStreams });
     }
 
     accept(arrival: EdgeOrderReceiver.Arrival<Message>): EdgeOrderReceiver.Outcome {
         const nowMs = this.dependencies.timers.nowMs();
-        const origin = { senderId: arrival.senderId, stream: arrival.stamp.stream };
-        const key = JSON.stringify([origin.senderId, origin.stream]);
+        const origin = { ...arrival.origin, stream: arrival.stamp.stream };
+        const key = toEdgeOrderStreamKey(origin);
         const known = this.streams.take(key);
         const forgotten = known === undefined ? this.takeStreamToForget() : undefined;
-        const stream = known ?? createEdgeOrderReceivedStream<Message>(origin, nowMs);
+        const stream = known ?? createEdgeOrderReceivedStream<Message>(origin, nowMs, this.evictedStreams.take(key));
         this.streams.acceptAt({ key, value: stream, nowEpochMs: nowMs });
         // The arrival's stream is in the table first: a hand-over can bring that stream's next arrival in the same turn.
         if (forgotten !== undefined) {
             forgotten.forgotten = true;
             this.release(forgotten);
+            this.recordEvicted(forgotten);
         }
         return this.holdArrival(stream, arrival, nowMs);
     }
@@ -103,7 +116,8 @@ export class EdgeOrderReceiver<Message> {
             lateMessages: this.lateMessages,
             duplicateMessages: this.duplicateMessages,
             expiredMessages: this.expiredMessages,
-            droppedMessages: this.droppedMessages
+            droppedMessages: this.droppedMessages,
+            evictedStreams: this.evictedStreams.size()
         };
     }
 
@@ -151,6 +165,13 @@ export class EdgeOrderReceiver<Message> {
         }
         const [leastRecentKey] = this.streams.keys();
         return this.streams.take(leastRecentKey);
+    }
+
+    /** A stream that had started keeps its position; one pushed out while still entering has none to keep. */
+    private recordEvicted(stream: EdgeOrderReceivedStream<Message>): void {
+        if (stream.nextPosition !== undefined) {
+            this.evictedStreams.set(toEdgeOrderStreamKey(stream.origin), stream.nextPosition);
+        }
     }
 
     private release(stream: EdgeOrderReceivedStream<Message>): void {
