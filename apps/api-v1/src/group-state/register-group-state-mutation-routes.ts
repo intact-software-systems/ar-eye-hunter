@@ -1,3 +1,4 @@
+import { requireGuestBookingApplication } from './guests/register-guest-booking-routes.ts';
 import { requireRoomParticipantSession } from './group-state-route-authorization.ts';
 import type { Hono } from 'hono';
 
@@ -32,6 +33,8 @@ function registerCreateGroupRoute(
             try {
                 const authSession = await dependencies.requireApiAuthSession(context.req);
                 const scope = toGroupStateRouteScope(context);
+                const request = await readGroupStateRouteRequest<CreateGroupRequest>(context);
+                requireGuestBookingApplication(dependencies, scope.applicationId, request.guestBooking === true);
                 const written = toGroupStateResponse({
                     kind: 'mutation',
                     written: await dependencies.processGroupAppInbox(
@@ -41,7 +44,7 @@ function registerCreateGroupRoute(
                             authSession,
                             scope,
                             traceId: readApiRequestTraceId(context),
-                            request: await readGroupStateRouteRequest<CreateGroupRequest>(context)
+                            request
                         })
                     )
                 });

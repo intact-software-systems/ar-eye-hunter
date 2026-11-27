@@ -36,6 +36,7 @@ export interface ApiV1StateSnapshotRouteRuntime {
     readonly groupStateInboxService: Pick<
         ApiV1Runtime['groupStateInboxService'],
         | 'processAuthenticatedGroupEntryUntilCompletion'
+        | 'processGuestBookingUntilCompletion'
         | 'processTemporaryGroupCreationUntilCompletion'
         | 'processGuestAdmissionUntilCompletion'
         | 'processQuickJoinUntilCompletion'
@@ -85,6 +86,7 @@ export interface ApiV1StateSnapshotRouteOperations<Runtime extends ApiV1StateSna
 }
 
 export interface ApiV1StateSnapshotRoutePolicy {
+    readonly guestBookingByApplication: GroupStateRouteDependencies['guestBookingByApplication'];
     readonly temporaryRoomPolicies: GroupStateRouteDependencies['temporaryRoomPolicies'];
     readonly groupAdmission: ApiV1GroupAdmissionConfiguration;
     readonly strictReadAuthorization: boolean;
@@ -133,7 +135,9 @@ export function createStateSnapshotReadRouteRegistrars<Runtime extends ApiV1Stat
                     runtime.groupStateInboxService.processGroupMoveUntilCompletion(input, authority),
                 listGroupMoves: (scope, principalId) =>
                     runtime.groupStateService.move.listForPrincipal(scope, principalId),
+                guestBookingByApplication: policy.guestBookingByApplication,
                 temporaryRoomPolicies: policy.temporaryRoomPolicies,
+                processGuestBooking: input => runtime.groupStateInboxService.processGuestBookingUntilCompletion(input),
                 processTemporaryRoomCreation: input => runtime.groupStateInboxService.processTemporaryGroupCreationUntilCompletion(input),
                 processGuestAdmission: input => runtime.groupStateInboxService.processGuestAdmissionUntilCompletion(input),
                 processQuickJoin: (input, authority) =>

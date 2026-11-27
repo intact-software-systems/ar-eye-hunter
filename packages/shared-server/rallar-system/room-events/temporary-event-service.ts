@@ -1,5 +1,7 @@
 import { requireExactKeys, requirePositiveInteger, requireRecord } from '@shared/api/exact-object-decoding.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { projectRoomEventOrganizerView } from '@shared/api/room-events/room-event-organizer-view.ts';
+import { GroupMutationAuthorizationError } from '../group-state/group-mutation-authority.ts';
 import { decodeRoomEvent } from '@shared/api/room-events/decode-room-event.ts';
 import { changeRoomEvent, createRoomEvent, projectRoomEvent, type RoomEvent } from '@shared/api/room-events/room-event.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
@@ -36,6 +38,7 @@ export namespace TemporaryEventService {
         readonly serviceId: string;
         readonly finishedRetentionMs: number;
         readonly organizerIds: readonly string[];
+        readonly handoverWindowMs: number;
         readonly organizerIdsByApplication?: Readonly<Record<string, readonly string[]>>;
     }
     export interface Result { readonly revision: number; }
@@ -107,7 +110,21 @@ export class TemporaryEventService {
     async read(lobby: GroupRef, actor: RoomEventActor): Promise<RoomEvent.View | null> {
         const stored = await this.repository.read(lobby);
         await this.authority.read({ ...actor, lobby }, stored?.value ?? null, this.dependencies.nowEpochMs());
-        return stored ? projectRoomEvent(stored.value, actor.principalId) : null;
+        return stored ? projectRoomEvent(stored.value, actor.principalId, this.dependencies.nowEpochMs()) : null;
+    }
+
+    async readOrganizer(lobby: GroupRef, actor: RoomEventActor): Promise<RoomEvent.OrganizerView> {
+        const stored = await this.repository.read(lobby);
+        if (!stored || stored.value.organizerId !== actor.principalId) {
+            throw new GroupMutationAuthorizationError('Only the current event organizer can read the full roster.');
+        }
+        const { members } = await this.authority.read({ ...actor, lobby }, stored.value, this.dependencies.nowEpochMs());
+        // A handover or closure may commit while the membership read is in flight.
+        const current = await this.repository.read(lobby);
+        if (!current || current.value.closed || current.value.organizerId !== actor.principalId) {
+            throw new GroupMutationAuthorizationError('Organizer access has ended.');
+        }
+        return projectRoomEventOrganizerView(current.value, members);
     }
 
     private async execute(input: RoomEventMutation, context: AppInboxMessageContext<TemporaryEventService.Result>) {
@@ -117,7 +134,7 @@ export class TemporaryEventService {
         if (input.command.action === 'claim' && !!authority.guestLease !== !!input.courtTransport) {
             throw new TypeError('A guest claiming a court must bind its own court session.');
         }
-        const after = nextEventForPlayer(before?.value ?? null, input, nowEpochMs);
+        const after = nextEventForPlayer({ before: before?.value ?? null, input, nowEpochMs, handoverWindowMs: this.config.handoverWindowMs });
         const result = { revision: after.revision };
         if (after === before?.value) return await this.dependencies.appInbox.commit(context, result, async () => {});
         return await this.commit({ before, after, actor: input, command: input.command, authority, requestId: input.requestId,
@@ -174,13 +191,20 @@ export class TemporaryEventService {
     }
 }
 
-function nextEventForPlayer(before: RoomEvent | null, input: RoomEventMutation, nowEpochMs: number): RoomEvent {
+interface NextPlayerEvent {
+    readonly before: RoomEvent | null;
+    readonly input: RoomEventMutation;
+    readonly nowEpochMs: number;
+    readonly handoverWindowMs: number;
+}
+
+function nextEventForPlayer({ before, input, nowEpochMs, handoverWindowMs }: NextPlayerEvent): RoomEvent {
     if (input.command.action === 'create') {
         if (before) throw new TypeError('This lobby already has an event.');
         return createRoomEvent({ lobby: input.lobby, organizerId: input.principalId, command: input.command, nowEpochMs });
     }
     if (!before) throw new TypeError('This lobby has no event.');
-    return changeRoomEvent({ event: before, principalId: input.principalId, command: input.command, nowEpochMs });
+    return changeRoomEvent({ event: before, principalId: input.principalId, command: input.command, nowEpochMs, handoverWindowMs });
 }
 
 function decodeEventResult(value: unknown): TemporaryEventService.Result {

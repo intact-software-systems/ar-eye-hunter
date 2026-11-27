@@ -520,6 +520,7 @@ function createHostFixture() {
     });
     const snapshot = { ...room, group: { ...room.group, joinMode: 'code' as const } };
     const arena: ComponentProps<typeof ArenaRoomHosting>['arena'] = {
+        connectionState: 'connected',
         session,
         roomId: 'private-arena',
         createArenaRoom: async () => snapshot,

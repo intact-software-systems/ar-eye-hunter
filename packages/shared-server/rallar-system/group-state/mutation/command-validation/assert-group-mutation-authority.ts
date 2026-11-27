@@ -1,3 +1,4 @@
+import { assertGuestBookingCommand } from '../../schedule/guest-booking-command.ts';
 import { assertTemporaryGroupCreation } from '../membership/temporary-group-creation.ts';
 import { assertGuestAdmissionAuthority, assertGuestAdmissionCommand, assertGuestExpiryCommand } from '../membership/group-guest-admission.ts';
 import type { GroupMutationCommand, GroupMutationIngressFacts } from '../group-mutation-contracts.ts';
@@ -44,6 +45,10 @@ function assertInternalMutationAuthority(
 ): void {
     if (facts.authenticatedAuthority !== null) {
         throw new TypeError('Internal group mutation cannot use authenticated authority facts');
+    }
+    if (facts.internalAuthority === 'guest-booking') {
+        assertGuestBookingCommand(command);
+        return;
     }
     if (command.input.actorPrincipalId !== null || command.input.actorSessionId !== null) {
         throw new TypeError('Internal group maintenance cannot claim semantic actor authority');

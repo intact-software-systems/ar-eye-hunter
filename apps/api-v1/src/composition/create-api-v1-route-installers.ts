@@ -127,6 +127,7 @@ export interface CreateApiV1RouteInstallersInput<
     readonly operatorToken: ApiV1OperatorTokenConfiguration;
     readonly publicConfiguration: ApiConfigResponse;
     readonly ice: ApiV1IceConfiguration;
+    readonly guestBookingByApplication: ApiV1GroupConfiguration['guestBookingByApplication'];
     readonly temporaryRoomPolicies: ApiV1GroupConfiguration['temporaryRoomPoliciesByApplication'];
     readonly groupAdmission: ApiV1GroupAdmissionConfiguration;
     readonly groupDefaultMaxMembers: number | null;
@@ -229,6 +230,7 @@ function createApiV1RouteConstruction<
         readLobbyOccupancy: (rooms, now) => input.topology.groupStateRepository.readLobbyOccupancy(rooms, now),
         requireApiAuthSession: operations.requireApiAuthSession
     }, {
+        guestBookingByApplication: input.guestBookingByApplication,
         temporaryRoomPolicies: input.temporaryRoomPolicies,
         groupAdmission: input.groupAdmission,
         strictReadAuthorization: input.strictReadAuthorization,

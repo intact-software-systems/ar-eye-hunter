@@ -109,25 +109,27 @@ it('rejects a cross-file admin handoff with the wrong type and dead correct evid
     );
 });
 
-it('rejects a cross-file auth handoff discriminator and owner reroute', () => {
+it('rejects a cross-file auth handoff with the wrong discriminator', () => {
     const item = requireEntry(AppInboxType.AUTH_USER_REGISTER, 'HTTP');
-    const typeOwnerSource = readFileSync(item.typeOwnerSourcePath, 'utf8');
-    const dispatchSource = readFileSync(item.dispatchSourcePath, 'utf8');
-    const wrongType = typeOwnerSource.replace('kind: \'register-user\',', 'kind: \'issue-session\',') +
-        '\nfunction deadAuthType(): void { void \'register-user\'; }\n';
-    const wrongOwner = dispatchSource.replace(
-        'await this.authInboxHandler.processAuthMutation(command, context)',
-        'await Promise.resolve(command)'
-    ) +
-        '\nclass DeadAuthOwner { process(): void { void this.authInboxHandler.processAuthMutation; } private readonly authInboxHandler = { processAuthMutation(): void {} }; }\n';
-    expect(typeOwnerSource).toContain('kind: \'register-user\',');
-    expect(dispatchSource).toContain(
-        'await this.authInboxHandler.processAuthMutation(command, context)'
-    );
+    const source = readFileSync(item.typeOwnerSourcePath, 'utf8');
+    const discriminator = "kind: 'register-user',";
+    expect(source).toContain(discriminator);
+    const wrongType = source.replace(discriminator, "kind: 'issue-session',") +
+        "\nfunction deadAuthType(): void { void 'register-user'; }\n";
 
     expect(validateWithOverride(item.typeOwnerSourcePath, wrongType)).toEqual(
         expect.arrayContaining([expect.stringContaining('registered handler is not connected')])
     );
+});
+
+it('rejects a cross-file auth handoff rerouted away from its owner', () => {
+    const item = requireEntry(AppInboxType.AUTH_USER_REGISTER, 'HTTP');
+    const source = readFileSync(item.dispatchSourcePath, 'utf8');
+    const dispatch = 'await this.authInboxHandler.processAuthMutation(command, context)';
+    expect(source).toContain(dispatch);
+    const wrongOwner = source.replace(dispatch, 'await Promise.resolve(command)') +
+        '\nclass DeadAuthOwner { process(): void { void this.authInboxHandler.processAuthMutation; } private readonly authInboxHandler = { processAuthMutation(): void {} }; }\n';
+
     expect(validateWithOverride(item.dispatchSourcePath, wrongOwner)).toEqual(
         expect.arrayContaining([expect.stringContaining('owner dispatch is not connected')])
     );

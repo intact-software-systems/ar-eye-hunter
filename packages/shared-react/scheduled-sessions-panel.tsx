@@ -106,12 +106,13 @@ function ScheduleForm({ owner, disabled, defaultName, maxPlayers }: ScheduleForm
     const [name, setName] = useState('');
     const [date, setDate] = useState(() => toLocalDateInput(Date.now() + 3_600_000));
     const [capacity, setCapacity] = useState(maxPlayers);
+    const [guestBooking, setGuestBooking] = useState(false);
     const startsAtEpochMs = new Date(date).getTime();
     const valid = Number.isFinite(startsAtEpochMs) && startsAtEpochMs > Date.now();
     const submit = (event: FormEvent) => {
         event.preventDefault();
         if (valid && !disabled) {
-            void owner.create({ displayName: `${defaultName}: ${name.trim()}`, startsAtEpochMs, maxPlayers: capacity });
+            void owner.create({ displayName: `${defaultName}: ${name.trim()}`, startsAtEpochMs, maxPlayers: capacity, ...(guestBooking && { guestBooking: true }) });
         }
     };
     return (
@@ -149,6 +150,7 @@ function ScheduleForm({ owner, disabled, defaultName, maxPlayers }: ScheduleForm
                         onChange={(event) => setCapacity(event.target.valueAsNumber)}
                     />
                 </label>
+                <label><input type="checkbox" checked={guestBooking} onChange={event => setGuestBooking(event.target.checked)} />Allow guest reservations</label>
                 <p>Your seat is included. Creating this unlisted room keeps you in your current game.</p>
                 <button
                     type="submit"

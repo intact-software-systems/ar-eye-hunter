@@ -97,19 +97,20 @@ function RelicRoomPanels({ game, preferences }: Pick<RelicSidePanelProps, 'game'
         RallarMatchmaking.createBrowser(rallar, game.roomEntry, { scope: RELIC_ROOM_SCOPE })
     );
     const [friends] = useState(() => RallarFriends.createBrowser(rallar, game.roomEntry, { scope: RELIC_ROOM_SCOPE }));
+    const account = game.session && !game.session.guestRoom;
     return (
         <>
             <RelicRoomEntry game={game} />
-            {game.session && (
+            {account && (
                 <BrowserTournamentPanel
                     browser={rallar}
                     entry={game.roomEntry}
                     catalogConfig={{ scope: RELIC_ROOM_SCOPE, limit: 20, timeoutMs: 10000 }}
                 />
             )}
-            {game.session && <PartyPanel owner={party} friends={friends} />}
-            {game.session && <MatchmakingPanel party={party} owner={matchmaking} findLabel="Find an expedition" />}
-            {game.session && (
+            {account && <PartyPanel owner={party} friends={friends} />}
+            {account && <MatchmakingPanel party={party} owner={matchmaking} findLabel="Find an expedition" />}
+            {account && (
                 <ScheduledSessionsPanel
                     owner={scheduledSessions}
                     connected={game.diagnostics.middlewareConnected}
@@ -117,7 +118,7 @@ function RelicRoomPanels({ game, preferences }: Pick<RelicSidePanelProps, 'game'
                     maxPlayers={4}
                 />
             )}
-            {game.session && (
+            {account && (
                 <FriendsPanel
                     owner={friends}
                     sessions={scheduledSessions}
@@ -126,7 +127,7 @@ function RelicRoomPanels({ game, preferences }: Pick<RelicSidePanelProps, 'game'
                     roomRef={game.roomId ? { ...RELIC_ROOM_SCOPE, groupId: game.roomId } : null}
                 />
             )}
-            {game.session && <RelicRoomMove game={game} party={party} />}
+            {account && <RelicRoomMove game={game} party={party} />}
             <RelicLobby game={game} preferences={preferences} />
         </>
     );
