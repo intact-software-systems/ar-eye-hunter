@@ -38,7 +38,10 @@ export namespace ALInboundOrderedDelivery {
         readonly completedThrough: number;
     }
 
-    /** A delivery that completed. `position` is absent only for a message on no ordering track. */
+    /**
+     * A delivery that completed. `position` is absent only for a delivery on no ordering track: a forward, or a message
+     * on no track.
+     */
     export interface Completed {
         readonly kind: 'completed';
         readonly position: Position | undefined;

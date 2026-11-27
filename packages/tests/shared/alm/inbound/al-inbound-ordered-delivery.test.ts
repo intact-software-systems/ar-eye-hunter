@@ -9,6 +9,7 @@ import type { ALInboundOrderedDelivery } from '@shared/alm/inbound/al-inbound-or
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 
 import {
+    createInboundTestBackendStores,
     createInboundTestMessage,
     createInboundTestOrderedDelivery,
     createInboundTestRuntime,
@@ -115,29 +116,63 @@ it('answers a completion whose position another completion moved, without writin
     expect(await readSlot(admissionStore)).toBeUndefined();
 });
 
-// A completion that reads its message already completed answers the position it read, not a bare `completed` that
-// leaves its caller without the track's position. The read is served as the slot stood before the store's own
-// completion of the message and the progress that completion committed.
+// A completion that reads its message already completed answers the position it read, not its message's own sequence:
+// a later delivery is handed on from that position. It stands for a second claim of the same row, taken after the
+// first claim's lease expired, whose completion commits between the store's read of the slot and its read of the
+// track's progress, which are separate reads; a later message's completion follows it, so the progress read is past
+// the message. The hold sits in the store's own progress read.
 it('answers the position it read for a completion that finds its message already completed', async () => {
-    const admissionStore = await createAdmittedStore();
-    const readBufferedRelease = admissionStore.readBufferedRelease.bind(admissionStore);
-    vi.spyOn(admissionStore, 'readBufferedRelease').mockImplementationOnce(async (input) => {
-        const before = (await readBufferedRelease(input))!;
-        expect(
-            await admissionStore.commitDeliveryCompletion({
-                trackKey: TRACK_KEY,
-                seq: 1,
-                observedSlot: before.snapshot,
-                observedProgress: before.observations.deliveryProgress!.value!
-            })
-        ).toBe('committed');
-        const moved = await admissionStore.readOrderingTrack({ trackKey: TRACK_KEY, message: FIRST.id, nowMs: Date.now() });
-        return { ...before, observations: { ...before.observations, deliveryProgress: moved.observations.deliveryProgress } };
+    const namespace = 'inbound-ordered-delivery-already-completed';
+    const { backend, stores } = createInboundTestBackendStores({
+        namespace,
+        storage: 'memory',
+        observer: createPassThroughIndexedDbOperationObserver()
+    });
+    const { admissionStore } = stores;
+    for (const msg of [FIRST, SECOND]) {
+        expect(await admissionStore.commitBundle(await readInboundTestAdmission(admissionStore, msg))).toBe('committed');
+    }
+    const competing = createInboundTestOrderedDelivery(admissionStore);
+    const read = backend.read.bind(backend);
+    let held = false;
+    vi.spyOn(backend, 'read').mockImplementation(async (key, decode) => {
+        if (!held && key === `${namespace}:delivered:${TRACK_KEY}`) {
+            held = true;
+            expect(await competing.complete(FIRST)).toEqual(completedThrough(1));
+            expect(await competing.complete(SECOND)).toEqual(completedThrough(2));
+        }
+        return await read(key, decode);
     });
 
-    expect(await createInboundTestOrderedDelivery(admissionStore).complete(FIRST)).toEqual(completedThrough(1));
+    expect(await createInboundTestOrderedDelivery(admissionStore).complete(FIRST)).toEqual(completedThrough(2));
 
-    expect((await admissionStore.readOrderedDelivery(TRACK_KEY, 2)).completedThrough).toBe(1);
+    expect(held).toBe(true);
+    expect((await admissionStore.readOrderedDelivery(TRACK_KEY, 3)).completedThrough).toBe(2);
+    expect(await readSlot(admissionStore)).toBeUndefined();
+});
+
+// The position a completion wrote is the track's progress, not its message's own sequence: a slot whose delivery
+// reaches past its sequence (the expired copies a bounded hold passed after it, which no delivery will complete)
+// moves the track through that reach, and the answer states it.
+it('answers the position its write committed for a slot that reaches past its own sequence', async () => {
+    const { admissionStore } = createInboundTestStores({
+        namespace: 'inbound-ordered-delivery-reaching',
+        storage: 'memory',
+        observer: createPassThroughIndexedDbOperationObserver()
+    });
+    const admission = await readInboundTestAdmission(admissionStore, FIRST);
+    const reaching = {
+        ...admission,
+        mutations: admission.mutations.map((mutation) =>
+            mutation.kind === 'set-buffered' ? { ...mutation, snapshot: { ...mutation.snapshot, completesThrough: 3 } } : mutation
+        )
+    };
+    expect(await admissionStore.commitBundle(reaching)).toBe('committed');
+    expect((await readSlot(admissionStore))?.snapshot.completesThrough).toBe(3);
+
+    expect(await createInboundTestOrderedDelivery(admissionStore).complete(FIRST)).toEqual(completedThrough(3));
+
+    expect((await admissionStore.readOrderedDelivery(TRACK_KEY, 4)).completedThrough).toBe(3);
     expect(await readSlot(admissionStore)).toBeUndefined();
 });
 
@@ -361,11 +396,12 @@ it('makes no further attempt once its shutdown signal aborted during a lost writ
     expect(await readReleaseFacts(stores)).toEqual(before);
 });
 
-// A release whose readiness reads its message completed answers the position that read found: another delivery
-// completed message 2 between the release's slot read and its readiness read, so it hands nothing to the application,
-// writes nothing, and states where the track stands.
+// A release whose readiness reads its message completed answers the position that read found, not its message's own
+// sequence: another delivery completed message 2, and message 3 after it, between the release's slot read and its
+// readiness read, so it hands nothing to the application, writes nothing, and states where the track stands (3).
 it('answers the position its readiness read for a release whose message completed after its slot read', async () => {
     const { stores, admissionStore, release } = await createReleasableStore('completed');
+    const third = createAcknowledgedMessage(3);
     const readBufferedRelease = admissionStore.readBufferedRelease.bind(admissionStore);
     vi.spyOn(admissionStore, 'readBufferedRelease').mockImplementationOnce(async (input) => {
         const read = (await readBufferedRelease(input))!;
@@ -377,13 +413,15 @@ it('answers the position its readiness read for a release whose message complete
                 observedProgress: read.observations.deliveryProgress!.value!
             })
         ).toBe('committed');
+        expect(await admissionStore.commitBundle(await readInboundTestAdmission(admissionStore, third))).toBe('committed');
+        expect(await createInboundTestOrderedDelivery(admissionStore).complete(third)).toEqual(completedThrough(3));
         return read;
     });
 
-    expect(await createInboundTestOrderedDelivery(admissionStore).release(release)).toEqual(completedThrough(2));
+    expect(await createInboundTestOrderedDelivery(admissionStore).release(release)).toEqual(completedThrough(3));
 
     expect(await readReleaseSlot(admissionStore)).toBeUndefined();
-    expect((await admissionStore.readOrderedDelivery(TRACK_KEY, 3)).completedThrough).toBe(2);
+    expect((await admissionStore.readOrderedDelivery(TRACK_KEY, 4)).completedThrough).toBe(3);
     expect(await readStoredAcks(stores, 'message-2')).toEqual([]);
 });
 

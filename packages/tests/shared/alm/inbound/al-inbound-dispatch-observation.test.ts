@@ -219,8 +219,10 @@ it('preserves a thrown port error even when the diagnostic sink throws', async (
     expect(JSON.stringify(fixture.events)).not.toContain('private');
 });
 
+// An ordered dispatch whose track already moved past its message hands nothing to the port and answers the position
+// its read found (3, past the message's own sequence 1), which a later delivery is handed on from.
 it.each<OrderedDispatchScenario>([
-    { outcome: 'completed', completedThrough: 1, predecessor: undefined, disposition: 'ordering-completed' },
+    { outcome: 'completed', completedThrough: 3, predecessor: undefined, disposition: 'ordering-completed' },
     { outcome: 'retry', completedThrough: 0, predecessor: { kind: 'effect' }, disposition: 'ordering-retry' }
 ])(
     'records ordered $outcome without invoking the port',
