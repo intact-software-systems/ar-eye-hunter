@@ -1,4 +1,5 @@
 import { readALTargetGroupRef, type ALMessage } from '../../al-contracts/al-contract.ts';
+import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
 import type { ALAckPayload, ALNackPayload, ALPendingAckSnapshot } from '../../al-contracts/al-control.ts';
 import type {
     ALMessageHandlingPlan,
@@ -269,6 +270,12 @@ export interface ALInboundOrderedDeliveryRead {
     readonly predecessor: ALInboundDeliveryPredecessor | undefined;
 }
 
+/** The delivery row a track's slot names, and the carrier whose lane claims it. */
+export interface ALInboundOrderedSuccessor {
+    readonly effectId: string;
+    readonly carrier: ALDeliveryCarrier;
+}
+
 export type ALInboundDeliveryPredecessor =
     | { readonly kind: 'effect'; }
     | { readonly kind: 'resync-required'; };
@@ -451,6 +458,12 @@ export interface ALInboundAdmissionStore extends ALReadyable {
     readBufferedRelease(input: ReadALInboundBufferedReleaseInput): Promise<ALInboundBufferedReleaseReadDto | undefined>;
 
     readOrderedDelivery(trackKey: string, beforeSeq: number): Promise<ALInboundOrderedDeliveryRead>;
+
+    /**
+     * The delivery row named by the track's slot after `completedThrough`, in one read; absent when no slot stands
+     * there (the next message is not admitted, or the track continues after an omission) or the slot names no delivery.
+     */
+    readOrderedSuccessor(trackKey: string, completedThrough: number): Promise<ALInboundOrderedSuccessor | undefined>;
 
     /** The track's live ordering snapshot; absent for a track never opened or past its TTL. */
     readOrderingSnapshot(trackKey: string, nowMs: number): Promise<ALOrderingTrackSnapshot | undefined>;
@@ -749,6 +762,13 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
 
     async readOrderedDelivery(trackKey: string, beforeSeq: number): Promise<ALInboundOrderedDeliveryRead> {
         return await this.effects.readOrderedDelivery(trackKey, beforeSeq);
+    }
+
+    async readOrderedSuccessor(
+        trackKey: string,
+        completedThrough: number
+    ): Promise<ALInboundOrderedSuccessor | undefined> {
+        return await this.effects.readOrderedSuccessor(trackKey, completedThrough);
     }
 
     async readOrderingSnapshot(trackKey: string, nowMs: number): Promise<ALOrderingTrackSnapshot | undefined> {

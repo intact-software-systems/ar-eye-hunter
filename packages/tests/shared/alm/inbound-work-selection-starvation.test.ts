@@ -76,6 +76,7 @@ describe.each(['memory', 'indexeddb'] as const)('inbound work behind rows in ret
         const port = createTestALInboundWorkPort({ carrier: 'ws', ...stores, nowMs: Date.now });
         const selector = createALInboundWorkSelector({
             delivery: createInboundTestDispatch(stores, Date.now).delivery,
+            admissionStore: stores.admissionStore,
             namespace: NAMESPACE,
             nowMs: Date.now,
             lane: 'durable',

@@ -11,11 +11,12 @@ import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALWorkReadySelection } from '../work/al-work-handler.ts';
 import type { ALWorkClaim, ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import { resolveALWorkEntryDueAtMs, resolveALWorkEntryReadyAt } from '../work/read-al-work-ready-at.ts';
-import type { ALInboundDurableEffect } from './al-inbound-admission-store.ts';
+import type { ALInboundAdmissionStore, ALInboundDurableEffect } from './al-inbound-admission-store.ts';
 import type {
     ALInboundAdmittedDelivery,
     ALInboundDeliveryObservation
 } from './al-inbound-admitted-delivery.ts';
+import type { ALInboundOrderedDelivery } from './al-inbound-ordered-delivery.ts';
 import type { ALInboundDeferredEffect } from './al-inbound-runtime-diagnostics.ts';
 import {
     AL_INBOUND_WORK_LEASE_MS,
@@ -23,7 +24,7 @@ import {
     type ALPersistedInboundEffect
 } from './al-inbound-work-entry.ts';
 import { ALInboundRotationPage, type ALInboundWorkScan } from './lane/al-inbound-rotation-page.ts';
-import { claimALInboundPromotedRelease } from './lane/claim-al-inbound-promoted-release.ts';
+import { claimALInboundOrderedSuccessor } from './lane/claim-al-inbound-ordered-successor.ts';
 
 const SCAN_STATUSES = [EntityStatus.NEW, EntityStatus.RETRY, EntityStatus.RESERVED] as const;
 
@@ -118,6 +119,8 @@ type ALInboundRowEligibility =
 
 interface ALInboundWorkSelectorDependencies {
     readonly delivery: ALInboundAdmittedDelivery;
+    /** Names the delivery a track's next slot holds, which a completed delivery hands its place to. */
+    readonly admissionStore: Pick<ALInboundAdmissionStore, 'readOrderedSuccessor'>;
     readonly namespace: string;
     readonly nowMs: () => number;
     /** The durability of the store pair the selector reads: it decides where control sends run in a batch. */
@@ -153,12 +156,17 @@ export interface ALInboundWorkSelector {
      */
     getClaimedControlSends(): readonly ALInboundClaimedControlSend[];
     /**
-     * Reserves the release of `seq + 1` of the track whose release of `seq` this batch just completed,
-     * when that row is due and eligible now (D190). The same track only, one row per completed
-     * predecessor, so a track never has two releases claimed at once.
+     * Reserves the delivery the track's slot after `position` names, a dispatch or a release, when it is this lane's,
+     * due and reads ready now, as it was read (D190, D785). One row per completed delivery of the track.
      */
-    claimPromotedRelease(port: ALWorkQueuePort, completed: ALWorkClaim): Promise<ALWorkClaim | undefined>;
-    /** How many releases the last batch ran by promotion; each left that batch's unreserved due rows. */
+    claimOrderedSuccessor(
+        port: ALWorkQueuePort,
+        position: ALInboundOrderedDelivery.Position
+    ): Promise<ALWorkClaim | undefined>;
+    /**
+     * How many deliveries the last batch ran because the same track's previous delivery completed earlier in it; each
+     * left that batch's unreserved due rows.
+     */
     getPromotedCount(): number;
     requestHeadRead(): void;
     isHeadReadPending(): boolean;
@@ -348,10 +356,11 @@ export function createALInboundWorkSelector(
             claimedControlSends = claimed.controlSends;
             return claimed.selection;
         },
-        claimPromotedRelease: async (port, completed) => {
-            const promoted = await claimALInboundPromotedRelease({
+        claimOrderedSuccessor: async (port, position) => {
+            const promoted = await claimALInboundOrderedSuccessor({
                 port,
-                completed,
+                position,
+                admissionStore: dependencies.admissionStore,
                 delivery: dependencies.delivery,
                 namespace: dependencies.namespace,
                 nowMs: dependencies.nowMs()

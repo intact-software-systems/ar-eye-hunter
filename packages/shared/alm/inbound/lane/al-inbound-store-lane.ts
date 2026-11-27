@@ -15,7 +15,9 @@ import {
 import {
     AL_WORK_PROBE_EVERY_ROUND,
     ALWorkHandler,
+    toALWorkOutcome,
     type ALWorkBatchDiagnostics,
+    type ALWorkClaimResult,
     type ALWorkDiagnostics,
     type ALWorkObservationDeferral,
     type ALWorkReadySelection
@@ -34,6 +36,7 @@ import { ALInboundAdmittedDelivery } from '../al-inbound-admitted-delivery.ts';
 import { toALInboundLocalDeliveryEffectIds } from '../al-inbound-effect-intent.ts';
 import { ALInboundMessageAdmission } from '../al-inbound-message-admission.ts';
 import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '../al-inbound-message-runtime.ts';
+import type { ALInboundOrderedDelivery } from '../al-inbound-ordered-delivery.ts';
 import type { ALInboundPendingAdmission } from '../al-inbound-pending-admission.ts';
 import {
     recordALInboundAdmissionOutcome,
@@ -66,7 +69,7 @@ import {
     type ALInboundWorkSelector
 } from '../read-al-inbound-work-selection.ts';
 import type { ALInboundRotationPage } from './al-inbound-rotation-page.ts';
-import { toALInboundPromotionResult } from './claim-al-inbound-promoted-release.ts';
+import { toALInboundSuccessionResult } from './claim-al-inbound-ordered-successor.ts';
 import {
     AL_INBOUND_ROTATION_WINDOW_UNOPENED,
     computeALInboundRotationWindow,
@@ -122,7 +125,7 @@ export class ALInboundStoreLane {
     private readonly delivery: ALInboundAdmittedDelivery;
     private readonly gapRenewal: ALInboundGapRenewal;
     private readonly workSelector: ALInboundWorkSelector;
-    private readonly work: ALWorkHandler<ALWorkClaim>;
+    private readonly work: ALWorkHandler<ALInboundOrderedDelivery.Position>;
     private readonly storageRecovery: ALStorageRecoveryReporter | undefined;
     private readonly removeForeignCommitListener: (() => void) | undefined;
     private nextEvictionAtMs = Number.NEGATIVE_INFINITY;
@@ -148,6 +151,7 @@ export class ALInboundStoreLane {
         });
         this.workSelector = createALInboundWorkSelector({
             delivery: this.delivery,
+            admissionStore: input.stores.admissionStore,
             namespace: input.stores.admissionStore.namespace,
             // Selection schedules work; delivery rechecks authority with the strict runtime clock.
             nowMs: () => this.dependencies.workClock.nowMs(),
@@ -443,7 +447,7 @@ export class ALInboundStoreLane {
         claim: ALWorkClaim,
         batchStartedAtMs: number,
         deferObservation: ALWorkObservationDeferral | undefined
-    ): Promise<ALWorkOutcome> {
+    ): Promise<ALWorkClaimResult<ALInboundOrderedDelivery.Position>> {
         const effect = decodeALInboundWorkEntry(claim.entry, this.input.stores.admissionStore.namespace);
         assertALInboundWorkCarrier(effect, this.dependencies.carrier);
         this.recordClaimStarted(batchStartedAtMs, effect.effectId);
@@ -459,9 +463,10 @@ export class ALInboundStoreLane {
             claimStartedAtMs: startedAtMs,
             defer: deferObservation
         });
-        let result: ALWorkOutcome['status'] | undefined;
+        let settled: ALWorkOutcome['status'] | undefined;
         try {
-            const outcome = await this.runInboundEffect(effect, evidence);
+            const result = await this.runInboundEffect(effect, evidence);
+            const outcome = toALWorkOutcome(result);
             this.recordClaimSettled({
                 claim,
                 effect,
@@ -470,11 +475,11 @@ export class ALInboundStoreLane {
                 batchStartedAtMs,
                 startedAtMs
             });
-            result = outcome.status;
-            return outcome;
+            settled = outcome.status;
+            return result;
         }
         finally {
-            evidence?.publishClaim(result ?? 'threw');
+            evidence?.publishClaim(settled ?? 'threw');
         }
     }
 
@@ -534,7 +539,7 @@ export class ALInboundStoreLane {
     private async runInboundEffect(
         effect: ALPersistedInboundEffect,
         evidence: ALInboundAcknowledgementEvidence | undefined
-    ): Promise<ALWorkOutcome> {
+    ): Promise<ALWorkClaimResult<ALInboundOrderedDelivery.Position>> {
         const payload = effect.payload;
         if (payload.kind === 'admit-message') {
             const replayed = await this.admission.replay(payload);
@@ -553,11 +558,9 @@ export class ALInboundStoreLane {
         if (payload.kind === 'renew-gap') {
             return await this.renewGap(effect, payload);
         }
-        const delivered = await this.delivery.deliver(
-            effect,
-            this.workSelector.getDeliveryObservation(effect.effectId)
+        return toALInboundSuccessionResult(
+            await this.delivery.deliver(effect, this.workSelector.getDeliveryObservation(effect.effectId))
         );
-        return { status: delivered === 'retry' ? 'retry' : 'completed' };
     }
 
     /**
@@ -640,9 +643,12 @@ export class ALInboundStoreLane {
         return handedOver?.kind === 'storage-unavailable' ? { status: 'retry' } : replayed.outcome;
     }
 
-    private createWorkHandler(workPort: ALWorkQueuePort, workType: string): ALWorkHandler<ALWorkClaim> {
+    private createWorkHandler(
+        workPort: ALWorkQueuePort,
+        workType: string
+    ): ALWorkHandler<ALInboundOrderedDelivery.Position> {
         const { input, dependencies } = this;
-        return new ALWorkHandler<ALWorkClaim>({
+        return new ALWorkHandler<ALInboundOrderedDelivery.Position>({
             workerId: input.workerId,
             port: workPort,
             queueEngine: dependencies.queueEngine,
@@ -655,10 +661,9 @@ export class ALInboundStoreLane {
             // refreshes -- so every engine pass walks the rotation again: no answer stands.
             readinessMemoryMs: AL_WORK_PROBE_EVERY_ROUND,
             selectReady: (port, pageSize) => this.selectInboundWork(port, pageSize),
-            claimSuccessor: (port, completed) => this.workSelector.claimPromotedRelease(port, completed),
+            claimSuccessor: (port, position) => this.workSelector.claimOrderedSuccessor(port, position),
             batchObservations: dependencies.diagnostics?.acknowledgementCapture?.batchObservations,
-            runClaim: async (claim, batchStartedAtMs, defer) =>
-                toALInboundPromotionResult(claim, await this.runInboundClaim(claim, batchStartedAtMs, defer)),
+            runClaim: (claim, batchStartedAtMs, defer) => this.runInboundClaim(claim, batchStartedAtMs, defer),
             diagnostics: (event) => this.recordWorkDiagnostics(event),
             storageHealth: input.stores.storageHealth,
             durableOwnership: toALDurableWorkLaneOwnership(input.durableWorkOwnership, workType)

@@ -221,8 +221,8 @@ export type ALInboundRuntimeDiagnosticsEvent =
         /** Due rows this batch's page saw and did not run, oldest first. */
         deferred: readonly ALInboundDeferredEffect[];
         /**
-         * Releases this batch ran because the same track's previous release completed in it (D190):
-         * counted in `claimedCount`, named in `claimedEffectIds`, and never listed in `deferred`.
+         * The deliveries the batch ran because the same track's previous delivery completed earlier in it (D190,
+         * D785): counted in `claimedCount`, named in `claimedEffectIds`, and never listed in `deferred`.
          */
         promoted: number;
     }>
