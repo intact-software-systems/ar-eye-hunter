@@ -784,7 +784,7 @@ for (const [ack, delivery] of OVER_WIRE_LIMIT_DELIVERIES) {
             const frames = new Map(
                 ['alice', 'bystander', ...OVER_WIRE_LIMIT_SUBSCRIBER_IDS].map((sessionId) => [sessionId, addConnection(harness.server, sessionId)])
             );
-            const framesOf = (sessionId: string) => frames.get(sessionId) ?? [];
+            const framesOf = (sessionId: string) => readOpenedFrames(frames, sessionId);
             harness.reads.push(() => Promise.resolve(createOverWireLimitAuthority()));
             const message: ALMessage = { ...feedMessage({ senderId: 'alice', msgId: `over-wire-limit-${ack}` }), delivery };
             // No receipt opens for more than 256 recipients, and the server warns that it opened none.
@@ -882,7 +882,10 @@ function createRoomAuthorityReads(): RoomAuthorityReads {
     };
 }
 
-/** The API's two dequeue filters over the harness's reads, and the socket filter, each admitting only open sockets. */
+/**
+ * The API's D498 re-check filters over the harness's reads: the durable one at the dequeue, and the local one at a send,
+ * which like the socket filter admits only sockets open here.
+ */
 function createRecipientEligibilityFilters(
     server: JsonWebSocketServer,
     grantedTopics: WsGrantedTopicSet,
@@ -1142,6 +1145,15 @@ function openLateConnection(server: JsonWebSocketServer, sessionId: string): str
     attachTestWebSocket(server, new ConnectionContext({ id: sessionId, socket, generationId: 'generation' }));
     socket.open();
     return socket.sent;
+}
+
+/** The frames of a socket the test opened; an id it never opened is the test's own mistake, not an empty socket. */
+function readOpenedFrames(frames: ReadonlyMap<string, string[]>, sessionId: string): string[] {
+    const opened = frames.get(sessionId);
+    if (opened === undefined) {
+        throw new Error(`no socket was opened for ${sessionId}`);
+    }
+    return opened;
 }
 
 function readDelivered(frames: readonly string[], message: ALMessage): number {

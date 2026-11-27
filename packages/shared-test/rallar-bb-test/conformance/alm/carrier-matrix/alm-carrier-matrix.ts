@@ -650,7 +650,7 @@ export const ALM_CARRIER_MATRIX = {
                         testName:
                             'a granted publication reaches each of 257 subscribed sessions once, with no audience on the wire',
                         because:
-                            'The server delivers a granted publication to each of 257 subscribed sessions once, and no copy lists its audience: each session\'s subscription generation travels beside the stored row, not in the frame.'
+                            'The server delivers a granted publication to each of 257 subscribed sessions once, and no copy lists its audience: each session\'s subscription generation is kept on the stored row beside the message, not in the frame.'
                     },
                     {
                         kind: 'documented-limit',
