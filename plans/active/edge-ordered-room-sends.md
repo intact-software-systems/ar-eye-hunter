@@ -1,10 +1,10 @@
 # Edge order: ordered room sends, sorted at the two ends
 
-Status: rulings 1 to 5 and 7 to 9 are made, ruling 6 is open. The verdict is **viable**: the measurement the plan
+Status: rulings 1 to 5 and 7 to 12 are made, ruling 6 is open. The verdict is **viable**: the measurement the plan
 owed is run (section 2.5, slice 1), and it holds up to 10 messages a second from one sender. Slices 1 to 5 are on
 `main` since 2026-11-27: slices 2 to 4 as PR 916 (one commit that holds PRs 916, 924 and 926), slice 5 as PR 929
-and slice 1 as PR 915 (section 3, "What the slices found"). Slice 6, a real consumer, is next: ruling
-9 names the game director's event stream. Edge order builds on the unordered path, which keeps up under load only with PR 885's
+and slice 1 as PR 915 (section 3, "What the slices found"). Slice 6, a real consumer, is being built in PR 947:
+ruling 9 names the game director's event stream, and rulings 10 to 12 settle its design. Edge order builds on the unordered path, which keeps up under load only with PR 885's
 changes; they are on `main` since the same day, so edge order followed that pull request and did not replace it.
 
 Working name: **edge order**. Today's ordered mode (`orderingKey`) is called **hop order** in this document, because
@@ -433,25 +433,23 @@ Each slice is one pull request and leaves the product working. The riskiest ques
 | 3. One path end to end              | Done, on `main` (PR 916). `order: 'edge'` on a room channel; the counter taken at `send`; the sorter before the listener registries; whole-room, receipted, at-least-once sends over `ws`, `rtc` and `rtc-with-ws-fallback`. Other shapes are refused `unsupported`. | Browser tests with two pages; a conformance-lane cell `edge-order-stream` on the three carriers and one under the lane's seeded jitter; the public API snapshot; the measured bundle figure. | Holes from ended sends, the gap callback, reload, narrowed audiences, unretried sends. | 3 (where the counter rides), 4 (names) |
 | 4. Holes, reload and reports        | Done, on `main` (PR 916). The `f` floor for ended sends; the gap report to the app and the usage counters; the caps as growth surfaces; a new stream after a reload; the late joiner.                                                                                | Lane cells under the 25 % seeded loss, across a sender reload and with a late joiner; a long-run memory test.                                                                                | Unretried sends and narrowed audiences.                                                | 5 (what a reload means at receivers)   |
 | 5. Newest wins, and other audiences | Done, on `main` (PR 929). Unretried and `live` sends as "newest wins, a late one is dropped"; one stream per audience for listed, principal and peer sends; supersedence.                                                                                            | A lane cell under seeded loss: never out of order, drops counted.                                                                                                                            | Realtime lanes.                                                                        | None expected                          |
-| 6. A real consumer                  | The game director's event stream (ruling 9) moved to edge order; the product description, the browser README and the realtime skill updated; the measurement of slice 1 run again with the product code.                                                             | The hosted lane and the app's own tests.                                                                                                                                                     |                                                                                        | 9 (which stream)                       |
+| 6. A real consumer                  | The game director's event stream (ruling 9) moved to edge order; the product description, the browser README and the realtime skill updated. (Slice 1's measurement with the product code: done, PR 946.)                                                            | The hosted lane and the app's own tests.                                                                                                                                                     |                                                                                        | 9 (which stream)                       |
 | 7. Hop order's future               | Whatever ruling 6 says.                                                                                                                                                                                                                                              |                                                                                                                                                                                              |                                                                                        | 6                                      |
 
 **What the slices found.** Each line is the slice's own report in its pull request. Slices 2 to 4 landed together: on 2026-11-27 the maintainer chose to merge the stack top-down, so PR 926 was merged into PR 924 and PR 924 into PR 916, and PR 916 went to `main` as one commit. Slices 5 and 1 followed the same day, each as its own pull request. The sections above are as they were written before the slices ran, except sections 2.3 to 2.5, which hold slice 1's measurement.
 
 - **Slice 1, PR 915 (built on PR 885, landed after it).** Unordered sends sorted at the receiver keep up at 5 and 10 messages a
   second from one sender and for five senders at 2 a second each: every message before its deadline, sorted p95 at
-  most 0.50 s, at most 2 messages held. At 30 a second, above the session budget, the path keeps up at +0 ms and
-  falls behind at +5 ms. The reordering is the server's: every session on one instance read the same order. Sections 2.3 and 2.5 above hold its figures. What changed before it landed:
-  - The suite now stamps and sorts with the product's own `EdgeOrderSender` and `EdgeOrderReceiver` and keeps no
-    copy of the rule. The recorded arrivals of all 30 runs were replayed through the product receiver; every figure
-    came out the same, to within 0.1 ms.
-  - **The +0 ms rows of section 2.5 overstate the lag.** The suite's first latency wrapper waited one timer turn
-    before every statement, also at +0 ms; `main`'s helper adds nothing at 0. Runs on 2026-11-27, on a machine that
-    was not quiet, read about half the lag at +0 ms (p50 35 to 88 ms where the table says 105 to 110). The +5 ms
-    rows are close to the table.
-  - In 5 of those 11 runs at +0 ms the last ten messages were more than 1.5 times slower than the first ten. The two
-    runs that started under a load of 6 stayed flat, so this may be the busy machine; it is not settled.
-  - **Owed:** the full 30-run table again on a quiet machine. Slice 6 runs it.
+  most 0.49 s, at most 2 messages held. At 30 a second, above the session budget, the path keeps up at +0 ms and
+  falls behind at +5 ms. The reordering is the server's: with one publisher, every session on one instance read the
+  same order. What changed before and after it landed:
+  - The suite stamps and sorts with the product's own `EdgeOrderSender` and `EdgeOrderReceiver` and keeps no copy of
+    the rule. The recorded arrivals of the first 30 runs, replayed through the product receiver, gave the same
+    figures.
+  - The measurement the roadmap owed in slice 6 is done: the full table was run again on `main` on 2026-11-27, on a
+    quiet machine, and sections 2.3 and 2.5 hold those figures since PR 946. The end of section 2.5 says how the
+    first run of 2026-11-26 differed: its +0 ms figures were about four times higher, because its latency wrapper
+    waited one timer turn before every statement.
 - **Slice 2, PR 916.** The stamp and the sorter as unwired code with 31 tests. The stamp's fields are `stream`,
   `position`, the lowest open position and the latest deadline of earlier open sends.
 - **Slice 3, PR 924 (stacked on PR 916).** `order: 'edge'` works end to end on a room channel, with two-page tests
@@ -695,3 +693,53 @@ What follows from the ruling, for slice 6 to settle in its design before it buil
 - The stale-drop for the `event` kind goes; the tracker stays for the kinds that keep it (snapshot, presence,
   capability).
 - No lane or browser test checks event order across the two carriers today.
+
+Slice 6's design answered these (2026-11-27), and three of its answers were the maintainer's to give (rulings 10 to
+12). The rest, as designed:
+
+- The shared relay always declares its output type `order: 'edge'`, on one channel object the relay session owns.
+  It is not a choice of each relay, because a choice would keep the raw send path beside the new one. Grumpy Town's
+  relay sends and handles no output, so it changes in declaration only.
+- Every output is one typed send with `rtc-with-ws-fallback`. An unreceipted output no longer leaves as "RTC, then a
+  second message over WS": the message layer's fallback picks the carrier, and one message is one position. The
+  relay's raw listeners stay, because the sorter already hands them sorted, unwrapped messages.
+- The whole sequence check for the `event` kind goes from the tracker, `duplicate-sequence` as well as
+  `stale-sequence`. The app's revision guards stay: they compare an event with snapshots, which are not in the
+  stream's order.
+- A director handover or reload starts a new stream and is safe as built: the relay checks sender and epoch at
+  hand-over, and the match accepts only the presence generation its own room state shows.
+- The proof is a two-page test on the real messaging stack: receipted event N, then unreceipted N+1; N+1 arrives
+  over RTC, then N over WS; the game sees N, then N+1. On `main` it sees only N+1. No new lane cell and no new
+  browser spec.
+
+**10. An old page and a new page in one room (slice 6). Ruled on 2026-11-27: nothing more.**
+
+A tab still on the bundle from before slice 6 and a tab on the new one do not hear each other's director events:
+the new page drops an unstamped event, and the old page ignores a wrapped one. Heartbeats, intents, sync requests
+and snapshots keep their types and still cross.
+
+- _Nothing more_ (chosen). The game state stays right by snapshot. Until the old tab reloads, a mixed room loses
+  what only events carry: hit, pickup and eye-attack effects, the arena headline and the rematch refusal text. No
+  shim.
+- _A new type id for the event stream_ (not chosen). The same loss, with cleaner diagnostics on the new page, at
+  the cost of a type-id change in both games.
+- _Refuse to play across bundles_ (not chosen). It needs a bundle version in the room state, which does not exist.
+
+**11. How long a page holds a later director event for a missing one (slice 6). Ruled on 2026-11-27: 3 seconds.**
+
+It bites only when a receipted event (match started, match ended) is missing at a page; hits and pickups are not
+retried, so nothing waits for them.
+
+- _3 s_ (chosen): `orderGapWaitMs: 3_000`. A receipted send retries after a 2 s acknowledgement timeout, so 3 s
+  covers the first retry and its delivery.
+- _5 s_ (not chosen). Also covers the second retry at 4 s; every later hit could wait that long.
+- _No cap_ (not chosen). Up to the missing event's 30 s lifetime.
+
+**12. What the game does when a director event it waited for is given up (slice 6). Ruled on 2026-11-27: ask the
+director for a snapshot.**
+
+- _Ask for a snapshot_ (chosen), through the match's existing sync request, except when the gap's reason is
+  `ended-at-sender`: that is a lost unreceipted event nobody waited for, and the next snapshot repairs it as today.
+- _Nothing_ (not chosen). The gap is counted and stated in the diagnostics only.
+- _Ask on every gap_ (not chosen). One sync request for every lost hit, which adds load when the room already
+  loses packets.
