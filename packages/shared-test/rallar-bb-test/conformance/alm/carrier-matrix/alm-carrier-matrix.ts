@@ -817,6 +817,12 @@ export const ALM_CARRIER_MATRIX = {
                         'refuses a reply wait on a request whose topic WS cannot carry, at the call, with the issue its reply would be refused with',
                     because:
                         'The wait resolves `unanswerable` with the issue the responder\'s `reply()` is refused with, and arms no timer.'
+                }, {
+                    kind: 'unit-test',
+                    testFile: 'packages/tests/shared-web/messages/reply/validate-browser-reply-route.test.ts',
+                    testName: 'names a topic the platform reserves on WS',
+                    because:
+                        'A topic the platform reserves on WS reads `reserved-ws-topic` at the same path, in place of `invalid-ws-user-topic`.'
                 }]
             },
             'rtc-with-ws-fallback': {

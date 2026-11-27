@@ -347,10 +347,6 @@ Message ownership is concentrated under [`messages/`](./messages/):
   subscriptions skip replies, so no reply reaches an `onMessage` subscriber of its type. A dropped reply states
   `reply-late` or `reply-wrong-responder` on the session's inbound diagnostics port, payload-free (see the
   [inbound navigation map](../../shared/alm/inbound/README.md#replies-and-their-diagnostics)).
-  The registry matches a reply on `replyToMsgId` alone, never on its topic, while `awaitReply` answers `unanswerable`
-  from the request's topic without asking the slot: an envelope built by hand, outside `reply()` and the server's
-  `newALReplyMessage`, that sets `replyToMsgId` on another topic for such a request is kept by the slot and read by
-  no wait.
   `RallarMessage.reply(payload, { typeId?, ttlMs? })` goes through `BrowserRallarMessageSender.sendReply`, the one
   place that sets `replyToMsgId`: a WS unicast to the requester's session on the request's topic, in the room's id
   when the request named a room (the request's custom `contextId` is not used), on the `command` purpose's
@@ -358,7 +354,9 @@ Message ownership is concentrated under [`messages/`](./messages/):
   requester's `awaitReply` resolves `unanswerable` with that issue at the call:
   [`validateBrowserReplyRoute`](./messages/reply/validate-browser-reply-route.ts) reads it from the request's topic
   when the registry opens the entry, and the registry answers before it arms a timer or asks the slot. Only a send
-  that stays on RTC can carry such a topic; every send that may travel WS is refused it at the call. Replies travel
+  that stays on RTC can carry such a topic; every send that may travel WS is refused it at the call. A reply envelope
+  built outside `reply()` and the server's `newALReplyMessage` that names such a request in `replyToMsgId` on another
+  topic is kept by the slot and read by no wait. Replies travel
   over WS only: a reply that arrives over RTC is dropped with `reply-late` (cause `unobserved`) when the page subscribes to its type over RTC. Room and people
   event listeners take `RallarStateEventMessage<T>`, the message without `reply`, because those events replay
   locally. `messages.readUsage()` returns `RallarMessagesUsage`, the volatile ledger report with `repliesHeld`
