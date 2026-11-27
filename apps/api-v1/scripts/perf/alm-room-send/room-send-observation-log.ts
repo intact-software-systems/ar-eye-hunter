@@ -11,10 +11,13 @@ import type {
 } from './room-send-cell-observations.ts';
 import { toRoomSendSocketRead, type RoomSendSocketRead } from './to-room-send-socket-read.ts';
 
-/** What a run observes of its sessions' sockets and its instances: not what it offers, nor what its stand-ins record. */
+/**
+ * What a run observes of its sessions' sockets and its instances: not the ordering of its sends, not what it offers,
+ * nor what its stand-ins record.
+ */
 export type RoomSendObservedReads = Omit<
     RoomSendCellObservations,
-    'sends' | 'resends' | 'acks' | 'sendEnds' | 'declinedRepairs'
+    'ordering' | 'sends' | 'resends' | 'acks' | 'sendEnds' | 'declinedRepairs'
 >;
 
 /** One frame a session's socket read while observation lasted. */

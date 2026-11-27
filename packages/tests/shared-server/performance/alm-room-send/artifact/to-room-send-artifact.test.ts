@@ -53,6 +53,7 @@ const INPUT: ToRoomSendArtifactInput = {
     wallMs: 77_250,
     run: {
         observations: {
+            ordering: 'ordering-key',
             sends: [
                 {
                     msgId: 'session-01-a-send-1',

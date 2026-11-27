@@ -26,6 +26,7 @@ import type { RoomSendCellObservations } from './room-send-cell-observations.ts'
 import { createDefaultRoomSendClock, type RoomSendClock } from './room-send-clock.ts';
 import { RoomSendObservationLog } from './room-send-observation-log.ts';
 import { RoomSendOfferLedger } from './room-send-offer-ledger.ts';
+import type { RoomSendOrdering } from './room-send-ordering.ts';
 import { startRoomSendLoopLagSampling } from './start-room-send-loop-lag-sampling.ts';
 import { toRoomSendAck } from './to-room-send-ack.ts';
 import { toRoomSendMessage } from './to-room-send-message.ts';
@@ -82,6 +83,8 @@ export interface RoomSendCellRunResult {
 /** One run in progress: `ledger` and `log` take what it offers and observes. */
 interface RoomSendRun {
     readonly schedule: RoomSendSchedule;
+    /** Whether every send of the run names the room's ordering key. */
+    readonly ordering: RoomSendOrdering;
     readonly roomRef: GroupRef;
     readonly instances: readonly RoomSendInstance[];
     readonly ledger: RoomSendOfferLedger;
@@ -189,6 +192,7 @@ export async function runRoomSendCell(
         return Either.ofRight(
             await observeRoomSends({
                 schedule,
+                ordering: 'ordering-key',
                 roomRef,
                 instances,
                 ledger: new RoomSendOfferLedger(),
@@ -296,7 +300,7 @@ async function observeRoomSends(
     };
     await Promise.all([...run.answersInFlight, firstHopResends]);
     return {
-        observations: { ...offers, ...reads, ...standInRecord },
+        observations: { ordering: run.ordering, ...offers, ...reads, ...standInRecord },
         runtime: {
             sendWindow,
             tail,
@@ -394,7 +398,7 @@ function offerRoomSend(due: DueRoomSend, run: RoomSendRun): void {
         send,
         roomRef: run.roomRef,
         createdAtEpochMs: run.clock.nowEpochMs(),
-        ordering: 'ordering-key'
+        ordering: run.ordering
     });
     const frame = JSON.stringify(message);
     const sentAtMs = run.clock.nowMs();

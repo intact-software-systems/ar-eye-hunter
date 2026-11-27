@@ -2,10 +2,12 @@ import type { ALNackReason, ALReceiptPayload, ALRepairReason } from '@shared/al-
 import type { ALMessageRejection } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 
+import type { RoomSendOrdering } from './room-send-ordering.ts';
+
 /**
- * One ordered, receipted room send as its publisher first offered it at the server's entry. A send is in the list
- * once, with its first offer and that offer's answer, however often its publisher offered it again: every later
- * offer is in `resends`.
+ * One receipted room send as its publisher first offered it at the server's entry. A send is in the list once, with
+ * its first offer and that offer's answer, however often its publisher offered it again: every later offer is in
+ * `resends`.
  */
 export interface RoomSendCellOffer {
     /**
@@ -15,7 +17,10 @@ export interface RoomSendCellOffer {
      */
     readonly msgId: string;
     readonly publisherPeerId: string;
-    /** The send's place on its publisher's track: a higher seq was offered later. */
+    /**
+     * The send's number among its publisher's offers, from 1: a higher seq was offered later. It is also the send's
+     * seq on its publisher's track when the send names an ordering key, and it is in the payload either way.
+     */
     readonly seq: number;
     /** The instant the schedule placed the send at, never recomputed from the timer that fired it. */
     readonly dueAtMs: number;
@@ -93,9 +98,10 @@ export type RoomSendCellAck = RoomSendCellAckOffer & RoomSendCellAnswer;
 /**
  * The server wrote a copy of a send to a session's socket: one frame on the wire, recorded each time one is written,
  * at whichever session. An arrival is a wire copy, taken before the de-duplication and the ordered hold-back of a
- * client, which a session of the cell has not: a client drops a copy it has taken before and holds back one that is
- * ahead of its track, and here both are arrivals. So an arrival is no delivery to an application, and where a figure
- * of the report says a copy was "read", it was read off the socket the server wrote it to.
+ * client, which a session of the cell has not: a client drops a copy it has taken before and, of a send that names
+ * an ordering key, holds back one that is ahead of its track, and here both are arrivals. So an arrival is no
+ * delivery to an application, and where a figure of the report says a copy was "read", it was read off the socket the
+ * server wrote it to.
  *
  * An arrival at a session the send did not expect, its own publisher or a session outside its audience, is no copy
  * of any expected recipient: the report counts it in `unmatched.arrivalsAtUnexpectedRecipient` and in no delivery or
@@ -139,7 +145,8 @@ export interface RoomSendCellReceipt {
 /**
  * A session's socket read a NACK or a repair request: the server's word to the sender of the message `msgId` names,
  * with the reason it gave. Of a gap in a track the server tells the sender twice, by a `gap` NACK and by a
- * `missing-seq` repair request, and both name the message whose arrival showed the gap, never one that is missing.
+ * `missing-seq` repair request, and both name the message whose arrival showed the gap, never one that is missing. A
+ * send that names no ordering key is on no track, so neither is about one.
  * Under the sender recovery `none` a session of the cell answers neither and sends nothing again; under
  * `client-stand-in` its publisher answers both as `RoomSendClientStandIn` states: each send it offers again is in
  * `resends`, and each it declines to, for a send that has ended or expired, is in `declinedRepairs`.
@@ -192,13 +199,18 @@ export interface RoomSendCellDeclinedRepair {
 
 /**
  * What one run of the cell recorded. Every instant is an unrounded `performance.now()` reading of one clock. Every
- * list but `sends`, `resends` and `acks` is in the order observed, appended as it happened, and the report takes "first" and
- * "before" from that order, never from comparing instants. `sends`, `resends` and `acks` are each in the order
- * offered. Every frame a session's socket read is in exactly one of `arrivals`, `receipts`, `controls` and
+ * list but `sends`, `resends` and `acks` is in the order observed, appended as it happened, and the report takes
+ * "first" and "before" from that order, never from comparing instants. `sends`, `resends` and `acks` are each in the
+ * order offered. Every frame a session's socket read is in exactly one of `arrivals`, `receipts`, `controls` and
  * `unclassifiedControls`. Every offer the run made at the entry, of a send, of a send again and of an ACK, is in
  * exactly one of `sends`, `resends` and `acks`, with what came of it.
  */
 export interface RoomSendCellObservations {
+    /**
+     * Whether the sends of the run named an ordering key, every one alike. The report states the figures that need a
+     * track for `ordering-key` alone.
+     */
+    readonly ordering: RoomSendOrdering;
     readonly sends: readonly RoomSendCellSend[];
     /** Empty in a run under the sender recovery `none`. */
     readonly resends: readonly RoomSendCellResend[];

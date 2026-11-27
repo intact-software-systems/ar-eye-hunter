@@ -1,10 +1,6 @@
 import type { RoomSendCellObservations } from '../room-send-cell-observations.ts';
 import { computeRoomSendAckFigures, type RoomSendAckFigures } from './compute-room-send-ack-figures.ts';
 import {
-    computeRoomSendBeforeFirstControlFigures,
-    type RoomSendBeforeFirstControlFigures
-} from './compute-room-send-before-first-control-figures.ts';
-import {
     computeRoomSendControlFigures,
     type RoomSendControlFigures
 } from './compute-room-send-control-figures.ts';
@@ -32,6 +28,7 @@ import {
     computeRoomSendStandInFigures,
     type RoomSendStandInFigures
 } from './compute-room-send-stand-in-figures.ts';
+import { computeRoomSendTrackFigures, type RoomSendTrackFigures } from './compute-room-send-track-figures.ts';
 import {
     computeRoomSendUnmatchedFigures,
     type RoomSendUnmatchedFigures
@@ -40,7 +37,8 @@ import { toObservedRoomSends } from './to-observed-room-sends.ts';
 
 /**
  * Every figure of one run of the cell. A send is the first in the list to carry its msgId, and what the cell recorded
- * beside the sends it knows is counted in `unmatched`, never dropped.
+ * beside the sends it knows is counted in `unmatched`, never dropped. Every group but `tracks` holds for a run
+ * whatever the ordering of its sends; `tracks` states its figures for sends that name an ordering key alone.
  */
 export interface RoomSendReport {
     readonly sends: RoomSendSendFigures;
@@ -48,7 +46,7 @@ export interface RoomSendReport {
     readonly recipientDelays: RoomSendRecipientDelayFigures;
     readonly receipts: RoomSendReceiptFigures;
     readonly controls: RoomSendControlFigures;
-    readonly beforeFirstControl: RoomSendBeforeFirstControlFigures;
+    readonly tracks: RoomSendTrackFigures;
     readonly resends: RoomSendResendFigures;
     readonly acks: RoomSendAckFigures;
     readonly standIn: RoomSendStandInFigures;
@@ -63,7 +61,7 @@ export function computeRoomSendReport(observations: RoomSendCellObservations): R
         recipientDelays: computeRoomSendRecipientDelayFigures(observedSends),
         receipts: computeRoomSendReceiptFigures(observedSends),
         controls: computeRoomSendControlFigures(observedSends),
-        beforeFirstControl: computeRoomSendBeforeFirstControlFigures(observedSends),
+        tracks: computeRoomSendTrackFigures(observations.ordering, observedSends),
         resends: computeRoomSendResendFigures(observedSends),
         acks: computeRoomSendAckFigures(observedSends),
         standIn: computeRoomSendStandInFigures(observedSends),

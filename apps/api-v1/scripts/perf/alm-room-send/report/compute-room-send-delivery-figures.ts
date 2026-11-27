@@ -1,11 +1,8 @@
 import { computeNumberExtrema } from '@shared/measurement/compute-number-extrema.ts';
 
 import { computeRoomSendDelaySummary, type RoomSendDelaySummary } from './compute-room-send-delay-summary.ts';
-import {
-    computeRoomSendTrackOrderFigures,
-    type RoomSendTrackOrderFigures
-} from './compute-room-send-track-order-figures.ts';
 import type { ObservedRoomSend, ObservedRoomSendCopy } from './to-observed-room-sends.ts';
+import { toRoomSendCopiesInOfferOrder, type RoomSendOfferedCopy } from './to-room-send-copies-in-offer-order.ts';
 
 /**
  * What became of each send on its way to the application and to its recipients' sockets. A copy is one expected
@@ -13,9 +10,10 @@ import type { ObservedRoomSend, ObservedRoomSendCopy } from './to-observed-room-
  * "read" when the server wrote it to its recipient's socket: a frame on the wire, before the de-duplication and the
  * ordered hold-back a client applies, which a session of the cell has not. So no figure here says what an
  * application saw: a copy written twice is one a client takes once, and a copy written ahead of its track is one a
- * client holds back.
+ * client holds back. Every figure here holds for a send whether or not it names an ordering key; the figures that
+ * need a track are `RoomSendTrackFigures`.
  */
-export interface RoomSendDeliveryFigures extends RoomSendTrackOrderFigures {
+export interface RoomSendDeliveryFigures {
     /** Sends an instance handed to its application subscriber at least once. */
     readonly handedToApplication: number;
     /** Sends handed to an application subscriber more than once, by one instance or by several. */
@@ -43,6 +41,13 @@ export interface RoomSendDeliveryFigures extends RoomSendTrackOrderFigures {
     readonly copiesRead: number;
     /** Expected copies the server wrote to their recipient's socket more than once; a client drops the repeat. */
     readonly copiesReadMoreThanOnce: number;
+    /**
+     * Copies first written to a socket before the first write, to the same socket, of a send the same publisher
+     * offered earlier; a copy never written is behind nothing. It is the order on the wire. Of sends on a track a
+     * client holds such a copy back, so its application may still see in order what was written out of it; of sends
+     * that name no ordering key nothing puts the order back.
+     */
+    readonly copiesReadOutOfOfferOrder: number;
 }
 
 export function computeRoomSendDeliveryFigures(
@@ -69,8 +74,25 @@ export function computeRoomSendDeliveryFigures(
         copiesExpected: copies.length,
         copiesRead: copies.filter(isRead).length,
         copiesReadMoreThanOnce: copies.filter((copy) => copy.reads.length > 1).length,
-        ...computeRoomSendTrackOrderFigures(observedSends)
+        copiesReadOutOfOfferOrder: toRoomSendCopiesInOfferOrder(observedSends)
+            .reduce((total, copiesInOfferOrder) => total + computeReadsBeforeAnEarlierOffer(copiesInOfferOrder), 0)
     };
+}
+
+/** Of one recipient's copies of one publisher: those first read before the first read of one offered earlier. */
+function computeReadsBeforeAnEarlierOffer(copiesInOfferOrder: readonly RoomSendOfferedCopy[]): number {
+    let latestReadPositionOfAnEarlierOffer = -1;
+    let readsBeforeAnEarlierOffer = 0;
+    for (const { firstReadPosition } of copiesInOfferOrder) {
+        if (firstReadPosition === undefined) {
+            continue;
+        }
+        if (firstReadPosition < latestReadPositionOfAnEarlierOffer) {
+            readsBeforeAnEarlierOffer += 1;
+        }
+        latestReadPositionOfAnEarlierOffer = Math.max(latestReadPositionOfAnEarlierOffer, firstReadPosition);
+    }
+    return readsBeforeAnEarlierOffer;
 }
 
 function isRead(copy: ObservedRoomSendCopy): boolean {

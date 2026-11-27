@@ -73,7 +73,9 @@ export interface ToRoomSendArtifactInput {
  * the ACKs that threw; a later offer that threw is in `resends` with the others.
  */
 export interface RoomSendArtifactObservations {
-    readonly counts: Readonly<Record<Exclude<keyof RoomSendCellObservations, 'observationEndedAtMs'>, number>>;
+    readonly counts: Readonly<
+        Record<Exclude<keyof RoomSendCellObservations, 'ordering' | 'observationEndedAtMs'>, number>
+    >;
     readonly thrownSends: readonly RoomSendCellSend[];
     readonly resends: RoomSendCellObservations['resends'];
     readonly thrownAcks: readonly RoomSendCellAck[];

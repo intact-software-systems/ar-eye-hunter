@@ -17,6 +17,8 @@ const SHORT_COMMIT_LENGTH = 7;
 /** A percentile over expected copies is out of reach when its rank lands on a copy the server never wrote. */
 const NOT_REACHED = 'not reached';
 const NO_SAMPLE = 'no sample';
+/** In place of a figure that needs a track, for a run of unordered sends: such a figure is never printed as 0. */
+const NO_TRACK = 'not applicable: unordered sends have no track';
 
 /**
  * The lines a run prints once it has ended, in the order to print them. The delay of the first line is nominal: it is
@@ -24,8 +26,10 @@ const NO_SAMPLE = 'no sample';
  * timer that fires late. A copy is "written to the recipient's socket": a frame on the wire, which is no delivery to
  * an application. A control a send drew is counted as drawn,
  * never as a send lost. An offer that threw is printed with the name of its error and the first message under that
- * name, which `toRoomSendThrownError` bounded and cleared of URLs when it was recorded. The last three lines are
- * there only when a count of theirs is above zero.
+ * name, which `toRoomSendThrownError` bounded and cleared of URLs when it was recorded. The copies written out of the
+ * order offered are worded by the ordering of the run's sends, and the two figures that need a track, the copies past
+ * a predecessor never written and the view before each track's first control, are printed as not applicable for a
+ * run of unordered sends. The last three lines are there only when a count of theirs is above zero.
  */
 export function toRoomSendSummary(source: RoomSendSummarySource): readonly string[] {
     return [
@@ -78,14 +82,26 @@ function toCopyLines(report: RoomSendReport): readonly string[] {
         `due time to first write, over the ${overWritten.count} written copies: ` +
         `p50 ${toDelay(overWritten.p50, NO_SAMPLE)}, p95 ${toDelay(overWritten.p95, NO_SAMPLE)}, ` +
         `max ${toDelay(overWritten.max, NO_SAMPLE)}`,
-        `copies written more than once ${delivery.copiesReadMoreThanOnce}, ` +
-        `ahead of a lower seq of their track ${delivery.copiesReadOutOfTrackOrder}, ` +
-        `past a predecessor never written ${delivery.copiesReadPastAnUnreadPredecessor}`,
+        toCopyOrderLine(report),
         `sends a server instance handed to its application subscriber: ${delivery.handedToApplication} of ` +
         `${sends.attempted}; more than once ${delivery.handedMoreThanOnce} ` +
         `(the most hand-offs of one send: ${delivery.largestHandOffMultiplicity ?? 0}); ` +
         `answered pending-admission and never handed ${delivery.pendingAdmissionNeverHanded}`
     ];
+}
+
+/** The repeats and the order on the wire. Only a send on a track has a predecessor its copy can be written past. */
+function toCopyOrderLine(report: RoomSendReport): string {
+    const { delivery, tracks } = report;
+    const repeats = `copies written more than once ${delivery.copiesReadMoreThanOnce}`;
+    switch (tracks.kind) {
+        case 'ordering-key':
+            return `${repeats}, ahead of a lower seq of their track ${delivery.copiesReadOutOfOfferOrder}, ` +
+                `past a predecessor never written ${tracks.copiesReadPastAnUnreadPredecessor}`;
+        case 'not-applicable':
+            return `${repeats}, ahead of an earlier send of their publisher ${delivery.copiesReadOutOfOfferOrder}; ` +
+                `past a predecessor never written: ${NO_TRACK}`;
+    }
 }
 
 /** The offers of each kind that threw, by the name of the error, with the first message under each name. */
@@ -120,8 +136,7 @@ function toReceiptLines(report: RoomSendReport): readonly string[] {
 
 /** What the server asked of the publishers, what they offered again, and the server's work before it first asked. */
 function toRecoveryLines(source: RoomSendSummarySource): readonly string[] {
-    const { controls, resends, beforeFirstControl, standIn } = source.report;
-    const beforeFirstControlDelays = beforeFirstControl.dueToFirstReadOverExpectedCopiesMs;
+    const { controls, resends, standIn } = source.report;
     return [
         controls.byType.nack + controls.byType.repair === 0
             ? 'controls the server sent its publishers: none'
@@ -141,12 +156,22 @@ function toRecoveryLines(source: RoomSendSummarySource): readonly string[] {
                 toCountWithBreakdown(standIn.repairsDeclined, standIn.repairsDeclinedByReason)
             ]
             : []),
-        `before each track's first control (${beforeFirstControl.tracksWithAControl} of ` +
+        toBeforeFirstControlLine(source)
+    ];
+}
+
+function toBeforeFirstControlLine(source: RoomSendSummarySource): string {
+    const { tracks } = source.report;
+    if (tracks.kind === 'not-applicable') {
+        return `before each track's first control: ${NO_TRACK}`;
+    }
+    const { beforeFirstControl } = tracks;
+    const delays = beforeFirstControl.dueToFirstReadOverExpectedCopiesMs;
+    return `before each track's first control (${beforeFirstControl.tracksWithAControl} of ` +
         `${source.shape.publishers} tracks drew one): ${beforeFirstControl.sends} sends, ` +
         `${beforeFirstControl.copiesRead} of ${beforeFirstControl.copiesExpected} copies written; ` +
-        `due time to first write over expected copies p50 ${toDelay(beforeFirstControlDelays.p50, NOT_REACHED)}, ` +
-        `p95 ${toDelay(beforeFirstControlDelays.p95, NOT_REACHED)}`
-    ];
+        `due time to first write over expected copies p50 ${toDelay(delays.p50, NOT_REACHED)}, ` +
+        `p95 ${toDelay(delays.p95, NOT_REACHED)}`;
 }
 
 /** How loaded the run's process was over one span. The loop's lag says whether its one event loop kept up. */

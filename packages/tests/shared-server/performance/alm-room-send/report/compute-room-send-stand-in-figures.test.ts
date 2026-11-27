@@ -21,6 +21,7 @@ function toSend(seq: number): RoomSendCellSend {
 
 /** Five sends of one publisher, and what its stand-in ended and declined of them and of two sends the cell never offered. */
 const OBSERVATIONS: RoomSendCellObservations = {
+    ordering: 'ordering-key',
     sends: [1, 2, 3, 4, 5].map(toSend),
     resends: [],
     acks: [],

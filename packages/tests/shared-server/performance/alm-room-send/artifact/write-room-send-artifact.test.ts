@@ -43,6 +43,7 @@ const ARTIFACT = toRoomSendArtifact({
     wallMs: 95_000,
     run: {
         observations: {
+            ordering: 'ordering-key',
             sends: [],
             resends: [],
             acks: [],

@@ -8,6 +8,7 @@ import type {
 } from '../../../../../../apps/api-v1/scripts/perf/alm-room-send/room-send-cell-observations.ts';
 
 const NO_OBSERVATIONS: RoomSendCellObservations = {
+    ordering: 'ordering-key',
     sends: [],
     resends: [],
     acks: [],

@@ -9,9 +9,11 @@ import {
     computeRoomSendReport,
     type RoomSendReport
 } from '../../../../../../apps/api-v1/scripts/perf/alm-room-send/report/compute-room-send-report.ts';
+import type { RoomSendTrackFigures } from '../../../../../../apps/api-v1/scripts/perf/alm-room-send/report/compute-room-send-track-figures.ts';
 
 /** The report of a run that observed nothing: every count 0, every delay without a sample. */
 const NO_FIGURES: RoomSendReport = computeRoomSendReport({
+    ordering: 'ordering-key',
     sends: [],
     resends: [],
     acks: [],
@@ -26,6 +28,19 @@ const NO_FIGURES: RoomSendReport = computeRoomSendReport({
 });
 
 const NO_DELAYS: RoomSendDelaySummary = NO_FIGURES.sends.latenessMs;
+
+/** The track figures of the stalled run: each of its five tracks drew a control, 37 sends in. */
+const STALLED_TRACKS = {
+    kind: 'ordering-key',
+    copiesReadPastAnUnreadPredecessor: 0,
+    beforeFirstControl: {
+        tracksWithAControl: 5,
+        sends: 37,
+        copiesExpected: 518,
+        copiesRead: 434,
+        dueToFirstReadOverExpectedCopiesMs: { count: 518, p50: 45, p95: null, p99: null }
+    }
+} satisfies RoomSendTrackFigures;
 
 /**
  * A run whose tracks stalled: 200 sends to 14 recipients each, of whose 2800 copies the server wrote 434, with every
@@ -100,13 +115,7 @@ const STALLED_RUN: RoomSendSummarySource = {
             sendsWithANack: 12,
             sendsWithARepairRequest: 12
         },
-        beforeFirstControl: {
-            tracksWithAControl: 5,
-            sends: 37,
-            copiesExpected: 518,
-            copiesRead: 434,
-            dueToFirstReadOverExpectedCopiesMs: { count: 518, p50: 45, p95: null, p99: null }
-        },
+        tracks: STALLED_TRACKS,
         resends: {
             ...NO_FIGURES.resends,
             count: 582,
@@ -213,12 +222,16 @@ describe('toRoomSendSummary', () => {
                 },
                 receipts: { ...STALLED_RUN.report.receipts, complete: 200, timedOut: 0, admittedWithoutTerminal: 0, noReceipt: 0 },
                 controls: NO_FIGURES.controls,
-                beforeFirstControl: {
-                    tracksWithAControl: 0,
-                    sends: 200,
-                    copiesExpected: 2_800,
-                    copiesRead: 2_800,
-                    dueToFirstReadOverExpectedCopiesMs: { count: 2_800, p50: 43.12, p95: 64.96, p99: 80 }
+                tracks: {
+                    kind: 'ordering-key',
+                    copiesReadPastAnUnreadPredecessor: 0,
+                    beforeFirstControl: {
+                        tracksWithAControl: 0,
+                        sends: 200,
+                        copiesExpected: 2_800,
+                        copiesRead: 2_800,
+                        dueToFirstReadOverExpectedCopiesMs: { count: 2_800, p50: 43.12, p95: 64.96, p99: 80 }
+                    }
                 },
                 resends: NO_FIGURES.resends
             }
@@ -247,6 +260,42 @@ describe('toRoomSendSummary', () => {
             'before each track\'s first control (0 of 5 tracks drew one): 200 sends, 2800 of 2800 copies written; ' +
             'due time to first write over expected copies p50 43.1 ms, p95 65.0 ms'
         ]);
+    });
+
+    it('prints the copies written ahead of a lower seq of their track and those past a predecessor never written, each from its own count', () => {
+        const outOfOrder: RoomSendSummarySource = {
+            ...STALLED_RUN,
+            report: {
+                ...STALLED_RUN.report,
+                delivery: { ...STALLED_RUN.report.delivery, copiesReadOutOfOfferOrder: 7 },
+                tracks: { ...STALLED_TRACKS, copiesReadPastAnUnreadPredecessor: 3 }
+            }
+        };
+
+        expect(toRoomSendSummary(outOfOrder)[8]).toBe(
+            'copies written more than once 56, ahead of a lower seq of their track 7, ' +
+                'past a predecessor never written 3'
+        );
+    });
+
+    it('prints not applicable in place of the predecessor count and the before-first-control line of an unordered run', () => {
+        const unordered: RoomSendSummarySource = {
+            ...STALLED_RUN,
+            report: {
+                ...STALLED_RUN.report,
+                delivery: { ...STALLED_RUN.report.delivery, copiesReadOutOfOfferOrder: 7 },
+                tracks: { kind: 'not-applicable' }
+            }
+        };
+
+        const lines = toRoomSendSummary(unordered);
+
+        expect(lines).toHaveLength(19);
+        expect(lines[8]).toBe(
+            'copies written more than once 56, ahead of an earlier send of their publisher 7; ' +
+                'past a predecessor never written: not applicable: unordered sends have no track'
+        );
+        expect(lines[16]).toBe('before each track\'s first control: not applicable: unordered sends have no track');
     });
 
     it('prints what the run recorded beside its sends, and the delays no figure holds, only when there are any', () => {

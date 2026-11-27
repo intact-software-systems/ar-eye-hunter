@@ -147,9 +147,9 @@ function expectEverySendWrittenAndReceipted(observations: RoomSendCellObservatio
     expect(report.delivery).toMatchObject({
         copiesExpected: COPIES,
         copiesRead: COPIES,
-        copiesReadOutOfTrackOrder: 0,
-        copiesReadPastAnUnreadPredecessor: 0
+        copiesReadOutOfOfferOrder: 0
     });
+    expect(report.tracks).toMatchObject({ kind: 'ordering-key', copiesReadPastAnUnreadPredecessor: 0 });
     expect(report.recipientDelays.copiesReadBeforeTheirOffer).toBe(0);
     // A receipt may be read again: an instance without the origin's socket publishes a receipt row to the cluster
     // until the row expires, so `moreThanOneTerminal` is no part of what a run must show.
