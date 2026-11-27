@@ -283,13 +283,15 @@ orderings unless it says otherwise below: two lines are worded by the ordering, 
 - **Offers that threw.** For first offers, later offers and ACKs apart: how many threw, by the name
   of the error, with the first message under each name. An offer that threw says nothing of what
   the server did with the frame, so such a send is not among the sends that expect a receipt, and a
-  receipt read of it is counted in the line of what was recorded beside the sends. One error a run
-  on the ordering key may record here is `ALAdmissionCorruptionError`, "Buffered inbound ordering
-  slot lost its canonical message"
-  (`packages/shared/alm/inbound/al-inbound-ordering-validation.ts`): an admission on an ordered
-  track lists the track's buffered slots in one statement and reads each slot's message in a later
-  one, each read drops a row whose lifetime has ended, and a message that expires between the two
-  reads leaves a slot without its message. No stored record is invalid.
+  receipt read of it is counted in the line of what was recorded beside the sends. A run on the
+  ordering key used to record `ALAdmissionCorruptionError` here, "Buffered inbound ordering slot
+  lost its canonical message": an admission on an ordered track lists the track's buffered slots in
+  one statement and reads each slot's message in a later one, each read drops a row whose lifetime
+  has ended, and a message that expired between the two reads left a slot without its message. The
+  reader now reads that slot's key once more and, finding it gone too, reads no slot
+  (`readALInboundBufferedMessage`, `packages/shared/alm/inbound/al-inbound-ordering-validation.ts`),
+  so that expiry no longer throws. The error recorded here now means a slot still stored without
+  its message row: a stored record that is invalid.
 - **Lateness.** From a send's due instant to its offer: how late the load generator itself was.
 - **Copies written to the recipient's socket, of expected.** A copy is one expected recipient's
   share of a send, fourteen a send. It is "written" when the server wrote its frame to that
