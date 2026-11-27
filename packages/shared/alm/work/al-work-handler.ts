@@ -22,9 +22,50 @@ import {
     type ALWorkReadinessProbeCause
 } from './al-work-readiness-memory.ts';
 
-export type ALWorkAttemptResult =
+/**
+ * A completed claim that also names its succession: the value its owner's successor claim reads to find the row that
+ * takes this claim's place in the batch.
+ */
+export interface ALWorkCompletedWithSuccession<TSuccession> {
+    readonly status: 'completed-with-succession';
+    readonly succession: TSuccession;
+}
+
+/**
+ * What one claim's run answers: an outcome, or a completion that names a succession. An owner with no succession
+ * (`never`) answers outcomes only.
+ */
+export type ALWorkClaimResult<TSuccession = never> =
     | ALWorkOutcome
+    | ([TSuccession] extends [never] ? never : ALWorkCompletedWithSuccession<TSuccession>);
+
+export type ALWorkAttemptResult<TSuccession = never> =
+    | ALWorkClaimResult<TSuccession>
     | Readonly<{ status: 'retained'; settled: Promise<ALWorkOutcome>; }>;
+
+/**
+ * How an owner hands a completed claim's place in the batch on: the claim of its successor, and the batch age past
+ * which the batch asks for none. The two are one value, so an owner that hands on also bounds how long a batch goes on
+ * handing on.
+ */
+export interface ALWorkSuccessorClaim<TSuccession> {
+    /**
+     * Reserves the claim a completed one hands its place in the batch to, found by the succession that claim named,
+     * which the batch then runs after the claims it holds.
+     */
+    readonly claim: (port: ALWorkQueuePort, succession: TSuccession) => Promise<ALWorkClaim | undefined>;
+    /**
+     * A batch whose age is this or more asks for no successor. The age runs from the batch's start, the instant its
+     * `durationMs` is counted from, which comes before the batch reserves any row: every claim the batch holds keeps
+     * its row reserved until the batch's end releases it, and a row it completed early is exposed for that long.
+     */
+    readonly untilBatchAgeMs: number;
+}
+
+/** The outcome a claim's release is written with: a claim that named a succession completed. */
+export function toALWorkOutcome<TSuccession>(result: ALWorkClaimResult<TSuccession>): ALWorkOutcome {
+    return result.status === 'completed-with-succession' ? { status: 'completed' } : result;
+}
 
 export interface ALWorkReadySelection {
     readonly claims: readonly ALWorkClaim[];
@@ -46,7 +87,7 @@ export interface ALWorkReadySelection {
 /** Per-batch private evidence, delivered after the handler's mandatory lifecycle; never a release receipt. */
 export type ALWorkObservationDeferral = (publish: () => void) => void;
 
-export interface ALWorkHandlerDependencies {
+export interface ALWorkHandlerDependencies<TSuccession = never> {
     readonly batchObservations?: typeof ALWorkBatchObservations;
 
     readonly workerId: string;
@@ -76,14 +117,11 @@ export interface ALWorkHandlerDependencies {
         batchStartedAtMs: number
     ) => Promise<ALWorkReadySelection>;
     /**
-     * Reserves the claim a completed one hands its place in the batch to, which the batch then runs
-     * after the claims it selected. Asked only after a claim completed and while the batch has
-     * fewer than `pageSize` claims, so a claim that failed promotes nothing and no batch runs more
-     * than a page. Undefined for an owner whose rows wait on no other row of theirs.
+     * Asked only for a claim that completed naming a succession, while the batch has fewer than `pageSize` claims, is
+     * younger than its `untilBatchAgeMs` and is not disposed. Undefined for an owner that hands nothing on, and only
+     * undefined for one with no succession (`never`), whose claims never name one.
      */
-    readonly claimSuccessor:
-        | ((port: ALWorkQueuePort, completed: ALWorkClaim) => Promise<ALWorkClaim | undefined>)
-        | undefined;
+    readonly claimSuccessor: [TSuccession] extends [never] ? undefined : ALWorkSuccessorClaim<TSuccession> | undefined;
     /**
      * Runs one claim. The instant the batch's run loop started comes with it -- after the selection
      * and the reservation, before the first claim runs -- so an owner that reports per-claim timing
@@ -95,7 +133,7 @@ export interface ALWorkHandlerDependencies {
         claim: ALWorkClaim,
         batchStartedAtMs: number,
         deferObservation?: ALWorkObservationDeferral
-    ) => Promise<ALWorkAttemptResult>;
+    ) => Promise<ALWorkAttemptResult<TSuccession>>;
     /**
      * Starts the claims of a selection that run as one group, before the batch runs any claim: each one
      * it takes maps to that claim's own attempt, which the batch awaits in its turn instead of calling
@@ -105,7 +143,7 @@ export interface ALWorkHandlerDependencies {
         claims: readonly ALWorkClaim[],
         batchStartedAtMs: number,
         deferObservation?: ALWorkObservationDeferral
-    ) => ReadonlyMap<ALWorkClaim, Promise<ALWorkAttemptResult>>;
+    ) => ReadonlyMap<ALWorkClaim, Promise<ALWorkAttemptResult<TSuccession>>>;
     readonly diagnostics: ((event: ALWorkDiagnostics) => void) | undefined;
     /**
      * Absent on the server lane and on the browser's memory lanes, which have no storage health
@@ -227,8 +265,14 @@ interface ALWorkClaimedRun {
 }
 
 /** One claim's turn in the batch: the attempt its group already started, or none when it runs alone. */
-interface ALWorkClaimTurn extends ALWorkClaimedRun {
-    readonly attempt: Promise<ALWorkAttemptResult> | undefined;
+interface ALWorkClaimTurn<TSuccession> extends ALWorkClaimedRun {
+    readonly attempt: Promise<ALWorkAttemptResult<TSuccession>> | undefined;
+}
+
+/** What a claim's run settled in the batch: the release its flush owes, and the succession a completion named. */
+interface ALWorkSettledRun<TSuccession> {
+    readonly release: ALWorkRelease;
+    readonly handOn: ALWorkCompletedWithSuccession<TSuccession> | undefined;
 }
 
 /** The mutable batch records and source start used while selecting and running its claims. */
@@ -253,8 +297,8 @@ interface ALWorkBatchEnd {
  * Generic ALM work loop: the port owns reservation and retry policy, this owns the engine task and
  * the batch lifecycle, and `ALWorkReadinessMemory` owns how long a probe's answer stands.
  */
-export class ALWorkHandler {
-    private readonly dependencies: ALWorkHandlerDependencies;
+export class ALWorkHandler<TSuccession = never> {
+    private readonly dependencies: ALWorkHandlerDependencies<TSuccession>;
     private batch: Promise<void> | undefined;
     private readonly retainedReleases = new Set<Promise<void>>();
     private bootstrapped = false;
@@ -270,7 +314,7 @@ export class ALWorkHandler {
     private readonly shutdown = new AbortController();
     private readonly engine: ALWorkEngineMembership;
 
-    constructor(dependencies: ALWorkHandlerDependencies) {
+    constructor(dependencies: ALWorkHandlerDependencies<TSuccession>) {
         this.dependencies = dependencies;
         this.readiness = new ALWorkReadinessMemory(dependencies.readinessMemoryMs);
         this.engine = new ALWorkEngineMembership({
@@ -594,19 +638,29 @@ export class ALWorkHandler {
                 progress.rescheduledCount += 1;
                 continue;
             }
-            const release = await this.runOne(claim, progress, { ...run, attempt });
-            if (release === undefined || this.rerunsExpedited(release, queued, progress)) {
+            const ran = await this.runOne(claim, progress, { ...run, attempt });
+            if (ran === undefined || this.rerunsExpedited(ran.release, queued, progress)) {
                 continue;
             }
-            releases.push(release);
-            if (this.shutdown.signal.aborted) {
-                continue;
-            }
-            const successors = await this.claimSuccessors(release, progress.claimedCount);
-            queued.push(...successors);
-            progress.claimedCount += successors.length;
+            releases.push(ran.release);
+            await this.queueSuccessors(ran, queued, input);
         }
         return this.shutdown.signal.aborted ? undefined : run;
+    }
+
+    /** Queues the successor a completed claim hands its place to behind every claim the batch holds, unless disposed. */
+    private async queueSuccessors(
+        ran: ALWorkSettledRun<TSuccession>,
+        queued: ALWorkClaim[],
+        input: ALWorkClaimedRunInput
+    ): Promise<void> {
+        const { progress, batchStartedAtMs } = input;
+        if (this.shutdown.signal.aborted) {
+            return;
+        }
+        const successors = await this.claimSuccessors(ran.handOn, progress.claimedCount, batchStartedAtMs);
+        queued.push(...successors);
+        progress.claimedCount += successors.length;
     }
 
     /** The batch's next claim: an expedited row still pending goes before every claim the batch already holds. */
@@ -668,17 +722,25 @@ export class ALWorkHandler {
     }
 
     /**
-     * The successor a completed claim hands its place to, while the batch holds fewer than a page.
-     * One that cannot be claimed is left to the next selection, and the failure is stated as a batch
-     * failure is: throwing here would strand the claims this batch has not run yet.
+     * The successor a completion that named a succession hands its place to, while the batch holds fewer than a
+     * page and its age since `batchStartedAtMs` is below `untilBatchAgeMs`; both are decided before anything is read.
+     * One that cannot be claimed is left to the next selection, and the failure is stated as a batch failure is:
+     * throwing here would strand the claims this batch has not run yet.
      */
-    private async claimSuccessors(release: ALWorkRelease, claimedCount: number): Promise<readonly ALWorkClaim[]> {
-        const { claimSuccessor, pageSize, port } = this.dependencies;
-        if (claimSuccessor === undefined || release.outcome.status !== 'completed' || claimedCount >= pageSize) {
+    private async claimSuccessors(
+        handOn: ALWorkCompletedWithSuccession<TSuccession> | undefined,
+        claimedCount: number,
+        batchStartedAtMs: number
+    ): Promise<readonly ALWorkClaim[]> {
+        const { claimSuccessor, clock, pageSize, port } = this.dependencies;
+        if (
+            claimSuccessor === undefined || handOn === undefined || claimedCount >= pageSize ||
+            computeALWorkElapsedMs(batchStartedAtMs, clock.nowMs()) >= claimSuccessor.untilBatchAgeMs
+        ) {
             return [];
         }
         try {
-            const successor = await claimSuccessor(port, release.claim);
+            const successor = await claimSuccessor.claim(port, handOn.succession);
             return successor === undefined ? [] : [successor];
         }
         catch (error) {
@@ -700,16 +762,16 @@ export class ALWorkHandler {
         return releases;
     }
 
-    /** The release the batch's flush owes this claim, or nothing at all for a retained one. */
+    /** What the batch owes this claim: its release and the succession it named, or nothing for a retained one. */
     private async runOne(
         claim: ALWorkClaim,
         progress: ALWorkBatchReport.Progress,
-        turn: ALWorkClaimTurn
-    ): Promise<ALWorkRelease | undefined> {
+        turn: ALWorkClaimTurn<TSuccession>
+    ): Promise<ALWorkSettledRun<TSuccession> | undefined> {
         const { clock, runClaim } = this.dependencies;
         const runStartedAtMs = clock.nowMs();
         this.countExpeditedRun(claim);
-        let result: ALWorkAttemptResult;
+        let result: ALWorkAttemptResult<TSuccession>;
         try {
             result = await (turn.attempt ?? runClaim(claim, turn.runStartedAtMs, turn.deferObservation));
         }
@@ -722,6 +784,7 @@ export class ALWorkHandler {
                 this.releaseRetainedClaim(claim, result.settled);
                 return undefined;
             case 'completed':
+            case 'completed-with-succession':
                 progress.completedCount += 1;
                 break;
             case 'non-retryable':
@@ -732,7 +795,8 @@ export class ALWorkHandler {
                 progress.rescheduledCount += 1;
                 break;
         }
-        return { claim, outcome: result };
+        const handOn = result.status === 'completed-with-succession' ? result : undefined;
+        return { release: { claim, outcome: toALWorkOutcome(result) }, handOn };
     }
 
     private countExpeditedRun(claim: ALWorkClaim): void {

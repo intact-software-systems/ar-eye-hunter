@@ -1012,8 +1012,9 @@ publication succeed. The event's `data` is the event itself:
   due rows the batch's page saw and did not run, as `{ effectId, dueAtMs }`, oldest first — held back by their eligibility
   read, or cleared by it and left unreserved by the port. A row a live lease
   holds is not due, so a batch's own rows never read as deferred. `promoted`
-  counts the buffered releases the batch ran because the same track's previous
-  release completed earlier in that batch (D190): each is also counted in
+  counts the deliveries the batch ran because a delivery of the same track
+  completed earlier in that batch and the track's next slot named them, a
+  buffered release or an in-order delivery (D190, D785): each is also counted in
   `claimedCount` and named in `claimedEffectIds`, and none is listed in
   `deferred`
 - `claim-settled` carries `msgId`, `typeId`, `payloadKind`, `durationMs`,

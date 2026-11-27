@@ -15,6 +15,7 @@ import { registerGroupStateReadRoutes } from './register-group-state-read-routes
 import { registerGroupTopicSubscriptionRoutes } from './register-group-topic-subscription-routes.ts';
 
 import { registerTemporaryRoomRoutes } from './guests/register-temporary-room-routes.ts';
+import { registerGuestBookingRoutes } from './guests/register-guest-booking-routes.ts';
 import { registerRoomGuestRedemptionRoute } from './guests/register-room-guest-redemption-route.ts';
 
 export function registerGroupStateRoutes(
@@ -27,6 +28,7 @@ export function registerGroupStateRoutes(
     registerGroupQuickJoinRoute(app, dependencies);
     registerGroupMoveRoutes(app, dependencies);
     registerGroupSessionRoutes(app, dependencies);
+    registerGuestBookingRoutes(app, dependencies);
     registerGroupStateMutationRoutes(app, dependencies, authorization);
     registerGroupLifecycleRoutes(app, dependencies);
     registerRoomGuestRedemptionRoute(app, dependencies);

@@ -13,6 +13,7 @@ import {
 import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
+import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { createVolatileALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
@@ -23,6 +24,7 @@ import {
     AL_INBOUND_WORK_LEASE_MS,
     computeALInboundWorkEntry,
     decodeALInboundWorkEntry,
+    toALInboundWorkKey,
     type ALPersistedInboundEffect
 } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import type { ALInboundRotationPage } from '@shared/alm/inbound/lane/al-inbound-rotation-page.ts';
@@ -51,12 +53,15 @@ import {
 } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
-import type { ALInboundDurableEffect } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import type { ALInboundAdmissionStore, ALInboundDurableEffect } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { createInboundTestDispatch, readInboundTestDispatchEffect } from '../create-inbound-test-dispatch.ts';
 import {
+    createInboundTestBackendStores,
     createInboundTestMessage,
+    createInboundTestOrderedDelivery,
     createInboundTestRuntime,
     createInboundTestStores,
+    INBOUND_TEST_SELF_PEER_ID,
     INBOUND_TEST_SOURCE,
     readInboundTestAdmission,
     type CreateInboundTestRuntimeInput,
@@ -387,6 +392,7 @@ describe('ALInboundWorkSelector completed rotations', () => {
         const rotations: ALInboundRotationPage.CompletedRotation[] = [];
         const selector = createALInboundWorkSelector({
             delivery: fixture.delivery,
+            admissionStore: fixture.admissionStore,
             namespace: fixture.namespace,
             nowMs: Date.now,
             lane: 'durable',
@@ -646,6 +652,127 @@ describe('ALInboundWorkSelector eligibility reads', () => {
     });
 });
 
+describe('ALInboundWorkSelector ordered successor', () => {
+    // Pins the positive case the refusals below stand against: the row the track's next slot names is reserved as read.
+    it('reserves the delivery the slot after the position names', async () => {
+        const fixture = await createOrderedSuccessorFixture({});
+
+        const claim = await fixture.selector.claimOrderedSuccessor(fixture.port, fixture.position);
+
+        expect(claim?.entry.key).toEqual(fixture.successorEntry.key);
+        expect(fixture.readKeys).toEqual([toKeyAsString(fixture.successorEntry.key)]);
+        expect((await fixture.readSuccessorRow())?.status).toBe(EntityStatus.RESERVED);
+        expect(fixture.selector.getHandOnCount()).toBe(1);
+    });
+
+    // Pins that a row another claim holds is never reserved twice.
+    it('answers nothing for a successor another claim reserved', async () => {
+        const fixture = await createOrderedSuccessorFixture({});
+        await fixture.port.claimObserved([fixture.successorEntry]);
+        const before = await fixture.readSuccessorRow();
+        expect(before?.status).toBe(EntityStatus.RESERVED);
+
+        expect(await fixture.selector.claimOrderedSuccessor(fixture.port, fixture.position)).toBeUndefined();
+
+        expect(await fixture.readSuccessorRow()).toEqual(before);
+    });
+
+    // Pins that a hand-on keeps the retry schedule: a retried row is not claimed before its delay has passed.
+    it('answers nothing for a retried successor whose delay has not passed', async () => {
+        const fixture = await createOrderedSuccessorFixture({});
+        const [claim] = await fixture.port.claimObserved([fixture.successorEntry]);
+        await fixture.port.releaseAll([{ claim: claim!, outcome: { status: 'retry' } }]);
+        const before = await fixture.readSuccessorRow();
+        expect(before?.status).toBe(EntityStatus.RETRY);
+        expect(before?.dequeueAudit.nextTs?.epochMilliseconds).toBeGreaterThan(fixture.nowMs());
+
+        expect(await fixture.selector.claimOrderedSuccessor(fixture.port, fixture.position)).toBeUndefined();
+
+        expect(await fixture.readSuccessorRow()).toEqual(before);
+    });
+
+    // Pins that a retried successor is handed on once its delay has passed: the retry schedule delays it, never strands it.
+    it('reserves a retried successor whose delay has passed', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
+        const fixture = await createOrderedSuccessorFixture({});
+        const [claim] = await fixture.port.claimObserved([fixture.successorEntry]);
+        await fixture.port.releaseAll([{ claim: claim!, outcome: { status: 'retry' } }]);
+        const retried = await fixture.readSuccessorRow();
+        expect(retried?.status).toBe(EntityStatus.RETRY);
+        // The queue reserves by its own clock, so the system clock moves with the fixture's reading.
+        vi.setSystemTime(retried!.dequeueAudit.nextTs!.epochMilliseconds);
+        fixture.setNowMs(retried!.dequeueAudit.nextTs!.epochMilliseconds);
+
+        const handedOn = await fixture.selector.claimOrderedSuccessor(fixture.port, fixture.position);
+
+        expect(handedOn?.entry.key).toEqual(fixture.successorEntry.key);
+        expect((await fixture.readSuccessorRow())?.status).toBe(EntityStatus.RESERVED);
+        expect(handedOn?.attempts).toBe(2);
+    });
+
+    // Pins that an expired successor is left to the rotation, which no longer claims it either: the selector's clock
+    // stands at the row's own expiry, so the expiry check is what refuses it.
+    it('answers nothing for an expired successor', async () => {
+        const fixture = await createOrderedSuccessorFixture({});
+        const before = await fixture.readSuccessorRow();
+        fixture.setNowMs(before!.audit.expiryTs.epochMilliseconds);
+
+        expect(await fixture.selector.claimOrderedSuccessor(fixture.port, fixture.position)).toBeUndefined();
+
+        expect(await fixture.readSuccessorRow()).toEqual(before);
+    });
+
+    // Pins that a successor is claimed only when its delivery reads ready now: with no consumer it waits.
+    it('answers nothing for a successor whose delivery has no consumer registered', async () => {
+        const fixture = await createOrderedSuccessorFixture({ canDispatchMessage: () => false });
+        const before = await fixture.readSuccessorRow();
+
+        expect(await fixture.selector.claimOrderedSuccessor(fixture.port, fixture.position)).toBeUndefined();
+
+        expect(await fixture.readSuccessorRow()).toEqual(before);
+    });
+
+    // Pins that a lane hands on only its own carrier's rows, without reading the other lane's row.
+    it('answers nothing for a slot whose carrier is the other lane\'s, and reads no row', async () => {
+        const fixture = await createOrderedSuccessorFixture({ laneCarrier: 'rtc' });
+        const before = await fixture.readSuccessorRow();
+
+        expect(await fixture.selector.claimOrderedSuccessor(fixture.port, fixture.position)).toBeUndefined();
+
+        expect(fixture.readKeys).toEqual([]);
+        expect(await fixture.readSuccessorRow()).toEqual(before);
+    });
+
+    // Pins what a hand-on does on a track that has ended, its progress row gone: the successor's readiness reads
+    // `resync-required`, which a claim may take to reject it, by the rotation's page and by the hand-on alike.
+    it('reserves the successor of a track whose progress row is gone, as the rotation would, to reject it', async () => {
+        const fixture = await createOrderedSuccessorFixture({});
+        await fixture.removeTrackProgress();
+        const before = await fixture.readSuccessorRow();
+        expect(before?.status).toBe(EntityStatus.NEW);
+
+        const handedOn = await fixture.selector.claimOrderedSuccessor(fixture.port, fixture.position);
+
+        expect(handedOn?.entry.key).toEqual(fixture.successorEntry.key);
+        expect((await fixture.readSuccessorRow())?.status).toBe(EntityStatus.RESERVED);
+    });
+
+    // Pins that a hand-on does not follow a track past an omission: the next copy stands at a later sequence.
+    it('answers nothing for a track that continues after an omission', async () => {
+        const fixture = await createOrderedSuccessorFixture({ omitted: true });
+        const before = await fixture.readSuccessorRow();
+        expect(before?.status).toBe(EntityStatus.NEW);
+
+        expect(await fixture.selector.claimOrderedSuccessor(fixture.port, fixture.position)).toBeUndefined();
+
+        expect(fixture.readKeys).toEqual([]);
+        expect(await fixture.readSuccessorRow()).toEqual(before);
+    });
+});
+
 describe('ALInboundWorkSelector claim order', () => {
     it.each(
         [
@@ -891,6 +1018,7 @@ function createSelectorFixture(clock: SelectorClock = STILL_CLOCK): SelectorFixt
         port: createTestALInboundWorkPort({ carrier: 'ws', ...stores, nowMs: clock.readStoreMs }),
         selector: createALInboundWorkSelector({
             delivery,
+            admissionStore,
             namespace,
             nowMs: clock.nowMs,
             lane: 'durable',
@@ -957,6 +1085,7 @@ function createTimedSelectorFixture(): TimedSelectorFixture {
         },
         selector: createALInboundWorkSelector({
             delivery,
+            admissionStore,
             namespace,
             nowMs: () => nowMs,
             lane: 'durable',
@@ -997,6 +1126,7 @@ function createCostBoundaryFixture(): CostBoundaryFixture {
         advance,
         selector: createALInboundWorkSelector({
             delivery,
+            admissionStore,
             namespace,
             nowMs,
             lane: 'durable',
@@ -1238,9 +1368,111 @@ function createPendingAdmissionEntry(namespace: string, observedAtMs: number = N
     }).entry;
 }
 
+interface OrderedSuccessorFixtureInput {
+    /** Absent registers a consumer for every message. */
+    readonly canDispatchMessage?: (msg: ALMessage) => boolean;
+    /** Absent, the lane claims the carrier the messages were admitted on. */
+    readonly laneCarrier?: 'rtc' | 'ws';
+    /** The next copy after message 1 is message 3, which names 1 as its prior, in place of message 2. */
+    readonly omitted?: boolean;
+}
+
+interface OrderedSuccessorFixture {
+    readonly port: ALWorkQueuePort;
+    readonly selector: ALInboundWorkSelector;
+    readonly position: { readonly trackKey: string; readonly completedThrough: number; };
+    /** The delivery row of the copy after message 1, as admitted. */
+    readonly successorEntry: ResourceEntry;
+    readonly readSuccessorRow: () => Promise<ResourceEntry | undefined>;
+    /** The work rows the port read by key, in order: the store's own record of the rows a hand-on looked at. */
+    readonly readKeys: readonly ResourceEntryKeyString[];
+    /** The selector's clock. */
+    readonly nowMs: () => number;
+    /** Moves the one reading the port, the delivery and the selector share to `atMs`. */
+    readonly setNowMs: (atMs: number) => void;
+    /** Removes the track's delivery progress row, as its lapse would: the track has ended for this store. */
+    readonly removeTrackProgress: () => Promise<void>;
+}
+
+/** Message 1 of a recorded track admitted over WS and completed, and the copy after it admitted behind it. */
+async function createOrderedSuccessorFixture(input: OrderedSuccessorFixtureInput): Promise<OrderedSuccessorFixture> {
+    const namespace = 'inbound-ordered-successor';
+    const { backend, stores } = createInboundTestBackendStores({
+        namespace,
+        storage: 'memory',
+        observer: createPassThroughIndexedDbOperationObserver()
+    });
+    const first = createRecordedTrackMessage(1, {});
+    const next = input.omitted === true
+        ? createRecordedTrackMessage(3, { [INBOUND_TEST_SELF_PEER_ID]: 1 })
+        : createRecordedTrackMessage(2, {});
+    await readInboundTestDispatchEffect(stores, first);
+    const successor = await readInboundTestDispatchEffect(stores, next);
+    const trackKey = toALOrderingTrackKey(first)!;
+    expect(await createInboundTestOrderedDelivery(stores.admissionStore).complete(first)).toEqual({
+        kind: 'completed',
+        position: { trackKey, completedThrough: 1 }
+    });
+    // One still reading for the port, the delivery and the selector, so a retry delay cannot pass while the case runs;
+    // only the case moves it.
+    let atMs = Date.now();
+    const readAtMs = () => atMs;
+    const nowMs = readAtMs;
+    const delivery = createInboundTestDispatch(stores, readAtMs, input.canDispatchMessage).delivery;
+    const port = createTestALInboundWorkPort({ carrier: input.laneCarrier ?? 'ws', ...stores, nowMs: readAtMs });
+    const readKeys: ResourceEntryKeyString[] = [];
+    const successorKey = toALInboundWorkKey(namespace, successor.effectId);
+    return {
+        port: {
+            ...port,
+            readEntry: async (key) => {
+                readKeys.push(toKeyAsString(key));
+                return await port.readEntry(key);
+            }
+        },
+        selector: createALInboundWorkSelector({
+            delivery,
+            admissionStore: stores.admissionStore,
+            namespace,
+            nowMs,
+            lane: 'durable',
+            onRotationCompleted: IGNORE_ROTATIONS
+        }),
+        position: { trackKey, completedThrough: 1 },
+        successorEntry: successor.entry,
+        readSuccessorRow: async () => (await stores.workQueue.getItem(successorKey)) ?? undefined,
+        readKeys,
+        nowMs,
+        setNowMs: (movedToMs) => {
+            atMs = movedToMs;
+        },
+        removeTrackProgress: async () => {
+            await backend.write(async (tx) => {
+                await tx.remove(`${namespace}:delivered:${trackKey}`);
+            });
+        }
+    };
+}
+
+/** A room copy of the fixture's track, frozen to the fixture's receiver, with the priors its authority recorded. */
+function createRecordedTrackMessage(seq: number, priorSeqByRecipient: Readonly<Record<string, number>>): ALMessage {
+    const message = createInboundTestMessage({ msgId: `recorded-${seq}`, seq });
+    return {
+        ...message,
+        targets: {
+            mode: 'multicast',
+            groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room' },
+            recipientPeerIds: [INBOUND_TEST_SELF_PEER_ID],
+            snapshotVersion: 1
+        },
+        ordering: { ...message.ordering!, priorSeqByRecipient }
+    };
+}
+
 interface DispatchPageFixture {
     readonly namespace: string;
     readonly delivery: ALInboundAdmittedDelivery;
+    readonly admissionStore: ALInboundAdmissionStore;
     readonly port: ALWorkQueuePort;
     readonly selector: ALInboundWorkSelector;
     readonly effects: readonly ALPersistedInboundEffect[];
@@ -1268,9 +1500,11 @@ async function createDispatchPageFixture(
     return {
         namespace,
         delivery,
+        admissionStore: stores.admissionStore,
         port: createTestALInboundWorkPort({ carrier: 'ws', ...stores, nowMs: Date.now }),
         selector: createALInboundWorkSelector({
             delivery,
+            admissionStore: stores.admissionStore,
             namespace,
             nowMs: Date.now,
             lane: 'durable',

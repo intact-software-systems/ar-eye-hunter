@@ -10,7 +10,7 @@ test('public event commands reject worker settlement and a caller-supplied actor
         requireSession: async () => createGroupStateRouteAuthSession('alice'),
         readRoom: async () => undefined,
         nowEpochMs: () => 10,
-        events: { read: async () => null, mutate: { submit: async () => { throw new Error('Unexpected event write'); } } }
+        events: { pushPublicKey: null, read: async () => null, readOrganizer: async () => { throw new Error('Unexpected organizer read'); }, mutate: { submit: async () => { throw new Error('Unexpected event write'); } } }
     });
     const path = '/api/state/apps/a/workspaces/w/groups/lobby/event';
     const get = await app.request(path);
@@ -22,4 +22,40 @@ test('public event commands reject worker settlement and a caller-supplied actor
         });
         assert.equal(response.status, 400);
     }
+});
+
+test('the client can discover the public application server key before requesting notification permission', async () => {
+    const app = new Hono();
+    registerRoomEventRoutes(app, {
+        requireSession: async () => createGroupStateRouteAuthSession('alice'), readRoom: async () => undefined, nowEpochMs: () => 10,
+        events: { pushPublicKey: 'public-key', read: async () => null, readOrganizer: async () => { throw new Error('Unexpected organizer read'); }, mutate: { submit: async () => { throw new Error('Unexpected write'); } } }
+    });
+    const response = await app.request('/api/room-event-alerts/public-key');
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { publicKey: 'public-key' });
+});
+
+test('organizer reads use the authenticated session and exact lobby', async () => {
+    const app = new Hono();
+    const session = createGroupStateRouteAuthSession('organizer');
+    const lobby = { applicationId: 'a', workspaceId: 'w', groupId: 'lobby' };
+    registerRoomEventRoutes(app, {
+        requireSession: async () => session,
+        readRoom: async () => undefined,
+        nowEpochMs: () => 10,
+        events: {
+            pushPublicKey: null,
+            read: async () => null,
+            readOrganizer: async (group, actor) => {
+                assert.deepEqual(group, lobby);
+                assert.deepEqual(actor, { principalId: session.clientId, sessionId: session.sessionId });
+                return { lobby, revision: 2, organizerId: actor.principalId, courts: [], closesAt: 100, closed: false, queue: [], players: [] };
+            },
+            mutate: { submit: async () => { throw new Error('Unexpected event write'); } }
+        }
+    });
+    const response = await app.request('/api/state/apps/a/workspaces/w/groups/lobby/event/organizer');
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('Cache-Control'), 'no-store');
+    assert.equal((await response.json()).organizerId, session.clientId);
 });

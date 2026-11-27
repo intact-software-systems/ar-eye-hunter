@@ -197,7 +197,8 @@ export function toConnectCommand(step: AlmConformanceStepInput): RallarBlackBoxT
                 ? {}
                 : { messageSelector: { ...step.messages.messageSelector } }),
             ...(step.role === 'successor' ? RESTORED_SESSION_RALLAR : {}),
-            ...(installsRecoveryOwner(step) ? { recoveryOwner: 'record' } : {})
+            ...(installsRecoveryOwner(step) ? { recoveryOwner: 'record' } : {}),
+            ...(step.messages.order === undefined ? {} : { channelOrder: step.messages.order })
         },
         timeoutMs: CONNECT_TIMEOUT_MS,
         ...(input.carrier === 'ws' || !waitsForReadyPeers(step) ? {} : {

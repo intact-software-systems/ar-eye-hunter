@@ -4,6 +4,7 @@ import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
 import type { RoomEvent } from '@shared/api/room-events/room-event.ts';
+import { decodeRoomEventOrganizerView } from '@shared/api/room-events/room-event-organizer-view.ts';
 import { decodeRoomEventView } from '@shared/api/room-events/decode-room-event-view.ts';
 import { isTemporaryRoomAdmission } from '@shared/api/room-guests/temporary-room.ts';
 import { decodeExactGroupRef } from '@shared/encoding/decode-exact-group-ref.ts';
@@ -65,6 +66,31 @@ export class RallarRoomEvent extends AuthenticatedResource<RoomEvent.View | null
         this.lobby = ref;
         this.grants = grants;
         this.path = path;
+    }
+
+    /** Observe event-wide allocations while remaining in the selected room. */
+    organizerView(): Pick<AuthenticatedResource<RoomEvent.OrganizerView, never>, 'start' | 'stop' | 'getState' | 'onChange' | 'refresh'> {
+        const browser = this.browser;
+        const lobby = this.lobby;
+        return new AuthenticatedResource<RoomEvent.OrganizerView, never>({
+            auth: { session: () => browser.session(), onChange: (listener, options) => browser.auth.onChange(listener, options) },
+            activity: new BrowserActivity(), timers: createDefaultTimers(), createId: () => crypto.randomUUID()
+        }, {
+            scope: lobby, changeResult: 'read',
+            subscribeRefresh: changed => subscribeViewInvalidations({ browser, scope: lobby, resource: 'room-event-organizer',
+                changed: notice => {
+                    if (!notice || (notice.resource === 'room-event-organizer' && notice.groupId === lobby.groupId)) void changed();
+                } })
+        }, {
+            read: async ({ session, signal }) => {
+                const raw = await readApiView({ baseUrl: readApiBaseUrl(), path: this.path + '/organizer', session, signal, timeoutMs: 10_000 });
+                const view = decodeRoomEventOrganizerView(raw);
+                if (view.organizerId !== session.clientId || !isSameGroupRef(view.lobby, lobby)) {
+                    throw new TypeError('Organizer roster belongs to another account or event.');
+                }
+                return view;
+            }
+        });
     }
 
     async enterCourt(): Promise<void> {

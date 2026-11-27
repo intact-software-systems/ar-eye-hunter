@@ -11,7 +11,8 @@ const COMMAND_CHANNEL = {
     access: 'members',
     durability: undefined,
     onStorageUnavailable: 'refuse',
-    publication: undefined
+    publication: undefined,
+    order: undefined
 } as const;
 
 describe('a WS send addressed to one peer (Q11)', () => {

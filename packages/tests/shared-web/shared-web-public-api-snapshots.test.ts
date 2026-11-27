@@ -14,6 +14,10 @@ interface PublicSurfaceSnapshot {
 
 const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
     {
+        filePath: 'packages/shared-web/browser/rooms/sessions/guest-session-booking.ts',
+        expected: { values: ['GuestSessionBooking'], types: [], starExports: [], namespaceExports: [] }
+    },
+    {
         filePath: 'packages/shared-web/browser/rooms/lobby/rallar-room-lobby.ts',
         expected: { values: ['RallarRoomLobby'], types: [], starExports: [], namespaceExports: [] }
     },
@@ -187,6 +191,9 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarMessageHandle',
                 'RallarMessageHandler',
                 'RallarMessageLane',
+                'RallarMessageOrder',
+                'RallarMessageOrderGap',
+                'RallarMessageOrderGapReason',
                 'RallarMessageReplyOptions',
                 'RallarMessageReplyOutcome',
                 'RallarMessageReplyWaitOptions',
@@ -442,6 +449,9 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarMessageHandle',
                 'RallarMessageHandler',
                 'RallarMessageLane',
+                'RallarMessageOrder',
+                'RallarMessageOrderGap',
+                'RallarMessageOrderGapReason',
                 'RallarMessageReplyOptions',
                 'RallarMessageReplyOutcome',
                 'RallarMessageReplyWaitOptions',
@@ -720,12 +730,16 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'ALVolatileSessionReport',
                 'BoundedHistogram',
                 'RallarChannelRecovery',
+                'RallarEdgeOrderUsage',
                 'RallarMessage',
                 'RallarMessageDeliveryListener',
                 'RallarMessageDeliveryOutcome',
                 'RallarMessageHandle',
                 'RallarMessageHandler',
                 'RallarMessageLane',
+                'RallarMessageOrder',
+                'RallarMessageOrderGap',
+                'RallarMessageOrderGapReason',
                 'RallarMessagePayload',
                 'RallarMessageReplyOptions',
                 'RallarMessageReplyOutcome',
@@ -918,6 +932,18 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
             starExports: [],
             namespaceExports: []
         }
+    },
+    {
+        filePath: 'packages/shared-web/browser/rooms/events/court-alert-click.ts',
+        expected: { values: ['COURT_ALERT_OPENED', 'clearCourtAlertClick', 'openCourtAlertClick', 'readCourtAlertClick'], types: [], starExports: [], namespaceExports: [] }
+    },
+    {
+        filePath: 'packages/shared-web/browser/rooms/events/court-ready-notifications.ts',
+        expected: { values: ['disableCourtReadyNotifications', 'enableCourtReadyNotifications', 'readCourtAlertPublicKey'], types: [], starExports: [], namespaceExports: [] }
+    },
+    {
+        filePath: 'packages/shared-web/browser/rooms/events/court-alert-notification.ts',
+        expected: { values: ['courtAlertLaunchUrl', 'courtAlertStatus', 'courtReadyNotification', 'readCourtAlertLaunch'], types: [], starExports: [], namespaceExports: [] }
     },
     {
         filePath: 'packages/shared-web/browser/rooms/events/rallar-room-event.ts',

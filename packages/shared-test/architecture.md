@@ -139,6 +139,9 @@ What an ALM send comes to on each carrier, and what proves each such outcome, is
 stated once in the carrier matrix; the
 [ALM carrier matrix](./rallar-bb-test/docs/alm-carrier-matrix.md) page explains
 how to read and change it.
+The [ALM publication workload family](./rallar-bb-test/docs/alm-publication-workload.md)
+describes one point of that family: its parameters, what each role runs, its local proof and
+what each field of its figures record means.
 These maps keep the independent command, control and analysis families directly
 locatable without moving unrelated owners merely to change a directory count.
 

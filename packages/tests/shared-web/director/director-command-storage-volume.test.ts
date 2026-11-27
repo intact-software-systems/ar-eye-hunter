@@ -118,7 +118,8 @@ function createCommandTransport(sender: BrowserRallarMessageSender): BrowserDire
                 throw new Error('No channel in this test subscribes.');
             }
         },
-        grantedTopics: new BrowserGrantedTopics({ findGroupSnapshot: () => undefined })
+        grantedTopics: new BrowserGrantedTopics({ findGroupSnapshot: () => undefined }),
+        edgeOrder: { declareEdgeOrder: () => {} }
     });
     return new BrowserDirectorRelayTransport({
         messages: {

@@ -170,7 +170,8 @@ describe('Rallar facade default scope behavior', () => {
                 applicationId: 'default-app',
                 workspaceId: 'default'
             },
-            {}
+            {},
+            mocks.context.session
         );
     });
 
@@ -308,7 +309,8 @@ describe('Rallar facade default scope behavior', () => {
                 command: {
                     timeoutMs: 321
                 }
-            }
+            },
+            mocks.context.session
         );
     });
 

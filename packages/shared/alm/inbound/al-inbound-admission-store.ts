@@ -56,7 +56,11 @@ import {
     type ALInboundMessageReference,
     type ALStoredInboundMessage
 } from './al-inbound-canonical-message.ts';
-import { ALInboundDurableEffectStore } from './al-inbound-durable-effect-store.ts';
+import {
+    ALInboundDurableEffectStore,
+    type ALInboundOrderedDeliveryRead,
+    type ALInboundOrderedSuccessor
+} from './al-inbound-durable-effect-store.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 import {
     decodeALInboundBufferedSnapshot,
@@ -264,15 +268,6 @@ export interface ALInboundBufferedReleaseReadDto {
     readonly durability: ALStoreDurability;
 }
 
-export interface ALInboundOrderedDeliveryRead {
-    readonly completedThrough: number;
-    readonly predecessor: ALInboundDeliveryPredecessor | undefined;
-}
-
-export type ALInboundDeliveryPredecessor =
-    | { readonly kind: 'effect'; }
-    | { readonly kind: 'resync-required'; };
-
 export type ALInboundAdmissionMutation =
     | Readonly<{
         kind: 'mark-terminal-volatile-msg-owner';
@@ -451,6 +446,12 @@ export interface ALInboundAdmissionStore extends ALReadyable {
     readBufferedRelease(input: ReadALInboundBufferedReleaseInput): Promise<ALInboundBufferedReleaseReadDto | undefined>;
 
     readOrderedDelivery(trackKey: string, beforeSeq: number): Promise<ALInboundOrderedDeliveryRead>;
+
+    /**
+     * The delivery row named by the track's slot after `completedThrough`, in one read; absent when no slot stands
+     * there (the next message is not admitted, or the track continues after an omission) or the slot names no delivery.
+     */
+    readOrderedSuccessor(trackKey: string, completedThrough: number): Promise<ALInboundOrderedSuccessor | undefined>;
 
     /** The track's live ordering snapshot; absent for a track never opened or past its TTL. */
     readOrderingSnapshot(trackKey: string, nowMs: number): Promise<ALOrderingTrackSnapshot | undefined>;
@@ -749,6 +750,13 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
 
     async readOrderedDelivery(trackKey: string, beforeSeq: number): Promise<ALInboundOrderedDeliveryRead> {
         return await this.effects.readOrderedDelivery(trackKey, beforeSeq);
+    }
+
+    async readOrderedSuccessor(
+        trackKey: string,
+        completedThrough: number
+    ): Promise<ALInboundOrderedSuccessor | undefined> {
+        return await this.effects.readOrderedSuccessor(trackKey, completedThrough);
     }
 
     async readOrderingSnapshot(trackKey: string, nowMs: number): Promise<ALOrderingTrackSnapshot | undefined> {

@@ -2,13 +2,7 @@ import { AL_CHECKPOINT_DEFAULT_SETTINGS } from '@shared/alm/checkpoint/al-checkp
 
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
-import {
-    CONNECT_READINESS_TIMEOUT_MS,
-    CONNECT_TIMEOUT_MS,
-    NON_EXPIRING_SEND_TIMEOUT_MS,
-    RESPONSE_MARGIN_MS,
-    STATS_TIMEOUT_MS
-} from '../../alm-conformance-budgets.ts';
+import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS } from '../../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '../../alm-conformance-carriers.ts';
 import { toHeldFaultCommands } from '../../alm-conformance-fault-commands.ts';
 import {
@@ -25,15 +19,17 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 import {
-    RESTORED_SESSION_RALLAR,
     toCheckpointStorePrefix,
-    toConnectCommand,
     toRecoveryTtlMs,
     toStoreRecoveryWait
 } from '../../alm-conformance-session-commands.ts';
 import { toCommandId } from '../../alm-conformance-step-identities.ts';
-import type { AlmReloadCheckpoint } from '../../alm-reload-pair.ts';
-import { toAlmCellCommandPrefix } from '../../cell/to-alm-cell-command-prefix.ts';
+import {
+    toAlmReloadCheckpoint,
+    toReloadCommand,
+    toReloadPhaseHealthCommand,
+    toRestoredReconnectCommand
+} from '../../cell/to-alm-reload-checkpoint.ts';
 import { toOwnerLeaseLapseWait, toPauseCommand } from '../../to-pause-command.ts';
 
 /**
@@ -51,37 +47,25 @@ export const checkpointRecovery: AlmConformanceScenarioDefinition = {
     laneFamily: 'two-agent',
     toSenderCommands: toCheckpointRecoverySenderCommands,
     toRecipientCommands: toCheckpointRecoveryReceiverCommands,
-    toReloadCheckpoint
+    toReloadCheckpoint: (step) =>
+        toAlmReloadCheckpoint(step, {
+            senderPrefixEnd: 'assert-checkpoint-write',
+            senderSuffixEnd: 'assert-recovered-claimed',
+            receiverReadyEnd: 'health-before',
+            receiverAbsenceEnd: 'absent-before-reload',
+            receiverRecoveryEnd: 'health-after'
+        })
 };
-
-function toReloadCheckpoint(step: AlmConformanceStepInput): AlmReloadCheckpoint {
-    const sender = { ...step, role: 'sender' as const };
-    const receiver = { ...step, role: 'receiver' as const };
-    return {
-        key: toAlmCellCommandPrefix(step.input.carrier, step.scenarioKey),
-        senderPrefixEnd: toCommandId(sender, 'assert-checkpoint-write'),
-        senderReload: toCommandId(sender, 'reload'),
-        senderSuffixEnd: toCommandId(sender, 'assert-recovered-claimed'),
-        receiverReadyEnd: toCommandId(receiver, 'health-before'),
-        receiverAbsenceEnd: toCommandId(receiver, 'absent-before-reload'),
-        receiverRecoveryEnd: toCommandId(receiver, 'health-after')
-    };
-}
 
 function toCheckpointRecoverySenderCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
-        toHealthCommand(sender, 'health-before'),
+        toReloadPhaseHealthCommand(sender, 'health-before'),
         ...toHeldFaultCommands(sender, 'checkpoint-hold', 'until-cleared'),
         toStorageCountersCommand(sender, 'storage-counters-before-send', true),
         toOriginalSend(sender),
         ...toRetainedEvidenceCommands({ ...sender, index: 1 }, true),
         ...toCheckpointWriteCommands(sender),
-        {
-            kind: 'agent.reload',
-            commandId: toCommandId(sender, 'reload'),
-            readyTimeoutMs: CONNECT_READINESS_TIMEOUT_MS,
-            timeoutMs: CONNECT_TIMEOUT_MS
-        },
+        toReloadCommand(sender),
         ...toRestoredCommands(sender)
     ];
 }
@@ -114,14 +98,9 @@ function toCheckpointWriteCommands(sender: AlmConformanceStepInput): readonly Ra
  * lease has lapsed and its first batch claims the row.
  */
 function toRestoredCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
-    const reconnect = toConnectCommand(sender);
     return [
         toOwnerLeaseLapseWait(sender),
-        {
-            ...reconnect,
-            commandId: toCommandId(sender, 'reconnect'),
-            rallar: { ...reconnect.rallar, ...RESTORED_SESSION_RALLAR }
-        },
+        toRestoredReconnectCommand(sender),
         toObserveCommand({ ...sender, index: 1, state: 'unobservable' }),
         toResultAssertion({
             step: sender,
@@ -168,19 +147,15 @@ function toOriginalSend(sender: AlmConformanceStepInput): RallarBlackBoxTestComm
 function toCheckpointRecoveryReceiverCommands(receiver: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const payload = toPayload(receiver);
     return [
-        toHealthCommand(receiver, 'health-before'),
+        toReloadPhaseHealthCommand(receiver, 'health-before'),
         toPayloadWait({ step: receiver, name: 'absent-before-reload', payload, absent: true }),
         {
             ...toPayloadWait({ step: receiver, name: 'receive-original', payload, absent: false }),
             timeoutMs: toRecoveryTtlMs(receiver.input.deadlineMs)
         },
-        toHealthCommand(receiver, 'health-after'),
+        toReloadPhaseHealthCommand(receiver, 'health-after'),
         toReceivedCommand({ ...receiver, index: 1, count: 2, absent: true })
     ];
-}
-
-function toHealthCommand(step: AlmConformanceStepInput, name: string): RallarBlackBoxTestCommand {
-    return { kind: 'health', commandId: toCommandId(step, name), timeoutMs: STATS_TIMEOUT_MS };
 }
 
 /** The payload names its carrier, so a wait never matches another carrier's cell. */

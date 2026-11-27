@@ -121,7 +121,7 @@ export function toALInboundBufferedReleaseEffects(read: ALInboundMessageReadDto)
     });
 }
 
-/** The one row that releases `seq` of a track: a delivered predecessor finds its successor by it (D190). */
+/** The one row that releases `seq` of a track; its slot names it, which is how a delivered predecessor finds it. */
 export function toALInboundReleaseEffectId(trackKey: string, seq: number): string {
     return toALInboundEffectId(['release', trackKey, seq]);
 }

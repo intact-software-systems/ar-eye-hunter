@@ -22,11 +22,12 @@ export interface InboundTestDispatch {
 /**
  * The admitted delivery the runtime composes, over the caller's own stores and on the caller's own
  * clock, so a pin can drive one row from its readiness read through its dispatch without a rotation
- * around it.
+ * around it. Absent, `canDispatchMessage` registers a consumer for every message.
  */
 export function createInboundTestDispatch(
     stores: ALInboundRuntimeStores,
-    nowMs: () => number
+    nowMs: () => number,
+    canDispatchMessage?: (msg: ALMessage) => boolean
 ): InboundTestDispatch {
     const dispatched: string[] = [];
     const delivery = new ALInboundAdmittedDelivery({
@@ -36,6 +37,7 @@ export function createInboundTestDispatch(
         effectWorkerId: 'inbound-test-dispatch',
         diagnostics: undefined,
         planIncomingMessage: planInboundTestMessage,
+        canDispatchMessage,
         dispatchInboxEntry: async (entry) => {
             dispatched.push(decodePersistedALMessage(entry.resource).id.msgId);
         },

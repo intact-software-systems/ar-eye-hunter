@@ -14,7 +14,7 @@ import { toApiMutationFailureResponse, toApiMutationRouteFailure } from '../rout
 import { readApiRequestTraceId } from '../services/read-api-request-trace-id.ts';
 
 export interface RoomEventRouteDependencies {
-    readonly events: Pick<TemporaryEventService, 'read'> & { readonly mutate: Pick<TemporaryEventService['mutate'], 'submit'> };
+    readonly events: Pick<TemporaryEventService, 'read' | 'readOrganizer' | 'pushPublicKey'> & { readonly mutate: Pick<TemporaryEventService['mutate'], 'submit'> };
     readonly readRoom: (room: GroupRef) => Promise<GroupSnapshot | undefined>;
     readonly nowEpochMs: () => number;
     readonly requireSession: (request: {header(name: string): string | undefined}) => Promise<IssuedAuthSession>;
@@ -33,16 +33,25 @@ async function roomEventSession(context: Context, lobby: GroupRef, dependencies:
 const EVENT_PATH = '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/event';
 
 export function registerRoomEventRoutes(app: Hono, dependencies: RoomEventRouteDependencies): void {
-    app.get(EVENT_PATH, async context => {
+    app.get('/api/room-event-alerts/public-key', context => {
         context.header('Cache-Control', 'no-store');
-        try {
-            const lobby = lobbyRef(context);
-            const session = await roomEventSession(context, lobby, dependencies);
-            return context.json(await dependencies.events.read(lobby, { principalId: session.clientId, sessionId: session.sessionId }));
-        } catch (error) {
-            return toApiMutationFailureResponse(context, toError(error));
-        }
+        return context.json({ publicKey: dependencies.events.pushPublicKey });
     });
+    for (const [path, read] of [
+        [EVENT_PATH, dependencies.events.read.bind(dependencies.events)],
+        [EVENT_PATH + '/organizer', dependencies.events.readOrganizer.bind(dependencies.events)]
+    ] as const) {
+        app.get(path, async context => {
+            context.header('Cache-Control', 'no-store');
+            try {
+                const lobby = lobbyRef(context);
+                const session = await roomEventSession(context, lobby, dependencies);
+                return context.json(await read(lobby, { principalId: session.clientId, sessionId: session.sessionId }));
+            } catch (error) {
+                return toApiMutationFailureResponse(context, toError(error));
+            }
+        });
+    }
     app.post(EVENT_PATH + '/requests/:requestId', async context => {
         context.header('Cache-Control', 'no-store');
         try {

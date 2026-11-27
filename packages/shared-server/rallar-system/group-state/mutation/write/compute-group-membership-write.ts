@@ -16,7 +16,7 @@ import { computeMemberPresenceAdmission } from '../presence/compute-group-presen
 
 export interface ComputeGroupMembershipWriteInput {
     /** Only issued after the enclosing event has accepted the assignment or departure. */
-    readonly eventMembership?: { readonly transport?: GroupMutationDomainWrite['guestTransportSession'] };
+    readonly eventMembership?: { readonly organizerPlaying?: boolean; readonly transport?: GroupMutationDomainWrite['guestTransportSession'] };
     readonly command: GroupMutationCommand;
     readonly read: GroupMutationRead;
     readonly facts: GroupMutationFacts;
@@ -47,6 +47,8 @@ export function computeGroupMembershipWrite({
     );
     let group: Group = {
         ...stored.value,
+        ...(eventMembership?.organizerPlaying !== undefined && stored.value.eventRoom &&
+            { eventRoom: { ...stored.value.eventRoom, organizerPlaying: eventMembership.organizerPlaying } }),
         metadata,
         metadataVersion: stored.value.metadataVersion + Number(metadata !== stored.value.metadata),
         activeMemberCount,

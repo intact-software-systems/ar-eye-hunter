@@ -16,6 +16,48 @@ export type RallarMessageTransport = 'rtc' | 'ws' | 'replay';
 
 export type RallarMessagePayload = object | string | number | boolean | null;
 
+/** Where a message stands in its sender page's edge-ordered stream; positions count from 1. */
+export interface RallarMessageOrder {
+    /** Minted in memory by the sender's page for the channel and room, so a reload or another tab is a new stream. */
+    readonly stream: string;
+    readonly position: number;
+}
+
+/**
+ * Why a page gave up positions of an edge-ordered stream. The message could no longer arrive: `ended-at-sender`, its
+ * sender said the send was over (refused, cancelled, past its deadline, or acknowledged by the recipients it had);
+ * `cannot-arrive`, the time its sender gave it to arrive has passed. A bound of this page was reached, and the
+ * message is dropped as late if it still arrives: `held-message-deadline`, a later message could be held no longer
+ * without passing its own deadline; `channel-wait-cap`, `held-message-cap` and `held-byte-cap`, a later message was
+ * held as long, or the stream held as much, as the page allows; `stream-cap`, the page follows no more streams.
+ * `held-message-expired`: the position arrived and was held past its own deadline, so it was not handed over.
+ */
+export type RallarMessageOrderGapReason =
+    | 'ended-at-sender'
+    | 'cannot-arrive'
+    | 'held-message-deadline'
+    | 'held-message-expired'
+    | 'channel-wait-cap'
+    | 'held-message-cap'
+    | 'held-byte-cap'
+    | 'stream-cap';
+
+/**
+ * The positions `fromPosition` to `toPosition`, both included, of one sender page's edge-ordered stream that this page
+ * did not hand over. A stream belongs to one room: the one its messages carry.
+ */
+export interface RallarMessageOrderGap {
+    /** The channel's topic; its type where the channel declared no topic. */
+    readonly topicId: string;
+    readonly typeId: string;
+    /** The sender's session, as `RallarMessage.senderId` gives it. */
+    readonly senderId: string;
+    readonly stream: string;
+    readonly fromPosition: number;
+    readonly toPosition: number;
+    readonly reason: RallarMessageOrderGapReason;
+}
+
 export interface RallarMessage<T = never> {
     readonly transport: RallarMessageTransport;
     readonly typeId: string;
@@ -27,8 +69,11 @@ export interface RallarMessage<T = never> {
     /** The sender's trace, `raw.id.traceId`. */
     readonly traceId: string;
     readonly payload: T;
+    /** The envelope as it travelled: on an edge-ordered channel its `payload.resource` is the wrapped payload. */
     readonly raw: ALMessage;
     readonly receivedAtEpochMs: number;
+    /** Present exactly on a message of a channel this page declared `order: 'edge'`. */
+    readonly order?: RallarMessageOrder;
     /** A WS unicast to the sender's session under this message's correlation; its handle observes the reply's delivery. */
     reply<R>(payload: R, options?: RallarMessageReplyOptions): Promise<RallarMessageHandle>;
 }
@@ -218,6 +263,20 @@ export interface RallarTypedMessageChannelDefinition {
      * the drain budget its sends are paced by before admission. There is no default for any field.
      */
     readonly publication?: ALPublicationPolicy;
+    /**
+     * `edge`, on a room channel: one sender page's messages reach this page's handlers in the order that page called
+     * `send`, whichever carrier each came over. Rallar Web numbers each send, wraps the payload with the number and
+     * sorts at the receiver in memory, so both ends declare it; a message that can no longer arrive is skipped. Its
+     * sends are whole-room, at-least-once, receipted and volatile: every other shape is refused `unsupported`.
+     */
+    readonly order?: 'edge';
+    /**
+     * On an `order: 'edge'` channel: called once for each run of positions this page gave up, in the stream's order,
+     * between the handlers of the messages before and after it. The latest declaration for a topic and type stands,
+     * for every room, as the latest channel for it does. What it throws is logged and does not stop the stream.
+     * Absent, a gap is stated in the inbound diagnostics and counted in `messages.readUsage()` only.
+     */
+    readonly onOrderGap?: (gap: RallarMessageOrderGap) => void | Promise<void>;
 }
 
 export type RallarTypedPayloadHandler<T> = (

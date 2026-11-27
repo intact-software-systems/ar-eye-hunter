@@ -30,6 +30,30 @@ const budgetsKiB = JSON.parse(readFileSync(path.join(scriptDir, '../bundle-budge
 
 const entries = [
     {
+        label: 'browser/rooms/sessions/guest-session-booking.ts',
+        entry: 'packages/shared-web/browser/rooms/sessions/guest-session-booking.ts',
+        output: 'guest-session-booking.min.js',
+        brotliBudgetKiB: budgetsKiB['browser/rooms/sessions/guest-session-booking.ts']
+    },
+    {
+        label: 'browser/rooms/events/court-ready-notifications.ts',
+        entry: 'packages/shared-web/browser/rooms/events/court-ready-notifications.ts',
+        output: 'court-ready-notifications.min.js',
+        brotliBudgetKiB: budgetsKiB['browser/rooms/events/court-ready-notifications.ts']
+    },
+    {
+        label: 'browser/rooms/events/court-alert-click.ts',
+        entry: 'packages/shared-web/browser/rooms/events/court-alert-click.ts',
+        output: 'court-alert-click.min.js',
+        brotliBudgetKiB: budgetsKiB['browser/rooms/events/court-alert-click.ts']
+    },
+    {
+        label: 'browser/rooms/events/court-alert-notification.ts',
+        entry: 'packages/shared-web/browser/rooms/events/court-alert-notification.ts',
+        output: 'court-alert-notification.min.js',
+        brotliBudgetKiB: budgetsKiB['browser/rooms/events/court-alert-notification.ts']
+    },
+    {
         label: 'browser/rooms/events/rallar-room-event.ts',
         entry: 'packages/shared-web/browser/rooms/events/rallar-room-event.ts',
         output: 'rallar-room-event.min.js',

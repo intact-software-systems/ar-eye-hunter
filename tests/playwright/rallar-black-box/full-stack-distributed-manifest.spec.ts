@@ -3,12 +3,8 @@ import {
     expect,
     test
 } from '@playwright/test';
-import {
-    spawn,
-    spawnSync,
-    type ChildProcess
-} from 'node:child_process';
-import { createHash, randomBytes } from 'node:crypto';
+import { spawnSync, type ChildProcess } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import type { StatsFs } from 'node:fs';
 import {
     mkdir,
@@ -34,19 +30,14 @@ import {
     readFullStackApiBaseUrl,
     readFullStackSpaBaseUrl
 } from '../../../apps/rallar-black-box/playwright-full-stack-api-server.ts';
-import {
-    readFullStackControlBaseUrl,
-    toFullStackControlWebSocketUrl
-} from '../../../apps/rallar-black-box/playwright-full-stack-control-server.ts';
-import { runWorldFleetDistributedRecipe } from '../../../apps/rallar-black-box/scripts/run-world-fleet-distributed-recipe.ts';
+import { readFullStackControlBaseUrl } from '../../../apps/rallar-black-box/playwright-full-stack-control-server.ts';
 import { selectAllLocalAlmManifest } from '../../../apps/rallar-black-box/scripts/select-all-local-alm-manifest.mjs';
 import {
     createAlmScaleDiagnosticEntries,
     createAlmScaleManifestEntries
 } from '../../../apps/rallar-black-box/src/hetzner/create-alm-scale-manifest-entries.ts';
+import { toControllerAgentIds } from '../../../apps/rallar-black-box/src/hetzner/hetzner-manifest-entry.ts';
 import type { ControlRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
-import { decodeControlDistributedRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-distributed-run-snapshot.ts';
-import { decodeControlRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-run-snapshot.ts';
 import {
     decodeDistributedRunEnvironment,
     readDistributedRunEnvironment,
@@ -57,12 +48,20 @@ import { decodeDistributedRunManifest } from '../../../packages/shared-test/rall
 import { isJsonRecordValue } from '../../../packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { Either } from '../../../packages/shared/resilience/Either.ts';
 
-import {
-    ALL_LOCAL_ALM_READINESS_TIMEOUT_MS,
-    ALL_LOCAL_ALM_REGISTRATION_TIMEOUT_MS,
-    computeAllLocalAlmObservationDeadlines
-} from './compute-all-local-alm-observation-deadlines.ts';
+import { computeAllLocalAlmObservationDeadlines } from './compute-all-local-alm-observation-deadlines.ts';
 import { expectWorldFleetGroupAssertions, expectWorldFleetManifest } from './expect-world-fleet-manifest.ts';
+import {
+    readLocalControlRunSnapshot,
+    startOwnedHeadlessWorker,
+    stopOwnedHeadlessWorker,
+    waitForOwnedWorkerAgents,
+    type OwnedHeadlessWorkerLaunch
+} from './owned-headless-worker.ts';
+import {
+    readNativeControlRun,
+    readNativeDistributedRun,
+    runOwnedWorkerManifest
+} from './run-owned-worker-manifest.ts';
 
 const REQUIRED_NATIVE_ASSERTION_COUNT = 231;
 
@@ -79,10 +78,7 @@ test('observes the selected authored ALM manifest with complete native evidence'
         browserEngine: process.env.BROWSER_ENGINE,
         registerBeforeLogin: process.env.REGISTER_BEFORE_LOGIN
     });
-    const agentIds = Array.from(
-        { length: selection.participantCount },
-        (_, index) => `controller-${String(index + 1).padStart(2, '0')}`
-    );
+    const agentIds = toControllerAgentIds(selection.participantCount);
     const storageDir = process.env.RALLAR_BLACK_BOX_STORAGE_DIR;
     expect(storageDir, 'Recorder storage must be selected before service startup').toBeTruthy();
     const artifactDir = path.join(storageDir!, 'observation');
@@ -106,6 +102,12 @@ test('observes the selected authored ALM manifest with complete native evidence'
     const apiBaseUrl = readFullStackApiBaseUrl();
     const spaBaseUrl = readFullStackSpaBaseUrl();
     const controlBaseUrl = readFullStackControlBaseUrl();
+    const launch: OwnedHeadlessWorkerLaunch = {
+        services: { apiBaseUrl, spaBaseUrl, controlBaseUrl },
+        manifest,
+        agentCount: selection.participantCount,
+        idleExitMs: deadlines.harnessTimeoutMs
+    };
     let worker: ChildProcess | undefined;
     let stage = 'preflight';
     let accepted = false;
@@ -128,101 +130,37 @@ test('observes the selected authored ALM manifest with complete native evidence'
             expect(['localhost', '127.0.0.1', '[::1]']).toContain(new URL(baseUrl).hostname);
         }
         expect(await readdir(storageDir!)).not.toContain('runs');
-        expect(await readControlSnapshot(controlBaseUrl, manifest.controlRunId, harnessAbort.signal)).toBeUndefined();
+        expect(await readLocalControlRunSnapshot(controlBaseUrl, manifest.controlRunId, harnessAbort.signal))
+            .toBeUndefined();
 
-        const credentials: NodeJS.ProcessEnv = {};
-        for (let ordinal = 1; ordinal <= selection.participantCount; ordinal += 1) {
-            credentials[`RALLAR_BLACK_BOX_AGENT_${ordinal}_USERNAME`] = agentIds[ordinal - 1];
-            credentials[`RALLAR_BLACK_BOX_AGENT_${ordinal}_PASSWORD`] = randomBytes(24).toString('hex');
-        }
         stage = 'registration';
-        worker = spawn(process.execPath, ['--import', 'tsx', 'apps/rallar-black-box/scripts/headless-worker.ts'], {
-            detached: true,
-            stdio: 'ignore',
-            env: {
-                ...process.env,
-                ...credentials,
-                RALLAR_BLACK_BOX_SPA_URL: spaBaseUrl,
-                RALLAR_BLACK_BOX_CONTROL_URL: toFullStackControlWebSocketUrl(controlBaseUrl),
-                RALLAR_CONTROL_HTTP_URL: controlBaseUrl,
-                RALLAR_API_BASE_URL: apiBaseUrl,
-                RALLAR_BLACK_BOX_RUN_ID: manifest.controlRunId,
-                RALLAR_BLACK_BOX_TARGET_DISTRIBUTED_RUN_ID: manifest.distributedRunId,
-                RALLAR_BLACK_BOX_AGENT_COUNT: String(selection.participantCount),
-                RALLAR_BLACK_BOX_AGENT_START_INDEX: '1',
-                RALLAR_BLACK_BOX_AGENT_PREFIX: 'controller',
-                RALLAR_BLACK_BOX_APPLICATION_ID: manifest.group.applicationId,
-                RALLAR_BLACK_BOX_WORKSPACE_ID: manifest.group.workspaceId,
-                RALLAR_BLACK_BOX_ROOM_ID: manifest.group.groupId,
-                RALLAR_BLACK_BOX_HEADLESS_ENTRY: 'headless',
-                RALLAR_BLACK_BOX_REGISTER: 'true',
-                RALLAR_BLACK_BOX_EXIT_MODE: 'after-target-distributed-run-terminal',
-                RALLAR_BLACK_BOX_IDLE_EXIT_MS: String(deadlines.harnessTimeoutMs)
-            }
-        });
+        worker = startOwnedHeadlessWorker(launch);
         worker.on('error', () => harnessAbort.abort());
-        await expect.poll(async () => {
-            if (worker!.exitCode !== null || harnessAbort.signal.aborted) {
-                throw new Error('Owned worker exited before registration.');
-            }
-            const snapshot = await readControlSnapshot(controlBaseUrl, manifest.controlRunId, harnessAbort.signal);
-            return (snapshot?.agents ?? []).filter((agent) =>
-                agent.connected && agent.registeredAtEpochMs !== undefined
-            )
-                .map((agent) => agent.agentId).sort();
-        }, { timeout: ALL_LOCAL_ALM_REGISTRATION_TIMEOUT_MS, intervals: [1_000] }).toEqual(agentIds);
+        await waitForOwnedWorkerAgents(worker, launch, harnessAbort.signal);
 
         stage = 'manifest-operation';
-        const operation = await runWorldFleetDistributedRecipe({
+        const operation = await runOwnedWorkerManifest({
             controlBaseUrl,
             manifestPath: selection.path,
+            manifestText: source.toString('utf8'),
             artifactDir,
             rtcCaptureMode: process.env.INPUT_RTC_CAPTURE_MODE,
-            pollMs: 2_000,
-            readinessTimeoutMs: ALL_LOCAL_ALM_READINESS_TIMEOUT_MS,
-            terminalTimeoutMs: deadlines.terminalTimeoutMs
-        }, {
-            fetch: (url, init) => fetch(url, { ...init, signal: harnessAbort.signal }),
-            readManifestText: async (filePath) => {
-                expect(filePath).toBe(selection.path);
-                return source.toString('utf8');
-            },
-            artifacts: {
-                mkdir: async (directory) => {
-                    await mkdir(directory, { recursive: true });
-                },
-                writeFile: async (filePath, contents) => {
-                    await writeFile(filePath, contents);
-                }
-            },
-            clock: {
-                now: Date.now,
-                wait: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))
-            },
-            log: console.log,
-            warn: console.warn,
+            terminalTimeoutMs: deadlines.terminalTimeoutMs,
+            signal: harnessAbort.signal,
             prepareEvidenceExport: async () => {
-                cleanup = await stopOwnedWorker(worker!);
+                cleanup = await stopOwnedHeadlessWorker(worker!);
                 if (cleanup !== 'reaped') {
                     throw new Error('Owned worker completion failed.');
                 }
                 producerCompletedBeforeExport = true;
             }
         });
-        operation.fold((failure) => {
-            throw new Error(failure.kind === 'runtime' ? failure.cause.message : failure.message);
+        operation.fold((message) => {
+            throw new Error(message);
         }, () => undefined);
         stage = 'native-acceptance';
-        const distributed = decodeControlDistributedRunSnapshot(
-            JSON.parse(await readFile(path.join(artifactDir, 'distributed-run.json'), 'utf8'))
-        ).fold(() => {
-            throw new Error('Native distributed snapshot could not be decoded.');
-        }, (decoded) => decoded);
-        const control = decodeControlRunSnapshot(
-            JSON.parse(await readFile(path.join(artifactDir, 'control-run.json'), 'utf8'))
-        ).fold(() => {
-            throw new Error('Native control snapshot could not be decoded.');
-        }, (decoded) => decoded);
+        const distributed = await readNativeDistributedRun(artifactDir);
+        const control = await readNativeControlRun(artifactDir);
         await writeRecorderCompleteness(artifactDir, storageDir!, control);
         expectWorldFleetManifest(distributed.manifest, manifest, process.env.INPUT_RTC_CAPTURE_MODE);
         expect(distributed.state).toBe('passed');
@@ -275,7 +213,7 @@ test('observes the selected authored ALM manifest with complete native evidence'
         harnessAbort.abort();
         try {
             if (cleanup !== 'reaped') {
-                cleanup = worker ? await stopOwnedWorker(worker) : 'not-started';
+                cleanup = worker ? await stopOwnedHeadlessWorker(worker) : 'not-started';
             }
             await writeFile(
                 path.join(artifactDir, 'observation-result.json'),
@@ -305,12 +243,7 @@ test('observes the selected authored ALM manifest with complete native evidence'
                     if (!producerCompletedBeforeExport) {
                         throw new Error('Native export lacked a completed producer boundary.');
                     }
-                    const control = decodeControlRunSnapshot(
-                        JSON.parse(await readFile(path.join(artifactDir, 'control-run.json'), 'utf8'))
-                    ).fold(() => {
-                        throw new Error('Native control snapshot unavailable.');
-                    }, (decoded) => decoded);
-                    await writeRecorderCompleteness(artifactDir, storageDir!, control);
+                    await writeRecorderCompleteness(artifactDir, storageDir!, await readNativeControlRun(artifactDir));
                 }
                 catch {
                     await writeFile(
@@ -335,26 +268,6 @@ test('observes the selected authored ALM manifest with complete native evidence'
         }
     }
 });
-
-async function readControlSnapshot(
-    controlBaseUrl: string,
-    runId: string,
-    signal: AbortSignal
-): Promise<ControlRunSnapshot | undefined> {
-    const response = await fetch(`${controlBaseUrl}/runs/${encodeURIComponent(runId)}`, { signal });
-    if (response.status === 404) {
-        return undefined;
-    }
-    if (!response.ok) {
-        throw new Error('Local control snapshot request failed.');
-    }
-    return decodeControlRunSnapshot(await response.json()).fold(
-        () => {
-            throw new Error('Local control snapshot could not be decoded.');
-        },
-        (decoded) => decoded
-    );
-}
 
 async function writeRecorderCompleteness(
     artifactDir: string,
@@ -397,50 +310,6 @@ async function writeRecorderCompleteness(
             2
         )
     );
-}
-
-async function stopOwnedWorker(worker: ChildProcess): Promise<string> {
-    if (!worker.pid) {
-        return 'not-started';
-    }
-    const closed = new Promise<void>((resolve) => worker.once('close', () => resolve()));
-    if (worker.exitCode === null && worker.signalCode === null) {
-        let naturalExitCeiling: NodeJS.Timeout | undefined;
-        await Promise.race([
-            closed,
-            new Promise<void>((resolve) => {
-                naturalExitCeiling = setTimeout(resolve, 20_000);
-            })
-        ]);
-        clearTimeout(naturalExitCeiling);
-    }
-    const alreadyClosed = worker.exitCode !== null || worker.signalCode !== null;
-    try {
-        process.kill(-worker.pid, 'SIGTERM');
-    }
-    catch {
-        if (alreadyClosed) {
-            return 'reaped';
-        }
-    }
-    if (!alreadyClosed) {
-        const forced = setTimeout(() => {
-            try {
-                process.kill(-worker.pid!, 'SIGKILL');
-            }
-            catch {}
-        }, 10_000);
-        let ceiling: NodeJS.Timeout | undefined;
-        await Promise.race([
-            closed,
-            new Promise<void>((resolve) => {
-                ceiling = setTimeout(resolve, 20_000);
-            })
-        ]);
-        clearTimeout(forced);
-        clearTimeout(ceiling);
-    }
-    return worker.exitCode !== null || worker.signalCode !== null ? 'reaped' : 'unreaped';
 }
 
 async function retainAvailableControlSnapshot(
@@ -544,7 +413,9 @@ function readMeasuredFiles(): Promise<readonly { file: string; sha256: string; }
         '.github/workflows/github-free-distributed-recipe.yml',
         'apps/rallar-black-box/playwright.full-stack.config.ts',
         'apps/rallar-black-box/scripts/run-world-fleet-distributed-recipe.ts',
-        'tests/playwright/rallar-black-box/full-stack-distributed-manifest.spec.ts'
+        'tests/playwright/rallar-black-box/full-stack-distributed-manifest.spec.ts',
+        'tests/playwright/rallar-black-box/owned-headless-worker.ts',
+        'tests/playwright/rallar-black-box/run-owned-worker-manifest.ts'
     ].map(async (file) => ({
         file,
         sha256: createHash('sha256').update(await readFile(file)).digest('hex')

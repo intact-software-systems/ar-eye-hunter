@@ -101,7 +101,11 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
             'and ascend strictly in arrival order; the result then carries ascending, and an absence claim takes none. ' +
             'stallMs also fails a presence claim once that long passes with no new copy since the count started or ' +
             'since its latest copy, so a count that keeps arriving may take its whole windowMs; the result then ' +
-            'carries stall, and an absence claim takes none.',
+            'carries stall, and an absence claim takes none. ageFrom names a payload field holding the epoch in ' +
+            'milliseconds at which each copy was sent; the result then carries sampleAge { from, ageMs, ' +
+            'unrecordedSamples }, a histogram of each matched copy\'s age when this agent recorded it, with a copy ' +
+            'that holds no number there or was stamped after it arrived counted as unrecorded; it fails no count, ' +
+            'and an absence claim takes none.',
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: ['api-v1'],

@@ -14,6 +14,8 @@ import {
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { toALVolatileSessionAdmission } from '@shared/alm/volatile-budget/to-al-volatile-session-admission.ts';
 
+import { IDLE_RALLAR_EDGE_ORDER_USAGE } from '../../../../packages/tests/shared-test/idle-rallar-edge-order-usage.ts';
+
 /** A connected fixture page uses the product's volatile ledger for both admission and its stats reading. */
 export class AlmReloadVolatileSession {
     private readonly idleLimits: ALVolatileSessionLimits;
@@ -65,7 +67,8 @@ export class AlmReloadVolatileSession {
             replyWaitsOpen: 0,
             publication,
             ordering: createALInboundOrderingCounters(),
-            congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures()
+            congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures(),
+            edgeOrder: IDLE_RALLAR_EDGE_ORDER_USAGE
         };
     }
 }

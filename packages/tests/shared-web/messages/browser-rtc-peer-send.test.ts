@@ -8,6 +8,7 @@ import { BrowserRallarMessageDispatch } from '@shared-web/browser/messages/brows
 import { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
 import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import { BrowserTypedMessageChannels } from '@shared-web/browser/messages/browser-typed-message-channels.ts';
+import { EdgeOrderSendStreams } from '@shared-web/browser/messages/edge-order/edge-order-send-streams.ts';
 import { BrowserPublicationStages } from '@shared-web/browser/messages/publication/browser-publication-stages.ts';
 import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
@@ -40,7 +41,8 @@ const COMMAND_CHANNEL = {
     access: 'members',
     durability: undefined,
     onStorageUnavailable: 'refuse',
-    publication: undefined
+    publication: undefined,
+    order: undefined
 } as const;
 const DIRECTOR = 'director';
 const INTENT = {
@@ -130,7 +132,8 @@ describe('a typed send addressed to one peer over RTC (Q11, C7)', () => {
                     throw new Error('No channel in this test subscribes.');
                 }
             },
-            grantedTopics: new BrowserGrantedTopics({ findGroupSnapshot: () => undefined })
+            grantedTopics: new BrowserGrantedTopics({ findGroupSnapshot: () => undefined }),
+            edgeOrder: { declareEdgeOrder: () => {} }
         });
         const intents = channels.room<{ intent: string; }>({
             topicId: 'room.director.intent',
@@ -473,6 +476,11 @@ function createPeerFallbackFixture(rtcVerdict: ALDeliveryAdmissionVerdict): Peer
     sessionDeliveries.beginSession(context.session);
     const epoch = feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
     const sender = new BrowserRallarMessageSender({
+        edgeOrderStreams: new EdgeOrderSendStreams({
+            newStreamId: () => crypto.randomUUID(),
+            maxStreams: 256,
+            acknowledgedSettleMs: 500
+        }),
         sessionDeliveries,
         creation: {
             createUnicast: newALUnicastMessage,

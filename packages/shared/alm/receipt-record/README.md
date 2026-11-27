@@ -44,7 +44,7 @@ order and naming each recipient once. A confirmation is read back only under its
 key fails closed as `ALAdmissionCorruptionError`. Every stored identity is one the receipt control accepts
 (`decodeALReceiptIdentifier`), so a stored row can always become a receipt.
 
-On PostgreSQL the keyed rows are `runtime_state_store` rows of that namespace, growth surface 85 (`ttl-within-run`,
+On PostgreSQL the keyed rows are `runtime_state_store` rows of that namespace, growth surface 90 (`ttl-within-run`,
 bound 1 860 000 ms: the window plus two graces; `growth-surfaces.ts`), and the work rows are expiring `resource_inbox`
 rows under surface 1.
 
@@ -238,8 +238,9 @@ ACK's statements is serialized against another ACK.
 
 Real PostgreSQL, three instances, each client delaying every statement, BEGIN and COMMIT by the added latency
 (one attributed hosted run recorded about 5 ms per statement). Lag is p50 from a message's last ACK to its
-`complete`. Test-only code, not kept in the tree. Every cell but the last bullet's sends unordered receipted messages;
-the last bullet's are ordered, which is what a browser's room send is by default.
+`complete`. Test-only code and the raw results, neither kept in the tree. Every cell but the last two bullets'
+sends unordered receipted messages, as a browser's room send is unless it states an `orderingKey` or a `seq`; the
+sends of those two bullets each state one, so they take the ordered inbound path.
 
 - **The record alone keeps up.** 40 messages at 2 a second, 14 recipients each, 28 ACKs a second: at +0 ms a p50 of
   5.6 to 9.0 ms, at +5 ms 60.5 to 62.8 ms, the last ten messages no slower than the first ten; 560 of 560
@@ -264,27 +265,61 @@ the last bullet's are ordered, which is what a browser's room send is by default
 - **The record stays exact.** No publisher's unordered room message, before or after, read `timed-out` or two
   terminal receipts. Of the server's own publications, the runs before ended 3 of 120 `timed-out`, 2 `complete` and
   never opened the rest; the runs after completed all 120.
-- **Five publishers of ordered sends keep up at +5 ms.** The same five publishers, each message ordered on its
-  publisher's own track and receipted. In three 20 s runs all 200 complete by their deadline, and over 45 s all 450,
-  with no send answered `pending-admission`, no message handed to the application twice and no frame read twice or out
-  of order at recipients; recipients read a message 0.6 to 0.7 s after its send (p50, at most 1.2 s), and receipts are
-  read at 19.3 to 19.4 of 20.1 a second (19.7 of 20.0 over 45 s). Before the server's inbound runtime looked again at
-  once at an admission, a replay or a release whose write was lost, the same cell completed 154 to 174 of 200, with 26
-  to 32 sends parked `pending-admission` and recipients 7.1 to 21.0 s behind, and 131 of 450 over 45 s. One run taken
-  beside another session's test suites (its 1-minute load rising from 7.5 to 13.1) completed 108 of 200 and ended five
-  tracks `resync-required`; its repeat on a quiet machine kept up (below, "Stated limits"). The stall was in the inbound
-  ordered admission on the server, not in the record; what remains of it is in `plans/backlog.md` ("The limit of one
-  ordered track", D784).
+- **Five publishers of ordered sends keep up at +5 ms when a message completes before its sender's next one.** The
+  same five publishers, each message ordered on its publisher's own track and receipted. On a quiet machine, in three
+  20 s runs all 200 complete by their deadline, and over 45 s all 450, with no send answered `pending-admission`, no
+  message handed to the application twice and no frame read twice or out of order at recipients; recipients read a
+  message 0.6 to 0.7 s after its send (p50, at most 1.2 s), and receipts are read at 19.3 to 19.4 of 20.1 a second
+  (19.7 of 20.0 over 45 s). Before the server's inbound runtime looked again at once at an admission, a replay or a
+  release whose write was lost, the same cell completed 154 to 174 of 200, with 26 to 32 sends parked
+  `pending-admission` and recipients 7.1 to 21.0 s behind, and 131 of 450 over 45 s. Under load, with eight CPU
+  burners beside the run (a 1-minute load of 6.6 to 10.2 at a run's start), all 200 complete in each of three runs,
+  with no track ended, nothing handed twice and every track's hand-offs in order, at a read of 0.9 to 1.9 s (p50; the
+  slowest 1.7 to 8.0 s), since the batch that completes a delivery now hands its track's next one on; the code before
+  that completed 141, 145 and 200 and ended four tracks in each of the two runs that failed, its slowest read 24.0 to
+  30.1 s. At +10 ms on a quiet machine all 200 complete in both runs at a read of 7.2 and 8.1 s (p50), against 75 and 70
+  before. The stall was in the inbound ordered delivery on the server, not in the record; what remains of it is in
+  `plans/backlog.md` ("What stays of the limit of one ordered track", D784, D785).
+- **The room-send cell on the record.** The API's room-send measurement cell was run once, with ordered sends, with
+  its instances counting in the record (one run); its README states that reading
+  (`apps/api-v1/scripts/perf/alm-room-send/README.md`, "One run on the build with the receipt record").
 
 ## Stated limits
 
-- **One ordered track.** A browser's room send is ordered by default. One ordered track through the WS server at
-  +5 ms keeps up at 2 messages a second in every run, at 3 a second in three runs of four, and at 4, 5 and 10 a second
-  in none: it falls behind, only the first messages of the track complete, the rest pass their 30 s lifetime and end
-  `timed-out`, and at 5 a second the track ended `resync-required`, a NACK to its sender, in both runs. A single
-  retried inbound work row still holds its track until the work rotation reaches it, so a loaded host can stall five
-  ordered publishers too (above, "Measured"). Faster streams are what ordering end to end in Rallar Web is planned
-  for.
+- **One ordered track.** This binds a send that asks for hop order, by stating an `orderingKey` or a `seq`. A browser's
+  room send is unordered unless it states one, and a room channel declared `order: 'edge'` sends unordered messages that
+  the receiving page puts back in its sending page's order (`packages/shared-web/browser/README.md`, "Edge order"):
+  neither enters the ordered inbound path. One ordered track through the WS server at +5 ms keeps up at 3 messages a
+  second in both runs. At 4 a second every message still completes (80 of 80 in both runs) but the track runs seconds
+  behind, its last message read 7.5 and 15.7 s after its send (5.8 and 6.4 s before the batch-age bound below). At 5 a
+  second only the track's first messages complete within their 30 s lifetime (the runs counted completions and did
+  not record which receipt the rest read), on the code with the hand-on and on the code before it: 20 to 69 of 100 over
+  four runs with the hand-on, 11 to 72 over eight without; with the hand-on built the track ended `resync-required`, a
+  NACK to its sender, in both runs, the code before it in one of its two. At 10 a second
+  the sends parked at admission dominate: 4 and 0 of 200 completed, the track not ended. A track whose sender keeps its
+  rate is handed on at most a page of 16 a batch, and its lag climbs while the rate holds (under load the worst of each
+  of three runs was 1.3, 5.1 and 7.7 s before the batch-age bound, 13.1, 3.1 and 3.4 s with it, not told apart); a lane
+  whose batches are already full of other claimable work hands nothing on and behaves as before, a case no run covered.
+  Whether `order: 'edge'` carries a stream faster than one track carries is its plan's measurement still owed
+  (`plans/active/edge-ordered-room-sends.md`).
+- **A batch stops handing on at half its lease.** A claim's work row stays reserved until its batch ends, so a batch
+  that runs longer than its 10 s lease lets another instance claim the rows it completed early: an ordered one reads
+  `completed` and is not dispatched again, an unordered one is handed to the application a second time. A batch hands
+  nothing on once it has run 5 s, half its lease, counted from before its first reservation. That stops new hand-ons,
+  not the claims the batch already holds, so a batch ends by about 5 s plus the time those claims take:
+  at +10 ms a statement, in three runs, 44 of the 61 batches that handed on ran past 5 s, the longest 6.07 s with 13
+  claims, and none came near the lease (before the bound, 21 of 33 batches held 16 claims and the five longest of each
+  run took 7.3 to 8.0 s). A page of a batch's own 16 claims, with no hand-on, still passes the lease on a database
+  slow enough (about 0.6 s a claim); that is older than the hand-on. The bound costs ordered latency where the
+  hand-on carried the load: at +10 ms every message still completed, but the recipients' read p50 was 8.6 to 10.7 s
+  against 7.2 and 8.1 s before it, later in every run, and one track at 4 a second ended further behind (above). It
+  trades later ordered messages, on a saturated database and for a track past its rate, for a wider margin under the
+  lease.
+- **What an over-driven ordered track costs unordered publishers.** One track at 5 a second beside five unordered
+  publishers on the same server left the unordered publishers complete (200 of 200 in every run) but read a message at
+  a p50 of 0.83 and 1.44 s with the batch-age bound and 0.72 and 0.86 s before it (two runs each, not told apart),
+  against 0.454 s without the track: the track's batches run long, and a message arriving on that lane waits for the
+  batch. The code before the hand-on read 1.38 and 0.70 s, not told apart from either.
 - **The sender's version still moves.** A message end through the message-end bundle (a spent repair budget, a
   re-plan refused for good, a receipt control's included) and each ACK window fence the sender, so a server
   publication's own receipt windows keep competing for the server's version row.
@@ -334,18 +369,25 @@ the last bullet's are ordered, which is what a browser's room send is by default
   a receipt. A copy's opening names its own snapshot version, since the version its audience was read at is not
   stored.
 
-Not shown: the hosted statement latency itself (the runs were local, at +0 and +5 ms); latencies above +5 ms; more than
-five publishers in a room, so the rate at which the receipts stop keeping up; `main` in the five-publisher cell;
-group-state deltas themselves, which the measurement stood in for with one sequenced publication every 500 ms, and a
-higher server publication rate; why one ordered track at 3 a second kept up in three runs of four and not in the
-fourth, and why a track that has fallen behind completes slower than one that keeps up; why recipients read room
+Not shown: the hosted statement latency itself (the runs were local, at +0, +5 and, for ordered sends, +10 ms);
+latencies above +5 ms for unordered sends and above +10 ms for ordered ones; more than five publishers in a room, so the
+rate at which the receipts stop keeping up; `main` in the five-publisher cell; group-state deltas themselves, which the
+measurement stood in for with one sequenced publication every 500 ms, and a higher server publication rate; for ordered
+sends, a lane whose pages are full of other claimable work, more than one over-driven track, an over-driven track on a
+loaded host, and whether a page of a batch's own claims stays inside its 10 s lease on a database slower than +10 ms;
+why one ordered track at 3 a second kept up in three runs of four before the hand-on was built (it kept up in both runs
+since); why one ordered track at 4 a second parks 6 to 13 sends at admission; why the WS server's room fan-out writes
+two closely spaced hand-offs of one track out of order at a raw socket (14 frames in one loaded run; a Rallar receiver's
+ordered delivery restores the order); across two server instances, the room fan-out leaving from the instance that
+completed the predecessor, that instance's readiness read asking its own dispatch port, and an arrival's commit against
+a completion's commit; a release handed on reading its slot a second time, on PostgreSQL; why recipients read room
 frames twice on one track at 10 a second, with the inbound's fresh attempts and without them, though the subscriber was
-handed each message once; any ordered cell in a browser, on IndexedDB or over RTC; whether a sender's resend unblocks
-a stalled track (the harness resends nothing); the recovery of a lost live `admitted` by the
-first-hop resend under load or across instances (it is pinned with one origin and one server); the sustained cost of an
-ACK that finds no head; how a cluster resolves a group leader (the group-leader case pins the cross-instance count); a
-survivor taking over a work row whose lease a killed process held (a "lost" instance in the PostgreSQL cluster cases is
-a disposed one; the black-box cluster recipe kills a process); the dequeue's and the ACK's latency under sustained load.
+handed each message once; any ordered cell in a browser, on IndexedDB or over RTC; whether a sender's resend unblocks a
+stalled track (the harness resends nothing); the recovery of a lost live `admitted` by the first-hop resend under load
+or across instances (it is pinned with one origin and one server); the sustained cost of an ACK that finds no head; how
+a cluster resolves a group leader (the group-leader case pins the cross-instance count); a survivor taking over a work
+row whose lease a killed process held (a "lost" instance in the PostgreSQL cluster cases is a disposed one; the
+black-box cluster recipe kills a process); the dequeue's and the ACK's latency under sustained load.
 
 ## Navigation probes
 

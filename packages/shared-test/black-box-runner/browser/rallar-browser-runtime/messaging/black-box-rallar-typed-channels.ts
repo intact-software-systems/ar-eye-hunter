@@ -56,6 +56,8 @@ export interface TypedChannelRoute {
     readonly publication: ALPublicationPolicy | undefined;
     /** The channel's recovery owner; undefined declares none, so a message the receiver cannot order is dropped. */
     readonly recovery: RallarChannelRecovery | undefined;
+    /** `edge` when the route's connect declares its channels edge-ordered; undefined declares no order. */
+    readonly order: 'edge' | undefined;
 }
 
 export interface BlackBoxRallarSendAudience {
@@ -136,7 +138,8 @@ export class BlackBoxRallarTypedChannels {
             ...(route.publication === undefined ? {} : { publication: route.publication }),
             ...(route.durability === undefined ? {} : { durability: route.durability }),
             ...(route.onStorageUnavailable === undefined ? {} : { onStorageUnavailable: route.onStorageUnavailable }),
-            ...(route.recovery === undefined ? {} : { recovery: route.recovery })
+            ...(route.recovery === undefined ? {} : { recovery: route.recovery }),
+            ...(route.order === undefined ? {} : { order: route.order })
         });
         const selector = config.rallar.messageSelector;
         if (
@@ -196,7 +199,8 @@ export class BlackBoxRallarTypedChannels {
             onStorageUnavailable: undefined,
             purpose: 'notification',
             publication: undefined,
-            recovery: config.rallar.recoveryOwner === 'record' ? this.#createRecordingRecoveryOwner(config) : undefined
+            recovery: config.rallar.recoveryOwner === 'record' ? this.#createRecordingRecoveryOwner(config) : undefined,
+            order: config.rallar.channelOrder
         });
     }
 

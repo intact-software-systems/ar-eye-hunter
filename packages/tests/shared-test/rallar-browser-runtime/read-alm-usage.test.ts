@@ -20,7 +20,17 @@ const REPORT: RallarMessagesUsage = {
     replyWaitsOpen: 1,
     publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS),
     ordering: createALInboundOrderingCounters(),
-    congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures()
+    congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures(),
+    edgeOrder: {
+        streams: 2,
+        heldMessages: 4,
+        evictedStreams: 1,
+        lateDrops: 0,
+        gaps: 1,
+        heldDropped: 0,
+        sendStreams: 1,
+        openSends: 3
+    }
 };
 
 const CONNECTION = {
@@ -36,12 +46,16 @@ beforeEach(() => {
     resetFacade();
 });
 
-it('answers the facade ledger report once the facade is connected, with no ordering snapshot or marker stated yet', async () => {
+it('answers the facade ledger report, its edge-order block included, once the facade is connected, with no ordering snapshot or marker stated yet', async () => {
     const runtime = await loadRuntime();
     facade.behavior.readUsage.mockReturnValue(REPORT);
 
     await expect(runtime.readAlmUsage()).resolves.toEqual({ ...REPORT, orderingTracks: 0, deliveredMarkers: 0 });
-    await expect(runtime.readAlmUsage()).resolves.toMatchObject({ repliesHeld: 3, replyWaitsOpen: 1 });
+    await expect(runtime.readAlmUsage()).resolves.toMatchObject({
+        repliesHeld: 3,
+        replyWaitsOpen: 1,
+        edgeOrder: { heldMessages: 4, openSends: 3 }
+    });
 });
 
 it('answers undefined before the facade is connected, where the facade read would throw', async () => {

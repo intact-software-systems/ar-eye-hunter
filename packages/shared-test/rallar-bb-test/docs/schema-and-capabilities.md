@@ -106,8 +106,9 @@ accepted layout at the readiness group revision, and a layout that settled earli
 the buffered events and released at once. The accepted overlay's `updatedAtEpochMs` is no anchor: it is
 the server's planning time, before the promotion. An epoch later than the wait's start counts from the
 start, so the wait never outlasts its own timeout. A recipe whose `timeoutFrom` is not one token, which a
-loop child may key by its `{loop.*}` placeholders, is refused when it is loaded; at run time a token
-naming no finite number fails the wait with `RALLAR_BLACK_BOX_WAIT_INVALID`.
+loop child may key by `{loop.index}`, `{loop.iteration}`, `{loop.elapsedMs}` or `{loop.commandIndex}` and
+by no other placeholder, is refused when it is loaded; at run time a token naming no finite number fails
+the wait with `RALLAR_BLACK_BOX_WAIT_INVALID`.
 
 `formation.readiness` reports `acceptedHeldSinceEpochMs` beside the formation summary and omits it while
 no layout is accepted, so the scale recipes gate the stable-layout loop on its presence and fail within
@@ -1015,9 +1016,10 @@ buffer drains within the default 30 s lifetime on the real runtime
 `released-2` cue, with a wait that covers the sender's body up to the cue, its storage baseline included, and then
 counts the 66 in a verdict's window; the count reads every arrival its page logged, those before the count started too.
 Each role's recipe runs that cue wait longer than an ordinary one. Over `rtc` the receiver buffered the track, so it
-also waits for an inbound `effect-drain` whose `promoted` count is above zero (D190): a `loop` with `until:
+also waits for an inbound `effect-drain` whose `promoted` count is above zero (D190, D785): a `loop` with `until:
 'first-success'` tries `"promoted":1` to `"promoted":9`, one leading digit per iteration, against the page's event
-history. Over `ws` the WS server is the hop that buffers the track and releases it when seq 2 arrives, so the receiver
+history. `promoted` counts every delivery a batch ran by hand-on, but in this cell the track's in-order copies arrive
+one at a time, so every hand-on the receiver reads is of a buffered release. Over `ws` the WS server is the hop that buffers the track and releases it when seq 2 arrives, so the receiver
 reads the 66 arrivals and no promotion: the server NACKs the gap at each later frame's arrival; those reports are one
 attempt per requester, charged once (D573), so the held seq 2 does not settle `repair-exhausted` and the release
 delivers it. `churn-bounded-tracks` (`rtc`, where the receiver is the one hop that orders a track) closes the sender and
@@ -1272,6 +1274,22 @@ window ended the count, and a stalled count's failure message names the window. 
 whose copies keep arriving may then take its whole `windowMs`, so a slow runner lengthens the count without failing it while a stopped sender still fails
 it within `stallMs`. An absence claim holds its whole window: command validation refuses
 `stallMs` beside `absent: true`.
+
+`ageFrom` names a field of each copy's payload, a top-level field like `ascendingBy` and not a path,
+that holds the epoch in milliseconds at which the copy was sent (a paced sender writes it with
+`{loop.atEpochMs}`). The result and the diagnostic then carry
+`sampleAge: { from, ageMs, unrecordedSamples }`, and neither is present when no age was asked for.
+`from` repeats the field. `ageMs` is a bounded histogram on the publication stage's age bounds
+(`AL_PUBLICATION_FIGURE_AGE_BOUNDS_MS`, the bounds of `selectionAgeMs`) with one sample per matched
+copy: the agent's clock when its event log recorded the copy, less the number the payload holds at
+that field. A copy with no finite number there, the unresolved text of a placeholder included, or one
+stamped after it arrived has no age the histogram records: it adds one to `unrecordedSamples` and is
+never clamped into a bucket, so `ageMs.count + unrecordedSamples` equals `observed`. The reading
+claims nothing and fails no count; a recipe that needs every copy aged asserts `unrecordedSamples`
+itself. The age is taken across two clocks, the sender's and this agent's, so between machines every
+sample also carries their offset, and it covers only the copies that arrived. A `recent` event history
+that evicted a copy has dropped its sample with it. An absence claim asks for no copy: command
+validation refuses `ageFrom` beside `absent: true`.
 
 `fault.inject` schedules a scripted `drop` for the next `remaining` matching
 frames on the `ws` or `rtc` carrier; `{ delayMs }` and `not-ready` are `ws` only
@@ -1793,6 +1811,16 @@ limits. Runtime execution for `loop` is available for sequential repeated child
 commands. Runtime execution for `parallel` is available for bounded concurrent
 groups with sequential child commands inside each group.
 
+A `loop` writes its placeholders into every string of a child command before
+the child runs: `{loop.index}` (zero-based, counted over every child the loop
+has run), `{loop.iteration}` (from 1), `{loop.commandIndex}` (the child's
+zero-based position in `commands`), `{loop.elapsedMs}` (milliseconds since the
+loop started) and `{loop.atEpochMs}` (the agent's clock in epoch milliseconds).
+A string that is exactly one placeholder becomes that number; a placeholder
+inside a longer string is written as text. `elapsedMs` and `atEpochMs` come
+from one clock read, taken when the child is resolved. A `wait.timeoutFrom`
+reference may be keyed by the first four, not by `{loop.atEpochMs}`.
+
 Schema-authoring views and catalog previews should inspect nested child
 commands recursively. A top-level `loop` or `parallel` can still require live
 Rallar services when a child command uses `rtc.*`, `ws.*`, or `http.request`.
@@ -1823,7 +1851,7 @@ A browser agent's `stats` result also carries its page's session ledger under
 `stats.rallar.alm`: `{ usage: { admissions, bytes, oldestAgeMs, tracks },
 own: { admissions, bytes }, inbound: { admissions, bytes },
 limits: { maxAdmissions, maxBytes, maxAgeMs, maxTracks }, overloaded,
-repliesHeld, replyWaitsOpen, publication, ordering, orderingTracks, deliveredMarkers }`. All but the last two are read at the
+repliesHeld, replyWaitsOpen, publication, ordering, congestionEpisodes, edgeOrder, orderingTracks, deliveredMarkers }`. All but the last two are read at the
 command from `rallar.messages.readUsage()` (D180): `usage` holds the totals of the ledger's
 two pools, `own` and `inbound` each pool (D189), and `overloaded` says the
 smallest next own send would be refused at the count or byte limit.
@@ -1853,6 +1881,13 @@ connect and counted per event, not per distinct copy.
 settlement of the attempt that was not deferred again; `openEpisodes`, the deferred messages no settlement has ended;
 and `unrecordedSamples`, the episodes the connect could not measure. It is cumulative over the connect and across both
 carriers. A page answer whose histogram has other bounds, or whose counts are not counts, fails the stats command.
+`edgeOrder` is `readUsage().edgeOrder`, required: what the page's edge-ordered channels keep at the read — `streams`
+(the sender streams it follows, at most 256), `heldMessages` (messages held for their turn, at most 256 a stream),
+`evictedStreams` (records of the streams the stream cap pushed out, at most 256), `sendStreams` (the streams it minted
+as a sender, at most 256) and `openSends` (its open sends and stated holes, each gone by its send's deadline) — and
+three counts cumulative since the page loaded, across its connects: `lateDrops`, `gaps` and `heldDropped`. An `assert`
+reads one as `latestStats.rallar.alm.edgeOrder.heldMessages`. A page answer whose block is absent or holds a value that
+is not a count fails the stats command.
 `orderingTracks` is the page's own, not the facade's: the sum of the latest
 `ordering-tracks` count each inbound store stated on the `storage` diagnostics
 port since the page's last `close` (D191; 0 before a store opened a track) — the same block reaches

@@ -28,6 +28,7 @@ import {
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
+import { IDLE_RALLAR_EDGE_ORDER_USAGE } from './idle-rallar-edge-order-usage.ts';
 import { writeAlmCellStartEvents } from './write-alm-cell-start-events.ts';
 
 /** Any ordinary run budget: a cell's extension adds to whichever one the lane passes. */
@@ -153,7 +154,8 @@ describe('own-share-under-inbound', () => {
         replyWaitsOpen: 0,
         publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS),
         ordering: createALInboundOrderingCounters(),
-        congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures()
+        congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures(),
+        edgeOrder: IDLE_RALLAR_EDGE_ORDER_USAGE
     };
 
     it.each(FAIRNESS_CARRIERS['own-share-under-inbound'])(
@@ -467,7 +469,8 @@ describe('churn-bounded-tracks', () => {
         replyWaitsOpen: 0,
         publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS),
         ordering: createALInboundOrderingCounters(),
-        congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures()
+        congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures(),
+        edgeOrder: IDLE_RALLAR_EDGE_ORDER_USAGE
     };
 
     it('opens 280 tracks with one send each, paced, and leaves; the receiver then holds exactly the cap of ordering snapshots', async () => {
