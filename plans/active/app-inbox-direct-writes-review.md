@@ -2,17 +2,21 @@
 
 Status: a review awaiting the maintainer's ruling. It answers nothing on the maintainer's behalf.
 
-Rulings already made, by the maintainer on 2026-11-27, after learning that database writes on incoming
-paths go outside AppInbox on the WS server and saying they were not aware of it:
+Rulings already made, by the maintainer on 2026-11-27, after learning that database writes on
+incoming paths go outside AppInbox on the WS server and saying they were not aware of it:
 
 1. The direct writes are revisited before ALM is completed (#948, decision 2 of
    `plans/active/alm-v1-production-readiness.md`).
 2. No agent proposes a database write on an incoming path outside AppInbox without saying so
    explicitly (the same decision).
 3. The review lives in the repository as a plan under `plans/active`: this file.
-4. A guard that makes such a write visible is built now, in the pull request that follows this one
-   (section 8).
+4. All the guard measures of section 8 are built now, in one pull request that follows this one
+   and confirms no exception.
 5. An AppInbox-backed ACK count is measured before the revisit (option (b) of section 7 says what).
+6. The guard defines its terms. An incoming path is "an HTTP request, a WebSocket frame, or a peer
+   message that leads to a write", and a database write includes a transport's own rows
+   (deduplication, ordering, receipt, work and outbox rows). Work that a queue row or a timer starts
+   is outside that definition; the registry still lists it, each entry naming its trigger.
 
 What removes this plan: the maintainer's ruling on the questions of section 11, and the work that
 ruling orders (the documents, the registry entries, a move behind AppInbox or the closing of the
@@ -38,10 +42,10 @@ quoted facts. Paths are relative to the repository root. "The roadmap" means
   ALM transport on the WS server since before the history this checkout holds. On a PostgreSQL
   cluster every admitted WebSocket message except a small unacknowledged RTC signal, and every ACK
   the server counts, writes the database without passing through AppInbox.
-- The receipt record of #885 is the newest such write and the only one a decision row calls out. It
-  was put to the maintainer on 2026-11-22 as one of six questions that day. The record keeps the
-  answer's label, "One more ALM runtime store", and not the question, its options or its
-  recommendation.
+- The receipt record of #885 is the newest such write and the only one a decision row calls out. The
+  record says it was asked of the maintainer on 2026-11-22, as one of six questions that day, each
+  alone. It keeps the answer's label, "One more ALM runtime store", and not the question, its
+  options or its recommendation.
 - Nothing in the record shows the rule being quoted to the maintainer, the word "exception" being
   used, or the AppInbox alternative being designed, costed or measured. The pull request's final
   description does not contain the word AppInbox.
@@ -78,8 +82,13 @@ Every statement below is `[read]`.
 - `apps/api-v1/README.md:18`, `docs/rallar-api-reference.md:13` and
   `docs/rallar-convergent-state-and-rtc-topology.md:52` say "**Every** HTTP and WebSocket database
   mutation". `docs/architecture.md:8` says "every incoming database mutation". `[read]`
-- No document defines "incoming". No document says whether a transport's own admission, dedup,
-  ordering, receipt or queue rows are a "database mutation" in the rule's sense. `[read]`
+- No rule document defines "incoming". No rule document says whether a transport's own admission,
+  dedup, ordering, receipt or queue rows are a "database mutation" in the rule's sense. `[read]`
+- The maintainer has since defined both for the guard (ruling 6 above): an incoming path is "an
+  HTTP request, a WebSocket frame, or a peer message that leads to a write", a database write
+  includes a transport's own deduplication, ordering, receipt, work and outbox rows, and work that a
+  queue row or a timer starts is outside the definition but listed in the registry with its
+  trigger. This review uses those words where it classes a write.
 - The doctrine does name one class of transaction that is not a domain write: the "exact PostgreSQL
   ResourceInbox, Results, or QueueBox transaction owner" (doctrine `:87-96`). That is AppInbox's own
   queue machinery. It does not name the ALM stores. `[read]`
@@ -102,8 +111,8 @@ Every statement below is `[read]`.
   (`packages/shared-server/README.md:10-12`) describe the direct write in passing and do not call it
   an exception: `packages/shared-server/docs/runtime-navigation.md:203-205` ("A `local-inbox`
   message is admitted to the shared PostgreSQL inbound store") and
-  `packages/shared-server/docs/persistence-and-replay.md:12` (`runtime_state_store` holds "AL runtime
-  namespaces"). The same package's README says there is no direct-write fallback. `[read]`
+  `packages/shared-server/docs/persistence-and-replay.md:12` (`runtime_state_store` holds "AL
+  runtime namespaces"). The same package's README says there is no direct-write fallback. `[read]`
 - #885 itself edited `packages/shared-server/README.md` and `docs/rallar-api-reference.md`, two of
   the documents that state the rule, and added no sentence about the departure (`git show 4caa19b6b`
   on those paths: no added or removed line names AppInbox). `[read]`
@@ -128,53 +137,97 @@ The same test's header says what such checks are worth: "they do not prove agent
 
 ### How it was built, and its limit
 
-The review searched `packages/shared-server`, `packages/shared` and the server apps for every call
-of `.begin(` or `runInPSqlTransaction(` (26 matches, three of them AppInbox's own method named
-`begin` and not a transaction), every source file that matches an SQL write statement (38 files),
-every construction of the PostgreSQL ALM backend, and every call of its `write`, and followed each
-back to what invokes it. Those counts are from pattern searches. `[read]`
+The review searched `packages/shared-server`, `packages/shared` and the server apps for every
+PostgreSQL transaction opener, by the four names they use: `.begin(`, `.transaction(`,
+`.savepoint(` and `runInPSqlTransaction(`. Leaving out IndexedDB transactions and AppInbox's own
+method named `begin` (three calls, not a transaction), that is 35 openers:
 
-The limit: the domain repositories (auth, client, group, presence, topology, RTC-RTT) each expose
-write methods that work on a root connection as well as on a transaction
-(`packages/shared-server/runtime-state/runtime-state-json-store.ts:51-71`, `:186-197`, and its
-subclasses). The review confirmed the AppInbox route for WS connect and ticket consumption
-(`packages/shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts:145-189`) and
-found no direct write call in `apps/api-v1/src/routes`, its services and feature folders, or the
-two game servers by pattern search. It did not trace every call of every domain repository method.
-A direct call from an incoming path that the patterns miss is possible. Section 10 repeats this.
+- 3 are AppInbox's own (class A);
+- 11 are the specialized queue owners that
+  `scripts/transaction-write-check/transaction-boundaries.mjs:48-77` names:
+  `packages/shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts:29`, nine in
+  `packages/shared-server/queuebox/postgres/p-sql-queue-box.ts` and
+  `packages/shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts:241`;
+- 10 are adapters and wrappers that open or nest a transaction for a caller
+  (`packages/shared-server/postgres/run-in-p-sql-transaction.ts:7`,
+  `packages/shared-server/postgres/create-p-sql-counter-scope.ts:52`, `:55`, `:67`,
+  `packages/shared-server/postgres/read-postgres-snapshot.ts:8`,
+  `packages/shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts:106`, `:117`,
+  `apps/api-v1/src/db/postgres-sql-adapter.ts:95`, `:132`,
+  `apps/api-v1/src/db/pglite-sql-adapter.ts:115`);
+- 1 is the ALM transport's (class C,
+  `packages/shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts:131`);
+- 10 are downstream and background work (class B).
+
+An earlier count of 26 searched two of the four names; it missed the queue owners' nine
+`resourceInbox.transaction(` calls, and with them that the ALM backend owns a queue of its own
+(class C). The review also matched every source file against an SQL write statement (38 files by a
+text pattern, which also matches comments; the guard's own count will be exact), every construction
+of the PostgreSQL ALM backend, every call of its `write` and of its work queue's
+`retainIfAbsent`, and followed each back to what invokes it. `[read]`
+
+The domain repositories (auth, client, group, presence, topology config and snapshot, RTC-RTT) are
+built on `RuntimeStateJsonStore`, whose write methods work on a root connection as well as on a
+transaction (`packages/shared-server/runtime-state/runtime-state-json-store.ts:51-71`, `:186-197`;
+13 classes extend it directly). A text search of their public write methods over `packages` and
+`apps`, tests left out, finds only the forwarding lines of other repository classes (for example
+`packages/shared-server/rallar-system/group-state/persistence/group-state-repository.ts:83`,
+`packages/shared-server/rallar-system/auth/persistence/auth-session-repository.ts:25`) and no
+production caller of those. The domain writes on incoming paths go through AppInbox: the review
+confirmed the route for WS connect and ticket consumption
+(`packages/shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts:145-189`)
+and found no direct write call in `apps/api-v1/src/routes`, its services and feature folders, or the
+two game servers. Section 10 says what this leaves untraced.
 
 ### Class A: AppInbox's own machinery and its outboxes
 
 Not exceptions. These are what the rule is made of. `[read]`
 
-| What is written                                                                                                     | Where                                                                                                                                                                                                  | Note                                                                   |
-| ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
-| The command's queue row and reservation in `resource_inbox`                                                         | `packages/shared-server/rallar-system/app-inbox/client/app-inbox-queue-entry-writer.ts`, `packages/shared-server/rallar-system/app-inbox/client/app-inbox-reservation-client.ts`                       | Written at the HTTP or WS boundary, before the worker runs.            |
-| Domain state, event, receipt, result in `resource_inbox_results`, final `APP_OUTBOX`/`WS_OUTBOX` rows, finalization | `packages/shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts:139`, `:155-161`, `:202`; `packages/shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts:128` | One transaction, opened by AppInbox.                                   |
-| Queue reservation, release, expiry sweeps                                                                           | `packages/shared-server/queuebox/postgres/p-sql-queue-box.ts`, `packages/shared-server/queuebox/postgres/resource-inbox-maintenance.ts`                                                                | The doctrine's "specialized ResourceInbox" owners (doctrine `:87-96`). |
+| What is written                                                                                                     | Where                                                                                                                                                                                                  | Note                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The command's queue row and reservation in `resource_inbox`                                                         | `packages/shared-server/rallar-system/app-inbox/client/app-inbox-queue-entry-writer.ts`, `packages/shared-server/rallar-system/app-inbox/client/app-inbox-reservation-client.ts`                       | Written at the HTTP or WS boundary, before the worker runs.                                                                                                                                                                                                                 |
+| Domain state, event, receipt, result in `resource_inbox_results`, final `APP_OUTBOX`/`WS_OUTBOX` rows, finalization | `packages/shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts:139`, `:155-161`, `:202`; `packages/shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts:128` | One transaction, opened by AppInbox.                                                                                                                                                                                                                                        |
+| Queue reservation, release, expiry sweeps                                                                           | `packages/shared-server/queuebox/postgres/p-sql-queue-box.ts`, `packages/shared-server/queuebox/postgres/resource-inbox-maintenance.ts`                                                                | The doctrine's "specialized ResourceInbox" owners (doctrine `:87-96`). The ALM backend constructs a second `PSqlQueueBox` over the same table (`packages/shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts:73`); its writes on incoming frames are class C. |
 
 ### Class B: downstream and background work
 
-Not on an incoming path: each runs from a queue row or a timer after some commit. They open their
-own transactions outside `AppInboxTransactionWriter`. One document names one of them, the RTC
-topology work handler, as having its own attempt boundary
-(`packages/shared-server/docs/persistence-and-replay.md:150-156`). The others are not named anywhere
-as a class. Listed so the revisit can draw its line knowingly. `[read]`
+Not on an incoming path: each runs from a queue row or a timer after some commit, which the
+maintainer's definition (ruling 6) places outside the rule and inside the registry, with its
+trigger. They write outside `AppInboxTransactionWriter`, in a transaction of their own or
+autocommit. One document names one of them, the RTC topology work handler, as having its own attempt
+boundary (`packages/shared-server/docs/persistence-and-replay.md:150-156`). The others are not named
+anywhere as a class. Listed so the revisit can draw its line knowingly. `[read]`
 
-| Writer                                                                             | Where                                                                                                                                                                                                                                                                                                                                         |
-| ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| RTC topology work: snapshot, publication, delivery log                             | `packages/shared-server/rallar-system/topology/replay/work/write-rtc-topology-publication-transaction.ts:58`, `packages/shared-server/rallar-system/topology/replay/work/rtc-topology-work-completion.ts:15`                                                                                                                                  |
-| Topology replay cursor, stream lease, compaction                                   | `packages/shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-replay-repository.ts:115`, `:162`; `packages/shared-server/rallar-system/topology/replay/postgres/compact-rtc-topology-delivery-entries.ts:40`; `packages/shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-replay-maintenance.ts:38` |
-| Presence summary worker                                                            | `packages/shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts:437`, `:545`                                                                                                                                                                                                                                      |
-| Admin prune page worker                                                            | `packages/shared-server/rallar-system/admin-operations/prune/admin-prune-page-worker.ts:302`                                                                                                                                                                                                                                                  |
-| RTC-RTT receipt cleanup                                                            | `packages/shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-receipt-cleanup.ts:148`                                                                                                                                                                                                                                                     |
-| Runtime-state and ResourceInbox expiry eviction                                    | `packages/shared-server/runtime-state/postgres/runtime-state-expiry-worker.ts`, `packages/shared-server/queuebox/postgres/resource-inbox-maintenance.ts`                                                                                                                                                                                      |
-| Formation latch written by topology work on a root repository                      | `apps/api-v1/src/composition/create-api-v1-system-installers.ts:128`                                                                                                                                                                                                                                                                          |
-| The ALM outbound worker's dequeue of a `WS_OUTBOX` row an AppInbox commit produced | Class C's outbound store, entered from a work row and not from a frame                                                                                                                                                                                                                                                                        |
+| Writer                                                                                                                                                                                                                                                                                                                                                                                 | Where                                                                                                                                                                                                                                                                                                                                                     |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| RTC topology work: snapshot, publication, delivery log                                                                                                                                                                                                                                                                                                                                 | `packages/shared-server/rallar-system/topology/replay/work/write-rtc-topology-publication-transaction.ts:58`, `packages/shared-server/rallar-system/topology/replay/work/rtc-topology-work-completion.ts:15`                                                                                                                                              |
+| Topology replay cursor, stream lease, compaction                                                                                                                                                                                                                                                                                                                                       | `packages/shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-replay-repository.ts:115`, `:162`; `packages/shared-server/rallar-system/topology/replay/postgres/compact-rtc-topology-delivery-entries.ts:40`; `packages/shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-replay-maintenance.ts:38`             |
+| Presence summary worker                                                                                                                                                                                                                                                                                                                                                                | `packages/shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts:437`, `:545`                                                                                                                                                                                                                                                  |
+| Admin prune page worker                                                                                                                                                                                                                                                                                                                                                                | `packages/shared-server/rallar-system/admin-operations/prune/admin-prune-page-worker.ts:302`                                                                                                                                                                                                                                                              |
+| RTC-RTT receipt cleanup                                                                                                                                                                                                                                                                                                                                                                | `packages/shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-receipt-cleanup.ts:148`                                                                                                                                                                                                                                                                 |
+| Runtime-state and ResourceInbox expiry eviction                                                                                                                                                                                                                                                                                                                                        | `packages/shared-server/runtime-state/postgres/runtime-state-expiry-worker.ts`, `packages/shared-server/queuebox/postgres/resource-inbox-maintenance.ts`                                                                                                                                                                                                  |
+| An outbox worker's finish of a durable deadline's queue row, autocommit                                                                                                                                                                                                                                                                                                                | `packages/shared-server/rallar-system/app-outbox/install-durable-deadline.ts:48`                                                                                                                                                                                                                                                                          |
+| The activation-status clock row a topology work cycle arms in the outbox                                                                                                                                                                                                                                                                                                               | `apps/api-v1/src/composition/create-api-v1-system-installers.ts:175-188` (the producer named at `:148-150`)                                                                                                                                                                                                                                               |
+| The ALM workers' own writes on the three backends: every claim, release, lease sweep and exhaustion finalization on the work queue; the inbound worker's replays and gap renewal; the outbound worker's dequeue, ACK windows, repairs and message ends; a server publication's receipt head, opened at its dequeue and healed at its retry window; the receipt worker's deadline `end` | `packages/shared/alm/work/al-work-queue-port.ts:115-135`; `packages/shared/alm/inbound/lane/al-inbound-store-lane.ts`; `packages/shared/alm/outbound/lane/al-outbound-store-lane.ts`; `packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts:496-498`, `:541-561`; `packages/shared/alm/receipt-record/al-receipt-record-worker.ts` |
+| The ALM outbound worker's dequeue of a `WS_OUTBOX` row an AppInbox commit produced                                                                                                                                                                                                                                                                                                     | Class C's outbound store, entered from a work row and not from a frame                                                                                                                                                                                                                                                                                    |
+
+An earlier reading of this inventory listed a formation latch "written by topology work on a root
+repository" (`apps/api-v1/src/composition/create-api-v1-system-installers.ts:128`). It is not: the
+root-bound `GroupConnectTriggerLatchRepository` only reads (`read` and `listAwaiting`,
+`packages/shared-server/rallar-system/group-state/persistence/group-connect-trigger-latch-repository.ts:56`,
+`:62`), and the latch row is written as a guarded-batch effect of a group mutation (`:175-189`, used
+at
+`packages/shared-server/rallar-system/group-state/mutation/aggregate/compute-group-connect-trigger.ts:54`,
+`:125`), inside AppInbox. The topology compaction also takes a plain row lock, `for update`
+(`packages/shared-server/rallar-system/topology/replay/postgres/compact-rtc-topology-delivery-entries.ts:63`).
+`[read]`
 
 ### Class C: the ALM transport on the WS server (the direct writes on incoming paths)
 
-One adapter carries all of it: `PSqlAdmissionWorkBackend.write`
+Two adapters carry it, both members of one port
+(`packages/shared/alm/al-admission-work-backend.ts:44-56`).
+
+The first is `PSqlAdmissionWorkBackend.write`
 (`packages/shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts:116-147`). It runs the
 caller's reads and decisions first, computes every statement, then opens its own transaction
 (`:131`) and executes only those statements. Every state row is a conditional write: insert if
@@ -183,7 +236,24 @@ absent, update if the revision matches, delete if the revision matches
 `:243-260`). Fences go first, in key order (collector `:127-154`; backend `:248-261`). A row that
 moved rolls the commit back and surfaces as the typed value `conflict`. `[read]`
 
-It is constructed three times in production code, one namespace each
+The second is the backend's own work queue, `workQueue` (backend `:60`, `:73`): a `PSqlQueueBox` of
+its own over `resource_inbox`. The runtimes write it through `ALWorkQueuePort`, outside `write`.
+`retainIfAbsent` is `PSqlQueueBox.enqueueIfAbsent`
+(`packages/shared/alm/work/al-work-queue-port.ts:119`): one insert-if-absent, replacing an expired
+row, in a transaction the queue box opens
+(`packages/shared-server/queuebox/postgres/p-sql-queue-box.ts:482-493`), with no state row and no
+fence in it. On an incoming frame it writes a kept send
+(`packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts:799-802` to
+`packages/shared/alm/inbound/al-inbound-message-admission.ts:328-361`), an admission that lost its
+three attempts (`packages/shared/alm/inbound/lane/al-inbound-store-lane.ts:229-237`), an inbound
+control whose commit lost
+(`packages/shared/alm/inbound/control/al-inbound-control-admission.ts:476-477`, `:500-511`) and a
+peer control whose commit lost
+(`packages/shared/alm/outbound/control/al-outbound-control-admission.ts:191-192`, `:476-486`). The
+workers' claims, releases, lease sweeps and exhaustion finalizations go through the same port
+(class B). `[read]`
+
+The backend is constructed three times in production code, one namespace each
 (`packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts:91`, `:113`;
 `packages/shared-server/al-runtime/postgres/create-p-sql-al-receipt-record-stores.ts:16`), and wired
 in `apps/api-v1/src/composition/create-api-v1-runtime.ts:364-368`, `:462-471`. `[read]`
@@ -194,10 +264,18 @@ cluster every message is, except a small, unacknowledged, best-effort RTC signal
 (`packages/shared-server/docs/runtime-navigation.md:203-216`;
 `apps/api-v1/src/composition/create-api-v1-runtime.ts:466`;
 `packages/shared-server/rallar-system/communication/is-instance-local-rtc-signal.ts:23-30`). So in
-the clustered deployment the direct write is the normal path of an incoming message, not a corner. A
-control frame such as an ACK is read against the inbound store and written elsewhere: in the
-receipt record (C6) or the outbound store (C4). The pinned cost of a client's ACK shows one
-transaction, the count (`packages/shared/alm/receipt-record/README.md:214-218`). `[read]`
+the clustered deployment the direct write is the normal path of an incoming message, not a corner.
+A control frame is first offered to the inbound runtime's own control admission
+(`packages/shared/alm/inbound/al-inbound-message-runtime.ts:436-488`). For an ACK of a room send
+that is one read of the control-owner index and no write
+(`packages/shared/alm/receipt-record/README.md:216-218`); the ACK is then counted in the receipt
+record (C6) or handed to the outbound store (C4). The same admission can commit in the inbound
+store (C1, C2): an ACK or a relayed NACK about a message whose row tracks a pending acknowledgement
+is written by `commitBundle`, and one whose commit loses is retained as a work row
+(`packages/shared/alm/inbound/control/al-inbound-control-admission.ts:211-227`, `:458-480`,
+`:500-511`). Which api-v1 traffic reaches that commit was not traced. The pinned cost of a client's
+ACK shows one transaction, the count (`packages/shared/alm/receipt-record/README.md:214-218`).
+`[read]`
 
 **This includes frames that end in AppInbox.** A WS command that mutates domain state (CRDT append,
 RTC-RTT) is first admitted by the ALM inbound runtime, then dispatched from an ALM work row to its
@@ -205,22 +283,49 @@ topic handler, which enqueues AppInbox (`packages/shared-server/docs/runtime-nav
 `apps/api-v1/src/composition/create-api-v1-system-installers.ts:90-99`). The ALM admission write
 comes before AppInbox on that path. `[read]`
 
-| #  | What is written                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | On which incoming path                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Transaction and guard                                                                                                                                                                                                                                                                                                                                                        | On conflict                                                                                                                                                                                                                                                                                                                                                  | Since                                                                                                                                                                                                                              | Called an exception anywhere?                                            |
-| -- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| C1 | **Inbound admission store**, namespace `server-ws-qbox:<name>:inbound:admission` in `runtime_state_store` (`packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts:65`, `:90`): dedup key, message owner row, canonical message row, supersedence latest, exclusive claim, ordering track, delivery-progress row, buffered slots, delivered markers, the frozen ingress audience (`packages/shared/alm/inbound/README.md:1227-1253`)                                                     | Every admitted data message (not a control frame): socket `onMessage` → `acceptIncomingMessage` → `admitAuthorizedMessage` → `inboundRuntime.admitIncomingMessage` (`packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts:664-671`, `:777-826`, `:885-896`); also a kept send (`:801`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | One backend transaction per admission (`packages/shared/alm/inbound/al-inbound-admission-store.ts:842`, `:927-939`). Guards on every written key; keys only read are not fenced on PostgreSQL (D138, roadmap `:167`; `packages/shared/alm/inbound/README.md:1217-1239`)                                                                                                      | Three fresh attempts in the same call, no wait (`packages/shared/alm/inbound/admission/retry-al-inbound-lost-write.ts:8-25`, D784); then the send is retained `pending-admission` as a work row                                                                                                                                                              | Older than the history here: present at the shallow root `626b99e61` (#862, 2026-11-21). The roadmap's Release 1 section (#521) records the admission's write boundaries delivered "in memory, IndexedDB, PostgreSQL" (`:929-938`) | No. D770 and the receipt README mention it only as the precedent.        |
-| C2 | **Inbound work rows** `AL_INBOUND/<namespace>/<effectId>` in `resource_inbox`, written with C1 (`packages/shared/alm/inbound/README.md:1241-1242`)                                                                                                                                                                                                                                                                                                                                                             | Same commit as C1 (`packages/shared/alm/inbound/README.md:1187-1189`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Same transaction as C1. Conditional insert, or replace of the observed row                                                                                                                                                                                                                                                                                                   | As C1                                                                                                                                                                                                                                                                                                                                                        | As C1                                                                                                                                                                                                                              | No                                                                       |
-| C3 | **Inbound delivery completion**: the ordering position and slot of a delivered message                                                                                                                                                                                                                                                                                                                                                                                                                         | The inbound worker, after the application hand-off (`packages/shared/alm/inbound/al-inbound-admission-store.ts:815`). Not at the socket, but caused by the frame and before any AppInbox commit                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | One transaction, guarded on the position and the slot (D783)                                                                                                                                                                                                                                                                                                                 | Three attempts (D783, D784)                                                                                                                                                                                                                                                                                                                                  | Guard changed by #885; the write is older                                                                                                                                                                                          | No                                                                       |
-| C4 | **Outbound admission store**, namespace from `toALOutboundAdmissionNamespace`: message owner, message version, sender version, sent row, pending-ACK (receipt) row, repair count, first-hop wait, supersedence latest, control histories; per track the head, the messages by sequence, the recipients' sent positions and the room sent floor (`packages/shared/alm/outbound/admission/al-outbound-admission-keys.ts:4-62`; `packages/shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts:7-30`) | (i) A client's room send on a topic whose fan-out is `outbox`, re-published by the router: `packages/shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts:418-440` → `packages/shared-server/rallar-system/websocket/router/publish-rallar-server-ws-message.ts:156-169` → `enqueueOutboxIfAbsent` (`packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts:739-758`). (ii) An incoming ACK, NACK or repair request addressed to the server: `onControlMessage` (`:612-614`) → `acceptServerControl` (`:374`) → `packages/shared/alm/outbound/control/al-outbound-control-admission.ts:201`, `:272`. (iii) A control the server sends back whose target has no socket on this instance, handed to the cluster outbox (`packages/shared/services/ws-queue-box-server/ws-queue-box-server-control-delivery.ts:40-66`, D107), and receipt controls: the terminal receipt always, `admitted` only when no local socket took it (D781). The WS server has no memory lane for controls, so these are durable rows (`packages/shared/alm/outbound/README.md:539-542`) | One backend transaction (`packages/shared/alm/outbound/admission/al-outbound-admission-store.ts:851`, `:870`, `:982`, `:1088`; `packages/shared/alm/outbound/al-outbound-pending-admission.ts:164`). Fenced on the message's version row, and on the sender's version row when the decision read shared sender rows (`packages/shared/alm/outbound/README.md:383-411`, D780) | A dispatch: three attempts, the last after about 10 ms (`packages/shared/alm/outbound/al-outbound-dispatch-admission.ts:100-119`, `:506-512`), then retained as `admit-message` work. A peer control that loses is retained as work. A server receipt: three attempts at once (`packages/shared/alm/outbound/README.md:505-537`)                             | Older than the history here                                                                                                                                                                                                        | No                                                                       |
-| C5 | **Outbound work rows and the canonical message**: `AL_OUTBOUND/...`, `AL_OUTBOUND_MESSAGE/...`, `AL_OUTBOUND_IDENTITY/...`, and rows of type `WS_OUTBOX` in `resource_inbox` (`packages/shared/alm/al-admission-work-backend.ts:10-14`; `packages/shared/alm/outbound/README.md:466-470`)                                                                                                                                                                                                                      | Same commits as C4. A `WS_OUTBOX` row is therefore written outside AppInbox whenever its producer is the router, a control or a receipt, and inside AppInbox when its producer is a domain mutation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Same transaction as C4. The dequeue also holds each claimed row with `select ... for update of resource_inbox` (`packages/shared-server/queuebox/postgres/replace-observed-resource-inbox-entry.ts:99-112`; backend `:262-268`)                                                                                                                                              | As C4                                                                                                                                                                                                                                                                                                                                                        | Older than the history here                                                                                                                                                                                                        | No. The row lock is discussed in section 5.                              |
-| C6 | **Receipt record**, namespace `server-ws-qbox:<name>:receipt:record`: one head per receipted message, one confirmation row per answering recipient (`packages/shared/alm/receipt-record/README.md:29-49`)                                                                                                                                                                                                                                                                                                      | Head: at the admission of a receipted room send (`packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts:898-904` → aggregation `open`, `packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts:594`), at a re-sent copy, and at a kept send's replay (service `:615-620`). Confirmation: at each incoming ACK (service `:612-614` → aggregation `:314-328`, `:393-411`, `:463-480` → `packages/shared/alm/receipt-record/al-receipt-record.ts:126-146`, `:209-246`). End: by the ACK that completes the set (aggregation `:359-364` → record `:163-189`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | `open` and `end`: one transaction, fenced on the head (`packages/shared/alm/receipt-record/al-receipt-record.ts:116-122`, `:169-187`, `:248-265`). `count`: one conditional insert of the recipient's own row, not fenced on the head (`:221-240`; `packages/shared/alm/receipt-record/README.md:92-98`)                                                                     | `count`: the key is read again; a stored row is `repeated`; otherwise `conflict` is returned, recorded as an observation and **not retried** (record `:241-245`; `packages/shared/services/ws-queue-box-server/receipt/to-ws-queue-box-server-counted-ack.ts:53-62`; aggregation `:393-411`). `end`: the loser does nothing; the deadline work ends it later | #885, merged 2026-11-27 as `4caa19b6b` (D770 to D779)                                                                                                                                                                              | Yes, the only one: D770, D779 point 5, the receipt README, the 1.0 plan. |
-| C7 | **Receipt record work rows**: `AL_RECEIPT_DEADLINE` with the head, `AL_RECEIPT_ENDED` with the end (`packages/shared/alm/receipt-record/README.md:36-38`)                                                                                                                                                                                                                                                                                                                                                      | Same commits as C6's head writes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Same transaction as the head (`packages/shared/alm/receipt-record/al-receipt-record.ts:248-265`)                                                                                                                                                                                                                                                                             | The worker retries a row up to the queue's 20 attempts or its expiry (`packages/shared/alm/receipt-record/README.md:131-141`)                                                                                                                                                                                                                                | #885                                                                                                                                                                                                                               | As C6                                                                    |
-| C8 | **The terminal receipt's `WS_OUTBOX` row** for the origin, and the settlement of the server's own pending row                                                                                                                                                                                                                                                                                                                                                                                                  | The record's worker, from the ended work row (`packages/shared/alm/receipt-record/README.md:143-146`). Caused by the last ACK                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | A later transaction than the `end` that decided it. One control id per ended work, so a repeat is the outbox's duplicate (`packages/shared/alm/receipt-record/README.md:148-154`)                                                                                                                                                                                            | The work row retries                                                                                                                                                                                                                                                                                                                                         | #885                                                                                                                                                                                                                               | As C6                                                                    |
+| #  | What is written                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | On which incoming path                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Transaction and guard                                                                                                                                                                                                                                                                                                                                                                             | On conflict                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Since                                                                                                                                                                                                                                                                          | Called an exception anywhere?                                            |
+| -- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| C1 | **Inbound admission store**, namespace `server-ws-qbox:<name>:inbound:admission` in `runtime_state_store` (`packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts:65`, `:90`): dedup key, message owner row, canonical message row, supersedence latest, exclusive claim, ordering track, delivery-progress row, buffered slots, delivered markers, the frozen ingress audience (`packages/shared/alm/inbound/README.md:1227-1253`)                                                     | Every admitted data message (not a control frame): socket `onMessage` → `acceptIncomingMessage` → `admitAuthorizedMessage` → `inboundRuntime.admitIncomingMessage` (`packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts:664-671`, `:777-826`, `:885-896`). A kept send (`:799-802`) writes no admission row: it is one work row through the work queue (C2)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | One backend transaction per admission (`packages/shared/alm/inbound/al-inbound-admission-store.ts:842`, `:927-939`). Guards on every written key; keys only read are not fenced on PostgreSQL (D138, roadmap `:167`; `packages/shared/alm/inbound/README.md:1217-1239`)                                                                                                                           | Three fresh attempts in the same call, no wait (`packages/shared/alm/inbound/admission/retry-al-inbound-lost-write.ts:8-25`, D784); then the send is retained `pending-admission` as a work row, written through the work queue's `retainIfAbsent` in a transaction of its own                                                                                                                                                                               | Older than the history here: present at the shallow root `626b99e61` (#862, 2026-11-21). The roadmap's Release 1 section (#521) records the finite original deadline "Delivered at every write boundary in memory, IndexedDB, PostgreSQL, and the cluster bridge" (`:929-938`) | No. D770 and the receipt README mention it only as the precedent.        |
+| C2 | **Inbound work rows** `AL_INBOUND/<namespace>/<effectId>` in `resource_inbox`, written with C1 (`packages/shared/alm/inbound/README.md:1241-1242`)                                                                                                                                                                                                                                                                                                                                                             | Same commit as C1 (`packages/shared/alm/inbound/README.md:1187-1189`). Also written alone, through the work queue: a kept send, an admission that lost every attempt, and a control whose commit lost                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | With C1: same transaction; conditional insert, or replace of the observed row. Alone: one insert-if-absent in the queue box's own transaction, no fence (`packages/shared-server/queuebox/postgres/p-sql-queue-box.ts:482-493`)                                                                                                                                                                   | As C1                                                                                                                                                                                                                                                                                                                                                                                                                                                        | As C1                                                                                                                                                                                                                                                                          | No                                                                       |
+| C3 | **Inbound delivery completion**: the ordering position and slot of a delivered message                                                                                                                                                                                                                                                                                                                                                                                                                         | The inbound worker, after the application hand-off (`packages/shared/alm/inbound/al-inbound-admission-store.ts:815`). Not at the socket, but caused by the frame and before any AppInbox commit                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | One transaction, guarded on the position and the slot (D783)                                                                                                                                                                                                                                                                                                                                      | Three attempts (D783, D784)                                                                                                                                                                                                                                                                                                                                                                                                                                  | Guard changed by #885; the write is older                                                                                                                                                                                                                                      | No                                                                       |
+| C4 | **Outbound admission store**, namespace from `toALOutboundAdmissionNamespace`: message owner, message version, sender version, sent row, pending-ACK (receipt) row, repair count, first-hop wait, supersedence latest, control histories; per track the head, the messages by sequence, the recipients' sent positions and the room sent floor (`packages/shared/alm/outbound/admission/al-outbound-admission-keys.ts:4-62`; `packages/shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts:7-30`) | (i) A client's room send on a topic whose fan-out is `outbox`, re-published by the router: `packages/shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts:418-440` → `packages/shared-server/rallar-system/websocket/router/publish-rallar-server-ws-message.ts:156-169` → `enqueueOutboxIfAbsent` (`packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts:739-758`). (ii) An incoming ACK, NACK or repair request addressed to the server: `onControlMessage` (`:612-614`) → `acceptServerControl` (`:374`) → `packages/shared/alm/outbound/control/al-outbound-control-admission.ts:201`, `:272`. (iii) A control the server sends back whose target has no socket on this instance, handed to the cluster outbox (`packages/shared/services/ws-queue-box-server/ws-queue-box-server-control-delivery.ts:40-66`, D107), and receipt controls: the terminal receipt always, `admitted` only when no local socket took it (D781). The WS server has no memory lane for controls, so these are durable rows (`packages/shared/alm/outbound/README.md:539-542`)    | One backend transaction (`packages/shared/alm/outbound/admission/al-outbound-admission-store.ts:851`, `:870`, `:982`, `:1088`; `packages/shared/alm/outbound/al-outbound-pending-admission.ts:164`). Fenced on the message's version row, and on the sender's version row when the decision read shared sender rows (`packages/shared/alm/outbound/README.md:383-411`, D780)                      | A dispatch: three attempts, the last after about 10 ms (`packages/shared/alm/outbound/al-outbound-dispatch-admission.ts:100-119`, `:506-512`), then retained as `admit-message` work. A peer control that loses is retained as work through the work queue's `retainIfAbsent` (`packages/shared/alm/outbound/control/al-outbound-control-admission.ts:476-486`). A server receipt: three attempts at once (`packages/shared/alm/outbound/README.md:505-537`) | Older than the history here                                                                                                                                                                                                                                                    | No                                                                       |
+| C5 | **Outbound work rows and the canonical message**: `AL_OUTBOUND/...`, `AL_OUTBOUND_MESSAGE/...`, `AL_OUTBOUND_IDENTITY/...`, and rows of type `WS_OUTBOX` in `resource_inbox` (`packages/shared/alm/al-admission-work-backend.ts:10-14`; `packages/shared/alm/outbound/README.md:466-470`)                                                                                                                                                                                                                      | Same commits as C4. A `WS_OUTBOX` row is therefore written outside AppInbox whenever its producer is the router, a control or a receipt, and inside AppInbox when its producer is a domain mutation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Same transaction as C4. The dequeue also holds each claimed row with `select ... for update of resource_inbox` (`packages/shared-server/queuebox/postgres/replace-observed-resource-inbox-entry.ts:99-112`; backend `:262-268`)                                                                                                                                                                   | As C4                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Older than the history here                                                                                                                                                                                                                                                    | No. The row lock is discussed in section 5.                              |
+| C6 | **Receipt record**, namespace `server-ws-qbox:<name>:receipt:record`: one head per receipted message, one confirmation row per answering recipient (`packages/shared/alm/receipt-record/README.md:29-49`)                                                                                                                                                                                                                                                                                                      | Head: at the admission of a receipted room send (`packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts:898-904` → aggregation `open`, `packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts:594`), at a re-sent copy, and at a kept send's replay (service `:615-620`). Confirmation: at each incoming ACK (service `:612-614` → aggregation `:314-328`, `:393-411`, `:463-480` → `packages/shared/alm/receipt-record/al-receipt-record.ts:126-146`, `:209-246`), with no head when the ACK overtook it (`countAhead`, aggregation `:475-478`; record `:148-161`); and at an outside-audience NACK of a server publication (aggregation `:324-327`, `:501-514`). End: by the ACK or NACK that completes the set (aggregation `:359-364` → record `:163-189`), by an admission whose `open` finds the set complete, and by a re-sent copy that finds an open head complete (aggregation `:605-611`, `:658-665`). Not from a frame: the server's own outside-audience confirmations (see "Entered by a cluster notice or a socket opening" below) | `open` and `end`: one transaction, fenced on the head (`packages/shared/alm/receipt-record/al-receipt-record.ts:116-122`, `:169-187`, `:248-265`). `count`: one conditional write of the recipient's own row (an insert; for the owner's `not-sent`, the replacement of a `confirmed` row, `:235-238`), not fenced on the head (`:221-240`; `packages/shared/alm/receipt-record/README.md:92-98`) | `count`: the key is read again; a stored row is `repeated`; otherwise `conflict` is returned, recorded as an observation and **not retried** (record `:241-245`; `packages/shared/services/ws-queue-box-server/receipt/to-ws-queue-box-server-counted-ack.ts:53-62`; aggregation `:393-411`). `end`: the loser does nothing; the deadline work ends it later                                                                                                 | #885, merged 2026-11-27 as `4caa19b6b` (D770 to D779)                                                                                                                                                                                                                          | Yes, the only one: D770, D779 point 5, the receipt README, the 1.0 plan. |
+| C7 | **Receipt record work rows**: `AL_RECEIPT_DEADLINE` with the head, `AL_RECEIPT_ENDED` with the end (`packages/shared/alm/receipt-record/README.md:36-38`)                                                                                                                                                                                                                                                                                                                                                      | Same commits as C6's head writes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Same transaction as the head (`packages/shared/alm/receipt-record/al-receipt-record.ts:248-265`)                                                                                                                                                                                                                                                                                                  | The worker retries a row up to the queue's 20 attempts or its expiry (`packages/shared/alm/receipt-record/README.md:131-141`)                                                                                                                                                                                                                                                                                                                                | #885                                                                                                                                                                                                                                                                           | As C6                                                                    |
+| C8 | **The terminal receipt's `WS_OUTBOX` row** for the origin, and the settlement of the server's own pending row                                                                                                                                                                                                                                                                                                                                                                                                  | The record's worker, from the ended work row (`packages/shared/alm/receipt-record/README.md:143-146`). Caused by the last ACK                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | A later transaction than the `end` that decided it. One control id per ended work, so a repeat is the outbox's duplicate (`packages/shared/alm/receipt-record/README.md:148-154`)                                                                                                                                                                                                                 | The work row retries                                                                                                                                                                                                                                                                                                                                                                                                                                         | #885                                                                                                                                                                                                                                                                           | As C6                                                                    |
 
 Before #885 the count of a client's receipted send lived in one server's memory (D37, roadmap
 `:66`), and the count of the server's own receipted publications was written per ACK into the
 outbound store's pending row, fenced on the server's sender version (D38 as amended, `:67`; D778,
 `:791`). So an incoming ACK already wrote the database outside AppInbox before the record existed.
 `[read]`
+
+Read against the maintainer's definition (ruling 6), C3 and C8 are work that a queue row starts: the
+inbound worker's completion and the receipt worker's terminal receipt. They are listed here because
+a frame causes them; the registry is to list them with that trigger.
+
+### Entered by a cluster notice or a socket opening
+
+Three writes are caused by a `WS_OUTBOX` row's dequeue on another instance, or by a socket opening,
+and are entered neither from a frame of the session they concern nor directly from a queue row or a
+timer on the instance that writes them. Whether the rule, with the maintainer's definition, counts
+them as incoming is not stated anywhere (question 10). `[read]`
+
+- An instance that receives another instance's outbox notice sends to its own sockets and then
+  counts, in the receipt record (C6), each session it sent nothing as outside the audience
+  (`packages/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts:383-433`,
+  `:574-611`; `packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts:987-993`;
+  `packages/shared/services/ws-queue-box-server/ws-queue-box-server-track-order.ts:111-134`).
+- When a local send of that notice fails, the receiving instance rewrites the `WS_OUTBOX` row for a
+  retry directly in `resource_inbox`, on the outbound store's work queue
+  (`packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts:293`) and not
+  through `write`
+  (`packages/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts:503-514`;
+  `packages/shared-server/rallar-system/queue-pubsub/requeue-remote-ws-outbox-delivery-failure.ts:34-36`).
+- A row held for a session whose socket has not opened is sent when it opens, and counts the same
+  outside-audience confirmations
+  (`packages/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts:543-572`;
+  `packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts:934-980`).
 
 ### Which of class C is "domain state that the rule, read plainly, would cover"
 
@@ -247,6 +352,11 @@ the repository.
   `packages/shared-server/app-data/app-data-store-cache.ts:212-219`). The review found no server app
   calling them from an incoming path; Relic registers its room-owned mutation as an AppInbox
   operation (`docs/architecture.md:338-339`). `[read]`
+- `RuntimeStateJsonPersistenceProvider` writes autocommit
+  (`packages/shared-server/runtime-state/runtime-state-json-persistence-provider.ts:11`) and is
+  constructed nowhere in production code. The autocommit write methods of the domain repositories
+  have no production caller (section 2, method). Both are dormant surfaces: a later caller is what a
+  guard should see. `[read]`
 - RallarAI can persist a result with `store.set` on such a store
   (`packages/shared-server/rallar-ai/rallar-server-ai-result-persistence.ts:85-93`). No app on
   `main` passes it a persistence port. `[read]`
@@ -276,11 +386,11 @@ The plan's six rulings became D779's five points because rulings 2 and 3 were fo
 The 1.0 plan cited the same thing as "ruling 6" (lines 197-199 at `e30b2c9f5`).
 
 D779 says "The maintainer approved the build as D770 to D778 state it". Those rows were written on
-2026-11-24, after the approval they record. What existed on 2026-11-22 was the plan, whose section 8
-said: "A recipient's ACK over WS writes the record directly, guard first and in one transaction. It
-does not pass through AppInbox. The record is one more AL runtime store (ruling 6), written at WS
-ingress as the AL runtime's inbound and outbound stores are; a decision row states it." (commit
-`39558820e`, file lines 231-235). `[read]`
+2026-11-24. The date they give for the approval they state is 2026-11-22. What existed on 2026-11-22
+was the plan, whose section 8 said: "A recipient's ACK over WS writes the record directly, guard
+first and in one transaction. It does not pass through AppInbox. The record is one more AL runtime
+store (ruling 6), written at WS ingress as the AL runtime's inbound and outbound stores are; a
+decision row states it." (commit `39558820e`, file lines 231-235). `[read]`
 
 ### What was asked "alone" as point 5, in the words the record keeps
 
@@ -297,7 +407,8 @@ ingress as the AL runtime's inbound and outbound stores are; a decision row stat
   marked recommended.
 - Whether the rule was quoted to the maintainer. No version of the plan read (up to `a24076889`)
   and neither decision row contains "mandatory", "exception", "departs", `AGENTS.md` or `CLAUDE.md`
-  near this ruling. The plan says the opposite of a departure in its constraints: "The write rule of
+  near this ruling. The plan's constraints say that the doctrine's write rule holds and do not say
+  that the same doctrine makes AppInbox mandatory: "The write rule of
   `convergent-service-writing.md` holds: the conditional guard is the first write, the state and the
   work it causes commit in one transaction, and nothing is repaired after a commit" (commit
   `39558820e`, file lines 103-104). `[read]`
@@ -352,9 +463,9 @@ ACK landing on another instance crossed by one best-effort NOTIFY and counted no
 campaign's first fault stops one of three replicas and passes only if every receipt settles within
 45 s; "Today that run cannot pass" (commit `39558820e`, file lines 9-27).
 
-**The first design tried.** The plan records the first ruling on the build as "Reuse the durable row":
-count in the `receiver` pending row of the server's outbound owner (C4). It was measured on real
-PostgreSQL with a delay added to every round trip (commit `39558820e`, file lines 44-67; D779
+**The first design tried.** The plan records the first ruling on the build as "Reuse the durable
+row": count in the `receiver` pending row of the server's outbound owner (C4). It was measured on
+real PostgreSQL with a delay added to every round trip (commit `39558820e`, file lines 44-67; D779
 point 2):
 
 | Shape                                  | Added latency | Durable row, one fenced commit per ACK | Per-recipient record              |
@@ -362,6 +473,12 @@ point 2):
 | 15 recipients at once, three instances | +2 ms         | 633 ms to complete                     | 26 ms                             |
 | 15 recipients at once, three instances | +5 ms         | 1 319 ms                               | 24 ms                             |
 | 40 messages, 14 ACKs each, 28 ACKs/s   | +5 ms         | median 30 s per message (one run)      | complete 20 ms after the last ACK |
+
+The source gives the conditions: "Machine load average 6 to 35 during the runs", test-only code,
+and for the record a prototype "measured on the runtime-state repository directly: 2 autocommit
+round trips per ACK". The record as built costs 5 round trips an ACK and completes 60.5 to 62.8 ms
+after the last ACK at +5 ms in the 40-message shape
+(`packages/shared/alm/receipt-record/README.md:245-247`).
 
 The durable row cost about 15 round trips per ACK, all fenced on the publisher's one version row, so
 ACKs ran one at a time per publisher: about 24 a second at +2 ms and about 11 at +5 ms, against the
@@ -379,13 +496,16 @@ description):
   that kills the admitting server now reads `complete` (README `:425-428`).
 - A non-completing ACK costs 5 round trips on the record and 8 through the WS server, none of them
   serialized against another ACK, each pinned by a named test (README `:200-235`).
-- Five unordered publishers at +5 ms: 200 of 200 complete by the deadline in three runs, against
-  111 to 124 before, at 223 to 225 statements a message against 343 to 351 (#885, measurement
-  table 1). Part of that gain is D780 and D781, which are about fences and the live `admitted`
-  frame, not about the record.
+- Five unordered publishers at +5 ms: 200 of 200 complete by the deadline in three runs, at 223 to
+  225 statements a message (#885, measurement table 1; README `:251-256`). That table's "before",
+  111 to 124 of 200 at 343 to 351 statements, is #885's own tree before D780 and D781, which already
+  counted in the record (D779, D782): the difference is the fence rule and the live `admitted`
+  frame, not the record. Against `main` before #885 there is one comparison, not interleaved: the
+  room-send cell's five unordered publishers at +5 ms completed a receipt 29.8 to 34.2 s after its
+  offer at the median on `main` and 702 to 757 ms on #885's tree (#885, comment of 2026-11-27).
 - Rows are bounded: growth surface 90, at most 31 minutes (README `:47-49`).
 - It also carries stated limits (README `:287-370`), among them: a deadline pass that no instance
-  runs within one grace of the deadline loses the receipt (`:355-357`); a lost `end` that no retry
+  runs within one grace of the deadline loses the receipt (`:356-357`); a lost `end` that no retry
   window reaches waits for the deadline worker (`:361`); the terminal receipt is delivered at least
   once (`:139-141`, `:152-154`).
 
@@ -405,7 +525,9 @@ description):
   AppInbox or why. The roadmap's implementation section points ALM at the doctrine and says
   "QueueBox and AppInbox retain the transaction and redelivery rules" (roadmap `:879-902`), which
   reads as if the rule were being followed. The first row that says "does not pass through AppInbox"
-  about any store is D770. `[read]`
+  about any store is D770. Two later rows treat the ALM write path as outside AppInbox in passing:
+  D595, "medium-scale by path, since no AppInbox or database mutation path is touched" (roadmap
+  `:622`), and D724, "no AppInbox mutation path moved" (`:734`). `[read]`
 
 ### What putting each write behind AppInbox would mean (the review's analysis)
 
@@ -435,12 +557,16 @@ conditional insert in one transaction per ACK, with two reads around it.
 _Added statements per ACK, derived._ At least: one queue-row insert, one claim, one result row and
 one finalization, on top of the confirmation insert. So no fewer than five writes where there is
 one, before counting the reads the handler repeats. The pinned direct cost is 5 round trips
-including BEGIN, COMMIT and both reads. A pinned total for an AppInbox command was not found in the
-repository.
+including BEGIN, COMMIT and both reads. No pinned total for one AppInbox command end to end was
+found. Parts of one are pinned and were not read for this review: an authorized WS connect "reads a
+co-member connect in at most seven statements and writes it in at most five"
+(`packages/tests/shared-server/integration/postgres/authorised-ws-connect-statements.test.ts:37`),
+and the dequeue pass and the release have statement tests under `apps/api-v1/test/db/`.
 
 _Rows kept, derived._ The measured five-publisher cell offers 140 ACKs a second (5 publishers × 2
-sends a second × 14 recipients). At a one-day retention that is about 12 million finished command
-rows and as many result rows a day (140 × 86 400), against confirmation rows that live at most
+sends a second × 14 recipients). If a deployment held that rate for a whole day, which no figure
+here says one does, a one-day retention would keep about 12 million finished command rows and as
+many result rows (140 × 86 400), against confirmation rows that live at most
 31 minutes. A shorter retention for this family would be a design decision of its own.
 
 _Latency on the hot path._ The count would move from the socket's own call to a queue hop. All
@@ -484,38 +610,40 @@ _All ALM runtime writes (C1 to C5)._ Three things make this a different order of
 
 - **Fresh authorization and policy on every retry.** An ACK is authorized once, at the socket; the
   record validates it against a head it read before its transaction, and a count that read an open
-  head can commit after another instance ended it (`packages/shared/alm/receipt-record/README.md:92-98`).
-  An inbound arrival's three attempts "run inside the one call its carrier authorized" (#885's
-  description).
-- **A retry for every conflict.** Today a `count` that answers `conflict` is recorded and dropped
-  (section 2, C6). Under AppInbox it would be redelivered.
+  head can commit after another instance ended it
+  (`packages/shared/alm/receipt-record/README.md:92-98`). An inbound arrival's three attempts "run
+  inside the one call its carrier authorized" (#885's description).
+- **A retry for every conflict.** Today a `count` that answers `conflict` is dropped, and recorded
+  only where the receipt observer is enabled (section 2, C6; question 3 says when it can arise).
+  Under AppInbox it would be redelivered.
 - **A durable typed result and replay.** The direct writes return their result in memory.
 - **One doctrine that the existing gates cover.** The mutation route inventory
   (`packages/tests/repo/mutation-route-ownership/routing/mutation-routing-inventory.ts:15-35`) lists
-  AppInbox types only. The state-write bench "runs none of this code" (D778, roadmap `:791`). Whether
-  the medium-scale convergence gate exercises receipted room sends was not established.
-- **The lease, attempt deadline and breaker** AppInbox already has
-  (`packages/shared-server/docs/persistence-and-replay.md:105-137`).
+  AppInbox types only. The state-write bench "runs none of this code" (D778, roadmap `:791`).
+  Whether the medium-scale convergence gate exercises receipted room sends was not established.
+- **The lease, attempt deadline and breaker** AppInbox already has (the lease and the attempt
+  deadline at `packages/shared-server/docs/persistence-and-replay.md:105-137`; the breaker, D196,
+  roadmap `:225`).
 
 ### What the direct writes do instead, checked against the doctrine item by item
 
-| Doctrine requirement (line)                                                                                            | Inbound and outbound stores (C1 to C5)                                                                                                                                                                                                           | Receipt record (C6 to C8)                                                                                                     |
-| ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| AppInbox is mandatory (`:57-60`)                                                                                       | Not met                                                                                                                                                                                                                                          | Not met                                                                                                                       |
-| Visible `read -> compute -> validate -> write`, compute and validate pure (`:34-43`)                                   | Met in shape: read sessions, `compute...`, `validate...CommitBundle`, conditional commit (`packages/shared/alm/inbound/README.md:1170-1203`)                                                                                                     | Met in shape: validators return every issue; tally and ending are pure (`packages/shared/alm/receipt-record/README.md:64-90`) |
-| Reads outside the write transaction; the transaction executes prepared writes only                                     | Met on PostgreSQL: statements are computed before `begin` (backend `:120-135`)                                                                                                                                                                   | Met, same adapter                                                                                                             |
-| The service write receives the transaction and never opens one (`:66-67`)                                              | Not met: the store's backend opens it (backend `:131`)                                                                                                                                                                                           | Not met, same                                                                                                                 |
-| The conditional guard is the first write (`:128`)                                                                      | Met: fences first, in key order                                                                                                                                                                                                                  | Met for `open` and `end`. `count` writes one guarded row and is deliberately not fenced on the head                           |
-| State, event, receipt, result and final outbox rows in the same transaction; no intermediate outbox (`:128-133`)       | Met for state and work rows. No durable result row exists                                                                                                                                                                                        | Not met: the terminal receipt's `WS_OUTBOX` row is written later by a worker from an intermediate `AL_RECEIPT_ENDED` work row |
-| Final outbox insertion is insert-only; a collision rolls back and never loads a winner (`:131-133`)                    | Not met: `enqueueIfAbsent` answers a duplicate as a value                                                                                                                                                                                        | Not met: a repeated delivery is "the outbox's duplicate" (README `:150-154`)                                                  |
-| Conflict is a typed value, not an exception (`:45-50`)                                                                 | Met at the store boundary                                                                                                                                                                                                                        | Met (README `:53-54`)                                                                                                         |
-| One delivery, one attempt; retry by queue redelivery, not a loop around the handler; re-check authorization (`:62-68`) | Not met at ingress: bounded in-call loops of three (D784; the dispatch policy). Each attempt is a full read, decision and write, so it is not the "retry only the final write" the doctrine forbids. Authorization is not re-read for an arrival | Not met: `count` has no retry at all; `end` has none at ingress and relies on the deadline work                               |
-| 20 attempts on the stated schedule (`:138-141`)                                                                        | Met only for work rows, which ride the same queue                                                                                                                                                                                                | Met only for the worker's rows                                                                                                |
-| Optimistic compare-and-set for create, update, delete (`:151-156`)                                                     | Met for written keys. Keys only read are not fenced on PostgreSQL, a recorded decision (D138)                                                                                                                                                    | Met                                                                                                                           |
-| No row, table or advisory locks beyond bounded ResourceInbox claims, unless approved with evidence (`:143-147`)        | Open question: the dequeue commit takes `for update` on the claimed queue rows it holds (C5). No decision row for it was found. It predates the history here                                                                                     | The receipt control's dequeue uses the same hold (README `:226-227`)                                                          |
-| Corrupt authoritative reads fail closed (`:192-194`)                                                                   | Met (`ALAdmissionCorruptionError`)                                                                                                                                                                                                               | Met (README `:43-45`)                                                                                                         |
-| Mandatory fields; canonical order for set-like snapshots (`:204-213`)                                                  | Not checked for this review                                                                                                                                                                                                                      | Terminal sets are in expected order, each recipient once (README `:42-43`)                                                    |
-| Verification: a code-derived trace from "the concrete AppInbox registration" (`:230-237`, `:245-267`)                  | Not applicable as written: there is no AppInbox registration to start from. The READMEs carry their own navigation probes                                                                                                                        | Same (README `:392-405`)                                                                                                      |
+| Doctrine requirement (line)                                                                                            | Inbound and outbound stores (C1 to C5)                                                                                                                                                                                                                                                                                                                     | Receipt record (C6 to C8)                                                                                                     |
+| ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| AppInbox is mandatory (`:57-60`)                                                                                       | Not met                                                                                                                                                                                                                                                                                                                                                    | Not met                                                                                                                       |
+| Visible `read -> compute -> validate -> write`, compute and validate pure (`:34-43`)                                   | Met in shape: read sessions, `compute...`, `validate...CommitBundle`, conditional commit (`packages/shared/alm/inbound/README.md:1170-1203`)                                                                                                                                                                                                               | Met in shape: validators return every issue; tally and ending are pure (`packages/shared/alm/receipt-record/README.md:64-90`) |
+| Reads outside the write transaction; the transaction executes prepared writes only                                     | Met on PostgreSQL: statements are computed before `begin` (backend `:120-135`). A work row written alone is one statement in the queue box's own transaction                                                                                                                                                                                               | Met, same adapter                                                                                                             |
+| The service write receives the transaction and never opens one (`:66-67`)                                              | Not met: the store's backend opens it (backend `:131`), and the work queue opens its own (`packages/shared-server/queuebox/postgres/p-sql-queue-box.ts:488`)                                                                                                                                                                                               | Not met, same                                                                                                                 |
+| The conditional guard is the first write (`:128`)                                                                      | Met for `write`: fences first, in key order. A work row written alone through the work queue has no fence                                                                                                                                                                                                                                                  | Met for `open` and `end`. `count` writes one guarded row and is deliberately not fenced on the head                           |
+| State, event, receipt, result and final outbox rows in the same transaction; no intermediate outbox (`:128-133`)       | Met for the state and work rows of one admission. Not met for the outbox row a frame causes: a durable room send on an `outbox` topic commits its admission with an `AL_INBOUND` work row, and the router writes the `WS_OUTBOX` row in a later transaction, when the inbound worker dispatches that row (section 2, C4 (i)). No durable result row exists | Not met: the terminal receipt's `WS_OUTBOX` row is written later by a worker from an intermediate `AL_RECEIPT_ENDED` work row |
+| Final outbox insertion is insert-only; a collision rolls back and never loads a winner (`:131-133`)                    | Not met: `enqueueIfAbsent` answers a duplicate as a value                                                                                                                                                                                                                                                                                                  | Not met: a repeated delivery is "the outbox's duplicate" (README `:150-154`)                                                  |
+| Conflict is a typed value, not an exception (`:45-50`)                                                                 | Met at the store boundary                                                                                                                                                                                                                                                                                                                                  | Met (README `:53-54`)                                                                                                         |
+| One delivery, one attempt; retry by queue redelivery, not a loop around the handler; re-check authorization (`:62-68`) | Not met at ingress: bounded in-call loops of three (D784; the dispatch policy). Each attempt is a full read, decision and write, so it is not the "retry only the final write" the doctrine forbids. Authorization is not re-read for an arrival                                                                                                           | Not met: `count` has no retry at all; `end` has none at ingress and relies on the deadline work                               |
+| 20 attempts on the stated schedule (`:138-141`)                                                                        | Met only for work rows, which ride the same queue                                                                                                                                                                                                                                                                                                          | Met only for the worker's rows                                                                                                |
+| Optimistic compare-and-set for create, update, delete (`:151-156`)                                                     | Met for written keys. Keys only read are not fenced on PostgreSQL, a recorded decision (D138)                                                                                                                                                                                                                                                              | Met                                                                                                                           |
+| No row, table or advisory locks beyond bounded ResourceInbox claims, unless approved with evidence (`:143-147`)        | Open question: the dequeue commit takes `for update` on the claimed queue rows it holds (C5). No decision row for it was found. It predates the history here                                                                                                                                                                                               | The receipt control's dequeue uses the same hold (README `:226-227`)                                                          |
+| Corrupt authoritative reads fail closed (`:192-194`)                                                                   | Met (`ALAdmissionCorruptionError`)                                                                                                                                                                                                                                                                                                                         | Met (README `:43-45`)                                                                                                         |
+| Mandatory fields; canonical order for set-like snapshots (`:204-213`)                                                  | Not checked for this review                                                                                                                                                                                                                                                                                                                                | Terminal sets are in expected order, each recipient once (README `:42-43`)                                                    |
+| Verification: a code-derived trace from "the concrete AppInbox registration" (`:230-237`, `:245-267`)                  | Not applicable as written: there is no AppInbox registration to start from. The READMEs carry their own navigation probes                                                                                                                                                                                                                                  | Same (README `:392-405`)                                                                                                      |
 
 The code-writing skill also says "Never add an inner retry loop in a handler or persistence
 helper" (`.agents/skills/rallar-code-writing/SKILL.md:202-204`, pinned at
@@ -528,31 +656,31 @@ departs from the letter of the doctrine with a ruling that does not name the rul
 
 ### The receipt record (C6 to C8)
 
-| For keeping it as built                                                                                                               | Against                                                                                                                                                   |
-| ------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| It closed R2: receipts survive the loss of the admitting server, shown by a cluster recipe (section 4)                                | It is the store closest to domain state, and the rule read plainly covers it (section 2)                                                                  |
-| It is cheap and measured: 5 round trips an ACK, no ACK waits on another, five publishers keep up at +5 ms (section 4)                 | The rule and the code now disagree in writing, and three later documents say so without the rule changing (section 1)                                     |
-| The alternative first chosen, a fenced row, was measured too slow by a wide margin (section 4)                                        | The comparison that was made was record against fenced row. Record against AppInbox was never made (section 5)                                            |
-| It meets the doctrine's guard-first, one-transaction, conflict-as-value and fail-closed rules (section 5 table)                       | It misses others: no retry of a lost count, no fresh authorization, an intermediate work row before the final outbox row, at-least-once terminal delivery |
-| It runs unchanged on the memory backend, so a memory-only server and the tests use the same code (README `:21-27`)                    | None of the mutation gates exercise it: not the route inventory, not the state-write bench (section 5)                                                    |
-| It deleted more than it added in concept: the memory aggregate, its cap, the deadline index and the cross-instance relay (D776, D777) | It carries a long list of stated limits that exist because it is not a queued command, such as the receipt lost when no deadline pass runs in time        |
-| Its cost is pinned by tests, so a regression shows                                                                                    | Its approval is recorded as five words with no question text, and its pull request description does not mention the departure (section 3)                 |
+| For keeping it as built                                                                                                               | Against                                                                                                                                                             |
+| ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| It closed R2: receipts survive the loss of the admitting server, shown by a cluster recipe (section 4)                                | It is the store closest to domain state, and the rule read plainly covers it (section 2)                                                                            |
+| It is cheap and measured: 5 round trips an ACK, no ACK waits on another, five publishers keep up at +5 ms (section 4)                 | The rule and the code now disagree in writing, and three later documents say so without the rule changing (section 1)                                               |
+| The alternative first chosen, a fenced row, was measured too slow by a wide margin (section 4)                                        | The comparison that was made was record against fenced row. Record against AppInbox was never made (section 5)                                                      |
+| It meets the doctrine's guard-first, one-transaction, conflict-as-value and fail-closed rules (section 5 table)                       | It misses others: no retry of a lost count, no fresh authorization, an intermediate work row before the final outbox row, at-least-once terminal delivery           |
+| It runs unchanged on the memory backend, so a memory-only server and the tests use the same code (README `:21-27`)                    | None of the mutation gates exercise it: not the route inventory, not the state-write bench (section 5)                                                              |
+| It deleted more than it added in concept: the memory aggregate, its cap, the deadline index and the cross-instance relay (D776, D777) | It carries a long list of stated limits that exist because it is not a queued command, such as the receipt lost when no deadline pass runs in time                  |
+| Its cost is pinned by tests, so a regression shows                                                                                    | What the record keeps of the question is an answer of five words with no question text, and its pull request description does not mention the departure (section 3) |
 
 ### The older ALM runtime stores (C1 to C5)
 
-| For keeping them as built                                                                                                                                       | Against                                                                                                                                                                     |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| They are transport infrastructure of the same kind as AppInbox's own queue rows (section 2)                                                                     | That classification is the review's. No document makes it, so today they are simply unrecorded departures from an unqualified rule                                          |
-| One implementation serves memory, IndexedDB and PostgreSQL, proved by one arbitration schedule on all three (`packages/shared/alm/inbound/README.md:1227-1239`) | They hold some application-visible facts: the exclusive claim, the frozen audience, the pending receipt row (section 2)                                                     |
-| AppInbox-bound WS commands depend on them, so moving them behind AppInbox is circular (section 5)                                                               | On a cluster they are the normal path of almost every message, so the unreviewed surface is large, not marginal (section 2)                                                 |
-| Every conflict is a typed value and every written row is a compare-and-set (section 5 table)                                                                    | They use in-call retry loops, do not re-read authorization for an arrival's retries, and take a row lock on claimed queue rows with no decision row found (section 5 table) |
-| Their costs are pinned and measured in the lane and the room-send cell (#927, #885)                                                                             | They were never put to the maintainer as a decision. The precedent the receipt record leaned on was itself not an approved exception (sections 3 and 5)                     |
-| Moving them is the largest piece of work considered here, with no measurement behind it                                                                         | Because they are unnamed, each new store "as the stores already are" inherits an approval nobody gave. The receipt record shows that this happens                           |
+| For keeping them as built                                                                                                                                                                                      | Against                                                                                                                                                                     |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| They are transport infrastructure of the same kind as AppInbox's own queue rows (section 2)                                                                                                                    | That classification is the review's. No document makes it, so today they are simply unrecorded departures from an unqualified rule                                          |
+| One implementation serves memory, IndexedDB and PostgreSQL, proved by one arbitration schedule on all three (`packages/shared/alm/inbound/README.md:1227-1239`)                                                | They hold some application-visible facts: the exclusive claim, the frozen audience, the pending receipt row (section 2)                                                     |
+| AppInbox-bound WS commands depend on them, so moving them behind AppInbox is circular (section 5)                                                                                                              | On a cluster they are the normal path of almost every message, so the unreviewed surface is large, not marginal (section 2)                                                 |
+| Every conflict is a typed value; every row written through the backend's `write` is a compare-and-set, and a work row written alone through the work queue is an insert-if-absent (section 2, section 5 table) | They use in-call retry loops, do not re-read authorization for an arrival's retries, and take a row lock on claimed queue rows with no decision row found (section 5 table) |
+| Their costs are pinned and measured in the lane and the room-send cell (#927, #885)                                                                                                                            | No decision row puts them to the maintainer. The precedent the receipt record leaned on is itself not a recorded decision (sections 3 and 5)                                |
+| Moving them is the largest piece of work considered here, with no measurement behind it                                                                                                                        | Because they are unnamed, each new store "as the stores already are" inherits an approval nobody gave. The receipt record shows that this happens                           |
 
 ## 7. Options for the revisit
 
 The maintainer's decision. The review's recommendation is at the end and is separate from the
-options.
+options. Each "Size" below is the review's estimate. Nothing was scoped or prototyped.
 
 ### (a) Confirm the exception and write it into the rule with its exact boundary
 
@@ -573,7 +701,7 @@ options.
   suites and the pinned costs restated; a retention rule for its finished rows; and a design for
   where the record lives, since it sits in `packages/shared` and must run without PostgreSQL.
 - **Risk.** Receipts stop keeping up, which is the failure the fenced row showed, and ACK traffic
-  delays every other mutation on the shared lane. Both unmeasured. The design listed "a receipt
+  delays every other mutation on the shared lane. Both unmeasured. The design listed "A receipt
   that is exact but arrives only at the deadline in the ordinary, no-crash case" under "What would
   make this a failure even if it works" (commit `39558820e`, file lines 86-89).
 - **Measure first.** An AppInbox-backed count in the record's own cells: 40 messages of 14 ACKs at
@@ -600,17 +728,17 @@ options.
 
 - **What it is.** The doctrine gains a second, bounded mutation path, for example "transport
   admission writes", with its own written requirements, a registry of the stores on it, a contract
-  test every such store must pass, and a guard that fails when a store appears outside the
-  registry. The rule sentence then says: AppInbox, or a registered store on the second path, and
-  nothing else.
-- **Cost.** A doctrine section (most requirements are already true in code), the registry and
-  guard, and a decision on each miss in section 5: retry a lost count or state it as a limit; rule
-  on the in-call loops; rule on the `for update` hold; say whether an intermediate work row before
-  the final outbox row is allowed on this path.
-- **Risk.** Two doctrines to keep true. A second path invites use, so the entry test must be
-  strict: what may be written on it and what may not.
-- **Measure first.** Nothing to start. A retry for a lost count would be re-read against the
-  pinned ACK cost.
+  test every such store must pass, and a guard that fails when a store, or a new caller of a store's
+  `write` or work queue, appears outside the registry. The rule sentence then says: AppInbox, or a
+  registered store on the second path, and nothing else.
+- **Cost.** A doctrine section (most requirements are already true in code), the registry and guard,
+  and a decision on each miss in section 5: retry a lost count or state it as a limit; rule on the
+  in-call loops; rule on the `for update` hold; say whether an intermediate work row before the
+  final outbox row is allowed on this path.
+- **Risk.** Two doctrines to keep true. A second path invites use, so the entry test must be strict:
+  what may be written on it and what may not.
+- **Measure first.** Nothing to start. A retry for a lost count would be re-read against the pinned
+  ACK cost.
 - **Size.** Small to medium: one documents-and-guard pull request, then one small pull request per
   miss the maintainer chooses to close.
 
@@ -618,50 +746,56 @@ options.
 
 Take (d) for C1 to C5, and decide C6 to C8 only after the measurement of (b).
 
-- C1 to C5 are the transport's own inbox and outbox. Naming them as a second path with
-  requirements matches what the code is, costs little, and stops approval by analogy.
-- The receipt record is the one store where the rule plainly applies and where the only question
-  ever put to the maintainer was thin. It deserves the comparison that was not made. The cells, the
-  pass line and the harness exist, so the measurement is cheap relative to deciding blind. If
-  AppInbox keeps up, (b) removes the exception. If it does not, the record joins the second path
-  with a figure behind it instead of a precedent.
-- Until the maintainer rules, no sentence that confirms anything is added. #948 already records that
-  as the maintainer's ruling. The guard of section 8 confirms nothing.
+- C1 to C5 are the transport's own inbox and outbox. Naming them as a second path with requirements
+  matches what the code is, costs little, and stops approval by analogy.
+- The receipt record is the one store where the rule plainly applies, and what the record keeps of
+  the one question it says was asked is five words. It deserves the comparison that was not made.
+  The cells, the pass line and the harness exist, so the measurement is cheap relative to deciding
+  blind. If AppInbox keeps up, (b) removes the exception. If it does not, the record joins the
+  second path with a figure behind it instead of a precedent.
+- Until the maintainer rules, no sentence that confirms anything is added. #948's decision 2 says
+  so, as what follows from the ruling that the write is revisited; it does not list it among the
+  three things ruled. The guard of section 8 confirms nothing.
 
 ## 8. The guard
 
-The maintainer ruled on 2026-11-27 that a guard is built now. The pull request that follows this one
-builds it; this section says only what it is for and what the review proposed it hold. It confirms
-no exception: every existing store it lists stays "under review" until the questions of section 11
-are answered.
+The maintainer ruled on 2026-11-27 that all the measures below are built now, in one pull request
+that confirms no exception. The pull request that follows this one builds them; this section says
+what each is for and what the review proposed it hold. Every existing store it lists stays "under
+review" until the questions of section 11 are answered. It uses the maintainer's definition of an
+incoming path and of a database write (ruling 6); work that a queue row or a timer starts is listed
+with its trigger.
 
 - **An explicitness rule** in `AGENTS.md`, `CLAUDE.md` and the doctrine: a plan, decision row, pull
   request or question that adds or changes a database write on an incoming path outside AppInbox
   says so in fixed words, names the rule it departs from, lists the rows and the path, states what
   AppInbox would cost or that it was not measured, and records the question put to the maintainer
   word for word with its options and recommendation. An existing store that writes outside AppInbox
-  is never precedent and never approval. That pull request carries the exact wording; none of it is
-  in force until it merges.
+  is never precedent and never approval. A line in the pull request template asks the same. That
+  pull request carries the exact wording; none of it is in force until it merges.
 - **A direct-write registry with a completeness check**, run as a phase of the governance gate
   (`scripts/governance-gate/governance-gate-phases.mjs:6-15`, which already runs
   `check:transaction-writes`). It compares the registry with what the source shows, in both
   directions: every construction of `PSqlAdmissionWorkBackend`, every call of an
-  `ALAdmissionWorkBackend`'s `write`, every transaction opener that is neither
+  `ALAdmissionWorkBackend`'s `write`, every call of `ALWorkQueuePort.retainIfAbsent` and of a write
+  method of such a backend's `workQueue`, every transaction opener that is neither
   `AppInboxTransactionWriter` nor a specialized owner of
   `scripts/transaction-write-check/transaction-boundaries.mjs:48-77`, every production file with an
   SQL write statement, and every new caller of a registered store.
 - **Phrase pins** in the integrity test, which close the gap of section 1: today nothing pins the
-  rule in `AGENTS.md` or `CLAUDE.md`. By the test's own header this proves publication, not
-  behaviour.
-- **A behavioural scenario** in `.agents/evaluations/rallar-code-writing/v2/`, since `AGENTS.md:25-28`
-  names fresh-agent pressure evaluations as the behavioural evidence.
+  rule in `AGENTS.md` or `CLAUDE.md`. `CLAUDE.md:234` words the rule "for every incoming database
+  mutation", not the eight files' pinned phrase, so it needs a pin of its own words. By the test's
+  own header this proves publication, not behaviour.
+- **A behavioural scenario** in `.agents/evaluations/rallar-code-writing/v2/`, since
+  `AGENTS.md:25-28` names fresh-agent pressure evaluations as the behavioural evidence.
 
-**Why the existing guards did not fire on #885** `[read]`: the mutation boundary analysis looks for a
-fixed list of domain mutator names and repository imports
+**Why the existing guards did not fire on #885** `[read]`: the mutation boundary analysis looks for
+a fixed list of domain mutator names and repository imports
 (`packages/tests/repo/mutation-route-ownership/boundary/mutation-boundary-analysis.ts:7-42`); the
 route inventory lists AppInbox types only; the transaction-write check judges what happens inside a
 transaction, not who may open one. The receipt record added no SQL and no new transaction opener: it
-constructed the existing backend with a new namespace and called its `write`.
+constructed the existing backend with a new namespace and called its `write`. The queue box opens
+its transactions with `resourceInbox.transaction(`, which a search for `.begin(` does not find.
 
 **What a guard of this shape cannot catch**, as the review states it: a new row family inside an
 already registered store and namespace; a write through an already registered caller on a new
@@ -678,7 +812,8 @@ and the guard keeps them from returning.
 ## 9. What the 1.0 plan carries
 
 `plans/active/alm-v1-production-readiness.md` carries this review as item A10 of its section 5.6
-(class Decide), one sentence in its exit criterion 8, two entries in its section 7 (the guard, now;
+(class Decide), one sentence in its exit criterion 8, by the maintainer's ruling that the revisit
+happens before ALM is completed, two entries in its section 7 (the guard, now;
 the revisit, before criterion 8 is marked) and its decision 2, which asks the questions of section
 11 and points here. D770 stays on A3's list.
 
@@ -686,11 +821,24 @@ the revisit, before criterion 8 is marked) and its decision 2, which asks the qu
 
 1. **The question as it was put to the maintainer on 2026-11-22**: its text, its options and its
    recommendation. Only the paraphrase and the five-word answer are recorded.
-2. **Whether the inventory of section 2 is complete.** Not every caller of every domain repository
-   write method was traced. Class C is traced; a direct write from an HTTP or WS path that the
-   patterns miss remains possible.
+2. **How complete the inventory is.** The stores are complete as far as traced: three
+   constructions of the PostgreSQL ALM backend, nine production calls of its `write` (two of them
+   inbound cap evictions the WS server does not enable) and five of its work queue's
+   `retainIfAbsent` (three of them on incoming frames, two in background work), in the three stores
+   of class C. The 35 PostgreSQL transaction openers are all
+   classed. The entry points of class C are listed from the code, including the receipt record's
+   NACK, count-ahead and extra `end` triggers and the writes entered by a cluster notice or a
+   socket opening. The callers of the domain repositories' autocommit write methods were checked by
+   a text search of their method names: none is a production caller, so that path is unused today;
+   a call by another name, or through a generic interface, would not show in it. Not traced:
+   which api-v1 traffic reaches the inbound control commit (section 2); every trigger of the class B
+   writers beyond their file and its comments; who reaches `PSqlQueueBox.setItem` and `removeItem`
+   (`packages/shared-server/queuebox/postgres/p-sql-queue-box.ts:499-512`) through the generic
+   persistence interface; the HTTP middleware, the admin routes beyond their composition, and
+   `apps/rallar-black-box-control-server`; and the exact file count of SQL write statements. A
+   direct write from an incoming path in those places remains possible.
 3. **Any cost of the AppInbox alternative.** No measurement exists, and no pinned round-trip total
-   for one AppInbox command was found. Every AppInbox figure in section 5 is derived.
+   for one AppInbox command end to end was found (parts of one are pinned, section 5). Every AppInbox figure in section 5 is derived.
 4. **History before 2026-11-21.** The checkout is shallow (root `626b99e61`, #862). When the
    inbound and outbound stores first wrote PostgreSQL directly, and whether that was ever discussed,
    rests on the roadmap alone (Release 1, #521; D138). #521 was not read.
@@ -708,69 +856,101 @@ the revisit, before criterion 8 is marked) and its decision 2, which asks the qu
    merged.** Nothing in #885 says it was; that is absence of a record, not proof.
 9. **Mandatory-field and canonical-order conformance of the ALM stores' rows**, which the doctrine
    also requires. Not checked.
-10. **The exact call-site counts a guard would register** (3 constructions, about 9 `write` calls,
-    about a dozen openers, 38 files) come from pattern searches, not from a type-resolved analysis.
-    Expect small differences.
+10. **The exact call-site counts a guard would register** (3 constructions, 9 `write` calls, 5
+    `retainIfAbsent` calls, 35 openers, about 38 files) come from text searches, not from a
+    type-resolved analysis. Expect small differences.
 
 ## 11. Questions for the maintainer
 
 Each question stands alone and is asked on its own. Where the review recommends an option it is
 listed first and marked; where the review makes no recommendation, the question says so and none is
 added here. The questions on the misses (3 to 9) matter only if the ruling on question 1 or 2 keeps
-a direct write.
+a direct write. Question 10 asks where the definition's line falls for three writes it does not
+name.
 
 **Question 1. The older ALM transport stores (C1 to C5).** The inbound admission store, the outbound
-admission store and their work rows are written directly on incoming WS frames, on a PostgreSQL
-cluster for every admitted message except a small RTC signal. No document names them as an
-exception and no decision row approved them. Which do you choose?
+admission store and their work rows are written directly on incoming WS frames, through the ALM
+backend's own transaction and through its work queue, on a PostgreSQL cluster for every admitted
+message except a small RTC signal. No document names them as an exception and no decision row
+records them as approved. Which do you choose?
 
 1. (d) Keep them, as a named second mutation path in the doctrine with written requirements, a
    registry, a contract test and a guard (recommended by the review).
 2. (a) Confirm them as a stated exception by name in each rule document and a registry.
-3. Leave them as they are while only the receipt record moves, as under (b).
+3. Change nothing for them: no sentence and no confirmed registry entry. The rule documents and
+   the code then still disagree, the guard goes on listing them as under review, and exit criterion
+   8 of the 1.0 plan cannot be marked as it is written.
 4. (c) Move every ALM runtime write behind AppInbox, a redesign of the server's transport.
+5. Rule on the transport's own rows (dedup, ordering, retransmission, work) by 1 or 2, and
+   separately on the rows section 2 calls application-visible: the exclusive claim and the frozen
+   audience in the inbound store, and the pending-ACK row in the outbound store.
 
 **Question 2. The receipt record (C6 to C8).** Each ACK writes a confirmation row directly at WS
-ingress; the record was put to you on 2026-11-22 as "Whether the record goes through AppInbox", and
-the record keeps only the answer "One more ALM runtime store". You have ruled that an AppInbox-backed
-count is measured first. Once it is, which do you choose?
+ingress. The decision record says this was asked of you on 2026-11-22 as "Whether the record goes
+through AppInbox" and keeps only the answer "One more ALM runtime store"; you said on 2026-11-27
+that you were not aware of it. You have ruled that an AppInbox-backed count is measured first. Once
+it is, which do you choose?
 
-1. Decide on the figure: (b) behind AppInbox if the AppInbox count keeps up (28 ACKs a second at
-   +5 ms, receipts completing by the deadline, no harm to other mutations), otherwise the record
-   joins the second path of (d) with that figure behind it (recommended by the review).
+Options 1 and 5 put the record on the second path of question 1's option (d). If question 1 was not
+answered (d), read them as option 2; option 4 applies only if question 1 was answered (c).
+
+1. Decide on the figure: (b) behind AppInbox if the AppInbox count keeps up at +5 ms with every
+   receipt completing by its deadline, and the state-write bench and the medium-scale gate run
+   beside it show no regression you do not accept; otherwise the record joins the second path with
+   that figure behind it (recommended by the review). The first hosted rung offers 28 ACKs a second;
+   the record as built also keeps up at 140. What a count that passes 28 and fails 140 means is
+   yours to say when the figure is in.
 2. (a) Confirm it as a stated exception.
 3. (b) Move it behind AppInbox whatever the figure.
 4. (c) Move it together with every other ALM runtime write.
 5. (d) Put it on the second path whatever the figure.
 
-**Question 3. A lost count.** A `count` whose write loses answers `conflict`, is recorded as an
-observation and is not retried. The review
-makes no recommendation. Retry a lost count, or state it as a limit?
+**Question 3. A lost count.** A `count` writes one row under the recipient's own key. A write that
+loses to another write of that row reads it and answers `repeated`. It answers `conflict` only when
+its commit rolls back and the re-read finds no row, which from the code needs a row of that receipt
+to expire or be removed between the count's read and its write; #885's five-publisher runs report
+no receipt commit that conflicted, and no test was found that produces one. Such a count is not
+retried, and it leaves a trace only where the receipt observer is enabled. If it met a live receipt,
+that recipient would be missing from the count and the receipt would end `timed-out` without it. A
+count also validates against a head it read before its transaction, so it can commit after another
+instance ended the head; its confirmation is then ignored. The review makes no recommendation. Retry
+such a count, or state it as a limit?
 
 **Question 4. The in-call retry loops.** The inbound runtime tries a lost write again at once, three
 attempts in one call (D784, whose row quotes the ruling "Retry-at-once only (Recommended)"); an
 outbound dispatch tries three times, the last after about 10 ms; a server receipt three times at
 once. The doctrine says one delivery makes one attempt and a conflict returns to queue redelivery.
-The review makes no recommendation. Confirm the loops as a requirement of the direct path, or bring
-these writes to queue redelivery?
+Without the inbound loop, on #885's tree, five ordered publishers at +5 ms completed 154 to 174 of
+200 with 26 to 32 sends parked and recipients 7.1 to 21.0 s behind; with it, 200 of 200 (D784;
+`packages/shared/alm/receipt-record/README.md:273-275`). The review makes no recommendation. Confirm
+the loops as allowed on the direct path, or remove them so that a lost write goes straight to its
+retained work row?
 
 **Question 5. The row lock on claimed queue rows.** The ALM dequeue commit holds each claimed
 `resource_inbox` row with `select ... for update`. The doctrine allows no such lock without explicit
 approval, measured evidence, a documented invariant, a bounded critical section and a review
-condition; no decision row for it was found. The review makes no recommendation. Approve it on those
-terms, or remove it?
+condition; no decision row for it was found. The hold makes the commit fail when a claimed row it
+does not rewrite has moved since the claim
+(`packages/shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts:229-233`, `:262-268`).
+`packages/shared-server/docs/persistence-and-replay.md:160-162` confines `FOR UPDATE SKIP LOCKED` to
+ResourceInbox reservation, overdue retry and timed-out reservation recovery; this statement is a
+plain `for update` outside those. The review makes no recommendation. Approve it on those terms, or
+remove it?
 
 **Question 6. The intermediate work row before the terminal receipt's outbox row.** The receipt
 record's `end` writes an `AL_RECEIPT_ENDED` work row, and a worker writes the terminal receipt's
 `WS_OUTBOX` row in a later transaction. The doctrine says final outbox rows are written in the same
-transaction, with no intermediate outbox. The review makes no recommendation. Allow this on the
-direct path, or require the outbox row in the deciding transaction?
+transaction, with no intermediate outbox. The inbound path has the same shape: an admission's
+`AL_INBOUND` work row comes before the `WS_OUTBOX` row the router writes at dispatch. The record and
+the outbound store are two backends behind one port, each with its own transaction, so the second
+alternative needs one transaction across both. The review makes no recommendation. Allow this on
+the direct path, or require the outbox row in the deciding transaction?
 
-**Question 7. Authorization on a retry.** A direct write is authorized once, at the socket: an
-arrival's attempts run inside the one call its carrier authorized, and a count can commit after
-another instance ended its head. The doctrine re-checks authorization and policy on every attempt.
-The review makes no recommendation. Accept a single authorization for the direct path, or require it
-on every attempt?
+**Question 7. Authorization on a retry.** An arrival is authorized once, at the socket: its
+attempts, up to three, run inside the one call its carrier authorized. A retained admission's
+replay asks its authority again on each attempt. The doctrine re-checks authorization and policy on
+every attempt. The review makes no recommendation. Accept one authorization for an arrival's
+in-call attempts, or require it on every attempt?
 
 **Question 8. A final outbox row that answers a duplicate as a value.** `enqueueIfAbsent` answers an
 existing row as a duplicate, and a repeated terminal receipt is "the outbox's duplicate". The
@@ -778,5 +958,17 @@ doctrine says final outbox insertion is insert-only and a collision rolls back. 
 recommendation. Allow insert-if-absent on the direct path, or require insert-only?
 
 **Question 9. No durable result row.** The direct writes return their result in memory; AppInbox
-keeps a durable typed result that a retry replays. The review makes no recommendation. Accept the
-in-memory result for the direct path, or require a durable result?
+keeps a durable typed result that a retry replays. A repeated frame is answered from stored rows,
+not from a stored result: a re-sent message from its dedup row, a re-sent receipted send from the
+receipt's head (`packages/shared/alm/receipt-record/README.md:156-161`). The review makes no
+recommendation. Accept the in-memory result for the direct path, or require a durable result?
+
+**Question 10. Writes entered by a cluster notice or a socket opening.** Three writes are caused by
+another instance's outbox row or by a socket opening: an instance that receives another instance's
+outbox notice counts outside-audience confirmations in the receipt record and, when its local send
+fails, rewrites the `WS_OUTBOX` row for a retry; and a row held for an awaited session counts the
+same confirmations when that session's socket opens (section 2, "Entered by a cluster notice or a
+socket opening"). Your definition places work that a queue row or a timer starts outside the rule,
+with its trigger in the registry, and an HTTP request, a WebSocket frame or a peer message inside
+it. The review makes no recommendation. Are these three writes inside the rule, or work listed in
+the registry with their trigger?
