@@ -83,7 +83,6 @@ was measured again.
 | `playground/alm/alm-qos-product-plan.md`              | Durability tiers and storage budgets                       | Delivered (P1, I2a, I2b); four later outcomes open             |
 | `playground/alm/alm-first-hosted-campaign-targets.md` | Targets of the first hosted campaign (D643)                | Ruled; not started                                             |
 | `plans/backlog.md`                                    | Future outcomes, 229 lines, most of them ALM               | Current                                                        |
-| `plans/active/alm-crash-surviving-receipt.md`         | Design of #885, on its branch only                         | Built; status line stale                                       |
 | Pull request #885                                     | The crash-surviving receipt                                | Built, draft, body stale; `main` `704a01a` merged at `4265b1d` |
 | Pull request #912                                     | `durable-takeover` lane cell, D763                         | Merged                                                         |
 | Pull request #922                                     | The carrier matrix (T4)                                    | Merged                                                         |
