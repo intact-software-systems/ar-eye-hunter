@@ -1312,7 +1312,7 @@ describe('Rallar server WS live cluster publication', () => {
             {
                 createdAtEpochMs: Date.now(),
                 senderId: 'sender',
-                route: newALRoute('room.match', 'message', groupRef.groupId),
+                route: newALRoute('room.match', groupRef.groupId, 'message'),
                 scope: 'room',
                 typeId: 'room.match.v1',
                 resource: { tick: 1 },
