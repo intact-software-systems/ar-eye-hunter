@@ -93,15 +93,15 @@ measurement comments on #885 and the tree; where a description and the tree disa
 is followed. A statement that rests on this reading names its pull request or says "checked at
 `e30b2c9`". No figure was measured for it.
 
-| Document                                              | Role                                                       | State                                                                     |
-| ----------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `playground/alm/alm-improvement-plan.md`              | Delivery roadmap, decision record D1 to D789               | Current in its rows; header, release map and matrix are stale             |
-| `playground/alm/alm-complete-product-description.md`  | Product contract and completion criteria                   | Current in its blocks; no criterion marked met                            |
-| `playground/alm/alm-publication-qos-addendum.md`      | Publication QoS and pub/sub, Slices 1 to 9, later outcomes | Complete for its advertised modes; adoption owed                          |
-| `playground/alm/alm-qos-product-plan.md`              | Durability tiers and storage budgets                       | Delivered (P1, I2a, I2b); four later outcomes open                        |
-| `playground/alm/alm-first-hosted-campaign-targets.md` | Targets of the first hosted campaign (D643)                | Ruled; not started                                                        |
-| `plans/backlog.md`                                    | Future outcomes, 237 lines, most of them ALM               | Current                                                                   |
-| `plans/active/edge-ordered-room-sends.md`             | Another author's plan for edge order (#914, #925)          | Slices 1 to 5 on `main` (#916, #929, #915); its ruling 6 open (section 7) |
+| Document                                              | Role                                                       | State                                                                             |
+| ----------------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `playground/alm/alm-improvement-plan.md`              | Delivery roadmap, decision record D1 to D789               | Current in its rows; header, release map and matrix read again at `e30b2c9` (#P1) |
+| `playground/alm/alm-complete-product-description.md`  | Product contract and completion criteria                   | Current in its blocks; no criterion marked met                                    |
+| `playground/alm/alm-publication-qos-addendum.md`      | Publication QoS and pub/sub, Slices 1 to 9, later outcomes | Complete for its advertised modes; adoption owed                                  |
+| `playground/alm/alm-qos-product-plan.md`              | Durability tiers and storage budgets                       | Delivered (P1, I2a, I2b); four later outcomes open                                |
+| `playground/alm/alm-first-hosted-campaign-targets.md` | Targets of the first hosted campaign (D643)                | Ruled; not started                                                                |
+| `plans/backlog.md`                                    | Future outcomes, 237 lines, most of them ALM               | Current                                                                           |
+| `plans/active/edge-ordered-room-sends.md`             | Another author's plan for edge order (#914, #925)          | Slices 1 to 5 on `main` (#916, #929, #915); its ruling 6 open (section 7)         |
 
 The pull requests this plan followed while they were open are all merged; section 4 lists them.
 The decision record has no row D764 to D769 (checked at `e30b2c9`). Rows D787 to D789 are added
@@ -161,9 +161,10 @@ After Release 16, in the order D642 ruled:
 | Three verdicts: a reply wait, a room send's route, a granted unicast         | #930, #937, #939, D787 to D789                 |
 | Edge order, slices 1 to 5 (another plan's work)                              | #916, #929, #915                               |
 
-The roadmap's requirement-to-evidence matrix marks 27 of 30 rows resolved, one delivered and two
-partial (F9 and PC10, both the schema-mismatch reclaim). It was last baselined before Release 9 and
-has no row for Releases 9 to 16.
+The roadmap's requirement-to-evidence matrix marks 27 of its 30 requirement rows resolved, one
+delivered and two partial (F9 and PC10, both the schema-mismatch reclaim), as written at Release 8.
+Since #P1 it also holds one row per addendum slice for Releases 9 to 16, each `Delivered`, and
+says that its requirement rows name slices of Releases 2 to 8 only.
 
 ## 4. What merged
 
@@ -751,7 +752,7 @@ Notes on the rows that need them:
 | A3 | Rulings recorded as provisional or made for the maintainer              | D513 to D641, D717, D783 | Decide  |
 | A4 | No consumer for anything delivered after Release 8                      | roadmap                  | Blocker |
 | A5 | No developer documentation outside `playground/`                        | none exists              | Blocker |
-| A6 | Stale statements in current documents                                   | below                    | Should  |
+| A6 | Stale statements in current documents                                   | below, #P1               | Closed  |
 | A7 | A client cannot learn a topic's fanout or participation before it sends | D482, D517               | Blocker |
 | A8 | Public surface leftovers                                                | backlog                  | Should  |
 | A9 | Replies travel over WS only and do not survive a reload                 | D441 to D446             | Later   |
@@ -769,24 +770,23 @@ Notes on the rows that need them:
   No product topic is `granted` at all (D483). The consumers of those are an example, the Recipe
   Console and the lane. The roadmap's own rule, that each release changes a game, stopped at
   Release 9.
-- **A6.** `docs/README.md` says the roadmap is "Releases 1 to 11" (checked at `e30b2c9`) and is
-  left for the documents slice. Also stale: the roadmap's header date, its release map ("thirty PRs in ten releases") and its matrix; row D740,
-  cut off at a `||` inside a code span by the table formatter; the standing direction that
-  "cryptographic proof of the original sender is outside this roadmap", which D758 overtook; the
-  product description's header and its "acceptance authority" paragraph, which the campaign
-  document contradicts; the QoS plan's "two persistence tiers today"; the addendum's "proposed
-  requirements" framing; the keep-set in `plans/README.md`, which names four ALM documents where
-  five exist; the lane table in `CLAUDE.md` (D636); and the product description's line that a
-  director command can arrive twice after a fallback "because AL dedup is per carrier lane",
-  which the inbound README contradicts: one session's inbound store is shared by both carriers.
-  Four more since the merges of 2026-11-27 (checked at `e30b2c9`): the room-send cell's README
-  says no unordered run has been made on the build with the receipt record, and sixteen were,
-  published only in a comment on #885; the carrier matrix's `closedBy` for the over-256 proof,
-  and the test that pins it, still wait "for the merge of pull request 885"; the status line of
-  `plans/active/edge-ordered-room-sends.md` says its slices 1 and 5 wait in #915 and #929, and
-  its roadmap and findings hold nothing of slice 5, which #929 lists as owed to it; and
-  `alm-publication-workload.md` says churn "needs a ruling on what churns", which the ruling of
-  2026-11-27 gave (P1).
+- **A6.** Closed by #P1, documents only. It read the roadmap's header, release map and matrix
+  again through Release 16 and added the S9-ii row and one matrix row per addendum slice;
+  restated row D740 from #888, because the table formatter had cut it at a `||` before its first
+  commit and no git object holds the lost text; corrected the standing direction on the original
+  sender's proof (D512, D758), the sentence in `docs/README.md`, the keep-set in
+  `plans/README.md` (five documents), the `postgres-integration` row of `CLAUDE.md` and its
+  missing `e2e-live-recipes` row, the product description's header, its "acceptance authority"
+  paragraph and its line on a director command after a fallback, the QoS plan's "two persistence
+  tiers today", the addendum's "proposed requirements" framing, and the room-send cell's README
+  on the runs made on #885's heads. It also found the durable send's pin stated as 10
+  `al-admission` operations in three documents where the test pins 11 since #869, and corrected
+  them. What it left, each with its owner: the carrier matrix's `closedBy` for the over-256
+  proof and the test's pinned list, restated by the pull request that adds that test (T4); the
+  status line of `plans/active/edge-ordered-room-sends.md`, corrected by #941; and the churn
+  sentence of `alm-publication-workload.md`, rewritten by the seeded-loss pull request (P1).
+  Found and not corrected: the roadmap still says each release changes a game (A4), and the
+  formatter still cuts a table row at a raw `||` in a code span, so write `\|\|` there.
 - **A7.** It is a Blocker because it is a parity defect as well as a convenience. The WS server
   refuses a live publication on an `outbox` topic as `unsupported` while RTC infers a grant from
   a channel declaration or a cached snapshot, so the same send gets a carrier-dependent answer.
@@ -1019,7 +1019,7 @@ all.
 
 | Milestone            | Outcome                                                                       | Closes                          | State at `e30b2c9`                                                   |
 | -------------------- | ----------------------------------------------------------------------------- | ------------------------------- | -------------------------------------------------------------------- |
-| A. In flight         | #885 on `main`, as #923 and #927 are; documents state the truth               | R2, A6                          | #885 is on `main` and R2 is closed. A6 is open.                      |
+| A. In flight         | #885 on `main`, as #923 and #927 are; documents state the truth               | R2, A6                          | Done: #885 is on `main`, R2 is closed and A6 is closed (#P1).        |
 | B. Reliability       | No Blocker left in 5.1; each Decide ruled; one lifecycle across the hand-over | R1, R3 to R19, T1 to T3, T5, T6 | T2 and T3 are closed. R1 is narrowed. The rest are open.             |
 | C. A lane that gates | Full scope required on three carriers; no `unproven` proof in a 1.0 mode      | G1 to G3, G6, G9, T4            | Open. 8 of the matrix's 16 `unproven` proofs remain.                 |
 | D. Trust             | Authorization debts closed; signing ruled; server limits enforced             | S1 to S8                        | S3 is closed on the WS server; its refusal at the call is to follow. |
