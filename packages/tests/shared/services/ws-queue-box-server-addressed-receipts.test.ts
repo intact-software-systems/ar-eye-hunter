@@ -167,6 +167,25 @@ describe('WS server receipts for addressed sends', () => {
         expect(readFrames(fixture.sockets.c)).toEqual([]);
     });
 
+    it('refuses a room unicast to its own sender before admission, with a NACK, though the admitted audience holds it', async () => {
+        const fixture = await createAddressedFixture();
+
+        const refused = await fixture.service.acceptIncomingMessage(
+            roomUnicast({ msgId: 'to-a', toPeerId: 'a', ack: 'receiver' }),
+            'a'
+        );
+
+        expect(refused.left).toEqual({
+            code: 'unauthorized',
+            message: 'AL unicast to-a addresses a, who is not in the audience its room admitted'
+        });
+        expect(readNacks(fixture.sockets.a).map((nack) => [nack.msgId, nack.reason])).toEqual([['to-a', 'unauthorized']]);
+        await fixture.engine.executeOnce();
+        expect(fixture.routed).toEqual([]);
+        expect(readReceipts(fixture.sockets.a)).toEqual([]);
+        expect(readFrames(fixture.sockets.a)).toEqual([]);
+    });
+
     it('follows the authorizer NACK policy when refusing an out-of-audience addressee', async () => {
         const fixture = await createAddressedFixture(false);
 

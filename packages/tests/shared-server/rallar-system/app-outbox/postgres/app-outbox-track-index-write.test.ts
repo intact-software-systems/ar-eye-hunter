@@ -38,7 +38,7 @@ async function createStorage(): Promise<PSqlSql> {
 }
 
 function createEntry(typeId: string, resourceId: string, seq: number | undefined): ResourceEntry {
-    const expiresAt = Temporal.Now.instant().add({ minutes: 10 });
+    const expiresAt = Temporal.Instant.fromEpochMilliseconds(Date.now() + 10 * 60_000);
     return createTrackIndexTestEntry({ typeId, resourceId, seq, expiresAt });
 }
 

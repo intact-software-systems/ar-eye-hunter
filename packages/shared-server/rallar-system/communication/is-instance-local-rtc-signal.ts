@@ -16,8 +16,9 @@ const UTF8 = new TextEncoder();
 
 /**
  * A relay-only RTC signal: best-effort, acknowledged by no one, and small enough to reach another instance inline in
- * its live notice. No other instance reads it back from the shared inbound store (no relayed ACK is proved against
- * it and no inbound-key notice names it), so a server beside other instances keeps it in its memory lane.
+ * its live notice. No other instance reads it back from the shared inbound store (no ACK entering another instance is
+ * proved against it and no inbound-key notice names it), so a server beside other instances keeps it in its memory
+ * lane.
  */
 export function isInstanceLocalRtcSignal(message: ALMessage): boolean {
     if (message.route.topicId !== AppTopics.rtcSignaling || message.payload.typeId !== AppTopics.rtcSignaling) {

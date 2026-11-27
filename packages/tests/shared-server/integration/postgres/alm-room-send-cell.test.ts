@@ -1,6 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
+import { createPSqlALReceiptRecordStores } from '@shared-server/al-runtime/postgres/create-p-sql-al-receipt-record-stores.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import { ALReceiptRecord } from '@shared/alm/receipt-record/al-receipt-record.ts';
+
+import { toRoomSendStoreNamespace } from '../../../../../apps/api-v1/scripts/perf/alm-room-send/instance/create-room-send-ws-server.ts';
 import { computeRoomSendReport } from '../../../../../apps/api-v1/scripts/perf/alm-room-send/report/compute-room-send-report.ts';
 import type {
     RoomSendCellControl,
@@ -11,7 +16,11 @@ import {
     runRoomSendCell
 } from '../../../../../apps/api-v1/scripts/perf/alm-room-send/run-room-send-cell.ts';
 import type { RoomSendShape } from '../../../../../apps/api-v1/scripts/perf/alm-room-send/validate-room-send-shape.ts';
-import { requirePostgresDatabaseUrl } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
+import { toPostgresJsConnectionUrl } from '../../../../../apps/api-v1/src/db/api-v1-database-lifecycle.ts';
+import {
+    createRuntimeStatePostgresSql,
+    requirePostgresDatabaseUrl
+} from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 
 /** The API's own defaults: each run here gives its instances the application pool an API instance starts with. */
 const API_V1_DEFAULTS = JSON.parse(
@@ -32,9 +41,9 @@ const COPIES = 112;
  * How long a run observes after its last offer. A reference run observes for the send's lifetime and the receipt's
  * grace, 75 s, so that a receipt that times out is still read. On an idle machine the median send here completes its
  * receipt a few hundred milliseconds after its offer, and 4 s is about ten times that median. It is no such margin
- * over the slow sends: at the reference load, five publishers and no added latency, the 99th percentile from offer
- * to complete receipt reached about 2 s, so the tail is a small multiple of a slow receipt, and twice the 2 s
- * first-hop wait. Four runs of a 2 s window and this tail keep the file under 30 s.
+ * over the slow sends: on the build before the receipt record, at the reference load, five publishers and no added
+ * latency, the 99th percentile from offer to complete receipt reached about 2 s, so the tail is a small multiple of
+ * a slow receipt, and twice the 2 s first-hop wait. Four runs of a 2 s window and this tail keep the file under 30 s.
  */
 const OBSERVATION_TAIL_MS = 4_000;
 
@@ -55,9 +64,14 @@ describe('ALM room-send cell on PostgreSQL', () => {
     postgresIt(
         'writes every copy of two publishers\' ordered sends in order and completes each receipt across three instances',
         async () => {
-            const run = await runSmallCell({ ordering: 'ordering-key', delayMs: 0, senderRecovery: 'none' });
+            const { observations: run, record } = await runSmallCell({
+                ordering: 'ordering-key',
+                delayMs: 0,
+                senderRecovery: 'none'
+            });
 
             expectEverySendWrittenAndReceipted(run);
+            await expectEveryReceiptEndedCompleteInTheSharedRecord(run, record);
             expectEveryCopyWrittenInTrackOrder(run);
             expect(run.resends).toEqual([]);
             expect(run.sendEnds).toEqual([]);
@@ -69,9 +83,14 @@ describe('ALM room-send cell on PostgreSQL', () => {
     postgresIt(
         'writes and receipts the same sends when every delayed round trip to the database waits 1 ms first',
         async () => {
-            const run = await runSmallCell({ ordering: 'ordering-key', delayMs: 1, senderRecovery: 'none' });
+            const { observations: run, record } = await runSmallCell({
+                ordering: 'ordering-key',
+                delayMs: 1,
+                senderRecovery: 'none'
+            });
 
             expectEverySendWrittenAndReceipted(run);
+            await expectEveryReceiptEndedCompleteInTheSharedRecord(run, record);
             expectEveryCopyWrittenInTrackOrder(run);
         },
         RUN_BUDGET_MS
@@ -84,13 +103,14 @@ describe('ALM room-send cell on PostgreSQL', () => {
     postgresIt(
         'writes and receipts the same sends when its publishers stand in for a client, and ends each on its complete receipt',
         async () => {
-            const run = await runSmallCell({
+            const { observations: run, record } = await runSmallCell({
                 ordering: 'ordering-key',
                 delayMs: 0,
                 senderRecovery: 'client-stand-in'
             });
 
             expectEverySendWrittenAndReceipted(run);
+            await expectEveryReceiptEndedCompleteInTheSharedRecord(run, record);
             expectEveryCopyWrittenInTrackOrder(run);
             expect(run.resends.filter((resend) => ['rejected', 'threw', 'not-admitted'].includes(resend.acceptance)))
                 .toEqual([]);
@@ -105,9 +125,14 @@ describe('ALM room-send cell on PostgreSQL', () => {
     postgresIt(
         'writes every copy of two publishers\' unordered sends, completes each receipt, and draws no gap control',
         async () => {
-            const run = await runSmallCell({ ordering: 'unordered', delayMs: 0, senderRecovery: 'client-stand-in' });
+            const { observations: run, record } = await runSmallCell({
+                ordering: 'unordered',
+                delayMs: 0,
+                senderRecovery: 'client-stand-in'
+            });
 
             expectEverySendWrittenAndReceipted(run);
+            await expectEveryReceiptEndedCompleteInTheSharedRecord(run, record);
             expect(computeRoomSendReport(run).delivery.copiesNamingAnOrderingKey).toBe(0);
             expect(computeRoomSendReport(run).tracks).toEqual({ kind: 'not-applicable' });
             expect(run.controls.filter(isGapControl)).toEqual([]);
@@ -118,10 +143,17 @@ describe('ALM room-send cell on PostgreSQL', () => {
     );
 });
 
+/** What a small run observed, and the receipt record its three instances share, read on the run's own schema. */
+interface SmallCellRun {
+    readonly observations: RoomSendCellObservations;
+    readonly record: ALReceiptRecord;
+}
+
 async function runSmallCell(
     shape: Pick<RoomSendShape, 'ordering' | 'delayMs' | 'senderRecovery'>
-): Promise<RoomSendCellObservations> {
+): Promise<SmallCellRun> {
     const runId = crypto.randomUUID();
+    const databaseUrl = await createRunSchema(runId);
 
     const run = await runRoomSendCell({
         shape: {
@@ -131,7 +163,7 @@ async function runSmallCell(
             applicationPoolMaxConnections: API_V1_DEFAULTS.database.applicationPool.maxConnections,
             ...shape
         },
-        databaseUrl: await createRunSchema(runId),
+        databaseUrl,
         runId,
         observationTailMs: OBSERVATION_TAIL_MS
     }, createDefaultRoomSendCellRunDependencies());
@@ -145,7 +177,7 @@ async function runSmallCell(
     expect(sendWindow.cpu.coresBusy).toBeGreaterThan(0);
     expect(tail.loopLag.ticks).toBeGreaterThan(0);
     expect(run.right!.runtime.applicationPoolMaxConnections).toBe(API_V1_DEFAULTS.database.applicationPool.maxConnections);
-    return run.right!.observations;
+    return { observations: run.right!.observations, record: await openRunReceiptRecord(databaseUrl, runId) };
 }
 
 function expectEverySendWrittenAndReceipted(observations: RoomSendCellObservations): void {
@@ -176,8 +208,9 @@ function expectEverySendWrittenAndReceipted(observations: RoomSendCellObservatio
     // `copiesReadMoreThanOnce` is asserted: each depends on which write wins.
     expect(report.delivery).toMatchObject({ copiesExpected: COPIES, copiesRead: COPIES });
     expect(report.recipientDelays.copiesReadBeforeTheirOffer).toBe(0);
-    // A receipt may be read again: an instance without the origin's socket publishes a receipt row to the cluster
-    // until the row expires, so `moreThanOneTerminal` is no part of what a run must show.
+    // A receipt may be read again: an instance without the origin's socket announces a receipt row to the cluster and
+    // leaves it to be taken again until an instance holding that socket takes it or the row expires, so
+    // `moreThanOneTerminal` is no part of what a run must show.
     expect(report.receipts).toMatchObject({
         expected: SENDS,
         complete: SENDS,
@@ -185,7 +218,8 @@ function expectEverySendWrittenAndReceipted(observations: RoomSendCellObservatio
         admittedWithoutTerminal: 0,
         noReceipt: 0
     });
-    // One ACK for each copy, each answered as a control: counted where the send is held, relayed where it is not.
+    // One ACK for each copy, each answered as a control by the instance its recipient's socket is on, whichever
+    // instance admitted the send.
     expect(report.acks).toMatchObject({ offered: COPIES, byAcceptance: { control: COPIES } });
 }
 
@@ -199,6 +233,44 @@ function expectEveryCopyWrittenInTrackOrder(observations: RoomSendCellObservatio
     expect(report.delivery.copiesNamingAnOrderingKey).toBe(COPIES);
     expect(report.delivery.copiesReadOutOfOfferOrder).toBe(0);
     expect(report.tracks).toMatchObject({ kind: 'ordering-key', copiesReadPastAnUnreadPredecessor: 0 });
+}
+
+/**
+ * Pins that the three instances count in one record on PostgreSQL: every send's head there ended `complete`, naming
+ * each of its fourteen recipients confirmed, though they ACKed on three instances, four, five and five. A record an
+ * instance kept in its own memory would leave no head on PostgreSQL, and one instance's count would never complete a
+ * send.
+ */
+async function expectEveryReceiptEndedCompleteInTheSharedRecord(
+    observations: RoomSendCellObservations,
+    record: ALReceiptRecord
+): Promise<void> {
+    const ended = await Promise.all(observations.sends.map(async (send) => {
+        const read = await record.read({ originPeerId: send.publisherPeerId, msgId: send.msgId });
+        const head = read.right?.head;
+        return {
+            msgId: send.msgId,
+            phase: head?.phase,
+            confirmed: head?.phase === 'complete' ? [...head.confirmedRecipientPeerIds].sort() : undefined
+        };
+    }));
+    expect(ended).toEqual(observations.sends.map((send) => ({
+        msgId: send.msgId,
+        phase: 'complete',
+        confirmed: [...send.expectedRecipientPeerIds].sort()
+    })));
+}
+
+/** The receipt record of the run's store namespace, read through a client of its own on the run's schema. */
+async function openRunReceiptRecord(databaseUrl: string, runId: string): Promise<ALReceiptRecord> {
+    const client = await createRuntimeStatePostgresSql(toPostgresJsConnectionUrl(databaseUrl));
+    onTestFinished(async () => await client.end());
+    const stores = createPSqlALReceiptRecordStores({
+        repository: new PSqlRuntimeStateRepository(client),
+        namespace: toRoomSendStoreNamespace(runId),
+        nowMs: Date.now
+    });
+    return new ALReceiptRecord({ ...stores, nowMs: Date.now });
 }
 
 /** The two things the server tells a sender of a gap in a track: a `gap` NACK and a `missing-seq` repair request. */

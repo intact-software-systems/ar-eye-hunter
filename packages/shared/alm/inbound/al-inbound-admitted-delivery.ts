@@ -1,14 +1,21 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ALMessageHandlingPlan, ALStoreDurability } from '../../al-contracts/al-policy.ts';
+import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
 import { toALMessageTraceOrNull } from '../../al-contracts/trace/to-al-message-trace.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALInboundAdmissionStore } from './al-inbound-admission-store.ts';
 import type { ALInboundMessageReference } from './al-inbound-canonical-message.ts';
 import { shouldRetryALInboundDelivery } from './al-inbound-effect-intent.ts';
 import { toALInboundDispatchEntry } from './al-inbound-message-deadline.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
-import { ALInboundOrderedDelivery } from './al-inbound-ordered-delivery.ts';
+import {
+    AL_INBOUND_COMPLETED_OFF_TRACK,
+    ALInboundOrderedDelivery,
+    isALInboundCompletion,
+    toALInboundCompleted
+} from './al-inbound-ordered-delivery.ts';
 import {
     computeALInboundBufferedReleasePlanningObservations,
     computeALInboundStoredPlanningObservations
@@ -46,6 +53,16 @@ interface ALInboundAdmittedForward {
     readonly attemptIdentity: string;
     readonly expireAtTimestamp: number;
 }
+
+/** Why a row of a kind that never runs in delivery is refused when a claim hands it to delivery. */
+const AL_INBOUND_NOT_DELIVERED_REASONS: Readonly<
+    Record<'admit-message' | 'admit-control' | 'send-control' | 'renew-gap', string>
+> = {
+    'admit-message': 'Pending admission must run before admitted delivery',
+    'admit-control': 'Pending control admission must run before admitted delivery',
+    'send-control': 'A control send runs in the control round of its batch, not in delivery',
+    'renew-gap': 'A gap renewal runs in its lane, not in delivery'
+};
 
 const NOT_READY: ALInboundDeliveryReadiness = { ready: false, observed: undefined };
 const READY_WITHOUT_OBSERVATION: ALInboundDeliveryReadiness = { ready: true, observed: undefined };
@@ -210,7 +227,7 @@ export class ALInboundAdmittedDelivery {
     async deliver(
         effect: ALPersistedInboundEffect,
         observed: ALInboundDeliveryObservation | undefined
-    ): Promise<'completed' | 'retry'> {
+    ): Promise<ALInboundOrderedDelivery.Completion> {
         if (this.shutdown.signal.aborted) {
             this.recordDispatchDecision(effect, observed, 'shutdown');
             return 'retry';
@@ -220,23 +237,25 @@ export class ALInboundAdmittedDelivery {
             this.recordDispatchDecision(effect, observed, 'expired');
             throw new NonRetryableException('Inbound work expired before delivery');
         }
+        return await this.deliverClaimed(effect, observed, nowMs);
+    }
 
+    private async deliverClaimed(
+        effect: ALPersistedInboundEffect,
+        observed: ALInboundDeliveryObservation | undefined,
+        nowMs: number
+    ): Promise<ALInboundOrderedDelivery.Completion> {
         switch (effect.payload.kind) {
             case 'admit-message':
-                throw new NonRetryableException('Pending admission must run before admitted delivery');
             case 'admit-control':
-                throw new NonRetryableException('Pending control admission must run before admitted delivery');
+            case 'send-control':
+            case 'renew-gap':
+                throw new NonRetryableException(AL_INBOUND_NOT_DELIVERED_REASONS[effect.payload.kind]);
             case 'dispatch-local':
                 return await this.dispatchAdmittedMessage(
                     observed ?? await this.readStoredDeliveryObservation(effect.payload.message, nowMs, undefined),
                     effect
                 );
-            case 'send-control':
-                throw new NonRetryableException(
-                    'A control send runs in the control round of its batch, not in delivery'
-                );
-            case 'renew-gap':
-                throw new NonRetryableException('A gap renewal runs in its lane, not in delivery');
             case 'forward-message':
                 return await this.forwardAdmittedMessage({
                     observed: observed ?? await this.readStoredDeliveryObservation(
@@ -261,9 +280,9 @@ export class ALInboundAdmittedDelivery {
     private async releaseBufferedMessage(
         input: ALInboundOrderedDelivery.ReleaseInput,
         effect: ALPersistedInboundEffect
-    ): Promise<'completed' | 'retry'> {
+    ): Promise<ALInboundOrderedDelivery.Completion> {
         const release = await this.orderedDelivery.release(input);
-        if (typeof release === 'string') {
+        if (isALInboundCompletion(release)) {
             return release;
         }
         if (this.shutdown.signal.aborted) {
@@ -278,8 +297,8 @@ export class ALInboundAdmittedDelivery {
     private async dispatchAdmittedMessage(
         observed: ALInboundDeliveryObservation,
         effect: ALPersistedInboundEffect
-    ): Promise<'completed' | 'retry'> {
-        const { msg, plan, source } = observed;
+    ): Promise<ALInboundOrderedDelivery.Completion> {
+        const { msg, plan } = observed;
         if (this.shutdown.signal.aborted) {
             this.recordDispatchDecision(effect, observed, 'shutdown');
             return 'retry';
@@ -302,12 +321,21 @@ export class ALInboundAdmittedDelivery {
             this.recordDispatchDecision(effect, observed, 'local-disabled');
             return await this.orderedDelivery.complete(msg);
         }
+        return await this.dispatchInOrder(observed, effect, entry);
+    }
+
+    private async dispatchInOrder(
+        observed: ALInboundDeliveryObservation,
+        effect: ALPersistedInboundEffect,
+        entry: ResourceEntry
+    ): Promise<ALInboundOrderedDelivery.Completion> {
+        const { msg, plan, source } = observed;
         const ordered = await this.readOrderedDispatchOutcome(msg);
         if (ordered !== 'dispatch') {
             this.recordDispatchDecision(
                 effect,
                 observed,
-                ordered === 'completed' ? 'ordering-completed' : 'ordering-retry'
+                ordered === 'retry' ? 'ordering-retry' : 'ordering-completed'
             );
             return ordered;
         }
@@ -375,13 +403,15 @@ export class ALInboundAdmittedDelivery {
      * The one decision an eligibility read cannot hand forward: a predecessor can land between that
      * read and the claim, so an ordered message asks the track again at the moment it would dispatch.
      */
-    private async readOrderedDispatchOutcome(msg: ALMessage): Promise<'completed' | 'retry' | 'dispatch'> {
+    private async readOrderedDispatchOutcome(
+        msg: ALMessage
+    ): Promise<ALInboundOrderedDelivery.Completion | 'dispatch'> {
         const readiness = await this.orderedDelivery.readiness(msg);
         switch (readiness.kind) {
             case 'waiting':
                 return 'retry';
             case 'completed':
-                return 'completed';
+                return toALInboundCompleted(toALOrderingTrackKey(msg), readiness.completedThrough);
             case 'resync-required':
                 return await this.orderedDelivery.reject(msg, readiness.completedThrough);
             case 'ready':
@@ -389,7 +419,9 @@ export class ALInboundAdmittedDelivery {
         }
     }
 
-    private async forwardAdmittedMessage(forward: ALInboundAdmittedForward): Promise<'completed' | 'retry'> {
+    private async forwardAdmittedMessage(
+        forward: ALInboundAdmittedForward
+    ): Promise<ALInboundOrderedDelivery.Completion> {
         const { msg, plan } = forward.observed;
         if (this.shutdown.signal.aborted || shouldRetryALInboundDelivery(plan)) {
             return 'retry';
@@ -398,7 +430,7 @@ export class ALInboundAdmittedDelivery {
             throw new NonRetryableException('Inbound message expired before forwarding');
         }
         if (plan.dropReason || !plan.forwarding.enabled) {
-            return 'completed';
+            return AL_INBOUND_COMPLETED_OFF_TRACK;
         }
         const forwarded = forward.retryPeerIds === undefined
             ? await this.dependencies.forwardMessage?.({
@@ -413,7 +445,7 @@ export class ALInboundAdmittedDelivery {
                 toPeerIds: forward.retryPeerIds,
                 attemptIdentity: forward.attemptIdentity
             });
-        return forwarded === 'retry' ? 'retry' : 'completed';
+        return forwarded === 'retry' ? 'retry' : AL_INBOUND_COMPLETED_OFF_TRACK;
     }
 }
 

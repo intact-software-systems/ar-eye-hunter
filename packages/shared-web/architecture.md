@@ -158,15 +158,15 @@ The command bundles `browser/rallar.ts`, the narrow browser entry points, and
 sizes. The measurement command is reporting-only; the check command fails when
 an entry exceeds its Brotli budget.
 
-The full facade has a 332 KiB Brotli ceiling. Invited room guest access,
-merged with the reload hand-over on `main`, measures 331.0 KiB against the
-previous 330 KiB ceiling.
+The full facade has a 338 KiB Brotli ceiling. Edge-ordered room sends beside
+the durable receipt record measure 337.133 KiB against the previous 337 KiB
+ceiling, which edge order had set when it measured 336.3 KiB.
 
 Current measured sizes and budgets:
 
 | Entry                           |   Minified |      Gzip |    Brotli |      Budget |
 | ------------------------------- | ---------: | --------: | --------: | ----------: |
-| `browser/rallar.ts`             | 1544.3 KiB | 410.1 KiB | 331.0 KiB | < 332.0 KiB |
+| `browser/rallar.ts`             | 1571.0 KiB | 417.7 KiB | 337.1 KiB | < 338.0 KiB |
 | `browser/rallar-core.ts`        |    0.5 KiB |   0.3 KiB |   0.3 KiB | < 100.0 KiB |
 | `browser/rallar-realtime.ts`    |    0.5 KiB |   0.3 KiB |   0.3 KiB | < 100.0 KiB |
 | `browser/rallar-data.ts`        |   30.1 KiB |   7.1 KiB |   6.4 KiB |  < 20.0 KiB |

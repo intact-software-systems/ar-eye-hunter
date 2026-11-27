@@ -2,6 +2,7 @@ import { readALTargetGroupRef, type ALMessage } from '../../al-contracts/al-cont
 import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import type { ALAckAlgo, ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import { assertALPublicationProofSigningInputKept } from '../../al-contracts/publication-proof/al-publication-proof.ts';
+import type { ALDeliveryRefusalReason } from '../../alm/delivery/al-delivery-lifecycle.ts';
 import type {
     ALOutboundDispatchPlan,
     ALOutboundMessageRuntime,
@@ -21,6 +22,7 @@ import { computeRtcFrozenAudienceRefusal, isRtcUnfrozenRoomMessage } from '../we
 import { computeGrantedSubscribeHolders } from './compute-granted-subscribe-holders.ts';
 import {
     computeRtcGrantedPublicationRefusal,
+    resolveRtcGrantedAddresseeRefusal,
     resolveRtcGrantedLeaderRefusal,
     resolveRtcGrantedPublicationShapeRefusal,
     RTC_GRANTED_PUBLICATION_REFUSALS,
@@ -41,13 +43,17 @@ import {
 } from './sign-rtc-publication.ts';
 import { toRtcGrantedListedLeg } from './to-rtc-granted-listed-leg.ts';
 
-/**
- * Why a granted leg is not signed: a shape RTC cannot carry (an audience its origin does not freeze), or its origin
- * could not sign it.
- */
-type RtcGrantedLegRefusal = Readonly<{ kind: 'unsupported-shape'; message: string; }> | RtcPublicationSigningFailure;
-
 export namespace RtcSignedPublicationCarrier {
+    /**
+     * Why a granted leg is refused before admission. `unsupported`: RTC cannot carry it as it was asked, which a
+     * fallback carrier takes over. `unauthorized`: the origin's judgement, from its cached snapshot, that the addressee
+     * of a `receiver` unicast may not receive it; the leg decides whether a fallback carrier may ask its server instead.
+     */
+    export interface LegRefusal {
+        readonly reason: Extract<ALDeliveryRefusalReason, 'unsupported' | 'unauthorized'>;
+        readonly detail: string;
+    }
+
     export interface Dependencies {
         readonly groupCache: ReadableKeyedValues<string, GroupSnapshot>;
         /** Which topics are granted: who may publish and subscribe on one, and that its frames are carried signed. */
@@ -108,18 +114,19 @@ export class RtcSignedPublicationCarrier {
     /**
      * A granted leg -- a room multicast, a listed or principal room broadcast, or a room unicast -- is
      * refused for the shape its sender gave before any freezing work, then for a `group-leader` leg whose leader holds
-     * no `subscribe`, then when its origin cannot sign at all; else a unicast is listed as a broadcast of one and the
+     * no `subscribe`, then when its origin cannot sign at all, then as unauthorized for a `receiver` unicast to its
+     * own sender or to a session that holds no `subscribe`; else a unicast is listed as a broadcast of one and the
      * leg is frozen to the live sessions whose principal holds `subscribe` on its topic as `toAdmittedMessage` carries
      * it, then refused when that frozen audience passes the RTC room limit. Its admission signs that narrowed audience
-     * (`signAdmitted`). Left: the refusal's detail, which a fallback carrier takes over.
+     * (`signAdmitted`).
      */
     admitLeg(
         msg: ALMessage,
         toAdmittedMessage: (msg: ALMessage, subscribeHolders: ReadonlySet<string>) => ALMessage
-    ): Either<string, ALMessage> {
+    ): Either<RtcSignedPublicationCarrier.LegRefusal, ALMessage> {
         const shapeRefusal = resolveRtcGrantedPublicationShapeRefusal(msg);
         if (shapeRefusal !== undefined) {
-            return Either.ofLeft(toRtcGrantedLegRefusalDetail({ kind: 'unsupported-shape', message: shapeRefusal }));
+            return Either.ofLeft({ reason: 'unsupported', detail: shapeRefusal });
         }
         const snapshot = this.readRoomSnapshot(msg);
         const nowEpochMs = this.#dependencies.clock.nowMs();
@@ -129,7 +136,7 @@ export class RtcSignedPublicationCarrier {
         const { selfSessionId } = this.#dependencies;
         const leaderRefusal = resolveRtcGrantedLeaderRefusal({ msg, snapshot, selfSessionId, subscribeHolders });
         if (leaderRefusal !== undefined) {
-            return Either.ofLeft(leaderRefusal);
+            return Either.ofLeft({ reason: 'unsupported', detail: leaderRefusal });
         }
         const signingRefusal = resolveRtcPublicationSigningRefusal({
             crypto: this.#publicationCrypto,
@@ -138,11 +145,15 @@ export class RtcSignedPublicationCarrier {
             nowEpochMs
         });
         if (signingRefusal !== undefined) {
-            return Either.ofLeft(toRtcGrantedLegRefusalDetail(signingRefusal));
+            return Either.ofLeft({ reason: 'unsupported', detail: toRtcGrantedLegRefusalDetail(signingRefusal) });
+        }
+        const addresseeRefusal = resolveRtcGrantedAddresseeRefusal({ msg, selfSessionId, subscribeHolders });
+        if (addresseeRefusal !== undefined) {
+            return Either.ofLeft({ reason: 'unauthorized', detail: addresseeRefusal });
         }
         const admitted = toAdmittedMessage(toRtcGrantedListedLeg(msg), subscribeHolders);
         return computeRtcFrozenAudienceRefusal(admitted, msg).fold(
-            (refusal) => Either.ofLeft(refusal.dropReason ?? ''),
+            (refusal) => Either.ofLeft({ reason: 'unsupported', detail: refusal.dropReason ?? '' }),
             () => Either.ofRight(admitted)
         );
     }
@@ -331,9 +342,9 @@ function keepsRoomPlan(input: RoomPlanKeepingInput): boolean {
     return snapshot === undefined ? proofRequired && !input.topicGranted : input.admission.kind !== 'authorized';
 }
 
-/** A shape refusal reads as its own text; a signing failure names its kind first. */
-function toRtcGrantedLegRefusalDetail(refusal: RtcGrantedLegRefusal): string {
-    return refusal.kind === 'unsupported-shape' ? refusal.message : `${refusal.kind}: ${refusal.message}`;
+/** A signing failure names its kind first. */
+function toRtcGrantedLegRefusalDetail(failure: RtcPublicationSigningFailure): string {
+    return `${failure.kind}: ${failure.message}`;
 }
 
 /** A repair plan, or none when nothing is owed. */

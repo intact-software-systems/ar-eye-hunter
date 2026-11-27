@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -9,13 +9,12 @@ import { toALOutboundSentPositionKey } from '@shared/alm/outbound/admission/al-o
 import { decodeALOutboundTrackPositionRow } from '@shared/alm/outbound/admission/decode-al-outbound-track-position-row.ts';
 import { toALOutboundCanonicalKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { AL_OUTBOUND_COMMIT_ATTEMPTS } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
 import {
-    commitCompetingOutboundSend,
     createDefaultOutboundTestRuntime,
     createDefaultOutboundTestStores,
+    loseOutboundCommitAttempts,
     OUTBOUND_TEST_SEND_PLANNER,
     readOutboundTestAdmission,
     runOutboundWorkTask,
@@ -124,7 +123,9 @@ describe('the sent positions an admission records on its track', () => {
         const { runtime, sent } = createRecordingRuntime(stores);
         const early = createFeedFrame('early', 1, ['b', 'c']);
         const late = createFeedFrame('late', 2, ['b', 'c']);
-        interleaveAfterEveryAttemptDecisionRead(stores, async () => {
+        // The earlier frame of the track commits before the first attempt, and another commit of the message before
+        // each later one, so every attempt loses a fence it took and the admission retains its request.
+        loseOutboundCommitAttempts(stores.admissionStore, async (commit) => {
             const bundle = await readOutboundTestAdmission({
                 store: stores.admissionStore,
                 message: early,
@@ -132,7 +133,7 @@ describe('the sent positions an admission records on its track', () => {
                 clock: { nowMs: () => Date.now() },
                 planner: RECORDING_PLANNER
             });
-            expect(await stores.admissionStore.commitBundle(bundle)).toBe('committed');
+            expect(await commit(bundle)).toBe('committed');
         });
 
         const pending = await runtime.enqueueIfAbsent(late);
@@ -265,28 +266,6 @@ async function readSentPositions(
         return [recipientPeerId, row?.seq ?? 0] as const;
     }));
     return Object.fromEntries(positions);
-}
-
-/**
- * Lets `interleaved` commit right after the next decision read, and a send of no copies after each of that commit's
- * attempts that follow, so every attempt's commit finds the sender moved and the admission retains its request.
- */
-function interleaveAfterEveryAttemptDecisionRead(stores: OutboundTestStores, interleaved: () => Promise<void>): void {
-    const store = stores.admissionStore;
-    const readOutgoingDecision = store.readOutgoingDecision.bind(store);
-    const commitBundle = store.commitBundle.bind(store);
-    let attempts = 0;
-    vi.spyOn(store, 'readOutgoingDecision').mockImplementation(async (input, decide) => {
-        const observed = await readOutgoingDecision(input, decide);
-        attempts += 1;
-        if (attempts === 1) {
-            await interleaved();
-        }
-        else if (attempts <= AL_OUTBOUND_COMMIT_ATTEMPTS) {
-            await commitCompetingOutboundSend(store, commitBundle, { senderId: input.msg.id.senderId, resourceId: `competing-send-${attempts}` });
-        }
-        return observed;
-    });
 }
 
 async function readCanonicalMessage(stores: OutboundTestStores, message: ALMessage): Promise<ALMessage> {

@@ -174,12 +174,14 @@ describe('alm-conformance cell parts', () => {
                             }
                             continue;
                         }
-                        // The two waits that start later in their own cell: the sibling's removal, read from `armed`
-                        // on, and the repair-exhausted sender's absence of a repair commit, read from its own start on.
+                        // The three waits that start later in their own cell: the sibling's removal, read from `armed`
+                        // on, the repair-exhausted sender's absence of a repair commit, read from its own start on, and
+                        // the edge-ordered granted stream's held arrival, read from the receiver's `entered` cue on.
                         const settled = `${cellPrefix}-${role}-no-repair-commit-after-failed-2`;
                         const laterStarts: Readonly<Record<string, string>> = {
                             [`${cellPrefix}-${role}-sibling-left`]: `${cellPrefix}-${role}-armed`,
-                            [settled]: settled
+                            [settled]: settled,
+                            [`${cellPrefix}-${role}-held-overtaking-publication`]: `${cellPrefix}-${role}-cue-entered`
                         };
                         const ownStart = laterStarts[wait.commandId!] ?? `${cellPrefix}-${role}-`;
                         expect(wait.match.sinceCommandIdPrefix, wait.commandId).toBe(ownStart);

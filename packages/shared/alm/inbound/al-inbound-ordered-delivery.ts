@@ -1,5 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
+import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import { toALOrderingTrackKey, type ALOrderingObservation } from '../../al-contracts/al-runtime.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { computeALInboundDeliveryCompletion } from './admission/al-inbound-delivery-progress.ts';
@@ -7,6 +7,7 @@ import {
     computeALInboundBufferedRelease,
     type ALInboundBufferedRelease
 } from './admission/compute-al-inbound-admission.ts';
+import { retryALInboundLostWrite } from './admission/retry-al-inbound-lost-write.ts';
 import { validateALInboundCommitBundle } from './admission/validate-al-inbound-commit-bundle.ts';
 import type { ALInboundBufferedReleaseReadDto, ALInboundCommitBundle } from './al-inbound-admission-store.ts';
 import { shouldRetryALInboundDelivery, type ALInboundEffectIntent } from './al-inbound-effect-intent.ts';
@@ -24,10 +25,34 @@ import {
 import { resolveALInboundSignFailurePolicy } from './receipt-proof/is-al-inbound-recipient-receipt.ts';
 import { signALInboundReceiptControls } from './receipt-proof/sign-al-inbound-receipt-controls.ts';
 
+/** One completion attempt: `conflict` when its write lost, so the next attempt reads and decides again. */
+type ALInboundCompletionAttempt = ALInboundOrderedDelivery.Completion | 'conflict';
+
+/** One release attempt's answer: `conflict` when its write lost, so the next attempt reads and decides again. */
+type ALInboundReleaseAttempt = ALInboundOrderedDelivery.ReleaseResult | 'conflict';
+
 export namespace ALInboundOrderedDelivery {
+    /** Where a track's delivery progress stands, as a completion wrote it or a read found it. */
+    export interface Position {
+        readonly trackKey: string;
+        readonly completedThrough: number;
+    }
+
+    /**
+     * A delivery that completed. `position` is absent only for a delivery on no ordering track: a forward, or a message
+     * on no track.
+     */
+    export interface Completed {
+        readonly kind: 'completed';
+        readonly position: Position | undefined;
+    }
+
+    /** What a delivery answers its claim: completed, or `retry`, which hands the work back. */
+    export type Completion = Completed | 'retry';
+
     export type Readiness =
-        | { readonly kind: 'ready' | 'waiting' | 'completed'; }
-        | { readonly kind: 'resync-required'; readonly completedThrough: number; };
+        | { readonly kind: 'ready' | 'waiting'; }
+        | { readonly kind: 'completed' | 'resync-required'; readonly completedThrough: number; };
 
     export interface Dependencies extends
         Pick<
@@ -51,7 +76,33 @@ export namespace ALInboundOrderedDelivery {
         readonly effectId: string;
     }
 
-    export type ReleaseResult = 'completed' | 'retry' | NonNullable<ALInboundBufferedRelease['localDelivery']>;
+    export type ReleaseResult = Completion | NonNullable<ALInboundBufferedRelease['localDelivery']>;
+}
+
+/** The answer of a completed delivery that is on no ordering track: a forward, or an unordered message. */
+export const AL_INBOUND_COMPLETED_OFF_TRACK: ALInboundOrderedDelivery.Completed = {
+    kind: 'completed',
+    position: undefined
+};
+
+/**
+ * The answer of a delivery that completed on `trackKey`, whose progress stands at `completedThrough`; off a track when
+ * `trackKey` is undefined.
+ */
+export function toALInboundCompleted(
+    trackKey: string | undefined,
+    completedThrough: number
+): ALInboundOrderedDelivery.Completed {
+    return trackKey === undefined
+        ? AL_INBOUND_COMPLETED_OFF_TRACK
+        : { kind: 'completed', position: { trackKey, completedThrough } };
+}
+
+/** Whether a release answered its claim, rather than the delivery its caller dispatches. */
+export function isALInboundCompletion(
+    result: ALInboundOrderedDelivery.ReleaseResult
+): result is ALInboundOrderedDelivery.Completion {
+    return result === 'retry' || result.kind === 'completed';
 }
 
 /** Owns the retained ordering facts that authorize release, resynchronization, and completion. */
@@ -62,7 +113,28 @@ export class ALInboundOrderedDelivery {
         this.dependencies = dependencies;
     }
 
+    /**
+     * A release whose write lost reads and decides again at once, rather than send the work back to wait out a retry
+     * delay that can outlast its message: a completion, another release or an admission on the track committed, and
+     * the next read sees it. Each attempt (`retryALInboundLostWrite`) reads the slot and the progress again.
+     *
+     * Hands the work back (`retry`) when every attempt's write lost, and when the plan asks for a retry or the
+     * predecessor has not completed, which a second read would find the same. A shutdown signal aborted before the
+     * write answers `retry` without writing; aborted by the time the write answers, `retry` whether it committed or
+     * lost, and no further attempt is made. Nothing has been dispatched then: the caller dispatches only the delivery
+     * a committed release answers. A release that finds its message already completed, or completes one its plan
+     * hands the application nothing, answers `completed` with the position of the track's progress it read or wrote.
+     */
     async release(input: ALInboundOrderedDelivery.ReleaseInput): Promise<ALInboundOrderedDelivery.ReleaseResult> {
+        const released = await retryALInboundLostWrite({
+            attempt: () => this.releaseOnce(input),
+            isLostWrite: (attempt) => attempt === 'conflict'
+        });
+        return released === 'conflict' ? 'retry' : released;
+    }
+
+    /** One fresh read of the slot and the track's progress, the decision, and the write when the release needs one. */
+    private async releaseOnce(input: ALInboundOrderedDelivery.ReleaseInput): Promise<ALInboundReleaseAttempt> {
         const { trackKey, seq, effectId } = input;
         const read = await this.dependencies.admissionStore.readBufferedRelease({
             trackKey,
@@ -72,6 +144,25 @@ export class ALInboundOrderedDelivery {
         if (!read) {
             return await this.confirmCompletion(trackKey, seq);
         }
+        const plan = await this.planRelease(read, effectId);
+        const readiness = await this.readiness(read.snapshot.msg);
+        if (shouldRetryALInboundDelivery(plan) || readiness.kind === 'waiting') {
+            return 'retry';
+        }
+        if (readiness.kind === 'completed') {
+            return toALInboundCompleted(trackKey, readiness.completedThrough);
+        }
+        if (readiness.kind === 'resync-required') {
+            return await this.reject(read.snapshot.msg, readiness.completedThrough);
+        }
+        if (plan.dropReason || !plan.localDelivery.enabled) {
+            return await this.complete(read.snapshot.msg);
+        }
+        return await this.writeRelease(read, plan);
+    }
+
+    /** The plan of a slot this work still owns, under its stored scope, before the message expired. */
+    private async planRelease(read: ALInboundBufferedReleaseReadDto, effectId: string): Promise<ALMessageHandlingPlan> {
         if (read.snapshot.delivery?.effectId !== effectId) {
             throw new NonRetryableException('Inbound work no longer owns its buffered message');
         }
@@ -88,19 +179,14 @@ export class ALInboundOrderedDelivery {
         if (expiresAtMs !== undefined && expiresAtMs <= this.dependencies.clock.nowMs()) {
             throw new NonRetryableException('Inbound buffered message expired before delivery');
         }
-        const readiness = await this.readiness(read.snapshot.msg);
-        if (shouldRetryALInboundDelivery(plan) || readiness.kind === 'waiting') {
-            return 'retry';
-        }
-        if (readiness.kind === 'completed') {
-            return 'completed';
-        }
-        if (readiness.kind === 'resync-required') {
-            return await this.reject(read.snapshot.msg, readiness.completedThrough);
-        }
-        if (plan.dropReason || !plan.localDelivery.enabled) {
-            return await this.complete(read.snapshot.msg);
-        }
+        return plan;
+    }
+
+    /** The release's signing and its one conditional write; the delivery it answers is dispatched only once it committed. */
+    private async writeRelease(
+        read: ALInboundBufferedReleaseReadDto,
+        plan: ALMessageHandlingPlan
+    ): Promise<ALInboundReleaseAttempt> {
         const facts = readALInboundEffectFacts(
             read.nowMs,
             this.dependencies.effectPreparation,
@@ -116,8 +202,11 @@ export class ALInboundOrderedDelivery {
             return 'retry';
         }
         const status = await this.dependencies.admissionStore.commitBundle(signed);
-        if (status === 'conflict' || this.dependencies.signal.aborted) {
+        if (this.dependencies.signal.aborted) {
             return 'retry';
+        }
+        if (status === 'conflict') {
+            return 'conflict';
         }
         const delivery = computed.localDelivery;
         if (delivery === undefined) {
@@ -218,12 +307,34 @@ export class ALInboundOrderedDelivery {
         }
     }
 
-    async complete(msg: ALMessage): Promise<'completed' | 'retry'> {
+    /**
+     * A completion runs after the application was handed the message, so a write that lost reads and decides again
+     * (`retryALInboundLostWrite`) rather than send the work back to be dispatched again.
+     *
+     * Hands the work back (`retry`) when every attempt's write lost or the shutdown signal aborted it; after a dispatch,
+     * the application is then handed the message again. It also hands the work back when the predecessor has not
+     * completed, which no dispatch can precede: only a dropped plan or a disabled local delivery, which hand the
+     * application nothing, reach that answer. An attempt ends in a `NonRetryableException` when the slot holds another
+     * message, when the progress row is gone, or when the slot is gone and the position has not moved past the message.
+     *
+     * Answers `completed` with the track's position: the one its write committed, or the one it read when it found the
+     * message already completed. A message on no ordering track completes with no position.
+     */
+    async complete(msg: ALMessage): Promise<ALInboundOrderedDelivery.Completion> {
         const trackKey = toALOrderingTrackKey(msg);
         const seq = msg.ordering?.seq;
         if (trackKey === undefined || seq === undefined) {
-            return 'completed';
+            return AL_INBOUND_COMPLETED_OFF_TRACK;
         }
+        const completed = await retryALInboundLostWrite({
+            attempt: () => this.completeOnce(msg, trackKey, seq),
+            isLostWrite: (attempt) => attempt === 'conflict'
+        });
+        return completed === 'conflict' ? 'retry' : completed;
+    }
+
+    /** One fresh read of the slot and the progress, its decision, and its write. */
+    private async completeOnce(msg: ALMessage, trackKey: string, seq: number): Promise<ALInboundCompletionAttempt> {
         const read = await this.dependencies.admissionStore.readBufferedRelease({
             trackKey,
             seq,
@@ -239,12 +350,11 @@ export class ALInboundOrderedDelivery {
         if (progress === undefined) {
             throw new NonRetryableException('Inbound ordered delivery lost its retained progress');
         }
-        const completedThrough = progress.completedThrough;
-        if (seq <= completedThrough) {
-            return 'completed';
+        if (seq <= progress.completedThrough) {
+            return toALInboundCompleted(trackKey, progress.completedThrough);
         }
         const completes = computeALInboundDeliveryCompletion({
-            completedThrough,
+            completedThrough: progress.completedThrough,
             seq,
             observation: read.snapshot.plan.orderingRuntime,
             completesThrough: read.snapshot.completesThrough
@@ -252,28 +362,19 @@ export class ALInboundOrderedDelivery {
         if (completes === undefined || this.dependencies.signal.aborted) {
             return 'retry';
         }
-        const status = await this.dependencies.admissionStore.commitMutations({
-            senderId: msg.id.senderId,
-            observations: read.observations,
-            mutations: [
-                {
-                    kind: 'set-delivery-progress',
-                    trackKey,
-                    value: {
-                        completedThrough: completes,
-                        expireAtTimestamp: progress.expireAtTimestamp
-                    }
-                },
-                { kind: 'delete-buffered', trackKey, seq }
-            ]
+        const status = await this.dependencies.admissionStore.commitDeliveryCompletion({
+            trackKey,
+            seq,
+            observedSlot: read.snapshot,
+            observedProgress: progress
         });
-        return status === 'conflict' ? 'retry' : 'completed';
+        return status === 'conflict' ? 'conflict' : toALInboundCompleted(trackKey, completes);
     }
 
-    private async confirmCompletion(trackKey: string, seq: number): Promise<'completed'> {
+    private async confirmCompletion(trackKey: string, seq: number): Promise<ALInboundOrderedDelivery.Completed> {
         const progress = await this.dependencies.admissionStore.readOrderedDelivery(trackKey, seq);
         if (seq <= progress.completedThrough) {
-            return 'completed';
+            return toALInboundCompleted(trackKey, progress.completedThrough);
         }
         throw new NonRetryableException('Inbound buffered message is missing without durable completion evidence');
     }

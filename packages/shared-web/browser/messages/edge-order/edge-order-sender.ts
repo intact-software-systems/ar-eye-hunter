@@ -11,11 +11,9 @@ export namespace EdgeOrderSender {
      */
     export type SendEnd = 'open' | 'delivered' | 'undelivered';
 
-    /** What the stream reads of one open send each time it stamps another. */
+    /** What the stream reads of one open send that is retried, each time it stamps another. */
     export interface OpenSend {
         readonly expiresAtMs: number;
-        /** False for a send nothing retries: a lost copy never comes back, so no receiver waits for it. */
-        readonly retried: boolean;
         getEnd(): SendEnd;
     }
 }
@@ -32,12 +30,17 @@ interface EdgeOrderSettlingSend {
     readonly openUntilMs: number;
 }
 
-/** `unobserved`: the send has its position and no lifecycle yet. `hole`: it ended and nothing of it can arrive. */
+/**
+ * `unobserved`: a retried send that has its position and no lifecycle yet. `hole`: a position no receiver waits for,
+ * because the send ended and nothing of it can arrive, or because nothing retries it.
+ */
 type EdgeOrderSendSlot = EdgeOrderSender.OpenSend | EdgeOrderSettlingSend | 'unobserved' | 'hole';
 
 /**
  * The send side of one edge-ordered stream. A send takes its position in the application's own call, before
- * anything is awaited; it is stamped when its message is built, and observed once it has a lifecycle to read.
+ * anything is awaited; it is stamped when its message is built, and a retried one is observed once it has a
+ * lifecycle to read. A send nothing retries is a hole to every later stamp from the moment it takes its position: a
+ * lost copy of it never comes back, so the newest message wins and a late one is dropped.
  */
 export class EdgeOrderSender {
     private readonly stream: string;
@@ -49,27 +52,46 @@ export class EdgeOrderSender {
      * below it have ended.
      */
     private readonly slots = new Map<number, EdgeOrderSendSlot>();
+    /**
+     * By position: the supersedence key of each retried send still open that named one. A later send of the same
+     * key replaces it, and that send's own stamp says so.
+     */
+    private readonly supersedenceKeys = new Map<number, string>();
 
     constructor(stream: string, acknowledgedSettleMs: number) {
         this.stream = stream;
         this.acknowledgedSettleMs = acknowledgedSettleMs;
     }
 
-    openSend(): number {
+    /**
+     * `retried`: the send is at-least-once and asks a receipt, so a lost copy of it comes back. `supersedenceKey`:
+     * the key of a latest-wins send, absent for any other.
+     */
+    openSend(retried: boolean, supersedenceKey: string | undefined): number {
         this.lastPosition += 1;
-        this.slots.set(this.lastPosition, 'unobserved');
+        if (retried && supersedenceKey !== undefined) {
+            this.supersedenceKeys.set(this.lastPosition, supersedenceKey);
+        }
+        this.slots.set(this.lastPosition, retried ? 'unobserved' : 'hole');
         return this.lastPosition;
     }
 
-    /** The stamp of an open send, from the sends still open below it at `nowMs` and the holes among them. */
-    stampSend(position: number, nowMs: number): EdgeOrderStamp {
+    /**
+     * The stamp of an open send, from the sends still open below it at `nowMs` and the holes among them.
+     * `supersedenceKey` is the send's own, as it was opened with. A latest-wins send replaces every earlier open
+     * send of its key: a copy of one that arrives after it is dropped on receipt, with no receipt, so this stamp
+     * states each as a hole. Only this stamp does: a receiver the replacing send never reaches still waits for the
+     * send it would have replaced, and a replacing send that never sets out changes nothing.
+     */
+    stampSend(position: number, nowMs: number, supersedenceKey: string | undefined): EdgeOrderStamp {
         this.closeEndedSends(nowMs);
+        const earlier = this.toEarlierSlots(position, supersedenceKey);
         return {
             stream: this.stream,
             position,
-            lowestOpenPosition: Math.min(this.slots.keys().next().value ?? position, position),
-            earlierCanArriveUntilMs: this.computeEarlierCanArriveUntil(position),
-            holes: this.computeHolesBelow(position)
+            lowestOpenPosition: earlier.find(([, slot]) => slot !== 'hole')?.[0] ?? position,
+            earlierCanArriveUntilMs: computeEarlierCanArriveUntil(earlier),
+            holes: computeHoles(earlier)
         };
     }
 
@@ -80,8 +102,9 @@ export class EdgeOrderSender {
     }
 
     /**
-     * Closes a send of which nothing set out: it failed, or was refused, before any carrier took it. While no
-     * later send has taken a position, the next send gets this one, so the stream has no hole at all.
+     * Closes a retried send of which nothing set out: it failed, or was refused, before any carrier took it. While
+     * no later send has taken a position, the next send gets this one, so the stream has no hole at all. A send
+     * nothing retries keeps its position: it is a hole already.
      */
     endSend(position: number): void {
         if (this.slots.get(position) !== 'unobserved') {
@@ -89,6 +112,7 @@ export class EdgeOrderSender {
         }
         if (position === this.lastPosition) {
             this.slots.delete(position);
+            this.supersedenceKeys.delete(position);
             this.lastPosition -= 1;
             return;
         }
@@ -116,52 +140,75 @@ export class EdgeOrderSender {
         }
         for (const [position, slot] of this.slots) {
             if (slot !== 'hole') {
-                return;
+                break;
             }
             this.slots.delete(position);
+        }
+        for (const position of this.supersedenceKeys.keys()) {
+            if (this.slots.get(position) === undefined || this.slots.get(position) === 'hole') {
+                this.supersedenceKeys.delete(position);
+            }
         }
     }
 
     /**
-     * The latest time a send still open below `position` can arrive: its deadline, the end of its settle time once
-     * it is acknowledged, or as long as any receiver is willing to wait while it has no deadline yet.
+     * The slots below `position`, in rising order, as the stamp of a send of `supersedenceKey` at `position` states
+     * them: one whose send that send replaces reads as a hole.
      */
-    private computeEarlierCanArriveUntil(position: number): number | undefined {
-        let latestMs: number | undefined;
-        for (const [openPosition, slot] of this.slots) {
-            if (openPosition >= position) {
+    private toEarlierSlots(
+        position: number,
+        supersedenceKey: string | undefined
+    ): ReadonlyArray<readonly [number, EdgeOrderSendSlot]> {
+        const earlier: Array<readonly [number, EdgeOrderSendSlot]> = [];
+        for (const [earlierPosition, slot] of this.slots) {
+            if (earlierPosition >= position) {
                 break;
             }
-            const canArriveUntilMs = toCanArriveUntil(slot);
-            if (canArriveUntilMs !== undefined && (latestMs === undefined || canArriveUntilMs > latestMs)) {
-                latestMs = canArriveUntilMs;
-            }
+            const replaced = supersedenceKey !== undefined &&
+                this.supersedenceKeys.get(earlierPosition) === supersedenceKey;
+            earlier.push([earlierPosition, replaced ? 'hole' : slot]);
         }
-        return latestMs;
+        return earlier;
     }
+}
 
-    private computeHolesBelow(position: number): readonly EdgeOrderPositionRun[] {
-        const holes: Array<[number, number]> = [];
-        for (const [hole, slot] of this.slots) {
-            if (hole >= position) {
-                break;
-            }
-            if (slot !== 'hole') {
-                continue;
-            }
-            const lastRun = holes.at(-1);
-            if (lastRun?.[1] === hole - 1) {
-                lastRun[1] = hole;
-            }
-            else if (holes.length === EDGE_ORDER_MAX_STATED_HOLES) {
-                break;
-            }
-            else {
-                holes.push([hole, hole]);
-            }
+/**
+ * The latest time a send still open among `earlier` can arrive: its deadline, the end of its settle time once it is
+ * acknowledged, or as long as any receiver is willing to wait while it has no deadline yet.
+ */
+function computeEarlierCanArriveUntil(
+    earlier: ReadonlyArray<readonly [number, EdgeOrderSendSlot]>
+): number | undefined {
+    let latestMs: number | undefined;
+    for (const [, slot] of earlier) {
+        const canArriveUntilMs = toCanArriveUntil(slot);
+        if (canArriveUntilMs !== undefined && (latestMs === undefined || canArriveUntilMs > latestMs)) {
+            latestMs = canArriveUntilMs;
         }
-        return holes;
     }
+    return latestMs;
+}
+
+/** The runs of holes above the lowest open send among `earlier`, the lowest first, at most as many as a stamp states. */
+function computeHoles(earlier: ReadonlyArray<readonly [number, EdgeOrderSendSlot]>): readonly EdgeOrderPositionRun[] {
+    const firstOpen = earlier.findIndex(([, slot]) => slot !== 'hole');
+    const holes: Array<[number, number]> = [];
+    for (const [hole, slot] of firstOpen === -1 ? [] : earlier.slice(firstOpen)) {
+        if (slot !== 'hole') {
+            continue;
+        }
+        const lastRun = holes.at(-1);
+        if (lastRun?.[1] === hole - 1) {
+            lastRun[1] = hole;
+        }
+        else if (holes.length === EDGE_ORDER_MAX_STATED_HOLES) {
+            break;
+        }
+        else {
+            holes.push([hole, hole]);
+        }
+    }
+    return holes;
 }
 
 /**
@@ -188,7 +235,7 @@ function toSendSlotAt(
     return end === 'undelivered' || slot.expiresAtMs <= nowMs ? 'hole' : slot;
 }
 
-/** Absent for a hole, and for a send nothing retries: no receiver waits for either. */
+/** Absent for a hole: no receiver waits for it. */
 function toCanArriveUntil(slot: EdgeOrderSendSlot): number | undefined {
     if (slot === 'hole') {
         return undefined;
@@ -196,8 +243,5 @@ function toCanArriveUntil(slot: EdgeOrderSendSlot): number | undefined {
     if (slot === 'unobserved') {
         return Number.MAX_SAFE_INTEGER;
     }
-    if ('openUntilMs' in slot) {
-        return slot.openUntilMs;
-    }
-    return slot.retried ? slot.expiresAtMs : undefined;
+    return 'openUntilMs' in slot ? slot.openUntilMs : slot.expiresAtMs;
 }

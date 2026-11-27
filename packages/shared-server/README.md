@@ -156,9 +156,10 @@ boundary, the computed queue failure and the retry exhaustion; the field's JSDoc
 `rallar-system/observability/timing.ts` names that complete set. A WS receipt
 observation names the trace of the message it is about: a business socket decision
 and an issued receipt carry the subject's, an ACK's facts carry the ACK's own (its
-subject's in production), and `ack-count` carries the live aggregate's. The
-`ws-receipt` timing line copies the observation's trace. The admin realtime
-receipt entry names the trace of the message's latest receipt fact.
+subject's in production), and `ack-count` carries the trace of the receipt its
+view read, else the counted control's. The `ws-receipt` timing line copies the
+observation's trace. The admin realtime receipt entry names the trace of the
+message's latest receipt fact.
 
 Authoritative persisted, replicated, queued, event, snapshot, receipt, and
 successful response fields are mandatory fields by default. Current writers

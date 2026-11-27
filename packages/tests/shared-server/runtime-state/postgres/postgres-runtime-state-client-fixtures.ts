@@ -14,6 +14,13 @@ export type PostgresSql =
         end(): Promise<void>;
     }>;
 
+/** A client that can also be lost: `terminate` closes its connections at once, rolling back any open transaction. */
+export type TerminablePostgresSql =
+    & PostgresSql
+    & Readonly<{
+        terminate(): Promise<void>;
+    }>;
+
 export interface WithPostgresClientsInput {
     readonly namespace: string | null;
     readonly clientCount: number;
@@ -23,7 +30,7 @@ export interface WithPostgresClientsInput {
 export async function createRuntimeStatePostgresSql(
     databaseUrl: string,
     maxConnections = 1
-): Promise<PostgresSql> {
+): Promise<TerminablePostgresSql> {
     const postgres = await import('postgres');
     const rawSql = postgres.default(databaseUrl, {
         max: maxConnections,
@@ -31,7 +38,8 @@ export async function createRuntimeStatePostgresSql(
         types: { timestampWithoutTimeZone: createPostgresTimestampWithoutTimeZoneTextType() }
     });
     return Object.assign(toPSqlSql(rawSql), {
-        end: async (): Promise<void> => await rawSql.end()
+        end: async (): Promise<void> => await rawSql.end(),
+        terminate: async (): Promise<void> => await rawSql.end({ timeout: 0 })
     });
 }
 

@@ -25,9 +25,10 @@ export interface RallarMessageOrder {
 }
 
 /**
- * Why a page gave up positions of an edge-ordered stream. The message could no longer arrive: `ended-at-sender`, its
- * sender said the send was over (refused, cancelled, past its deadline, or acknowledged by the recipients it had);
- * `cannot-arrive`, the time its sender gave it to arrive has passed. A bound of this page was reached, and the
+ * Why a page gave up positions of an edge-ordered stream. No one waits for the message any more: `ended-at-sender`,
+ * its sender said so, because the send was over (refused, cancelled, past its deadline, or acknowledged by the
+ * recipients it had) or because nothing retries it and a later message arrived first; `cannot-arrive`, the time its
+ * sender gave it to arrive has passed. A bound of this page was reached, and the
  * message is dropped as late if it still arrives: `held-message-deadline`, a later message could be held no longer
  * without passing its own deadline; `channel-wait-cap`, `held-message-cap` and `held-byte-cap`, a later message was
  * held as long, or the stream held as much, as the page allows; `stream-cap`, the page follows no more streams.
@@ -272,8 +273,14 @@ export interface RallarTypedMessageChannelDefinition {
     /**
      * `edge`, on a room channel: one sender page's messages reach this page's handlers in the order that page called
      * `send`, whichever carrier each came over. Rallar Web numbers each send, wraps the payload with the number and
-     * sorts at the receiver in memory, so both ends declare it; a message that can no longer arrive is skipped. Its
-     * sends are whole-room, at-least-once, receipted and volatile: every other shape is refused `unsupported`.
+     * sorts at the receiver in memory, so both ends declare it; a message that can no longer arrive is skipped. A
+     * send nothing retries (best-effort, or one that asks no receipt) is never waited for: the newest message wins,
+     * and one that arrives after a later one is dropped. So is a send a later latest-wins send of the same
+     * `supersedenceKey` replaced. One stream is one channel, room and audience, so a narrowed send (a list, a
+     * principal, a peer, skipped sessions) is ordered among the sends to the same audience; on a `live` channel one
+     * stream is one `resourceId`, numbered as its values leave the publication stage. Refused `unsupported`: a
+     * stored channel or send, a hop's or a leader's receipt, `orderingKey` and `seq`, latest-wins without a
+     * `supersedenceKey`, a world send, a send addressed to the server, and the `ws-then-rtc` strategy.
      */
     readonly order?: 'edge';
     /**
@@ -283,6 +290,20 @@ export interface RallarTypedMessageChannelDefinition {
      * Absent, a gap is stated in the inbound diagnostics and counted in `messages.readUsage()` only.
      */
     readonly onOrderGap?: (gap: RallarMessageOrderGap) => void | Promise<void>;
+    /**
+     * On an `order: 'edge'` channel: the longest this page holds a message of the channel for an earlier one that is
+     * missing, in whole milliseconds from when it was first held. Past it the page skips the missing positions,
+     * reports them as a `channel-wait-cap` gap, and drops their messages as late if they still arrive. Absent, the
+     * page waits as long as the sender says the missing message can arrive. Kept per topic and type like
+     * `onOrderGap`: the latest declaration that names it stands, for every room, from a stream's next arrival on.
+     */
+    readonly orderGapWaitMs?: number;
+    /**
+     * On an `order: 'edge'` channel: how long this page waits for earlier messages of a stream whose first message
+     * here is not its first, in whole milliseconds, before it starts at the lowest one it holds. Absent, 500. Kept
+     * per topic and type like `onOrderGap`: the latest declaration that names it stands, for every room.
+     */
+    readonly orderEntryWindowMs?: number;
 }
 
 export type RallarTypedPayloadHandler<T> = (

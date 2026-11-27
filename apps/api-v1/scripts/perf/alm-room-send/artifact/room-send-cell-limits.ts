@@ -1,4 +1,6 @@
-import { WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts';
+import { AL_RECEIPT_DEADLINE_GRACE_MS } from '@shared/al-contracts/al-control.ts';
+import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
+import { AL_RECEIPT_RECORD_WINDOW_MS } from '@shared/alm/receipt-record/validate-al-receipt-record-opening.ts';
 
 /** The round trips to the database a run adds its shape's latency to. */
 export const ROOM_SEND_DELAYED_ROUND_TRIPS: readonly string[] = [
@@ -6,8 +8,8 @@ export const ROOM_SEND_DELAYED_ROUND_TRIPS: readonly string[] = [
     'A transaction waits the delay after BEGIN, before each of its statements and before COMMIT or ROLLBACK, and ' +
     'holds its connection and its locks through all of it.',
     'A savepoint waits the delay before it opens, and again after it when it is rolled back.',
-    'Every NOTIFY publish waits the delay before it is sent: a copy\'s live notice, the announcement of a receipt ' +
-    'row and a relayed ACK.'
+    'Every NOTIFY publish waits the delay before it is sent: a copy\'s live notice and the announcement of a receipt ' +
+    'row.'
 ];
 
 /** What reaches or leaves the database in a run with no latency added to it. */
@@ -53,8 +55,14 @@ export const ROOM_SEND_CELL_LIMITS: readonly string[] = [
     'receipt removed. Under `none` a publisher offers each send once and answers nothing.',
     'What a browser does after `resync-required` or `receipt-exhausted` is not modelled: under either recovery a ' +
     'publisher goes on offering its next send, on the same track when its sends name an ordering key.',
-    `The receipt aggregates of an instance are bounded at ${WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES}; the ` +
-    'shapes run here stay far below it.',
+    'The three instances count each receipt in one receipt record on PostgreSQL, and no count of open receipts ' +
+    `bounds it: an open receipt's rows live until ${AL_RECEIPT_DEADLINE_GRACE_MS / 1_000} s past its send's ` +
+    'deadline and a confirmation under it that long again, an ended receipt that long past the later of its ' +
+    'deadline and its end, and a confirmation counted before its receipt was opened ' +
+    `${AL_RECEIPT_RECORD_WINDOW_MS / 60_000} min and ` +
+    `${AL_RECEIPT_DEADLINE_GRACE_MS / 1_000} s, so the rows a run holds grow with its send rate. A send to more ` +
+    `than ${AL_MESSAGE_RESOURCE_LIMITS.collectionEntries} recipients, or one whose receipt the control cannot ` +
+    'carry, opens no receipt; the room\'s fourteen stay far below both.',
     'The database is local, on the disk and the processor of the machine that runs the cell: its own time and its ' +
     'fsync are that machine\'s, and other work on the machine shows in the load average the artifact records.',
     'The artifact holds the report and the count of every observation list. It holds in full the later offers, the ' +

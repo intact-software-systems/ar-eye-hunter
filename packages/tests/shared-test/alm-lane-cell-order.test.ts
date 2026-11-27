@@ -57,6 +57,7 @@ const TOPOLOGY_RESHAPING_KEYS = [
     'receipted-relay-path',
     'granted-rtc-relay-only',
     'granted-rtc-ordered-relay',
+    'granted-rtc-edge-order-stream',
     'relayed-gap-renewal',
     'relayed-unreceipted-gap-renewal'
 ];
@@ -525,13 +526,13 @@ describe('the ALM lane plan', () => {
             resolveAlmLaneCellOrder({
                 scenarios: toFamilyCatalog('three-agent', 'rtc'),
                 order: 'shuffled',
-                seed: 22,
+                seed: 6,
                 only: [],
                 mintSeed: refuseMint
             }).scenarios
         );
         const plan = resolveAlmLanePlan({
-            ...toPlanInput('three-agent', { order: 'shuffled', seed: 22 }),
+            ...toPlanInput('three-agent', { order: 'shuffled', seed: 6 }),
             scenarios: toFamilyCatalog('three-agent', 'rtc')
         });
         const keys = plan.cells.map((cell) => cell.scenarioKey);
@@ -544,7 +545,7 @@ describe('the ALM lane plan', () => {
 
     it('a room per cell ignores the constraint', () => {
         const plan = resolveAlmLanePlan({
-            ...toPlanInput('three-agent', { order: 'shuffled', seed: 22, rooms: 'cell' }),
+            ...toPlanInput('three-agent', { order: 'shuffled', seed: 6, rooms: 'cell' }),
             scenarios: toFamilyCatalog('three-agent', 'rtc')
         });
 

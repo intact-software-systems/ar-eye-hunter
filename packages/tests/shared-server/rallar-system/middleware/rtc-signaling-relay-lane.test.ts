@@ -8,6 +8,7 @@ import {
 
 import { createPSqlALInboundRuntimeStores } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import { installRtcSignalingWsTopic } from '@shared-server/rallar-system/communication/install-rtc-signaling-ws-topic.ts';
+import { isInstanceLocalRtcSignal } from '@shared-server/rallar-system/communication/is-instance-local-rtc-signal.ts';
 import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/create-rallar-middleware.ts';
 import type { CreateRallarMiddlewareOptions } from '@shared-server/rallar-system/middleware/rallar-middleware-construction.ts';
 import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/rallar-middleware-runtime.ts';
@@ -119,15 +120,11 @@ describe('the WS server relay lane', () => {
     });
 });
 
-/** The notice channel that makes a server relay acknowledgements to other instances. */
-const CLUSTER: CreateRallarMiddlewareOptions['relayedAckNotices'] = {
-    transport: { publish: async () => undefined, subscribe: async () => undefined },
-    channel: 'relayed-acks',
-    publisherId: 'server-a'
-};
+/** What api-v1 keeps in memory beside other instances: only an instance-local RTC signal. */
+const CLUSTER: CreateRallarMiddlewareOptions['keepsVolatileMessageInMemory'] = isInstanceLocalRtcSignal;
 
 async function createRelayServer(
-    relayedAckNotices: CreateRallarMiddlewareOptions['relayedAckNotices'] = undefined
+    keepsVolatileMessageInMemory: CreateRallarMiddlewareOptions['keepsVolatileMessageInMemory'] = undefined
 ): Promise<RelayServer> {
     const storage = await createPSqlAdmissionTestStorage();
     const recorded = recordPGliteStatements(storage.sql.raw);
@@ -154,7 +151,7 @@ async function createRelayServer(
                 : undefined,
         inboundStores: durable,
         inboundVolatileStores: volatile,
-        relayedAckNotices
+        keepsVolatileMessageInMemory
     });
     installRtcSignalingWsTopic({
         service: runtime.wsQBoxServerService,

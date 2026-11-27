@@ -2,41 +2,45 @@ import { describe, expect, it } from 'vitest';
 
 import { createRallarAlmReceiptDiagnosticsRecorder } from '@shared-server/rallar-system/observability/alm-receipt-diagnostics.ts';
 import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
-import {
-    newALBroadcastMessage,
-    newALRoute,
-    type ALMessage
-} from '@shared/al-contracts/al-contract.ts';
-import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { createInMemoryALAdmissionState } from '@shared/alm/al-admission-backend.ts';
+import { ALReceiptRecord } from '@shared/alm/receipt-record/al-receipt-record.ts';
 
 import {
     countCopies,
     createBridgeBus,
+    createReceiptClusterState,
+    createReceiptInstanceStores,
     createReceiptOutbox,
     createReceiptServer,
     installClock,
     RECEIPT_SERVER_PEER_ID,
+    serverNotification,
+    sessionAck,
     type ReceiptServerInstance
 } from './ws-queue-box-server-receipt-fixture.ts';
 
-import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
-
-const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
-const ROOM = { ...SCOPE, groupId: 'room-1' };
 /** Long enough that the receipt budget (four 2 s windows) ends first. */
 const NOTIFICATION_TTL_MS = 60_000;
 const CLOCK_STEP_MS = 1_000;
 
 describe('receipts of the server\'s own room notifications', () => {
     it('sends only to the audience frozen at publish and records who confirmed, then that the rest never did', async () => {
+        // Pins the receipt of a notification counting someone outside the audience it was frozen to, or the admin read
+        // stating the row's own exhaustion for a receipt the record ended.
         const clock = installClock();
         const recorder = createRallarAlmReceiptDiagnosticsRecorder({
             nowEpochMs: () => clock.nowMs,
             capacity: 256
         });
         const outbox = createReceiptOutbox(clock);
+        const stores = createReceiptInstanceStores(createReceiptClusterState(() => clock.nowMs), () => clock.nowMs);
+        const record = new ALReceiptRecord({ ...stores.receiptRecordStores, nowMs: () => clock.nowMs });
         const local = await createReceiptServer({
+            ...stores,
+            inboundVolatileStores: undefined,
+            outboundBackend: undefined,
+            capturedRecipientEligibilityFilters: undefined,
+            receiptObserver: undefined,
             outbox,
             state: createInMemoryALAdmissionState(outbox),
             peerIds: ['a', 'b', 'c'],
@@ -44,8 +48,10 @@ describe('receipts of the server\'s own room notifications', () => {
             nowMs: () => clock.nowMs
         });
 
+        const notification = serverNotification('snapshot-1', 'receiver', NOTIFICATION_TTL_MS);
+
         const enqueued = await local.service.enqueueOutboxIfAbsent(
-            serverNotification('snapshot-1'),
+            notification,
             { admittedAudience: ['a', 'b'], admittedConnectionGenerationIds: undefined, recipientScope: undefined }
         );
 
@@ -59,25 +65,24 @@ describe('receipts of the server\'s own room notifications', () => {
         }).toEqual([1, 1]);
         expect(countCopies(local.sockets.c, 'snapshot-1')).toBe(0);
 
-        await local.service.acceptIncomingMessage(sessionAck('snapshot-1', 'a'), 'a');
+        await local.service.acceptIncomingMessage(sessionAck(notification, 'a', 'delivered'), 'a');
+        expect((await record.read({ originPeerId: RECEIPT_SERVER_PEER_ID, msgId: 'snapshot-1' })).right?.tally.confirmedRecipientPeerIds)
+            .toEqual(['a']);
+        expect(recorder.readDiagnostics().messages).toEqual([]);
+
+        await expect.poll(async () => {
+            clock.nowMs += CLOCK_STEP_MS;
+            await local.engine.executeOnce();
+            return recorder.readDiagnostics().messages[0]?.lastSettlementKind;
+        }, { timeout: 5_000 }).toBe('acknowledgement');
         expect(recorder.readDiagnostics().messages).toEqual([expect.objectContaining({
             msgId: 'snapshot-1',
             mode: 'receiver',
             confirmedPeerIds: ['a'],
             unconfirmedPeerIds: ['b'],
+            lastSettlementKind: 'acknowledgement',
             receiptExhausted: false
         })]);
-
-        await expect.poll(async () => {
-            clock.nowMs += CLOCK_STEP_MS;
-            await local.engine.executeOnce();
-            return recorder.readDiagnostics().messages[0]?.receiptExhausted;
-        }, { timeout: 5_000 }).toBe(true);
-        expect(recorder.readDiagnostics().messages[0]).toMatchObject({
-            confirmedPeerIds: ['a'],
-            unconfirmedPeerIds: ['b'],
-            lastSettlementKind: 'receipt-exhausted'
-        });
     });
 
     it('keeps a session that left in the receipt, where it reads unconfirmed, while the retries reach the rest', async () => {
@@ -88,6 +93,11 @@ describe('receipts of the server\'s own room notifications', () => {
         });
         const outbox = createReceiptOutbox(clock);
         const local = await createReceiptServer({
+            ...createReceiptInstanceStores(createReceiptClusterState(() => clock.nowMs), () => clock.nowMs),
+            inboundVolatileStores: undefined,
+            outboundBackend: undefined,
+            capturedRecipientEligibilityFilters: undefined,
+            receiptObserver: undefined,
             outbox,
             state: createInMemoryALAdmissionState(outbox),
             peerIds: ['a', 'b', 'c'],
@@ -95,7 +105,8 @@ describe('receipts of the server\'s own room notifications', () => {
             nowMs: () => clock.nowMs
         });
 
-        await local.service.enqueueOutboxIfAbsent(serverNotification('snapshot-3'), {
+        const notification = serverNotification('snapshot-3', 'receiver', NOTIFICATION_TTL_MS);
+        await local.service.enqueueOutboxIfAbsent(notification, {
             admittedAudience: ['a', 'b', 'c'],
             admittedConnectionGenerationIds: undefined,
             recipientScope: undefined
@@ -105,17 +116,18 @@ describe('receipts of the server\'s own room notifications', () => {
             return ['a', 'b', 'c'].map((peerId) => countCopies(local.sockets[peerId], 'snapshot-3'));
         }).toEqual([1, 1, 1]);
         await local.sockets.c.receiveClose(1000, 'left');
-        await local.service.acceptIncomingMessage(sessionAck('snapshot-3', 'a'), 'a');
+        await local.service.acceptIncomingMessage(sessionAck(notification, 'a', 'delivered'), 'a');
 
         await expect.poll(async () => {
             clock.nowMs += CLOCK_STEP_MS;
             await local.engine.executeOnce();
-            return recorder.readDiagnostics().messages[0]?.receiptExhausted;
-        }, { timeout: 5_000 }).toBe(true);
+            return recorder.readDiagnostics().messages[0]?.lastSettlementKind;
+        }, { timeout: 5_000 }).toBe('acknowledgement');
         expect(countCopies(local.sockets.b, 'snapshot-3')).toBeGreaterThan(1);
         expect(recorder.readDiagnostics().messages[0]).toMatchObject({
             confirmedPeerIds: ['a'],
-            unconfirmedPeerIds: ['b', 'c']
+            unconfirmedPeerIds: ['b', 'c'],
+            receiptExhausted: false
         });
     });
 
@@ -129,6 +141,11 @@ describe('receipts of the server\'s own room notifications', () => {
             });
             const outbox = createReceiptOutbox(clock);
             const local = await createReceiptServer({
+                ...createReceiptInstanceStores(createReceiptClusterState(() => clock.nowMs), () => clock.nowMs),
+                inboundVolatileStores: undefined,
+                outboundBackend: undefined,
+                capturedRecipientEligibilityFilters: undefined,
+                receiptObserver: undefined,
                 outbox,
                 state: createInMemoryALAdmissionState(outbox),
                 peerIds: ['a', 'b'],
@@ -136,8 +153,9 @@ describe('receipts of the server\'s own room notifications', () => {
                 nowMs: () => clock.nowMs
             });
             const msgId = `snapshot-${ack}`;
+            const notification = serverNotification(msgId, ack, NOTIFICATION_TTL_MS);
 
-            await local.service.enqueueOutboxIfAbsent(serverNotification(msgId, ack), {
+            await local.service.enqueueOutboxIfAbsent(notification, {
                 admittedAudience: ['a', 'b'],
                 admittedConnectionGenerationIds: undefined,
                 recipientScope: undefined
@@ -146,7 +164,7 @@ describe('receipts of the server\'s own room notifications', () => {
                 await local.engine.executeOnce();
                 return [countCopies(local.sockets.a, msgId), countCopies(local.sockets.b, msgId)];
             }).toEqual([1, 1]);
-            await local.service.acceptIncomingMessage(sessionAck(msgId, 'a'), 'a');
+            await local.service.acceptIncomingMessage(sessionAck(notification, 'a', 'delivered'), 'a');
 
             await expect.poll(async () => {
                 clock.nowMs += CLOCK_STEP_MS;
@@ -171,11 +189,33 @@ describe('receipts of the server\'s own room notifications', () => {
         });
         const outbox = createReceiptOutbox(clock);
         const state = createInMemoryALAdmissionState(outbox);
-        const local = await createReceiptServer({ outbox, state, peerIds: ['a'], recorder, nowMs: () => clock.nowMs });
-        const remote = await createReceiptServer({ outbox, state, peerIds: ['c'], recorder: undefined, nowMs: () => clock.nowMs });
+        const local = await createReceiptServer({
+            ...createReceiptInstanceStores(createReceiptClusterState(() => clock.nowMs), () => clock.nowMs),
+            inboundVolatileStores: undefined,
+            outboundBackend: undefined,
+            capturedRecipientEligibilityFilters: undefined,
+            receiptObserver: undefined,
+            outbox,
+            state,
+            peerIds: ['a'],
+            recorder,
+            nowMs: () => clock.nowMs
+        });
+        const remote = await createReceiptServer({
+            ...createReceiptInstanceStores(createReceiptClusterState(() => clock.nowMs), () => clock.nowMs),
+            inboundVolatileStores: undefined,
+            outboundBackend: undefined,
+            capturedRecipientEligibilityFilters: undefined,
+            receiptObserver: undefined,
+            outbox,
+            state,
+            peerIds: ['c'],
+            recorder: undefined,
+            nowMs: () => clock.nowMs
+        });
         await joinCluster(local, remote);
 
-        const enqueued = await local.service.enqueueOutboxIfAbsent(serverNotification('snapshot-empty'), {
+        const enqueued = await local.service.enqueueOutboxIfAbsent(serverNotification('snapshot-empty', 'receiver', NOTIFICATION_TTL_MS), {
             admittedAudience: [],
             admittedConnectionGenerationIds: undefined,
             recipientScope: undefined
@@ -197,11 +237,33 @@ describe('receipts of the server\'s own room notifications', () => {
         const outbox = createReceiptOutbox(clock);
         const state = createInMemoryALAdmissionState(outbox);
         const nowMs = () => clock.nowMs;
-        const local = await createReceiptServer({ outbox, state, peerIds: ['a', 'b'], recorder: undefined, nowMs });
-        const remote = await createReceiptServer({ outbox, state, peerIds: ['c', 'd'], recorder: undefined, nowMs });
+        const local = await createReceiptServer({
+            ...createReceiptInstanceStores(createReceiptClusterState(nowMs), nowMs),
+            inboundVolatileStores: undefined,
+            outboundBackend: undefined,
+            capturedRecipientEligibilityFilters: undefined,
+            receiptObserver: undefined,
+            outbox,
+            state,
+            peerIds: ['a', 'b'],
+            recorder: undefined,
+            nowMs
+        });
+        const remote = await createReceiptServer({
+            ...createReceiptInstanceStores(createReceiptClusterState(nowMs), nowMs),
+            inboundVolatileStores: undefined,
+            outboundBackend: undefined,
+            capturedRecipientEligibilityFilters: undefined,
+            receiptObserver: undefined,
+            outbox,
+            state,
+            peerIds: ['c', 'd'],
+            recorder: undefined,
+            nowMs
+        });
         await joinCluster(local, remote);
 
-        await local.service.enqueueOutboxIfAbsent(serverNotification('snapshot-uncaptured'));
+        await local.service.enqueueOutboxIfAbsent(serverNotification('snapshot-uncaptured', 'receiver', NOTIFICATION_TTL_MS));
 
         await expect.poll(async () => {
             await local.engine.executeOnce();
@@ -220,6 +282,11 @@ describe('receipts of the server\'s own room notifications', () => {
         const state = createInMemoryALAdmissionState(outbox);
         const nowMs = () => clock.nowMs;
         const local = await createReceiptServer({
+            ...createReceiptInstanceStores(createReceiptClusterState(nowMs), nowMs),
+            inboundVolatileStores: undefined,
+            outboundBackend: undefined,
+            capturedRecipientEligibilityFilters: undefined,
+            receiptObserver: undefined,
             outbox,
             state,
             peerIds: ['a', 'b'],
@@ -227,6 +294,11 @@ describe('receipts of the server\'s own room notifications', () => {
             nowMs
         });
         const remote = await createReceiptServer({
+            ...createReceiptInstanceStores(createReceiptClusterState(nowMs), nowMs),
+            inboundVolatileStores: undefined,
+            outboundBackend: undefined,
+            capturedRecipientEligibilityFilters: undefined,
+            receiptObserver: undefined,
             outbox,
             state,
             peerIds: ['c', 'd'],
@@ -235,7 +307,7 @@ describe('receipts of the server\'s own room notifications', () => {
         });
         await joinCluster(local, remote);
 
-        await local.service.enqueueOutboxIfAbsent(serverNotification('snapshot-2'), {
+        await local.service.enqueueOutboxIfAbsent(serverNotification('snapshot-2', 'receiver', NOTIFICATION_TTL_MS), {
             admittedAudience: ['a', 'c'],
             admittedConnectionGenerationIds: undefined,
             recipientScope: undefined
@@ -257,40 +329,4 @@ async function joinCluster(local: ReceiptServerInstance, remote: ReceiptServerIn
     const bus = createBridgeBus();
     await installQueueBoxPubSubBridge({ wsQBoxServerService: local.service, bridge: bus, channel: 'ws', publisherId: 'local' });
     await installQueueBoxPubSubBridge({ wsQBoxServerService: remote.service, bridge: bus, channel: 'ws', publisherId: 'remote' });
-}
-
-function serverNotification(msgId: string, ack: 'receiver' | 'hop' | 'subtree' = 'receiver'): ALMessage {
-    const message = newALBroadcastMessage(
-        {
-            createdAtEpochMs: Date.now(),
-            senderId: RECEIPT_SERVER_PEER_ID,
-            route: newALRoute('room.snapshot', ROOM.groupId, msgId),
-            scope: 'room',
-            typeId: 'snapshot.v1',
-            resource: { msgId },
-            options: {
-                groupRef: ROOM,
-                reliability: 'at-least-once',
-                qos: { ack: { algo: ack } },
-                ttlMs: NOTIFICATION_TTL_MS
-            }
-        }
-    );
-    return { ...message, id: { ...message.id, msgId } };
-}
-
-function sessionAck(ackedMsgId: string, recipient: string): ALMessage {
-    return newALAckControlMessage(
-        { v: 4, msgId: `ack-${ackedMsgId}-${recipient}`, senderId: recipient, ts: Date.now(), traceId: 'trace-ws-queue-box-server-originated-receipt' },
-        toTestALAckPayload({
-            ackedMsgId,
-            fromPeerId: recipient,
-            toPeerId: RECEIPT_SERVER_PEER_ID,
-            originPeerId: RECEIPT_SERVER_PEER_ID,
-            logicalRecipientPeerId: recipient,
-            carrier: 'ws',
-            status: 'delivered',
-            observedAtEpochMs: Date.now()
-        })
-    );
 }

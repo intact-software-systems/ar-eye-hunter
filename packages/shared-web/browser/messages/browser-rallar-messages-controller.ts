@@ -11,6 +11,7 @@ import {
     EdgeOrderSendStreams
 } from '@shared-web/browser/messages/edge-order/edge-order-send-streams.ts';
 import { EDGE_ORDER_ACKNOWLEDGED_SETTLE_MS } from '@shared-web/browser/messages/edge-order/edge-order-sender.ts';
+import { EDGE_ORDER_DEFAULT_STREAM_WAITS } from '@shared-web/browser/messages/edge-order/edge-order-stream-waits.ts';
 import type { BrowserGrantedTopics } from '@shared-web/browser/messages/publication/browser-granted-topics.ts';
 import type {
     RallarMessageHandler,
@@ -99,6 +100,7 @@ export class BrowserRallarMessagesController {
             readMiddleware: input.readMiddleware,
             readInboundDiagnostics: input.readInboundDiagnostics,
             edgeOrderLimits: EDGE_ORDER_RECEIVER_DEFAULT_LIMITS,
+            edgeOrderDefaultWaits: EDGE_ORDER_DEFAULT_STREAM_WAITS,
             timers: input.timers
         });
         new BrowserMessageReplyInbox({

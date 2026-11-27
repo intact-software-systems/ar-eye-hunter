@@ -7,13 +7,14 @@ import { DEFAULT_AL_REPOSITORY_TTL_MS } from '../../ALStoreRetention.ts';
 import type { ALWorkAttemptResult } from '../../work/al-work-handler.ts';
 import type { ALWorkClaim, ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
 import { AL_WORK_UNDESCRIBED_COMMIT, type ALWorkCommittedRows } from '../../work/al-work-readiness-memory.ts';
+import { resolveALWorkEntryReadyAt } from '../../work/read-al-work-ready-at.ts';
 import type { ALOutboundAdmissionStore, ALOutboundDurableEffect } from '../admission/al-outbound-admission-store.ts';
 import { toALOutboundMessageReference } from '../al-outbound-canonical-message.ts';
 import { toALOutboundPendingAdmissionId } from '../al-outbound-pending-admission.ts';
 import {
+    AL_OUTBOUND_WORK_LEASE_MS,
     computeALOutboundWorkEntry,
     isPendingALOutboundWork,
-    resolveALOutboundWorkReadyAt,
     toALOutboundWorkKey
 } from '../al-outbound-work-entry.ts';
 import type { ALOutboundComputedDto } from '../compute-al-outbound-dispatch.ts';
@@ -165,7 +166,7 @@ export class ALOutboundLaneMessageEnd<TPrepared> {
         }
         const claim = await this.claimAdmission(entry);
         if (claim === undefined) {
-            return { kind: 'held', readyAtMs: resolveALOutboundWorkReadyAt(entry) };
+            return { kind: 'held', readyAtMs: resolveALWorkEntryReadyAt(entry, AL_OUTBOUND_WORK_LEASE_MS) };
         }
         await workPort.releaseAll([{ claim, outcome: { status: 'completed' } }]);
         return { kind: 'completed' };

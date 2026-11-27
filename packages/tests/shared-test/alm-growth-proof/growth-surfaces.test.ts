@@ -4,6 +4,8 @@ import {
     it
 } from 'vitest';
 
+import { toServerWsQBoxALRuntimeStoreId } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
+import { toALReceiptRecordNamespace } from '@shared/alm/receipt-record/al-receipt-record-keys.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 import {
@@ -177,6 +179,17 @@ describe('Growth surface classification', () => {
             ttlMs: 3_600_000,
             sweepMs: 60_000
         });
+    });
+
+    // An unclassified runtime_state_store namespace fails the proof, and the sampler reads the record's rows under the
+    // wildcard store name. The longest-lived row is a head opened with its deadline one 30-minute window out and ended
+    // as late as the record allows, one grace after that deadline; its expiry is one more grace after the ending.
+    it('bounds the server receipt record rows by the receipt window and its two graces', () => {
+        const surface = GROWTH_SURFACES.find((candidate) => candidate.readers.some((reader) => reader.path.includes('server-ws-qbox:*:receipt:record')));
+
+        expect(toALReceiptRecordNamespace(toServerWsQBoxALRuntimeStoreId('*'))).toBe('server-ws-qbox:*:receipt:record');
+        expect(surface?.classification).toEqual({ growthClass: 'ttl-within-run', ttlMs: 1_860_000, sweepMs: 60_000 });
+        expect(surface?.owner).toBe('packages/shared/alm/receipt-record/al-receipt-record.ts');
     });
 
     it('bounds a page\'s delivered markers at 256 per inbound store across its two stores', () => {

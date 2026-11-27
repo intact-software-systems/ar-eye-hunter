@@ -15,8 +15,8 @@ export namespace EdgeOrderSendStreams {
         /** Mints a stream id in memory. Never the session id, which a reload keeps and every tab of a login shares. */
         readonly newStreamId: () => string;
         /**
-         * Past this many channel-and-room streams the one sent on least recently is forgotten, and its next send
-         * starts a new stream.
+         * Past this many streams the one sent on least recently is forgotten, and its next send starts a new
+         * stream, which its receivers enter at once and order against nothing the old stream carried.
          */
         readonly maxStreams: number;
         /** How long a send every recipient acknowledged stays open: a recipient may not have sorted it yet. */
@@ -29,18 +29,40 @@ export namespace EdgeOrderSendStreams {
         readonly openSends: number;
     }
 
+    /**
+     * Who a room send reaches when it narrows its room: one principal, one peer, a fixed list, or everyone but
+     * some sessions. A send that names none of them reaches its whole room.
+     */
+    export interface Audience {
+        readonly principalId?: string;
+        readonly peerId?: string;
+        readonly recipientPeerIds?: readonly string[];
+        readonly exceptPeerIds?: readonly string[];
+    }
+
     /** A channel's send, as far as its order is concerned: what its channel declares and where it is going. */
     export interface ChannelSend {
         readonly order: 'edge' | undefined;
+        /** A live channel's value: it is staged first and takes its position when it leaves the stage. */
+        readonly staged: boolean;
         /** Absent, the channel's topic is its type. */
         readonly topicId: string | undefined;
         readonly typeId: string;
         /** Absent only for a send that names no room, which no edge-ordered channel makes. */
         readonly roomRef: GroupRef | undefined;
+        readonly audience: Audience;
+        /** Whether a lost copy of the send comes back: it is at-least-once and asks a receipt. */
+        readonly retried: boolean;
+        /** The key of a latest-wins send, which replaces the earlier open sends of that key; absent for any other. */
+        readonly supersedenceKey: string | undefined;
     }
 }
 
-/** The page's edge-ordered send streams: one per channel and room, minted when the first send needs it. */
+/**
+ * The page's edge-ordered send streams, each minted when its first send needs it: one per channel, room and
+ * audience, and on a live channel one per publication stream, which is the unit its values replace each other in. A
+ * session left out of a narrowed send never sees that send's stream, so it never waits for it.
+ */
 export class EdgeOrderSendStreams {
     private readonly streams: LatestRepository<string, EdgeOrderSender>;
     private readonly newStreamId: () => string;
@@ -53,19 +75,46 @@ export class EdgeOrderSendStreams {
     }
 
     /**
-     * Takes the next position of the channel-and-room's stream; absent for a channel that declares no order.
-     * Called once the send's options passed validation and before the send awaits anything.
+     * Takes the next position of the stream of the send's channel, room and audience; absent for a channel that
+     * declares no order and for a live channel's value. Called once the send's options passed validation and before
+     * the send awaits anything.
      */
     openSend(send: EdgeOrderSendStreams.ChannelSend): EdgeOrderOpenSend | undefined {
         const { roomRef } = send;
-        if (send.order !== 'edge' || roomRef === undefined) {
+        if (send.order !== 'edge' || send.staged || roomRef === undefined) {
             return undefined;
         }
-        const key = JSON.stringify([send.topicId ?? send.typeId, send.typeId, toALGroupTargetKey(roomRef)]);
+        const { principalId, peerId, recipientPeerIds, exceptPeerIds } = send.audience;
+        return this.openStreamSend(
+            JSON.stringify([
+                send.topicId ?? send.typeId,
+                send.typeId,
+                toALGroupTargetKey(roomRef),
+                principalId ?? null,
+                peerId ?? null,
+                toSessionSetKey(recipientPeerIds),
+                toSessionSetKey(exceptPeerIds)
+            ]),
+            send
+        );
+    }
+
+    /**
+     * Takes the next position of a live publication stream, when a value of it leaves the stage for its carrier: a
+     * value another displaced on the stage never takes one. Nothing retries a live value.
+     */
+    openLiveSend(publicationStreamKey: string): EdgeOrderOpenSend {
+        return this.openStreamSend(publicationStreamKey, { retried: false, supersedenceKey: undefined });
+    }
+
+    private openStreamSend(
+        key: string,
+        send: Pick<EdgeOrderSendStreams.ChannelSend, 'retried' | 'supersedenceKey'>
+    ): EdgeOrderOpenSend {
         // Taken out and put back, so the stream last sent on is the newest and the cap pushes out the one idle longest.
         const stream = this.streams.take(key) ?? new EdgeOrderSender(this.newStreamId(), this.acknowledgedSettleMs);
         this.streams.set(key, stream);
-        return new EdgeOrderOpenSend(stream, stream.openSend());
+        return new EdgeOrderOpenSend(stream, stream.openSend(send.retried, send.supersedenceKey), send.supersedenceKey);
     }
 
     /** Closes, in every stream, the sends that have ended by `nowMs`: an idle page then keeps no open send. */
@@ -82,6 +131,11 @@ export class EdgeOrderSendStreams {
             openSends: streams.reduce((openSends, stream) => openSends + stream.getOpenSendCount(), 0)
         };
     }
+}
+
+/** One key for one set of sessions, in whatever order a send lists them; `null` when the send names none. */
+function toSessionSetKey(sessionIds: readonly string[] | undefined): readonly string[] | null {
+    return sessionIds === undefined ? null : [...sessionIds].sort();
 }
 
 /**
@@ -105,22 +159,24 @@ export async function endEdgeOrderSendOnFailure(
 export class EdgeOrderOpenSend {
     private readonly stream: EdgeOrderSender;
     private readonly position: number;
+    private readonly supersedenceKey: string | undefined;
 
-    constructor(stream: EdgeOrderSender, position: number) {
+    constructor(stream: EdgeOrderSender, position: number, supersedenceKey: string | undefined) {
         this.stream = stream;
         this.position = position;
+        this.supersedenceKey = supersedenceKey;
     }
 
     stamp(nowMs: number): EdgeOrderStamp {
-        return this.stream.stampSend(this.position, nowMs);
+        return this.stream.stampSend(this.position, nowMs, this.supersedenceKey);
     }
 
     /**
-     * From here the stream reads the send's end from its handle. A handle that is already terminal was refused
-     * before any carrier took the message, so nothing of it set out. An acknowledged send reads `delivered`, and
-     * the stream keeps it open for its settle time. A send that failed, or whose observation was lost, reads `open`
-     * until its deadline: a copy already on its way can still arrive. Any other end is `undelivered`. Every
-     * edge-ordered send is at-least-once and receipted, so each is one a receiver waits for.
+     * From here the stream reads a retried send's end from its handle. A handle that is already terminal was
+     * refused before any carrier took the message, so nothing of it set out. An acknowledged send reads `delivered`,
+     * and the stream keeps it open for its settle time. A send that failed, or whose observation was lost, reads
+     * `open` until its deadline: a copy already on its way can still arrive. Any other end is `undelivered`. The
+     * stream reads nothing of a send nothing retries: no receiver waits for it, however it ends.
      */
     observe(handle: Pick<RallarMessageHandle, 'lifecycle'>): void {
         const submitted = handle.lifecycle();
@@ -130,7 +186,6 @@ export class EdgeOrderOpenSend {
         }
         this.stream.observeSend(this.position, {
             expiresAtMs: submitted.expiresAtMs ?? Number.MAX_SAFE_INTEGER,
-            retried: true,
             getEnd: () => toEdgeOrderSendEnd(handle.lifecycle())
         });
     }

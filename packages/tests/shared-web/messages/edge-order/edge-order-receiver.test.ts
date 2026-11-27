@@ -7,6 +7,10 @@ import {
 import { EdgeOrderReceiver } from '@shared-web/browser/messages/edge-order/edge-order-receiver.ts';
 import { EdgeOrderSender } from '@shared-web/browser/messages/edge-order/edge-order-sender.ts';
 import type { EdgeOrderStamp } from '@shared-web/browser/messages/edge-order/edge-order-stamp.ts';
+import {
+    EDGE_ORDER_DEFAULT_STREAM_WAITS,
+    type EdgeOrderStreamWaits
+} from '@shared-web/browser/messages/edge-order/edge-order-stream-waits.ts';
 import type { RallarMessageOrderGap } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { createManualTimers, type ManualTimers } from '../../../shared/resilience/manual-timers.ts';
 
@@ -20,6 +24,8 @@ const FAR_DEADLINE_MS = 31_000;
 interface ReceiverFixture {
     readonly timers: ManualTimers;
     readonly receiver: EdgeOrderReceiver<string>;
+    /** The waits every arrival states for its channel, unless a test names others. */
+    readonly waits: EdgeOrderStreamWaits;
     readonly handedOver: string[];
     readonly handedOverAtMs: number[];
     readonly gaps: RallarMessageOrderGap[];
@@ -29,7 +35,10 @@ interface ReceiverFixture {
     readonly timerLag: { ms: number; };
 }
 
-function createReceiverFixture(limits: Partial<EdgeOrderReceiverLimits> = {}): ReceiverFixture {
+function createReceiverFixture(
+    limits: Partial<EdgeOrderReceiverLimits> = {},
+    waits: Partial<EdgeOrderStreamWaits> = {}
+): ReceiverFixture {
     const timers = createManualTimers(START_MS);
     const handedOver: string[] = [];
     const handedOverAtMs: number[] = [];
@@ -49,7 +58,16 @@ function createReceiverFixture(limits: Partial<EdgeOrderReceiverLimits> = {}): R
             gaps.push(gap);
         }
     });
-    return { timers, receiver, handedOver, handedOverAtMs, gaps, handOverListeners, timerLag };
+    return {
+        timers,
+        receiver,
+        waits: { ...EDGE_ORDER_DEFAULT_STREAM_WAITS, ...waits },
+        handedOver,
+        handedOverAtMs,
+        gaps,
+        handOverListeners,
+        timerLag
+    };
 }
 
 /** A stamp of stream A whose sender has nothing earlier open, unless the test states what is. */
@@ -66,9 +84,9 @@ function stamp(position: number, statement: Partial<Omit<EdgeOrderStamp, 'positi
 
 /** The stamp a sender page gives its next send, which stays open until `expiresAtMs`. */
 function stampNextSend(sender: EdgeOrderSender, retried: boolean, expiresAtMs = FAR_DEADLINE_MS): EdgeOrderStamp {
-    const position = sender.openSend();
-    const edgeOrderStamp = sender.stampSend(position, START_MS);
-    sender.observeSend(position, { expiresAtMs, retried, getEnd: () => 'open' });
+    const position = sender.openSend(retried, undefined);
+    const edgeOrderStamp = sender.stampSend(position, START_MS, undefined);
+    sender.observeSend(position, { expiresAtMs, getEnd: () => 'open' });
     return edgeOrderStamp;
 }
 
@@ -85,6 +103,7 @@ function accept(
     return fixture.receiver.accept({
         origin: ORIGIN,
         stamp: edgeOrderStamp,
+        waits: fixture.waits,
         expiresAtMs: FAR_DEADLINE_MS,
         byteLength: 1,
         message: `m${edgeOrderStamp.position}`,
@@ -188,7 +207,7 @@ describe('EdgeOrderReceiver: the gap rule', () => {
     it('never waits for a send nothing retries: the newest is handed over and the late one is dropped', () => {
         const fixture = createReceiverFixture();
         const sender = new EdgeOrderSender('A', NO_SETTLE_MS);
-        // Three sends in one turn: none has reached the carrier when the next is stamped.
+        // Three sends in one turn: each later stamp says no receiver waits for the ones before it.
         const first = stampNextSend(sender, false, 3_000);
         const second = stampNextSend(sender, false, 3_000);
         const third = stampNextSend(sender, false, 3_000);
@@ -198,7 +217,7 @@ describe('EdgeOrderReceiver: the gap rule', () => {
 
         expect(fixture.handedOver).toEqual(['m1', 'm3']);
         expect(fixture.gaps).toEqual([
-            { ...ORIGIN, stream: 'A', fromPosition: 2, toPosition: 2, reason: 'cannot-arrive' }
+            { ...ORIGIN, stream: 'A', fromPosition: 2, toPosition: 2, reason: 'ended-at-sender' }
         ]);
         expect(fixture.timers.pendingCount()).toBe(0);
         expect(accept(fixture, second)).toBe('late');
@@ -238,7 +257,7 @@ describe('EdgeOrderReceiver: the gap rule', () => {
     });
 
     it('holds no message longer than the cap its channel sets', async () => {
-        const fixture = createReceiverFixture({ gapWaitCapMs: 300 });
+        const fixture = createReceiverFixture({}, { orderGapWaitMs: 300 });
         accept(fixture, stamp(1));
         accept(fixture, stampBehind(3, 2));
 
@@ -252,16 +271,37 @@ describe('EdgeOrderReceiver: the gap rule', () => {
         ]);
     });
 
+    it('lets each stream wait as its own channel says, and a stream follow the waits of its latest arrival', async () => {
+        const fixture = createReceiverFixture();
+        const capped = { ...fixture.waits, orderGapWaitMs: 300 };
+        const otherChannel = { ...ORIGIN, typeId: 'game.chat' };
+        accept(fixture, stamp(1));
+        accept(fixture, stampBehind(3, 2));
+        accept(fixture, stamp(1), { origin: otherChannel, waits: capped, message: 'chat1' });
+        accept(fixture, stampBehind(3, 2), { origin: otherChannel, waits: capped, message: 'chat3' });
+
+        await fixture.timers.advanceTo(START_MS + 300);
+        // Only the capped channel's stream gave its missing message up.
+        expect(fixture.handedOver).toEqual(['m1', 'chat1', 'chat3']);
+
+        // The uncapped stream's channel is declared again with a cap: its next arrival brings it.
+        accept(fixture, stampBehind(4, 2), { waits: capped });
+        expect(fixture.handedOver).toEqual(['m1', 'chat1', 'chat3', 'm3', 'm4']);
+        expect(fixture.gaps.map((gap) => [gap.typeId, gap.fromPosition, gap.reason])).toEqual([
+            ['game.chat', 2, 'channel-wait-cap'],
+            ['game.move', 2, 'channel-wait-cap']
+        ]);
+    });
+
     it('closes a hole at once when a later message says the missing send has ended', () => {
         const fixture = createReceiverFixture();
         const sender = new EdgeOrderSender('A', NO_SETTLE_MS);
         let earlierSendsEnded = false;
         const stampOpenSend = (): EdgeOrderStamp => {
-            const position = sender.openSend();
-            const edgeOrderStamp = sender.stampSend(position, START_MS);
+            const position = sender.openSend(true, undefined);
+            const edgeOrderStamp = sender.stampSend(position, START_MS, undefined);
             sender.observeSend(position, {
                 expiresAtMs: FAR_DEADLINE_MS,
-                retried: true,
                 getEnd: () => earlierSendsEnded ? 'delivered' : 'open'
             });
             return edgeOrderStamp;
@@ -446,7 +486,7 @@ describe('EdgeOrderReceiver: the entry rule', () => {
     });
 
     it('starts at the lowest message it holds when the entry window ends, with no gap report', async () => {
-        const fixture = createReceiverFixture({ entryWaitMs: 500 });
+        const fixture = createReceiverFixture({}, { orderEntryWindowMs: 500 });
         accept(fixture, stampBehind(58, 40));
         accept(fixture, stampBehind(57, 40));
         expect(accept(fixture, stampBehind(57, 40), { message: 'm57-again' })).toBe('duplicate');
@@ -464,7 +504,7 @@ describe('EdgeOrderReceiver: the entry rule', () => {
     });
 
     it('starts before the entry window ends when a message it holds would pass its own deadline', async () => {
-        const fixture = createReceiverFixture({ entryWaitMs: 500 });
+        const fixture = createReceiverFixture({}, { orderEntryWindowMs: 500 });
         accept(fixture, stampBehind(57, 40), { expiresAtMs: START_MS + 200 });
 
         await fixture.timers.advanceTo(START_MS + 200);
@@ -631,10 +671,9 @@ describe('EdgeOrderReceiver: duplicates and bounds', () => {
             maxHeldMessagesPerStream: 256,
             maxHeldBytesPerStream: 1024 * 1024,
             maxStreams: 256,
-            maxEvictedStreams: 256,
-            entryWaitMs: 500,
-            gapWaitCapMs: undefined
+            maxEvictedStreams: 256
         });
+        expect(EDGE_ORDER_DEFAULT_STREAM_WAITS).toEqual({ orderEntryWindowMs: 500, orderGapWaitMs: undefined });
     });
 });
 

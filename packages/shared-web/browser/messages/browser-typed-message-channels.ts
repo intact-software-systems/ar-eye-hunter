@@ -74,7 +74,7 @@ export class BrowserTypedMessageChannels {
             this.input.grantedTopics.declareGrantedTopic(definition.topicId);
         }
         if (definition.order === 'edge') {
-            this.input.edgeOrder.declareEdgeOrder(route, definition.onOrderGap);
+            this.input.edgeOrder.declareEdgeOrder(route, definition);
         }
         const policy: BrowserTypedChannelPolicy = {
             purpose: definition.purpose,

@@ -118,7 +118,7 @@ const FOUR_ROLE_KEYS = [
 
 /**
  * A granted topic rides RTC as a signed room multicast: its cells run over rtc, the two-agent ones before the
- * congestion and fairness cells and the three-agent ones last, the two relay cells, which reshape the room's
+ * congestion and fairness cells and the three-agent ones last, the three path cells, which reshape the room's
  * topology, after every other. The revoked publisher runs over the fallback carrier too.
  */
 const GRANTED_RTC_TWO_AGENT_KEYS = [
@@ -140,7 +140,7 @@ const GRANTED_RTC_ROOM_KEYS = [
 ] as const;
 
 /** The granted cells that reshape the room's topology, in catalog order. */
-const GRANTED_RTC_RELAY_KEYS = ['granted-rtc-relay-only', 'granted-rtc-ordered-relay'] as const;
+const GRANTED_RTC_RELAY_KEYS = ['granted-rtc-relay-only', 'granted-rtc-ordered-relay', 'granted-rtc-edge-order-stream'] as const;
 
 const GRANTED_RTC_THREE_AGENT_KEYS = [...GRANTED_RTC_ROOM_KEYS, ...GRANTED_RTC_RELAY_KEYS] as const;
 
@@ -148,7 +148,7 @@ const GRANTED_RTC_THREE_AGENT_KEYS = [...GRANTED_RTC_ROOM_KEYS, ...GRANTED_RTC_R
 const RELAYED_GAP_RENEWAL_KEYS = ['relayed-gap-renewal', 'relayed-unreceipted-gap-renewal'] as const;
 
 /**
- * The rtc-only three-agent cells at the catalog's end: the relay path runs before the two granted relay cells, and the
+ * The rtc-only three-agent cells at the catalog's end: the relay path runs before the three granted path cells, and the
  * two gap renewal cells after them.
  */
 const RTC_THREE_AGENT_KEYS_IN_ORDER = [
@@ -303,6 +303,7 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'edge-order-loss-stream',
         'edge-order-reload',
         'edge-order-late-join',
+        'edge-order-unretried-loss-stream',
         'ws-unicast-receipt',
         'server-command',
         'server-originated',
@@ -344,6 +345,7 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'edge-order-loss-stream',
         'edge-order-reload',
         'edge-order-late-join',
+        'edge-order-unretried-loss-stream',
         'not-yet-in-sync-expires',
         'ws-unicast-receipt',
         'capacity',
@@ -380,6 +382,7 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'edge-order-loss-stream',
         'edge-order-reload',
         'edge-order-late-join',
+        'edge-order-unretried-loss-stream',
         'cross-carrier-duplicate-rtc-then-ws',
         'not-yet-in-sync-expires',
         'fallback-within-deadline',
@@ -892,6 +895,7 @@ describe('alm-conformance recipe family', () => {
             'edge-order-loss-stream',
             'edge-order-reload',
             'edge-order-late-join',
+            'edge-order-unretried-loss-stream',
             'cross-carrier-duplicate',
             'not-yet-in-sync',
             'receipt-exhausted-fallback',
@@ -938,6 +942,7 @@ describe('alm-conformance recipe family', () => {
             ['full'],
             ['full'],
             // The edge order cells after the swapped stream.
+            ['full'],
             ['full'],
             ['full'],
             ['full'],
@@ -1780,6 +1785,7 @@ describe('alm-conformance recipe family', () => {
             'rtc receipted-relay-path',
             'rtc granted-rtc-relay-only',
             'rtc granted-rtc-ordered-relay',
+            'rtc granted-rtc-edge-order-stream',
             ...RELAYED_GAP_RENEWAL_KEYS.map((key) => `rtc ${key}`)
         ]);
         expect(unsettled).toEqual([]);

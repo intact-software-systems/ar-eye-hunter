@@ -10,20 +10,21 @@ import {
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALWorkReadySelection } from '../work/al-work-handler.ts';
 import type { ALWorkClaim, ALWorkQueuePort } from '../work/al-work-queue-port.ts';
-import type { ALInboundDurableEffect } from './al-inbound-admission-store.ts';
+import { resolveALWorkEntryDueAtMs, resolveALWorkEntryReadyAt } from '../work/read-al-work-ready-at.ts';
+import type { ALInboundAdmissionStore, ALInboundDurableEffect } from './al-inbound-admission-store.ts';
 import type {
     ALInboundAdmittedDelivery,
     ALInboundDeliveryObservation
 } from './al-inbound-admitted-delivery.ts';
+import type { ALInboundOrderedDelivery } from './al-inbound-ordered-delivery.ts';
 import type { ALInboundDeferredEffect } from './al-inbound-runtime-diagnostics.ts';
 import {
+    AL_INBOUND_WORK_LEASE_MS,
     decodeALInboundWorkEntry,
-    resolveALInboundWorkDueAtMs,
-    resolveALInboundWorkReadyAt,
     type ALPersistedInboundEffect
 } from './al-inbound-work-entry.ts';
 import { ALInboundRotationPage, type ALInboundWorkScan } from './lane/al-inbound-rotation-page.ts';
-import { claimALInboundPromotedRelease } from './lane/claim-al-inbound-promoted-release.ts';
+import { claimALInboundOrderedSuccessor } from './lane/claim-al-inbound-ordered-successor.ts';
 
 const SCAN_STATUSES = [EntityStatus.NEW, EntityStatus.RETRY, EntityStatus.RESERVED] as const;
 
@@ -116,8 +117,13 @@ type ALInboundRowEligibility =
     }>
     | Readonly<{ kind: 'deferred'; effect: ALPersistedInboundEffect; }>;
 
+/** The one read the selection asks a delivery for: whether a row is ready now, and the surface it read. */
+type ALInboundWorkSelectionDelivery = Pick<ALInboundAdmittedDelivery, 'readReadiness'>;
+
 interface ALInboundWorkSelectorDependencies {
-    readonly delivery: ALInboundAdmittedDelivery;
+    readonly delivery: ALInboundWorkSelectionDelivery;
+    /** Names the delivery a track's next slot holds, which a completed delivery hands its place to. */
+    readonly admissionStore: Pick<ALInboundAdmissionStore, 'readOrderedSuccessor'>;
     readonly namespace: string;
     readonly nowMs: () => number;
     /** The durability of the store pair the selector reads: it decides where control sends run in a batch. */
@@ -153,13 +159,18 @@ export interface ALInboundWorkSelector {
      */
     getClaimedControlSends(): readonly ALInboundClaimedControlSend[];
     /**
-     * Reserves the release of `seq + 1` of the track whose release of `seq` this batch just completed,
-     * when that row is due and eligible now (D190). The same track only, one row per completed
-     * predecessor, so a track never has two releases claimed at once.
+     * Reserves the delivery the track's slot after `position` names, a dispatch or a release, when it is this lane's,
+     * due and reads ready now, as it was read (D190, D785). One row per completed delivery of the track.
      */
-    claimPromotedRelease(port: ALWorkQueuePort, completed: ALWorkClaim): Promise<ALWorkClaim | undefined>;
-    /** How many releases the last batch ran by promotion; each left that batch's unreserved due rows. */
-    getPromotedCount(): number;
+    claimOrderedSuccessor(
+        port: ALWorkQueuePort,
+        position: ALInboundOrderedDelivery.Position
+    ): Promise<ALWorkClaim | undefined>;
+    /**
+     * How many deliveries the last batch ran because the same track's previous delivery completed earlier in it, its
+     * hand-ons; each left that batch's unreserved due rows.
+     */
+    getHandOnCount(): number;
     requestHeadRead(): void;
     isHeadReadPending(): boolean;
 }
@@ -167,7 +178,7 @@ export interface ALInboundWorkSelector {
 /** Reads message eligibility before reservation so waiting work does not spend processing attempts. */
 async function readALInboundWorkSelection(
     input: ALInboundWorkSelectionReadInput,
-    delivery: ALInboundAdmittedDelivery
+    delivery: ALInboundWorkSelectionDelivery
 ): Promise<ALInboundWorkSelection> {
     const page = await input.port.readPage({
         status: SCAN_STATUSES[input.scan.statusIndex],
@@ -210,7 +221,7 @@ async function readALInboundWorkSelection(
 async function readALInboundPageEligibility(
     entries: readonly ResourceEntry[],
     input: ALInboundWorkSelectionReadInput,
-    delivery: ALInboundAdmittedDelivery
+    delivery: ALInboundWorkSelectionDelivery
 ): Promise<ALInboundPageEligibility> {
     let page: ALInboundPageEligibility = {
         claimable: [],
@@ -254,7 +265,7 @@ function computeALInboundPageEligibilityWithRow(
     if (row.kind === 'not-due') {
         return { ...page, readyAtMs: resolveALInboundScannedReadyAtMs(entry, row.readyAtMs, page.readyAtMs) };
     }
-    const due = { effectId: row.effect.effectId, dueAtMs: resolveALInboundWorkDueAtMs(entry) };
+    const due = { effectId: row.effect.effectId, dueAtMs: resolveALWorkEntryDueAtMs(entry) };
     if (row.kind === 'deferred') {
         return { ...page, deferred: [...page.deferred, due] };
     }
@@ -278,9 +289,9 @@ function computeALInboundPageEligibilityWithRow(
 async function readALInboundRowEligibility(
     entry: ResourceEntry,
     input: ALInboundWorkSelectionReadInput,
-    delivery: ALInboundAdmittedDelivery
+    delivery: ALInboundWorkSelectionDelivery
 ): Promise<ALInboundRowEligibility> {
-    const readyAt = resolveALInboundWorkReadyAt(entry);
+    const readyAt = resolveALWorkEntryReadyAt(entry, AL_INBOUND_WORK_LEASE_MS);
     if (readyAt > input.nowMs) {
         return { kind: 'not-due', readyAtMs: readyAt };
     }
@@ -330,7 +341,7 @@ export function createALInboundWorkSelector(
     });
     let claimedObservations: ReadonlyMap<string, ALInboundDeliveryObservation> = new Map();
     let unreservedDue: readonly ALInboundDeferredEffect[] = [];
-    let promotedCount = 0;
+    let handOnCount = 0;
     let claimedControlSends: readonly ALInboundClaimedControlSend[] = [];
     return {
         readNextReadyAtMs: (port, nowMs) => readALInboundNextReadyAtMs(page, port, nowMs),
@@ -344,25 +355,26 @@ export function createALInboundWorkSelector(
             });
             claimedObservations = claimed.observations;
             unreservedDue = claimed.unreservedDue;
-            promotedCount = 0;
+            handOnCount = 0;
             claimedControlSends = claimed.controlSends;
             return claimed.selection;
         },
-        claimPromotedRelease: async (port, completed) => {
-            const promoted = await claimALInboundPromotedRelease({
+        claimOrderedSuccessor: async (port, position) => {
+            const handedOn = await claimALInboundOrderedSuccessor({
                 port,
-                completed,
+                position,
+                admissionStore: dependencies.admissionStore,
                 delivery: dependencies.delivery,
                 namespace: dependencies.namespace,
                 nowMs: dependencies.nowMs()
             });
-            if (promoted !== undefined) {
-                unreservedDue = unreservedDue.filter((due) => due.effectId !== promoted.effectId);
-                promotedCount += 1;
+            if (handedOn !== undefined) {
+                unreservedDue = unreservedDue.filter((due) => due.effectId !== handedOn.effectId);
+                handOnCount += 1;
             }
-            return promoted?.claim;
+            return handedOn?.claim;
         },
-        getPromotedCount: () => promotedCount,
+        getHandOnCount: () => handOnCount,
         getDeliveryObservation: (effectId) => claimedObservations.get(effectId),
         getUnreservedDue: () => unreservedDue,
         getClaimedControlSends: () => claimedControlSends,
@@ -490,7 +502,7 @@ function toUnreservedClaimableDue(
 function computeEarliestALInboundDueAtMs(entries: readonly ResourceEntry[]): number | undefined {
     let earliest: number | undefined;
     for (const entry of entries) {
-        const dueAtMs = resolveALInboundWorkDueAtMs(entry);
+        const dueAtMs = resolveALWorkEntryDueAtMs(entry);
         earliest = earliest === undefined ? dueAtMs : Math.min(earliest, dueAtMs);
     }
     return earliest;

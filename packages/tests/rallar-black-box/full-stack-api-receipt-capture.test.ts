@@ -24,6 +24,7 @@ import {
 import { AL_STORAGE_UNAVAILABLE_CAUSES } from '../../shared/alm/storage/al-storage-unavailable.ts';
 import type { ApiJsonObject } from '../../shared/api/api-json-value.ts';
 import { toError } from '../../shared/resilience/to-error.ts';
+import { toWsQueueBoxServerEndedReceiptControlId } from '../../shared/services/ws-queue-box-server/receipt/to-ws-queue-box-server-receipt-control.ts';
 
 import type { ReceiptOwnerScenario, ReceiptOwnerSink } from './full-stack-api-receipt-owner-fixture.ts';
 
@@ -60,6 +61,7 @@ interface PendingReceiptCaptureEffectsDto extends ApiJsonObject {
     readonly nativeCalls: number;
     readonly publications: number;
     readonly clockReads: number;
+    readonly enginePasses: number;
     readonly releases: number;
     readonly lastReceiptReleaseAtMs: number;
     readonly receiptReleaseStatuses: readonly string[];
@@ -100,7 +102,7 @@ const ACK_REJECTION = {
     rejectionCode: 'unauthorized',
     owner: 'receipt-aggregation',
     stage: 'runtime-protocol',
-    failedGuards: ['already-confirmed', 'deadline-expired'],
+    failedGuards: ['outside-frozen-audience', 'deadline-expired'],
     validationAtEpochMs: 30000,
     deadlineAtMs: 30000,
     traceId: 'trace-receipt-control-1'
@@ -120,23 +122,17 @@ const CURRENTNESS_ACK_REJECTION = {
     traceId: 'trace-receipt-control-1'
 };
 
-const RELAY_ACK_REJECTION = {
-    kind: 'ack-rejection',
-    serverPeerId: 'server',
-    controlMsgId: 'ack-A',
-    controlSenderId: 'recipient',
-    controlCreatedAtEpochMs: 900,
-    rejectionCode: 'unauthorized',
-    owner: 'ack-relay',
-    stage: 'ingress-protocol',
-    failedGuards: ['origin-addressee-mismatch'],
-    traceId: 'trace-receipt-control-1'
-};
+/** The receipt subject the child admits: its message id and the recipients its room audience holds beside the origin. */
+interface ReceiptOwnerSubject {
+    readonly msgId: string;
+    readonly expectedRecipientPeerIds: readonly string[];
+}
 
-function toReceiptOwnerChildSource(expectedRecipientPeerIds: readonly string[]): string {
+function toReceiptOwnerChildSource({ msgId, expectedRecipientPeerIds }: ReceiptOwnerSubject): string {
     const source = (file: string) => JSON.stringify(path.resolve(file));
     return `
         import { WsQueueBoxServerReceiptAggregation } from ${source('packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts')};
+        import { createInMemoryALReceiptRecordStores } from ${source('packages/shared/alm/receipt-record/al-receipt-record-stores.ts')};
         import { InboxOutboxEngine } from ${source('packages/shared/services/inbox-outbox-engine.ts')};
         import { newALAckControlMessage } from ${source('packages/shared/al-contracts/al-control.ts')};
         import { createApiV1WsReceiptObserver } from ${source('apps/api-v1/src/composition/create-api-v1-ws-receipt-observer.ts')};
@@ -152,46 +148,64 @@ function toReceiptOwnerChildSource(expectedRecipientPeerIds: readonly string[]):
                 }));
             }
         });
+        const recordStores = createInMemoryALReceiptRecordStores('server-ws-qbox:capture', () => 1000);
+        const engine = new InboxOutboxEngine({ nowEpochMs: () => 1000, random: () => 0, reportTaskFailure: () => undefined });
         const owner = new WsQueueBoxServerReceiptAggregation({
-            serverPeerId: 'server', clock: { nowMs: () => 1000 }, newControlId: () => 'receipt-1',
-            qosProvider: undefined, queueEngine: new InboxOutboxEngine(),
+            serverPeerId: 'server', clock: { nowMs: () => 1000 }, random: () => 0, newControlId: () => 'receipt-1',
+            qosProvider: undefined, queueEngine: engine, recordStores, readIngressAudience: async () => undefined,
             enqueueOutbox: async (message) => ({
                 message, verdict: { kind: 'admitted', durable: true, queuedAttempts: 0 },
                 entries: [], trackedReceiptAlgo: 'none'
             }),
+            liveDelivery: { sendToResolvedPeer: () => 0, sendToResolvedPeerWithEvidence: () => ({ sentCount: 0, writes: [] }) },
             acceptServerControl: async () => ({ kind: 'not-handled' }),
             acceptServerReceipt: async () => ({ kind: 'not-handled' }),
+            readOwnPendingReceipt: async () => undefined,
+            readOwnPendingAck: async () => undefined,
             receiptObserver: createApiV1WsReceiptObserver({
                 enabled: true, timing, serviceId: 'api-process', publisherId: 'publisher-1'
             })
         });
         try {
-            owner.recordAdmission({
-                msgId: 'subject', originPeerId: 'origin', traceId: 'trace-full-stack-api-receipt-capture',
-                expectedRecipientPeerIds: ${JSON.stringify(expectedRecipientPeerIds)},
-                snapshotVersion: 7, deadlineAtMs: 30000, neverSentRecipientPeerIds: []
+            await owner.writeAdmittedReceipt({
+                message: {
+                    id: { v: 4, msgId: ${JSON.stringify(msgId)}, senderId: 'origin', ts: 900, traceId: 'trace-full-stack-api-receipt-capture' },
+                    route: { topicId: 'room.notification', resourceId: 'resource', contextId: 'room-1' },
+                    targets: { mode: 'broadcast', scope: 'room', groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' } },
+                    constraints: { expiresAtMs: 30000 },
+                    delivery: { reliability: 'at-least-once', ack: 'receiver' },
+                    payload: { typeId: 'message.v1', contentType: 'application/json', resource: '{}' }
+                },
+                originPeerId: 'origin',
+                roomAudience: { recipientPeerIds: ['origin', ...${JSON.stringify(expectedRecipientPeerIds)}], snapshotVersion: 7 },
+                acceptance: { kind: 'admitted' },
+                neverSentRecipientPeerIds: []
             });
             await owner.acceptControlMessage(newALAckControlMessage(
                 { v: 4, msgId: 'ack-1', senderId: 'recipient', ts: 900, traceId: 'trace-full-stack-api-receipt-capture' },
                 {
-                    ackedMsgId: 'subject', fromPeerId: 'recipient', toPeerId: 'origin', originPeerId: 'origin',
+                    ackedMsgId: ${JSON.stringify(msgId)}, fromPeerId: 'recipient', toPeerId: 'origin', originPeerId: 'origin',
                     logicalRecipientPeerId: 'recipient', carrier: 'ws', status: 'delivered', observedAtEpochMs: 901,
                     proof: null
                 }
             ));
+            for (let round = 0; round < 4; round += 1) {
+                await engine.executeOnce();
+                await new Promise((resolve) => setTimeout(resolve, 0));
+            }
         }
         finally {
-            owner.dispose();
+            await owner.dispose();
         }
     `;
 }
 
-async function captureOwnerReceiptEvidence(expectedRecipientPeerIds: readonly string[]): Promise<CapturedOwnerReceiptEvidence> {
+async function captureOwnerReceiptEvidence(subject: ReceiptOwnerSubject): Promise<CapturedOwnerReceiptEvidence> {
     const directory = await mkdtemp(path.join(tmpdir(), 'rallar-receipt-capture-'));
     let bodyFailed = false;
     try {
         const fixture = path.join(directory, 'owner-child.mts');
-        await writeFile(fixture, toReceiptOwnerChildSource(expectedRecipientPeerIds));
+        await writeFile(fixture, toReceiptOwnerChildSource(subject));
         const result = spawnSync(process.execPath, ['--import', 'tsx', captureScript, directory, '--', process.execPath, '--import', 'tsx', fixture], {
             encoding: 'utf8',
             timeout: 15000,
@@ -315,6 +329,7 @@ async function readPendingReceiptCaptureEffects(evidencePath: string): Promise<P
         nativeCalls: expect.any(Number),
         publications: expect.any(Number),
         clockReads: expect.any(Number),
+        enginePasses: expect.any(Number),
         releases: expect.any(Number),
         lastReceiptReleaseAtMs: expect.any(Number)
     });
@@ -361,12 +376,36 @@ const ACK = toTestALAckPayload({
     observedAtEpochMs: 900
 });
 
+/** A count states no source: every instance counts the ACKs it receives, and none is relayed to it. */
+const ACK_COUNT = {
+    kind: 'ack-count',
+    serverPeerId: 'server',
+    ack: ACK,
+    controlMsgId: 'ack-A',
+    controlSenderId: 'recipient',
+    controlCreatedAtEpochMs: 900,
+    traceId: 'trace-receipt-subject-1',
+    outcome: 'partial',
+    countAtEpochMs: 1000
+};
+
+/** A record of the deleted ACK relay's own kind, as its last producer wrote it. */
+const ACK_RELAY = {
+    kind: 'ack-relay',
+    serverPeerId: 'server',
+    ack: ACK,
+    controlMsgId: 'ack-A',
+    controlSenderId: 'recipient',
+    controlCreatedAtEpochMs: 900,
+    traceId: 'trace-receipt-control-1',
+    outcome: 'published'
+};
+
 /** One closed record of every kind, each naming its trace. */
 const TRACED_OBSERVATIONS = [
     BUSINESS_SOCKET_DECISION,
     ACK_REJECTION,
     CURRENTNESS_ACK_REJECTION,
-    RELAY_ACK_REJECTION,
     {
         kind: 'socket-decision',
         serverPeerId: 'server',
@@ -380,6 +419,7 @@ const TRACED_OBSERVATIONS = [
         outcome: 'control',
         handled: true
     },
+    ACK_COUNT,
     {
         kind: 'ack-count',
         serverPeerId: 'server',
@@ -387,20 +427,9 @@ const TRACED_OBSERVATIONS = [
         controlMsgId: 'ack-A',
         controlSenderId: 'recipient',
         controlCreatedAtEpochMs: 900,
-        traceId: 'trace-receipt-subject-1',
-        source: 'local',
-        outcome: 'partial',
-        countAtEpochMs: 1000
-    },
-    {
-        kind: 'ack-relay',
-        serverPeerId: 'server',
-        ack: ACK,
-        controlMsgId: 'ack-A',
-        controlSenderId: 'recipient',
-        controlCreatedAtEpochMs: 900,
         traceId: 'trace-receipt-control-1',
-        outcome: 'published'
+        outcome: 'conflict',
+        countAtEpochMs: 1000
     },
     {
         kind: 'receipt-outbox',
@@ -471,16 +500,15 @@ describe('full-stack private upstream receipt capture', () => {
     });
 
     it.each(['accepted', 'delivered', 'forwarded', 'subtree-complete', 'subtree-complete-not-subscribed'])(
-        'keeps an ACK relay record whose ACK has status %s',
+        'keeps an ACK count record whose ACK has status %s',
         (status) => {
-            const relay = TRACED_OBSERVATIONS.find((observation) => observation.kind === 'ack-relay')!;
-            const record = { ...relay, ack: { ...ACK, status } };
+            const record = { ...ACK_COUNT, ack: { ...ACK, status } };
 
             expect(toSafeApiWsReceiptObservation(record)).toEqual(record);
         }
     );
 
-    it('retains closed terminal aggregate, currentness and relay refusals with their actual owner and stage', () => {
+    it('retains closed terminal aggregate and currentness refusals with their actual owner and stage', () => {
         expect(toSafeApiWsReceiptObservation(ACK_REJECTION)).toEqual(ACK_REJECTION);
         const absent = { ...ACK_REJECTION, stage: 'ingress-protocol', failedGuards: ['aggregate-absent'], deadlineAtMs: undefined };
         expect(toSafeApiWsReceiptObservation(absent)).toEqual({
@@ -496,6 +524,11 @@ describe('full-stack private upstream receipt capture', () => {
             validationAtEpochMs: 30000,
             traceId: 'trace-receipt-control-1'
         });
+        // An ACK addressed elsewhere is refused before any head is read, so it names no deadline either.
+        const misaddressed = { ...absent, failedGuards: ['origin-addressee-mismatch'] };
+        expect(toSafeApiWsReceiptObservation(misaddressed)).toEqual({ ...absent, failedGuards: ['origin-addressee-mismatch'], deadlineAtMs: undefined });
+        const neverSent = { ...ACK_REJECTION, failedGuards: ['never-sent'] };
+        expect(toSafeApiWsReceiptObservation(neverSent)).toEqual(neverSent);
         for (const stage of ['post-authorizer-currentness', 'admission-currentness']) {
             for (const guard of ['connection-replaced', 'connection-closed']) {
                 const current = {
@@ -514,19 +547,21 @@ describe('full-stack private upstream receipt capture', () => {
                 expect(toSafeApiWsReceiptObservation(current)).toEqual(current);
             }
         }
-        const relay = {
-            kind: 'ack-rejection',
-            serverPeerId: 'server',
-            controlMsgId: 'ack-A',
-            controlSenderId: 'recipient',
-            controlCreatedAtEpochMs: 900,
-            rejectionCode: 'unauthorized',
+    });
+
+    // Pins the relay's deletion: a record of its kind or its refusal owner would otherwise still pass the projection
+    // as evidence of a path no instance runs.
+    it('refuses every record of the deleted ACK relay: its kind and its refusal owner', () => {
+        expect(toSafeApiWsReceiptObservation({ ...ACK_RELAY })).toBeUndefined();
+        expect(toSafeApiWsReceiptObservation({
+            ...ACK_REJECTION,
             owner: 'ack-relay',
             stage: 'ingress-protocol',
             failedGuards: ['origin-addressee-mismatch'],
-            traceId: 'trace-receipt-control-1'
-        };
-        expect(toSafeApiWsReceiptObservation(relay)).toEqual(relay);
+            validationAtEpochMs: undefined,
+            deadlineAtMs: undefined
+        })).toBeUndefined();
+        expect(toSafeApiWsReceiptObservation(ACK_COUNT)).toEqual(ACK_COUNT);
     });
 
     it.each([
@@ -555,7 +590,12 @@ describe('full-stack private upstream receipt capture', () => {
         { failedGuards: ['connection-replaced'] },
         { failedGuards: ['aggregate-absent', 'deadline-expired'] },
         { failedGuards: ['aggregate-absent'] },
-        { failedGuards: Array.from({ length: 8 }, () => 'deadline-expired') },
+        { failedGuards: Array.from({ length: 7 }, () => 'deadline-expired') },
+        { failedGuards: ['already-confirmed'] },
+        { failedGuards: ['already-outside'] },
+        { failedGuards: ['sender-recipient-mismatch'] },
+        { failedGuards: ['origin-addressee-mismatch', 'outside-frozen-audience', 'deadline-expired', 'never-sent'] },
+        { failedGuards: ['origin-addressee-mismatch', 'deadline-expired'], deadlineAtMs: undefined },
         { validationAtEpochMs: undefined },
         { validationAtEpochMs: -1 },
         { validationAtEpochMs: NaN },
@@ -569,21 +609,10 @@ describe('full-stack private upstream receipt capture', () => {
         expect(toSafeApiWsReceiptObservation({ ...ACK_REJECTION, ...corruption })).toBeUndefined();
     });
 
-    it.each([
-        { failedGuards: ['never-sent'] },
-        {
-            failedGuards: [
-                'origin-addressee-mismatch',
-                'sender-recipient-mismatch',
-                'outside-frozen-audience',
-                'already-confirmed',
-                'already-outside',
-                'deadline-expired',
-                'never-sent'
-            ]
-        }
-    ])('keeps an aggregate ACK rejection whose every guard is a known aggregate guard %j', (guards) => {
-        const rejection = { ...ACK_REJECTION, ...guards };
+    // Pins the projection's list naming a guard no refusal emits, or its maximum falling short of the three a refusal
+    // that read a head can state.
+    it('keeps an aggregate ACK rejection that names every guard of a head it read', () => {
+        const rejection = { ...ACK_REJECTION, failedGuards: ['outside-frozen-audience', 'deadline-expired', 'never-sent'] };
         expect(toSafeApiWsReceiptObservation(rejection)).toEqual(rejection);
     });
 
@@ -599,19 +628,8 @@ describe('full-stack private upstream receipt capture', () => {
     });
 
     it.each([
-        { stage: 'admission-currentness' },
-        { failedGuards: ['origin-addressee-mismatch', 'origin-addressee-mismatch'] },
-        { failedGuards: ['aggregate-absent'] }
-    ])('refuses an invalid relay requirement independently of aggregate clocks %j', (corruption) => {
-        expect(toSafeApiWsReceiptObservation(RELAY_ACK_REJECTION)).toEqual(RELAY_ACK_REJECTION);
-        expect(toSafeApiWsReceiptObservation({ ...RELAY_ACK_REJECTION, ...corruption })).toBeUndefined();
-    });
-
-    it.each([
         { baseline: CURRENTNESS_ACK_REJECTION, clock: 'validationAtEpochMs' },
-        { baseline: CURRENTNESS_ACK_REJECTION, clock: 'deadlineAtMs' },
-        { baseline: RELAY_ACK_REJECTION, clock: 'validationAtEpochMs' },
-        { baseline: RELAY_ACK_REJECTION, clock: 'deadlineAtMs' }
+        { baseline: CURRENTNESS_ACK_REJECTION, clock: 'deadlineAtMs' }
     ])('refuses supplied $clock at the non-aggregate owner $baseline.owner', ({ baseline, clock }) => {
         expect(toSafeApiWsReceiptObservation(baseline)).toEqual(baseline);
         expect(toSafeApiWsReceiptObservation({ ...baseline, [clock]: 30000 })).toBeUndefined();
@@ -696,10 +714,8 @@ describe('full-stack private upstream receipt capture', () => {
                 serverPeerId: 'server',
                 controlMsgId: 'ack-1',
                 traceId: 'trace-full-stack-api-receipt-owner-fixture',
-                source: 'local',
                 outcome: 'complete',
                 ack: expect.objectContaining({ ackedMsgId: 'subject', logicalRecipientPeerId: 'recipient', carrier: 'ws', status: 'delivered' }),
-                before: expect.objectContaining({ expectedRecipientPeerIds: ['recipient'], confirmedRecipientPeerIds: [], snapshotVersion: 7 }),
                 after: expect.objectContaining({ expectedRecipientPeerIds: ['recipient'], confirmedRecipientPeerIds: ['recipient'], snapshotVersion: 7 })
             })
         ]);
@@ -925,6 +941,7 @@ describe('full-stack private upstream receipt capture', () => {
         }
     });
 
+    // It spawns eight `node --import tsx` processes, so it takes each child's 15 s spawn limit, not vitest's 5 s default.
     it('preserves actual effects, work release and owned clock reads with absent, mutating or throwing sinks', async () => {
         const baseline = await capturePendingReceipt({ scenario: 'native-return', sink: 'collecting', appInboxPhaseTiming: true });
         for (const sink of ['disabled', 'mutating', 'throwing'] as const) {
@@ -933,6 +950,7 @@ describe('full-stack private upstream receipt capture', () => {
                 nativeCalls: baseline.effects.nativeCalls,
                 publications: baseline.effects.publications,
                 clockReads: baseline.effects.clockReads,
+                enginePasses: baseline.effects.enginePasses,
                 releases: baseline.effects.releases,
                 receiptReleaseStatuses: baseline.effects.receiptReleaseStatuses,
                 conflicted: true
@@ -947,13 +965,17 @@ describe('full-stack private upstream receipt capture', () => {
                 expect(captured.records).toEqual([]);
             }
         }
-    });
+    }, 15000);
 
     it('publishes transport evidence after the actual work release clock', async () => {
         const baseline = await capturePendingReceipt({ scenario: 'native-return', sink: 'collecting', appInboxPhaseTiming: true });
         const captured = await capturePendingReceipt({ scenario: 'native-return', sink: 'clock-mutating', appInboxPhaseTiming: true });
         expect(captured.effects.lastReceiptReleaseAtMs).toBe(baseline.effects.lastReceiptReleaseAtMs);
         expect(captured.effects.lastReceiptReleaseAtMs).toBe(1700000000000);
+        expect(captured.effects).toMatchObject({
+            enginePasses: baseline.effects.enginePasses,
+            clockReads: baseline.effects.clockReads
+        });
     });
 
     it('rejects unsafe new work records entirely while retaining the transport evidence', async () => {
@@ -979,10 +1001,48 @@ describe('full-stack private upstream receipt capture', () => {
         expect(captured.mode).toBe(0o600);
     });
 
+    // Pins a live admitted's transport observation the safe projection drops or reshapes, or whose rewritten
+    // connection identity it lets through.
+    it('projects a live admitted\'s transport observation', async () => {
+        const captured = await capturePendingReceipt({ scenario: 'native-return', sink: 'collecting', appInboxPhaseTiming: true });
+        const live = captured.records.filter((record) =>
+            record.kind === 'receipt-transport' && record.receiptControlMsgId !== captured.effects.receiptControlMsgId
+        );
+        expect(live).toEqual([{
+            kind: 'receipt-transport',
+            serverPeerId: 'server',
+            receiptControlMsgId: expect.any(String),
+            traceId: 'trace-full-stack-api-receipt-owner-fixture',
+            receipt: {
+                msgId: 'subject',
+                originPeerId: 'origin',
+                expectedRecipientPeerIds: ['recipient'],
+                confirmedRecipientPeerIds: [],
+                snapshotVersion: 7,
+                phase: 'admitted',
+                observedAtEpochMs: 1700000000000
+            },
+            transport: 'recipient',
+            nativeCall: 'returned',
+            connectionId: 'origin',
+            publisherCall: 'absent',
+            originIsHere: true,
+            outcome: 'sent',
+            submissionAttempted: true
+        }]);
+        expect(toSafeApiWsReceiptObservation(live[0])).toEqual(live[0]);
+
+        const unsafe = await capturePendingReceipt({ scenario: 'native-return', sink: 'unsafe-transport', appInboxPhaseTiming: true });
+        expect(unsafe.text).not.toContain('unsafe identity sentinel');
+        expect(unsafe.records.filter((record) => record.kind === 'receipt-transport')).toEqual([]);
+    });
+
     it('retains actual owner-produced count and outbox fields through the real child recorder', async () => {
-        const captured = await captureOwnerReceiptEvidence(['recipient']);
+        const captured = await captureOwnerReceiptEvidence({ msgId: 'subject', expectedRecipientPeerIds: ['recipient'] });
         expect(captured.status).toBe(0);
         const records = captured.text.trim().split('\n').filter(Boolean).map(toReceiptCaptureObject);
+        // The admission answers `admitted`; the count states what it read once its own `end` ran; the ended work then
+        // delivers the terminal receipt.
         expect(records).toMatchObject([
             {
                 component: 'ws-receipt',
@@ -993,12 +1053,13 @@ describe('full-stack private upstream receipt capture', () => {
                     receiptControlMsgId: 'receipt-1',
                     trackedReceiptAlgo: 'none',
                     verdict: { kind: 'admitted', durable: true, queuedAttempts: 0 },
+                    deadlineAtMs: 30000,
                     receipt: {
                         msgId: 'subject',
                         originPeerId: 'origin',
                         expectedRecipientPeerIds: ['recipient'],
-                        confirmedRecipientPeerIds: ['recipient'],
-                        phase: 'complete',
+                        confirmedRecipientPeerIds: [],
+                        phase: 'admitted',
                         snapshotVersion: 7,
                         observedAtEpochMs: 1000
                     }
@@ -1011,19 +1072,38 @@ describe('full-stack private upstream receipt capture', () => {
                 wsReceipt: {
                     kind: 'ack-count',
                     controlMsgId: 'ack-1',
-                    source: 'local',
                     countAtEpochMs: 1000,
                     outcome: 'complete',
                     ack: { ackedMsgId: 'subject', observedAtEpochMs: 901 },
-                    before: { expectedRecipientPeerIds: ['recipient'], confirmedRecipientPeerIds: [], snapshotVersion: 7, deadlineAtMs: 30000 },
-                    after: { expectedRecipientPeerIds: ['recipient'], confirmedRecipientPeerIds: ['recipient'] }
+                    after: { expectedRecipientPeerIds: ['recipient'], confirmedRecipientPeerIds: ['recipient'], snapshotVersion: 7, deadlineAtMs: 30000 }
+                }
+            },
+            {
+                component: 'ws-receipt',
+                serviceId: 'api-process',
+                details: { publisherId: 'publisher-1' },
+                wsReceipt: {
+                    kind: 'receipt-outbox',
+                    receiptControlMsgId: toWsQueueBoxServerEndedReceiptControlId({ originPeerId: 'origin', msgId: 'subject' }),
+                    trackedReceiptAlgo: 'none',
+                    verdict: { kind: 'admitted', durable: true, queuedAttempts: 0 },
+                    receipt: {
+                        msgId: 'subject',
+                        originPeerId: 'origin',
+                        expectedRecipientPeerIds: ['recipient'],
+                        confirmedRecipientPeerIds: ['recipient'],
+                        phase: 'complete',
+                        snapshotVersion: 7,
+                        observedAtEpochMs: 1000
+                    }
                 }
             }
         ]);
+        expect(records[1]?.wsReceipt).not.toHaveProperty('before');
         expect(captured.text).not.toMatch(/AUTH_SENTINEL|ERROR_SENTINEL|authorization|headers/);
         expect(captured.mode).toBe(0o600);
         expect(captured.summary).toMatchObject({
-            retainedRecords: 2,
+            retainedRecords: 3,
             rejectedLines: 0,
             stdoutEof: true,
             trailingPartial: false,
@@ -1034,15 +1114,18 @@ describe('full-stack private upstream receipt capture', () => {
     });
 
     it('reports a rejected exact set instead of retaining a partial audience', async () => {
-        const captured = await captureOwnerReceiptEvidence(['recipient', 'unsafe recipient']);
+        const captured = await captureOwnerReceiptEvidence({ msgId: 'subject', expectedRecipientPeerIds: ['recipient', 'unsafe recipient'] });
         expect(captured.status).toBe(0);
         expect(captured.text).toBe('');
-        expect(captured.summary).toMatchObject({ retainedRecords: 0, rejectedLines: 1, observation: 'partial', durableRequestCompletion: 'unverified' });
+        // The admitted receipt and the count each name the unsafe identity, so both lines are rejected.
+        expect(captured.summary).toMatchObject({ retainedRecords: 0, rejectedLines: 2, observation: 'partial', durableRequestCompletion: 'unverified' });
     });
 
     it('keeps the existing 64KiB bound and loss summary for a large actual owner record', async () => {
-        const audience = ['recipient', ...Array.from({ length: 4000 }, (_, index) => `peer-${index}-long-session-identity`)];
-        const captured = await captureOwnerReceiptEvidence(audience);
+        // The server opens only a receipt whose largest form a control carries (64 KiB), so no receipt record passes the
+        // bound. The count's record does: it carries the message id twice (the ACK's and the head's), each 33,500
+        // characters. The receipt lines stay under the bound and the projection refuses them: its identities stop at 512.
+        const captured = await captureOwnerReceiptEvidence({ msgId: 'm'.repeat(33_500), expectedRecipientPeerIds: ['recipient'] });
         expect(captured.status).toBe(0);
         expect(captured.text).toBe('');
         expect(captured.summary).toMatchObject({

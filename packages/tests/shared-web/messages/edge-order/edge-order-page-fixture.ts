@@ -62,6 +62,8 @@ export interface EdgeOrderPage {
      * acknowledges when it admits a message, so a test can say this before it delivers the message to that page.
      */
     acknowledge(carrier: ALDeliveryCarrier, message: ALMessage): void;
+    /** The carrier settles a message this page sent `superseded`: a newer one replaced it before it left. */
+    supersede(carrier: ALDeliveryCarrier, message: ALMessage): void;
     /** The connect goes away: what the lifecycle composition runs at detach. */
     detach(): void;
     /** Each call to connect waits for the next resolver a test queued here; with none queued it resolves at once. */
@@ -189,6 +191,16 @@ export function createEdgeOrderPage(input: EdgeOrderPageInput): EdgeOrderPage {
                 unconfirmedRecipientPeerIds: [],
                 outsideAudienceRecipientPeerIds: [],
                 complete: true,
+                traceId: message.id.traceId
+            }),
+        supersede: (carrier, message) =>
+            settlementEpoch.settlements[carrier]({
+                kind: 'superseded',
+                msgId: message.id.msgId,
+                carrier,
+                atMs: Date.now(),
+                replacementMsgId: crypto.randomUUID(),
+                detail: 'A newer message replaced it.',
                 traceId: message.id.traceId
             }),
         detach: () => controller.subscriptions.dropHeldEdgeOrderMessages()

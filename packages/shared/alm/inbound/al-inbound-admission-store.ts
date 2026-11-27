@@ -34,6 +34,11 @@ import {
 } from '../compute-al-supersedence-observation.ts';
 import { markTerminalVolatileAdmissionRow } from '../storage/in-memory-admission-work-write-buffer.ts';
 import { ALInboundDeliveredMarkerIndex } from './admission/al-inbound-delivered-marker-index.ts';
+import {
+    computeALInboundDeliveryCompletionMutations,
+    toALInboundDeliveredMarkers,
+    type ALInboundDeliveryCompletion
+} from './admission/al-inbound-delivery-progress.ts';
 import { readALInboundOrderingTrackEvicted } from './admission/al-inbound-evicted-ordering-tracks.ts';
 import {
     evictALInboundDeliveredMarkersPastCap,
@@ -51,7 +56,11 @@ import {
     type ALInboundMessageReference,
     type ALStoredInboundMessage
 } from './al-inbound-canonical-message.ts';
-import { ALInboundDurableEffectStore } from './al-inbound-durable-effect-store.ts';
+import {
+    ALInboundDurableEffectStore,
+    type ALInboundOrderedDeliveryRead,
+    type ALInboundOrderedSuccessor
+} from './al-inbound-durable-effect-store.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 import {
     decodeALInboundBufferedSnapshot,
@@ -259,15 +268,6 @@ export interface ALInboundBufferedReleaseReadDto {
     readonly durability: ALStoreDurability;
 }
 
-export interface ALInboundOrderedDeliveryRead {
-    readonly completedThrough: number;
-    readonly predecessor: ALInboundDeliveryPredecessor | undefined;
-}
-
-export type ALInboundDeliveryPredecessor =
-    | { readonly kind: 'effect'; }
-    | { readonly kind: 'resync-required'; };
-
 export type ALInboundAdmissionMutation =
     | Readonly<{
         kind: 'mark-terminal-volatile-msg-owner';
@@ -352,12 +352,6 @@ export type ALInboundAdmissionMutation =
         trackKey: string;
         seq: number;
     }>;
-
-export interface ALInboundWriteRequest {
-    readonly senderId: string;
-    readonly observations: ALInboundAdmissionObservations;
-    readonly mutations: readonly ALInboundAdmissionMutation[];
-}
 
 export type ALInboundDurableEffect =
     | ALInboundPendingAdmission
@@ -453,6 +447,12 @@ export interface ALInboundAdmissionStore extends ALReadyable {
 
     readOrderedDelivery(trackKey: string, beforeSeq: number): Promise<ALInboundOrderedDeliveryRead>;
 
+    /**
+     * The delivery row named by the track's slot after `completedThrough`, in one read; absent when no slot stands
+     * there (the next message is not admitted, or the track continues after an omission) or the slot names no delivery.
+     */
+    readOrderedSuccessor(trackKey: string, completedThrough: number): Promise<ALInboundOrderedSuccessor | undefined>;
+
     /** The track's live ordering snapshot; absent for a track never opened or past its TTL. */
     readOrderingSnapshot(trackKey: string, nowMs: number): Promise<ALOrderingTrackSnapshot | undefined>;
 
@@ -477,9 +477,13 @@ export interface ALInboundAdmissionStore extends ALReadyable {
     /** The provenance the message's admission recorded; absent when the store holds none. */
     readMessageProvenance(reference: ALInboundMessageReference): Promise<ALInboundMessageOwner | undefined>;
 
-    commitMutations(
-        request: ALInboundWriteRequest
-    ): Promise<'committed' | 'conflict' | 'expired'>;
+    /**
+     * Moves a track's delivery progress to the position the stored slot and `completedThrough` place the completion at,
+     * and deletes the delivered slot, when both are the ones the completion read. An expiry another commit extended is
+     * kept: the larger of the stored and the observed. `conflict` when either fact moved or they place no completion;
+     * nothing is written then.
+     */
+    commitDeliveryCompletion(completion: ALInboundDeliveryCompletion): Promise<'committed' | 'conflict'>;
 
     commitBundle(
         bundle: ALInboundCommitBundle
@@ -748,6 +752,13 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         return await this.effects.readOrderedDelivery(trackKey, beforeSeq);
     }
 
+    async readOrderedSuccessor(
+        trackKey: string,
+        completedThrough: number
+    ): Promise<ALInboundOrderedSuccessor | undefined> {
+        return await this.effects.readOrderedSuccessor(trackKey, completedThrough);
+    }
+
     async readOrderingSnapshot(trackKey: string, nowMs: number): Promise<ALOrderingTrackSnapshot | undefined> {
         const snapshot = await this.backend.readWithin((session) =>
             session.read(this.toOrderingKey(trackKey), decodeALInboundOrderingSnapshot)
@@ -800,16 +811,32 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         });
     }
 
-    async commitMutations(
-        request: ALInboundWriteRequest
-    ): Promise<'committed' | 'conflict' | 'expired'> {
-        return await this.commitBundle({
-            admissionExpiresAtMs: null,
-            senderId: request.senderId,
-            observations: request.observations,
-            mutations: request.mutations,
-            durableEffects: []
-        });
+    /** It names no deadline, so its write never expires. */
+    async commitDeliveryCompletion(completion: ALInboundDeliveryCompletion): Promise<'committed' | 'conflict'> {
+        const written = await this.writeUnlessConflicted(
+            (transaction) => this.writeDeliveryCompletion(transaction, completion),
+            null
+        );
+        if (written === 'conflict') {
+            return 'conflict';
+        }
+        this.recordDeliveredMarkers(written);
+        return 'committed';
+    }
+
+    private async writeDeliveryCompletion(
+        transaction: ALAdmissionWorkWriteContext,
+        completion: ALInboundDeliveryCompletion
+    ): Promise<readonly ALInboundAdmissionMutation[]> {
+        const mutations = computeALInboundDeliveryCompletionMutations(
+            completion,
+            await this.readBufferedMessage(transaction, completion.trackKey, completion.seq),
+            (await this.readDeliveryProgress(transaction, completion.trackKey))?.value
+        ).fold(rejectALInboundDeliveryCompletion, (computed) => computed);
+        for (const mutation of mutations) {
+            await this.applyMutation(transaction, mutation);
+        }
+        return mutations;
     }
 
     async commitBundle(
@@ -823,7 +850,10 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
             throw new TypeError(validated.left.message);
         }
 
-        const status = await this.writeValidatedBundle(validated.right!);
+        const status = await this.writeConditionally(
+            (transaction) => this.writeCommitBundle(transaction, validated.right!),
+            bundle.admissionExpiresAtMs
+        );
         if (status === 'committed') {
             await this.evictPastCaps(bundle);
         }
@@ -854,11 +884,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         index: ALInboundDeliveredMarkerIndex,
         maxMarkers: number
     ): Promise<void> {
-        for (const mutation of bundle.mutations) {
-            if (mutation.kind === 'set-delivery-progress') {
-                index.record({ trackKey: mutation.trackKey, expireAtTimestamp: mutation.value.expireAtTimestamp });
-            }
-        }
+        this.recordDeliveredMarkers(bundle.mutations);
         if (writesALInboundFirstDeliveredMarker(bundle)) {
             await evictALInboundDeliveredMarkersPastCap({
                 backend: this.backend,
@@ -872,6 +898,10 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         }
     }
 
+    private recordDeliveredMarkers(mutations: readonly ALInboundAdmissionMutation[]): void {
+        toALInboundDeliveredMarkers(mutations).forEach((marker) => this.deliveredMarkers?.record(marker));
+    }
+
     async readDeliveredMarkerCount(nowMs: number): Promise<number> {
         const held = await this.backend.readWithin((session) =>
             session.list(this.toDeliveredPrefix(), decodeALInboundDeliveryProgress)
@@ -879,19 +909,29 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         return held.filter((marker) => marker.value.expireAtTimestamp > nowMs).length;
     }
 
-    private async writeValidatedBundle(
-        bundle: ALInboundCommitBundle
-    ): Promise<'committed' | 'conflict' | 'expired'> {
+    private async writeConditionally<T>(
+        write: (transaction: ALAdmissionWorkWriteContext) => Promise<T>,
+        executionExpiresAtMs: number | null
+    ): Promise<T | 'conflict' | 'expired'> {
         try {
-            return await this.backend.write(
-                (transaction) => this.writeCommitBundle(transaction, bundle),
-                bundle.admissionExpiresAtMs
-            );
+            return await this.writeUnlessConflicted(write, executionExpiresAtMs);
         }
         catch (error) {
             if (error instanceof PersistenceWriteExpiredError) {
                 return 'expired';
             }
+            throw error;
+        }
+    }
+
+    private async writeUnlessConflicted<T>(
+        write: (transaction: ALAdmissionWorkWriteContext) => Promise<T>,
+        executionExpiresAtMs: number | null
+    ): Promise<T | 'conflict'> {
+        try {
+            return await this.backend.write(write, executionExpiresAtMs);
+        }
+        catch (error) {
             if (error instanceof ALAdmissionBackendConflictError) {
                 return 'conflict';
             }
@@ -902,7 +942,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
     private async writeCommitBundle(
         transaction: ALAdmissionWorkWriteContext,
         bundle: ALInboundCommitBundle
-    ): Promise<'committed' | 'conflict'> {
+    ): Promise<'committed'> {
         await this.requireOriginalObservations(transaction, bundle.observations);
         requireLivePersistenceWrite(bundle.admissionExpiresAtMs, this.nowMs());
         for (const mutation of bundle.mutations) {
@@ -1143,6 +1183,11 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
     private toBufferedTrackPrefix(trackKey: string): string {
         return `${this.namespace}:buffered:${trackKey}:`;
     }
+}
+
+/** A guard that lost aborts the completion's transaction, which then writes nothing. */
+function rejectALInboundDeliveryCompletion(conflict: 'conflict'): never {
+    throw new ALAdmissionBackendConflictError(`Inbound delivery completion ${conflict}: its position or slot moved`);
 }
 
 /** A bundle that writes the first snapshot of its track: the only commit that can take the store past its cap. */

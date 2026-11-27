@@ -94,23 +94,19 @@ describe('Postgres inbound ordered work recovery', () => {
             throw new Error('Expected the admitted ordering fence');
         }
         const completion = {
-            senderId: 'sender',
-            observations: observed.observations,
-            mutations: [{
-                kind: 'set-delivery-progress' as const,
-                trackKey,
-                value: {
-                    completedThrough: 1,
-                    expireAtTimestamp: observed.observations.deliveryProgress!.value!.expireAtTimestamp
-                }
-            }, { kind: 'delete-buffered' as const, trackKey, seq: 1 }]
+            trackKey,
+            seq: 1,
+            observedSlot: observed.snapshot,
+            observedProgress: observed.observations.deliveryProgress!.value!
         };
-        expect(await first.commitMutations(completion)).toBe('committed');
-        expect(await second.commitMutations(completion)).toBe('conflict');
+        expect(await first.commitDeliveryCompletion(completion)).toBe('committed');
+        expect(await second.commitDeliveryCompletion(completion)).toBe('conflict');
         expect(await second.readOrderedDelivery(trackKey, 2))
             .toEqual({ completedThrough: 1, predecessor: undefined });
     });
 
+    // The completion is guarded on its position and its slot, so an expiry the next admission extended neither conflicts
+    // it nor is lost to it.
     postgresIt('preserves an extended deadline when another connection completes from a stale read', async () => {
         const [firstStores, secondStores] = await createStores();
         const first = firstStores.admissionStore;
@@ -129,27 +125,14 @@ describe('Postgres inbound ordered work recovery', () => {
             deliveryProgress: { trackKey, value: { completedThrough: 0, expireAtTimestamp: deadline } }
         });
         expect(
-            await second.commitMutations({
-                senderId: 'sender',
-                observations: observed.observations,
-                mutations: [
-                    { kind: 'set-delivery-progress', trackKey, value: { ...original, completedThrough: 1 } },
-                    { kind: 'delete-buffered', trackKey, seq: 1 }
-                ]
-            })
-        ).toBe('conflict');
-        expect(await first.readBufferedRelease({ trackKey, seq: 1, nowMs: Date.now() })).toBeDefined();
-
-        expect(
-            await second.commitMutations({
-                senderId: 'sender',
-                observations: refreshed.observations,
-                mutations: [
-                    { kind: 'set-delivery-progress', trackKey, value: { completedThrough: 1, expireAtTimestamp: deadline } },
-                    { kind: 'delete-buffered', trackKey, seq: 1 }
-                ]
+            await second.commitDeliveryCompletion({
+                trackKey,
+                seq: 1,
+                observedSlot: observed.snapshot,
+                observedProgress: original
             })
         ).toBe('committed');
+        expect(await first.readBufferedRelease({ trackKey, seq: 1, nowMs: Date.now() })).toBeUndefined();
         const remaining = (await first.readBufferedRelease({ trackKey, seq: 2, nowMs: Date.now() }))!;
         expect(remaining.observations.deliveryProgress?.value).toEqual({
             completedThrough: 1,

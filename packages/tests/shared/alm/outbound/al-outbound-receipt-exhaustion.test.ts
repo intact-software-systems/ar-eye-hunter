@@ -207,7 +207,7 @@ describe('the receipt timer of a message that has ended', () => {
     });
 });
 
-/** The sender version every commit of the message's sender moves. */
+/** The sender version, which every commit that fences the message's sender moves, the ACK window's among them. */
 async function readSenderVersion(fixture: ExhaustionFixture): Promise<number | undefined> {
     return (await fixture.stores.admissionStore.readRepairMessage(fixture.message.id.msgId, NO_COPY_PLANNER)).clientRecord?.version;
 }

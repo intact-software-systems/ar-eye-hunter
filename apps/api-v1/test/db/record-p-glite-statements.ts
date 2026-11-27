@@ -14,6 +14,8 @@ export interface RecordedPGliteStatements {
     statements(): readonly RecordedPGliteStatement[];
     /** The statements run inside a transaction, in order. */
     inTransaction(): readonly RecordedPGliteStatement[];
+    /** The statements of each transaction, one list per transaction in the order they were opened. */
+    eachTransaction(): readonly (readonly RecordedPGliteStatement[])[];
     /** How many transactions the PGlite instance opened. */
     transactions(): number;
     /** Puts the three originals back; the caller owns this teardown. */
@@ -23,6 +25,7 @@ export interface RecordedPGliteStatements {
 /** Records every statement of one PGlite instance until `restore()`, BEGIN and COMMIT excluded. */
 export function recordPGliteStatements(raw: PGliteSql['raw']): RecordedPGliteStatements {
     const statements: RecordedPGliteStatement[] = [];
+    const transactionStatements: RecordedPGliteStatement[][] = [];
     let transactions = 0;
     const query = raw.query;
     const exec = raw.exec;
@@ -37,11 +40,15 @@ export function recordPGliteStatements(raw: PGliteSql['raw']): RecordedPGliteSta
     }) as typeof exec;
     raw.transaction = ((callback: Parameters<typeof transaction>[0]) => {
         transactions += 1;
+        const own: RecordedPGliteStatement[] = [];
+        transactionStatements.push(own);
         return transaction.call(raw, (tx) => {
             const txQuery = tx.query.bind(tx);
             return callback(Object.assign(Object.create(tx), {
                 query: (...args: Parameters<typeof tx.query>) => {
-                    statements.push({ scope: 'transaction', query: args[0], params: args[1] ?? [] });
+                    const statement = { scope: 'transaction', query: args[0], params: args[1] ?? [] } as const;
+                    statements.push(statement);
+                    own.push(statement);
                     return txQuery(...args);
                 }
             }));
@@ -50,6 +57,7 @@ export function recordPGliteStatements(raw: PGliteSql['raw']): RecordedPGliteSta
     return {
         statements: () => statements,
         inTransaction: () => statements.filter(({ scope }) => scope === 'transaction'),
+        eachTransaction: () => transactionStatements,
         transactions: () => transactions,
         restore: () => {
             raw.query = query;

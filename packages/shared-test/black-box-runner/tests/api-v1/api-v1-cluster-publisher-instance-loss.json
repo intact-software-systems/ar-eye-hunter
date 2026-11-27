@@ -1141,15 +1141,24 @@
       }
     },
     {
-      "name": "aliceReceivesNoCompleteReceiptOne",
+      "name": "aliceReceivesTheCompleteReceiptOne",
       "type": "ws.wait",
       "connection": "wsAliceSecondary",
+      "request": {
+        "outputs": {
+          "completeReceiptOneResource": "matchedMessage.data.payload.resource"
+        }
+      },
       "expect": {
         "connection": "wsAliceSecondary",
         "withinMs": 41000,
-        "absent": {
+        "message": {
           "route": {
             "topicId": "al-control"
+          },
+          "targets": {
+            "mode": "unicast",
+            "toPeerId": "{aliceSessionId}"
           },
           "payload": {
             "typeId": "al.control.receipt.v1",
@@ -1159,9 +1168,105 @@
             }
           }
         },
+        "consume": true,
         "decodeJsonPaths": [
           "payload.resource"
         ]
+      }
+    },
+    {
+      "name": "parseCompleteReceiptOne",
+      "type": "set",
+      "output": "completeReceiptOne",
+      "transform": {
+        "jsonParse": {
+          "path": "outputs.completeReceiptOneResource"
+        }
+      }
+    },
+    {
+      "name": "deriveBobExpectedCompleteReceiptOne",
+      "type": "set",
+      "output": "bobExpectedCompleteReceiptOne",
+      "transform": {
+        "includes": [
+          {
+            "path": "outputs.completeReceiptOne.expectedRecipientPeerIds"
+          },
+          {
+            "path": "outputs.bobSessionId"
+          }
+        ]
+      }
+    },
+    {
+      "name": "deriveCarolExpectedCompleteReceiptOne",
+      "type": "set",
+      "output": "carolExpectedCompleteReceiptOne",
+      "transform": {
+        "includes": [
+          {
+            "path": "outputs.completeReceiptOne.expectedRecipientPeerIds"
+          },
+          {
+            "path": "outputs.carolSessionId"
+          }
+        ]
+      }
+    },
+    {
+      "name": "deriveBobConfirmedCompleteReceiptOne",
+      "type": "set",
+      "output": "bobConfirmedCompleteReceiptOne",
+      "transform": {
+        "includes": [
+          {
+            "path": "outputs.completeReceiptOne.confirmedRecipientPeerIds"
+          },
+          {
+            "path": "outputs.bobSessionId"
+          }
+        ]
+      }
+    },
+    {
+      "name": "deriveCarolConfirmedCompleteReceiptOne",
+      "type": "set",
+      "output": "carolConfirmedCompleteReceiptOne",
+      "transform": {
+        "includes": [
+          {
+            "path": "outputs.completeReceiptOne.confirmedRecipientPeerIds"
+          },
+          {
+            "path": "outputs.carolSessionId"
+          }
+        ]
+      }
+    },
+    {
+      "name": "assertTheCompleteReceiptOne",
+      "type": "assert",
+      "actual": {
+        "phase": "{completeReceiptOne.phase}",
+        "bobExpectedCompleteReceiptOne": "{bobExpectedCompleteReceiptOne}",
+        "carolExpectedCompleteReceiptOne": "{carolExpectedCompleteReceiptOne}",
+        "bobConfirmedCompleteReceiptOne": "{bobConfirmedCompleteReceiptOne}",
+        "carolConfirmedCompleteReceiptOne": "{carolConfirmedCompleteReceiptOne}",
+        "expectedBeyond": "{completeReceiptOne.expectedRecipientPeerIds.2}",
+        "confirmedBeyond": "{completeReceiptOne.confirmedRecipientPeerIds.2}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "body": {
+          "phase": "complete",
+          "bobExpectedCompleteReceiptOne": true,
+          "carolExpectedCompleteReceiptOne": true,
+          "bobConfirmedCompleteReceiptOne": true,
+          "carolConfirmedCompleteReceiptOne": true,
+          "expectedBeyond": "MISSING",
+          "confirmedBeyond": "MISSING"
+        }
       }
     },
     {

@@ -17,11 +17,13 @@ import type {
     ALInboundGapRenewalEffect
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { toALInboundMessageKey, toALInboundMessageReference } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
+import { toALInboundLocalDeliveryEffectId, toALInboundReleaseEffectId } from '@shared/alm/inbound/al-inbound-effect-intent.ts';
 import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
-import { resolveALInboundWorkDueAtMs, type ALPersistedInboundEffect } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import type { ALPersistedInboundEffect } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { ALInboundGapRenewal } from '@shared/alm/inbound/gap-renewal/al-inbound-gap-renewal.ts';
 import type { ALInboundReceiptProofs } from '@shared/alm/inbound/receipt-proof/sign-al-inbound-receipt-controls.ts';
+import { resolveALWorkEntryDueAtMs } from '@shared/alm/work/read-al-work-ready-at.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { RtcReceiptProofSigner } from '@shared/multicast/receipt-proof/rtc-receipt-proof-signer.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
@@ -863,26 +865,38 @@ describe('a receiver holding a recorded track at its start (the bounded hold)', 
     });
 
     it('waits for the run\'s last delivery when the sequence after the passed copies arrives before it completed', async () => {
-        let thirdHeld = true;
-        const fixture = createRenewalFixture('memory', {
-            canDispatchMessage: (msg) => !thirdHeld || msg.ordering?.seq !== 3
-        });
-        await fixture.runtime.admitIncomingMessage(recordedMessage(3), INBOUND_TEST_SOURCE);
-        await fixture.runtime.admitIncomingMessage(recordedMessage(4, { ttlMs: SHORT_TTL_MS }), INBOUND_TEST_SOURCE);
-        await fixture.runtime.admitIncomingMessage(recordedMessage(6), INBOUND_TEST_SOURCE);
-        await advanceThrough(fixture, [1_000, 3_000, 7_000]);
-        const askedBefore = gapControls(fixture).length;
-
-        await fixture.runtime.admitIncomingMessage(recordedMessage(5), INBOUND_TEST_SOURCE);
-        await advanceTo(fixture, 7_000);
+        const { fixture, askedBefore, releaseThird } = await admitPastPassedCopiesBehindHeldThird();
         expect(fixture.deliveredMessages).toEqual([]);
-        thirdHeld = false;
+        releaseThird();
         await advanceThrough(fixture, [8_000, 10_000]);
 
         expect(gapControls(fixture).slice(askedBefore)).toEqual([]);
         expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([3, 5, 6]);
         expect(['5', '6'].flatMap((msgId) => readNackReasons(fixture, msgId))).not.toContain('resync-required');
         expect(await readPendingInboundWork(fixture)).toEqual([]);
+    });
+
+    // Pins a hand-on after a completion that moves its track past several sequences: the run's last delivery (3) reaches
+    // past the passed copy (4), so its completion states 4, the slot read at 5 names message 5's row, and the batch
+    // that ran 3 hands on 5 and then 6, where a read at 3's own sequence plus one would find no slot.
+    it('hands on the message after the passed copies in the batch that completed the run\'s last delivery', async () => {
+        const { fixture, releaseThird } = await admitPastPassedCopiesBehindHeldThird();
+        const before = fixture.diagnostics.length;
+        releaseThird();
+
+        await advanceThrough(fixture, [8_000, 10_000]);
+
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([3, 5, 6]);
+        const drains = fixture.diagnostics.slice(before).flatMap((event) => event.kind === 'effect-drain' && event.claimedCount > 0 ? [event] : []);
+        const trackKey = toALOrderingTrackKey(recordedMessage(3))!;
+        expect(drains.map((drain) => [drain.claimedEffectIds, drain.promoted])).toEqual([[
+            [
+                toALInboundReleaseEffectId(trackKey, 3),
+                toALInboundLocalDeliveryEffectId(recordedMessage(5), false),
+                toALInboundReleaseEffectId(trackKey, 6)
+            ],
+            2
+        ]]);
     });
 
     it('keeps asking, numbered 4, on a track that delivered something, and enters nowhere', async () => {
@@ -936,6 +950,39 @@ function orderedMessage(seq: number, input: OrderedMessageInput = {}): ALMessage
         { recipientPeerIds: [INBOUND_TEST_SELF_PEER_ID], snapshotVersion: 1 }
     );
     return { ...frozen, ordering: { orderingKey: 'chat', seq } };
+}
+
+interface PassedCopiesBehindHeldThird {
+    readonly fixture: InboundTestRuntime;
+    /** The gap controls sent before message 5 arrived. */
+    readonly askedBefore: number;
+    /** Lets message 3's delivery read ready. */
+    readonly releaseThird: () => void;
+}
+
+/**
+ * Recorded copies 3, 4 (short-lived) and 6 with message 3 held at its readiness, run until 4 has passed, then 5, run
+ * again at 7 s: message 3 is the run's last delivery, still undelivered, and 5 and 6 wait behind it.
+ */
+async function admitPastPassedCopiesBehindHeldThird(): Promise<PassedCopiesBehindHeldThird> {
+    let thirdHeld = true;
+    const fixture = createRenewalFixture('memory', {
+        canDispatchMessage: (msg) => !thirdHeld || msg.ordering?.seq !== 3
+    });
+    await fixture.runtime.admitIncomingMessage(recordedMessage(3), INBOUND_TEST_SOURCE);
+    await fixture.runtime.admitIncomingMessage(recordedMessage(4, { ttlMs: SHORT_TTL_MS }), INBOUND_TEST_SOURCE);
+    await fixture.runtime.admitIncomingMessage(recordedMessage(6), INBOUND_TEST_SOURCE);
+    await advanceThrough(fixture, [1_000, 3_000, 7_000]);
+    const askedBefore = gapControls(fixture).length;
+    await fixture.runtime.admitIncomingMessage(recordedMessage(5), INBOUND_TEST_SOURCE);
+    await advanceTo(fixture, 7_000);
+    return {
+        fixture,
+        askedBefore,
+        releaseThird: () => {
+            thirdHeld = false;
+        }
+    };
 }
 
 /** The same copy as its authority recorded it: this receiver, its frozen audience, was sent every sequence below. */
@@ -1098,7 +1145,7 @@ async function readPendingInboundWork(fixture: InboundTestRuntime): Promise<read
 async function readRenewalDueTimes(fixture: InboundTestRuntime): Promise<readonly number[]> {
     return (await readInboundTestWorkRows(fixture.stores))
         .filter((effect) => effect.payload.kind === 'renew-gap')
-        .map((effect) => resolveALInboundWorkDueAtMs(effect.entry));
+        .map((effect) => resolveALWorkEntryDueAtMs(effect.entry));
 }
 
 async function readRenewalExpiries(fixture: InboundTestRuntime): Promise<readonly number[]> {
@@ -1130,7 +1177,7 @@ async function readRenewalTimer(fixture: InboundTestRuntime, requestNumber: numb
         effect.payload.kind === 'renew-gap' && effect.payload.requestNumber === requestNumber
     );
     return timer?.payload.kind === 'renew-gap'
-        ? { toPeerId: timer.payload.toPeerId, dueAtMs: resolveALInboundWorkDueAtMs(timer.entry) }
+        ? { toPeerId: timer.payload.toPeerId, dueAtMs: resolveALWorkEntryDueAtMs(timer.entry) }
         : undefined;
 }
 

@@ -199,10 +199,12 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('shared-key arbitratio
     });
 
     it('decides on the outbound sender version: one sender, two messages', async () => {
+        // Each message holds a place on its own track, so its commit fences on its sender's version, and the two
+        // share that version alone: the guard of the written key that decides them is the sender version.
         const fixture = await createArbitrationFixture(storage);
         const store = await createOutboundStore(fixture);
-        const a = createOutboundMessage('version-loser');
-        const b = createOutboundMessage('version-winner');
+        const a = createTrackedOutboundMessage('version-loser', 'track-a');
+        const b = createTrackedOutboundMessage('version-winner', 'track-b');
 
         await runStaleReadThenSequentialCommit({
             fixture,
@@ -503,6 +505,11 @@ const OUTBOUND_MINTING_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg, a
     ...OUTBOUND_ONE_COPY_PLANNER(msg, authority),
     mintsSequence: true
 });
+
+/** A message that states the first sequence of a track of its own. */
+function createTrackedOutboundMessage(resourceId: string, orderingKey: string): ALMessage {
+    return { ...createOutboundMessage(resourceId), ordering: { orderingKey, epoch: 1, seq: 1 } };
+}
 
 /** One sender's message on one track, naming its key and epoch but no sequence. */
 function createMintRequest(resourceId: string): ALMessage {

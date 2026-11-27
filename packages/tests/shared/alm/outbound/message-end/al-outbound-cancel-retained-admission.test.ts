@@ -8,6 +8,7 @@ import {
 } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_OUTBOUND_WORK_LEASE_MS } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
 import {
@@ -26,6 +27,7 @@ import {
 } from '../../session-outbound-test-runtime.ts';
 import {
     openPageOwner,
+    readEndMessageAdmissionRow,
     readEndMessageRow,
     readSendGuardKind,
     relayAnnouncedCommits,
@@ -146,6 +148,14 @@ describe('a cancel or hand-over of a message whose admission was retained (D751)
         vi.setSystemTime(Date.now() + 2_000);
         await drainOutboundWorkDueNow(owner.runtime, owner.stores);
         expect(await owner.stores.admissionStore.hasSentMessageAdmission(message.id.msgId)).toBe(false);
+        // Pins a held end coming due before the lease of the reservation that held it ends, when it can only find the
+        // admission row held again.
+        const heldEnd = await readEndMessageRow(owner.stores, message.id.msgId);
+        const admission = await readEndMessageAdmissionRow(owner.stores, heldEnd);
+        expect(heldEnd?.status).toBe(EntityStatus.RETRY);
+        expect(heldEnd?.dequeueAudit.nextTs?.epochMilliseconds).toBe(
+            Number(admission?.dequeueAudit.startTs?.epochMilliseconds) + AL_OUTBOUND_WORK_LEASE_MS
+        );
         vi.setSystemTime(Date.now() + OUTBOUND_LEASE_RECOVERY_BOUND_MS);
         await drainOutboundWorkDueNow(owner.runtime, owner.stores);
 

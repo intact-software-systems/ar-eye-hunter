@@ -381,7 +381,7 @@ Message ownership is concentrated under [`messages/`](./messages/):
   whichever carrier each came over. No hop orders them: the messages travel as unordered messages and the two ends
   do the work, in memory.
   - **Send.** [EdgeOrderSendStreams](./messages/edge-order/edge-order-send-streams.ts) keeps one stream per channel
-    (topic and type) and room, with an id minted in memory, never from the session id: a reload or another tab is a
+    (topic and type), room and audience, with an id minted in memory, never from the session id: a reload or another tab is a
     new stream. `BrowserRallarMessageSender` takes the send's position in the application's own call, after the
     send's options passed validation and before the connect is awaited, so a refused send takes none. When the
     message is built, [EdgeOrderSender](./messages/edge-order/edge-order-sender.ts) states the stamp: the stream,
@@ -403,6 +403,61 @@ Message ownership is concentrated under [`messages/`](./messages/):
     above them is stated by a later stamp once those are passed, and until then it is waited for like any missing
     message. A hole leaves the stamps when every send below it has ended, because the lowest open position then
     says it. A stamp with no hole carries no `holes` field.
+  - **A send nothing retries: newest wins.** A send is retried only when it is at-least-once and asks a receipt
+    ([`isEdgeOrderRetriedSend`](./messages/edge-order/validate-edge-order-send.ts), decided in the application's
+    call from the send's options and the channel's defaults by
+    [`toEdgeOrderChannelSend`](./messages/edge-order/to-edge-order-channel-send.ts)). A lost copy of any other send (`reliability:
+    'best-effort'`, `ack: 'none'`, or the same asked through `qos`) never comes back, so no receiver waits for it:
+    from the moment it takes its position it is a hole to every later stamp, and the stream keeps nothing of it. A
+    receiver that gets a later message first hands that one over at once, reports the skipped position as an
+    `ended-at-sender` gap, and drops the earlier message as `late` if it still arrives. Such a send is itself held
+    for an earlier retried send that is still missing, like any message. A stream none of whose sends is retried
+    never makes a receiver wait, not even at its entry.
+  - **Narrowed audiences.** A room send may narrow its room: `recipientPeerIds`, `scope: 'principal'` with
+    `principalId`, `exceptPeerIds`, or `peerId` for one browser session, over WS or RTC. A session left out of a
+    send must never wait for it, so one stream is one channel, room and audience
+    ([EdgeOrderSendStreams.openSend](./messages/edge-order/edge-order-send-streams.ts)): the whole room is one
+    audience, each principal, each peer, each set of listed sessions and each set of skipped sessions another, in
+    whatever order a send lists the sessions. A receiver needs no rule for this: it only ever sees the streams
+    whose audience it is in, and a session that comes into an audience later (a principal's new session, a
+    session that joins a room others are skipped from) is a late joiner of that stream. Each audience counts
+    against the page's 256 send streams. A page that sends to more audiences than that starts the stream it sent
+    on least recently anew at position 1, with a new id: its receivers enter the new stream at once, and nothing
+    orders it against what the old stream carried, as after a reload. So an application that gives every message
+    its own recipient list gets a stream per message and no order between them. A send addressed to the server is
+    refused `unsupported` once the connect names the server's peer id
+    ([`validateEdgeOrderPeer`](./messages/edge-order/validate-edge-order-send.ts)): the server is not behind
+    Rallar Web's sorter. The position it took is closed, so it leaves no hole anyone waits for.
+  - **Supersedence.** A send may ask `qos.supersedence` latest-wins with a `supersedenceKey`. A send its carrier
+    settles `superseded` never arrives, so it ends as a hole like a refused one, and the next message says so.
+    That alone would leave the newest value waiting: the stamp of the send that replaces another is made before
+    the carrier settles anything, and ALM drops a copy that arrives after its replacement on receipt, with no
+    receipt, so the replaced send can stay open at the sender until its deadline. So the stamp of a latest-wins
+    send states every earlier open retried send of its key in its stream as a hole
+    ([EdgeOrderSender.stampSend](./messages/edge-order/edge-order-sender.ts)): a receiver that gets the newest
+    value hands it over at once, hands a replaced one over only if it arrived first, and drops it as late
+    otherwise. Only that stamp says so, and the stream itself is not changed: a receiver the replacing send never
+    reaches (nothing retries it and it was lost) still waits for the send it would have replaced, which is then
+    the newest of its key there, and a replacing send that never sets out changes nothing. Sends of another key,
+    or of none, are waited for as before. Latest-wins without a `supersedenceKey`, and `replacesMsgId`, are
+    refused: ALM would still supersede under its default key or by message id, and nothing here would tell a
+    receiver which earlier send not to wait for.
+  - **A live channel.** Nothing retries a live value, so a live channel is newest-wins as above. Two things differ,
+    because a live channel paces its values on a stage before admission and replaces a staged value with a newer
+    one of its stream. First, one edge stream is one publication stream: the channel, room, audience and
+    `resourceId` that `toALPublicationStreamKey` names, which is the unit the stage and ALM's own latest-wins
+    already replace values in. One stream for the whole channel would let a value of one resource that overtook a
+    value of another drop it as late, though it is that resource's newest. Second, the position is taken when the
+    value leaves the stage, not at the call: `BrowserRallarMessageDispatch` calls the publication request's
+    `stampAtOpportunity` once, when the stage's opportunity selects the value and before its leg is written, and
+    [`toBrowserPublicationRequest`](./messages/publication/to-browser-publication-request.ts) wraps the payload with
+    the position taken then. A value
+    displaced on the stage, cancelled there, or expired or refused before it leaves takes no position, so it
+    leaves no hole: a gap a
+    receiver reports on a live channel is a value that left the sender and did not arrive in time. The payload
+    limit counts the wrapper at that moment, and a value refused for it then has taken its position. The stage's
+    byte budget counts the value without the wrapper. A page that publishes more live streams than the 256 send
+    streams it keeps starts the least recently used one anew.
   - **Receive.** `BrowserRallarMessageSubscriptions.dispatch` passes every message of a declared topic and type to
     [EdgeOrderArrivals](./messages/edge-order/edge-order-arrivals.ts), which unwraps it and runs it through one
     [EdgeOrderReceiver](./messages/edge-order/edge-order-receiver.ts) that both carriers share. The page listens
@@ -424,10 +479,32 @@ Message ownership is concentrated under [`messages/`](./messages/):
     no longer arrive), `held-message-deadline`, `channel-wait-cap`, `held-message-cap`, `held-byte-cap` and
     `stream-cap` (a bound of this page was reached; the message is dropped as late if it still arrives), and
     `held-message-expired` (the position arrived and was held past its own deadline).
+  - **A granted channel.** The payload is wrapped before the message is created, so the stamp is inside what the
+    RTC carrier's publisher proof signs: a relay and the subscriber verify the frame as they verify any granted
+    frame, and neither reads the stamp. `subscribe(handler)` is given the publications of each publisher's stream
+    in that publisher's send order, with the application's payload, over either carrier. A session that elects
+    after a stream began is a late joiner: it starts at the first publication it gets, after its entry window when
+    earlier ones can still arrive. A session whose election lapsed and returned still follows the streams it knew:
+    it waits for a publication it was not sent in between only as long as that publication's sender says it can
+    still arrive, which for one its recipients acknowledged is the 500 ms settle time, and then reports the gap.
+    The conformance lane proves the path with `granted-rtc-edge-order-stream`: two publishers at the ends of a
+    three-page path and one subscriber.
+  - **The two waits a channel may set.** `orderGapWaitMs` is the longest this page holds a message of the
+    channel for an earlier one that is missing, counted from when the message was first held; past it the page
+    skips the missing positions with a `channel-wait-cap` gap, and their messages are dropped as late if they
+    still arrive. Absent, only the sender's statement and the held message's own deadline bound the wait.
+    `orderEntryWindowMs` is the length of the entry window below, 500 ms when absent. Both are whole
+    milliseconds, 0 or more, and 0 means no wait. They are receive-side and belong to this page: the sender's page
+    is not told. Like `onOrderGap` they are kept per topic and type
+    ([EdgeOrderArrivals.declare](./messages/edge-order/edge-order-arrivals.ts)): for each of the three, the latest
+    declaration that names it stands, for every room, and a declaration that leaves it out changes nothing about
+    it. A stream takes the waits that stand when its next message arrives, so a declaration made while a message is
+    held applies to that message from the stream's next arrival on.
   - **A reload, a second tab and a late joiner.** A sender's streams are independent. A reloaded page, or another
     tab of the same login, sends on a new stream that starts at once at its receivers and neither closes nor waits
     for any other stream, so each stream is in its own order and nothing orders two streams against each other. A
-    receiver whose first message of a stream is past position 1 waits its entry window (500 ms) for earlier ones,
+    receiver whose first message of a stream is past position 1 waits its entry window (`orderEntryWindowMs`, 500
+    ms by default) for earlier ones,
     unless the sender says nothing earlier can still arrive, and then starts at the lowest message it holds, with
     no gap report. A message from before its entry that reaches it later is dropped as `late` and counted.
   - **What is not handed over** is stated in the connect's inbound diagnostics: `edge-order-arrival` for an
@@ -447,14 +524,17 @@ Message ownership is concentrated under [`messages/`](./messages/):
     what is kept at the read (`streams`, `heldMessages`, `evictedStreams`, `sendStreams`, `openSends`) and what was
     given up since the page loaded (`lateDrops`, `gaps`, `heldDropped`). An idle page holds no message and has no
     open send; its stream and record counts stay where the caps left them.
-  - **Refused as `unsupported`**, at the definition: a `live` channel, a `granted` channel, a channel with a
-    durability other than `volatile`, `channel(...)` without a room, and `onOrderGap` on a channel that declares no
-    order. At the send, before it takes a position: `reliability: 'best-effort'`, `ack: 'none'` or
-    `'group-leader'`, a `qos.delivery` other than at-least-once, a `qos.ack` other than `receiver`,
-    `exceptPeerIds`, `recipientPeerIds`, `principalId`, `peerId` (the server included), a `scope` other than
-    `room`, `orderingKey`, `seq`, `qos.supersedence`, a `qos.durability` other than `volatile`, and the
-    `ws-then-rtc` strategy. A granted channel still waits: a late subscriber is a late joiner, which is now
-    handled, but its wrapped payload has not been proven through the publisher proof and the `subscribe` election.
+  - **Refused as `unsupported`**, at the definition
+    ([`validate-edge-order-channel.ts`](./messages/edge-order/validate-edge-order-channel.ts)): a channel with a
+    durability other than `volatile`, because the order lives in memory only; `channel(...)` without a room,
+    because a stream belongs to one room; and `onOrderGap`, `orderGapWaitMs` or `orderEntryWindowMs` on a channel
+    that declares no order. At the send, before it takes a position
+    ([`validate-edge-order-send.ts`](./messages/edge-order/validate-edge-order-send.ts)): `ack: 'group-leader'`
+    and a `qos.ack` other than `receiver` or `none`, because a hop's or a leader's receipt does not say the
+    recipients have the message, so the sender could call a send over that a recipient still waits for;
+    `scope: 'world'`, which names no room; `orderingKey` and `seq`, which ask for hop order; a
+    `qos.supersedence` that is not latest-wins with a `supersedenceKey` and no `replacesMsgId`; a
+    `qos.durability` other than `volatile`; and the `ws-then-rtc` strategy. After the connect: a `peerId` that is the server's.
   - **Limits.** Both ends must declare the channel: a receiver that did not is given the wrapped payload in
     arrival order, and a receiver that did drops a message without a stamp. The declaration, and with it
     `onOrderGap`, is per topic and type on a page, for every room; a gap report names its stream, and a stream

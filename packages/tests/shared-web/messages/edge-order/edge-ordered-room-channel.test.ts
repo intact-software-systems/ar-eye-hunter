@@ -453,17 +453,12 @@ describe('an edge-ordered room channel: declared on one end only', () => {
 describe('an edge-ordered room channel: refused shapes', () => {
     const unsupported = (path: string) => expect.objectContaining({ issues: [expect.objectContaining({ path, code: 'unsupported' })] });
 
-    it.each<[string, Partial<RallarRoomMessageChannelDefinition>, string]>([
-        ['a live channel', {
-            purpose: 'live',
-            publication: { cadenceMs: 500, retainNewest: 1, drain: { messages: 8, bytes: 65_536 } }
-        }, '$.order'],
-        ['a granted channel', { access: 'granted' }, '$.order'],
-        ['a channel that stores its sends', { durability: 'local-outbox' }, '$.order']
-    ])('refuses %s', (_shape, definition, path) => {
+    it('refuses a channel that stores its sends', () => {
         const page = createEdgeOrderPage({ sessionId: 'alice-session' });
 
-        expect(() => page.messages.room<EdgeOrderTestMove>({ ...EDGE_ORDER_TEST_MOVES, ...definition })).toThrow(unsupported(path));
+        expect(() => page.messages.room<EdgeOrderTestMove>({ ...EDGE_ORDER_TEST_MOVES, durability: 'local-outbox' })).toThrow(
+            unsupported('$.order')
+        );
     });
 
     it('refuses a channel that names no room, and an order it does not know', () => {
@@ -477,24 +472,11 @@ describe('an edge-ordered room channel: refused shapes', () => {
     });
 
     it.each<[string, string, (channel: RallarTypedMessageChannel<EdgeOrderTestMove>) => Promise<object>]>([
-        ['a best-effort send', '$.reliability', (channel) => channel.send({ n: 1 }, { reliability: 'best-effort' })],
-        ['a best-effort QoS request', '$.qos.delivery', (channel) => channel.send({ n: 1 }, { qos: { delivery: { algo: 'best-effort' } } })],
-        ['a send that asks no receipt', '$.ack', (channel) => channel.sendWs({ n: 1 }, { ack: 'none' })],
-        ['a QoS request for no receipt', '$.qos.ack', (channel) => channel.sendRtc({ n: 1 }, { qos: { ack: { algo: 'none' } } })],
         ['a send to the room\'s leader', '$.ack', (channel) => channel.send({ n: 1 }, { ack: 'group-leader' })],
-        ['a send that skips sessions', '$.exceptPeerIds', (channel) => channel.send({ n: 1 }, { exceptPeerIds: ['bob-session'] })],
-        ['a send to a fixed list', '$.recipientPeerIds', (channel) => channel.sendWs({ n: 1 }, { recipientPeerIds: ['bob-session'] })],
-        ['a send to one principal', '$.principalId', (channel) => channel.sendWs({ n: 1 }, { scope: 'principal', principalId: 'bob' })],
-        ['a send to one peer', '$.peerId', (channel) => channel.send({ n: 1 }, { peerId: 'bob-session' })],
         ['a send to the server', '$.peerId', (channel) => channel.sendWs({ n: 1 }, { peerId: 'server' })],
         ['a world send', '$.scope', (channel) => channel.sendWs({ n: 1 }, { scope: 'world' })],
         ['a send with an ordering key', '$.orderingKey', (channel) => channel.send({ n: 1 }, { orderingKey: 'moves' })],
         ['a send with a sequence', '$.seq', (channel) => channel.sendRtc({ n: 1 }, { seq: 1 })],
-        [
-            'a superseding send',
-            '$.qos.supersedence',
-            (channel) => channel.send({ n: 1 }, { qos: { supersedence: { algo: 'latest-wins', opts: { supersedenceKey: 'k' } } } })
-        ],
         ['a stored send', '$.qos.durability', (channel) => channel.send({ n: 1 }, { qos: { durability: { algo: 'local-outbox' } } })],
         ['the ws-then-rtc strategy', '$.strategy', (channel) => channel.send({ n: 1 }, { strategy: 'ws-then-rtc' })]
     ])('refuses %s as unsupported, and the refused send takes no position', async (_shape, path, sendRefused) => {

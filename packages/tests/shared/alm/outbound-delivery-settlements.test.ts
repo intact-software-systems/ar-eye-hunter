@@ -399,8 +399,8 @@ it.each(BACKEND_KINDS)('states the verdict a retained admission replay reached o
     const settlements: ALDeliverySettlement[] = [];
     const stores = createStores(kind);
     const store = stores.admissionStore;
-    // A competing sender wins the version fence inside each of its commit attempts, so the send below is told
-    // its bundle conflicted and retains a pending admission the drain replays on its own.
+    // Another commit of the message wins its version fence inside each of its commit attempts, so the send below is
+    // told its bundle conflicted and retains a pending admission the drain replays on its own.
     loseOutboundCommitAttempts(store);
     const runtime = createDefaultOutboundTestRuntime({
         stores,
@@ -482,7 +482,7 @@ it.each(BACKEND_KINDS)('states the old message superseded at its replacement\'s 
     const old = createOutboundMessage('msg-superseded-before-replay');
     const replacement = createOutboundMessage('msg-replayed-replacement');
     await enqueueOutboundOrThrow(runtime, old);
-    // Each of the replacement's own commit attempts loses the sender's version fence, so its admission waits for the replay.
+    // Each of the replacement's own commit attempts loses a fence it took, so its admission waits for the replay.
     loseOutboundCommitAttempts(store);
 
     expect((await runtime.enqueueIfAbsent(replacement)).verdict).toEqual({ kind: 'pending' });

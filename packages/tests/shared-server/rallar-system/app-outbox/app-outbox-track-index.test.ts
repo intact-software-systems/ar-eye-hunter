@@ -143,6 +143,17 @@ describe('the provenance row of a proved WS outbox row', () => {
             .toThrow(new TypeError('A WS outbox proof expires with its row'));
     });
 
+    it('refuses a proof whose row expires between milliseconds, which storage can round past the proof', () => {
+        const betweenMilliseconds = Temporal.Instant.fromEpochNanoseconds(EXPIRES_AT.epochNanoseconds + 999_600n);
+        const entry = createTrackIndexTestEntry({ typeId: EnqueuedType.WS_OUTBOX, resourceId: 'round-2', seq: 2, expiresAt: betweenMilliseconds });
+        const input = toProvedInput(entry);
+
+        expect(input.provenance!.expiresAtMs).toBe(EXPIRES_AT.epochMilliseconds);
+        expect(() => computeWsOutboxInsert(input)).toThrow(new TypeError('A WS outbox proof expires with its row'));
+        const issues = validateWsOutboxInsert(input, computeWsOutboxInsert(toProvedInput(createEntry(EnqueuedType.WS_OUTBOX, 2))));
+        expect(issues.map((issue) => issue.message)).toEqual(['wsOutbox.provenance.expiresAtMs differs from the row expiry']);
+    });
+
     it('validates a proved row by recomputation: a re-keyed, re-valued, re-expired or missing proof row, a re-keyed index row and a row expiry the facts do not name are each one issue', () => {
         const input = toProvedInput(createEntry(EnqueuedType.WS_OUTBOX, 2));
         const computed = computeWsOutboxInsert(input);

@@ -249,11 +249,15 @@ describe('the control rows a volatile outbound send keeps (D74)', () => {
         });
     });
 
-    it('keeps the per-origin version row for an hour on the volatile pair: it fences every commit of that origin', async () => {
+    it('keeps the per-origin version row for an hour on the volatile pair: it fences every commit of that origin that reads a row its messages share', async () => {
         useFakeDate();
         const pair = createObservedOutboundPair('volatile');
         const runtime = createReceiptedVolatileSendRuntime(pair.stores, []);
-        const message = createOutboundMessage('version-row', { ttlMs: 1_000 });
+        // A send on a track: it reads rows its origin's other messages share, so its commit writes the origin's version.
+        const message: ALMessage = {
+            ...createOutboundMessage('version-row', { ttlMs: 1_000 }),
+            ordering: { orderingKey: 'conversation', epoch: 1, seq: 1 }
+        };
         await enqueueOutboundOrThrow(runtime, message);
         const acknowledgedAtMs = Date.now();
 

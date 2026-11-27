@@ -441,18 +441,18 @@ moved or changed test.
       }
     },
     {
-      "id": "alm-inbound-conflict-one-admission-attempt",
+      "id": "alm-inbound-conflict-bounded-admission-attempts",
       "domain": "ALM incoming optimistic admission recovery",
       "owner": "Rallar shared maintainers",
-      "summary": "An initial incoming delivery makes one admission commit attempt; a lost conditional write retains pending work for fresh worker admission after restart.",
-      "semanticCoverage": "packages/tests/shared/al-inbound-message-runtime.test.ts#retains a stale optimistic write for fresh admission after runtime restart",
-      "coverageRelation": "The fixture commits an actual competing owner observation through the bound real store method, then lets the original bundle lose CAS. It checks one outer runtime call, pending NEW work and no premature effects, then recreates the runtime and proves ordered delivery, forwarding and duplicate handling.",
+      "summary": "An initial incoming delivery whose writes are lost makes at most three admission commit writes before it is retained as pending work for fresh worker admission after restart.",
+      "semanticCoverage": "packages/tests/shared/al-inbound-message-runtime.test.ts#retains a write lost on each of its three attempts for fresh admission after runtime restart",
+      "coverageRelation": "The fixture commits an actual competing owner observation through the bound real store method, lets the original bundle lose CAS, and loses every later write. It checks three commit attempts in one outer runtime call, pending NEW work and no premature effects, then recreates the runtime and proves ordered delivery, forwarding and duplicate handling.",
       "interactionRequirement": {
         "interactionKind": "count",
         "ownedPort": "ALInboundAdmissionStore.commitBundle called by ALInboundMessageAdmission.attempt",
         "observableEffect": "Each runtime call submits a separately computed admission candidate to the authoritative conditional persistence boundary.",
-        "requiredConstraint": "The initial runtime delivery invokes commitBundle exactly once; its conflict must be handed to retained QueueBox work rather than an inner admission retry.",
-        "failureRationale": "Eventual delivery and a pending row do not exclude an extra hidden commit attempt before retention. The count guards the one-attempt-per-delivery retry contract. The competing write performed inside the fixture is not counted as an outer runtime call."
+        "requiredConstraint": "The initial runtime delivery invokes commitBundle at most three times while each write is lost; the third conflict must be handed to retained QueueBox work rather than a fourth attempt.",
+        "failureRationale": "Eventual delivery and a pending row do not exclude an unbounded or extra hidden commit attempt before retention. The count guards the bounded attempts of one delivery. The competing write performed inside the fixture is not counted as an outer runtime call."
       }
     },
     {
@@ -6030,21 +6030,6 @@ moved or changed test.
       }
     },
     {
-      "id": "alm-outbound-own-outside-audience-no-write",
-      "domain": "ALM outbound receipt outside class",
-      "owner": "Rallar shared maintainers",
-      "summary": "Recording the server's own skipped recipients outside its receipt writes nothing for a peer already outside.",
-      "semanticCoverage": "packages/tests/shared/alm/outbound/admission/al-outbound-outside-audience-commit.test.ts#is idempotent and writes nothing for a peer already outside",
-      "coverageRelation": "The tests commit a real pending receipt through the in-memory admission store, call commitOutsideAudience, and compare the receipt row and the origin's version row before and after, beside the answer the store returns.",
-      "interactionRequirement": {
-        "interactionKind": "absence",
-        "ownedPort": "ALAdmissionWorkBackend.write for commitOutsideAudience",
-        "observableEffect": "A write rewrites the receipt row and bumps the server's single sender version, which every server-origin dispatch commits under.",
-        "requiredConstraint": "commitOutsideAudience opens no write transaction when its fold changes nothing, when no pending receipt exists, or when the receipt is complete.",
-        "failureRationale": "An identical rewrite leaves the readback row unchanged apart from its expiry, so the row snapshot alone cannot prove the sender version was not bumped and a concurrent dispatch was not forced into a conflict."
-      }
-    },
-    {
       "id": "alm-outbound-ordering-stored-predecessors-bounded-read",
       "domain": "ALM outbound track order",
       "owner": "Rallar shared maintainers",
@@ -6072,36 +6057,6 @@ moved or changed test.
         "observableEffect": "A read costs every settled dequeue a store round trip; an index-end commit deletes the index row later rows of the track read to find their predecessor recorded.",
         "requiredConstraint": "For a row whose own commit recorded positions, the index end makes zero stored-row reads and zero index-end commits.",
         "failureRationale": "The function returns nothing, so only the absence of these port calls shows the recorded row's index stayed and no extra read was paid."
-      }
-    },
-    {
-      "id": "alm-outbound-own-outside-audience-absent-no-write",
-      "domain": "ALM outbound receipt outside class",
-      "owner": "Rallar shared maintainers",
-      "summary": "Recording the server's own skipped recipients outside a receipt that was never written answers absent and writes nothing.",
-      "semanticCoverage": "packages/tests/shared/alm/outbound/admission/al-outbound-outside-audience-commit.test.ts#answers absent for a receipt that does not exist and writes nothing",
-      "coverageRelation": "The tests commit a real pending receipt through the in-memory admission store, call commitOutsideAudience, and compare the receipt row and the origin's version row before and after, beside the answer the store returns.",
-      "interactionRequirement": {
-        "interactionKind": "absence",
-        "ownedPort": "ALAdmissionWorkBackend.write for commitOutsideAudience",
-        "observableEffect": "A write rewrites the receipt row and bumps the server's single sender version, which every server-origin dispatch commits under.",
-        "requiredConstraint": "commitOutsideAudience opens no write transaction when its fold changes nothing, when no pending receipt exists, or when the receipt is complete.",
-        "failureRationale": "An identical rewrite leaves the readback row unchanged apart from its expiry, so the row snapshot alone cannot prove the sender version was not bumped and a concurrent dispatch was not forced into a conflict."
-      }
-    },
-    {
-      "id": "alm-outbound-own-outside-audience-completed-no-write",
-      "domain": "ALM outbound receipt outside class",
-      "owner": "Rallar shared maintainers",
-      "summary": "Recording the server's own skipped recipients outside a receipt already complete answers absent and writes nothing, so its completion retention is never shortened.",
-      "semanticCoverage": "packages/tests/shared/alm/outbound/admission/al-outbound-outside-audience-commit.test.ts#answers absent for a receipt already complete and writes nothing",
-      "coverageRelation": "The tests commit a real pending receipt through the in-memory admission store, call commitOutsideAudience, and compare the receipt row and the origin's version row before and after, beside the answer the store returns.",
-      "interactionRequirement": {
-        "interactionKind": "absence",
-        "ownedPort": "ALAdmissionWorkBackend.write for commitOutsideAudience",
-        "observableEffect": "A write rewrites the receipt row and bumps the server's single sender version, which every server-origin dispatch commits under.",
-        "requiredConstraint": "commitOutsideAudience opens no write transaction when its fold changes nothing, when no pending receipt exists, or when the receipt is complete.",
-        "failureRationale": "An identical rewrite leaves the readback row unchanged apart from its expiry, so the row snapshot alone cannot prove the sender version was not bumped and a concurrent dispatch was not forced into a conflict."
       }
     },
     {
@@ -9490,12 +9445,12 @@ moved or changed test.
       "id": "test-structure-coupling-3473aa2934492476",
       "path": "packages/tests/shared/al-inbound-message-runtime.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "alm-inbound-conflict-one-admission-attempt",
+      "contract": "alm-inbound-conflict-bounded-admission-attempts",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar shared maintainers",
-      "rationale": "The one outer commit invocation forbids an inner optimistic retry. The same test separately proves durable pending ownership, restart replay and final delivery; the bound competing write is fixture input, not another runtime call.",
-      "semanticCoverage": "packages/tests/shared/al-inbound-message-runtime.test.ts#retains a stale optimistic write for fresh admission after runtime restart"
+      "rationale": "The three outer commit invocations forbid a fourth optimistic attempt. The same test separately proves durable pending ownership, restart replay and final delivery; the bound competing write is fixture input, not another runtime call.",
+      "semanticCoverage": "packages/tests/shared/al-inbound-message-runtime.test.ts#retains a write lost on each of its three attempts for fresh admission after runtime restart"
     },
     {
       "id": "test-structure-coupling-0942a87639fec715",
@@ -13027,39 +12982,6 @@ moved or changed test.
       "owner": "Rallar browser maintainers",
       "rationale": "The absence of a request specifically carrying Bob’s credentials proves hidden account replacement defers its canonical read.",
       "semanticCoverage": "packages/tests/shared-web/rooms/move/rallar-room-move.test.ts#defers hidden reads and fences the previous account across foreground recovery"
-    },
-    {
-      "id": "test-structure-coupling-9cdcb40fd8a90eea",
-      "path": "packages/tests/shared/alm/outbound/admission/al-outbound-outside-audience-commit.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "alm-outbound-own-outside-audience-no-write",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar shared maintainers",
-      "rationale": "The absent backend write proves recording an already-outside peer is idempotent: it neither rewrites the receipt nor bumps the server's sender version, which every server-origin dispatch commits under, so a repeated skip costs no fence contention.",
-      "semanticCoverage": "packages/tests/shared/alm/outbound/admission/al-outbound-outside-audience-commit.test.ts#is idempotent and writes nothing for a peer already outside"
-    },
-    {
-      "id": "test-structure-coupling-3f6a9447a5d86434",
-      "path": "packages/tests/shared/alm/outbound/admission/al-outbound-outside-audience-commit.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "alm-outbound-own-outside-audience-absent-no-write",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar shared maintainers",
-      "rationale": "The absent backend write proves a skip on a row whose receipt was never written (a first-dequeue drop precedes the receipt) answers absent without creating a receipt row or bumping the server's sender version.",
-      "semanticCoverage": "packages/tests/shared/alm/outbound/admission/al-outbound-outside-audience-commit.test.ts#answers absent for a receipt that does not exist and writes nothing"
-    },
-    {
-      "id": "test-structure-coupling-4545095888eae0cf",
-      "path": "packages/tests/shared/alm/outbound/admission/al-outbound-outside-audience-commit.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "alm-outbound-own-outside-audience-completed-no-write",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar shared maintainers",
-      "rationale": "The absent backend write proves a completed receipt is never rewritten by a later skip: a rewrite would shorten the retention completion extended to the message deadline and bump the server's sender version for nothing.",
-      "semanticCoverage": "packages/tests/shared/alm/outbound/admission/al-outbound-outside-audience-commit.test.ts#answers absent for a receipt already complete and writes nothing"
     },
     {
       "id": "test-structure-coupling-8035b512f2fde42f",

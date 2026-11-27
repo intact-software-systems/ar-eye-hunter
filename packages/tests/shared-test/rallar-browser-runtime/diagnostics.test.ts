@@ -568,7 +568,8 @@ it.each([
             targetMsgId: 'unsent-message',
             pendingBefore: null,
             candidateAfter: null,
-            senderVersion: expect.any(Number),
+            // The sender's one send reads no row its other messages share, so no commit wrote its version row.
+            senderVersion: null,
             candidateExpiresAtMs: null,
             settlement: null,
             commitOutcome: 'not-attempted'

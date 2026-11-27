@@ -293,6 +293,11 @@ const EXPECTED_OUTCOMES = {
         rtc: UNDELIVERED_EXPIRED,
         'rtc-with-ws-fallback': HANDED_TO_WS_NOT_READY
     },
+    'granted-receiver-unicast-to-non-subscriber': {
+        ws: toRefusedBy('trusted-server', 'unauthorized'),
+        rtc: toRefusedBy('origin', 'unauthorized'),
+        'rtc-with-ws-fallback': toHandedToWsAtAdmission('no-route')
+    },
     'ordered-gap-repair': { ws: DELIVERED, rtc: DELIVERED, 'rtc-with-ws-fallback': DELIVERED },
     'repair-budget-exhausted': {
         ws: toUndelivered('skipped', 'repair-exhausted'),

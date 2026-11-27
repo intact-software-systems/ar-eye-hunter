@@ -25,6 +25,7 @@ import {
 import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { decodeALInboundWorkEntry, toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
+import { toALOutboundOriginMessageKey } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
 import type { ALOutboundMessageRuntime, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -37,6 +38,7 @@ import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { createPSqlAdmissionTestStorage, type PSqlAdmissionTestStorage } from '../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
+import { loseInboundWritesFromNowOn } from '../shared/alm/inbound-runtime-test-fixture.ts';
 
 const AUTHENTICATED_SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
 
@@ -58,7 +60,8 @@ describe('PSql admission optimistic retry', () => {
         const message = createInboundMessage('inbound-conflict');
         conflictNextInboundCommit({ storage, namespace, msg: message, nowMs: Date.now });
 
-        await expect(store.commitMutations({
+        await expect(store.commitBundle({
+            admissionExpiresAtMs: null,
             senderId: 'peer-1',
             observations: (await readIncoming(store, message, Date.now())).observations,
             mutations: [{
@@ -72,7 +75,8 @@ describe('PSql admission optimistic retry', () => {
                     originAuthenticated: false
                 },
                 expireAtTimestamp: Date.now() + 60_000
-            }]
+            }],
+            durableEffects: []
         })).resolves.toBe('conflict');
     });
 
@@ -93,7 +97,8 @@ describe('PSql admission optimistic retry', () => {
         const message = createInboundMessage('inbound-error');
         vi.spyOn(sql, 'begin').mockRejectedValueOnce(new Error('inbound storage unavailable'));
 
-        await expect(store.commitMutations({
+        await expect(store.commitBundle({
+            admissionExpiresAtMs: null,
             senderId: 'peer-1',
             observations: (await readIncoming(store, message, Date.now())).observations,
             mutations: [{
@@ -107,7 +112,8 @@ describe('PSql admission optimistic retry', () => {
                     originAuthenticated: false
                 },
                 expireAtTimestamp: Date.now() + 60_000
-            }]
+            }],
+            durableEffects: []
         })).rejects.toThrow('inbound storage unavailable');
     });
 
@@ -132,6 +138,10 @@ describe('PSql admission optimistic retry', () => {
         });
         const msg = createInboundMessage('inbound-runtime-retry');
         conflictNextInboundCommit({ storage, namespace: store.namespace, msg, nowMs: Date.now });
+        // The first write meets that CAS loss in the store's own transaction; every later attempt's write is lost too,
+        // so the admission is retained however often its owner looks again.
+        vi.spyOn(store, 'commitBundle').mockImplementationOnce(store.commitBundle.bind(store));
+        const restoreWrites = loseInboundWritesFromNowOn(store);
         const source = { kind: 'ws-client' as const, peerId: 'peer-1', authenticatedScope: AUTHENTICATED_SCOPE };
 
         const conflicted = await runtime.admitIncomingMessage(msg, source);
@@ -153,6 +163,7 @@ describe('PSql admission optimistic retry', () => {
         const pending = decodeALInboundWorkEntry(page.entries[0], store.namespace);
         expect(pending.payload).toMatchObject({ kind: 'admit-message', msg: { id: msg.id }, source });
         expect(pending.expireAtTimestamp).toBe(msg.constraints?.expiresAtMs);
+        restoreWrites();
         retention.mockRestore();
 
         const restartedStores = createDefaultPSqlALInboundRuntimeStores(options);
@@ -274,16 +285,22 @@ describe('PSql admission optimistic retry', () => {
         await runtime.ready();
         const commit = store.commitBundle.bind(store);
         let attempts = 0;
-        // Another commit of the sender moves its version after each attempt's read, so every attempt loses the fence.
+        // Another commit of the message moves its version after each attempt's read, so every attempt loses the fence
+        // its message's version takes; the send reads no row its sender's other messages share.
         vi.spyOn(store, 'commitBundle').mockImplementation(async (candidate) => {
             if (attempts < AL_OUTBOUND_COMMIT_ATTEMPTS) {
-                expect(candidate.expectedVersion).toBe(attempts === 0 ? undefined : attempts);
+                expect(candidate.message.expectedVersion).toBe(attempts === 0 ? undefined : attempts);
                 attempts += 1;
                 await repository.upsert(
                     {
                         namespace: store.namespace,
-                        key: `${store.namespace}:version:self`,
-                        value: JSON.stringify({ senderId: 'self', version: attempts }),
+                        key: toALOutboundOriginMessageKey({
+                            row: 'msg-version',
+                            namespace: store.namespace,
+                            originPeerId: candidate.message.originPeerId,
+                            msgId: candidate.message.msgId
+                        }),
+                        value: JSON.stringify({ msgId: candidate.message.msgId, version: attempts }),
                         expireAtTimestamp: Date.now() + 60_000
                     }
                 );

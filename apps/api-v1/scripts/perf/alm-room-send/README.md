@@ -37,9 +37,9 @@ report and artifact. It measures; it gates nothing, and no figure fails a run.
 One Bun process holds three API instances on one PostgreSQL database and fifteen sessions in one
 room, five on each instance. Each instance is the real `WsQueueBoxServerService` with the real
 `RallarServerWsRouter`, its own application pool and listener pool from the API's database
-lifecycle, the PostgreSQL QueueBox bridge, the live notice subscriber and the relayed-ACK
-subscriber, wired as the API's middleware wires them. One port is replaced: the room authorizer,
-which admits a fixed audience and reads nothing.
+lifecycle, the PostgreSQL QueueBox bridge and the live notice subscriber, and the receipt record
+the three share on PostgreSQL, wired as the API's middleware wires them. One port is replaced: the
+room authorizer, which admits a fixed audience and reads nothing.
 
 The first sessions of the room publish. Each publisher offers the message a browser's
 `notification` channel writes to its WS socket for a room send under the `ws` strategy: a room
@@ -119,21 +119,28 @@ two:
   of, the router publishes one live notice NOTIFY that carries the message inline, writes the copies
   of its own sessions once the publish has returned, and each other instance writes its sessions'
   copies as the NOTIFY reaches it. No copy is a row of the WS outbox.
-- **A receipt.** The instance that admitted the send writes a receipt row to the shared WS outbox.
-  The instance whose worker takes the row writes it to the origin's socket when that socket is its
-  own; otherwise it announces the row's key through the QueueBox bridge's NOTIFY for the origin's
-  instance to write, and announces it again until the row expires. A publisher may therefore read
-  one receipt more than once.
-- **An ACK.** A recipient's ACK is counted on the instance its socket is on when that instance
-  admitted the send; otherwise that instance relays it to the others by the relayed-ACK NOTIFY.
+- **A receipt.** The instance that admits the send opens its receipt in the receipt record and
+  writes the `admitted` receipt to the origin's sockets on that instance: at ingress the origin's
+  own instance, and for a send kept `pending-admission`, the instance whose worker ran its replay.
+  It stores the receipt as a row of the shared WS outbox only when no socket there took it. The
+  terminal receipt is always such a row, written by the record's ended work on whichever instance
+  claims that work, at least once under one control id. The instance whose worker takes a row writes
+  it to the origin's socket when that socket is its own; otherwise it announces the row's key
+  through the QueueBox bridge's NOTIFY and leaves the row to be taken again, until an instance that
+  holds the origin's socket takes it or the row expires: the receipt row's republication. A
+  publisher may therefore read one receipt more than once. The receipt is the same under both
+  orderings.
+- **An ACK.** A recipient's ACK is counted in the record by the instance its socket is on, whichever
+  instance admitted the send. Nothing carries an ACK between instances.
 
 ### What a publisher hears of its own send
 
 The `admitted` receipt is the only thing the server writes to the origin when it admits a send
 (`writeAdmittedReceipt` in
-`packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts`), and it
-travels as the outbox row above, not as an answer on the socket: the entry's return value is
-discarded at the socket ingress (`registerSocketIngress` in
+`packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts`): the
+admitting instance writes it to the origin's socket once the record has opened the receipt, as
+above. It is no answer of the entry: the entry's return value is discarded at the socket ingress
+(`registerSocketIngress` in
 `packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts`), and an admission
 answered `pending-admission` writes no receipt until its replay admits the send.
 
@@ -143,16 +150,20 @@ Only a receipt of the send, in any phase, or a NACK that may end the send, ends 
 from the receipt a send asks and from its retry policy, never from its ordering key
 (`toWsQueueBoxClientFirstHopTrackingPlan` in
 `packages/shared/services/ws-queue-box-client/ws-queue-box-client-receipt-tracking.ts`), so a send
-of either ordering holds it. So when the receipt row is slow to reach the origin's socket, a client
+of either ordering holds it. So when the `admitted` receipt is slow to reach the origin's socket, a client
 resends a send the server already holds, and after the third silent resend, about 8 s after the
 offer, it ends the message as `receipt-exhausted`. First-hop resends in a run are therefore the
 client's own behaviour under a slow receipt, not something the cell adds; the 8 s is read from the
 code and was not measured against a browser.
 
-The margin under that 2 s wait is thin at the reference load even with no latency added: in one
-reference run of ordered sends at +0 ms the 99th percentile from offer to complete receipt reached
-1.95 s ([reference figures](#reference-figures)). That is why a healthy run can still show a few
-first-hop resends.
+On the build before the receipt record, which stored `admitted` as an outbox row, the margin under
+that 2 s wait was thin at the reference load even with no latency added: in one reference run of
+ordered sends at +0 ms the 99th percentile from offer to complete receipt reached 1.95 s
+([reference figures](#reference-figures)), which is why a healthy run there could still show a few
+first-hop resends. On the build with the record, one run of ordered sends at +5 ms, on another
+machine than the reference sets' (so not a comparison with them), read `admitted` at a 99th
+percentile of 0.53 s and `complete` at 1.31 s after the offer, and no publisher resent a send
+([one run on the build with the record](#one-run-on-the-build-with-the-receipt-record)).
 
 ## Running it
 
@@ -238,7 +249,8 @@ unordered run of one shape never share a name. It holds:
   - in full, with their instants: the later offers (`resends`), the receipts, the NACKs and repair
     requests (`controls`), any control of another kind (`unclassifiedControls`), the sends the
     stand-in ended (`sendEnds`), and the first offers and the ACKs that threw. Each stayed under a
-    thousand entries in every run of the ordered [reference set](#reference-figures);
+    thousand entries in every run of the ordered [reference set](#reference-figures), measured on
+    the build before the receipt record, and in the one run since;
   - summarised: the repairs the stand-in declined (`declinedRepairs`), as the count by reason, the
     first 200 with their instants, and one row for each send and reason with its count and its first
     and last instant. A stalled track draws a decline for each ended send at each execution of each
@@ -328,8 +340,8 @@ orderings unless it says otherwise below: two lines are worded by the ordering, 
   after the send's lifetime. `admitted only` read an `admitted` receipt and no terminal one before
   observation ended; `none` read no receipt at all.
 - **ACKs.** Each recipient offers one ACK for its first read of a copy, and the entry answers it as
-  a `control`, whether the instance counted it for a receipt it holds or relayed it to the others;
-  the answer does not say which. An ACK the entry rejected, by the code of the rejection, or whose
+  a `control` once its instance has counted it in the receipt record, whichever instance admitted
+  the send. An ACK the entry rejected, by the code of the rejection, or whose
   offer threw, counted for nothing: it would explain a receipt that never completes.
 - **Controls.** The NACKs and repair requests the publishers' sockets read, by reason. A control
   about a gap names the send whose arrival showed the gap, never a missing one, so a send that
@@ -341,8 +353,9 @@ orderings unless it says otherwise below: two lines are worded by the ordering, 
 - **Resends.** Only under `client-stand-in`: the later offers by cause, `repair` or `first-hop`, and
   what came of each. The server answers `duplicate` to a send it has already admitted and hands
   nothing off for it, so a resend of an admitted send brings no copy. It is not without effect:
-  while the send's receipt is still open on that instance, each such offer makes the instance write
-  the `admitted` receipt again, one more outbox row.
+  the instance answers each such offer from the receipt record, with the `admitted` receipt and the
+  confirmations so far on the origin's socket while the receipt is open, and with the terminal
+  receipt as one more outbox row once it has ended.
 - **Sends the stand-in ended, and repairs it declined.** Only under `client-stand-in`: the sends
   ended, by cause, and the re-offers a repair request asked for that the stand-in did not make
   because the send had ended or expired, when the request was served or by the instant the re-offer
@@ -461,7 +474,7 @@ Delayed:
 - a transaction after BEGIN, before each of its statements and before COMMIT or ROLLBACK, holding
   its connection and its locks through all of it;
 - a savepoint before it opens, and again after it when it is rolled back;
-- every NOTIFY publish: a copy's live notice, the announcement of a receipt row, a relayed ACK.
+- every NOTIFY publish: a copy's live notice and the announcement of a receipt row.
 
 Not delayed:
 
@@ -524,8 +537,12 @@ outside a transaction holds no connection while it waits.
   bound, as stated above.
 - **A stand-in, not a client.** `client-stand-in` leaves out what the section above names, and
   neither recovery models what a browser does after `resync-required` or `receipt-exhausted`.
-- **Receipt aggregates.** An instance bounds its receipt aggregates at 4096; the shapes the options
-  allow in a short window stay far below it, and a longer or faster run may not.
+- **Receipt rows.** The three instances count each receipt in one receipt record on PostgreSQL,
+  and no count of open receipts bounds it: an open receipt's rows live until 30 s past its send's
+  deadline and a confirmation under it 30 s longer, an ended receipt 30 s past the later of its
+  deadline and its end, and a confirmation counted before its receipt was opened 30 min and 30 s,
+  so the rows a run holds grow with its send rate. A send to more than 256 recipients, or one whose
+  receipt the control cannot carry, opens no receipt; the room's fourteen stay far below both.
 - **A local database.** PostgreSQL shares the machine's disk and processor with the cell. Other
   work on the machine shows in the load average the artifact records.
 - **One clock, for the cell.** The cell reads and waits through one injected clock; the product's
@@ -538,7 +555,14 @@ outside a transaction holds no connection while it waits.
 ## Reference figures
 
 Every figure this README states from a run is from one of two reference sets of 16 runs each, on
-one machine, one run at a time.
+one machine, one run at a time, or from the one run on the build with the receipt record below.
+Both sets were measured on the build before the durable receipt record, which counted a receipt in
+the memory of the instance that admitted its send, relayed an ACK to it from the others, and stored
+`admitted` as an outbox row. No figure of either set is of the build with the record, where the
+instances count in one record on PostgreSQL and `admitted` is written on the admitting socket. On
+that build one run was made, of the ordered set's five-publisher shape at +5 ms under
+`client-stand-in`, on another machine; its figures are stated apart, below, and are of that build
+only.
 
 ### The ordered set
 
@@ -573,7 +597,8 @@ a second for 20 s offer 200 sends, each to fourteen recipients.
 
 - **Ordering.** `--ordering=unordered` on every run.
 - **Commit.** `5e8f819`, on the branch of pull request #932, whose product code was `main`'s at
-  `430e94f`. The artifacts carry the schema `rallar.alm.room-send-cell.v1`.
+  `430e94f`, the build before the receipt record. The artifacts carry the schema
+  `rallar.alm.room-send-cell.v1`.
 - **Shapes.** The sixteen of the ordered set, run for run.
 - **Machine.** The same, on 2026-11-27. Each run had a fresh database, and the 1-minute load was
   0.17 to 0.69 at each start.
@@ -606,9 +631,25 @@ What the set supports:
   first-hop resends (173), each answered `duplicate`.
 
 What it does not support: why the receipt is late (no cause was looked for); a spread, with three
-runs of two shapes and one of each other; and a comparison with the ordered set, as the
-[limits](#limits) say. The smoke on PostgreSQL runs a small unordered cell and proves behaviour,
-never timing.
+runs of two shapes and one of each other; a comparison with the ordered set, as the
+[limits](#limits) say; and any figure of the build with the receipt record, where no unordered run
+has been made. The smoke on PostgreSQL runs a small unordered cell and proves behaviour, never
+timing.
+
+### One run on the build with the receipt record
+
+One run of ordered sends, `--ordering=ordering-key`, five publishers at 2 sends a second for 20 s,
++5 ms, `client-stand-in`, the API's default pool of 5, on 2026-11-27 at a 1-minute load of 2.2 to
+3.9, on another machine than the sets': a 12-core Apple M2 Max with PostgreSQL 16.12, Bun 1.4.5.
+It wrote 2,800 of 2,800 copies in order, none more than once, the first write at a median of
+0.22 s and a 99th percentile of 0.74 s after the due time; all 200 receipts completed, at a median of 0.70 s and a 99th percentile of 1.31 s after the offer, and
+`admitted` at a 99th percentile of 0.53 s; no send was handed off twice, no NACK or repair request
+was sent, and no publisher resent a send. n is 1. The build holds several changes beyond the one the
+sets were measured on, on this path, and one run does not separate them: the durable receipt record
+the instances count in, a receipt commit fenced on its own message's version, `admitted` written on
+the admitting socket, an ordered completion guarded on its position and its slot, a lost inbound
+write tried again at once, and the batch that completes an ordered delivery handing on its track's
+next one.
 
 ## Navigation
 

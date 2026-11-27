@@ -38,10 +38,9 @@ export interface RoomSendCellOffer {
  * entry accepted the offer as; `rejected` for a rejection; `threw` for an offer whose call threw, with the error's
  * name and its message, cut at 240 characters with anything URL-shaped removed; or `unanswered` for an offer still
  * pending when observation ended. An offer that threw says nothing of what the server did with the frame: it may
- * have admitted the send before it threw. An instance answers a recipient's ACK `control` whether it counted the ACK
- * for a receipt it holds or relayed it to the other instances: the answer does not say which. Its `handled` flag says
- * whether the instance's own outbound owner took the control, is false for a recipient's ACK either way, and is not
- * kept.
+ * have admitted the send before it threw. An instance answers a recipient's ACK `control` once it has counted the ACK
+ * in the receipt record the instances share, whichever instance admitted the send. Its `handled` flag says whether
+ * the instance's own outbound owner took the control, is false for a recipient's ACK, and is not kept.
  */
 export type RoomSendCellAnswer =
     | {
@@ -134,12 +133,15 @@ export interface RoomSendCellHandOff {
 }
 
 /**
- * A session's socket read a receipt of a send. A receipt is a row the instance that admitted the send writes to the
- * shared WS outbox. The instance whose worker takes the row writes it to the origin's socket when that
- * socket is its own; otherwise it announces the row's key by a `ws-channel` NOTIFY for the origin's instance to
- * write, and announces it again until the row expires, so the origin may read one receipt more than once. A
- * recipient's ACK reaches the instance that counts it directly, or by a `ws-relayed-ack` NOTIFY from the instance
- * its socket is on.
+ * A session's socket read a receipt of a send. Every instance counts the recipients' ACKs in one receipt record on
+ * PostgreSQL, the instance a recipient's socket is on counting that recipient's. The `admitted` receipt is written
+ * to the origin's sockets on the instance that admitted the send (the origin's own at ingress; for a send kept
+ * `pending-admission`, the instance that ran its replay), and is a row of the shared WS outbox only when no socket
+ * there took it. The terminal receipt is a row of the shared WS outbox, written by the record's ended work on
+ * whichever instance claims it. The instance whose worker takes a row writes it to the origin's socket when that
+ * socket is its own; otherwise it announces the row's key by a `ws-channel` NOTIFY and leaves the row to be taken
+ * again, until an instance that holds the origin's socket takes it or the row expires (the receipt row's
+ * republication), so the origin may read one receipt more than once.
  */
 export interface RoomSendCellReceipt {
     readonly msgId: string;

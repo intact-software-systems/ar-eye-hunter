@@ -110,7 +110,7 @@ export interface ALMObservationInboundDrain {
     readonly runDurationMs: number;
     readonly releaseDurationMs: number;
     readonly queueWaitMs: number;
-    /** Releases the batch ran by promotion (D190). */
+    /** Every delivery the batch ran by hand-on, a buffered release or an in-order delivery (D190, D785). */
     readonly promoted: number;
 }
 

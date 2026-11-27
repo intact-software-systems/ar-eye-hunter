@@ -230,6 +230,7 @@
     },
     {
       "name": "probeOverLimitJoinAnswers429WithRetryAfter",
+      "description": "The per-principal bucket refills continuously (one token per windowMs / limit), so a request sent after the storm can find a refilled token and be admitted. Resend until the drained bucket refuses: a working limiter refuses within a few attempts because it returns at most one token per refill interval, and an absent limiter exhausts the attempts and fails.",
       "type": "http",
       "connection": "api",
       "request": {
@@ -241,6 +242,12 @@
         },
         "body": {
           "status": "active"
+        },
+        "poll": {
+          "maxAttempts": 10,
+          "maxDurationMs": 30000,
+          "backoffMs": 0,
+          "backoffMultiplier": 1
         }
       },
       "expect": {
