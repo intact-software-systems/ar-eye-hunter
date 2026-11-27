@@ -1,78 +1,76 @@
+// Ruling M1 and slice 4 cited below are the maintainer's ruling on R16 of plans/active/alm-v1-production-readiness.md
+// (a room copy missed on the default fan-out) and that item's repair on a server of one process.
 import { describe, expect, it } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_VOLATILE_STORE_EVICTION_INTERVAL_MS } from '@shared/alm/ALStoreRetention.ts';
 
-import { roomMessage } from '../../../../shared/services/ws-queue-box-server-receipt-fixture.ts';
 import {
-    advanceLiveRoomClock,
     connectLiveRoomSession,
     createLiveRoomClusterFixture,
+    createLiveRoomSend,
+    LIVE_ROOM_ORIGIN,
+    LIVE_ROOM_SESSION_IDS,
     readLiveRoomStoredCopies,
     settleLiveRoomCluster,
     type LiveRoomClusterFixture
 } from './live-room-cluster-fixture.ts';
 
-const ORIGIN = 'p';
-const ROOM = [ORIGIN, 'r1', 'r2'];
 const LIFETIME_MS = 10_000;
-const KEEPS_ALL = () => false;
 
 describe('the server\'s inbound store keeps a live-path room send for its repair', () => {
     // Pins a change to the inbound store's retention that leaves a live-path send with no envelope or audience another
     // instance can read before its deadline: the resend of ruling M1 would then send nothing.
     it('keeps a handed-on send\'s envelope and admitted audience readable by another instance until its deadline', async () => {
-        const fixture = await createLiveRoomClusterFixture({ roomSessionIds: ROOM, volatileInbound: false });
+        const fixture = await createLiveRoomClusterFixture({ roomSessionIds: LIVE_ROOM_SESSION_IDS, volatileInbound: false });
         const { a, b } = fixture.instances;
-        await connectLiveRoomSession(a, ORIGIN, KEEPS_ALL);
-        await connectLiveRoomSession(a, 'r1', KEEPS_ALL);
-        await connectLiveRoomSession(b, 'r2', KEEPS_ALL);
-        const deadlineMs = fixture.clock.nowMs + LIFETIME_MS;
-        const sends = [
-            receipted(fixture, 'm-1'),
-            { ...receipted(fixture, 'm-2'), delivery: { reliability: 'at-least-once', ack: 'none' } } satisfies ALMessage
-        ];
+        await connectLiveRoomSession(a, LIVE_ROOM_ORIGIN, undefined);
+        await connectLiveRoomSession(a, 'r1', undefined);
+        await connectLiveRoomSession(b, 'r2', undefined);
+        const sentAtMs = fixture.clock.nowMs;
+        const receipted = createLiveRoomSend({ msgId: 'm-1', nowMs: sentAtMs, lifetimeMs: LIFETIME_MS });
+        const unreceipted: ALMessage = {
+            ...createLiveRoomSend({ msgId: 'm-2', nowMs: sentAtMs, lifetimeMs: LIFETIME_MS }),
+            delivery: { reliability: 'at-least-once', ack: 'none' }
+        };
+        const sends = [receipted, unreceipted];
         await handOn(fixture, sends);
         const store = b.stores.inboundStores.admissionStore;
+        const kept = sends.map((envelope) => ({ envelope, sourceAudience: LIVE_ROOM_SESSION_IDS, ingressAudience: LIVE_ROOM_SESSION_IDS }));
 
-        expect(await readLiveRoomStoredCopies(store, sends, fixture.clock.nowMs)).toEqual(
-            sends.map((envelope) => ({ envelope, sourceAudience: ROOM, ingressAudience: ROOM }))
-        );
-        fixture.clock.nowMs = deadlineMs - 1;
-        expect(await readLiveRoomStoredCopies(store, sends, fixture.clock.nowMs)).toEqual(
-            sends.map((envelope) => ({ envelope, sourceAudience: ROOM, ingressAudience: ROOM }))
-        );
-        fixture.clock.nowMs = deadlineMs;
+        expect(await readLiveRoomStoredCopies(store, sends, fixture.clock.nowMs)).toEqual(kept);
+        fixture.clock.nowMs = sentAtMs + LIFETIME_MS - 1;
+        expect(await readLiveRoomStoredCopies(store, sends, fixture.clock.nowMs)).toEqual(kept);
+        fixture.clock.nowMs = sentAtMs + LIFETIME_MS;
         expect((await readLiveRoomStoredCopies(store, sends, fixture.clock.nowMs)).map(({ envelope }) => envelope)).toEqual([undefined, undefined]);
     });
 
-    // Turned by slice 4 (ruling M1; design section 6, "One instance"): the memory pair of a server of one process will
-    // keep a receipted envelope to its deadline. Pins today's release of it at the pair's next sweep.
+    // Turned by slice 4 (ruling M1, a server of one process): the memory pair will keep a receipted envelope to its
+    // deadline. Pins today's release of it at the pair's next sweep, one interval after the first.
     it('releases a handed-on send\'s envelope from a memory pair at its next sweep, before its deadline', async () => {
-        const fixture = await createLiveRoomClusterFixture({ roomSessionIds: ROOM, volatileInbound: true });
+        const fixture = await createLiveRoomClusterFixture({ roomSessionIds: LIVE_ROOM_SESSION_IDS, volatileInbound: true });
         const { a } = fixture.instances;
-        await connectLiveRoomSession(a, ORIGIN, KEEPS_ALL);
-        await connectLiveRoomSession(a, 'r1', KEEPS_ALL);
-        const send = roomMessage({ msgId: 'm-1', originPeerId: ORIGIN, nowMs: fixture.clock.nowMs, lifetimeMs: 2 * AL_VOLATILE_STORE_EVICTION_INTERVAL_MS });
+        await connectLiveRoomSession(a, LIVE_ROOM_ORIGIN, undefined);
+        await connectLiveRoomSession(a, 'r1', undefined);
+        const send = createLiveRoomSend({ msgId: 'm-1', nowMs: fixture.clock.nowMs, lifetimeMs: 2 * AL_VOLATILE_STORE_EVICTION_INTERVAL_MS });
         await handOn(fixture, [send]);
         const store = a.stores.volatileStores!.admissionStore;
-        expect(await readLiveRoomStoredCopies(store, [send], fixture.clock.nowMs)).toEqual([{ envelope: send, sourceAudience: ROOM, ingressAudience: ROOM }]);
+        expect(await readLiveRoomStoredCopies(store, [send], fixture.clock.nowMs)).toEqual([
+            { envelope: send, sourceAudience: LIVE_ROOM_SESSION_IDS, ingressAudience: LIVE_ROOM_SESSION_IDS }
+        ]);
 
-        await advanceLiveRoomClock(fixture, AL_VOLATILE_STORE_EVICTION_INTERVAL_MS);
+        fixture.clock.nowMs += AL_VOLATILE_STORE_EVICTION_INTERVAL_MS;
+        await settleLiveRoomCluster(fixture);
 
         expect(fixture.clock.nowMs).toBeLessThan(send.constraints!.expiresAtMs!);
         expect((await readLiveRoomStoredCopies(store, [send], fixture.clock.nowMs))[0]!.envelope).toBeUndefined();
     });
 });
 
-function receipted(fixture: LiveRoomClusterFixture, msgId: string): ALMessage {
-    return roomMessage({ msgId, originPeerId: ORIGIN, nowMs: fixture.clock.nowMs, lifetimeMs: LIFETIME_MS });
-}
-
 /** Offers each send from the origin on instance a and settles the cluster, so each is handed to the router once. */
 async function handOn(fixture: LiveRoomClusterFixture, sends: readonly ALMessage[]): Promise<void> {
     for (const message of sends) {
-        expect((await fixture.instances.a.service.acceptIncomingMessage(message, ORIGIN)).right).toEqual({ kind: 'admitted' });
+        expect((await fixture.instances.a.service.acceptIncomingMessage(message, LIVE_ROOM_ORIGIN)).right).toEqual({ kind: 'admitted' });
         await settleLiveRoomCluster(fixture);
     }
     const { a, b } = fixture.instances;

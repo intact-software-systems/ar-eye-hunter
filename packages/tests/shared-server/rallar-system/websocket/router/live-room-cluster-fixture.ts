@@ -32,6 +32,7 @@ import {
     createReceiptInstanceStores,
     installClock,
     RECEIPT_SERVER_PEER_ID,
+    roomMessage,
     type ClusterInstance,
     type ReceiptClock,
     type ReceiptClusterState,
@@ -86,17 +87,6 @@ export interface CreateLiveRoomClusterFixtureInput {
     readonly volatileInbound: boolean;
 }
 
-/** The clock step of `advanceLiveRoomClock`; both engines run after each step. */
-export const LIVE_ROOM_CLOCK_STEP_MS = 500;
-
-/** The receipt fixture's room: its `roomMessage` is a send to this room on this implicit topic. */
-const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
-const ROOM_TOPIC_ID = 'room.notification';
-const SNAPSHOT_VERSION = 3;
-const NOTICE_CHANNEL = 'live-room-cluster';
-const BRIDGE_CHANNEL = 'live-room-cluster-outbox';
-const ENGINE_ROUNDS = 6;
-
 export interface CreateLiveRoomInstanceInput {
     /** The instance's publisher id on the notice bus and the outbox bridge. */
     readonly publisherId: string;
@@ -108,6 +98,35 @@ export interface CreateLiveRoomInstanceInput {
     readonly roomSessionIds: readonly string[];
 }
 
+/** The first `copies` frames of one message a socket loses after the server wrote them; every later copy arrives. */
+export interface LiveRoomCopyLoss {
+    readonly msgId: string;
+    readonly copies: number;
+}
+
+/** One receipted room send of `LIVE_ROOM_ORIGIN`'s, sent at `nowMs`. */
+export interface LiveRoomSendInput {
+    readonly msgId: string;
+    readonly nowMs: number;
+    readonly lifetimeMs: number;
+}
+
+/** The session every case sends from. */
+export const LIVE_ROOM_ORIGIN = 'p';
+/** The room most cases use: the origin and one recipient on each instance. */
+export const LIVE_ROOM_SESSION_IDS: readonly string[] = [LIVE_ROOM_ORIGIN, 'r1', 'r2'];
+
+/** The receipt fixture's room: its `roomMessage` is a send to this room on this implicit topic. */
+const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
+const ROOM_TOPIC_ID = 'room.notification';
+const SNAPSHOT_VERSION = 3;
+const NOTICE_CHANNEL = 'live-room-cluster';
+const BRIDGE_CHANNEL = 'live-room-cluster-outbox';
+/** The clock step of `advanceLiveRoomClock`; the cluster settles after each step. */
+const CLOCK_STEP_MS = 500;
+/** A bound, not a budget: a cluster that still starts work after this many rounds fails the case. */
+const MAX_SETTLE_ROUNDS = 64;
+
 interface MemoryInstanceStoresInput {
     readonly state: ReceiptClusterState;
     readonly outbound: ALAdmissionMemoryState;
@@ -117,65 +136,133 @@ interface MemoryInstanceStoresInput {
 
 interface LiveNoticeBusState {
     readonly bus: LiveNoticeBus;
-    toTransport(name: LiveRoomInstanceName): LiveWsNoticeTransport;
+    createTransport(name: LiveRoomInstanceName): LiveWsNoticeTransport;
 }
 
-/** Engines are not started: a case moves the clock and runs both engines itself, so every run is the same. */
+interface CreateLiveRoomServiceInput {
+    readonly instance: CreateLiveRoomInstanceInput;
+    readonly server: JsonWebSocketServer;
+    readonly engine: InboxOutboxEngine;
+}
+
+/** Engines are not started: a case moves the clock and settles both engines itself, so every run is the same. */
 export async function createLiveRoomClusterFixture(input: CreateLiveRoomClusterFixtureInput): Promise<LiveRoomClusterFixture> {
     const clock = installClock();
-    const state = createReceiptClusterState(() => clock.nowMs);
-    const outbound = createInMemoryALAdmissionState(new InMemoryQueueBox(new Map(), () => Temporal.Instant.fromEpochMilliseconds(clock.nowMs)));
     const nowMs = () => clock.nowMs;
+    const state = createReceiptClusterState(nowMs);
+    const outbound = createInMemoryALAdmissionState(new InMemoryQueueBox(new Map(), () => Temporal.Instant.fromEpochMilliseconds(clock.nowMs)));
     const notices = createLiveNoticeBus();
     const shared = { nowMs, bridge: createBridgeBus(), roomSessionIds: input.roomSessionIds };
     const storesInput = { state, outbound, nowMs, volatileInbound: input.volatileInbound };
     const a = await createLiveRoomInstance({
         ...shared,
         publisherId: 'a',
-        stores: toMemoryInstanceStores(storesInput),
-        noticeTransport: notices.toTransport('a')
+        stores: createMemoryInstanceStores(storesInput),
+        noticeTransport: notices.createTransport('a')
     });
     const b = await createLiveRoomInstance({
         ...shared,
         publisherId: 'b',
-        stores: toMemoryInstanceStores(storesInput),
-        noticeTransport: notices.toTransport('b')
+        stores: createMemoryInstanceStores(storesInput),
+        noticeTransport: notices.createTransport('b')
     });
     return { clock, state, bus: notices.bus, instances: { a, b } };
 }
 
-/** Opens `sessionId`'s socket on the instance; a frame `losesFrame` names is lost after the server wrote it. */
+/** One instance; its engine is not started. The test's end disposes its service, stops its engine and rethrows a failure. */
+export async function createLiveRoomInstance(input: CreateLiveRoomInstanceInput): Promise<LiveRoomInstance> {
+    const { nowMs, stores } = input;
+    const server = new JsonWebSocketServer();
+    const engine = new InboxOutboxEngine();
+    const service = createLiveRoomService({ instance: input, server, engine });
+    onTestFinished(async () => {
+        const failure = (await Promise.allSettled([service.dispose(), engine.stop()])).find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
+    });
+    const handledMsgIds: string[] = [];
+    const router = new RallarServerWsRouter(service, {
+        grantedTopics: new WsGrantedTopicSet(),
+        nowEpochMs: nowMs,
+        livePublication: { transport: input.noticeTransport, channel: NOTICE_CHANNEL, publisherId: input.publisherId },
+        authorizeRoomMessage: createFixedRoomAuthorizer(input.roomSessionIds)
+    }).install();
+    router.on({ topicId: ROOM_TOPIC_ID }, (message) => {
+        handledMsgIds.push(message.raw.id.msgId);
+    });
+    await installLiveWsNoticeSubscriber({
+        transport: input.noticeTransport,
+        channel: NOTICE_CHANNEL,
+        publisherId: input.publisherId,
+        nowMs,
+        inboundStores: [stores.inboundStores.admissionStore],
+        resolveBroadRecipientSessionIds: () => getOpenSessionIds(server),
+        filterEligibleRecipientSessionIds: (sessionIds) => sessionIds.filter((sessionId) => server.connections.get(sessionId)?.isOpen === true),
+        sendToTargetsWithResult: (delivery) => sendReceivedLiveWsNotice(service, delivery)
+    });
+    await installQueueBoxPubSubBridge({ wsQBoxServerService: service, bridge: input.bridge, channel: BRIDGE_CHANNEL, publisherId: input.publisherId });
+    return { service, engine, server, stores, handledMsgIds };
+}
+
+/**
+ * Opens `sessionId`'s socket on the instance. With a `loss`, the first `copies` frames of that message the server
+ * writes are lost after the write; every later copy of it, a copy sent again included, reaches the socket.
+ */
 export async function connectLiveRoomSession(
     instance: LiveRoomInstance,
     sessionId: string,
-    losesFrame: (frame: ALMessage) => boolean
+    loss: LiveRoomCopyLoss | undefined
 ): Promise<SimulatedWebSocket> {
     const socket = await connect(instance, sessionId);
+    if (loss === undefined) {
+        return socket;
+    }
     const send = socket.send.bind(socket);
-    socket.send = (frame) => losesFrame(decodePersistedALMessage(String(frame))) ? String(frame).length : send(frame);
+    let lost = 0;
+    socket.send = (frame) => {
+        if (lost < loss.copies && decodePersistedALMessage(String(frame)).id.msgId === loss.msgId) {
+            lost += 1;
+            return String(frame).length;
+        }
+        return send(frame);
+    };
     return socket;
 }
 
-/** Runs instance a's engine, then b's, each until its work has settled: a claims any work both could. */
-export async function settleLiveRoomCluster(fixture: LiveRoomClusterFixture): Promise<void> {
-    for (let round = 0; round < ENGINE_ROUNDS; round += 1) {
-        for (const instance of [fixture.instances.a, fixture.instances.b]) {
-            await instance.engine.executeOnce();
-            await new Promise((resolve) => setTimeout(resolve, 0));
-        }
-    }
+/** The receipt fixture's room send from `LIVE_ROOM_ORIGIN`: at-least-once, receipted by every receiver. */
+export function createLiveRoomSend(input: LiveRoomSendInput): ALMessage {
+    return roomMessage({ msgId: input.msgId, originPeerId: LIVE_ROOM_ORIGIN, nowMs: input.nowMs, lifetimeMs: input.lifetimeMs });
 }
 
-/** Moves the clock `durationMs` forward in steps of `LIVE_ROOM_CLOCK_STEP_MS`, settling the cluster after each. */
+/**
+ * Runs instance a's engine, then b's, with a macrotask after each so the work it started drains, until a round in
+ * which neither starts work: a claims any work both could.
+ */
+export async function settleLiveRoomCluster(fixture: LiveRoomClusterFixture): Promise<void> {
+    for (let round = 0; round < MAX_SETTLE_ROUNDS; round += 1) {
+        let started = false;
+        for (const instance of [fixture.instances.a, fixture.instances.b]) {
+            started = await instance.engine.executeOnce() || started;
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        if (!started) {
+            return;
+        }
+    }
+    throw new Error(`The live room cluster still started work after ${MAX_SETTLE_ROUNDS} rounds`);
+}
+
+/** Moves the clock `durationMs` forward in steps of `CLOCK_STEP_MS`, settling the cluster after each. */
 export async function advanceLiveRoomClock(fixture: LiveRoomClusterFixture, durationMs: number): Promise<void> {
-    for (let elapsedMs = 0; elapsedMs < durationMs; elapsedMs += LIVE_ROOM_CLOCK_STEP_MS) {
-        fixture.clock.nowMs += Math.min(LIVE_ROOM_CLOCK_STEP_MS, durationMs - elapsedMs);
+    for (let elapsedMs = 0; elapsedMs < durationMs; elapsedMs += CLOCK_STEP_MS) {
+        fixture.clock.nowMs += Math.min(CLOCK_STEP_MS, durationMs - elapsedMs);
         await settleLiveRoomCluster(fixture);
     }
 }
 
-/** The msgIds of the data frames a socket was written, in order; controls (receipts, ACKs, NACKs) are left out. */
-export function readDataCopies(socket: SimulatedWebSocket): readonly string[] {
+/** The msgIds of the message frames a socket was written, in order; controls (receipts, ACKs, NACKs) are left out. */
+export function getMessageCopies(socket: SimulatedWebSocket): readonly string[] {
     return socket.sent
         .map((frame) => decodePersistedALMessage(frame))
         .filter((message) => !isALControlTypeId(message.payload.typeId))
@@ -205,40 +292,7 @@ export async function readLiveRoomStoredCopies(
     }));
 }
 
-/** One instance; its engine is not started. The test's end disposes its service and stops its engine. */
-export async function createLiveRoomInstance(input: CreateLiveRoomInstanceInput): Promise<LiveRoomInstance> {
-    const { nowMs, stores } = input;
-    const server = new JsonWebSocketServer();
-    const engine = new InboxOutboxEngine();
-    const service = createLiveRoomService({ input, server, engine });
-    onTestFinished(async () => {
-        await Promise.allSettled([service.dispose(), engine.stop()]);
-    });
-    const handledMsgIds: string[] = [];
-    const router = new RallarServerWsRouter(service, {
-        grantedTopics: new WsGrantedTopicSet(),
-        nowEpochMs: nowMs,
-        livePublication: { transport: input.noticeTransport, channel: NOTICE_CHANNEL, publisherId: input.publisherId },
-        authorizeRoomMessage: toFixedRoomAuthorizer(input.roomSessionIds)
-    }).install();
-    router.on({ topicId: ROOM_TOPIC_ID }, (message) => {
-        handledMsgIds.push(message.raw.id.msgId);
-    });
-    await installLiveWsNoticeSubscriber({
-        transport: input.noticeTransport,
-        channel: NOTICE_CHANNEL,
-        publisherId: input.publisherId,
-        nowMs,
-        inboundStores: [stores.inboundStores.admissionStore],
-        resolveBroadRecipientSessionIds: () => readOpenSessionIds(server),
-        filterEligibleRecipientSessionIds: (sessionIds) => sessionIds.filter((sessionId) => server.connections.get(sessionId)?.isOpen === true),
-        sendToTargetsWithResult: (delivery) => sendReceivedLiveWsNotice(service, delivery)
-    });
-    await installQueueBoxPubSubBridge({ wsQBoxServerService: service, bridge: input.bridge, channel: BRIDGE_CHANNEL, publisherId: input.publisherId });
-    return { service, engine, server, stores, handledMsgIds };
-}
-
-function toMemoryInstanceStores({ state, outbound, nowMs, volatileInbound }: MemoryInstanceStoresInput): LiveRoomInstanceStores {
+function createMemoryInstanceStores({ state, outbound, nowMs, volatileInbound }: MemoryInstanceStoresInput): LiveRoomInstanceStores {
     return {
         ...createReceiptInstanceStores(state, nowMs),
         outboundStores: createDefaultInMemoryALOutboundRuntimeStores({
@@ -250,16 +304,10 @@ function toMemoryInstanceStores({ state, outbound, nowMs, volatileInbound }: Mem
     };
 }
 
-interface CreateLiveRoomServiceInput {
-    readonly input: CreateLiveRoomInstanceInput;
-    readonly server: JsonWebSocketServer;
-    readonly engine: InboxOutboxEngine;
-}
-
 /** Every instance of one deployment shares the server's name, as api-v1's instances share `wsRuntimeName`. */
-function createLiveRoomService({ input, server, engine }: CreateLiveRoomServiceInput): WsQueueBoxServerService {
-    const { inboundStores, receiptRecordStores, outboundStores, volatileStores } = input.stores;
-    const openRecipients = () => readOpenSessionIds(server).map((sessionId) => ({ peerId: sessionId, connectionId: sessionId }));
+function createLiveRoomService({ instance, server, engine }: CreateLiveRoomServiceInput): WsQueueBoxServerService {
+    const { inboundStores, receiptRecordStores, outboundStores, volatileStores } = instance.stores;
+    const openRecipients = () => getOpenSessionIds(server).map((sessionId) => ({ peerId: sessionId, connectionId: sessionId }));
     return createDefaultWsQueueBoxServerService({
         inboundStores,
         receiptRecordStores,
@@ -278,14 +326,20 @@ function createLiveRoomService({ input, server, engine }: CreateLiveRoomServiceI
             requiresFrozenAudience: () => false,
             resolvePeerIdForConnection: (connectionId) => connectionId,
             resolvePeerRecipients: (peerId) => openRecipients().filter((recipient) => recipient.peerId === peerId),
-            resolveBroadcastRecipients: () => openRecipients().filter((recipient) => input.roomSessionIds.includes(recipient.peerId))
+            resolveBroadcastRecipients: () => openRecipients().filter((recipient) => instance.roomSessionIds.includes(recipient.peerId))
         }
     });
 }
 
-/** Admits every room message to the fixed room and reads nothing; a message with no targets is refused. */
-function toFixedRoomAuthorizer(roomSessionIds: readonly string[]): RallarServerWsRoomAuthorizer {
-    const sessions = roomSessionIds.map((sessionId) => createActiveGroupPresenceSessionFixture({ ...ROOM, principalId: sessionId, sessionId }));
+/**
+ * Admits every room message to the fixed room and reads nothing; a message with no targets is refused. Its sessions
+ * never expire, so a path that asks a session's liveness on the fixture's clock finds the whole room live.
+ */
+function createFixedRoomAuthorizer(roomSessionIds: readonly string[]): RallarServerWsRoomAuthorizer {
+    const sessions = roomSessionIds.map((sessionId) => ({
+        ...createActiveGroupPresenceSessionFixture({ ...ROOM, principalId: sessionId, sessionId }),
+        expiresAtEpochMs: Number.MAX_SAFE_INTEGER
+    }));
     return ({ message }) =>
         message.targets === undefined ? false : {
             authorized: true,
@@ -293,7 +347,7 @@ function toFixedRoomAuthorizer(roomSessionIds: readonly string[]): RallarServerW
         };
 }
 
-function readOpenSessionIds(server: JsonWebSocketServer): readonly string[] {
+function getOpenSessionIds(server: JsonWebSocketServer): readonly string[] {
     return [...server.connections.values()].filter((connection) => connection.isOpen).map((connection) => connection.id);
 }
 
@@ -328,7 +382,7 @@ function createLiveNoticeBus(): LiveNoticeBusState {
     };
     return {
         bus,
-        toTransport: (name) => ({
+        createTransport: (name) => ({
             publish,
             subscribe: async (_channel, onNotice) => {
                 listeners.set(name, onNotice);

@@ -1,3 +1,5 @@
+// Ruling M1 cited below is the maintainer's ruling on R16 of plans/active/alm-v1-production-readiness.md (a room copy
+// missed on the default fan-out).
 import { describe, expect, it } from 'vitest';
 
 import { createPSqlALReceiptRecordStores } from '@shared-server/al-runtime/postgres/create-p-sql-al-receipt-record-stores.ts';
@@ -11,12 +13,15 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { DEFAULT_AL_REPOSITORY_TTL_MS } from '@shared/alm/ALStoreRetention.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 
-import { createBridgeBus, roomMessage } from '../../../../shared/services/ws-queue-box-server-receipt-fixture.ts';
+import { createBridgeBus } from '../../../../shared/services/ws-queue-box-server-receipt-fixture.ts';
 import { createReceiptCluster, POLL, type ReceiptCluster } from '../../../integration/postgres/test-support/create-receipt-cluster.ts';
 import { createRuntimeStatePostgresSql, requirePostgresDatabaseUrl } from '../../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 import {
     connectLiveRoomSession,
     createLiveRoomInstance,
+    createLiveRoomSend,
+    LIVE_ROOM_ORIGIN,
+    LIVE_ROOM_SESSION_IDS,
     readLiveRoomStoredCopies,
     type LiveRoomInstance,
     type LiveRoomInstanceStores,
@@ -24,12 +29,9 @@ import {
 } from './live-room-cluster-fixture.ts';
 import { createRecordingLiveWsPublication } from './recording-live-ws-publication.ts';
 
-const ORIGIN = 'p';
-const ROOM = [ORIGIN, 'r1', 'r2'];
 /** Long enough for the engine to hand both sends on in real time; the reads judge the deadline on their own clock. */
 const LIFETIME_MS = 60_000;
 const CASE_TIMEOUT_MS = 60_000;
-const KEEPS_ALL = () => false;
 
 describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('the server\'s PostgreSQL inbound store keeps a live-path room send for its repair', () => {
     // Pins a change to the inbound store's retention on PostgreSQL that leaves a live-path send with no envelope or
@@ -37,23 +39,24 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('the server\'s 
     it('keeps a handed-on send\'s envelope and admitted audience readable through another client until its deadline', async () => {
         const run = await createReceiptCluster();
         const instance = await startPostgresLiveRoomInstance(run);
-        await connectLiveRoomSession(instance, ORIGIN, KEEPS_ALL);
-        await connectLiveRoomSession(instance, 'r1', KEEPS_ALL);
+        await connectLiveRoomSession(instance, LIVE_ROOM_ORIGIN, undefined);
+        await connectLiveRoomSession(instance, 'r1', undefined);
         const sentAtMs = Date.now();
-        const receipted = roomMessage({ msgId: `m-1-${run.runId}`, originPeerId: ORIGIN, nowMs: sentAtMs, lifetimeMs: LIFETIME_MS });
+        const receipted = createLiveRoomSend({ msgId: `m-1-${run.runId}`, nowMs: sentAtMs, lifetimeMs: LIFETIME_MS });
         const unreceipted: ALMessage = {
-            ...roomMessage({ msgId: `m-2-${run.runId}`, originPeerId: ORIGIN, nowMs: sentAtMs, lifetimeMs: LIFETIME_MS }),
+            ...createLiveRoomSend({ msgId: `m-2-${run.runId}`, nowMs: sentAtMs, lifetimeMs: LIFETIME_MS }),
             delivery: { reliability: 'at-least-once', ack: 'none' }
         };
         const sends = [receipted, unreceipted];
         const deadlineMs = sentAtMs + LIFETIME_MS;
 
         for (const message of sends) {
-            expect((await instance.service.acceptIncomingMessage(message, ORIGIN)).right).toEqual({ kind: 'admitted' });
+            expect((await instance.service.acceptIncomingMessage(message, LIVE_ROOM_ORIGIN)).right).toEqual({ kind: 'admitted' });
         }
-        await expect.poll(() => instance.handledMsgIds, POLL).toEqual(sends.map((message) => message.id.msgId));
+        // Two rows admitted a moment apart may be claimed in either order: the subject is the store, not the claim order.
+        await expect.poll(() => [...instance.handledMsgIds].sort(), POLL).toEqual(sends.map((message) => message.id.msgId).sort());
 
-        const kept = sends.map((envelope) => ({ envelope, sourceAudience: ROOM, ingressAudience: ROOM }));
+        const kept = sends.map((envelope) => ({ envelope, sourceAudience: LIVE_ROOM_SESSION_IDS, ingressAudience: LIVE_ROOM_SESSION_IDS }));
         expect(await readStoredCopiesAt(run, sends, Date.now())).toEqual(kept);
         expect(await readStoredCopiesAt(run, sends, deadlineMs - 1)).toEqual(kept);
         expect((await readStoredCopiesAt(run, sends, deadlineMs)).map(({ envelope }) => envelope)).toEqual([undefined, undefined]);
@@ -77,7 +80,7 @@ async function startPostgresLiveRoomInstance(run: ReceiptCluster): Promise<LiveR
         stores,
         noticeTransport: createRecordingLiveWsPublication().livePublication.transport,
         bridge: createBridgeBus(),
-        roomSessionIds: ROOM
+        roomSessionIds: LIVE_ROOM_SESSION_IDS
     });
     instance.engine.start();
     return instance;
