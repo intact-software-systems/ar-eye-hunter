@@ -43,7 +43,9 @@ const relay = rallar.director.createRelay<MoveIntent, DirectorOutput>({
     },
     // Outputs were lost. The next output waits for this callback, so it must not wait on the network.
     onOutputGap: () => {
-        void relay.requestSync({ reason: 'output-gap' });
+        void relay.requestSync({ reason: 'output-gap' }).catch((error) => {
+            console.error('Failed to request a sync:', error);
+        });
     },
     onSnapshot: async (message) => {
         reconcileFromDirectorSnapshot(message.data);

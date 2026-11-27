@@ -793,14 +793,14 @@ carrier it came over. The match does not drop an event by its own sequence
 number. When the page gives an event up, the match asks the director for a
 sync with `{ reason: 'event-order-gap' }`, and a director whose match reads
 snapshots (`readSnapshot`) answers with one. It asks nothing when the gap's
-reason is `ended-at-sender`, which says the sender called the send over, most
-often for an event sent without a receipt that a later event overtook. The event itself is not delivered again: a later
-snapshot from the director brings the state it led to, when the game sends
-snapshots. It does so through the relay's periodic snapshot, which runs while
-the match sets `readSnapshot` and leaves `autoSnapshotIntervalMs` on (2 s when
-absent), or through Rallar Game's `publishSnapshot(...)`
-(`match.game.publishSnapshot(...)` here). A game that sends no snapshots gets
-neither the event nor its state.
+reason is `ended-at-sender`, which says the sender said the send is over, most
+often for an event sent without a receipt that a later event overtook. The
+event itself is not delivered again: a later snapshot from the director brings
+the state it led to, when the game sends snapshots. It does so through the
+relay's periodic snapshot, which runs while the match sets `readSnapshot` and
+leaves `autoSnapshotIntervalMs` on (2 s when absent), or through Rallar Game's
+`publishSnapshot(...)` (`match.game.publishSnapshot(...)` here). A game that
+sends no snapshots gets neither the event nor its state.
 
 `finalizeResult(summary)` resolves the match `GroupRef`, reads the live
 `rallar.director.status(...)`, and returns a `room-trusted` envelope only when
