@@ -1,13 +1,8 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
-import { toALMessageTrace } from '../../al-contracts/trace/to-al-message-trace.ts';
 import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import type { ALOutboundAdmissionStore } from '../../alm/outbound/admission/al-outbound-admission-store.ts';
-import {
-    writeALOutboundRuntimeDiagnostic,
-    type ALOutboundMessageRuntime,
-    type ALOutboundRuntimeDiagnosticsSink
-} from '../../alm/outbound/al-outbound-message-runtime.ts';
+import type { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import {
     isALOutboundRowUnrecorded,
     toALOrderingPendingPredecessors,
@@ -16,11 +11,11 @@ import {
 } from '../../alm/outbound/lane/compute-al-outbound-group-sent-positions.ts';
 import type { JsonWebSocketServer } from '../../websocket/json-web-socket-server.ts';
 import { toWsQueueBoxServerOutsideAudienceAck } from './scope/to-ws-queue-box-server-outside-audience-ack.ts';
-import type { WsQueueBoxServerAckRelay } from './ws-queue-box-server-ack-relay.ts';
 import type {
     WsQueueBoxServerOutboundPlanning,
     WsQueueBoxServerPreparedMessage
 } from './ws-queue-box-server-outbound-planning.ts';
+import type { WsQueueBoxServerReceiptAggregation } from './ws-queue-box-server-receipt-aggregation.ts';
 
 export namespace WsQueueBoxServerTrackOrder {
     export interface Dependencies {
@@ -30,15 +25,13 @@ export namespace WsQueueBoxServerTrackOrder {
             | 'listOrderingMessages'
             | 'readStoredPredecessorsToSettled'
             | 'readOrderingPredecessor'
-            | 'commitOutsideAudience'
         >;
         readonly clock: ALOutboundMessageRuntime.Clock;
         readonly socket: Pick<JsonWebSocketServer, 'connections'>;
-        readonly ackRelay: Pick<WsQueueBoxServerAckRelay, 'writeServerAck'>;
+        readonly receipts: Pick<WsQueueBoxServerReceiptAggregation, 'acceptControlMessage'>;
         readonly outboundPlanning: Pick<WsQueueBoxServerOutboundPlanning, 'resolvePolicy'>;
         readonly name: string;
         readonly newControlId: () => string;
-        readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
     }
 }
 
@@ -51,7 +44,6 @@ export type WsOutsideAudienceJudgement = 'durable' | 'open-here';
  * outside the receipt its origin awaits.
  */
 export class WsQueueBoxServerTrackOrder {
-    private static readonly OWN_OUTSIDE_AUDIENCE_ATTEMPTS = 3;
     private readonly dependencies: WsQueueBoxServerTrackOrder.Dependencies;
 
     constructor(dependencies: WsQueueBoxServerTrackOrder.Dependencies) {
@@ -107,20 +99,21 @@ export class WsQueueBoxServerTrackOrder {
 
     /**
      * Records each session the server sent its origin's row nothing outside the audience of the receipt the origin
-     * awaits (S4-R9): a relayed row's origin hears it as an outside-audience ACK, and the server's own rows -- its
-     * publications and every producer row it sends -- record it in their own receipt (S5-R8). Rows no receipt counts
-     * recipients of have none to record in. A dequeue or retry drop is judged from durable presence and recorded
+     * awaits (S4-R9), as the server's outside-audience ACK, which the receipt record counts for every origin: a relayed
+     * row's and the server's own rows -- its publications and every producer row it sends (S5-R8). Rows no receipt
+     * counts recipients of have none to record in. A dequeue or retry drop is judged from durable presence and recorded
      * whatever this instance's sockets hold; a send-time drop or skip is judged only for a session whose socket here is
-     * open -- a session live elsewhere is its own instance's to send, one live nowhere is the retry's to judge. For a
-     * server-own row at its dequeue the receipt is not yet written, so the commit answers `absent` and the dropped
-     * session is simply never expected (D545); for a relayed row the outside ACK is written at once.
+     * open -- a session live elsewhere is its own instance's to send, one live nowhere is the retry's to judge. A
+     * server publication's drop at its first dequeue precedes the pending row that would prove it and writes nothing:
+     * the row and the head expect only the judged audience (D545). A skip once the row exists, before or after the
+     * head opened, is counted.
      */
     async writeOutsideAudience(
         message: ALMessage,
         sessionIds: readonly string[],
         judgement: WsOutsideAudienceJudgement
     ): Promise<void> {
-        const { name, outboundPlanning, socket, ackRelay, clock } = this.dependencies;
+        const { name, outboundPlanning, socket, receipts, clock } = this.dependencies;
         const originPeerId = message.id.senderId;
         if (!isALLogicalReceiptMode(outboundPlanning.resolvePolicy(message).effective.ack.algo)) {
             return;
@@ -129,12 +122,8 @@ export class WsQueueBoxServerTrackOrder {
             sessionId !== originPeerId &&
             (judgement === 'durable' || socket.connections.get(sessionId)?.isOpen === true)
         );
-        if (originPeerId === name) {
-            await this.commitOwnOutsideAudience(message, judged);
-            return;
-        }
         for (const recipientPeerId of judged) {
-            await ackRelay.writeServerAck(toWsQueueBoxServerOutsideAudienceAck({
+            await receipts.acceptControlMessage(toWsQueueBoxServerOutsideAudienceAck({
                 message,
                 recipientPeerId,
                 serverPeerId: name,
@@ -142,29 +131,6 @@ export class WsQueueBoxServerTrackOrder {
                 nowMs: clock.nowMs()
             }));
         }
-    }
-
-    /** Each attempt re-reads the receipt; one that ended or was never pending has nobody left to record. */
-    private async commitOwnOutsideAudience(message: ALMessage, recipientPeerIds: readonly string[]): Promise<void> {
-        if (recipientPeerIds.length === 0) {
-            return;
-        }
-        const receipt = { originPeerId: message.id.senderId, msgId: message.id.msgId };
-        for (let attempt = 0; attempt < WsQueueBoxServerTrackOrder.OWN_OUTSIDE_AUDIENCE_ATTEMPTS; attempt += 1) {
-            if (
-                await this.dependencies.admissionStore.commitOutsideAudience(receipt, recipientPeerIds) !== 'conflict'
-            ) {
-                return;
-            }
-        }
-        writeALOutboundRuntimeDiagnostic(this.dependencies.diagnostics, {
-            kind: 'outside-audience-commit',
-            msgId: message.id.msgId,
-            recipientPeerIds,
-            attempts: WsQueueBoxServerTrackOrder.OWN_OUTSIDE_AUDIENCE_ATTEMPTS,
-            outcome: 'conflict',
-            ...toALMessageTrace(message)
-        });
     }
 
     private toHeldAuthority(

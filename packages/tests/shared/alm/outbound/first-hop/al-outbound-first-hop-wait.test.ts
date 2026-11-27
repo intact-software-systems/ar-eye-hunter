@@ -485,6 +485,37 @@ describe('a WS client\'s first-hop wait once its message has ended', () => {
         expect(fixture.written).toHaveLength(1);
         expect(toTerminalKinds(fixture)).toEqual([]);
     });
+
+    it('deletes the wait of an ended message for a sender that never moved its version', async () => {
+        // Pins the orphaned wait's cleanup taking its sender from a version row that no commit of a sender whose
+        // commits read nothing shared ever writes: the wait would stay until it expired.
+        const fixture = createFirstHopFixture('memory');
+        // A room unicast names no ordering key, so none of its sender's commits reads a row another message shares.
+        const only = await sendOne(fixture, 'room unicast', 'receiver');
+        const read = await fixture.stores.admissionStore.readRepairMessage(only.id.msgId, createWsClientMintingPlanner(SESSION_ID));
+        const wait = read.firstHopWait!;
+        // The end a control makes: on the message's version alone, and without reading the wait.
+        expect(
+            await fixture.stores.admissionStore.commitBundle({
+                ...toALOutboundMessageEndBundle({
+                    senderId: only.id.senderId,
+                    msgId: only.id.msgId,
+                    stored: read.storedMessage,
+                    expectedVersion: read.clientRecord?.version,
+                    messageVersion: read.messageVersion,
+                    openReceipt: read.pendingAck,
+                    firstHopWait: undefined
+                }),
+                fencesSender: false
+            })
+        ).toBe('committed');
+
+        await advance(fixture, 2_000);
+
+        expect(await readWorkStatus(fixture.stores, toALOutboundFirstHopTimeoutEffectId(wait))).toBe(EntityStatus.COMPLETED);
+        expect(await readFirstHopWait(fixture, only)).toBeUndefined();
+        expect(fixture.written).toHaveLength(1);
+    });
 });
 
 describe('a WS client\'s receipt row when the server answers admitted twice', () => {

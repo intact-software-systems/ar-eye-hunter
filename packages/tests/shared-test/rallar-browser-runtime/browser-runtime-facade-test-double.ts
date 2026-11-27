@@ -593,11 +593,11 @@ export function openFacadeDelivery(
                 senderId: 'client-1',
                 traceId: 'trace-browser-runtime-facade-test-double'
             },
-            route: { topicId: 'alm.conformance', contextId: 'room-1', resourceId: 'room-1' },
+            route: { topicId: 'room.alm-conformance', contextId: 'room-1', resourceId: 'room-1' },
             payload: { typeId: 'alm.conformance', contentType: 'application/json', resource: '{}' },
             delivery: { ack: 'receiver', reliability: 'at-least-once' }
         },
-        carrier: carrier,
+        carrier,
         readDeadlineEpochMs: Date.now
     });
     if (verdict) {

@@ -61,7 +61,11 @@ describe('BrowserRallarDeliveryRegistry', () => {
         it('defaults the ack mode to none when the envelope carries no delivery block', () => {
             const harness = new DeliveryRegistryHarness();
 
-            const handle = harness.registry.open({ message: toBestEffortTestMessage('msg-1'), carrier: 'rtc', readDeadlineEpochMs: harness.readDeadlineEpochMs });
+            const handle = harness.registry.open({
+                message: toBestEffortTestMessage('msg-1'),
+                carrier: 'rtc',
+                readDeadlineEpochMs: harness.readDeadlineEpochMs
+            });
 
             expect(handle.lifecycle().ackMode).toBe('none');
         });
@@ -69,7 +73,11 @@ describe('BrowserRallarDeliveryRegistry', () => {
         it('arms no timer for an opened message', () => {
             const harness = new DeliveryRegistryHarness();
 
-            harness.registry.open({ message: toExpiringTestMessage('msg-1', START_MS + 5_000), carrier: 'rtc', readDeadlineEpochMs: harness.readDeadlineEpochMs });
+            harness.registry.open({
+                message: toExpiringTestMessage('msg-1', START_MS + 5_000),
+                carrier: 'rtc',
+                readDeadlineEpochMs: harness.readDeadlineEpochMs
+            });
             harness.registry.record(toAdmittedSettlement('msg-1', START_MS));
 
             expect(vi.getTimerCount()).toBe(0);
@@ -148,7 +156,11 @@ describe('BrowserRallarDeliveryRegistry', () => {
         it('keeps a receipt requested only through qos.ack open past transport acceptance', () => {
             const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(
-                { message: { ...toBestEffortTestMessage('msg-1'), qos: { ack: { algo: 'hop' } } }, carrier: 'rtc', readDeadlineEpochMs: harness.readDeadlineEpochMs }
+                {
+                    message: { ...toBestEffortTestMessage('msg-1'), qos: { ack: { algo: 'hop' } } },
+                    carrier: 'rtc',
+                    readDeadlineEpochMs: harness.readDeadlineEpochMs
+                }
             );
 
             harness.registry.record(toAdmittedSettlement('msg-1', START_MS, 'hop'));
@@ -257,7 +269,11 @@ describe('BrowserRallarDeliveryRegistry', () => {
 
         it('clears both timers when a settlement resolves the wait', async () => {
             const harness = new DeliveryRegistryHarness();
-            const handle = harness.registry.open({ message: toExpiringTestMessage('msg-1', START_MS + 5_000), carrier: 'rtc', readDeadlineEpochMs: harness.readDeadlineEpochMs });
+            const handle = harness.registry.open({
+                message: toExpiringTestMessage('msg-1', START_MS + 5_000),
+                carrier: 'rtc',
+                readDeadlineEpochMs: harness.readDeadlineEpochMs
+            });
 
             const pending = handle.wait({ timeoutMs: 1_000 });
             expect(vi.getTimerCount()).toBe(2);
@@ -271,7 +287,11 @@ describe('BrowserRallarDeliveryRegistry', () => {
     describe('the message deadline', () => {
         it('reads expired once the deadline has elapsed', () => {
             const harness = new DeliveryRegistryHarness();
-            const handle = harness.registry.open({ message: toExpiringTestMessage('msg-1', START_MS - 1), carrier: 'rtc', readDeadlineEpochMs: harness.readDeadlineEpochMs });
+            const handle = harness.registry.open({
+                message: toExpiringTestMessage('msg-1', START_MS - 1),
+                carrier: 'rtc',
+                readDeadlineEpochMs: harness.readDeadlineEpochMs
+            });
 
             const lifecycle = handle.lifecycle();
 
@@ -281,7 +301,11 @@ describe('BrowserRallarDeliveryRegistry', () => {
 
         it('notifies listeners when a lazy read crosses the deadline', () => {
             const harness = new DeliveryRegistryHarness();
-            const handle = harness.registry.open({ message: toExpiringTestMessage('msg-1', START_MS + 100), carrier: 'rtc', readDeadlineEpochMs: harness.readDeadlineEpochMs });
+            const handle = harness.registry.open({
+                message: toExpiringTestMessage('msg-1', START_MS + 100),
+                carrier: 'rtc',
+                readDeadlineEpochMs: harness.readDeadlineEpochMs
+            });
             const states: string[] = [];
             handle.onEvent((lifecycle) => {
                 states.push(lifecycle.state);
@@ -297,7 +321,11 @@ describe('BrowserRallarDeliveryRegistry', () => {
 
         it('re-arms the deadline timer when it fires before the clock reaches the deadline', async () => {
             const harness = new DeliveryRegistryHarness();
-            const handle = harness.registry.open({ message: toExpiringTestMessage('msg-1', START_MS + 100), carrier: 'rtc', readDeadlineEpochMs: harness.readDeadlineEpochMs });
+            const handle = harness.registry.open({
+                message: toExpiringTestMessage('msg-1', START_MS + 100),
+                carrier: 'rtc',
+                readDeadlineEpochMs: harness.readDeadlineEpochMs
+            });
 
             const pending = handle.wait();
             harness.setNowMs(START_MS + 99);
@@ -315,7 +343,11 @@ describe('BrowserRallarDeliveryRegistry', () => {
 
         it('reports the deadline-applied lifecycle in a timeout outcome', async () => {
             const harness = new DeliveryRegistryHarness();
-            const handle = harness.registry.open({ message: toExpiringTestMessage('msg-1', START_MS + 100), carrier: 'rtc', readDeadlineEpochMs: harness.readDeadlineEpochMs });
+            const handle = harness.registry.open({
+                message: toExpiringTestMessage('msg-1', START_MS + 100),
+                carrier: 'rtc',
+                readDeadlineEpochMs: harness.readDeadlineEpochMs
+            });
 
             const pending = handle.wait({ timeoutMs: 50 });
             harness.setNowMs(START_MS + 200);
@@ -329,7 +361,11 @@ describe('BrowserRallarDeliveryRegistry', () => {
 
         it('reports the deadline-applied lifecycle in an aborted outcome', async () => {
             const harness = new DeliveryRegistryHarness();
-            const handle = harness.registry.open({ message: toExpiringTestMessage('msg-1', START_MS + 100), carrier: 'rtc', readDeadlineEpochMs: harness.readDeadlineEpochMs });
+            const handle = harness.registry.open({
+                message: toExpiringTestMessage('msg-1', START_MS + 100),
+                carrier: 'rtc',
+                readDeadlineEpochMs: harness.readDeadlineEpochMs
+            });
             const controller = new AbortController();
 
             const pending = handle.wait({ signal: controller.signal });
@@ -344,7 +380,11 @@ describe('BrowserRallarDeliveryRegistry', () => {
 
         it('expires a pending wait when the deadline timer fires', async () => {
             const harness = new DeliveryRegistryHarness();
-            const handle = harness.registry.open({ message: toExpiringTestMessage('msg-1', START_MS + 100), carrier: 'rtc', readDeadlineEpochMs: harness.readDeadlineEpochMs });
+            const handle = harness.registry.open({
+                message: toExpiringTestMessage('msg-1', START_MS + 100),
+                carrier: 'rtc',
+                readDeadlineEpochMs: harness.readDeadlineEpochMs
+            });
 
             const pending = handle.wait();
             await harness.advanceMs(100);
@@ -396,7 +436,11 @@ describe('BrowserRallarDeliveryRegistry', () => {
 
         it('is a no-op once the deadline has elapsed and does not call the port', () => {
             const harness = new DeliveryRegistryHarness();
-            const handle = harness.registry.open({ message: toExpiringTestMessage('msg-1', START_MS + 100), carrier: 'rtc', readDeadlineEpochMs: harness.readDeadlineEpochMs });
+            const handle = harness.registry.open({
+                message: toExpiringTestMessage('msg-1', START_MS + 100),
+                carrier: 'rtc',
+                readDeadlineEpochMs: harness.readDeadlineEpochMs
+            });
             const states: string[] = [];
             handle.onEvent((lifecycle) => {
                 states.push(lifecycle.state);
@@ -435,7 +479,11 @@ describe('BrowserRallarDeliveryRegistry', () => {
         it('keeps a re-ask under the correlation it names', () => {
             const harness = new DeliveryRegistryHarness();
 
-            const handle = harness.registry.open({ message: { ...toTestMessage('msg-2'), actions: { corrId: 'msg-1' } }, carrier: 'ws', readDeadlineEpochMs: harness.readDeadlineEpochMs });
+            const handle = harness.registry.open({
+                message: { ...toTestMessage('msg-2'), actions: { corrId: 'msg-1' } },
+                carrier: 'ws',
+                readDeadlineEpochMs: harness.readDeadlineEpochMs
+            });
 
             expect(handle.corrId).toBe('msg-1');
         });
@@ -444,7 +492,11 @@ describe('BrowserRallarDeliveryRegistry', () => {
             const harness = new DeliveryRegistryHarness();
 
             const handle = harness.registry.open(
-                { message: { ...toTestMessage('reply-1'), actions: { corrId: 'msg-1', replyToMsgId: 'msg-1' } }, carrier: 'ws', readDeadlineEpochMs: harness.readDeadlineEpochMs }
+                {
+                    message: { ...toTestMessage('reply-1'), actions: { corrId: 'msg-1', replyToMsgId: 'msg-1' } },
+                    carrier: 'ws',
+                    readDeadlineEpochMs: harness.readDeadlineEpochMs
+                }
             );
 
             expect(handle.corrId).toBe('msg-1');
@@ -453,7 +505,11 @@ describe('BrowserRallarDeliveryRegistry', () => {
 
         it('resolves awaitReply with the matched reply and the request lifecycle', async () => {
             const harness = new DeliveryRegistryHarness();
-            const handle = harness.registry.open({ message: toUnicastTestMessage('msg-1', 'responder-1'), carrier: 'ws', readDeadlineEpochMs: harness.readDeadlineEpochMs });
+            const handle = harness.registry.open({
+                message: toUnicastTestMessage('msg-1', 'responder-1'),
+                carrier: 'ws',
+                readDeadlineEpochMs: harness.readDeadlineEpochMs
+            });
             harness.registry.record(toAcknowledgementSettlement('msg-1', START_MS));
             const pending = handle.awaitReply({ timeoutMs: 1_000 });
             const reply = toReply('reply-1', 'responder-1', 'msg-1');
@@ -464,6 +520,43 @@ describe('BrowserRallarDeliveryRegistry', () => {
             expect(outcome.status).toBe('replied');
             expect(outcome).toMatchObject({ reply, lifecycle: { state: 'acknowledged' } });
             expect(vi.getTimerCount()).toBe(0);
+        });
+
+        it('refuses a reply wait on a request whose topic WS cannot carry, at the call, with the issue its reply would be refused with', async () => {
+            const harness = new DeliveryRegistryHarness();
+            const handle = harness.registry.open({
+                message: { ...toUnicastTestMessage('msg-1', 'responder-1'), route: { topicId: 'ask', contextId: 'room-1', resourceId: 'chat' } },
+                carrier: 'rtc',
+                readDeadlineEpochMs: harness.readDeadlineEpochMs
+            });
+            harness.registry.record(toAcknowledgementSettlement('msg-1', START_MS));
+
+            const pending = handle.awaitReply({ timeoutMs: 1_000 });
+            const timersArmedAtTheCall = vi.getTimerCount();
+            await harness.advanceMs(1_000);
+
+            expect(await pending).toMatchObject({
+                status: 'unanswerable',
+                issues: [expect.objectContaining({ path: '$.topicId', code: 'invalid-ws-user-topic' })],
+                lifecycle: { state: 'acknowledged' }
+            });
+            expect(timersArmedAtTheCall).toBe(0);
+        });
+
+        it('waits for a reply to a request on a topic WS carries, whatever carrier sent the request', async () => {
+            const harness = new DeliveryRegistryHarness();
+            const handle = harness.registry.open({
+                message: toUnicastTestMessage('msg-1', 'responder-1'),
+                carrier: 'rtc',
+                readDeadlineEpochMs: harness.readDeadlineEpochMs
+            });
+            harness.registry.record(toAcknowledgementSettlement('msg-1', START_MS));
+            const pending = handle.awaitReply({ timeoutMs: 1_000 });
+            const reply = toReply('reply-1', 'responder-1', 'msg-1');
+
+            harness.registry.recordReply(reply);
+
+            expect(await pending).toMatchObject({ status: 'replied', reply, lifecycle: { state: 'acknowledged' } });
         });
 
         it('answers a reply from another sender than the unicast addressed wrong-responder', () => {
@@ -487,7 +580,11 @@ describe('BrowserRallarDeliveryRegistry', () => {
 
         it('leaves the request as it was when the reply wait times out', async () => {
             const harness = new DeliveryRegistryHarness();
-            const handle = harness.registry.open({ message: toUnicastTestMessage('msg-1', 'responder-1'), carrier: 'ws', readDeadlineEpochMs: harness.readDeadlineEpochMs });
+            const handle = harness.registry.open({
+                message: toUnicastTestMessage('msg-1', 'responder-1'),
+                carrier: 'ws',
+                readDeadlineEpochMs: harness.readDeadlineEpochMs
+            });
             harness.registry.record(toAdmittedSettlement('msg-1', START_MS));
             const before = handle.lifecycle();
             const pending = handle.awaitReply({ timeoutMs: 500 });
@@ -502,7 +599,11 @@ describe('BrowserRallarDeliveryRegistry', () => {
         it('keeps a best-effort request\'s reply wait open once the transport accepted it', async () => {
             const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(
-                { message: { ...toBestEffortTestMessage('msg-1'), targets: { mode: 'unicast', toPeerId: 'responder-1' } }, carrier: 'ws', readDeadlineEpochMs: harness.readDeadlineEpochMs }
+                {
+                    message: { ...toBestEffortTestMessage('msg-1'), targets: { mode: 'unicast', toPeerId: 'responder-1' } },
+                    carrier: 'ws',
+                    readDeadlineEpochMs: harness.readDeadlineEpochMs
+                }
             );
             const pending = handle.awaitReply({ timeoutMs: 1_000 });
 
@@ -518,7 +619,11 @@ describe('BrowserRallarDeliveryRegistry', () => {
         it('resolves a reply that arrives after the request deadline replied, though no read applied the deadline', async () => {
             const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(
-                { message: { ...toUnicastTestMessage('msg-1', 'responder-1'), constraints: { expiresAtMs: START_MS + 1_000 } }, carrier: 'ws', readDeadlineEpochMs: harness.readDeadlineEpochMs }
+                {
+                    message: { ...toUnicastTestMessage('msg-1', 'responder-1'), constraints: { expiresAtMs: START_MS + 1_000 } },
+                    carrier: 'ws',
+                    readDeadlineEpochMs: harness.readDeadlineEpochMs
+                }
             );
             const pending = handle.awaitReply({ timeoutMs: 5_000 });
             harness.setNowMs(START_MS + 1_001);
@@ -532,7 +637,11 @@ describe('BrowserRallarDeliveryRegistry', () => {
         it('resolves a lone reply wait undelivered when the request deadline lapses before its timeout', async () => {
             const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(
-                { message: { ...toUnicastTestMessage('msg-1', 'responder-1'), constraints: { expiresAtMs: START_MS + 1_000 } }, carrier: 'ws', readDeadlineEpochMs: harness.readDeadlineEpochMs }
+                {
+                    message: { ...toUnicastTestMessage('msg-1', 'responder-1'), constraints: { expiresAtMs: START_MS + 1_000 } },
+                    carrier: 'ws',
+                    readDeadlineEpochMs: harness.readDeadlineEpochMs
+                }
             );
             const pending = handle.awaitReply({ timeoutMs: 5_000 });
 
@@ -545,7 +654,11 @@ describe('BrowserRallarDeliveryRegistry', () => {
         it('resolves a lone reply wait undelivered when its timeout fires as the request deadline lapses', async () => {
             const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(
-                { message: { ...toUnicastTestMessage('msg-1', 'responder-1'), constraints: { expiresAtMs: START_MS + 1_000 } }, carrier: 'ws', readDeadlineEpochMs: harness.readDeadlineEpochMs }
+                {
+                    message: { ...toUnicastTestMessage('msg-1', 'responder-1'), constraints: { expiresAtMs: START_MS + 1_000 } },
+                    carrier: 'ws',
+                    readDeadlineEpochMs: harness.readDeadlineEpochMs
+                }
             );
             const pending = handle.awaitReply({ timeoutMs: 1_000 });
 
@@ -573,7 +686,11 @@ describe('BrowserRallarDeliveryRegistry', () => {
 
         it('resolves an open reply wait undelivered when the request fails', async () => {
             const harness = new DeliveryRegistryHarness();
-            const handle = harness.registry.open({ message: toUnicastTestMessage('msg-1', 'responder-1'), carrier: 'ws', readDeadlineEpochMs: harness.readDeadlineEpochMs });
+            const handle = harness.registry.open({
+                message: toUnicastTestMessage('msg-1', 'responder-1'),
+                carrier: 'ws',
+                readDeadlineEpochMs: harness.readDeadlineEpochMs
+            });
             const pending = handle.awaitReply({ timeoutMs: 1_000 });
 
             harness.registry.record(toCancelledSettlement('msg-1', START_MS));
@@ -655,7 +772,11 @@ describe('BrowserRallarDeliveryRegistry', () => {
 
         it('spares an aged terminal entry while a reply wait on it is open, and drops it once the wait ends', async () => {
             const harness = new DeliveryRegistryHarness({ retainTerminalMs: 1_000, maxEntries: MAX_ENTRIES });
-            const handle = harness.registry.open({ message: toUnicastTestMessage('msg-1', 'responder-1'), carrier: 'ws', readDeadlineEpochMs: harness.readDeadlineEpochMs });
+            const handle = harness.registry.open({
+                message: toUnicastTestMessage('msg-1', 'responder-1'),
+                carrier: 'ws',
+                readDeadlineEpochMs: harness.readDeadlineEpochMs
+            });
             harness.registry.record(toAcknowledgementSettlement('msg-1', START_MS));
             const pending = handle.awaitReply({ timeoutMs: 5_000 });
 
@@ -675,7 +796,11 @@ describe('BrowserRallarDeliveryRegistry', () => {
 
         it('resolves a reply wait undelivered when the count bound releases its live request', async () => {
             const harness = new DeliveryRegistryHarness({ retainTerminalMs: RETAIN_TERMINAL_MS, maxEntries: 1 });
-            const handle = harness.registry.open({ message: toUnicastTestMessage('msg-1', 'responder-1'), carrier: 'ws', readDeadlineEpochMs: harness.readDeadlineEpochMs });
+            const handle = harness.registry.open({
+                message: toUnicastTestMessage('msg-1', 'responder-1'),
+                carrier: 'ws',
+                readDeadlineEpochMs: harness.readDeadlineEpochMs
+            });
             const pending = handle.awaitReply({ timeoutMs: 5_000 });
 
             harness.registry.open({ message: toTestMessage('msg-2'), carrier: 'rtc', readDeadlineEpochMs: harness.readDeadlineEpochMs });
@@ -690,7 +815,11 @@ describe('BrowserRallarDeliveryRegistry', () => {
 
         it('resolves a reply wait undelivered when the count bound drops its acknowledged request', async () => {
             const harness = new DeliveryRegistryHarness({ retainTerminalMs: RETAIN_TERMINAL_MS, maxEntries: 1 });
-            const handle = harness.registry.open({ message: toUnicastTestMessage('msg-1', 'responder-1'), carrier: 'ws', readDeadlineEpochMs: harness.readDeadlineEpochMs });
+            const handle = harness.registry.open({
+                message: toUnicastTestMessage('msg-1', 'responder-1'),
+                carrier: 'ws',
+                readDeadlineEpochMs: harness.readDeadlineEpochMs
+            });
             harness.registry.record(toAcknowledgementSettlement('msg-1', START_MS));
             const pending = handle.awaitReply({ timeoutMs: 5_000 });
 
@@ -731,7 +860,11 @@ describe('BrowserRallarDeliveryRegistry', () => {
     describe('reply counts', () => {
         it('counts the replies the retained entries hold and the reply waits in flight', async () => {
             const harness = new DeliveryRegistryHarness();
-            const waiting = harness.registry.open({ message: toUnicastTestMessage('msg-1', 'responder-1'), carrier: 'ws', readDeadlineEpochMs: harness.readDeadlineEpochMs });
+            const waiting = harness.registry.open({
+                message: toUnicastTestMessage('msg-1', 'responder-1'),
+                carrier: 'ws',
+                readDeadlineEpochMs: harness.readDeadlineEpochMs
+            });
             harness.registry.open({ message: toUnicastTestMessage('msg-2', 'responder-1'), carrier: 'ws', readDeadlineEpochMs: harness.readDeadlineEpochMs });
             harness.registry.open({ message: toUnicastTestMessage('msg-3', 'responder-1'), carrier: 'ws', readDeadlineEpochMs: harness.readDeadlineEpochMs });
             const first = waiting.awaitReply({ timeoutMs: 1_000 });
@@ -808,7 +941,11 @@ describe('BrowserRallarDeliveryRegistry', () => {
 
         it('keeps a reply matched before the session ended for a later awaitReply', async () => {
             const harness = new DeliveryRegistryHarness();
-            const handle = harness.registry.open({ message: toUnicastTestMessage('msg-1', 'responder-1'), carrier: 'ws', readDeadlineEpochMs: harness.readDeadlineEpochMs });
+            const handle = harness.registry.open({
+                message: toUnicastTestMessage('msg-1', 'responder-1'),
+                carrier: 'ws',
+                readDeadlineEpochMs: harness.readDeadlineEpochMs
+            });
             harness.registry.record(toAcknowledgementSettlement('msg-1', START_MS));
             const reply = toReply('reply-1', 'responder-1', 'msg-1');
             harness.registry.recordReply(reply);
@@ -820,8 +957,16 @@ describe('BrowserRallarDeliveryRegistry', () => {
 
         it('resolves open reply waits undelivered, an acknowledged request\'s too', async () => {
             const harness = new DeliveryRegistryHarness();
-            const live = harness.registry.open({ message: toUnicastTestMessage('msg-1', 'responder-1'), carrier: 'ws', readDeadlineEpochMs: harness.readDeadlineEpochMs });
-            const acknowledged = harness.registry.open({ message: toUnicastTestMessage('msg-2', 'responder-1'), carrier: 'ws', readDeadlineEpochMs: harness.readDeadlineEpochMs });
+            const live = harness.registry.open({
+                message: toUnicastTestMessage('msg-1', 'responder-1'),
+                carrier: 'ws',
+                readDeadlineEpochMs: harness.readDeadlineEpochMs
+            });
+            const acknowledged = harness.registry.open({
+                message: toUnicastTestMessage('msg-2', 'responder-1'),
+                carrier: 'ws',
+                readDeadlineEpochMs: harness.readDeadlineEpochMs
+            });
             harness.registry.record(toAcknowledgementSettlement('msg-2', START_MS));
             const livePending = live.awaitReply({ timeoutMs: 5_000 });
             const acknowledgedPending = acknowledged.awaitReply({ timeoutMs: 5_000 });

@@ -36,11 +36,6 @@ export type WsQueueBoxServerReceiptAckRejectionObservation =
             readonly validationAtEpochMs: number;
             readonly deadlineAtMs: number | undefined;
         }
-        | {
-            readonly owner: 'ack-relay';
-            readonly stage: WsQueueBoxServerReceiptAggregation.ProtocolObservation['stage'];
-            readonly failedGuards: readonly ['origin-addressee-mismatch'];
-        }
     );
 
 export interface WsQueueBoxServerReceiptSocketFacts {
@@ -56,7 +51,7 @@ export interface WsQueueBoxServerReceiptAckFacts {
     readonly controlCreatedAtEpochMs: number;
     /**
      * The ACK control's own trace, which equals its subject's in production because the ACK is built with it; on
-     * `ack-count` the counted aggregate's trace instead, when one is live.
+     * `ack-count` the record head's trace instead when the count returned a view, else the control's.
      */
     readonly traceId: string;
     readonly ack: ALAckPayload;
@@ -77,11 +72,6 @@ export interface WsQueueBoxServerReceiptAggregateFacts {
     readonly confirmedRecipientPeerIds: readonly string[];
     readonly snapshotVersion: number;
     readonly deadlineAtMs: number;
-}
-
-export interface WsQueueBoxServerReceiptCountSource {
-    readonly source: 'local' | 'relayed';
-    readonly relayPublisherId: string | undefined;
 }
 
 export interface WsQueueBoxServerReceiptOutboxVerdict {
@@ -145,19 +135,15 @@ export type WsQueueBoxServerReceiptObservation =
         readonly rejectionCode: ALMessageRejection['code'] | undefined;
         readonly handled: boolean | undefined;
     })
-    | (WsQueueBoxServerReceiptAckFacts & WsQueueBoxServerReceiptCountSource & {
+    | (WsQueueBoxServerReceiptAckFacts & {
         readonly kind: 'ack-count';
         readonly serverPeerId: string;
-        readonly before: WsQueueBoxServerReceiptAggregateFacts | undefined;
+        /** The view a counted ACK returned; absent for a refused or conflicting count, and for one counted ahead. */
         readonly after: WsQueueBoxServerReceiptAggregateFacts | undefined;
         readonly countAtEpochMs: number;
-        readonly outcome: 'rejected' | 'partial' | 'complete';
+        /** `conflict`: the record refused the write, and the origin's retry recovers it. */
+        readonly outcome: 'rejected' | 'conflict' | 'partial' | 'complete';
         readonly rejectionCode: ALMessageRejection['code'] | undefined;
-    })
-    | (WsQueueBoxServerReceiptAckFacts & {
-        readonly kind: 'ack-relay';
-        readonly serverPeerId: string;
-        readonly outcome: 'provenance-refused' | 'budget-refused' | 'published' | 'publication-failed';
     })
     | {
         readonly kind: 'receipt-outbox';
@@ -250,6 +236,15 @@ export function toImmutableWsQueueBoxServerReceiptAck(ack: ALAckPayload): ALAckP
         status: ack.status,
         observedAtEpochMs: ack.observedAtEpochMs,
         proof: ack.proof
+    });
+}
+
+export function toImmutableWsQueueBoxServerReceipt(receipt: ALReceiptPayload): ALReceiptPayload {
+    return Object.freeze({
+        ...receipt,
+        expectedRecipientPeerIds: Object.freeze([...receipt.expectedRecipientPeerIds]),
+        confirmedRecipientPeerIds: Object.freeze([...receipt.confirmedRecipientPeerIds]),
+        outsideAudienceRecipientPeerIds: Object.freeze([...receipt.outsideAudienceRecipientPeerIds])
     });
 }
 

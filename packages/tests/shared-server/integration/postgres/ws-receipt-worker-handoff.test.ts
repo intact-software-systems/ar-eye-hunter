@@ -16,10 +16,13 @@ import {
     countCopies,
     createBridgeBus,
     createClusterInstance,
+    createReceiptClusterState,
+    createReceiptInstanceStores,
     installClock,
     receiverAck,
     roomMessage,
-    runReceiptWorkerHandoff
+    runReceiptWorkerHandoff,
+    toHandoffRoomMessageInput
 } from '../../../shared/services/ws-queue-box-server-receipt-fixture.ts';
 import { createResourceInboxTestStorage } from '../../queuebox/resource-inbox-test-storage.ts';
 import { readSentReceipts } from '../../../ws-receipted-send-test-controls.ts';
@@ -74,6 +77,10 @@ postgresIt('completes one receipt naming all fourteen receivers once the last he
     const instance = await createClusterInstance({
         name: 'server',
         outboundStores,
+        ...createReceiptInstanceStores(createReceiptClusterState(Date.now), Date.now),
+        inboundVolatileStores: undefined,
+        receiptObserver: undefined,
+        roomView: { inSync: true },
         bus: createBridgeBus(),
         publisherId: 'local',
         engine: new InboxOutboxEngine(),
@@ -86,14 +93,17 @@ postgresIt('completes one receipt naming all fourteen receivers once the last he
     const promptReceiverPeerIds = RECEIVER_PEER_IDS.slice(0, -1);
     const heldReceiverPeerId = RECEIVER_PEER_IDS.at(-1)!;
 
-    expect((await instance.service.acceptIncomingMessage(roomMessage(sentAtMs), 'a')).right?.kind).toBe('admitted');
+    expect((await instance.service.acceptIncomingMessage(roomMessage(toHandoffRoomMessageInput(sentAtMs)), 'a')).right?.kind).toBe('admitted');
     await expect.poll(() => receivers.map((socket) => countCopies(socket, 'room-message-1'))).toEqual(RECEIVER_PEER_IDS.map(() => 1));
     await expect.poll(() => subjectReceipts().map((receipt) => receipt.phase)).toEqual(['admitted']);
     for (const peerId of promptReceiverPeerIds) {
-        await instance.service.acceptIncomingMessage(receiverAck(peerId, Date.now()), peerId);
+        await instance.service.acceptIncomingMessage(receiverAck({ msgId: 'room-message-1', originPeerId: 'a', recipient: peerId, nowMs: Date.now() }), peerId);
     }
     expect(subjectReceipts().map((receipt) => receipt.phase)).toEqual(['admitted']);
-    await instance.service.acceptIncomingMessage(receiverAck(heldReceiverPeerId, Date.now()), heldReceiverPeerId);
+    await instance.service.acceptIncomingMessage(
+        receiverAck({ msgId: 'room-message-1', originPeerId: 'a', recipient: heldReceiverPeerId, nowMs: Date.now() }),
+        heldReceiverPeerId
+    );
     await expect.poll(() => subjectReceipts().some((receipt) => receipt.phase === 'complete')).toBe(true);
 
     const completed = subjectReceipts().filter((receipt) => receipt.phase === 'complete');

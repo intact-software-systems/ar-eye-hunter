@@ -19,6 +19,7 @@ import { TurnBatchedReads } from '@shared/resilience/turn-batched-reads.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import {
+    commitCompetingOutboundMessageCommit,
     createDefaultOutboundTestStores,
     createOutboundMessage,
     OUTBOUND_TEST_SEND_PLANNER,
@@ -368,10 +369,11 @@ it('commits a send of a sender while an earlier send of that sender still reads,
 
 it('reads, decides and writes again at once when another commit of its sender moved the fence after its read', async () => {
     const { admission, store, diagnostics } = createDispatchFixture();
-    const stale = createOutboundMessage('stale-read');
+    // Each message holds a place on its own track, so the two commits share the sender version alone.
+    const stale: ALMessage = { ...createOutboundMessage('stale-read'), ordering: { orderingKey: 'track-stale', epoch: 1, seq: 1 } };
     const competitor = await readOutboundTestAdmission({
         store,
-        message: createOutboundMessage('competitor'),
+        message: { ...createOutboundMessage('competitor'), ordering: { orderingKey: 'track-competitor', epoch: 1, seq: 1 } },
         creationNow: () => Temporal.Now.instant(),
         clock: { nowMs: Date.now }
     });
@@ -595,23 +597,15 @@ function toFailingReadSession(
     };
 }
 
-/** A competing send of the same sender wins the version fence inside each of the message's commit attempts, so it retains. */
+/** Another commit of the message wins its version fence inside each of the message's commit attempts, so it retains. */
 async function retainPendingAdmission(
     admission: ALOutboundDispatchAdmission<OutboundTestPayload>,
     store: ALOutboundAdmissionStore<OutboundTestPayload>,
     message: ALMessage
 ): Promise<void> {
     const commitBundle = store.commitBundle.bind(store);
-    let competitors = 0;
     const spy = vi.spyOn(store, 'commitBundle').mockImplementation(async (bundle, observation) => {
-        competitors += 1;
-        const competitor = await readOutboundTestAdmission({
-            store,
-            message: createOutboundMessage(`${message.id.msgId}-competitor-${competitors}`),
-            creationNow: () => Temporal.Now.instant(),
-            clock: { nowMs: Date.now }
-        });
-        expect(await commitBundle(competitor)).toBe('committed');
+        await commitCompetingOutboundMessageCommit(commitBundle, bundle);
         return await commitBundle(bundle, observation);
     });
     expect((await admission.commit(toDispatch(message))).computed.verdict).toEqual({ kind: 'pending' });

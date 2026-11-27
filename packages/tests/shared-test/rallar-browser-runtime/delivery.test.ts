@@ -1,4 +1,3 @@
-import { Temporal } from '@js-temporal/polyfill';
 import 'fake-indexeddb/auto';
 import {
     beforeEach,
@@ -43,7 +42,6 @@ import {
     createDefaultOutboundTestRuntime,
     holdOutboundClaims,
     loseOutboundCommitAttempts,
-    readOutboundTestAdmission,
     runOutboundWorkTask
 } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload } from '../../shared/alm/outbound-test-payload.ts';
@@ -431,19 +429,8 @@ it('observes a retained pending admission without storage reads and wakes on the
     });
     const carrierAdmission = Promise.withResolvers<ALOutboundEnqueueResult>();
     vi.mocked(fixture.middleware.middleware.webSocketQueueBox.enqueueOutboxIfAbsent).mockImplementation(async (message) => {
-        const competitor = await readOutboundTestAdmission({
-            store: admissionStore,
-            message: {
-                ...message,
-                id: { ...message.id, msgId: 'competing-sender-version' },
-                route: { ...message.route, resourceId: 'competing-sender-version' }
-            },
-            creationNow: () => Temporal.Now.instant(),
-            clock: { nowMs: () => Date.now() }
-        });
-        loseOutboundCommitAttempts(admissionStore, async (competing) => {
-            expect(await competing(competitor)).toBe('committed');
-        });
+        // Another commit of the message lands before each of its attempts, so every attempt loses its message's fence.
+        loseOutboundCommitAttempts(admissionStore);
         const result = await outbound.enqueueIfAbsent(message);
         carrierAdmission.resolve(result);
         return result;

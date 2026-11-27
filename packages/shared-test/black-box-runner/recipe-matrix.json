@@ -1079,7 +1079,7 @@
           }
         ]
       },
-      "description": "No-browser API-v1 WebSocket addressed sends: a room unicast's one-member receipt, the out-of-audience refusal, serverPeerId on /api/config, the server-addressed receipt, and the NACK for a room send from another scope."
+      "description": "No-browser API-v1 WebSocket addressed sends: a room unicast's one-member receipt, the out-of-audience refusal, serverPeerId on /api/config, the server-addressed receipt, the unauthorized NACK for a room multicast and a room broadcast whose route names another room than their groupRef, and the NACK for a room send from another scope."
     },
     {
       "id": "api-v1-websocket-topic-routing",
@@ -3094,7 +3094,7 @@
           }
         ]
       },
-      "description": "No-browser API-v1 at-least-once room send on an undeclared (live-only) topic across processes. Alice's socket is on the primary, Bob's on the secondary. The broadcast is sent once and reaches Bob through the cluster live notice; the admitted receipt names Bob. Bob's ACK enters the secondary, which holds no receipt aggregate for the message and relays it once as a relayed-ack notice; the primary counts it and the origin's receipt ends complete."
+      "description": "No-browser API-v1 at-least-once room send on an undeclared (live-only) topic across processes. Alice's socket is on the primary, Bob's on the secondary. The broadcast is sent once and reaches Bob through the cluster live notice; the admitted receipt names Bob. Bob's ACK enters the secondary, which counts it in the receipt record every instance shares; the origin's receipt ends complete."
     },
     {
       "id": "api-v1-cluster-instance-loss",
@@ -3234,7 +3234,7 @@
           }
         ]
       },
-      "description": "No-browser API-v1 loss of the server that admitted a receipted broadcast, on the three-server cluster. Alice's socket is on the primary, Bob's on the secondary and Carol's on the tertiary. Alice sends an at-least-once room broadcast with a receiver receipt and a 10 s deadline; its admitted receipt expects Bob and Carol and nobody else, and both receive it. The primary is crashed after admitted, and Bob and Carol acknowledge on the survivors. Alice reconnects on the secondary with the same session; her next broadcast from the new socket reaches Bob and Carol, who acknowledge, and its receipt completes. For the first broadcast, the new socket receives neither a complete nor a timed-out receipt through its deadline and the receipt grace (41 s)."
+      "description": "No-browser API-v1 loss of the server that admitted a receipted broadcast, on the three-server cluster. Alice's socket is on the primary, Bob's on the secondary and Carol's on the tertiary. Alice sends an at-least-once room broadcast with a receiver receipt and a 10 s deadline; its admitted receipt expects Bob and Carol and nobody else, and both receive it. The primary is crashed after admitted, and Bob and Carol acknowledge on the survivors. Alice reconnects on the secondary with the same session; her next broadcast from the new socket reaches Bob and Carol, who acknowledge, and its receipt completes. The first broadcast's receipt also completes: the survivors count Bob's and Carol's acknowledgements in the receipt record every server shares, and the new socket receives the complete receipt for it, naming Bob and Carol as expected and confirmed and nobody else, within 41 s, which covers the receipt row's republications, and no timed-out receipt."
     },
     {
       "id": "api-v1-admin-authorization-boundary",

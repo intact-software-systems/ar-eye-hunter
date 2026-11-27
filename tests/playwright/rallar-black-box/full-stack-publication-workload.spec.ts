@@ -15,9 +15,16 @@ import {
 import { decodeRallarBlackBoxTestResult } from '../../../packages/shared-test/rallar-bb-test/composite-results.ts';
 import {
     createPublicationWorkloadRecipes,
-    type PublicationWorkloadRecipes
+    type PublicationWorkloadRecipes,
+    type PublicationWorkloadRoleKind,
+    type PublicationWorkloadRoleRecipe,
+    type PublicationWorkloadRoomRecipes
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/publication-workload/create-publication-workload-recipes.ts';
-import { toPublicationWorkloadFigures } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/publication-workload/to-publication-workload-figures.ts';
+import {
+    toPublicationWorkloadFigures,
+    type PublicationWorkloadFigures,
+    type PublicationWorkloadRoomResults
+} from '../../../packages/shared-test/rallar-bb-test/conformance/alm/publication-workload/to-publication-workload-figures.ts';
 import type { PublicationWorkloadParameters } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/publication-workload/validate-publication-workload-parameters.ts';
 import type { ControlDistributedRunCommandLink } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
@@ -39,33 +46,12 @@ import {
 } from './owned-headless-worker.ts';
 import { readNativeDistributedRun, runOwnedWorkerManifest } from './run-owned-worker-manifest.ts';
 
-const AGENT_COUNT = 3;
-
-/**
- * The family's local point: one publisher and two subscribers, 60 live frames 500 ms apart on `rtc`. The family has
- * no default, so every value is this proof's own choice.
- */
-const LOCAL_POINT: PublicationWorkloadParameters = {
-    group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
-    participantCount: AGENT_COUNT,
-    carrier: 'rtc',
-    publishIntervalMs: 500,
-    windowMs: 30_000,
-    publication: { cadenceMs: 100, retainNewest: 1, drain: { messages: 8, bytes: 65_536 } },
-    payloadBytes: 256,
-    ttlMs: 5_000,
-    minReceiveRatio: 0.95,
-    minSendSuccessRatio: 0.95,
-    readyTimeoutMs: 45_000
-};
-
-/** The commands whose result values the figures record is read from, and each role's last `stats`. */
-const RESULT_COMMAND_IDS = {
-    publisherFrames: 'publication-workload-publisher-frames',
-    publisherStats: 'publication-workload-publisher-stats',
-    subscriberReceived: 'publication-workload-subscriber-received',
-    subscriberStats: 'publication-workload-subscriber-stats'
-} as const;
+/** One point this proof runs in the browser, under the name `RALLAR_BLACK_BOX_PUBLICATION_WORKLOAD_POINT` picks it by. */
+interface LocalPoint {
+    readonly name: string;
+    readonly description: string;
+    readonly parameters: PublicationWorkloadParameters;
+}
 
 /** What one agent's recipe left behind: the history it ran under and the result of each of its commands. */
 interface AgentRecipeRun {
@@ -75,162 +61,326 @@ interface AgentRecipeRun {
     readonly results: readonly RallarBlackBoxTestResult[];
 }
 
-// The terminal wait is the manifest's own terminal timeout, and the harness abort, the owned worker's idle exit and
-// this test's limit are derived from it. The API must be new to the run: every launch gives the same users a new
-// password.
-test('runs the publication workload local point on three agents and records its figures', async ({}, testInfo) => {
-    test.skip(
-        process.env.RALLAR_BLACK_BOX_FULL_STACK !== '1' || process.env.RALLAR_BLACK_BOX_FULL_STACK_HEADLESS !== '1',
-        'Opt-in standalone headless full-stack observation required'
-    );
+const SECOND_ROOM_GROUP = { ...HETZNER_DISTRIBUTED_MANIFEST_GROUP, groupId: 'hetzner-headless-room-2' };
+
+/**
+ * The family has no default, so every value is this proof's own choice. The second point's six agents are the most a
+ * recorded 4-CPU run of the headless worker passed with (`docs/github-actions-black-box-headless-runbook.md`), and its
+ * delivery level is the first hosted campaign's for several publishers
+ * (`playground/alm/alm-first-hosted-campaign-targets.md`, section 2.3).
+ */
+const LOCAL_POINTS: readonly LocalPoint[] = [
+    {
+        name: 'one-room',
+        description: 'One room of one publisher and two subscribers: 60 live frames 500 ms apart on rtc.',
+        parameters: {
+            groups: [HETZNER_DISTRIBUTED_MANIFEST_GROUP],
+            participantCount: 3,
+            publisherCount: 1,
+            carrier: 'rtc',
+            publishIntervalMs: 500,
+            windowMs: 30_000,
+            publication: { cadenceMs: 100, retainNewest: 1, drain: { messages: 8, bytes: 65_536 } },
+            payloadBytes: 256,
+            ttlMs: 5_000,
+            minReceiveRatio: 0.95,
+            minSendSuccessRatio: 0.95,
+            readyTimeoutMs: 45_000
+        }
+    },
+    {
+        name: 'two-rooms',
+        description:
+            'Two rooms of two publishers and one subscriber each: 30 live frames a publisher 500 ms apart on rtc.',
+        parameters: {
+            groups: [HETZNER_DISTRIBUTED_MANIFEST_GROUP, SECOND_ROOM_GROUP],
+            participantCount: 3,
+            publisherCount: 2,
+            carrier: 'rtc',
+            publishIntervalMs: 500,
+            windowMs: 15_000,
+            publication: { cadenceMs: 100, retainNewest: 1, drain: { messages: 8, bytes: 65_536 } },
+            payloadBytes: 256,
+            ttlMs: 5_000,
+            minReceiveRatio: 0.9,
+            minSendSuccessRatio: 0.95,
+            readyTimeoutMs: 45_000
+        }
+    }
+];
+
+/** The commands whose result values the figures record is read from. */
+const RESULT_COMMAND_IDS = {
+    publisherFrames: 'publication-workload-publisher-frames',
+    publisherStats: 'publication-workload-publisher-stats',
+    subscriberReceived: 'publication-workload-subscriber-received'
+} as const;
+
+/** Each role's last `stats`, read after its window. */
+const STATS_COMMAND_IDS: Readonly<Record<PublicationWorkloadRoleKind, string>> = {
+    publisher: RESULT_COMMAND_IDS.publisherStats,
+    subscriber: 'publication-workload-subscriber-stats'
+};
+
+test('is asked for a point it holds', () => {
+    test.skip(!isHeadlessFullStackOptedIn(), 'Opt-in standalone headless full-stack observation required');
     expect(
-        process.env.RALLAR_BLACK_BOX_STORAGE_DIR,
-        'The control server keeps whole results only in recorder storage, selected before it starts'
-    ).toBeTruthy();
-    const recipes = createPublicationWorkloadRecipes(LOCAL_POINT).fold((issues) => {
-        throw new Error(`The local point is no point of the family: ${JSON.stringify(issues)}`);
-    }, (valid) => valid);
-    const artifactDir = testInfo.outputPath('observation');
-    const manifestPath = path.join(artifactDir, 'source-manifest.json');
-    const manifest = createLocalPointManifest(recipes, manifestPath);
-    const deadlines = computeAllLocalAlmObservationDeadlines(manifest);
-    test.setTimeout(deadlines.testTimeoutMs);
-    const controlBaseUrl = readFullStackControlBaseUrl();
-    const launch: OwnedHeadlessWorkerLaunch = {
-        services: { apiBaseUrl: readFullStackApiBaseUrl(), spaBaseUrl: readFullStackSpaBaseUrl(), controlBaseUrl },
-        manifest,
-        agentCount: AGENT_COUNT,
-        idleExitMs: deadlines.harnessTimeoutMs
-    };
-    const harnessAbort = new AbortController();
-    const harnessTimer = setTimeout(() => harnessAbort.abort(), deadlines.harnessTimeoutMs);
-    const worker = startOwnedHeadlessWorker(launch);
-    worker.on('error', () => harnessAbort.abort());
-    let cleanup: OwnedHeadlessWorkerCleanup | undefined;
+        LOCAL_POINTS.map(({ name }) => name),
+        'RALLAR_BLACK_BOX_PUBLICATION_WORKLOAD_POINT names a point of this proof'
+    ).toContain(process.env.RALLAR_BLACK_BOX_PUBLICATION_WORKLOAD_POINT);
+});
 
-    try {
-        await waitForOwnedWorkerAgents(worker, launch, harnessAbort.signal);
-        const operation = await runOwnedWorkerManifest({
-            controlBaseUrl,
-            manifestPath,
-            manifestText: `${JSON.stringify(manifest, null, 2)}\n`,
-            artifactDir,
-            rtcCaptureMode: undefined,
-            terminalTimeoutMs: deadlines.terminalTimeoutMs,
-            signal: harnessAbort.signal,
-            prepareEvidenceExport: async () => {
-                cleanup = await stopOwnedHeadlessWorker(worker);
-                expect(cleanup, 'The worker ends before its evidence is read').toBe('reaped');
-            }
-        });
-        expect(operation.left, 'The distributed run passes and exports its evidence').toBeUndefined();
-        const distributed = await readNativeDistributedRun(artifactDir);
-        expect(distributed.state, 'The run passed').toBe('passed');
-
-        const agentRuns = await readAgentRecipeRuns(
-            artifactDir,
-            distributed.commandLinks.filter((link) => link.phase === 'start')
+// One point a Playwright run: every launch gives the same users, `controller-01` onward, a new password, so the API
+// must be new to the point. The terminal wait is the manifest's own terminal timeout, and the harness abort, the owned
+// worker's idle exit and the test's limit are derived from it.
+for (const point of LOCAL_POINTS) {
+    test(`runs the publication workload ${point.name} point and records its figures`, async ({}, testInfo) => {
+        test.skip(!isHeadlessFullStackOptedIn(), 'Opt-in standalone headless full-stack observation required');
+        test.skip(
+            process.env.RALLAR_BLACK_BOX_PUBLICATION_WORKLOAD_POINT !== point.name,
+            'RALLAR_BLACK_BOX_PUBLICATION_WORKLOAD_POINT names the other point'
         );
-        const publisherRun = agentRuns.find((run) => run.recipeId === recipes.publisher.recipe.recipeId);
         expect(
-            publisherRun,
-            `One agent ran the publisher's recipe ${recipes.publisher.recipe.recipeId}; the agents ran ${
-                agentRuns.map((run) => `${run.agentId}: ${run.recipeId}`).join(', ')
-            }`
-        ).toBeDefined();
-        const figures = toPublicationWorkloadFigures({
-            parameters: LOCAL_POINT,
-            publisher: {
-                loop: readResultValue(publisherRun!, RESULT_COMMAND_IDS.publisherFrames),
-                stats: readResultValue(publisherRun!, RESULT_COMMAND_IDS.publisherStats)
-            },
-            subscribers: agentRuns.filter((run) => run.recipeId === recipes.subscriber.recipe.recipeId).map((run) => ({
-                agentId: run.agentId,
-                received: readResultValue(run, RESULT_COMMAND_IDS.subscriberReceived)
-            }))
-        });
-        const figuresPath = testInfo.outputPath('publication-workload-figures.json');
-        await writeFile(figuresPath, `${JSON.stringify(figures.right ?? { issues: figures.left }, null, 2)}\n`);
-        await testInfo.attach('publication-workload-figures.json', {
-            path: figuresPath,
-            contentType: 'application/json'
-        });
+            process.env.RALLAR_BLACK_BOX_STORAGE_DIR,
+            'The control server keeps whole results only in recorder storage, selected before it starts'
+        ).toBeTruthy();
+        const recipes = createPublicationWorkloadRecipes(point.parameters).fold((issues) => {
+            throw new Error(`The ${point.name} point is no point of the family: ${JSON.stringify(issues)}`);
+        }, (valid) => valid);
+        const artifactDir = testInfo.outputPath('observation');
+        const manifestPath = path.join(artifactDir, 'source-manifest.json');
+        const manifest = createLocalPointManifest(point, recipes, manifestPath);
+        const deadlines = computeAllLocalAlmObservationDeadlines(manifest);
+        test.setTimeout(deadlines.testTimeoutMs);
+        const controlBaseUrl = readFullStackControlBaseUrl();
+        const launch: OwnedHeadlessWorkerLaunch = {
+            services: { apiBaseUrl: readFullStackApiBaseUrl(), spaBaseUrl: readFullStackSpaBaseUrl(), controlBaseUrl },
+            manifest,
+            agentCount: computeAgentCount(recipes),
+            idleExitMs: deadlines.harnessTimeoutMs
+        };
+        const harnessAbort = new AbortController();
+        const harnessTimer = setTimeout(() => harnessAbort.abort(), deadlines.harnessTimeoutMs);
+        const worker = startOwnedHeadlessWorker(launch);
+        worker.on('error', () => harnessAbort.abort());
+        let cleanup: OwnedHeadlessWorkerCleanup | undefined;
 
-        expect(figures.right, `The run gives a figures record; issues: ${(figures.left ?? []).join('; ')}`)
-            .toBeDefined();
-        const { configured: { plan }, measured } = figures.right!;
-        expect(measured.publisher.publicationStage.counters.admitted, 'The stage handed enough frames to a carrier')
-            .toBeGreaterThanOrEqual(plan.minAcceptedSends);
-        expect(measured.subscribers, 'Every subscriber of the point has figures').toHaveLength(plan.subscriberCount);
-        for (const { agentId, observed, unrecordedSamples, sampleAgeMs } of measured.subscribers) {
-            expect(observed, `${agentId} received enough of the frames`).toBeGreaterThanOrEqual(
+        try {
+            await waitForOwnedWorkerAgents(worker, launch, harnessAbort.signal);
+            const operation = await runOwnedWorkerManifest({
+                controlBaseUrl,
+                manifestPath,
+                manifestText: `${JSON.stringify(manifest, null, 2)}\n`,
+                artifactDir,
+                rtcCaptureMode: undefined,
+                terminalTimeoutMs: deadlines.terminalTimeoutMs,
+                signal: harnessAbort.signal,
+                prepareEvidenceExport: async () => {
+                    cleanup = await stopOwnedHeadlessWorker(worker);
+                    expect(cleanup, 'The worker ends before its evidence is read').toBe('reaped');
+                }
+            });
+            expect(operation.left, 'The distributed run passes and exports its evidence').toBeUndefined();
+            const distributed = await readNativeDistributedRun(artifactDir);
+            expect(distributed.state, 'The run passed').toBe('passed');
+
+            const agentRuns = await readAgentRecipeRuns(
+                artifactDir,
+                distributed.commandLinks.filter((link) => link.phase === 'start')
+            );
+            const figures = toPublicationWorkloadFigures({
+                parameters: point.parameters,
+                rooms: recipes.rooms.map((room) => toRoomResults(room, agentRuns))
+            });
+            const figuresPath = testInfo.outputPath('publication-workload-figures.json');
+            await writeFile(figuresPath, `${JSON.stringify(figures.right ?? { issues: figures.left }, null, 2)}\n`);
+            await testInfo.attach('publication-workload-figures.json', {
+                path: figuresPath,
+                contentType: 'application/json'
+            });
+
+            expect(
+                figures.right,
+                `The run gives a figures record; issues: ${(figures.left ?? []).join('; ')}; the agents ran ${
+                    agentRuns.map((run) => `${run.agentId}: ${run.recipeId}`).join(', ')
+                }`
+            ).toBeDefined();
+            expectPointFigures(figures.right!);
+            expectAgentPages(recipes, agentRuns);
+        }
+        finally {
+            clearTimeout(harnessTimer);
+            harnessAbort.abort();
+            // A worker already reaped is not stopped again: the stop signals its process group, and that id may by now
+            // name another group.
+            if (cleanup !== 'reaped') {
+                cleanup = await stopOwnedHeadlessWorker(worker);
+            }
+            // Soft: a throw from here would replace the failure the test ended on.
+            expect.soft(cleanup, 'The test leaves no worker running').not.toBe('unreaped');
+        }
+    });
+}
+
+/** Only a caller that sets both opt-ins asks for this proof; `npm run test:rallar` loads the file and sets neither. */
+function isHeadlessFullStackOptedIn(): boolean {
+    return process.env.RALLAR_BLACK_BOX_FULL_STACK === '1' && process.env.RALLAR_BLACK_BOX_FULL_STACK_HEADLESS === '1';
+}
+
+/**
+ * Every room holds the figures of each of its agents; every publisher's stage handed enough frames to a carrier; every
+ * subscriber received enough of its room's frames and no more than them, with an age for each; and each delivered
+ * figure covers exactly its subscribers. No latency level, no percentile and no rate is asserted.
+ */
+function expectPointFigures(figures: PublicationWorkloadFigures): void {
+    const { configured: { parameters, plan }, measured } = figures;
+    for (const [index, room] of measured.rooms.entries()) {
+        const roomName = `room ${index + 1}`;
+        expect(room.publishers, `Every publisher of ${roomName} has figures`).toHaveLength(parameters.publisherCount);
+        expect(room.subscribers, `Every subscriber of ${roomName} has figures`).toHaveLength(plan.subscriberCount);
+        for (const { agentId, publicationStage } of room.publishers) {
+            expect(publicationStage.counters.admitted, `The stage of ${agentId} handed enough frames to a carrier`)
+                .toBeGreaterThanOrEqual(plan.minAcceptedSends);
+        }
+        for (const { agentId, observed, unrecordedSamples, sampleAgeMs } of room.subscribers) {
+            expect(observed, `${agentId} received enough of the frames of ${roomName}`).toBeGreaterThanOrEqual(
                 plan.minExpectedInboundMessages
             );
-            expect(observed, `${agentId} received no more messages than frames`).toBeLessThanOrEqual(plan.frameCount);
+            expect(observed, `${agentId} received no more messages than ${roomName} has frames`).toBeLessThanOrEqual(
+                plan.expectedInboundMessages
+            );
             expect(unrecordedSamples, `Every message ${agentId} received gave an age`).toBe(0);
-            expect(sampleAgeMs.kind, `${agentId} recorded delivered sample ages`).toBe('recorded');
             // A stamp that is no send time reads as an age far above any window.
             expect(
-                sampleAgeMs.kind === 'recorded' && sampleAgeMs.max < LOCAL_POINT.windowMs,
+                sampleAgeMs.kind === 'recorded' && sampleAgeMs.max < parameters.windowMs,
                 `The oldest sample of ${agentId} is younger than the window: ${JSON.stringify(sampleAgeMs)}`
             ).toBe(true);
         }
-        for (const run of agentRuns) {
-            expect(run.eventHistoryMode, `${run.agentId} ran its recipe on a full event history`).toBe('full');
-            expect(
-                readResultValue(
-                    run,
-                    run === publisherRun ? RESULT_COMMAND_IDS.publisherStats : RESULT_COMMAND_IDS.subscriberStats
-                ),
-                `The page of ${run.agentId} kept every event, and its event capture has no gap`
-            ).toMatchObject({
-                eventHistory: { policy: { mode: 'full' }, evictedEvents: 0, capture: { status: 'continuous' } }
-            });
-        }
+        expect(room.delivered.sampleAgeMs.kind, `${roomName} states one delivered sample age`).toBe('recorded');
+        expect(room.delivered.observed, `The delivered figure of ${roomName} counts every subscriber's messages`)
+            .toBe(computeSum(room.subscribers.map((subscriber) => subscriber.observed)));
     }
-    finally {
-        clearTimeout(harnessTimer);
-        harnessAbort.abort();
-        // A worker already reaped is not stopped again: the stop signals its process group, and that id may by now
-        // name another group.
-        if (cleanup !== 'reaped') {
-            cleanup = await stopOwnedHeadlessWorker(worker);
-        }
-        // Soft: a throw from here would replace the failure the test ended on.
-        expect.soft(cleanup, 'The test leaves no worker running').not.toBe('unreaped');
-    }
-});
+    expect(
+        measured.delivered.sampleAgeMs.kind === 'recorded' && measured.delivered.sampleAgeMs.count,
+        'The delivered sample age of the point holds every age of every room'
+    ).toBe(
+        computeSum(
+            measured.rooms.map(({ delivered: { sampleAgeMs } }) =>
+                sampleAgeMs.kind === 'recorded' ? sampleAgeMs.count : 0
+            )
+        )
+    );
+}
 
 /**
- * The entry names no event history of its own: a manifest's history replaces the `full` one the subscriber's recipe
- * asks for. A control run holds a barrier id once, so each run of the test is a control run of its own.
+ * A page that dropped events would under-count, and a page the product held over its volatile budget would have refused
+ * frames the point's level then blames on delivery.
+ */
+function expectAgentPages(recipes: PublicationWorkloadRecipes, agentRuns: readonly AgentRecipeRun[]): void {
+    const roles = recipes.rooms.flatMap((room) => room.roles);
+    for (const run of agentRuns) {
+        const role = roles.find(({ recipe }) => recipe.recipeId === run.recipeId);
+        expect(role, `${run.agentId} ran a recipe of the point, and ran ${run.recipeId}`).toBeDefined();
+        expect(run.eventHistoryMode, `${run.agentId} ran its recipe on a full event history`).toBe('full');
+        expect(
+            readResultValue(run, STATS_COMMAND_IDS[role!.kind]),
+            `The page of ${run.agentId} kept every event, its event capture has no gap, and it was never overloaded`
+        ).toMatchObject({
+            eventHistory: { policy: { mode: 'full' }, evictedEvents: 0, capture: { status: 'continuous' } },
+            rallar: { alm: { overloaded: false } }
+        });
+    }
+}
+
+/**
+ * A room's results are those of the agents that ran one of the room's own recipes. A recipe's id holds its room, so no
+ * agent's results reach two rooms.
+ */
+function toRoomResults(
+    room: PublicationWorkloadRoomRecipes,
+    agentRuns: readonly AgentRecipeRun[]
+): PublicationWorkloadRoomResults {
+    const runsOfKind = (kind: PublicationWorkloadRoleKind): readonly AgentRecipeRun[] =>
+        agentRuns.filter((run) =>
+            room.roles.some((role) => role.kind === kind && role.recipe.recipeId === run.recipeId)
+        );
+    return {
+        group: room.group,
+        publishers: runsOfKind('publisher').map((run) => ({
+            agentId: run.agentId,
+            loop: readResultValue(run, RESULT_COMMAND_IDS.publisherFrames),
+            stats: readResultValue(run, RESULT_COMMAND_IDS.publisherStats)
+        })),
+        subscribers: runsOfKind('subscriber').map((run) => ({
+            agentId: run.agentId,
+            received: readResultValue(run, RESULT_COMMAND_IDS.subscriberReceived)
+        }))
+    };
+}
+
+/**
+ * A role-map manifest whose roles are the recipe ids: each recipe runs on its own agents and on no other. The entry's
+ * own pattern gives every agent every recipe and names no role, so the roles are written here. The entry names no event
+ * history of its own: a manifest's history replaces the `full` one a subscriber's recipe asks for. A control run holds
+ * a barrier id once, so each run of the test is a control run of its own.
  */
 function createLocalPointManifest(
+    point: LocalPoint,
     recipes: PublicationWorkloadRecipes,
     filePath: string
 ): RallarBlackBoxDistributedRunManifest {
     const runId = `publication-workload-${uniqueSuffix()}`;
+    const roles = recipes.rooms.flatMap((room) => room.roles);
+    const agentCount = computeAgentCount(recipes);
     const entry = createBudgetedManifestEntry({
         filePath,
-        title: `Publication workload ${AGENT_COUNT}-agent local point`,
-        description: 'One publisher and two subscribers: 60 live frames 500 ms apart on rtc.',
-        distributedRunId: `${runId}-${AGENT_COUNT}-agent`,
-        recipes: [recipes.publisher.recipe, recipes.subscriber.recipe],
-        agentCount: AGENT_COUNT,
-        profiles: ['alm', 'messages.rtc', 'publication-workload', `${AGENT_COUNT}-agent`],
+        title: `Publication workload ${point.name} local point`,
+        description: point.description,
+        distributedRunId: `${runId}-${point.name}`,
+        recipes: roles.map((role) => role.recipe),
+        agentCount,
+        profiles: ['alm', 'messages.rtc', 'publication-workload', point.name],
         live: true,
-        targetAgentIds: toControllerAgentIds(AGENT_COUNT),
+        targetAgentIds: toControllerAgentIds(agentCount),
         targetPolicyMode: 'role-map',
-        rolePattern: 'one-sender-many-receivers',
+        rolePattern: 'all-agents',
         mainline: false,
         diagnostic: false,
         expectedFailure: false,
         stress: false,
         barrier: true,
         groupAssertions: [],
-        metadata: { family: 'publication-workload' }
+        metadata: { family: 'publication-workload', point: point.name }
     });
-    return { ...entry.manifest, controlRunId: runId };
+    return {
+        ...entry.manifest,
+        controlRunId: runId,
+        recipes: entry.manifest.recipes.map((selection) => ({ ...selection, role: selection.recipeId })),
+        targetPolicy: { mode: 'role-map', roles: toAgentIdsByRecipeId(roles), expectedParticipantCount: agentCount }
+    };
+}
+
+/**
+ * The agents are handed out in the order the rooms and their roles come, so the run's first agent writes the first
+ * room's group.
+ */
+function toAgentIdsByRecipeId(
+    roles: readonly PublicationWorkloadRoleRecipe[]
+): Readonly<Record<string, readonly string[]>> {
+    const agentIds = toControllerAgentIds(computeSum(roles.map((role) => role.agentCount)));
+    return Object.fromEntries(roles.map((role, index) => {
+        const firstAgent = computeSum(roles.slice(0, index).map((earlier) => earlier.agentCount));
+        return [role.recipe.recipeId, agentIds.slice(firstAgent, firstAgent + role.agentCount)];
+    }));
+}
+
+/** The agents of every room together, each running one recipe. */
+function computeAgentCount(recipes: PublicationWorkloadRecipes): number {
+    return computeSum(recipes.rooms.flatMap((room) => room.roles.map((role) => role.agentCount)));
+}
+
+function computeSum(counts: readonly number[]): number {
+    return counts.reduce((sum, count) => sum + count, 0);
 }
 
 /**

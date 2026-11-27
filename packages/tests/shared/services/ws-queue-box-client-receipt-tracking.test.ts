@@ -448,7 +448,8 @@ describe('WS client receipt admission edges', () => {
                 }
             }
         });
-        await fixture.service.enqueueOutboxIfAbsent(roomMessage());
+        // A send on a track: its admission writes the sender version the receipt's read then reports.
+        await fixture.service.enqueueOutboxIfAbsent(toSequencedRoomMessage());
         await fixture.service.acceptIncomingMessage(receiptMessage('admitted', []));
         const before = await fixture.outboundStores.admissionStore.readReceiptAdmission({
             originPeerId: 'self',
@@ -456,6 +457,7 @@ describe('WS client receipt admission edges', () => {
             phase: 'complete',
             expectedRecipientPeerIds: []
         });
+        expect(before.clientRecord?.version).toBeGreaterThan(0);
         vi.setSystemTime(1_000_100);
         const control = receiptMessage('complete', confirmed);
         vi.setSystemTime(1_000_150);
@@ -542,17 +544,26 @@ describe('WS client receipt admission edges', () => {
 
     it('retains each actual conflicted or expired attempt without inventing a settlement', async () => {
         const fixture = await createReceiptTrackingFixture();
-        await fixture.service.enqueueOutboxIfAbsent(roomMessage());
+        // A send on a track, so its sender holds a version the receipt's read reports.
+        await fixture.service.enqueueOutboxIfAbsent(toSequencedRoomMessage());
         const store = fixture.outboundStores.admissionStore;
         const before = await store.readReceiptAdmission({ originPeerId: 'self', msgId: 'room-message-1', phase: 'complete', expectedRecipientPeerIds: [] });
         const commitBundle = store.commitBundle.bind(store);
         const commit = vi.spyOn(store, 'commitBundle').mockImplementationOnce(async (bundle) => {
             const concurrent = roomMessage();
-            await fixture.service.enqueueOutboxIfAbsent({ ...concurrent, id: { ...concurrent.id, msgId: 'concurrent-send' } });
+            await fixture.service.enqueueOutboxIfAbsent({
+                ...concurrent,
+                id: { ...concurrent.id, msgId: 'concurrent-send' },
+                ordering: { orderingKey: 'concurrent-stream' }
+            });
             return await commitBundle(bundle);
         });
         await fixture.service.acceptIncomingMessage(receiptMessage('admitted', []));
-        // A send of another message of the sender writes none of this message's rows, so it costs the receipt nothing.
+        const after = await store.readReceiptAdmission({ originPeerId: 'self', msgId: 'room-message-1', phase: 'complete', expectedRecipientPeerIds: [] });
+        // A send on another track moves the sender version between the receipt's read and its write. The receipt reads no
+        // row the sender's other messages share, so it fences its own message alone and commits at its first attempt; a
+        // receipt that fenced the sender version would conflict here.
+        expect(after.clientRecord!.version).toBeGreaterThan(before.clientRecord!.version);
         expect(fixture.diagnostics.filter((event) => event.kind === 'receipt-confirmation')).toEqual([
             expect.objectContaining({
                 attempt: 1,
@@ -794,4 +805,9 @@ async function sendVolatileRoomMessage(): Promise<VolatileRoomSend> {
     // The receipt row lives in the memory pair, never in the durable one.
     expect(await readReceipt(fixture)).toBeUndefined();
     return { fixture, message };
+}
+
+/** The room message on a track of its own: the WS client mints its sequence, so its commits fence the sender version. */
+function toSequencedRoomMessage(): ALMessage {
+    return { ...roomMessage(), ordering: { orderingKey: 'room-stream' } };
 }

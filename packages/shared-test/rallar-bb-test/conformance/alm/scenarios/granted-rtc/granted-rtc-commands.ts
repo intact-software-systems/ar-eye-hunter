@@ -34,7 +34,8 @@ import {
 
 /**
  * A granted cell proves what the RTC carrier itself decides, so it runs under the `rtc` strategy, where no refusal or
- * lost copy is handed to WS; a cell that proves the hand-over too names the fallback carrier itself.
+ * lost copy is handed to WS. A cell the carrier matrix names takes its carriers from the matrix instead, and runs over
+ * the fallback carrier only where a cell of the matrix names it there as a proof.
  */
 export const GRANTED_RTC_CARRIERS: readonly AlmConformanceCarrier[] = ['rtc'];
 

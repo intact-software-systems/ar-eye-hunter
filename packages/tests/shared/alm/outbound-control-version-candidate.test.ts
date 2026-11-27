@@ -176,7 +176,8 @@ describe('outbound control version candidate', () => {
             carrier: 'ws',
             recipientAuthentication: { kind: 'carrier' }
         });
-        const message = createOutboundMessage('control-version-race');
+        // A message on a track: its admission writes the sender version the control must leave as it was.
+        const message: ALMessage = { ...createOutboundMessage('control-version-race'), ordering: { orderingKey: 'conversation', epoch: 1, seq: 1 } };
         await store.commitBundle(
             await readOutboundTestAdmission({ store: store, message: message, creationNow: () => Temporal.Now.instant(), clock: { nowMs: () => Date.now() } })
         );

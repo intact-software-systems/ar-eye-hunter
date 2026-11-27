@@ -191,7 +191,7 @@ function createSigningRuntime(planOutgoingMessage: ALOutboundPlanner<OutboundTes
     return { runtime, stores, asked, signed, sent };
 }
 
-/** Competing sends of the same sender win the version fence before every attempt of the message's first commit, so it retains. */
+/** Another commit of the same message moves its version before every attempt of the message's first commit, so it retains. */
 async function enqueueBehindCompetitor<T>(stores: OutboundTestStores, enqueue: () => Promise<T>): Promise<T> {
     const store = stores.admissionStore;
     loseOutboundCommitAttempts(store);

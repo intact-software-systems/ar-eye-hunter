@@ -60,9 +60,10 @@ export namespace ALOutboundFirstHopWait {
  * again under a new attempt identity, within the send's own receipt budget, and charges nothing while the frame is
  * still queued. It ends when the hop answers: a receipt in any phase, a terminal NACK or a relay's refusal of the
  * send, or the hop's `not-yet-in-sync`, which retains the send and states nothing. It also ends when its retries run
- * out, stating `receipt-exhausted`, and when its message ends. A resend is two commits, each fenced on the sender's
- * version: the wait's next attempt and its timer, then the dispatch that writes the frame. A crash between them
- * spends one attempt that wrote no frame.
+ * out, stating `receipt-exhausted`, and when its message ends. A resend is two commits, each fenced on the message's
+ * version: the wait's next attempt and its timer, on the sender's version too, then the dispatch that writes the frame,
+ * on the sender's only when its read touched a row the sender's messages share. A crash between them spends one
+ * attempt that wrote no frame.
  */
 export class ALOutboundFirstHopWait<TPrepared> {
     private readonly dependencies: ALOutboundFirstHopWait.Dependencies<TPrepared>;
@@ -146,15 +147,16 @@ export class ALOutboundFirstHopWait<TPrepared> {
 
     /**
      * A wait whose message is gone, or ended in a commit that did not read the wait, has nothing left to resend;
-     * without a sender record nothing fences its end.
+     * without a stored message nothing names the sender whose versions fence its end.
      */
     private async commitOrphanedWait(read: ALOutboundRepairReadDto<TPrepared>, msgId: string): Promise<void> {
-        if (read.clientRecord === undefined) {
+        const senderId = read.storedMessage?.reference.senderId;
+        if (senderId === undefined) {
             return;
         }
         await this.commitBundle({
-            senderId: read.clientRecord.senderId,
-            ...toALOutboundReadCommitFences({ originPeerId: read.clientRecord.senderId, msgId }, read),
+            senderId,
+            ...toALOutboundReadCommitFences({ originPeerId: senderId, msgId }, read),
             mutations: [{ kind: 'delete-first-hop-wait', msgId }],
             durableEffects: [],
             endedTimeoutEffectIds: []

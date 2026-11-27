@@ -75,8 +75,10 @@ describe('outbound warm send IndexedDB transaction ledger', () => {
             total.requests,
             'every get, getAll and put those 8 transactions issue; the guard read issues its 2 gets ' +
                 'in one session; the decision read, the fence snapshot and the commit each read the message ' +
-                'version, and the commit writes it' + table
-        ).toBe(41);
+                'version, and the commit writes it; the send reads no row its sender\'s other messages share, so ' +
+                'only the decision reads the sender version, and the fence snapshot and the commit neither read ' +
+                'nor write it' + table
+        ).toBe(38);
         expect(total.droppedRequests, 'every request ran on a transaction the ledger recorded' + table)
             .toBe(0);
         expect(

@@ -17,7 +17,10 @@ import { toTestALAckPayload, toTestALNackPayload } from '../../../al-control-tes
 
 const SERVER = toALInboundReceiver(
     'server',
-    (ack) => ack.originPeerId === 'origin' ? undefined : { code: 'unauthorized', message: 'AL acknowledgement names no receipt this server aggregates' },
+    (ack) =>
+        Promise.resolve(
+            ack.originPeerId === 'origin' ? undefined : { code: 'unauthorized', message: 'AL acknowledgement names no receipt this server aggregates' }
+        ),
     undefined
 );
 
@@ -37,7 +40,7 @@ describe('inbound control addressing', () => {
         const relayObservations: string[] = [];
         const receiver = toALInboundReceiver('server', (ack) => {
             relayObservations.push(ack.ackedMsgId);
-            return { code: 'unauthorized', message: 'Unrelated relay refusal' };
+            return Promise.resolve({ code: 'unauthorized', message: 'Unrelated relay refusal' });
         }, undefined);
 
         const authorization = await readALInboundMessageAuthorization(message, source, receiver);
@@ -52,24 +55,39 @@ describe('inbound control addressing', () => {
         const identities: Array<ALMessage['id'] | undefined> = [];
         const receiver = toALInboundReceiver('server', (_ack, controlIdentity) => {
             identities.push(controlIdentity);
-            return { code: 'unauthorized', message: 'closed relay refusal' };
+            return Promise.resolve({ code: 'unauthorized', message: 'closed relay refusal' });
         }, undefined);
         expect((await readALInboundMessageAuthorization(message, toWsClientSource('recipient'), receiver)).left).toEqual({
             code: 'unauthorized',
             message: 'closed relay refusal'
         });
         expect(identities).toEqual([{ v: 4, msgId: 'ack-1', senderId: 'recipient', ts: 1, traceId: 'trace-read-al-inbound-message-authorization' }]);
-        expect(receiver.readRelayedAckRejection(toTestALAckPayload({
-            ackedMsgId: 'message-1',
-            fromPeerId: 'recipient',
-            toPeerId: 'origin',
-            originPeerId: 'origin',
-            logicalRecipientPeerId: 'recipient',
-            carrier: 'ws',
-            status: 'delivered',
-            observedAtEpochMs: 1
-        }))).toEqual({ code: 'unauthorized', message: 'closed relay refusal' });
+        expect(
+            await receiver.readRelayedAckRejection(toTestALAckPayload({
+                ackedMsgId: 'message-1',
+                fromPeerId: 'recipient',
+                toPeerId: 'origin',
+                originPeerId: 'origin',
+                logicalRecipientPeerId: 'recipient',
+                carrier: 'ws',
+                status: 'delivered',
+                observedAtEpochMs: 1
+            }))
+        ).toEqual({ code: 'unauthorized', message: 'closed relay refusal' });
         expect(identities[1]).toBeUndefined();
+    });
+
+    it('waits for the receiver\'s answer about a relayed acknowledgement', async () => {
+        // Receivers that answer after a timer turn: a caller that took the pending promise for the verdict would refuse
+        // the admitted ACK (a promise is truthy) and admit nothing it was told to refuse.
+        const ackToOrigin = createReceiverAcknowledgement('origin');
+        const wsClientSource = toWsClientSource('recipient');
+        const refusal = { code: 'unauthorized', message: 'refused later' } as const;
+        const later = <T>(value: T) => () => new Promise<T>((resolve) => setTimeout(() => resolve(value), 0));
+        const refusing = toALInboundReceiver('server', later(refusal), undefined);
+        const admitting = toALInboundReceiver('server', later(undefined), undefined);
+        expect((await readALInboundMessageAuthorization(ackToOrigin, wsClientSource, refusing)).left).toEqual(refusal);
+        expect((await readALInboundMessageAuthorization(ackToOrigin, wsClientSource, admitting)).right).toEqual(ackToOrigin);
     });
 
     it('admits a receiver ACK addressed to an origin the WS server relays for', async () => {
@@ -102,7 +120,7 @@ describe('inbound control addressing', () => {
         const relayObservations: string[] = [];
         const receiver = toALInboundReceiver('server', (ack) => {
             relayObservations.push(ack.ackedMsgId);
-            return { code: 'unauthorized', message: 'Unrelated relay refusal' };
+            return Promise.resolve({ code: 'unauthorized', message: 'Unrelated relay refusal' });
         }, undefined);
 
         expect((await readALInboundMessageAuthorization(forged, toWsClientSource('recipient'), receiver)).left).toEqual({

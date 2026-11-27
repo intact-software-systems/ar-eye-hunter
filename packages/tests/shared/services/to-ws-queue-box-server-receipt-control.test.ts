@@ -1,0 +1,121 @@
+import { describe, expect, it } from 'vitest';
+
+import { AL_RECEIPT_DEADLINE_GRACE_MS, decodeALControlMessage } from '@shared/al-contracts/al-control.ts';
+import type { ALReceiptRecordOpening } from '@shared/alm/receipt-record/al-receipt-record-rows.ts';
+import {
+    isWsQueueBoxServerHeadBackedAdmittedReceipt,
+    isWsQueueBoxServerReceiptEncodable,
+    toWsQueueBoxServerEndedReceipt,
+    toWsQueueBoxServerEndedReceiptControlId,
+    toWsQueueBoxServerReceiptControlMessage,
+    toWsQueueBoxServerReceiptPayload
+} from '@shared/services/ws-queue-box-server/receipt/to-ws-queue-box-server-receipt-control.ts';
+
+const SERVER = 'server';
+const NOW = 1_800_000_000_000;
+
+/** An opening for `count` recipients whose ids are each 128 characters long. */
+function opening(count: number): ALReceiptRecordOpening {
+    return {
+        originPeerId: SERVER,
+        msgId: 'delta-1',
+        traceId: 'trace-receipt-control',
+        expectedRecipientPeerIds: Array.from({ length: count }, (_, index) => `${String(index).padStart(3, '0')}${'r'.repeat(125)}`),
+        neverSentRecipientPeerIds: [],
+        snapshotVersion: 0,
+        deadlineAtMs: NOW + 7_000
+    };
+}
+
+describe('the receipt control', () => {
+    it('carries the largest receipt of 249 recipients of 128 characters, and not of 250', () => {
+        // Pins a head opened for an audience whose terminal receipt no control can encode, so its ended work threw
+        // on every delivery; and the rule refusing an audience whose largest receipt still encodes.
+        expect([isWsQueueBoxServerReceiptEncodable(opening(249), SERVER), isWsQueueBoxServerReceiptEncodable(opening(250), SERVER)])
+            .toEqual([true, false]);
+    });
+
+    it('is a receipt control from the server that outlives the later of its deadline and its observation', () => {
+        // Pins a receipt row expiring with its message's deadline, before a late terminal receipt reaches the origin.
+        const head = opening(2);
+        const receipt = toWsQueueBoxServerReceiptPayload(head, {
+            confirmedRecipientPeerIds: head.expectedRecipientPeerIds.slice(0, 1),
+            outsideAudienceRecipientPeerIds: [],
+            phase: 'timed-out',
+            observedAtEpochMs: NOW + 9_000
+        });
+        const control = toWsQueueBoxServerReceiptControlMessage(
+            { receipt, opening: head, controlId: toWsQueueBoxServerEndedReceiptControlId(head), settlesServerRow: true },
+            SERVER
+        );
+
+        expect(control.id).toMatchObject({
+            msgId: toWsQueueBoxServerEndedReceiptControlId(head),
+            senderId: SERVER,
+            ts: NOW + 9_000,
+            traceId: 'trace-receipt-control'
+        });
+        expect(control.constraints?.expiresAtMs).toBe(NOW + 9_000 + AL_RECEIPT_DEADLINE_GRACE_MS);
+        expect(decodeALControlMessage(control).right).toEqual({ type: 'receipt', payload: receipt });
+    });
+});
+
+describe('which receipt is an admitted with a head behind it', () => {
+    const head = opening(2);
+    const receiptAt = (phase: 'admitted' | 'complete' | 'timed-out', expected: readonly string[]) => ({
+        ...toWsQueueBoxServerReceiptPayload(head, {
+            confirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: [],
+            phase,
+            observedAtEpochMs: NOW
+        }),
+        expectedRecipientPeerIds: expected
+    });
+
+    // Pins an `admitted` with a head behind it kept waiting for the outbound worker as a row.
+    it('is an admitted receipt that expects somebody', () => {
+        expect(isWsQueueBoxServerHeadBackedAdmittedReceipt(receiptAt('admitted', head.expectedRecipientPeerIds))).toBe(true);
+    });
+
+    // Pins the only answer of a send admitted to nobody, which has no head to answer a resend from, losing its row.
+    it('is not an admitted receipt that expects nobody', () => {
+        expect(isWsQueueBoxServerHeadBackedAdmittedReceipt(receiptAt('admitted', []))).toBe(false);
+    });
+
+    // Pins a terminal receipt losing its durable row.
+    it('is not a complete or a timed-out receipt', () => {
+        expect([
+            isWsQueueBoxServerHeadBackedAdmittedReceipt(receiptAt('complete', head.expectedRecipientPeerIds)),
+            isWsQueueBoxServerHeadBackedAdmittedReceipt(receiptAt('timed-out', head.expectedRecipientPeerIds))
+        ]).toEqual([false, false]);
+    });
+});
+
+describe('the ended work\'s receipt', () => {
+    // Pins a terminal receipt that leaves the server's row unsettled, or a repeat of the ended work's delivery issued
+    // under a control id of its own, which the outbox would not take as the duplicate it is.
+    it('carries the ended work\'s control id and its end time, and settles the server\'s row, at either end', () => {
+        const head = opening(2);
+        const issued = (['complete', 'timed-out'] as const).map((phase) =>
+            toWsQueueBoxServerEndedReceipt({
+                phase,
+                opening: head,
+                confirmedRecipientPeerIds: head.expectedRecipientPeerIds.slice(0, 1),
+                outsideAudienceRecipientPeerIds: [],
+                endedAtEpochMs: NOW + 9_000
+            })
+        );
+
+        expect(issued.map(({ receipt, controlId, settlesServerRow }) => ({
+            phase: receipt.phase,
+            observedAtEpochMs: receipt.observedAtEpochMs,
+            controlId,
+            settlesServerRow
+        }))).toEqual(['complete', 'timed-out'].map((phase) => ({
+            phase,
+            observedAtEpochMs: NOW + 9_000,
+            controlId: toWsQueueBoxServerEndedReceiptControlId(head),
+            settlesServerRow: true
+        })));
+    });
+});

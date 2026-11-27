@@ -559,7 +559,7 @@
           "route": {
             "topicId": "room.match",
             "resourceId": "match-lobby-blocked-resource-{runId}",
-            "contextId": "{applicationId}:{workspaceId}"
+            "contextId": "{lobbyGroupId}"
           },
           "targets": {
             "mode": "broadcast",
@@ -1293,7 +1293,7 @@
           "route": {
             "topicId": "room.match",
             "resourceId": "match-arena-live-resource-{runId}",
-            "contextId": "{applicationId}:{workspaceId}"
+            "contextId": "{arenaGroupId}"
           },
           "targets": {
             "mode": "broadcast",

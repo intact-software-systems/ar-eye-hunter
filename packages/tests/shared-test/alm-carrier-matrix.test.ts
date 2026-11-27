@@ -326,6 +326,11 @@ const EXPECTED_OUTCOMES = {
         'rtc-with-ws-fallback': toRefusedByTheReceiver('receipt', 'missing-proof')
     },
     reply: { ws: DELIVERED, rtc: DELIVERED, 'rtc-with-ws-fallback': DELIVERED },
+    'reply-wait-on-topic-ws-cannot-carry': {
+        ws: NOT_APPLICABLE,
+        rtc: toRefusedAtTheCall('$.topicId', 'invalid-ws-user-topic'),
+        'rtc-with-ws-fallback': NOT_APPLICABLE
+    },
     'left-sender-send': {
         ws: toRefusedBy('trusted-server', 'membership-fenced'),
         rtc: toRefusedBy('peer', 'membership-fenced'),
@@ -339,25 +344,15 @@ const EXPECTED_OUTCOMES = {
     'snapshot-floor-catch-up': { ws: DELIVERED, rtc: DELIVERED, 'rtc-with-ws-fallback': DELIVERED }
 } as const;
 
-const LEFT_SENDER_FROZEN_AUDIENCE_PIN =
-    'a unit pin that the origin of a room send frozen to an audience refuses a frozen recipient\'s `membership-fenced` NACK while it holds no receipt row';
-
 const LEFT_SENDER_CELL =
     'a left-sender cell over this carrier; a page that has read its own leave holds the send `pending-authority`, and nothing pins how that ends';
 
 /** Every cell some part of whose outcome nothing proves yet, and what will prove it. */
 const UNPROVEN_CELLS = [
-    ['all-broadcast', 'ws', 'a unit pin of the `$.scope` path of the issue that a WS send naming `all` throws'],
-    ['peer-unicast-off-overlay-next-hop', 'rtc', 'a unit pin of the kept unicast\'s handle at its deadline'],
     [
         'ordered-gap-repair',
         'rtc-with-ws-fallback',
         'a gap cell over this carrier whose track stays on RTC; a frame its sender holds is handed to WS, whose relay gates it as its own gap, until one ordering track spans the hand-over (product work)'
-    ],
-    [
-        'repair-budget-exhausted',
-        'ws',
-        '`repair-exhausted` over this carrier, where the server is the one requester and renews its own gap'
     ],
     [
         'repair-budget-exhausted',
@@ -367,23 +362,14 @@ const UNPROVEN_CELLS = [
     [
         'room-audience-over-frame-limit',
         'ws',
-        'a server test that delivers a granted publication to more than 256 subscribed sessions'
+        'a server test that delivers a granted publication to more than 256 subscribed sessions; it waits for the merge of pull request 885, which changes the test file that holds the harness'
     ],
-    ['relay-payload-confidentiality', 'rtc-with-ws-fallback', '`granted-rtc-relay-only` over this carrier'],
     [
         'revoked-publish-unknown-to-sender',
         'rtc-with-ws-fallback',
         'a receipted publication over this carrier: no hop answers the frame it drops, so the receipt runs out and the send is handed to WS, where the server refuses it `no-publish-grant`; nothing pins that chain'
     ],
-    [
-        'frame-with-forged-sender',
-        'rtc-with-ws-fallback',
-        '`granted-rtc-forged-sender` over this carrier; no unit test forges a sender together with its registered key id at a receiving hop'
-    ],
-    ['reply', 'rtc', '`reply-correlated` over this carrier'],
-    ['left-sender-send', 'rtc', LEFT_SENDER_FROZEN_AUDIENCE_PIN],
     ['left-sender-send', 'rtc', LEFT_SENDER_CELL],
-    ['left-sender-send', 'rtc-with-ws-fallback', LEFT_SENDER_FROZEN_AUDIENCE_PIN],
     ['left-sender-send', 'rtc-with-ws-fallback', LEFT_SENDER_CELL],
     [
         'left-sender-send',
@@ -394,6 +380,16 @@ const UNPROVEN_CELLS = [
         'snapshot-floor-catch-up',
         'rtc-with-ws-fallback',
         'one lifecycle across the hand-over to WS, then `fenced-catch-up` over this carrier'
+    ]
+] as const;
+
+/** Every lane cell that shows only a part of its cell's outcome, and the part it shows. */
+const PARTIAL_LANE_CELLS = [
+    [
+        'relay-payload-confidentiality',
+        'rtc',
+        'granted-rtc-relay-only',
+        'The subscriber receives the publication over RTC, and the session that holds `publish` alone delivers nothing to its application. The run does not force the frame through that session, so it does not show it forwarding.'
     ]
 ] as const;
 
@@ -433,6 +429,16 @@ describe('ALM_CARRIER_MATRIX', () => {
         expect(unproven).toEqual(expect.arrayContaining([...UNPROVEN_CELLS]));
     });
 
+    it('names every lane cell that shows only a part of its outcome and the part it shows', () => {
+        const partial = toAlmCarrierMatrixCellProofs(ALM_CARRIER_MATRIX).flatMap(({ capabilityId, carrier, proof }) =>
+            proof.kind === 'lane-cell' && proof.because !== undefined
+                ? [[capabilityId, carrier, proof.scenarioKey, proof.because]]
+                : []
+        );
+
+        expect(partial).toEqual(PARTIAL_LANE_CELLS);
+    });
+
     it('names for every unit proof a test title that its test file holds', () => {
         const unitProofs = toAlmCarrierMatrixCellProofs(ALM_CARRIER_MATRIX).flatMap(({ proof }) => proof.kind === 'unit-test' ? [proof] : []);
         // A title written with an escaped apostrophe is named as it reads.
@@ -468,14 +474,14 @@ const EXPECTED_CELL_CARRIERS: readonly (readonly [AlmCarrierMatrixScenarioKey, r
     ['unicast-fallback', ['rtc-with-ws-fallback']],
     ['ordering-gap-repair', ['ws', 'rtc']],
     ['seeded-loss-unreceipted-stream', ['ws']],
-    ['repair-exhausted', ['rtc']],
+    ['repair-exhausted', ['ws', 'rtc']],
     ['granted-rtc-relay-only', ['rtc']],
     ['granted-rtc-revoked-publisher', ['rtc', 'rtc-with-ws-fallback']],
     ['granted-rtc-missing-proof', ['rtc']],
     ['granted-rtc-forged-sender', ['rtc']],
     ['unsigned-ack-refused', ['rtc', 'rtc-with-ws-fallback']],
     ['forged-recipient-ack', ['rtc']],
-    ['reply-correlated', ['ws', 'rtc-with-ws-fallback']],
+    ['reply-correlated', ['ws', 'rtc', 'rtc-with-ws-fallback']],
     ['reply-timeout-late', ['ws']],
     ['reply-first-wins', ['ws']],
     ['fenced-rejection', ['ws']],

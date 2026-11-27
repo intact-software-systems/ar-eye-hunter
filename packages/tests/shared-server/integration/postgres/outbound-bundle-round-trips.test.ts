@@ -91,12 +91,13 @@ describe('Postgres outbound admission bundle', () => {
             expect(stateExpiries[0]! - committingFrom).toBeGreaterThanOrEqual(VERSION_TTL_MS);
             expect(stateExpiries[0]! - committedBy).toBeLessThanOrEqual(VERSION_TTL_MS);
             expect(await readQueueExpiries(sql, proved)).toEqual(proved.map(toQueueExpiries));
-            const commits = readVersionCommits(log, lane);
+            const commits = readMessageVersionCommits(log, lane);
             expect(commits).toHaveLength(1);
-            // Each new message's version is inserted alone, a compare-and-set in key order, before the rows on the sender
-            // version.
+            // The rows read nothing their sender's other messages share, so the group fences no sender version. Every
+            // new message's version but the last is inserted alone, a compare-and-set in key order; the last is written
+            // with the owner and sent rows.
             expect(commits[0]!.map(({ text, rowCount }) => [toStatementKind(text), rowCount])).toEqual([
-                ...Array.from({ length: GROUP_SIZE }, () => ['state', 1]),
+                ...Array.from({ length: GROUP_SIZE - 1 }, () => ['state', 1]),
                 ['state', 2 * GROUP_SIZE + 1],
                 ['hold', GROUP_SIZE],
                 ['insert', 2 * GROUP_SIZE]
@@ -310,7 +311,10 @@ async function readStateRows(sql: PSqlSql, lane: WsDequeueLane): Promise<readonl
     });
 }
 
-/** The bundle writes an owner and a sent row per message and the sender version, each one insert at revision 0. */
+/**
+ * The bundle writes an owner, a version and a sent row per message, each one insert at revision 0, and no sender
+ * version: its rows read nothing their sender's other messages share.
+ */
 function toExpectedStateRows(lane: WsDequeueLane, messages: readonly ALMessage[]): readonly StateRowSummary[] {
     return [
         ...messages.map((message) => ({
@@ -323,8 +327,7 @@ function toExpectedStateRows(lane: WsDequeueLane, messages: readonly ALMessage[]
             value: JSON.stringify({ msgId: message.id.msgId, version: 1 }),
             revision: 0
         })),
-        ...messages.map((message) => ({ key: `sent:${message.id.msgId}`, value: undefined, revision: 0 })),
-        { key: `version:${lane.senderId}`, value: JSON.stringify({ senderId: lane.senderId, version: 1 }), revision: 0 }
+        ...messages.map((message) => ({ key: `sent:${message.id.msgId}`, value: undefined, revision: 0 }))
     ].sort((left, right) => left.key < right.key ? -1 : left.key > right.key ? 1 : 0);
 }
 
@@ -396,14 +399,14 @@ function toExpectedQueueRows(): readonly string[] {
     ].sort();
 }
 
-/** The statements of every transaction that wrote the run's sender version, one list per transaction. */
-function readVersionCommits(log: StatementLog, lane: WsDequeueLane): readonly (readonly RecordedStatement[])[] {
-    const versionKey = `${lane.namespace}:version:${lane.senderId}`;
+/** The statements of every transaction that wrote one of the run's message versions, one list per transaction. */
+function readMessageVersionCommits(log: StatementLog, lane: WsDequeueLane): readonly (readonly RecordedStatement[])[] {
+    const versionKeyPrefix = `${lane.namespace}:msg-version:`;
     const transactions = new Set(
         log.statements
             .filter(({ transaction, text, values }) =>
                 transaction !== null && text.includes('runtime_state_store') &&
-                JSON.stringify(values).includes(versionKey)
+                JSON.stringify(values).includes(versionKeyPrefix)
             )
             .map(({ transaction }) => transaction)
     );

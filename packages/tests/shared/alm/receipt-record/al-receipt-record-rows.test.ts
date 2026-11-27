@@ -1,0 +1,228 @@
+import {
+    ALAdmissionCorruptionError,
+    decodeALAdmissionValue,
+    type ALAdmissionDecoder
+} from '@shared/alm/al-admission-decoder.ts';
+import {
+    toALReceiptRecordConfirmationKey,
+    toALReceiptRecordHeadKey
+} from '@shared/alm/receipt-record/al-receipt-record-keys.ts';
+import {
+    decodeALReceiptRecordConfirmation,
+    decodeALReceiptRecordHead,
+    type ALReceiptRecordConfirmation,
+    type ALReceiptRecordEndedHead,
+    type ALReceiptRecordHead,
+    type ALReceiptRecordOpenHead,
+    type ALReceiptRecordOpening
+} from '@shared/alm/receipt-record/al-receipt-record-rows.ts';
+import { describe, expect, it } from 'vitest';
+
+import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
+
+const ref = { originPeerId: 'origin', msgId: 'msg-1' };
+const headKey = toALReceiptRecordHeadKey('ns', ref);
+const confirmationKey = toALReceiptRecordConfirmationKey('ns', ref, 'r1');
+const opening: ALReceiptRecordOpening = {
+    ...ref,
+    traceId: 'trace-1',
+    expectedRecipientPeerIds: ['r1', 'r2', 'r3'],
+    neverSentRecipientPeerIds: [],
+    snapshotVersion: 4,
+    deadlineAtMs: 10_000
+};
+const openHead: ALReceiptRecordOpenHead = { phase: 'open', opening };
+const neverSentHead: ALReceiptRecordOpenHead = { phase: 'open', opening: { ...opening, neverSentRecipientPeerIds: ['r2'] } };
+// r3 confirmed from outside the audience snapshot, so both terminal sets are present and non-empty.
+const endedHead: ALReceiptRecordEndedHead = {
+    phase: 'timed-out',
+    opening,
+    confirmedRecipientPeerIds: ['r1'],
+    outsideAudienceRecipientPeerIds: ['r3'],
+    endedAtEpochMs: 10_500
+};
+const confirmation: ALReceiptRecordConfirmation = { recipientPeerId: 'r1', kind: 'confirmed', countedAtEpochMs: 9_000 };
+/** The longest peer identity a receipt control names, and one character more. */
+const peerAtLimit = 'p'.repeat(AL_MESSAGE_RESOURCE_LIMITS.routeIdCharacters);
+const peerPastLimit = `${peerAtLimit}p`;
+/** A receipt names its message by an id of at most this many characters. */
+const msgIdPastLimit = 'm'.repeat(AL_MESSAGE_RESOURCE_LIMITS.payloadBytes + 1);
+/** A receipt control carries the opening's trace as its own, so the trace must be one `decodeALTraceId` accepts. */
+const tracePastLimit = 't'.repeat(129);
+
+interface RefusalCase {
+    readonly name: string;
+    readonly value: object;
+    readonly key: string;
+    readonly decode: ALAdmissionDecoder<ALReceiptRecordHead | ALReceiptRecordConfirmation>;
+}
+
+const refusals: readonly RefusalCase[] = [
+    // A head copied under another message's key would answer for a receipt it does not describe.
+    {
+        name: 'a head under another message head key',
+        value: openHead,
+        key: toALReceiptRecordHeadKey('ns', { ...ref, msgId: 'msg-2' }),
+        decode: decodeALReceiptRecordHead
+    },
+    { name: 'an unknown phase', value: { ...openHead, phase: 'done' }, key: headKey, decode: decodeALReceiptRecordHead },
+    // An open head's count lives in its confirmation rows; a stored set beside it would be a second truth.
+    {
+        name: 'an open head that carries a confirmed set',
+        value: { ...openHead, confirmedRecipientPeerIds: ['r1'] },
+        key: headKey,
+        decode: decodeALReceiptRecordHead
+    },
+    {
+        name: 'an ended head without its end time',
+        value: {
+            phase: endedHead.phase,
+            opening,
+            confirmedRecipientPeerIds: endedHead.confirmedRecipientPeerIds,
+            outsideAudienceRecipientPeerIds: endedHead.outsideAudienceRecipientPeerIds
+        },
+        key: headKey,
+        decode: decodeALReceiptRecordHead
+    },
+    // 257 is one past the AL collection limit of 256 audience entries.
+    {
+        name: 'an audience past the collection limit',
+        value: {
+            ...openHead,
+            opening: { ...opening, expectedRecipientPeerIds: Array.from({ length: 257 }, (_, index) => `r${index}`) }
+        },
+        key: headKey,
+        decode: decodeALReceiptRecordHead
+    },
+    // The never-sent list decides which recipients' own word counts; a head that lost it would count them all.
+    {
+        name: 'an opening without its never-sent recipients',
+        value: {
+            phase: 'open',
+            opening: {
+                originPeerId: opening.originPeerId,
+                msgId: opening.msgId,
+                traceId: opening.traceId,
+                expectedRecipientPeerIds: opening.expectedRecipientPeerIds,
+                snapshotVersion: opening.snapshotVersion,
+                deadlineAtMs: opening.deadlineAtMs
+            }
+        },
+        key: headKey,
+        decode: decodeALReceiptRecordHead
+    },
+    {
+        name: 'never-sent recipients past the collection limit',
+        value: {
+            ...openHead,
+            opening: { ...opening, neverSentRecipientPeerIds: Array.from({ length: 257 }, (_, index) => `r${index}`) }
+        },
+        key: headKey,
+        decode: decodeALReceiptRecordHead
+    },
+    {
+        name: 'a never-sent recipient that is not a string',
+        value: { ...openHead, opening: { ...opening, neverSentRecipientPeerIds: ['r2', 7] } },
+        key: headKey,
+        decode: decodeALReceiptRecordHead
+    },
+    {
+        name: 'a negative deadline',
+        value: { ...openHead, opening: { ...opening, deadlineAtMs: -1 } },
+        key: headKey,
+        decode: decodeALReceiptRecordHead
+    },
+    // A head a receipt control could not name opens a receipt that can never be answered.
+    {
+        name: 'an origin longer than a receipt control names',
+        value: { ...openHead, opening: { ...opening, originPeerId: peerPastLimit } },
+        key: toALReceiptRecordHeadKey('ns', { ...ref, originPeerId: peerPastLimit }),
+        decode: decodeALReceiptRecordHead
+    },
+    {
+        name: 'a message id longer than a receipt control names',
+        value: { ...openHead, opening: { ...opening, msgId: msgIdPastLimit } },
+        key: toALReceiptRecordHeadKey('ns', { ...ref, msgId: msgIdPastLimit }),
+        decode: decodeALReceiptRecordHead
+    },
+    {
+        name: 'a trace a receipt control cannot carry',
+        value: { ...openHead, opening: { ...opening, traceId: tracePastLimit } },
+        key: headKey,
+        decode: decodeALReceiptRecordHead
+    },
+    {
+        name: 'an expected recipient longer than a receipt control names',
+        value: { ...openHead, opening: { ...opening, expectedRecipientPeerIds: ['r1', peerPastLimit] } },
+        key: headKey,
+        decode: decodeALReceiptRecordHead
+    },
+    {
+        name: 'a never-sent recipient longer than a receipt control names',
+        value: { ...openHead, opening: { ...opening, neverSentRecipientPeerIds: [peerPastLimit] } },
+        key: headKey,
+        decode: decodeALReceiptRecordHead
+    },
+    {
+        name: 'an ended head whose outside recipient is longer than a receipt control names',
+        value: { ...endedHead, outsideAudienceRecipientPeerIds: [peerPastLimit] },
+        key: headKey,
+        decode: decodeALReceiptRecordHead
+    },
+    {
+        name: 'a confirmation whose recipient is longer than a receipt control names',
+        value: { ...confirmation, recipientPeerId: peerPastLimit },
+        key: toALReceiptRecordConfirmationKey('ns', ref, peerPastLimit),
+        decode: decodeALReceiptRecordConfirmation
+    },
+    // A confirmation under another recipient's key would count the wrong recipient.
+    {
+        name: 'a confirmation under another recipient key',
+        value: confirmation,
+        key: toALReceiptRecordConfirmationKey('ns', ref, 'r2'),
+        decode: decodeALReceiptRecordConfirmation
+    },
+    {
+        name: 'an unknown confirmation kind',
+        value: { ...confirmation, kind: 'maybe' },
+        key: confirmationKey,
+        decode: decodeALReceiptRecordConfirmation
+    }
+];
+
+describe('receipt record rows', () => {
+    it('reads back an open head and an ended head as written', () => {
+        expect(decodeALAdmissionValue(openHead, headKey, decodeALReceiptRecordHead)).toEqual(openHead);
+        expect(decodeALAdmissionValue(endedHead, headKey, decodeALReceiptRecordHead)).toEqual(endedHead);
+        expect(decodeALAdmissionValue(neverSentHead, headKey, decodeALReceiptRecordHead)).toEqual(neverSentHead);
+        expect(decodeALAdmissionValue(confirmation, confirmationKey, decodeALReceiptRecordConfirmation))
+            .toEqual(confirmation);
+    });
+
+    // Pins the identity rule refusing what a receipt control still names: one identity at each limit reads back.
+    it('reads back identities at the limit a receipt control names', () => {
+        const atLimit: ALReceiptRecordOpenHead = {
+            phase: 'open',
+            opening: {
+                ...opening,
+                originPeerId: peerAtLimit,
+                msgId: 'm'.repeat(AL_MESSAGE_RESOURCE_LIMITS.payloadBytes),
+                traceId: 't'.repeat(128),
+                expectedRecipientPeerIds: ['r1', peerAtLimit],
+                neverSentRecipientPeerIds: [peerAtLimit]
+            }
+        };
+        const atLimitKey = toALReceiptRecordHeadKey('ns', atLimit.opening);
+        const atLimitConfirmation = { ...confirmation, recipientPeerId: peerAtLimit };
+
+        expect(decodeALAdmissionValue(atLimit, atLimitKey, decodeALReceiptRecordHead)).toEqual(atLimit);
+        expect(
+            decodeALAdmissionValue(atLimitConfirmation, toALReceiptRecordConfirmationKey('ns', ref, peerAtLimit), decodeALReceiptRecordConfirmation)
+        ).toEqual(atLimitConfirmation);
+    });
+
+    // A corrupt row must fail closed at the storage boundary, never be read as absent or as another row.
+    it.each(refusals)('refuses a row that is not what its key names: $name', ({ value, key, decode }) => {
+        expect(() => decodeALAdmissionValue(value, key, decode)).toThrow(ALAdmissionCorruptionError);
+    });
+});

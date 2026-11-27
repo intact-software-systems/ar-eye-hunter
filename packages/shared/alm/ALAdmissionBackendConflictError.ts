@@ -1,8 +1,8 @@
 /**
- * The only way an admission conflict may leave a `write` callback. Every backend commits whatever
- * the callback returns, and a commit that merely read metadata still bumps the admission revision,
- * which invalidates every other in-flight optimistic write. Throwing aborts the transaction with no
- * write and no revision bump; the store that owns the callback catches this at its public boundary
+ * The only way an admission conflict may leave a `write` callback. Every backend commits whatever the
+ * callback wrote once it returns, so a callback that finds its guard no longer holds throws this instead:
+ * the transaction aborts with nothing written. A backend throws it too when a fenced row or an observed
+ * work row moved before the commit. The store that owns the callback catches it at its public boundary
  * and returns the typed `'conflict'` value its callers read.
  */
 export class ALAdmissionBackendConflictError extends Error {
