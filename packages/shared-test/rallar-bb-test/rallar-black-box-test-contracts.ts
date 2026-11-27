@@ -454,6 +454,12 @@ export type RallarBlackBoxTestMessagesReceivedCommand =
          * no new copy since the count started or since its latest copy; an absence claim takes none.
          */
         stallMs?: number;
+        /**
+         * Without it, the count reads no age and its result names no `sampleAge`. With it, a payload field holding the
+         * epoch in milliseconds at which each copy was sent, from which the result reads the copies' ages; an absence
+         * claim takes none.
+         */
+        ageFrom?: string;
         windowMs: number;
     }>;
 

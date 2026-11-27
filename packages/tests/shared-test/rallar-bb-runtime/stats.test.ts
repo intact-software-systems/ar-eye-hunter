@@ -14,6 +14,8 @@ import {
     toIdleALOutboundPublicationFigures
 } from '@shared/alm/outbound/publication/al-outbound-publication-figures.ts';
 import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import { assertBoundedHistogram } from '@shared/measurement/assert-bounded-histogram.ts';
+import { computeBoundedHistogramRecorded, type BoundedHistogram } from '@shared/measurement/bounded-histogram.ts';
 
 import type { RallarBlackBoxBrowserRallarRuntime } from '../../../shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 import {
@@ -57,6 +59,11 @@ const CONGESTION_EPISODES: RallarBlackBoxTestAlmUsage['congestionEpisodes'] = {
     openEpisodes: 1,
     unrecordedSamples: 0
 };
+/** What a page that recorded on other bounds answers: a whole histogram, whose only fault is its bounds. */
+function toRecordedOnOtherBounds(upperBounds: readonly number[], samples: readonly number[]): BoundedHistogram {
+    return computeBoundedHistogramRecorded(assertBoundedHistogram(upperBounds, 'the other bounds'), samples).histogram;
+}
+
 const FIRST_REPORT: RallarBlackBoxTestAlmUsage = {
     usage: { admissions: 3, bytes: 912, oldestAgeMs: 1_250, tracks: 2 },
     own: { admissions: 2, bytes: 600 },
@@ -467,7 +474,8 @@ describe('the stats result rallar.alm block', () => {
                 ...PUBLICATION_REPORT,
                 figures: {
                     ...PUBLICATION_FIGURES,
-                    selectionAgeMs: { ...PUBLICATION_FIGURES.selectionAgeMs, upperBounds: otherAgeBounds },
+                    // The one selection of the figures above, 1,150 - 1,000 = 150 ms after its value was staged.
+                    selectionAgeMs: toRecordedOnOtherBounds(otherAgeBounds, [150]),
                     drainBytesPercent: { ...PUBLICATION_FIGURES.drainBytesPercent, bucketCounts: [1.5, 0, 0, 0, 0, 0, 0] },
                     missedOpportunities: -1
                 }
@@ -501,7 +509,8 @@ describe('the stats result rallar.alm.congestionEpisodes block', () => {
         const onOtherBounds = createDefaultPageRuntime(async () => ({
             ...FIRST_REPORT,
             congestionEpisodes: {
-                durationMs: { ...CONGESTION_EPISODES.durationMs, upperBounds: otherBounds },
+                // The three durations of the episodes above: 50 + 100 + 100 = 250 ms.
+                durationMs: toRecordedOnOtherBounds(otherBounds, [50, 100, 100]),
                 openEpisodes: -1,
                 unrecordedSamples: 0.5
             }

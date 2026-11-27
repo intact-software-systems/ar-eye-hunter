@@ -126,3 +126,10 @@ the admission Rallar returned for that room. After a page reload, restore the sa
 by passing their previously saved room admission to `activateGuest` again. A signed-out event
 watcher waits for authentication. With an active court visit, the watcher retrieves the
 same player's lobby grant from the protected credential store before reading the event.
+
+A signed-in event organizer can mount `event.organizerView()` independently of the player view.
+Call `start()`, subscribe with `onChange`, and call `stop()` when the roster closes.
+Its snapshot contains event-local player names, parties in queue order, court occurrences,
+and seats. A seat's numeric deadline is its claim cutoff; a null deadline identifies a
+claimed seat. Private changes, foreground return and reconnect refresh the roster.
+Watching another court preserves room selection. A denied read clears the roster.

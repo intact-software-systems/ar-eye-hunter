@@ -97,7 +97,7 @@ export function decodeEventProposal(value: PlainJsonValue | undefined): RoomEven
     return { ...group, accepted: consent, proposalRevision: positive(proposalRevision, 'Proposal revision') };
 }
 
-function court(value: PlainJsonValue): RoomEvent.Court {
+export function decodeEventCourt(value: PlainJsonValue): RoomEvent.Court {
     const { occurrence, seats: stored, ...setup } = decodeEventRecord(value, 'Court');
     const settings = courtSetup(setup);
     const seats = rows(stored, seat => {
@@ -118,7 +118,7 @@ export function decodeRoomEvent(value: unknown): RoomEvent {
         lobby: decodeExactGroupRef(e.lobby, 'Event lobby'), organizerId: assertValidRallarRouteId(e.organizerId),
         revision: positive(e.revision, 'Event revision'), closesAt: positive(e.closesAt, 'Event closing time'),
         claimWindowMs: positive(e.claimWindowMs, 'Court claim window'), closed: boolean(e.closed),
-        courts: rows(e.courts, court), queue: rows(e.queue, decodeEventParty), proposals: rows(e.proposals, decodeEventProposal), removed: ids(e.removed) };
+        courts: rows(e.courts, decodeEventCourt), queue: rows(e.queue, decodeEventParty), proposals: rows(e.proposals, decodeEventProposal), removed: ids(e.removed) };
     if (!event.courts.length) throw new TypeError('Stored event has no courts.');
     ids([event.lobby.groupId, ...event.courts.map(c => c.groupId)]);
     ids([...event.queue.flatMap(p => p.players), ...event.courts.flatMap(c => c.seats.map(s => s.principalId)), ...event.removed]);

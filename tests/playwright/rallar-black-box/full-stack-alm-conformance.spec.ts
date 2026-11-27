@@ -30,6 +30,8 @@ import {
     type CreateAlmConformanceRecipesInput
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import { toAlmReloadCheckpoints } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
+import { ALM_CARRIER_MATRIX } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/carrier-matrix/alm-carrier-matrix.ts';
+import { validateAlmCarrierMatrixPlan } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/carrier-matrix/validate-alm-carrier-matrix-plan.ts';
 import {
     createAlmConformanceRecipes,
     toAlmConformanceRoleRecipe,
@@ -236,6 +238,8 @@ test.describe('ALM conformance lane', () => {
             await writeLaneResultFile(toLaneResultDirectory(testInfo), toAlmLanePlanFileName(identity), plan);
             const { only, skip } = requireLaneParameters();
             expect(validateAlmLanePlanCoverage({ ...identity, families: plan.families, only, skip })).toEqual([]);
+            expect(validateAlmCarrierMatrixPlan({ matrix: ALM_CARRIER_MATRIX, plan: { ...plan, only, skip } }))
+                .toEqual([]);
         });
 
         for (const family of ['two-agent', 'addressed'] as const) {

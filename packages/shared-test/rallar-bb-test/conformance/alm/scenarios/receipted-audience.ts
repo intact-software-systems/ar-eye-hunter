@@ -16,7 +16,6 @@ import {
 } from '../alm-conformance-budgets.ts';
 import {
     ALM_CONFORMANCE_CARRIERS,
-    ALM_CONFORMANCE_RTC_ALONE_CARRIERS,
     ALM_CONFORMANCE_RTC_CARRIERS,
     type AlmConformanceCarrier
 } from '../alm-conformance-carriers.ts';
@@ -49,6 +48,8 @@ import {
 } from '../alm-conformance-scenario-definition.ts';
 import { toConnectCommand } from '../alm-conformance-session-commands.ts';
 import { toCommandId } from '../alm-conformance-step-identities.ts';
+import { ALM_CARRIER_MATRIX } from '../carrier-matrix/alm-carrier-matrix.ts';
+import { resolveAlmCarrierMatrixCellCarriers } from '../carrier-matrix/resolve-alm-carrier-matrix-cell-carriers.ts';
 import { toAlmCellCommandPrefix } from '../cell/to-alm-cell-command-prefix.ts';
 import {
     toCueListenCommands,
@@ -59,6 +60,8 @@ import {
 const RETIRED_ACK_TYPE_ID = 'al.control.ack.v2';
 /** The name of the arrival wait a raw ACK answers. */
 const ARRIVAL = 'received-send-1';
+/** How the origin refuses a receipt that reaches it over RTC without its recipient's proof, as the matrix states it. */
+const UNPROVEN_RECEIPT_REFUSAL = ALM_CARRIER_MATRIX['receipt-without-proof'].cells.rtc.outcome.code;
 
 /** A raw ACK `recipient-b` sends: its command's name, its type and the label its authored msgId carries. */
 interface RawAckAnswer {
@@ -207,7 +210,7 @@ export const unsignedAckRefused: AlmConformanceScenarioDefinition = {
     scenarioId: 'receipted-audience',
     scenarioKey: 'unsigned-ack-refused',
     tags: FULL_TAGS,
-    carriers: ALM_CONFORMANCE_RTC_CARRIERS,
+    carriers: resolveAlmCarrierMatrixCellCarriers('unsigned-ack-refused'),
     roles: ALM_CONFORMANCE_THREE_AGENT_ROLES,
     laneFamily: 'three-agent',
     toReceiptRoles: () => BOTH_CONFIRMED,
@@ -218,7 +221,7 @@ export const unsignedAckRefused: AlmConformanceScenarioDefinition = {
             name: 'unsigned-ack-refused',
             controlMsgId: toRawAckMsgId(sender, 'unsigned-ack', toSentMsgIdReference({ ...sender, index: 1 })),
             controlTypeId: AL_CONTROL_ACK_TYPE_ID,
-            proofRefusal: 'missing-proof'
+            proofRefusal: UNPROVEN_RECEIPT_REFUSAL
         }),
         ...toReceiptWindowCommands(sender, {
             roles: BOTH_CONFIRMED,
@@ -240,7 +243,7 @@ export const forgedRecipientAck: AlmConformanceScenarioDefinition = {
     scenarioId: 'receipted-audience',
     scenarioKey: 'forged-recipient-ack',
     tags: FULL_TAGS,
-    carriers: ALM_CONFORMANCE_RTC_ALONE_CARRIERS,
+    carriers: resolveAlmCarrierMatrixCellCarriers('forged-recipient-ack'),
     roles: ALM_CONFORMANCE_THREE_AGENT_ROLES,
     laneFamily: 'three-agent',
     toReceiptRoles: () => BOTH_CONFIRMED,
@@ -430,7 +433,7 @@ function toForgedAckSenderCommands(sender: AlmConformanceStepInput): readonly Ra
             name: 'forged-recipient-ack-refused',
             controlMsgId: toRawAckMsgId(sender, 'forged-ack', toSentMsgIdReference({ ...sender, index: 1 })),
             controlTypeId: AL_CONTROL_ACK_TYPE_ID,
-            proofRefusal: 'missing-proof'
+            proofRefusal: UNPROVEN_RECEIPT_REFUSAL
         }),
         toControlAdmissionWait({
             step: { ...sender, index: 1 },

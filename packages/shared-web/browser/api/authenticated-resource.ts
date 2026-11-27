@@ -55,7 +55,7 @@ export namespace AuthenticatedResource {
 export class AuthenticatedResource<View, Request> {
     private readonly dependencies: AuthenticatedResource.Dependencies;
     private readonly config: AuthenticatedResource.Config;
-    private readonly api: AuthenticatedResource.Api<View, Request>;
+    private readonly api: Pick<AuthenticatedResource.Api<View, Request>, 'read'> & Partial<Pick<AuthenticatedResource.Api<View, Request>, 'change'>>;
     private readonly notifications = new SynchronousNotifications<AuthenticatedResource.State<View>>((error) =>
         console.error('Authenticated resource listener failed', error)
     );
@@ -73,7 +73,7 @@ export class AuthenticatedResource<View, Request> {
     constructor(
         dependencies: AuthenticatedResource.Dependencies,
         config: AuthenticatedResource.Config,
-        api: AuthenticatedResource.Api<View, Request>
+        api: [Request] extends [never] ? Pick<AuthenticatedResource.Api<View, Request>, 'read'> : AuthenticatedResource.Api<View, Request>
     ) {
         this.dependencies = dependencies;
         this.config = config;
@@ -234,7 +234,7 @@ export class AuthenticatedResource<View, Request> {
 
     private async send(pending: AuthenticatedResource.Pending<Request>): Promise<void> {
         const attempt = this.attempt();
-        if (attempt === null) {
+        if (attempt === null || !this.api.change) {
             return;
         }
         this.pending = pending;

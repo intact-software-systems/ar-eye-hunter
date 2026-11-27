@@ -1,5 +1,7 @@
 import { requireExactKeys, requirePositiveInteger, requireRecord } from '@shared/api/exact-object-decoding.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { projectRoomEventOrganizerView } from '@shared/api/room-events/room-event-organizer-view.ts';
+import { GroupMutationAuthorizationError } from '../group-state/group-mutation-authority.ts';
 import { decodeRoomEvent } from '@shared/api/room-events/decode-room-event.ts';
 import { changeRoomEvent, createRoomEvent, projectRoomEvent, type RoomEvent } from '@shared/api/room-events/room-event.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
@@ -108,6 +110,20 @@ export class TemporaryEventService {
         const stored = await this.repository.read(lobby);
         await this.authority.read({ ...actor, lobby }, stored?.value ?? null, this.dependencies.nowEpochMs());
         return stored ? projectRoomEvent(stored.value, actor.principalId) : null;
+    }
+
+    async readOrganizer(lobby: GroupRef, actor: RoomEventActor): Promise<RoomEvent.OrganizerView> {
+        const stored = await this.repository.read(lobby);
+        if (!stored || stored.value.organizerId !== actor.principalId) {
+            throw new GroupMutationAuthorizationError('Only the current event organizer can read the full roster.');
+        }
+        const { members } = await this.authority.read({ ...actor, lobby }, stored.value, this.dependencies.nowEpochMs());
+        // A handover or closure may commit while the membership read is in flight.
+        const current = await this.repository.read(lobby);
+        if (!current || current.value.closed || current.value.organizerId !== actor.principalId) {
+            throw new GroupMutationAuthorizationError('Organizer access has ended.');
+        }
+        return projectRoomEventOrganizerView(current.value, members);
     }
 
     private async execute(input: RoomEventMutation, context: AppInboxMessageContext<TemporaryEventService.Result>) {
