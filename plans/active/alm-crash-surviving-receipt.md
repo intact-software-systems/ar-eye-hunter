@@ -4,8 +4,8 @@ A sender's receipt on WebSocket stays exact when the server instance that admitt
 restarts. The count of who confirmed a receipted room send moves out of one instance's memory into a
 durable record every instance reads and writes.
 
-Status: approved by the maintainer on 2026-11-22; slices 1 to 6 built. Slice 7, an ordered arrival that loses its
-write looks again at once (section 12), is designed and waits for the maintainer's approval; it is not built.
+Status: approved by the maintainer on 2026-11-22; slices 1 to 7 built. Section 13, a completed delivery hands its
+track's next message on, is a design that waits for the maintainer's approval (ruling 16); nothing of it is built.
 
 ## Why
 
@@ -30,11 +30,11 @@ publisher-loss recipe now reads `complete`.
 The first hosted campaign's first fault stops one of three replicas for 30 s and passes only when every
 receipt settles within 45 s. On `main` that run cannot pass.
 
-## The maintainer's rulings (2026-11-22, 2026-11-25 and 2026-11-26)
+## The maintainer's rulings (2026-11-22, 2026-11-25, 2026-11-26 and 2026-11-27)
 
 Rulings 1 to 7, 9 and 10 were each asked alone. Ruling 8 the maintainer wrote unasked, in the same message as
 ruling 7. Rulings 11 to 13 were each asked alone and relayed word for word by another session of the maintainer's;
-rulings 14 and 15 the maintainer gave in the session that builds this work.
+rulings 14 to 16 the maintainer gave in the session that builds this work.
 
 1. What the receipt must read after the admitting server dies: **"Exact receipt"**, over a truthful
    terminal receipt that forgets the ACKs counted before the crash.
@@ -79,6 +79,9 @@ rulings 14 and 15 the maintainer gave in the session that builds this work.
     released; about 70 production lines; it moves about 50 existing tests; five ordered senders keep up, measured;
     one sender stays at about 3 ordered messages a second, which is written down as a limit; fast streams are what
     the end-to-end ordering of ruling 14 is for.)
+16. Whether the repair of section 13 is built in #885 (2026-11-27; asked with the measured figures of "Why ordered
+    tracks fall behind together"; the other options put were to build it at once, or to hand the pull request over
+    without it): **"Show me the design first"**.
 
 ## What the measurement found
 
@@ -772,8 +775,9 @@ into their phases, with no change of behaviour, before they change.
   instance only, and it holds a track to one admission at a time. Whether the inbound may serialize in memory what
   the store arbitrates is a question of the write doctrine that this work does not open.
 - _Claiming a track's next in-order dispatch in the batch that completed its predecessor_, as the batch already
-  promotes the next buffered release (D190). Not prototyped. It answers the study's reading of the one-track limit
-  below, which was not probed.
+  promotes the next buffered release (D190). Not prototyped when this section was written. It has been since, after
+  a probe showed what it answers ("Why ordered tracks fall behind together"), and section 13 is its design, which
+  waits for approval.
 
 **The limit that stays.** Measured on the built code ("Ordered room messages, with the fresh attempts built"), one
 ordered track keeps up at 2 messages a second through the WS server at +5 ms (40 of 40 in every run, the last
@@ -847,6 +851,320 @@ over memory for its volatile pair, and for an RTC receiver.
   release's fresh attempts were measured only together with the progress-row lever, where they added nothing
   measurable, so this measurement is their first without it. A figure that does not pass is a finding, reported with
   its numbers and not fixed in the measurement.
+
+### 13. A completed delivery hands its track's next message on
+
+**A design that waits for the maintainer's approval (ruling 16). Nothing of it is built.** It rests on a prototype
+that was applied as a patch outside the tree and measured ("Why ordered tracks fall behind together"). The prototype
+is not the design: where they differ is said below.
+
+Section 12 keeps an ordered track on its fast path as long as one message's dispatch and completion fit inside the gap
+to the next send. When they do not, the next message's delivery is found waiting for its predecessor and is set
+aside, and nothing brings it back when the predecessor completes: it waits for the lane's rotation, seconds later, by
+which time the message after it is waiting too. The track never returns to the fast path while its sender keeps its
+rate, and every ordered track that shares the rotation falls behind with it. That needs no fault: a loaded host, a
+database slower than +5 ms a statement, one slow completion or one fast sender is enough.
+
+**The rule.** A claim whose delivery answers `completed` for a message on an ordering track states where its track's
+delivery progress then stands. The batch that ran the claim, while it holds fewer than a page of claims, reads the
+track's slot after that position; when that slot names a delivery row of the batch's own lane that is due, not
+expired and reads ready now, the batch reserves the row exactly as it read it and runs it after the claims it already
+holds. In every other case it reserves nothing and the row waits for the rotation, as it does today.
+
+This is the rule the batch already has for a buffered track's releases (D190), widened from "a completed release
+promotes the next release" to "a completed delivery hands on the next delivery, whichever kind it is". The release
+rule becomes a case of it and its own lookup is deleted, so there is one rule and one lookup.
+
+**Who claims.** The work batch of the lane that ran the completing claim: on a WS server, the instance whose worker
+completed the predecessor, over the PostgreSQL store every instance shares; in a browser, the tab that owns the
+session's work, over IndexedDB or over its memory pair; in a test, the memory stores. It is the same code in each
+(`ALWorkHandler`, `ALInboundStoreLane`), as the release promotion is today.
+
+**How the next message is found.** The store keeps one slot for every admitted, undelivered message of a track
+(`<ns>:buffered:<track>:<seq>`), deletes it when the delivery completes, and records on it the work row that delivers
+it (`delivery.effectId`): a `dispatch-local` row for a message admitted in order, a `release-buffered` row for one
+that waited behind a gap. A dispatch row's id is made from the sender and the message id, so it cannot be computed
+from a track and a sequence; the slot is the one index from a position to a row, and it exists already. The lookup is
+one read of the slot at `completedThrough + 1`:
+
+- _No slot_: the next message is not admitted yet, or the track continues after an omission (see the limits).
+  Nothing more is read.
+- _A slot that names no delivery row, or one whose carrier is another lane's_: nothing this batch may run. Nothing
+  more is read.
+- _A slot naming a delivery of this lane_: the row is read by its key. It is reserved only when it is not expired, is
+  due (a new row, or a retried one whose delay has passed; a reserved row is due only at its lease's end), and its
+  delivery reads ready now, by the same readiness read the rotation's page makes for it
+  (`ALInboundAdmittedDelivery.readReadiness`: the stored message, its plan, the predecessor, a registered consumer).
+
+Counted on PostgreSQL from the code, where every read of a session is its own statement: a completion whose track
+has nothing waiting costs **one statement more** than today. One that hands a message on costs the slot read, the
+row read, the readiness read (three statements for a dispatch with no supersedence key: the message, its owner row,
+the track's progress) and one reservation transaction (a locked read and an update). The readiness read and the
+reservation are what the rotation spends on the same row when it reaches it, so the addition a handed-on message
+costs is two reads; what it saves is every rotation pass that read the row and set it aside (the probe counted 1 907
+to 2 235 `waiting` readiness reads a run against 344 to 404 `ready`). Nothing is written that is not written today:
+the only write is the row's reservation. The handed-on claim then reads its own surface at delivery, as a promoted
+release does today; carrying the readiness read's surface forward, as a page's claim carries its own, would save two
+statements a message and is left to the build to measure. No statement pin exists for any of this yet; the build pins
+both shapes.
+
+**Where the position lives.** In the return value, and nowhere else. The prototype kept a map on the delivery object,
+from a claim's effect id to the position its completion had committed, read back by the batch and cleared at 1 024
+entries: a memory across calls with a cap chosen by nobody. The design threads the position through the calls that
+already return:
+
+- `ALInboundOrderedDelivery.complete` answers `'completed' | 'retry'` today. It answers a `Completion`: `retry`, or
+  `completed` with a `position` (`{ trackKey, completedThrough }`), which is absent only for a message on no ordering
+  track. The position is the one the completion wrote (`completes`, which `completeOnce` computes before its write),
+  or the one it read when it found the message already completed. `release` and the readiness's `completed` answer
+  carry it the same way, each from the progress it read, so every `completed` of a delivery on a track states it.
+- `ALInboundAdmittedDelivery.deliver` returns that same `Completion` (a forward answers `completed` with none).
+- `ALInboundStoreLane.runInboundEffect`, which maps the delivery's answer to the work outcome today, maps a completion
+  with a position to a result that carries it.
+- `ALWorkHandler` passes it on. `ALWorkAttemptResult` gains one variant, a completed claim that names a succession,
+  whose type is the owner's (a type parameter that defaults to `never`); the batch releases the row `completed` as
+  for any completed claim and, under the same two conditions as now, calls `claimSuccessor(port, succession)` with
+  it, where today it passes the completed claim. `ALWorkOutcome`, which the queue port and three owners share, does
+  not change, and an owner that hands nothing on (the outbound lane, the receipt record's worker) cannot produce the
+  variant and is not edited.
+- `claimSuccessor` is the selector's, as now: the lookup and the reservation above, in the file that holds the
+  release promotion today, renamed for what it then does. The slot read is one new read of the admission store,
+  beside `readOrderedDelivery` in `ALInboundDurableEffectStore`, which already reads slots.
+
+Nothing is remembered between claims, so nothing needs a cap; no object is given a callback or a setter; and a
+succession that is never asked for (a full batch, a disposed lane) is dropped with the result that carried it. The
+lookup sits behind the handler's existing guard for a successor claim, so a store failure in it is reported as a
+batch failure and the completed claim stays completed. Putting the read inside the claim's own run, to hand the
+handler a plain row key and spare the type parameter, was considered and rejected for that reason: a failed
+best-effort read would turn a committed completion into a retried row.
+
+**What bounds it, and what enforces each bound.**
+
+- _A batch never runs more than a page._ `ALWorkHandler.claimSuccessors` asks for a successor only while the batch's
+  claimed count is below `pageSize` (16, `AL_INBOUND_WORK_PAGE_SIZE`), and counts each one it takes. This is the bound
+  the cheaper form broke. Pinned today by the 64-message drain and by the handler's own page-bound case.
+- _One claim per row._ The row is reserved through `ALWorkQueuePort.claimObserved`, which reserves a row only while
+  it is still new or retrying and is the very row that was read (a row version on PostgreSQL, taken with
+  `FOR UPDATE SKIP LOCKED`; the stored value in memory and on IndexedDB), and only a row of the lane's own work type.
+- _The lease._ The reservation is the ordinary one: 10 s from the moment it is made, which for a handed-on row is
+  when its predecessor completed, later than the rest of its batch.
+- _The rotation's cursor._ The lookup reads one slot and one row by key. It reads no page, so
+  `ALInboundRotationPage`'s position and its owed head read are where they were, and the scan order NEW, RETRY,
+  RESERVED is untouched. It never runs the lease-timeout sweep.
+- _Readiness is decided twice, from the store._ At the claim, as above; and again at dispatch, where an ordered
+  message asks its track once more (`readOrderedDispatchOutcome`), as every dispatch does. Order is never taken from
+  the hand-on: a message is dispatched only when the store says its predecessor completed.
+- _Within the batch, nothing is overtaken._ A handed-on claim is appended to the batch's queue, so every claim the
+  batch already holds runs before it, another track's deliveries, replays and control sends among them. Several
+  lagging tracks in one batch are therefore served in turn, one message each per round.
+
+**Fairness, stated plainly.** A handed-on row goes ahead of the rotation: ahead of the rows on pages the rotation
+has not reached, the retried rows it reads after every new one, and whatever the next batch would have claimed. A
+release successor already does exactly that, and a 255-message buffered track already fills 17 batches in a row. What
+is new is that the steady traffic of an ordered track qualifies too, and that it has no natural end: a sender that
+keeps offering more than its track carries can keep every batch of the lane at a full page for as long as it sends.
+What that sender can do: make each batch take a full page's time, so the rotation's next page, and an arrival that
+commits while the batch runs, wait up to 15 more claims than they would have. What it cannot do: run more than a page
+in a batch, run ahead of a claim the batch holds, take the rotation's next page (the batch after reads the page the
+rotation stood at, not the track), or reserve a row that is not its own track's next. No measured cell mixes an
+over-driven track with other traffic; the proof below adds one.
+
+**What happens when the next message is not there to hand on.** Each case reserves nothing and changes no row:
+
+- _Not admitted yet._ No slot. When it is admitted, its predecessor has completed, so its own commit's batch reads
+  it ready and claims it at the head of the queue: the fast path, as today.
+- _Held by another owner._ The row is reserved (another instance's batch, or this one's), so it is not due.
+- _Reserved between the read and the reservation._ The reservation finds the row changed and takes nothing.
+- _Not ready._ No consumer is registered for it, its plan asks for a retry, or its predecessor is, after all, not
+  the completed one. It waits for the rotation.
+- _Behind a gap._ The message at the next position is the missing one, so there is no slot. The copies buffered
+  after it have no row until the gap closes; then each has a release row, its slot names it, and the hand-on finds a
+  release as it finds a dispatch.
+- _Expired._ Not reserved. The track then ends as it does today: the message after it reads a gap with no
+  predecessor and the track ends `resync-required`. A hand-on never skips a message.
+- _The track ended, or its progress row is gone._ The next message's readiness reads `resync-required`, which a
+  claim is allowed to take in order to reject it, by the rotation's page today and by the hand-on alike.
+- _The batch is full, or the lane is being disposed._ Not asked.
+- _The completion did not commit._ It answered `retry` and stated no position.
+
+**With the four owners of section 12.** An arrival, a replay, a release and a completion each try a lost write again
+at once. The hand-on writes nothing but a reservation, so it loses no write and makes none of theirs lose.
+
+- _An arrival that retries while its predecessor's completion hands on._ The two commits are ordered by the store.
+  If the arrival's admission commits first, its row exists when the completion's batch reads the slot afterwards, and
+  the batch claims it. If the completion commits first, an arrival that had read the old position loses its write,
+  and its fresh attempt reads the new one and commits; either way its own commit's batch finds its predecessor
+  completed. In the window between, both batches can try for the row; one reservation wins. A lost attempt wrote
+  no slot and no row, so the lookup cannot find half an admission.
+- _A completion's fresh attempts._ Only the attempt that commits states a position. A completion that loses all
+  three states none and its row goes back as work, as today; its successor keeps waiting, since its predecessor has
+  not completed.
+- _A replay or a release that commits in a later attempt_ announces its work as it does today; a release that
+  completes hands on like any delivery.
+
+Can a message be handed to the application twice because of this? No more than today: a row is dispatched by the
+one batch that holds its reservation. The three cases that hand a delivered message over again are unchanged: every
+completion attempt lost, a shutdown or a crash between dispatch and completion, and a lease that ended while its
+batch was still running. The last is the one to watch: batches reach a full page more often, and a claim reserved
+with its page still runs up to 15 claims after its reservation, as in any full page today. Out of order? No: the
+store decides order at dispatch. Never? The hand-on is an addition, not a replacement: a row it does not take is
+found by the rotation exactly as it is now.
+
+**Two server instances.** Arrival `n + 1` is admitted through instance B while `n` is still being delivered by
+instance A. B's batch reads the new row, finds its predecessor waiting and sets it aside without reserving it. When
+A's completion of `n` commits, A reads the shared slot, finds the row B's admission wrote, and reserves and
+dispatches it on A. That is nothing new: any instance's rotation already claims any instance's rows, and A's
+readiness read asks A's own dispatch port whether it can deliver. If B's rotation reaches the row at the same
+moment, one reservation wins and the other takes nothing. The room fan-out then leaves from A.
+
+**In the browser and on an RTC receiver.** The rule runs there: the lane and the handler are the shared ones, over
+IndexedDB for the session's durable pair and over memory for its volatile pair, for the WS client and for an RTC
+receiver alike.
+
+- Nothing stored changes shape, and no message, control or diagnostic gains a field. The `effect-drain`
+  diagnostic's `promoted` now counts every delivery a batch ran by hand-on, where it counted releases.
+- An ordered completion makes one more IndexedDB read (the slot); a hand-on makes that, the row read, the readiness
+  reads and one reservation write, each its own short transaction, as the release promotion does today. A browser
+  is one thread: the hand-on runs between the completion and the batch's next claim, in the same task chain.
+- A relay's forwards are not gated on ordering and are not handed on. Only local delivery is.
+- A session's durable work is run by the one tab that owns it; that does not change.
+- **The bundle budget will be passed.** `browser/rallar.ts` measures 332.813 of its 333 KiB, 0.187 KiB of headroom.
+  The prototype was not bundled, so its size is not known; from its 74 source lines, less the release lookup this
+  design deletes, the estimate is 0.2 to 0.5 KiB compressed. The budget is raised to the smallest whole KiB above the
+  measured figure, in a commit of its own, as before. The headless bundle (434.203 of 435) may hold.
+- Not measured in a browser, on IndexedDB or over RTC: every cell runs the server's lane on PostgreSQL.
+
+**What it does not do.**
+
+- _It does not make one track carry more than its delivery cycle allows._ Measured with the prototype on a quiet
+  host: one track keeps up at 3 a second in every run and completes 80 of 80 at 4 a second in both runs, its last
+  message read 1.5 and 3.8 s behind (the built code: 41, 80, 43 and 80 of 80); at 5 a second it completed 20 and 69
+  of 100, and at 10 a second 4 and 3 of 200. At 10 a second the sends that are parked at admission dominate, which
+  this does not touch. The limit of one ordered track stays, a little higher and less sharp.
+- _It hands nothing on from a full batch._ A lane whose pages are full of claimable work promotes nothing and behaves
+  as built. The measured cell left room (94 to 164 successors found a run, 85 to 164 claimed). More publishers or
+  more unordered traffic on one lane were not run.
+- _It stops at the page._ A long backlog is drained up to a page at a time; between batches the track waits for the
+  rotation again. In the loaded runs the worst lag of a run was 0.8 to 5.1 s and a lagging track caught up again, a
+  sawtooth, where the built code's lag climbed to the lifetime.
+- _It does not follow an omission._ When the track's next message for this receiver is not the next sequence (the
+  sender left this receiver out of one), no slot stands at `completedThrough + 1` and the next copy waits for the
+  rotation, as today. Finding it needs a read of the track's slots, which is not proposed.
+- _It does not reach across carriers._ A successor that arrived on the other carrier belongs to that carrier's lane.
+- _It does not change the rotation's scan order,_ the retry policy, the lease, or what an admission writes.
+- _It does not order the room fan-out on the wire._ The measurement's recipients are raw sockets, and they read
+  frames of one track out of order when two hand-offs lie close together (14 in one run of the built code, 9 to 42
+  with the cheaper form, none with the prototype of this design): the WS server's fan-out to a room writes each
+  message on its own and keeps no order between two. A Rallar receiver restores the order from its own buffer.
+  Older than this work and a separate question; this design neither fixes nor relies on it.
+
+**The tests it moves.** The prototype turned three cases red in a sweep of 3 754, all in
+`al-inbound-release-promotion.test.ts`, each a pinned count that the rule changes by design. No delivery-order
+assertion failed and no batch ran more than a page.
+
+- _"delivers a buffered track in sequence order, each release promoted only after its predecessor delivered"_ pins
+  that a batch promotes no more releases than it ran behind their own track's previous release. Old reading: 14 of a
+  batch's releases follow a release, 14 at most are promoted. New: 15 are, because the dispatch of the message that
+  closed the gap hands on the first release. Restated to count a delivery behind its track's previous delivery,
+  whichever kind. The delivered order, 1 to 21, is asserted unchanged.
+- _"drains a 64-message buffered track in 5 batches, none running more than a page"_ pins the batches' sizes as 1,
+  16, 16, 16, 16 and their promotions as 0, 15, 15, 15, 15. New: sizes 16, 16, 16, 16, 1, for the same reason, and
+  by that reasoning promotions 15, 15, 15, 15, 0 (the run stopped at the sizes). Five batches, none above a page, 65
+  delivered: unchanged.
+- _"promotes a release only behind its own track's predecessor, with two tracks draining together"_: the same count
+  as the first, 11 where 10 was the bound. Restated the same way; each track's order is asserted unchanged.
+
+Also restated, not shown red by the prototype because it kept the handler's contract: the five cases of the work
+handler that pass a `claimSuccessor` (`al-work-handler.test.ts`, `al-work-handler-disposal.test.ts`), whose fake
+owners return the new result; what they assert (run order, the page bound, a throwing successor claim is reported
+and strands nothing, a successor reserved during disposal is released unrun) stays. The fixtures that pass
+`claimSuccessor: undefined`, about fifty, are not edited. A PostgreSQL statement pin or an IndexedDB operation count
+of an ordered delivery gains one read; the prototype was not run on those lanes.
+
+**The cases that would pin it**, on stored facts and on the subscriber's received list:
+
+- _A held completion with a waiting successor._ `n` is dispatched and its completion held; `n + 1` is admitted
+  meanwhile and its batch sets it aside; the completion is let go. The subscriber then holds `n`, `n + 1`; one batch
+  names both rows in order with one promotion; the successor's row is completed after one attempt; no row went back
+  as a retry and no rotation pass lay between.
+- _The page bound, in order._ 64 messages of one track admitted in order behind a held first dispatch: every batch
+  claims at most a page, the subscriber receives 1 to 64 in order, each once. And a batch whose selection already
+  filled the page hands nothing on.
+- _Other claims first._ A batch that holds another track's delivery and an unordered one runs both before the
+  handed-on successor.
+- _Two instances._ On shared stores and on PostgreSQL: the arrival admitted through B, the predecessor completed on
+  A, the successor delivered once, by A, with one attempt; and with B's rotation racing A's hand-on, exactly one
+  hand-over.
+- _A successor not yet admitted._ The completion's batch reads one slot and nothing else (the statement pin), and
+  the message that arrives afterwards is delivered by its own commit's batch.
+- _Each refusal above_: a row reserved elsewhere, not due, expired, not ready, on another carrier, a slot with no
+  delivery. Each leaves the row's status, attempts and version as they were.
+- _A completion that loses every attempt_ hands nothing on. _An unordered delivery_ makes no read. _A lookup that
+  throws_ is reported as a batch failure; the completed claim is released completed and the batch's other claims
+  run.
+- _Through the WS server_: five sends of one track, each arriving while its predecessor's completion is held, are
+  delivered in order, each once, with no retried row.
+
+**How it is proven**, on the built code beside the code before it, with the harness of section 12:
+
+- _The loaded cell that failed._ Five ordered publishers for 20 s at +5 ms, three WS server instances, with eight
+  CPU burners (`yes > /dev/null`) started 45 s before the run and stopped after it, which on the measuring machine
+  gave a 1-minute load of 6 to 12 at a run's start; the load is recorded with every run. Three runs a column, the
+  columns back to back. It passes when every run of the built code completes 200 of 200 by the deadline, makes no
+  retried row, ends no track `resync-required`, hands no message to the subscriber twice or out of its track's
+  order, and runs no batch longer than its 10 s lease (the largest `effect-drain` duration is recorded). The
+  recipients' read, p50 and largest, and each track's lag over the run are recorded.
+- _The quiet cells_ must read as they did: five ordered for 20 s and for 45 s, and the two unordered guards.
+- _The one-track bracket_, 2, 3, 4, 5 and 10 a second, is recorded as the limit, whatever it reads, with where each
+  track stopped.
+- _Two cells no run has covered_, recorded whatever they read: the five ordered publishers on a quiet host at
+  +10 ms, to test that a slower database alone produces the stall and that the rule answers it; and one track at 5 a
+  second beside the five unordered publishers, to read what an over-driven track now costs other traffic.
+- A figure that does not pass is a finding, reported with its numbers and not fixed in the measurement.
+
+**Alternatives considered.**
+
+- _Bring the successor's row due and ask for a head read_ (the cheaper form, prototyped). On a committed ordered
+  completion the lane named the successor's row to the running batch through `expedite()`. It removed the stall too
+  (200 of 200 in three loaded runs). Rejected: an expedited row is claimed before the batch's next claim and outside
+  the page count, so one track's backlog drains in a single batch (the 64-message case ran one batch, not five) and
+  goes ahead of every claim the batch holds. It also needed the lane to hand the delivery a callback at
+  construction. And one track at 4 a second read its last message 14 to 15 s behind, against 1.5 to 3.8 s.
+- _Change the rotation's scan order_, reading due retried rows with every page of new ones (section 12, "Not built").
+  It does not address this: the waiting row is a new row, not a retried one. Prototyped earlier, it took one track at
+  5 a second from 16 to 17 completed to 2 of 100 and showed frames read twice, neither explained.
+- _Do nothing and state the limit._ Honest, and what section 12's limit already does for one fast track. But the
+  limit to state would be that five publishers at 2 a second each, the cell section 12 measured as keeping up, stop
+  keeping up when the host is busy or the database is slower than the measurement's, and that all tracks of a lane
+  stop together.
+
+**Its size and its risk.** About 130 production lines changed in nine files of `packages/shared/alm`: the two
+delivery classes' return types (about ten return sites) and the readiness's, one store read, the successor claim
+rewritten around it, the selector's and the lane's wiring, and the handler's one variant. Three test cases restated,
+five handler cases adapted, about a dozen new cases, two of them on PostgreSQL; the inbound README's
+release-promotion paragraph, the diagnostic documents and a decision row. Five tasks: the completion states its
+position (no behaviour change); the handler passes a succession on; the successor claim; the PostgreSQL and WS server
+cases with their statement pins; the measurement, the documents and the budget.
+
+What could make it larger:
+
+- _Files already over the standard._ `dispatchAdmittedMessage` (60 lines) and `reject` (52) are older than this work
+  and longer than a function may be, and `al-work-handler.ts` and the lane are large files. A change in them can
+  require the split first, as section 12 did for `attempt` and `release`.
+- _The conformance lane's observation._ Its artifact sums `promoted` as `promotedReleases`, and four documents
+  describe the count as releases. The count stays one number; its name there, the documents and the committed
+  snapshot follow.
+- _Lanes the prototype was not run on_: the PostgreSQL integration lane, the black-box recipes, the ALM lane.
+- _A finding of the mixed cell._ If an over-driven track is shown to slow other traffic, a bound on how many
+  messages one track is handed in a batch is a new parameter and a new decision.
+- _The sawtooth._ If the wait between two batches matters, asking for a head read when a hand-on stopped at the page
+  is the next lever. It is not in this design and was not measured.
+
+Not shown, beside the limits above: the prototype's result rests on three loaded runs, in which the built code
+beside it also completed 200, 193 and 200 (with reads of up to 29.6 s), where it completed 109 to 155 in six other
+loaded runs; the design's lookup for a release (through the slot, where the prototype kept the release's computed
+key and fell back to the slot) is not the prototype's and costs one read more per promoted release; and nothing here
+was run in a browser.
 
 ## Approaches considered
 
@@ -930,10 +1248,11 @@ over memory for its volatile pair, and for an RTC receiver.
    outbox row as the fallback. Built in this pull request (ruling 7), and the five-publisher cell at +5 ms run
    again on it. With it, the completion of an ordered delivery guarded on its position and its slot (section 11,
    ruling 12).
-7. An ordered arrival that loses its write looks again at once, and so do a replay and a release (section 12,
-   rulings 11, 14 and 15). Designed; not built until the maintainer approves section 12. Then: the rule, the tests
-   it moves, the measurement on the built code, the documents and decision row D784 restated, the gates on the
-   final head, and this file's deletion.
+7. Built. An ordered arrival that loses its write looks again at once, and so do a replay and a release (section 12,
+   rulings 11, 14 and 15): the rule, the tests it moved, the measurement on the built code and decision row D784.
+8. A completed delivery hands its track's next message on (section 13, ruling 16). Designed; not built unless the
+   maintainer approves section 13. Then: the rule, the tests it moves, the measurement on the built code, the
+   documents and its decision row, the gates on the final head, and this file's deletion.
 
 ## Calls made here, each the maintainer's to overrule
 
@@ -995,6 +1314,15 @@ over memory for its volatile pair, and for an RTC receiver.
   path.
 - `attempt` and `release` are split into their phases before they change, with no change of behaviour, because both
   exceed the function length the standard allows.
+- Section 13's, a design that is not built: a buffered release and an in-order delivery are handed on by one rule
+  and one lookup, and the release's own lookup by its computed key is deleted, at the cost of one more read per
+  promoted release.
+- Section 13's: the position a completion leaves travels as a return value, through one type parameter of the shared
+  work handler, and is kept nowhere. The handler stays ignorant of tracks.
+- Section 13's: a handed-on delivery counts against the page and runs after every claim its batch already holds.
+  No further bound per track is set until a measurement asks for one.
+- Section 13's: a track that continues after an omission, a successor on another carrier and a full batch are left to
+  the rotation, as today.
 
 ## Left to the builder
 
@@ -1336,6 +1664,71 @@ track, how far behind its send the last completed message was read. Receipts are
   handed each message once; neither was probed.
 - **The unordered cells read as before**: 200 of 200 in each, the read's p50 0.5 s on both columns.
 
+### Why ordered tracks fall behind together
+
+One run of the built code above did not keep up, and its five tracks stopped at the same send. It was
+probed: the five ordered publishers for 20 s at +5 ms on the built code, under deliberate CPU load (8 to 12 burners,
+a 1-minute load of 8.7 to 27.7 at the start), reading the lane's `dispatch-decision` dispositions, every readiness
+read and every completion. This replaces the reading given for that run above and in section 12 ("a local dispatch
+that ran before its predecessor's completion"), which the probe does not bear out.
+
+- **Reproduced in three runs of three.** 109, 116 and 127 of 200 completed; 3, 5 and 5 tracks ended
+  `resync-required`; every track of a run stopped at the same send. A run on the quiet machine after them
+  completed 200 of 200.
+- **The cause is not a race.** When a message's dispatch-to-completion takes longer than the gap to the next send
+  (here by load: completions 1.0 to 1.6 s after the successor's send, with 500 ms between sends), the successor's
+  delivery reads its predecessor `waiting` and is set aside before it is reserved; its row stays new. Nothing claims
+  it when the predecessor completes: only a buffered release's successor is promoted (`claimPromotedRelease`). It
+  waits for the rotation, which read its readiness again every 3 to 4 s; of about 2 400 to 2 700 readiness reads a
+  run, 1 907 to 2 235 answered `waiting`. By then the next arrival has also found its predecessor unfinished, so the
+  track never returns to the fast path while the sender keeps its rate; the wait from due to claim grew from 5.6 to
+  26.3 s.
+- **All tracks share the rotation**, so they fall behind at the same rate and reach the 30 s lifetime at the same
+  send. The expired message's successor then reads `resync-required` and its track ends. The 8, 10 and 11 dispatch
+  rows a run that answered `retry` and were never claimed again are those later successors' rejections
+  (`ordering-retry`), each expired within milliseconds. No dispatch answered `port-retry`, `consumer-unavailable` or
+  `plan-retry`.
+- **It needs no host load as such.** A database slower than +5 ms a statement, one slow completion (a stall, a pause,
+  a lock wait) or one track sent faster than the cycle leads to the same state, and it does not recover while the
+  offered rate holds. It is older than section 12: the dispatch path, the deferral, the rotation and the promotion
+  are unchanged by it. Section 12's fresh attempts removed the stalls that used to come first, so this is now the
+  first limit ordered publishers meet.
+
+Two repairs were then prototyped as patches outside the tree and measured on the same head, each run directly after
+a run of the built code (73 runs; raw results kept outside the tree). _The hand-on_ is section 13's rule: the batch
+that completed a delivery claims the track's next admitted delivery, found by one read of the track's next slot, only
+when the row is due and reads ready, as it read it, while the batch holds fewer than a page. _The cheaper form_
+brings the successor's row forward through `expedite()` instead.
+
+| Cell, +5 ms                                 | Built                                                                                                                          | The hand-on                                                                              | The cheaper form                                         |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Five ordered, 20 s, 200, loaded (8 burners) | beside the hand-on: 200, 193, 200, read at most 5.4, 29.6, 27.9 s; beside the cheaper form: 151, 155, 134, 4 to 5 tracks ended | 200 each of three; read p50 0.9-2.7 s, at most 1.3-5.4 s; no retried row; no track ended | 200 each of three; read p50 0.8-1.0 s, at most 1.8-2.3 s |
+| Five ordered, 20 s and 45 s, quiet          | 200 each of four; 450 each of two; read 0.6 s                                                                                  | 200 each of two; 450; read 0.6 s                                                         | 200 each of two; 450; read 0.6 s                         |
+| The two unordered cells, 200                | 200 each; read 0.5 s                                                                                                           | 200 each; read 0.5 s                                                                     | 200 each; read 0.5 s                                     |
+| One track, 2 and 3 a second                 | 40 each; 60 each                                                                                                               | 40 each; 60 each                                                                         | 40 each; 60 each                                         |
+| One track, 4 a second, 80                   | 41, 80, 43, 80                                                                                                                 | 80, 80; read at most 3.8 and 1.5 s                                                       | 80, 80; read at most 14.3 and 15.3 s                     |
+| One track, 5 a second, 100                  | 29, 22, 17, 24                                                                                                                 | 20, 69                                                                                   | 100, 23                                                  |
+| One track, 10 a second, 200                 | 4, 1, 4, 3                                                                                                                     | 4, 3                                                                                     | 7, 6                                                     |
+| The unit sweep, 3 754 cases                 | all pass                                                                                                                       | 3 red, each a pinned promotion count or batch shape                                      | 1 red: a 64-message track drains in one batch, not five  |
+
+- **The hand-on removes the loaded stall**: in its three loaded runs (loads of 8.8 and 10.2 at the start, and one
+  that began at 45.8 with other work on the machine beside it) every message completed, no row went back as a retry,
+  no track ended, recipients read no frame out of order, 94 to 164 successors were found a run and 85 to 164 claimed,
+  and a lagging track caught up again (the worst lag of a run 0.8 to 5.1 s) where the built code's lag only climbs.
+  The built code beside it completed 200, 193 and 200, two of those runs reading a message 27.9 and 29.6 s behind,
+  against a 30 s lifetime; beside the cheaper form, and in the probe, it completed 109 to 155.
+- **The quiet figures do not move**, on either repair.
+- **One track**: 3 a second keeps up in every run of every column; at 4 a second the hand-on completed all 80 in
+  both runs where the built code completed all 80 in two runs of four; 5 and 10 a second keep up on none. At 10 a
+  second the parked arrivals dominate.
+- **The cheaper form breaks the page bound.** An expedited claim is taken before the batch's next claim and is not
+  counted against the page, so one track's backlog drains in a single batch, ahead of every other claim.
+- **Seen beside it, older than both repairs:** recipients, which are raw sockets here, read frames of one track out
+  of order when two hand-offs lie close together (14 in one run of the built code, 9 to 42 in the cheaper form's
+  loaded runs, none in the hand-on's), though the subscriber was handed every track in order. The WS server's fan-out
+  to a room keeps no order between two messages written close together; a Rallar receiver's ordered delivery
+  restores it from its buffer.
+
 ## Established in slice 1
 
 - **Unfenced rows neither conflict nor wait.** Through `PSqlAdmissionWorkBackend`, 30 concurrent writes to
@@ -1476,6 +1869,13 @@ track, how far behind its send the last completed message was read. Receipts are
   twice on one track at 10 a second (with the fresh attempts and without them) and when reading due retried rows with
   the new ones, nor why that lever delivered 2 of 100 on one track. What separates the arrival's attempts alone from
   all of them over 45 s rests on one run each. No cell ran in a browser, on IndexedDB or over RTC.
+- Of section 13, which is a design and not built: its figures are a prototype's, three loaded runs a column, and the
+  built code beside the hand-on completed 200, 193 and 200 where it completed 109 to 155 in six other loaded runs.
+  Not run: an over-driven track beside other traffic, a lane whose pages are full, more than five publishers, a
+  database slower than +5 ms on a quiet host, the PostgreSQL integration lane, the black-box recipes and the ALM lane
+  with the prototype, and any browser, IndexedDB or RTC cell. The design's lookup for a release differs from the
+  prototype's and is not measured. Why the WS server's room fan-out writes two close hand-offs of one track out of
+  order was not probed.
 - The sustained cost of an ACK that finds no head: the measurement through the WS server offers each ACK only
   after its recipient reads the message, and does not count how many found no head.
 - Leader resolution in a cluster: the group-leader case pins the cross-instance count, not how the leader is
