@@ -724,7 +724,12 @@ both or neither (R-S2c-ii-1). Absence means "not yet frozen", a distinct state:
   ([`toRtcGrantedListedLeg`](../../multicast/publication/to-rtc-granted-listed-leg.ts)), so it rides as a frozen,
   signed multicast of one. A named session without `subscribe` is frozen out silently, and an audience frozen to
   nobody owns no children: under `receiver` its receipt of zero recipients completes at once, and under `none` the
-  plan drops `no-route`, a fallback trigger. Any other granted shape (an exclusions-only room broadcast, `world`, a
+  plan drops `no-route`, a fallback trigger. A `receiver` unicast whose addressee holds no `subscribe`, or is the
+  origin itself, is not frozen: the leg refuses it `unauthorized` from the origin's cached snapshot
+  ([`resolveRtcGrantedAddresseeRefusal`](../../multicast/publication/compute-rtc-granted-publication-refusal.ts)),
+  terminal under `'hold'` and answered `unroutable`/`no-route` under `'hand-over'` (`toRtcGrantedLegVerdict`), so the
+  WS server decides from its live audience; unlike the room authority's `unauthorized` above, it is not the answer on
+  every strategy. Any other granted shape (an exclusions-only room broadcast, `world`, a
   roomless principal) is refused before freezing as `refused/unsupported`
   ([`resolveRtcGrantedPublicationShapeRefusal`](../../multicast/publication/compute-rtc-granted-publication-refusal.ts)).
   A granted `group-leader` send whose room's director

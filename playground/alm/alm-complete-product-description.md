@@ -370,8 +370,10 @@ payload is not confidential from relays (D520); an exclusions-only, `world` or
 exclusive granted send, one whose frozen audience passes the room limit of 256,
 and a `group-leader` send whose director holds no `subscribe` are
 RTC-`unsupported`, and `ws-then-rtc` sends granted messages over WS; a named
-session without `subscribe` is left out silently, so a receipted peer send to it
-completes with zero recipients over RTC where WS answers `unauthorized` (D553);
+session without `subscribe` is left out silently, and a receipted peer send to
+one, or to the sender itself, is refused `unauthorized` under `rtc` by the
+origin from its cached snapshot, so a stale snapshot refuses what WS would
+deliver, and under `rtc-with-ws-fallback` goes to WS, whose server decides;
 after a hand-over the WS server keeps a frozen session that never subscribed
 expected and unconfirmed until the deadline; the `granted-rtc` and four-role
 cells run on the local lane only (D521, D558).

@@ -492,8 +492,6 @@ and it has no status list.
   meet a changed payload; whether that spends its budget early or states
   `repair-exhausted` wrongly is not established, and no cell exercises it.
   Next step: a unit case with the overlay planner at the default budget.
-- A granted `receiver` RTC unicast to a non-holder (S6-i, D553) reads
-  `acknowledged` with zero recipients over RTC, where WS reads `unauthorized`.
 - A frozen session that never subscribes after a hand-over (S6-i) stays
   expected and unconfirmed on WS.
 - A recorded witnessed position (S4-i, D528): a session that witnesses while

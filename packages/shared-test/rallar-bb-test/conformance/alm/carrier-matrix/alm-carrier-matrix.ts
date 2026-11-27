@@ -468,6 +468,99 @@ export const ALM_CARRIER_MATRIX = {
             }
         }
     },
+    'granted-receiver-unicast-to-non-subscriber': {
+        statement:
+            'A granted `receiver` unicast to a session that holds no `subscribe` on its topic, or to its own sender, is refused `unauthorized`: by the WS server from its live audience, and over RTC by the origin from its cached snapshot, unless a fallback carrier takes it and the WS server decides.',
+        cells: {
+            ws: {
+                kind: 'stated',
+                outcome: { kind: 'refused', by: 'trusted-server', reason: 'unauthorized' },
+                proofs: [
+                    {
+                        kind: 'unit-test',
+                        testFile: 'packages/tests/shared/services/ws-queue-box-server-addressed-receipts.test.ts',
+                        testName:
+                            'refuses a room unicast to a session outside the admitted audience before admission, with a NACK',
+                        because:
+                            'The WS server refuses a room unicast to a session outside the audience its room admitted `unauthorized` before admission, with a NACK.'
+                    },
+                    {
+                        kind: 'unit-test',
+                        testFile: 'packages/tests/shared/services/ws-queue-box-server-addressed-receipts.test.ts',
+                        testName: 'refuses a room unicast to its own sender before admission, with a NACK',
+                        because:
+                            'It refuses a room unicast to its own sender the same way, though that audience holds it.'
+                    },
+                    {
+                        kind: 'unit-test',
+                        testFile: WS_CLIENT_RELAY_REJECTION_TEST,
+                        testName:
+                            'states the server refusing a room unicast to a non-member before admission; the receipted handle reads rejected (C3)',
+                        because:
+                            'The origin states that NACK as the trusted server\'s rejection: the receipted handle reads `rejected`.'
+                    },
+                    {
+                        kind: 'unit-test',
+                        testFile:
+                            'packages/tests/shared-server/rallar-system/websocket/room-publication/compute-room-publication-admission.test.ts',
+                        testName: 'the audience holds only subscribe-granted principals',
+                        because:
+                            'On a granted topic the audience the room admits holds only the live sessions of principals granted `subscribe`.'
+                    }
+                ]
+            },
+            rtc: {
+                kind: 'stated',
+                outcome: { kind: 'refused', by: 'origin', reason: 'unauthorized' },
+                proofs: [
+                    {
+                        kind: 'unit-test',
+                        testFile: RTC_PUBLICATION_SIGNING_TEST,
+                        testName:
+                            'as unauthorized on a leg with no fallback carrier: nothing sent, nothing stored, no receipt',
+                        because:
+                            'With no fallback carrier the origin refuses it `unauthorized` from its cached snapshot, a non-holder and its own session holding `subscribe` alike, and sends, stores and receipts nothing.'
+                    },
+                    {
+                        kind: 'unit-test',
+                        testFile: 'packages/tests/shared-web/messages/browser-granted-channel.test.ts',
+                        testName: 'under rtc settles rejected refused/unauthorized, with no WS leg',
+                        because:
+                            'On rtc alone the handle ends `rejected` `unauthorized`, with no attempt and no WS leg.'
+                    }
+                ]
+            },
+            'rtc-with-ws-fallback': {
+                kind: 'stated',
+                outcome: { kind: 'handed-to-ws', at: 'admission', reason: 'no-route' },
+                proofs: [
+                    {
+                        kind: 'unit-test',
+                        testFile: RTC_PUBLICATION_SIGNING_TEST,
+                        testName:
+                            'unroutable no-route on a leg with a fallback carrier, naming the unicast its sender gave',
+                        because:
+                            'With a fallback carrier the origin answers `unroutable`/`no-route` with the unicast its sender gave, and sends, stores and receipts nothing.'
+                    },
+                    {
+                        kind: 'unit-test',
+                        testFile: 'packages/tests/shared-web/messages/browser-granted-channel.test.ts',
+                        testName:
+                            'under rtc-with-ws-fallback moves the unicast to WS at admission and ends on the server',
+                        because:
+                            'The `no-route` verdict moves the unicast to WS at admission, with no hand-over, and it ends `rejected` on the WS server\'s `unauthorized`; the test injects that NACK, which the `ws` cell shows the server answers.'
+                    },
+                    {
+                        kind: 'unit-test',
+                        testFile: 'packages/tests/shared-web/messages/browser-granted-channel.test.ts',
+                        testName: 'ends acknowledged on WS when the server delivers it',
+                        because:
+                            'When the origin\'s cached snapshot was stale and the server\'s live audience holds the addressee, it ends on the WS receipt.'
+                    }
+                ]
+            }
+        }
+    },
     'ordered-gap-repair': {
         statement: 'A gap inside the repair window is repaired by the hop that orders the track.',
         cells: {

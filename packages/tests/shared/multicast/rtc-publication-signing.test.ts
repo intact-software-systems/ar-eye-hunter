@@ -49,11 +49,21 @@ import {
 import {
     createPublicationRoomSnapshot,
     PUBLICATION_TOPIC_ID,
+    PUBLISH_AND_SUBSCRIBE,
     PUBLISH_ONLY,
     SUBSCRIBE_ONLY
 } from './rtc-publication-proof-fixtures.ts';
 
 const GRANTED_ROUTE = { topicId: PUBLICATION_TOPIC_ID, resourceId: 'feed-1', contextId: ORIGIN_ROOM.groupId };
+
+/**
+ * The addressees RTC cannot reach with a granted receiver unicast: a session that holds no `subscribe`, and the sender
+ * itself, which here holds `subscribe` so only the self check can refuse it.
+ */
+const UNREACHABLE_ADDRESSEES: readonly [string, Readonly<Record<string, GroupPublicationTopicPermissions>>, string][] = [
+    ['a non-holder', { b: PUBLISH_ONLY }, 'b'],
+    ['its own sender', { a: PUBLISH_AND_SUBSCRIBE, b: SUBSCRIBE_ONLY, c: SUBSCRIBE_ONLY }, 'a']
+];
 
 describe('the RTC origin of a granted publication', () => {
     beforeEach(() => {
@@ -208,23 +218,45 @@ describe('the RTC origin of a granted publication', () => {
             .toMatchObject({ mode: 'receiver', expectedPeerIds: ['b'] });
     });
 
-    it.each<[string, Readonly<Record<string, GroupPublicationTopicPermissions>> | undefined, string]>([
-        ['a non-holder', { b: PUBLISH_ONLY }, 'b'],
-        ['its own sender', undefined, 'a']
-    ])('admits a granted unicast to %s as a complete receipt of zero recipients', async (_name, grants, toPeerId) => {
-        const crypto = await createAvailablePublicationCryptoFixture();
-        const fixture = createGrantedFixture(crypto, toKeyedSnapshot(crypto, grants));
+    it.each(UNREACHABLE_ADDRESSEES)(
+        'refuses a granted receiver unicast to %s as unauthorized on a leg with no fallback carrier: nothing sent, nothing stored, no receipt',
+        async (_name, grants, toPeerId) => {
+            const crypto = await createAvailablePublicationCryptoFixture();
+            const fixture = createGrantedFixture(crypto, toKeyedSnapshot(crypto, grants));
+            const message = createGrantedUnicast('receiver', toPeerId);
 
-        const admitted = await enqueueLegAndDrain(fixture, createGrantedUnicast('receiver', toPeerId), 'hand-over');
+            const refused = await enqueueLegAndDrain(fixture, message, 'hold');
 
-        expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
-        expect(admitted.message.targets).toEqual(toOriginFrozenTargets([], 3));
-        expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent]).toEqual([]);
-        expect(fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1)).toMatchObject({
-            expectedRecipientPeerIds: [],
-            complete: true
-        });
-    });
+            expect(refused.verdict).toEqual({
+                kind: 'refused',
+                reason: 'unauthorized',
+                detail: RTC_GRANTED_PUBLICATION_REFUSALS.addresseeNotSubscribed
+            });
+            expect(isALDeliveryAdmissionFallbackVerdict(refused.verdict)).toBe(false);
+            expect(refused.message.targets).toEqual({ mode: 'unicast', toPeerId, groupRef: ORIGIN_ROOM });
+            await expectNothingCarried(fixture, refused, message);
+        }
+    );
+
+    it.each(UNREACHABLE_ADDRESSEES)(
+        'answers a granted receiver unicast to %s unroutable no-route on a leg with a fallback carrier, naming the unicast its sender gave',
+        async (_name, grants, toPeerId) => {
+            const crypto = await createAvailablePublicationCryptoFixture();
+            const fixture = createGrantedFixture(crypto, toKeyedSnapshot(crypto, grants));
+            const message = createGrantedUnicast('receiver', toPeerId);
+
+            const handedOver = await enqueueLegAndDrain(fixture, message, 'hand-over');
+
+            expect(handedOver.verdict).toEqual({
+                kind: 'unroutable',
+                reason: 'no-route',
+                detail: RTC_GRANTED_PUBLICATION_REFUSALS.addresseeNotSubscribed
+            });
+            expect(isALDeliveryAdmissionFallbackVerdict(handedOver.verdict)).toBe(true);
+            expect(handedOver.message.targets).toEqual({ mode: 'unicast', toPeerId, groupRef: ORIGIN_ROOM });
+            await expectNothingCarried(fixture, handedOver, message);
+        }
+    );
 
     it('refuses a granted unicast to a non-holder asking no receipt as no-route, the refusal a fallback takes over', async () => {
         const crypto = await createAvailablePublicationCryptoFixture();
@@ -689,6 +721,20 @@ async function verifyProof(crypto: AvailablePublicationCrypto, message: ALMessag
 
 async function readStoredMessage(fixture: RtcOriginOverlayFixture, entry: ALOutboundEnqueueResult['entries'][number]): Promise<ALMessage> {
     return JSON.parse((await fixture.resources.workQueue.getItem(entry.key))!.resource) as ALMessage;
+}
+
+/** The leg names the unicast its sender gave and carries nothing: no copy sent, no row stored, no receipt opened. */
+async function expectNothingCarried(
+    fixture: RtcOriginOverlayFixture,
+    result: ALOutboundEnqueueResult,
+    message: ALMessage
+): Promise<void> {
+    expect(result.message).toEqual(message);
+    expect(result.entries).toEqual([]);
+    expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent]).toEqual([]);
+    expect(await fixture.resources.workQueue.getAllKeys()).toEqual([]);
+    expect(fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement')).toEqual([]);
+    expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId })).toBeUndefined();
 }
 
 async function enqueueLegAndDrain(fixture: RtcOriginOverlayFixture, message: ALMessage, carrierGap: RtcCarrierGapAdmission) {

@@ -1125,11 +1125,13 @@ live sessions whose principal holds effective `subscribe` in its cached
 snapshot, narrowed to the listed sessions, the principal's sessions or the one
 peer, so the signed targets and a receipt's expected recipients are that
 audience; a peer send rides as a frozen multicast of one, relayed through the
-room's tree. A named session without `subscribe` is left out silently, so a
-receipted peer send to such a session reads `acknowledged` with zero
-recipients over RTC, where WS refuses it `unauthorized`; an `ack: 'none'` one
-falls back on `no-route`, and under `rtc` alone it settles `rejected` with
-`unroutable`/`no-route`. The page signs each frame with the
+room's tree. A named session without `subscribe` is left out silently. A
+receipted peer send to such a session, or to the sending session itself, is
+refused `unauthorized` by the sending page under `rtc`, as WS refuses it, and
+under `rtc-with-ws-fallback` moves to WS at admission, where the server decides
+from its live audience; an `ack: 'none'` one falls back on `no-route`, and
+under `rtc` alone it ends `failed` with `unroutable`/`no-route`.
+The page signs each frame with the
 publication key its session registered on its room presence (see Group Policy
 And State Routes above). Every relay and receiver verifies that signature
 against its own cached room snapshot before it forwards or delivers the frame. A

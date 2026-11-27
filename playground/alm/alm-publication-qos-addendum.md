@@ -932,11 +932,14 @@ snapshot's version, and judges the 256-entry room limit on that frozen set
 On the wire a list, a principal broadcast and a unicast are each a frozen,
 signed multicast that relays forward along the tree and receivers admit
 unchanged; the receipt expects the frozen list, or the one peer. A named
-non-holder is frozen out silently, one rule for every shape, and an audience
-frozen to nobody owns no children (`resolveALOwnedChildPeerIds`): under
-`receiver` the receipt of zero recipients completes at once and nothing is
-sent, and under `ack: 'none'` the plan is an `unroutable`/`no-route` fallback
-verdict, nothing sent. A granted send whose narrowed audience passes 256 is
+non-holder is frozen out silently, and an audience frozen to nobody owns no
+children (`resolveALOwnedChildPeerIds`): under `receiver` the receipt of zero
+recipients completes at once and nothing is sent, and under `ack: 'none'` the
+plan is an `unroutable`/`no-route` fallback verdict, nothing sent. A `receiver`
+unicast to a non-holder, or to its origin, is not frozen: the leg refuses it
+`unauthorized`, terminal under `rtc` and `unroutable`/`no-route` under
+`rtc-with-ws-fallback`, so the WS server decides (this reverses D553).
+A granted send whose narrowed audience passes 256 is
 refused `unsupported` with the targets its sender gave and handed to the
 fallback; 256 still signs. A stored or `enqueueIfAbsent` copy is judged by the
 targets its sender gave: a proof on a non-multicast original is refused
@@ -967,10 +970,11 @@ diagnostic through the runtime diagnostics, `conflict` reported and not
 retried, with no console line; and the outbound admission reads name
 `readOrderingMessageId`, the generic value read private again. Limits: an
 exclusions-only granted room broadcast stays refused `unsupported` on RTC, and
-ordering on a peer send stays refused; receipts are unsigned; a `receiver`
-unicast to a non-holder completes with zero recipients over RTC, where WS
-answers `unauthorized`, and under `rtc` alone an `ack: 'none'` one settles
-`rejected` with `unroutable`/`no-route`; after a hand-over a frozen session that
+ordering on a peer send stays refused; receipts are unsigned; under `rtc` alone
+the origin refuses a `receiver` unicast to a session its cached snapshot shows
+without `subscribe` `unauthorized` where WS might deliver it, and an
+`ack: 'none'` one ends `failed` with `unroutable`/`no-route`; after a hand-over
+a frozen session that
 never
 subscribes stays expected and unconfirmed on WS; and the cells run on the local
 lane only, with no hosted manifest. Decisions D551–D562 are in the roadmap, and
