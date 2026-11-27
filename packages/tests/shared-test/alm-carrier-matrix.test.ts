@@ -347,8 +347,6 @@ const LEFT_SENDER_CELL =
 
 /** Every cell some part of whose outcome nothing proves yet, and what will prove it. */
 const UNPROVEN_CELLS = [
-    ['all-broadcast', 'ws', 'a unit pin of the `$.scope` path of the issue that a WS send naming `all` throws'],
-    ['peer-unicast-off-overlay-next-hop', 'rtc', 'a unit pin of the kept unicast\'s handle at its deadline'],
     [
         'ordered-gap-repair',
         'rtc-with-ws-fallback',

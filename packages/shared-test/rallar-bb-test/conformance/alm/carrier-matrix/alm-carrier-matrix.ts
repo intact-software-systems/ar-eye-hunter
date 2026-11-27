@@ -241,7 +241,7 @@ export const ALM_CARRIER_MATRIX = {
                         testFile: BROWSER_MESSAGE_AUDIENCES_TEST,
                         testName: 'names the three scopes a browser WS send may take',
                         because:
-                            'A browser WS send names room, world or principal; `all` throws `invalid-scope` and enqueues nothing.'
+                            'A browser WS send names room, world or principal; `all` throws `invalid-scope` at `$.scope` and enqueues nothing.'
                     },
                     {
                         kind: 'unit-test',
@@ -249,10 +249,6 @@ export const ALM_CARRIER_MATRIX = {
                         testName: 'refuses %s from a client as %s and admits nothing',
                         because:
                             'The server refuses a client frame that names `all` as `unauthorized` and admits nothing.'
-                    },
-                    {
-                        kind: 'unproven',
-                        closedBy: 'a unit pin of the `$.scope` path of the issue that a WS send naming `all` throws'
                     }
                 ]
             },
@@ -411,7 +407,12 @@ export const ALM_CARRIER_MATRIX = {
                         testName: 'keeps the message on RTC through any run of not-ready attempts',
                         because: 'On rtc alone a run of `not-ready` attempts hands nothing over and fails no handle.'
                     },
-                    { kind: 'unproven', closedBy: 'a unit pin of the kept unicast\'s handle at its deadline' }
+                    {
+                        kind: 'unit-test',
+                        testFile: BROWSER_RTC_PEER_SEND_TEST,
+                        testName: 'ends expired at its deadline when every attempt settled not-ready',
+                        because: 'On rtc alone the kept unicast reads `expired` at its deadline, and no WS leg starts.'
+                    }
                 ]
             },
             'rtc-with-ws-fallback': {

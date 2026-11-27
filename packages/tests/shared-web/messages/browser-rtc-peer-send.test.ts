@@ -1,4 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
 import { BrowserChannelRecoveryOwners } from '@shared-web/browser/messages/browser-channel-recovery-owners.ts';
@@ -59,6 +65,8 @@ const NO_ROUTE: ALDeliveryAdmissionVerdict = {
     reason: 'no-route',
     detail: 'Skipping RTC outbound dispatch without planned transport messages'
 };
+/** The deadline the RTC carrier double selects for an envelope it admits, counted from the envelope's own time. */
+const RTC_DEADLINE_AFTER_SEND_MS = 29_000;
 const SERVER_OVER_WS = 'The server is addressed over WS: a peer-addressed send to it takes the ws strategy.';
 const SERVER_NAMES_NO_PEER_ID = 'A peer-addressed send needs a server that names its peer id; this server names none.';
 const CONTEXT_NAMES_ANOTHER_ROOM = 'A peer-addressed send routes in the room it names: contextId must equal the room id.';
@@ -434,6 +442,29 @@ describe('what the handle of a peer send over RTC reads (Q11, D56)', () => {
             expect(readCarriers(fixture)).toEqual(['rtc']);
             expect(handle.lifecycle().state).not.toBe('failed');
         });
+
+        it('ends expired at its deadline when every attempt settled not-ready, with no WS leg', async () => {
+            vi.useFakeTimers({ toFake: ['Date'] });
+            onTestFinished(() => {
+                vi.useRealTimers();
+            });
+            const fixture = createPeerFallbackFixture(ADMITTED);
+            const handle = await fixture.send('rtc');
+            const deadlineMs = fixture.admissions[0].message.id.ts + RTC_DEADLINE_AFTER_SEND_MS;
+
+            for (let attempt = 0; attempt <= AL_FALLBACK_NOT_READY_ATTEMPTS; attempt += 1) {
+                fixture.settle(toNotReady(handle.msgId, `send-${attempt}`));
+            }
+            await new Promise((resolve) => setTimeout(resolve, 0));
+
+            expect(handle.lifecycle().expiresAtMs).toBe(deadlineMs);
+            vi.setSystemTime(deadlineMs - 1);
+            expect(['expired', 'failed']).not.toContain(handle.lifecycle().state);
+            vi.setSystemTime(deadlineMs);
+            expect(handle.lifecycle()).toMatchObject({ state: 'expired', evidence: { failure: { kind: 'expired' } } });
+            expect(fixture.handedOver).toEqual([]);
+            expect(readCarriers(fixture)).toEqual(['rtc']);
+        });
     });
 });
 
@@ -526,7 +557,7 @@ function createCarrierDoubles(rtcVerdict: ALDeliveryAdmissionVerdict): CarrierDo
         const admitted = carrier === 'rtc'
             ? {
                 ...message,
-                constraints: { ...message.constraints, expiresAtMs: message.id.ts + 29_000 }
+                constraints: { ...message.constraints, expiresAtMs: message.id.ts + RTC_DEADLINE_AFTER_SEND_MS }
             }
             : message;
         admissions.push({ carrier, message: admitted });
