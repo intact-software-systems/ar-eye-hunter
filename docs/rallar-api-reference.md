@@ -856,9 +856,12 @@ track no receipt unless the send states `ack` (or `qos.ack`); without one,
 `qos: { durability: { algo: 'local-outbox' } }`, or to a checkpointed memory
 send with `qos: { durability: { algo: 'local-checkpoint' } }`.
 
-A room send's `contextId` is its room id, which is also its default: the WS
-server refuses a room send whose `contextId` names anything else
-`unauthorized`, whatever its audience (D82).
+A room send's `contextId` is its room id, which is also its default. The
+browser refuses a room send whose `contextId` names anything else at the call,
+on every strategy and on both lanes: `send()` throws one `$.contextId` issue,
+code `context-room-mismatch`, and returns no handle. The WS server refuses the
+same frame `unauthorized`, whatever its audience (D82). An RTC receiver does not
+check it, so only a modified client can deliver such a send over RTC.
 
 Every volatile message a session sends or receives counts against the session's
 volatile bound, on both carriers and for lane and typed channel sends alike

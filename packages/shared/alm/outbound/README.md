@@ -888,7 +888,7 @@ no hop, so its sender hears a peer's fence only through a tracked receipt (`rece
 a room send with `ack: 'none'` never hears it. The `unauthorized` refusals are a unicast to a session outside
 the room's admitted audience
 ([`toWsQueueBoxServerAddresseeAuthorization`](../../services/ws-queue-box-server/to-ws-queue-box-server-addressee-authorization.ts)),
-a room send of any shape (unicast, multicast, room or principal broadcast) whose `route.contextId` names another room than its `groupRef` (D82), a message whose room or principal names another application or workspace than its connection authenticated (D100, [`toWsQueueBoxServerScopeAuthorization`](../../services/ws-queue-box-server/scope/to-ws-queue-box-server-scope-authorization.ts)), a client's `all` broadcast (D158), and any room send the room
+a room send of any shape (unicast, multicast, room or principal broadcast) whose `route.contextId` names another room than its `groupRef` (D82; the browser refuses that send at the call first), a message whose room or principal names another application or workspace than its connection authenticated (D100, [`toWsQueueBoxServerScopeAuthorization`](../../services/ws-queue-box-server/scope/to-ws-queue-box-server-scope-authorization.ts)), a client's `all` broadcast (D158), and any room send the room
 authorizer ([`ws-topic-room-authorizer.ts`](../../../shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts))
 refuses — a halted transport, a scope mismatch, data before activation; a sender without a live session or
 an active member is `membership-fenced` instead. A `group-leader` room send is refused at ingress with a
