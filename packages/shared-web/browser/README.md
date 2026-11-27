@@ -346,6 +346,10 @@ Message ownership is concentrated under [`messages/`](./messages/):
   subscriptions skip replies, so no reply reaches an `onMessage` subscriber of its type. A dropped reply states
   `reply-late` or `reply-wrong-responder` on the session's inbound diagnostics port, payload-free (see the
   [inbound navigation map](../../shared/alm/inbound/README.md#replies-and-their-diagnostics)).
+  The registry matches a reply on `replyToMsgId` alone, never on its topic, while `awaitReply` answers `unanswerable`
+  from the request's topic without asking the slot: an envelope built by hand, outside `reply()` and the server's
+  `newALReplyMessage`, that sets `replyToMsgId` on another topic for such a request is kept by the slot and read by
+  no wait.
   `RallarMessage.reply(payload, { typeId?, ttlMs? })` goes through `BrowserRallarMessageSender.sendReply`, the one
   place that sets `replyToMsgId`: a WS unicast to the requester's session on the request's topic, in the room's id
   when the request named a room (the request's custom `contextId` is not used), on the `command` purpose's

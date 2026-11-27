@@ -161,10 +161,10 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
         title: 'Await ALM Reply',
         description:
             'Waits for the one reply to a prior messages.send handle, matched on its replyToMsgId. The value ' +
-            'is payload-free: status (replied, timeout, aborted, undelivered), the request\'s state and corrId, and ' +
-            'for replied the reply\'s msgId, replyToMsgId, corrId, senderId and typeId. The page ends the wait 250 ms ' +
-            'before timeoutMs, so a timeout is the command\'s value, never its failure; the first timeout ends every ' +
-            'wait of the request, and a later reply is dropped as reply-late. Replies travel over WS only.',
+            'is payload-free: status (replied, timeout, aborted, undelivered, unanswerable), the request\'s state and ' +
+            'corrId, and for replied the reply\'s msgId, replyToMsgId, corrId, senderId and typeId. The page ends the ' +
+            'wait 250 ms before timeoutMs, so a timeout is the command\'s value, never its failure; the first timeout ' +
+            'ends every wait of the request, and a later reply is dropped as reply-late. Replies travel over WS only.',
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: ['api-v1'],

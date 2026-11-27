@@ -333,12 +333,15 @@ no connected session fails with `RALLAR_BLACK_BOX_ALM_RAW_CONTROL_UNAVAILABLE`.
 `messages.awaitReply` names `handleId`, an earlier `messages.send` handle, and `timeoutMs`, which it requires,
 and optionally `connection`. It waits for the one reply to that request, matched on the reply's `replyToMsgId`, and
 returns a payload-free value: `{ handleId, status, state, corrId }`, with `status` one of `replied`, `timeout`,
-`aborted` and `undelivered`, `state` the request's lifecycle state when the wait ended and `corrId` its correlation;
+`aborted`, `undelivered` and `unanswerable`, `state` the request's lifecycle state when the wait ended and `corrId` its
+correlation;
 `replied` adds `reply: { msgId, replyToMsgId, corrId, senderId, typeId, traceId }`. What the reply carried stays in the page.
 The page ends its wait 250 ms before `timeoutMs`, so a `timeout` is the command's value and never its failure, unlike
 `messages.observe`; the first timeout ends every wait of the request, and a reply arriving after it is dropped with a
 `reply-late` inbound diagnostic whose `cause` is `timed-out`. A request whose lifecycle ends terminal in any state other
-than `acknowledged`, or `transport-accepted` with no receipt to wait for, reads `undelivered`. A handle the
+than `acknowledged`, or `transport-accepted` with no receipt to wait for, reads `undelivered`. A request on a topic WS
+cannot carry reads `unanswerable` at the call, whatever its state and before any wait: its reply would travel WS on that
+topic. The value does not carry the issues the product states with it. A handle the
 page never sent, or no longer retains, fails the command as invalid input. Replies travel over WS only.
 
 `messages.reply` names `typeId`, `index`, `payload` and `handleId`, and optionally `connection`. The typed channel
