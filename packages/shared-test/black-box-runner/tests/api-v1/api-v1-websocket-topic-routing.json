@@ -472,7 +472,7 @@
           "route": {
             "topicId": "room.chat",
             "resourceId": "api-v1-bb-ws-resource-{runId}",
-            "contextId": "{applicationId}:{workspaceId}"
+            "contextId": "{groupId}"
           },
           "targets": {
             "mode": "broadcast",
@@ -534,7 +534,7 @@
           "route": {
             "topicId": "room.chat",
             "resourceId": "api-v1-bb-ws-resource-{runId}",
-            "contextId": "{applicationId}:{workspaceId}"
+            "contextId": "{groupId}"
           },
           "targets": {
             "mode": "broadcast",
