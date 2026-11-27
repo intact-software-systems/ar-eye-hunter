@@ -273,6 +273,11 @@ const EXPECTED_OUTCOMES = {
         rtc: toRefusedAtTheCall('$.scope', 'invalid-scope'),
         'rtc-with-ws-fallback': toRefusedAtTheCall('$.scope', 'invalid-scope')
     },
+    'room-send-naming-another-room': {
+        ws: toRefusedAtTheCall('$.contextId', 'context-room-mismatch'),
+        rtc: toRefusedAtTheCall('$.contextId', 'context-room-mismatch'),
+        'rtc-with-ws-fallback': toRefusedAtTheCall('$.contextId', 'context-room-mismatch')
+    },
     'server-peer-unicast': {
         ws: DELIVERED,
         rtc: toRefusedAtTheCall('$.peerId', 'unsupported'),
@@ -364,11 +369,6 @@ const UNPROVEN_CELLS = [
         'repair-budget-exhausted',
         'rtc-with-ws-fallback',
         'one lifecycle across the hand-over to WS, then a held-gap cell over this carrier'
-    ],
-    [
-        'room-audience-over-frame-limit',
-        'ws',
-        'a server test that delivers a granted publication to more than 256 subscribed sessions; it waits for the merge of pull request 885, which changes the test file that holds the harness'
     ],
     [
         'revoked-publish-unknown-to-sender',

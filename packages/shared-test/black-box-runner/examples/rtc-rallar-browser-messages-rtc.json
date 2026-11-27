@@ -60,7 +60,7 @@
         "transport": "messages.rtc",
         "typeId": "{messageTypeId}",
         "topicId": "{topicId}",
-        "contextId": "{applicationId}:{workspaceId}:{roomId}",
+        "contextId": "{roomId}",
         "timeoutMs": 15000
       },
       "roomRef": {
@@ -85,7 +85,7 @@
         "transport": "messages.rtc",
         "typeId": "{messageTypeId}",
         "topicId": "{topicId}",
-        "contextId": "{applicationId}:{workspaceId}:{roomId}",
+        "contextId": "{roomId}",
         "timeoutMs": 15000
       },
       "roomRef": {
