@@ -1,5 +1,4 @@
 import type {
-    RallarDirectorRelayConfig,
     RallarDirectorRelayEnvelope,
     RallarDirectorStatus
 } from '@shared-web/browser/director/rallar-director-facade.ts';
@@ -20,7 +19,8 @@ export namespace CreateDirectorOutputChannel {
         readonly messages: Pick<RallarMessagesOperations, 'room'>;
         readonly topicId: string;
         readonly typeId: string;
-        readonly onOutputGap: RallarDirectorRelayConfig<unknown, unknown>['onOutputGap'];
+        /** The relay config's callback; undefined when the application takes no gap. */
+        readonly onOutputGap: ((gap: RallarMessageOrderGap) => void | Promise<void>) | undefined;
         isStopped(): boolean;
         readStatus(): RallarDirectorStatus;
     }
