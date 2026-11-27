@@ -154,6 +154,7 @@ function toCreateGroupMetadata(request: CreateGroupRequest): Group['metadata'] {
             [GROUP_SESSION_SCHEDULE_METADATA_KEY]: {
                 revision: 1,
                 startsAtEpochMs: request.scheduledStartAtEpochMs,
+                ...(request.guestBooking && { guestBooking: true }),
                 cancelledAtEpochMs: null
             }
         })

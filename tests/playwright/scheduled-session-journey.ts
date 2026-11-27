@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Browser, type Page } from '@playwright/test';
 import { assertIdleViewReads } from './assert-idle-view-reads.ts';
 import { localStartInput } from './local-start-input.ts';
 import {
@@ -129,7 +129,7 @@ export interface ScheduledSessionDestination {
     readonly startsAtEpochMs: number;
 }
 
-export async function scheduleThroughControls(page: Page, delayMs: number): Promise<ScheduledSessionDestination> {
+export async function scheduleThroughControls(page: Page, delayMs: number, guestBooking = false): Promise<ScheduledSessionDestination> {
     const panel = page.getByRole('region', { name: 'Scheduled sessions', exact: true });
     await expect(panel).toBeVisible();
     await panel.getByText('Schedule a session', { exact: true }).click();
@@ -137,6 +137,7 @@ export async function scheduleThroughControls(page: Page, delayMs: number): Prom
     await panel.getByLabel('Session name', { exact: true }).fill(`Together ${Date.now()}`);
     await panel.getByLabel('Session start', { exact: true }).fill(start.input);
     await panel.getByLabel('Player seats', { exact: true }).fill('2');
+    if (guestBooking) await panel.getByLabel('Allow guest reservations').check();
     await panel.getByRole('button', { name: 'Create scheduled session', exact: true }).click();
     const link = panel.getByLabel('Session share link', { exact: true });
     await expect(link).toHaveValue(/#rallar-session\?/);
@@ -154,4 +155,78 @@ async function followSessionLink(page: Page, link: string, game: 'arena' | 'reli
         await openArenaOperations(page);
     }
     await expect(page.getByRole('article', { name: 'Session details', exact: true })).toBeVisible();
+}
+
+interface GuestSessionBookingJourneyInput {
+    readonly page: Page;
+    readonly guest: Page;
+    readonly browser: Browser;
+    readonly game: 'arena' | 'relic';
+}
+
+export async function guestSessionBookingJourney({ page, guest, browser, game }: GuestSessionBookingJourneyInput): Promise<void> {
+    await signInRoomPlayer(page, 'alice', game);
+    const session = await scheduleThroughControls(page, 300_000, true);
+    await guest.goto(session.link);
+    if (game === 'arena') await openArenaOperations(guest);
+    const booking = guest.getByRole('region', { name: 'Guest reservation' });
+    await guest.route('**/session/guest/requests/*', async route => {
+        await route.fetch();
+        await route.abort();
+    }, { times: 1 });
+    await booking.getByRole('button', { name: 'Reserve as a guest' }).click();
+    await expect(booking.getByRole('alert')).toBeVisible();
+    await guest.reload();
+    if (game === 'arena') await openArenaOperations(guest);
+    await expect(booking).toContainText('Your lobby seat is reserved.');
+    const other = await browser.newPage();
+    try {
+        await other.goto(session.link);
+        if (game === 'arena') await openArenaOperations(other);
+        await expect(other.getByRole('button', { name: 'Reserve as a guest' })).toBeDisabled();
+        await expect(other.getByRole('button', { name: 'Claim my lobby seat' })).toHaveCount(0);
+    } finally { await other.close(); }
+    const claim = booking.getByRole('button', { name: 'Claim my lobby seat' });
+    const requests: string[] = [];
+    const accountOnlyReads: string[] = [];
+    guest.on('request', request => {
+        const path = new URL(request.url()).pathname;
+        if (/\/(?:group-directory|tournament|clients|groups)$/.test(path)) accountOnlyReads.push(path);
+    });
+    await guest.route('**/session/guest/requests/*', async route => {
+        const response = await route.fetch();
+        expect(response.status()).toBe(200);
+        requests.push(route.request().url());
+        if (requests.length === 1) {
+            await guest.evaluate(() => {
+                const getItem = Storage.prototype.getItem;
+                Storage.prototype.getItem = function (key: string) {
+                    if (key === 'auth.session') throw new DOMException('Browser session storage temporarily unavailable', 'SecurityError');
+                    return getItem.call(this, key);
+                };
+                window.addEventListener('restore-test-storage', () => { Storage.prototype.getItem = getItem; }, { once: true });
+            });
+        }
+        await route.fulfill({ response });
+    });
+    await claim.click();
+    await expect(booking.getByRole('alert')).toContainText('Browser session storage temporarily unavailable');
+    await guest.evaluate(() => { window.dispatchEvent(new Event('restore-test-storage')); });
+    await claim.click();
+    await expect(page.getByRole('region', { name: 'Scheduled sessions', exact: true })).toContainText('0 of 2 player seats available.');
+    await expect(guest.getByText(`Entered ${session.groupId}.`, { exact: true })).toBeVisible();
+    await expect(guest.getByRole('button', { name: 'Logout', exact: true })).toBeVisible();
+    const refresh = guest.waitForResponse(response => {
+        const path = new URL(response.url()).pathname;
+        return response.request().method() === 'GET' && (path.endsWith('/groups') || path.endsWith('/groups/' + session.groupId));
+    });
+    await guest.getByRole('button', { name: 'Refresh', exact: true }).click();
+    expect((await refresh).status()).toBe(200);
+    await expect(guest.getByRole('button', { name: 'Logout', exact: true })).toBeVisible();
+    if (game === 'arena') {
+        await expect(guest.getByRole('button', { name: 'Appoint this SPA' })).toBeDisabled();
+    }
+    expect(accountOnlyReads).toEqual([]);
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toBe(requests[0]);
 }

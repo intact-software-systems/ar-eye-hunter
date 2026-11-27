@@ -1,5 +1,5 @@
 import type { ApiJsonObject } from '../api-json-value.ts';
-import { requireEpoch, requireExactKeys, requirePositiveInteger, requireRecord } from '../exact-object-decoding.ts';
+import { requireEpoch, requireExactOptionalKeys, requirePositiveInteger, requireRecord } from '../exact-object-decoding.ts';
 import type { GroupPolicyReasonCode } from '../group-policy-types.ts';
 import type { GroupRef } from '../group-types.ts';
 import type { MutationActorInput } from '../state-types.ts';
@@ -7,6 +7,7 @@ import type { MutationActorInput } from '../state-types.ts';
 /** Public room timing; account reservations belong to private server state. */
 export interface GroupSessionSchedule {
     readonly revision: number;
+    readonly guestBooking?: true;
     readonly startsAtEpochMs: number;
     readonly cancelledAtEpochMs: number | null;
 }
@@ -29,6 +30,7 @@ export function readGroupSessionSchedule(metadata: ApiJsonObject): GroupSessionS
     assertGroupSessionSchedule(schedule);
     return {
         revision: schedule.revision,
+        ...(schedule.guestBooking && { guestBooking: true }),
         startsAtEpochMs: schedule.startsAtEpochMs,
         cancelledAtEpochMs: schedule.cancelledAtEpochMs
     };
@@ -36,7 +38,8 @@ export function readGroupSessionSchedule(metadata: ApiJsonObject): GroupSessionS
 
 export function assertGroupSessionSchedule(value: unknown): asserts value is GroupSessionSchedule {
     const schedule = requireRecord(value, 'Scheduled session');
-    requireExactKeys(schedule, ['revision', 'startsAtEpochMs', 'cancelledAtEpochMs'], 'Scheduled session');
+    requireExactOptionalKeys({ value: schedule, required: ['revision', 'startsAtEpochMs', 'cancelledAtEpochMs'], optional: ['guestBooking'], label: 'Scheduled session' });
+    if (schedule.guestBooking !== undefined && schedule.guestBooking !== true) throw new TypeError('Invalid scheduled guest booking policy.');
     requirePositiveInteger(schedule.revision, 'Scheduled session revision');
     assertScheduleTimestamp(schedule.startsAtEpochMs);
     if (schedule.cancelledAtEpochMs !== null) {

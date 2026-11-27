@@ -285,7 +285,7 @@ export class RallarRoomDirectory {
 
     private resolveSessionKey(): string | undefined {
         const session = this.dependencies.auth.session();
-        return session ? toAuthSessionKey(session) : undefined;
+        return session && !session.guestRoom ? toAuthSessionKey(session) : undefined;
     }
 
     private publish(state: RallarRoomDirectory.State): void {

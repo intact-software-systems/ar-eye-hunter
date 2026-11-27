@@ -223,7 +223,8 @@ describe('Rallar startup lifecycle behavior', () => {
                 applicationId: 'ar-eye-hunter',
                 workspaceId: 'default'
             },
-            expect.any(Object)
+            expect.any(Object),
+            mocks.apiMiddleware.session
         );
     });
 
@@ -278,7 +279,8 @@ describe('Rallar startup lifecycle behavior', () => {
                 command: {
                     timeoutMs: 123
                 }
-            }
+            },
+            mocks.apiMiddleware.session
         );
     });
 
@@ -362,7 +364,8 @@ describe('Rallar startup lifecycle behavior', () => {
         );
         expect(mocks.refreshStateSnapshots).toHaveBeenCalledWith(
             { applicationId: 'startup-app', workspaceId: 'startup-workspace' },
-            { command: { signal: controller.signal, timeoutMs: 500, maxAttempts: 1, shouldRetry: expect.any(Function) } }
+            { command: { signal: controller.signal, timeoutMs: 500, maxAttempts: 1, shouldRetry: expect.any(Function) } },
+            mocks.apiMiddleware.session
         );
         await expect(facade.connect({ rtcCaptureMode: 'native' })).rejects.toMatchObject({ code: 'new-connection-required' });
         expect(facade.rtcCapture()?.configuration).toEqual(selection.expectedConfiguration);

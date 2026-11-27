@@ -171,6 +171,7 @@ function createInput(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRunti
             cacheTtlMs: 300_000,
             rateLimit: { windowMs: 60_000, requests: 20 }
         },
+        guestBookingByApplication: {},
         temporaryRoomPolicies: {},
         groupAdmission: {
             windowMs: 60_000,
@@ -217,6 +218,7 @@ function createRuntime(): ApiV1RouteInstallerRuntime {
         },
         groupStateInboxService: {
             processAuthenticatedGroupEntryUntilCompletion: rejectUnusedOperation,
+            processGuestBookingUntilCompletion: rejectUnusedOperation,
             processTemporaryGroupCreationUntilCompletion: rejectUnusedOperation,
             processGuestAdmissionUntilCompletion: rejectUnusedOperation,
             processQuickJoinUntilCompletion: rejectUnusedOperation,

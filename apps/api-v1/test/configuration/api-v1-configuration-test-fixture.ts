@@ -106,6 +106,7 @@ const CONFIGURATION_DEFAULTS_SOURCE = {
         roomLobbyPoliciesByApplication: {},
         eventHandoverWindowMs: 600_000,
         eventOrganizerIdsByApplication: {},
+        guestBookingByApplication: {},
         temporaryRoomPoliciesByApplication: {},
         defaultMaxMembers: 256,
         currentSnapshotCacheMaxEntries: 512,

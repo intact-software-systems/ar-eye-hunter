@@ -68,7 +68,7 @@ class ArenaDirectorAppointment {
     }
 
     async appoint(source: DirectorAttemptSource): Promise<void> {
-        if (isCurrentArenaSpectator()) {
+        if (rallar.session()?.guestRoom || isCurrentArenaSpectator()) {
             return;
         }
         const attempt = this.start(source);
