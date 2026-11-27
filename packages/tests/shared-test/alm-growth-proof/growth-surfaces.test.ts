@@ -49,6 +49,15 @@ describe('Growth surface classification', () => {
         expect(new Set(namespaces).size).toBe(namespaces.length);
     });
 
+    // A killed process's records stay until their socket generation's 30-day expiry while nothing ends them.
+    it('classifies the socket holder records as kept beyond the run, for their generation\'s 30 days', () => {
+        const holders = GROWTH_SURFACES.filter((surface) => surface.readers.some((reader) => reader.path.includes('client-state:ws-connection-holders')));
+
+        expect(holders.map((surface) => surface.classification)).toEqual([
+            { growthClass: 'ttl-beyond-run', ttlMs: 30 * 24 * 60 * 60 * 1_000 }
+        ]);
+    });
+
     it('guards the resource_inbox total against rows stamped never to expire', () => {
         const total = GROWTH_SURFACES.find((surface) => surface.id === 1);
 

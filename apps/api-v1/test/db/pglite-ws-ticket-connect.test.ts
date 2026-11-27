@@ -108,6 +108,7 @@ async function createWsConnectFixture(
     registerWsRoutes(app, {
         serverPeerId: 'test-server',
         holderId: TEST_WS_CONNECTION_HOLDER_ID,
+        readiness: Promise.resolve(),
         socketServer,
         appClientInboxService: client,
         readWsConnectTicket: async (ticketDigest) => (await sessions.findWebSocketTicketByDigestEntry(ticketDigest))?.value,

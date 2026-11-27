@@ -65,6 +65,8 @@ export interface ApiV1RouteInstallerRuntime extends ApiV1StateSnapshotRouteRunti
     readonly viewWatches: { readonly mutate: ViewWatchRouteDependencies['mutation']; };
     readonly wsQBoxServerService: Pick<ApiV1Runtime['wsQBoxServerService'], 'socket'>;
     readonly rtcTopologyDelivery: Pick<ApiV1Runtime['rtcTopologyDelivery'], 'publisherStreamId'>;
+    /** Resolves once the process holds the liveness lease its connects name. */
+    readonly readiness: ApiV1Runtime['readiness'];
     readonly appAuthInboxService: configRoutes.ConfigRouteDependencies['appAuthInbox'];
     readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
     readonly appClientInboxService: Pick<
@@ -277,6 +279,7 @@ function createApiV1WsRouteInstaller<
         wsRoutes.registerWsRoutes(app, {
             serverPeerId: input.publicConfiguration.clockPeerId ?? input.publicConfiguration.serverPeerId,
             holderId: input.runtime.rtcTopologyDelivery.publisherStreamId,
+            readiness: input.runtime.readiness,
             socketServer: input.runtime.wsQBoxServerService.socket,
             readGuestRoom: construction.readGuestRoom,
             appClientInboxService: input.runtime.appClientInboxService,

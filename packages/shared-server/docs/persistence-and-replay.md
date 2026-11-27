@@ -18,7 +18,7 @@ corruption boundary when that shape is invalid.
 | `crdt_documents`               | `rallar-system/crdt/persistence/`                        | Current CRDT document metadata and revision authority.                                                           |
 | `crdt_updates`                 | `rallar-system/crdt/persistence/`                        | Durable document update log.                                                                                     |
 | `crdt_snapshots`               | `rallar-system/crdt/persistence/`                        | Durable compacted document snapshots.                                                                            |
-| `rtc_topology_delivery_stream` | `rallar-system/topology/replay/postgres/`                | Per-process publisher/consumer stream HEAD, retained floor, and lease.                                           |
+| `rtc_topology_delivery_stream` | `rallar-system/topology/replay/postgres/`                | Per-process publisher/consumer stream HEAD, retained floor, and the process's liveness lease.                    |
 | `rtc_topology_delivery_log`    | `rallar-system/topology/replay/postgres/`                | Immutable per-publisher topology delivery sequence.                                                              |
 | `rtc_topology_replay_cursor`   | `rallar-system/topology/replay/postgres/`                | Last processed sequence for one consumer/publisher pair.                                                         |
 
@@ -26,6 +26,37 @@ Feature-owned runtime-state codecs define the namespace, key family, exact
 value, and expiry behavior. Do not use `runtime_state_store` as an untyped
 application-data table. Application data enters through
 `RallarServerAppData.open(...)` and `app_data_store`.
+
+### WebSocket connection holders
+
+`client-state:ws-connection-holders` records which API process holds each
+authorised socket generation. Its owner is
+`rallar-system/client-state/connection-holder/`.
+
+- **Key:** `holder=<holderId>:session=<sessionId>:generation=<generationId>`,
+  each part escaped as the other client-state keys are. One holder's records
+  are one key range, paged with `readHolderPage`; one generation's record is
+  found by its key's suffix with `readGenerationRecord`.
+- **Value:** `{ version: 1, holderId, connection, expireAtEpochMs }`, where
+  `connection` is the authorised connect payload the holding process keeps in
+  memory. A row whose key, value and expiry do not name one record is
+  client-state corruption.
+- **Writers:** only AppInbox. `CLIENT_AUTHORISED_WS_CONNECT` inserts the record
+  as one effect of the guarded batch its completed connect already writes,
+  including a no-op connect. `CLIENT_AUTHORISED_WS_DISCONNECT` deletes it at the
+  revision it read, in its own transaction, whether or not the session row is
+  still there. An `inactive` or `ticket-rejected` connect writes none.
+- **Holder id and lease:** the holder id is the process's topology delivery
+  stream id, so the stream's lease above is also the holder's liveness lease.
+  The connect names the process that enqueued it, whichever server's worker runs
+  it, and reads that stream's lease in its read phase on the database clock: a
+  holder whose lease is not live answers the connect `inactive`. The upgrade
+  route builds no connect before its process's runtime is ready.
+- **Lifetime:** a record expires with its generation's open guard, the
+  connect's lease or the AppInbox retry horizon past the generation's start,
+  whichever is later. An expired record reads as absent and the runtime-state
+  expiry worker removes it. Nothing yet ends the records of a process lost
+  without closing its sockets; they wait for that expiry.
 
 ## Current-value boundaries
 

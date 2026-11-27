@@ -36,6 +36,8 @@ export interface RegisterWsRoutesInput {
     readonly serverPeerId: string;
     /** This process's liveness lease id: every connect it enqueues names it as the holder of its socket. */
     readonly holderId: string;
+    /** Resolves once this process holds its liveness lease; no connect names it as holder before then. */
+    readonly readiness: Promise<void>;
     readonly socketServer: JsonWebSocketServer;
     readonly appClientInboxService: Pick<
         AppClientInboxService,
@@ -81,25 +83,11 @@ async function upgradeAuthorisedWebSocket(
     if (!ticketDigest || session === undefined) {
         return toWsTicketRejectionResponse(context, { sessionId, generationId: null });
     }
-    let guestSocket: RoomGuestSocket | undefined;
-    if (session.guestRoom) {
-        const room = session.guestRoom;
-        if (
-            !input.readGuestRoom || requestUrl.searchParams.get('applicationId') !== room.applicationId ||
-            requestUrl.searchParams.get('workspaceId') !== room.workspaceId
-        ) {
-            return toWsTicketRejectionResponse(context, { sessionId, generationId: null });
-        }
-        guestSocket = new RoomGuestSocket({
-            guest: { roomRef: room, clientId: session.clientId, sessionId },
-            readSnapshot: input.readGuestRoom,
-            now: input.nowEpochMs,
-            serverPeerId: input.serverPeerId
-        });
-        if (!await guestSocket.authorizeUpgrade()) {
-            return toWsTicketRejectionResponse(context, { sessionId, generationId: null });
-        }
+    const guest = await authorizeGuestSocket(input, { session, requestUrl });
+    if (guest.status === 'rejected') {
+        return toWsTicketRejectionResponse(context, { sessionId, generationId: null });
     }
+    await input.readiness;
     const connect = createAuthorisedWsConnect(input, {
         session,
         ticketDigest,
@@ -110,10 +98,45 @@ async function upgradeAuthorisedWebSocket(
     input.socketServer.expectedConnections.expect(connect.expected);
     const written = await writeAuthorisedWsConnect(input, connect);
     if (written?.right?.status === 'ok') {
-        return await registerAuthorisedWebSocket(context, input, { connect, guestSocket });
+        return await registerAuthorisedWebSocket(context, input, { connect, guestSocket: guest.guestSocket });
     }
     input.socketServer.expectedConnections.release(connect.expected);
     return await writeUnwrittenConnectResponse(context, input, { connect, written });
+}
+
+interface GuestSocketRequest {
+    readonly session: PersistedAuthSession;
+    readonly requestUrl: URL;
+}
+
+type GuestSocketAuthorisation =
+    | Readonly<{ status: 'rejected'; }>
+    | Readonly<{ status: 'authorised'; guestSocket: RoomGuestSocket | undefined; }>;
+
+/** A guest session's socket is bound to its one room: the request must name that room's scope and the room admit it. */
+async function authorizeGuestSocket(
+    input: RegisterWsRoutesInput,
+    { session, requestUrl }: GuestSocketRequest
+): Promise<GuestSocketAuthorisation> {
+    const room = session.guestRoom;
+    if (room === undefined) {
+        return { status: 'authorised', guestSocket: undefined };
+    }
+    if (
+        !input.readGuestRoom || requestUrl.searchParams.get('applicationId') !== room.applicationId ||
+        requestUrl.searchParams.get('workspaceId') !== room.workspaceId
+    ) {
+        return { status: 'rejected' };
+    }
+    const guestSocket = new RoomGuestSocket({
+        guest: { roomRef: room, clientId: session.clientId, sessionId: session.sessionId },
+        readSnapshot: input.readGuestRoom,
+        now: input.nowEpochMs,
+        serverPeerId: input.serverPeerId
+    });
+    return await guestSocket.authorizeUpgrade()
+        ? { status: 'authorised', guestSocket }
+        : { status: 'rejected' };
 }
 
 interface TicketedWsSessionRead {

@@ -59,6 +59,7 @@ function createTimedApp(events: RallarTimingEvent[]): Hono {
     registerWsRoutes(app, {
         serverPeerId: 'test-server',
         holderId: TEST_WS_CONNECTION_HOLDER_ID,
+        readiness: Promise.resolve(),
         socketServer: new JsonWebSocketServer(),
         appClientInboxService: {
             writeAuthorisedWsClientConnect: rejectUnusedDependency,

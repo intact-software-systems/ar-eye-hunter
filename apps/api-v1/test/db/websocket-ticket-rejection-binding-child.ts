@@ -103,6 +103,7 @@ async function createTicketRejectionFixture(sql: PGliteSql): Promise<TicketRejec
     registerWsRoutes(app, {
         serverPeerId: 'test-server',
         holderId: TEST_WS_CONNECTION_HOLDER_ID,
+        readiness: Promise.resolve(),
         socketServer: new JsonWebSocketServer(),
         appClientInboxService: client,
         readWsConnectTicket: async (ticketDigest) =>

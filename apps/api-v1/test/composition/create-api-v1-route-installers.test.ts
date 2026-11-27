@@ -227,6 +227,7 @@ function createRuntime(): ApiV1RouteInstallerRuntime {
     return {
         wsQBoxServerService: { socket: new JsonWebSocketServer() },
         rtcTopologyDelivery: { publisherStreamId: TEST_WS_CONNECTION_HOLDER_ID },
+        readiness: Promise.resolve(),
         viewWatches: { mutate: { submit: rejectUnusedOperation } },
         ...createAuthRuntime(),
         appClientInboxService: {

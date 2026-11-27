@@ -64,10 +64,46 @@ test('websocket server captures a strictly monotonic generation start fact once 
 
 test('websocket route names its own process as the holder of the connect it enqueues', async () => {
     const enqueued: ToAuthorisedWsClientConnectEnqueueInput[] = [];
+    const app = createInactiveConnectRouteApp(enqueued, Promise.resolve());
+
+    const response = await app.request('http://localhost/api/ws/session-1?ticket=ticket-1', {
+        headers: { upgrade: 'websocket' }
+    });
+
+    assert.equal(response.status, 409);
+    assert.deepEqual(enqueued.map((input) => input.holderId), [HOLDER_ID]);
+});
+
+test('websocket route enqueues no connect before its process holds its liveness lease', async () => {
+    const enqueued: ToAuthorisedWsClientConnectEnqueueInput[] = [];
+    let ready = (): void => undefined;
+    const readiness = new Promise<void>((resolve) => {
+        ready = resolve;
+    });
+    const app = createInactiveConnectRouteApp(enqueued, readiness);
+
+    const response = app.request('http://localhost/api/ws/session-1?ticket=ticket-1', {
+        headers: { upgrade: 'websocket' }
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const enqueuedBeforeReadiness = enqueued.length;
+    ready();
+
+    assert.equal(enqueuedBeforeReadiness, 0);
+    assert.equal((await response).status, 409);
+    assert.equal(enqueued.length, 1);
+});
+
+/** A route whose connects all come back inactive, so a request ends at the connect it enqueued. */
+function createInactiveConnectRouteApp(
+    enqueued: ToAuthorisedWsClientConnectEnqueueInput[],
+    readiness: Promise<void>
+): ReturnType<typeof createTracedApiTestApp> {
     const app = createTracedApiTestApp();
     registerWsRoutes(app, {
         serverPeerId: 'route-server',
         holderId: HOLDER_ID,
+        readiness,
         socketServer: new JsonWebSocketServer(),
         appClientInboxService: {
             writeAuthorisedWsClientConnect: async (input) => {
@@ -99,11 +135,5 @@ test('websocket route names its own process as the holder of the connect it enqu
         },
         nowEpochMs: Date.now
     });
-
-    const response = await app.request('http://localhost/api/ws/session-1?ticket=ticket-1', {
-        headers: { upgrade: 'websocket' }
-    });
-
-    assert.equal(response.status, 409);
-    assert.deepEqual(enqueued.map((input) => input.holderId), [HOLDER_ID]);
-});
+    return app;
+}
