@@ -67,7 +67,7 @@ it:
    carrier is and should stay. The ones that do not sit on the hand-over of `rtc-with-ws-fallback`,
    the default strategy (section 5.7).
 7. **The product contract is not adopted.** Each of the ten completion criteria carries a mark
-   since #NNN, one met and nine partial; dozens of rulings are recorded as provisional or made
+   since #950, one met and nine partial; dozens of rulings are recorded as provisional or made
    on the maintainer's behalf, there is no version or upgrade policy beyond "deploy web and API
    together", and no game uses a capability delivered after Release 8.
 
@@ -95,8 +95,8 @@ is followed. A statement that rests on this reading names its pull request or sa
 
 | Document                                              | Role                                                       | State                                                                              |
 | ----------------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `playground/alm/alm-improvement-plan.md`              | Delivery roadmap, decision record D1 to D789               | Current in its rows; header, release map and matrix read again at `e30b2c9` (#NNN) |
-| `playground/alm/alm-complete-product-description.md`  | Product contract and completion criteria                   | Current in its blocks; each criterion marked (#NNN)                                |
+| `playground/alm/alm-improvement-plan.md`              | Delivery roadmap, decision record D1 to D789               | Current in its rows; header, release map and matrix read again at `e30b2c9` (#950) |
+| `playground/alm/alm-complete-product-description.md`  | Product contract and completion criteria                   | Current in its blocks; each criterion marked (#950)                                |
 | `playground/alm/alm-publication-qos-addendum.md`      | Publication QoS and pub/sub, Slices 1 to 9, later outcomes | Complete for its advertised modes; adoption owed                                   |
 | `playground/alm/alm-qos-product-plan.md`              | Durability tiers and storage budgets                       | Delivered (P1, I2a, I2b); four later outcomes open                                 |
 | `playground/alm/alm-first-hosted-campaign-targets.md` | Targets of the first hosted campaign (D643)                | Ruled; not started                                                                 |
@@ -163,7 +163,7 @@ After Release 16, in the order D642 ruled:
 
 The roadmap's requirement-to-evidence matrix marks its seventeen F rows and three Q rows as
 written at Release 8 (nineteen resolved, F9 partial) and its ten PC rows as the product
-description marks them. Since #NNN it also holds one row per addendum slice for Releases 9 to 16,
+description marks them. Since #950 it also holds one row per addendum slice for Releases 9 to 16,
 each `Delivered`, and says that its requirement rows name slices of Releases 2 to 8 only.
 
 ## 4. What merged
@@ -749,11 +749,11 @@ Notes on the rows that need them:
 | Id | Item                                                                            | Source                    | Class   |
 | -- | ------------------------------------------------------------------------------- | ------------------------- | ------- |
 | A1 | The contracts are not adopted                                                   | addendum §6, §9           | Blocker |
-| A2 | Each criterion of the product description carries a mark: one met, nine partial | product description, #NNN | Closed  |
+| A2 | Each criterion of the product description carries a mark: one met, nine partial | product description, #950 | Closed  |
 | A3 | Rulings recorded as provisional or made for the maintainer                      | D513 to D641, D717, D783  | Decide  |
 | A4 | No consumer for anything delivered after Release 8                              | roadmap                   | Blocker |
 | A5 | No developer documentation outside `playground/`                                | none exists               | Blocker |
-| A6 | Stale statements in current documents                                           | below, #NNN               | Closed  |
+| A6 | Stale statements in current documents                                           | below, #950               | Closed  |
 | A7 | A client cannot learn a topic's fanout or participation before it sends         | D482, D517                | Blocker |
 | A8 | Public surface leftovers                                                        | backlog                   | Should  |
 | A9 | Replies travel over WS only and do not survive a reload                         | D441 to D446              | Later   |
@@ -761,7 +761,7 @@ Notes on the rows that need them:
 - **A1.** The addendum asks for a scope, default and cutover decision, a truthful security and
   revocation contract, the requirement-to-evidence matrix for the advertised modes, and current
   measured capacity. It records none as taken.
-- **A2.** Closed by #NNN. Each criterion states what is evidenced and what is not, read at
+- **A2.** Closed by #950. Each criterion states what is evidenced and what is not, read at
   `e8620c0`. Met: 4. Partial: 1 (8 `unproven` proofs, a full scope that gates nothing), 2
   (S1), 3 (an unreceipted at-least-once send, and what #939 left), 5 (the durable send's pin
   rose past D87's budget in #869 with no decision row; met once a row accepts 11 or the extra
@@ -779,7 +779,7 @@ Notes on the rows that need them:
   No product topic is `granted` at all (D483). The consumers of those are an example, the Recipe
   Console and the lane. The roadmap's own rule, that each release changes a game, stopped at
   Release 9.
-- **A6.** Closed by #NNN, documents only. It read the roadmap's header, release map and matrix
+- **A6.** Closed by #950, documents only. It read the roadmap's header, release map and matrix
   again through Release 16 and added the S9-ii row and one matrix row per addendum slice;
   restated row D740 from #888, because the table formatter had cut it at a `||` before its first
   commit and no git object holds the lost text; corrected the standing direction on the original
@@ -1024,7 +1024,7 @@ Where each stands at `e30b2c9`. No criterion is changed, and none is met in full
    (decision 3).
 7. _There is an upgrade rule._ Open, unchanged.
 8. _It is adopted._ Open. Of A3's list, D784 is now the maintainer's own ruling. The completion
-   criteria are marked (#NNN): one met, nine partial.
+   criteria are marked (#950): one met, nine partial.
 
 ## 7. The plan
 
@@ -1033,12 +1033,12 @@ all.
 
 | Milestone            | Outcome                                                                       | Closes                          | State at `e30b2c9`                                                   |
 | -------------------- | ----------------------------------------------------------------------------- | ------------------------------- | -------------------------------------------------------------------- |
-| A. In flight         | #885 on `main`, as #923 and #927 are; documents state the truth               | R2, A6                          | Done: #885 is on `main`, R2 is closed and A6 is closed (#NNN).       |
+| A. In flight         | #885 on `main`, as #923 and #927 are; documents state the truth               | R2, A6                          | Done: #885 is on `main`, R2 is closed and A6 is closed (#950).       |
 | B. Reliability       | No Blocker left in 5.1; each Decide ruled; one lifecycle across the hand-over | R1, R3 to R19, T1 to T3, T5, T6 | T2 and T3 are closed. R1 is narrowed. The rest are open.             |
 | C. A lane that gates | Full scope required on three carriers; no `unproven` proof in a 1.0 mode      | G1 to G3, G6, G9, T4            | Open. 8 of the matrix's 16 `unproven` proofs remain.                 |
 | D. Trust             | Authorization debts closed; signing ruled; server limits enforced             | S1 to S8                        | S3 is closed on the WS server; its refusal at the call is to follow. |
 | E. Measured envelope | Workload family past its first point, probes, first rung, levels set          | P1 to P12, G4                   | The family has its second local point. Nothing hosted.               |
-| F. Product           | Upgrade rule, runbook, guide, a consumer per mode, adoption                   | C1 to C6, A1 to A8, G5          | Open. A2 and A6 are closed (#NNN).                                   |
+| F. Product           | Upgrade rule, runbook, guide, a consumer per mode, adoption                   | C1 to C6, A1 to A8, G5          | Open. A2 and A6 are closed (#950).                                   |
 
 ### The next two slices
 
@@ -1107,7 +1107,7 @@ lease reads it fenced and its clients present again elsewhere; the gates the cha
 selects are green with no constant touched.
 
 **Beside them**, started the same day because they meet other files: the documents, which are
-done (#NNN); from queue item 1, the server test of a granted publication to more than 256
+done (#950); from queue item 1, the server test of a granted publication to more than 256
 subscribed sessions and the call-time refusal witness, neither of which needs a ruling; and
 seeded loss, the first pull request of queue item 4.
 
@@ -1203,7 +1203,7 @@ places:
 ### The queue after the two slices
 
 Outcome-shaped, in the order proposed at the first reading; the merges changed no order. Four
-items are gone: the documents and the completion-criteria marks are done (#NNN, closing A6 and
+items are gone: the documents and the completion-criteria marks are done (#950, closing A6 and
 A2), the three verdict fixes S3, T2 and T3 are on `main` (#937, #939, #930), and the torn read
 and the crashed server's presence are the next two slices above. Each remaining item says what
 unblocks it and which files it meets. Any item that changes browser code also meets the two
