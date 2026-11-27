@@ -19,7 +19,7 @@ completion record here.
   roadmap `alm-improvement-plan.md`, the product contract
   `alm-complete-product-description.md`, the persistence and performance QoS
   plan `alm-qos-product-plan.md`, the publication QoS and pub/sub addendum
-  `alm-publication-qos-addendum.md`, the design that continues, and the first
+  `alm-publication-qos-addendum.md` (the design that continues) and the first
   hosted campaign's targets `alm-first-hosted-campaign-targets.md`. The snapshot
   readers in `playground/alm/tools/` read a control run snapshot from the hosted
   ALM lane artifact `alm-conformance-lane-<carrier>-<scope>-<sha>`

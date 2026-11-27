@@ -560,12 +560,13 @@ Both sets were measured on the build before the durable receipt record, which co
 the memory of the instance that admitted its send, relayed an ACK to it from the others, and stored
 `admitted` as an outbox row. No figure of either set is of a build with the record, where the
 instances count in one record on PostgreSQL and `admitted` is written on the admitting socket. Three
-readings were made on such builds, all on heads of pull request #885 before it merged and none on
+readings were made on such builds, all from heads of pull request #885 before it merged and none on
 `main` as merged. One run, of the ordered set's five-publisher shape at +5 ms under
 `client-stand-in`, on another machine: its figures are stated apart, below. The sixteen shapes with
-ordered sends, 18 runs at head `29e4c50c`, and the sixteen shapes with unordered sends, 16 runs at
-head `a2407688`, both on the reference machine: their figures are in two comments on that pull
-request of 2026-11-27 and are not restated here.
+ordered sends, 18 runs on head `29e4c50c` merged with `main` at `430e94f7`, and the sixteen shapes
+with unordered sends, 16 runs on head `a2407688` with the cell as #932 left it, both on the
+reference machine with the cell adapted to count in the record: their figures are in two comments
+on that pull request of 2026-11-27 and are not restated here.
 
 ### The ordered set
 
