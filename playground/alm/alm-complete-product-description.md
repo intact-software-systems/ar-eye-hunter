@@ -1636,7 +1636,7 @@ by release.
    **Partial.** Evidenced: one scenario catalog runs over `ws`, `rtc` and
    `rtc-with-ws-fallback` and asserts the same logical outcome on every carrier a scenario names
    (`tests/playwright/rallar-black-box/full-stack-alm-conformance.spec.ts`), and its `smoke`
-   scope is required (D702). Not evidenced: 8 proofs of the carrier matrix are `unproven`
+   scope is required (D702). Not evidenced: 7 proofs of the carrier matrix are `unproven`
    (`packages/shared-test/rallar-bb-test/conformance/alm/carrier-matrix/alm-carrier-matrix.ts`),
    and the `full` scope is an observation that gates nothing (D702).
 2. Every live/persisted envelope and control message is bounded, decoded, and
@@ -1693,10 +1693,11 @@ by release.
 
    **Partial.** Evidenced: a reliable room send's audience is frozen at admission on both
    carriers (S2c-ii, #595), and every room send carries the roster fence and is refused
-   `membership-fenced` past it (R2, #642). Not evidenced on every carrier: a room send whose
-   `contextId` names another room is refused by the WS server alone (#937, D788). No RTC
-   receiver checks it, and the browser's refusal at the call is ruled and not built on this
-   commit.
+   `membership-fenced` past it (R2, #642); and a room send whose `contextId` names another
+   room is refused at the call on every carrier (#943) and by the WS server (#937, D788), read
+   at `5593e6a7a`. Not evidenced: no RTC receiver checks that context, so a frame that did not
+   pass the refusal at the call, a modified client's or one an earlier release stored and this
+   one retries, is still delivered over RTC; that is a stated limit (#943).
 7. Every target/ACK mode, including principal, world, all, and fixed audiences
    and the group-leader mode, has one documented semantic proven by the
    conformance lane over both carriers and exercised by one of the two games. A
