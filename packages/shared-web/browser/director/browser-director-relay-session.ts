@@ -9,7 +9,6 @@ import type {
     RallarDirectorStatus
 } from '@shared-web/browser/director/rallar-director-facade.ts';
 import type {
-    RallarMessageOrderGap,
     RallarMessagePayload,
     RallarTypedMessageChannel
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
@@ -27,14 +26,9 @@ import {
 } from './browser-director-relay-observation.ts';
 import type { BrowserDirectorRelayTransport } from './browser-director-relay-transport.ts';
 import type { BrowserDirectorStatusRuntime } from './browser-director-status-runtime.ts';
+import { createDirectorOutputChannel } from './create-director-output-channel.ts';
 
 const RALLAR_DIRECTOR_DEFAULT_TOPIC_ID = 'app.rallar.director';
-
-/**
- * A receipted output is retried after its 2 s ACK timeout, so 3 s covers the first retry and its delivery. A later
- * output is not held longer than that for a missing one.
- */
-const DIRECTOR_OUTPUT_GAP_WAIT_MS = 3_000;
 
 export namespace BrowserDirectorRelaySession {
     export interface Input<TIntent, TOutput, TSnapshot> {
@@ -79,16 +73,13 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
         this.syncRequestTypeId = input.config.syncRequestTypeId ??
             `${this.topicId}.sync-request`;
         this.roomTarget = input.config.roomRef ?? input.config.roomId;
-        this.outputChannel = input.messages.room<RallarDirectorRelayEnvelope<TOutput>>({
-            roomId: input.config.roomRef ? undefined : input.config.roomId,
-            roomRef: input.config.roomRef,
+        this.outputChannel = createDirectorOutputChannel<TOutput>({
+            messages: input.messages,
             topicId: this.topicId,
             typeId: input.config.outputTypeId,
-            purpose: 'notification',
-            access: 'members',
-            order: 'edge',
-            orderGapWaitMs: DIRECTOR_OUTPUT_GAP_WAIT_MS,
-            onOrderGap: (gap) => this.receiveOutputGap(gap)
+            onOutputGap: input.config.onOutputGap,
+            isStopped: () => this.stopped,
+            readStatus: () => this.status()
         });
     }
 
@@ -328,14 +319,6 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
         await this.input.config.onOutput?.(
             toTypedRelayMessage<TOutput>(message)
         );
-    }
-
-    /** The declaration stands for every room on this page and a gap names none, so the sender is the fence. */
-    private async receiveOutputGap(gap: RallarMessageOrderGap): Promise<void> {
-        if (this.stopped || gap.senderId !== this.status().appointment?.sessionId) {
-            return;
-        }
-        await this.input.config.onOutputGap?.(gap);
     }
 
     private async receiveSnapshot(
