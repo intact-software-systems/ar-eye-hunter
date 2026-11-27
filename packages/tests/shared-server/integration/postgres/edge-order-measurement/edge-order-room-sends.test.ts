@@ -406,14 +406,15 @@ async function sendRoomMessages(room: RoomRun, cell: MeasuredCell): Promise<void
 
 /**
  * The position is taken at the call, before the instance is asked: the order an application's `send` calls have.
- * From then on the stream reads the send's end from its terminal receipt, as a page reads it from the send's handle.
+ * Every measured send is retried and asks a receipt, and names no supersedence key. From then on the stream reads
+ * the send's end from its terminal receipt, as a page reads it from the send's handle.
  */
 async function sendRoomMessage(room: RoomRun, publisher: string): Promise<void> {
     const sentAt = performance.now();
     const nowMs = Date.now();
     const sender = room.senders.get(publisher)!;
-    const position = sender.openSend();
-    const stamp = sender.stampSend(position, nowMs);
+    const position = sender.openSend(true, undefined);
+    const stamp = sender.stampSend(position, nowMs, undefined);
     const sent: SentMessage = {
         msgId: `room-${room.cluster.runId}-${publisher}-m${String(position).padStart(3, '0')}`,
         publisher,
@@ -431,7 +432,7 @@ async function sendRoomMessage(room: RoomRun, publisher: string): Promise<void> 
     };
     room.sent.push(sent);
     room.sentByMsgId.set(sent.msgId, sent);
-    sender.observeSend(position, { expiresAtMs: sent.expiresAtEpochMs, retried: true, getEnd: () => toSendEnd(sent) });
+    sender.observeSend(position, { expiresAtMs: sent.expiresAtEpochMs, getEnd: () => toSendEnd(sent) });
     const unstamped = roomMessage({ msgId: sent.msgId, originPeerId: publisher, nowMs, lifetimeMs: LIFETIME_MS });
     const message: ALMessage = { ...unstamped, payload: { ...unstamped.payload, resource: sent.resource } };
     const accepted = await readInstanceOf(room.instances, publisher).service.acceptIncomingMessage(message, publisher);

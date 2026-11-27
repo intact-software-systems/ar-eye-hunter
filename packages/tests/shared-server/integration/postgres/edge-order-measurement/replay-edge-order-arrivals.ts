@@ -1,6 +1,7 @@
 import type { EdgeOrderReceiverLimits } from '@shared-web/browser/messages/edge-order/edge-order-receiver-limits.ts';
 import { EdgeOrderReceiver } from '@shared-web/browser/messages/edge-order/edge-order-receiver.ts';
 import type { EdgeOrderStamp } from '@shared-web/browser/messages/edge-order/edge-order-stamp.ts';
+import { EDGE_ORDER_DEFAULT_STREAM_WAITS } from '@shared-web/browser/messages/edge-order/edge-order-stream-waits.ts';
 import type { RallarMessageOrderGap } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 
 import { createManualTimers } from '../../../../shared/resilience/manual-timers.ts';
@@ -36,6 +37,9 @@ export interface EdgeOrderReplay {
 /** The one channel every measured room message travels on; with the publisher it names an arrival's stream. */
 const MEASURED_CHANNEL = { topicId: 'room.notification', typeId: 'message.v1' };
 
+/** The measured channel declares no waits of its own: the defaults, the 500 ms entry window the measurement ran with. */
+const MEASURED_CHANNEL_WAITS = EDGE_ORDER_DEFAULT_STREAM_WAITS;
+
 /**
  * Runs one recipient's arrivals, in arrival order, through the browser's edge-order receiver on a clock that only
  * the arrivals and the receiver's own timers move. The replay is exact for the rule: the receiver reads no other
@@ -63,6 +67,7 @@ export async function replayEdgeOrderArrivals(
         receiver.accept({
             origin: { ...MEASURED_CHANNEL, senderId: arrival.publisher },
             stamp: arrival.stamp,
+            waits: MEASURED_CHANNEL_WAITS,
             expiresAtMs: arrival.expiresAtMs,
             byteLength: arrival.byteLength,
             message: arrival
