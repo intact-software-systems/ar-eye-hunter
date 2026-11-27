@@ -50,6 +50,7 @@ function toLifecycle(state: ALDeliveryState): ALDeliveryLifecycle {
 function openSend(streams: EdgeOrderSendStreams): EdgeOrderOpenSend {
     const send = streams.openSend({
         order: 'edge',
+        staged: false,
         topicId: EDGE_ORDER_TEST_MOVES.topicId,
         typeId: EDGE_ORDER_TEST_MOVES.typeId,
         roomRef: EDGE_ORDER_TEST_ROOM,
@@ -131,6 +132,7 @@ describe('the page\'s edge-ordered send streams: what a send\'s lifecycle tells 
         openObservedSend(streams);
         streams.openSend({
             order: 'edge',
+            staged: false,
             topicId: 'room.chat',
             typeId: 'chat.line',
             roomRef: EDGE_ORDER_TEST_ROOM,
@@ -156,6 +158,7 @@ describe('the page\'s edge-ordered send streams: what a send\'s lifecycle tells 
         const stampIn = (room: string): EdgeOrderStamp => {
             const send = streams.openSend({
                 order: 'edge',
+                staged: false,
                 topicId: EDGE_ORDER_TEST_MOVES.topicId,
                 typeId: EDGE_ORDER_TEST_MOVES.typeId,
                 roomRef: { ...EDGE_ORDER_TEST_ROOM, groupId: room },
@@ -186,6 +189,7 @@ describe('EdgeOrderSendStreams: one stream per audience', () => {
     const openTo = (streams: EdgeOrderSendStreams, peerId: string): EdgeOrderStamp => {
         const send = streams.openSend({
             order: 'edge',
+            staged: false,
             topicId: EDGE_ORDER_TEST_MOVES.topicId,
             typeId: EDGE_ORDER_TEST_MOVES.typeId,
             roomRef: EDGE_ORDER_TEST_ROOM,

@@ -1,18 +1,21 @@
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 
+/** Whatever a JavaScript caller put in a field of a definition: nothing has checked it yet. */
+export type UncheckedChannelOption = object | string | number | boolean | null;
+
 /** What a channel definition says of its order, as a JavaScript caller may pass it: anything, or nothing, in each field. */
 export interface EdgeOrderChannelInput {
     readonly durability?: string;
     readonly order?: string;
-    readonly onOrderGap?: unknown;
-    readonly orderGapWaitMs?: unknown;
-    readonly orderEntryWindowMs?: unknown;
+    readonly onOrderGap?: UncheckedChannelOption;
+    readonly orderGapWaitMs?: UncheckedChannelOption;
+    readonly orderEntryWindowMs?: UncheckedChannelOption;
 }
 
 /** One option only an edge-ordered channel takes: what it is called and how a value that is not one is refused. */
 interface EdgeOrderChannelOption {
     readonly path: string;
-    readonly value: unknown;
+    readonly value: UncheckedChannelOption | undefined;
     readonly isValid: boolean;
     readonly invalidCode: string;
     readonly invalidMessage: string;
@@ -71,7 +74,7 @@ function toEdgeOrderChannelOptions(definition: EdgeOrderChannelInput): readonly 
     ];
 }
 
-function isWholeMilliseconds(value: unknown): boolean {
+function isWholeMilliseconds(value: UncheckedChannelOption | undefined): boolean {
     return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 

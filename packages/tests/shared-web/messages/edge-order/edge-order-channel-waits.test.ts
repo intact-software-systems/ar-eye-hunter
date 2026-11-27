@@ -209,7 +209,7 @@ describe('an edge-ordered room channel: refused waits', () => {
         }
     );
 
-    it.each<[keyof OrderWaits, string, unknown]>([
+    it.each<[keyof OrderWaits, string, number | string | null]>([
         ['orderGapWaitMs', 'invalid-order-gap-wait', -1],
         ['orderGapWaitMs', 'invalid-order-gap-wait', 1.5],
         ['orderGapWaitMs', 'invalid-order-gap-wait', Number.POSITIVE_INFINITY],

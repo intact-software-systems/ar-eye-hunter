@@ -99,6 +99,40 @@ describe('an edge-ordered room channel: supersedence', () => {
         expect(pages.gaps).toEqual([]);
     });
 
+    it('waits for a replaced send again at a page the send that replaced it never reached', async () => {
+        const pages = createSupersedencePages();
+        await pages.send.sendWs({ n: 1 });
+        await pages.send.sendWs({ n: 2 }, latestWins('cursor'));
+        await pages.send.sendWs({ n: 3 }, { ...latestWins('cursor'), reliability: 'best-effort' });
+        await pages.send.sendWs({ n: 4 });
+        const [first, second, , fourth] = pages.alice.sent.ws;
+        await pages.bob.deliver('ws', first);
+
+        // Send 3 replaced send 2 and was lost; nothing retries it. Send 2 is then still the newest of its key.
+        await pages.bob.deliver('ws', fourth);
+        expect(pages.seen).toEqual([1]);
+
+        await pages.bob.deliver('ws', second);
+        expect(pages.seen).toEqual([1, 2, 4]);
+    });
+
+    it.each<[string, RallarTypedMessageSendOptions<EdgeOrderTestMove>]>([
+        ['a latest-wins send that names no key', { qos: { supersedence: { algo: 'latest-wins' } } }],
+        [
+            'a send that replaces one message by its id',
+            { qos: { supersedence: { algo: 'latest-wins', opts: { supersedenceKey: 'cursor', replacesMsgId: 'm-1' } } } }
+        ]
+    ])('refuses %s as unsupported, and the refused send takes no position', async (_shape, options) => {
+        const pages = createSupersedencePages();
+
+        await expect(pages.send.sendWs({ n: 1 }, options)).rejects.toThrow(
+            expect.objectContaining({ issues: [expect.objectContaining({ path: '$.qos.supersedence', code: 'unsupported' })] })
+        );
+
+        await pages.send.sendWs({ n: 2 });
+        expect(JSON.parse(pages.alice.sent.ws[0].payload.resource).edgeOrder.position).toBe(1);
+    });
+
     it.each<[string, RallarTypedMessageSendOptions<EdgeOrderTestMove>]>([
         ['another key', latestWins('selection')],
         ['no key', {}]
@@ -127,8 +161,8 @@ describe('an edge-ordered room channel: supersedence', () => {
             pages.alice.acknowledge('ws', message);
         }
 
-        // The stream's last send is open for its settle time, counted from the read that first sees it acknowledged.
-        expect(pages.alice.messages.readUsage().edgeOrder).toMatchObject({ sendStreams: 1, openSends: 1 });
+        // Each send is open for its settle time, counted from the read that first sees it acknowledged.
+        expect(pages.alice.messages.readUsage().edgeOrder).toMatchObject({ sendStreams: 1, openSends: 3 });
         await vi.advanceTimersByTimeAsync(500);
 
         expect(pages.alice.messages.readUsage().edgeOrder).toMatchObject({ sendStreams: 1, openSends: 0 });

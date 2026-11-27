@@ -21,7 +21,7 @@ function send(sender: EdgeOrderSender, expiresAtMs: number, retried = true): Obs
     readonly stamp: ReturnType<EdgeOrderSender['stampSend']>;
 } {
     const position = sender.openSend(retried, undefined);
-    const stamp = sender.stampSend(position, NOW_MS);
+    const stamp = sender.stampSend(position, NOW_MS, undefined);
     let end: EdgeOrderSender.SendEnd = 'open';
     sender.observeSend(position, { expiresAtMs, getEnd: () => end });
     return {
@@ -44,7 +44,7 @@ describe('EdgeOrderSender', () => {
         const positions = [sender.openSend(true, undefined), sender.openSend(true, undefined), sender.openSend(true, undefined)];
 
         expect(positions).toEqual([1, 2, 3]);
-        expect(positions.map((position) => sender.stampSend(position, NOW_MS).stream)).toEqual([
+        expect(positions.map((position) => sender.stampSend(position, NOW_MS, undefined).stream)).toEqual([
             'stream-a',
             'stream-a',
             'stream-a'
@@ -150,7 +150,7 @@ describe('EdgeOrderSender', () => {
         const sender = new EdgeOrderSender('stream-a', NO_SETTLE_MS);
         const openKeyed = (key: string | undefined) => {
             const position = sender.openSend(true, key);
-            const stamp = sender.stampSend(position, NOW_MS);
+            const stamp = sender.stampSend(position, NOW_MS, key);
             sender.observeSend(position, { expiresAtMs: 20_000, getEnd: () => 'open' });
             return stamp;
         };
@@ -164,6 +164,55 @@ describe('EdgeOrderSender', () => {
             lowestOpenPosition: 1,
             earlierCanArriveUntilMs: 20_000,
             holes: [[2, 2], [4, 4]]
+        });
+        // Only the send that replaces them says so: one that replaces nothing still waits for them.
+        expect(openKeyed(undefined)).toMatchObject({ position: 6, lowestOpenPosition: 1, holes: [] });
+    });
+
+    it('states the first send its key does not replace as the lowest open one', () => {
+        const sender = new EdgeOrderSender('stream-a', NO_SETTLE_MS);
+        const replaced = sender.openSend(true, 'cursor');
+        sender.observeSend(replaced, { expiresAtMs: 20_000, getEnd: () => 'open' });
+        const other = sender.openSend(true, 'selection');
+        sender.observeSend(other, { expiresAtMs: 9_000, getEnd: () => 'open' });
+
+        expect(sender.stampSend(sender.openSend(true, 'cursor'), NOW_MS, 'cursor')).toEqual({
+            stream: 'stream-a',
+            position: 3,
+            lowestOpenPosition: 2,
+            earlierCanArriveUntilMs: 9_000,
+            holes: []
+        });
+    });
+
+    it('leaves the earlier sends of a key open when the send that would replace them never set out', () => {
+        const sender = new EdgeOrderSender('stream-a', NO_SETTLE_MS);
+        const first = sender.openSend(true, 'cursor');
+        sender.observeSend(first, { expiresAtMs: 20_000, getEnd: () => 'open' });
+        const refused = sender.openSend(true, 'cursor');
+        sender.stampSend(refused, NOW_MS, 'cursor');
+
+        sender.endSend(refused);
+
+        expect(sender.stampSend(sender.openSend(true, undefined), NOW_MS, undefined)).toMatchObject({
+            position: 2,
+            lowestOpenPosition: 1,
+            earlierCanArriveUntilMs: 20_000,
+            holes: []
+        });
+    });
+
+    it('does not let a position that was given back carry its key to the send that takes it next', () => {
+        const sender = new EdgeOrderSender('stream-a', NO_SETTLE_MS);
+        sender.endSend(sender.openSend(true, 'cursor'));
+        const unkeyed = sender.openSend(true, undefined);
+        sender.observeSend(unkeyed, { expiresAtMs: 20_000, getEnd: () => 'open' });
+
+        expect(sender.stampSend(sender.openSend(true, 'cursor'), NOW_MS, 'cursor')).toMatchObject({
+            position: 2,
+            lowestOpenPosition: 1,
+            earlierCanArriveUntilMs: 20_000,
+            holes: []
         });
     });
 
@@ -183,7 +232,7 @@ describe('EdgeOrderSender', () => {
 
         const position = sender.openSend(true, undefined);
 
-        expect(sender.stampSend(position, 5_000)).toEqual({
+        expect(sender.stampSend(position, 5_000, undefined)).toEqual({
             stream: 'stream-a',
             position: 3,
             lowestOpenPosition: 2,
@@ -198,7 +247,7 @@ describe('EdgeOrderSender', () => {
         sender.openSend(true, undefined);
         const second = sender.openSend(true, undefined);
 
-        expect(sender.stampSend(second, NOW_MS)).toEqual({
+        expect(sender.stampSend(second, NOW_MS, undefined)).toEqual({
             stream: 'stream-a',
             position: 2,
             lowestOpenPosition: 1,
@@ -224,7 +273,7 @@ describe('EdgeOrderSender', () => {
         const next = sender.openSend(true, undefined);
         sender.endSend(refused);
 
-        expect(sender.stampSend(next, NOW_MS)).toEqual({
+        expect(sender.stampSend(next, NOW_MS, undefined)).toEqual({
             stream: 'stream-a',
             position: 2,
             lowestOpenPosition: 2,
@@ -239,7 +288,7 @@ describe('EdgeOrderSender', () => {
         const first = sender.openSend(true, undefined);
         send(sender, 30_000);
 
-        expect(sender.stampSend(first, NOW_MS)).toEqual({
+        expect(sender.stampSend(first, NOW_MS, undefined)).toEqual({
             stream: 'stream-a',
             position: 1,
             lowestOpenPosition: 1,
@@ -277,7 +326,7 @@ describe('EdgeOrderSender', () => {
         const next = sender.openSend(true, undefined);
         sender.endSend(neverSetOut);
 
-        expect(sender.stampSend(next, NOW_MS)).toMatchObject({ position: 3, lowestOpenPosition: 1, holes: [[2, 2]] });
+        expect(sender.stampSend(next, NOW_MS, undefined)).toMatchObject({ position: 3, lowestOpenPosition: 1, holes: [[2, 2]] });
     });
 
     it('states neighbouring holes as one run, and only those below the stamped send', () => {
@@ -291,7 +340,7 @@ describe('EdgeOrderSender', () => {
         }
         after.refuse();
 
-        expect(sender.stampSend(builtLate, NOW_MS).holes).toEqual([[2, 4]]);
+        expect(sender.stampSend(builtLate, NOW_MS, undefined).holes).toEqual([[2, 4]]);
         expect(send(sender, 10_000).stamp.holes).toEqual([[2, 4], [6, 6]]);
     });
 
@@ -303,8 +352,8 @@ describe('EdgeOrderSender', () => {
         const third = sender.openSend(true, undefined);
         const fourth = sender.openSend(true, undefined);
 
-        expect(sender.stampSend(third, 4_999)).toMatchObject({ lowestOpenPosition: 1, holes: [] });
-        expect(sender.stampSend(fourth, 5_000)).toMatchObject({ lowestOpenPosition: 1, holes: [[2, 2]] });
+        expect(sender.stampSend(third, 4_999, undefined)).toMatchObject({ lowestOpenPosition: 1, holes: [] });
+        expect(sender.stampSend(fourth, 5_000, undefined)).toMatchObject({ lowestOpenPosition: 1, holes: [[2, 2]] });
     });
 
     it('drops a hole from its stamps once every send below it has ended: the lowest open position says it', () => {
@@ -359,7 +408,7 @@ describe('EdgeOrderSender: the settle time of an acknowledged send', () => {
     /** Opens a send, stamps it at `nowMs` and observes it with a deadline of 30 s; `acknowledge` ends it as delivered. */
     function sendAt(sender: EdgeOrderSender, nowMs: number): { readonly stamp: EdgeOrderStamp; acknowledge(): void; } {
         const position = sender.openSend(true, undefined);
-        const stamp = sender.stampSend(position, nowMs);
+        const stamp = sender.stampSend(position, nowMs, undefined);
         let end: EdgeOrderSender.SendEnd = 'open';
         sender.observeSend(position, { expiresAtMs: 31_000, getEnd: () => end });
         return {
@@ -399,8 +448,8 @@ describe('EdgeOrderSender: the settle time of an acknowledged send', () => {
         sendAt(sender, 1_000).acknowledge();
         sender.closeEndedSends(1_200);
 
-        expect(sender.stampSend(sender.openSend(true, undefined), 1_699)).toMatchObject({ lowestOpenPosition: 1 });
-        expect(sender.stampSend(sender.openSend(true, undefined), 1_700)).toEqual({
+        expect(sender.stampSend(sender.openSend(true, undefined), 1_699, undefined)).toMatchObject({ lowestOpenPosition: 1 });
+        expect(sender.stampSend(sender.openSend(true, undefined), 1_700, undefined)).toEqual({
             stream: 'stream-a',
             position: 3,
             lowestOpenPosition: 2,
@@ -425,8 +474,8 @@ describe('EdgeOrderSender: the settle time of an acknowledged send', () => {
         const third = sender.openSend(true, undefined);
         sender.endSend(refused);
 
-        expect(sender.stampSend(third, 1_100)).toMatchObject({ lowestOpenPosition: 1, holes: [[2, 2]] });
-        expect(sender.stampSend(sender.openSend(true, undefined), 1_600)).toMatchObject({ lowestOpenPosition: 3, holes: [] });
+        expect(sender.stampSend(third, 1_100, undefined)).toMatchObject({ lowestOpenPosition: 1, holes: [[2, 2]] });
+        expect(sender.stampSend(sender.openSend(true, undefined), 1_600, undefined)).toMatchObject({ lowestOpenPosition: 3, holes: [] });
     });
 
     it('still drains: a settling send is counted until its settle time has passed, and not after', () => {

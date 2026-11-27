@@ -395,7 +395,8 @@ Message ownership is concentrated under [`messages/`](./messages/):
     says it. A stamp with no hole carries no `holes` field.
   - **A send nothing retries: newest wins.** A send is retried only when it is at-least-once and asks a receipt
     ([`isEdgeOrderRetriedSend`](./messages/edge-order/validate-edge-order-send.ts), decided in the application's
-    call from the send's options and the channel's defaults). A lost copy of any other send (`reliability:
+    call from the send's options and the channel's defaults by
+    [`toEdgeOrderChannelSend`](./messages/edge-order/to-edge-order-channel-send.ts)). A lost copy of any other send (`reliability:
     'best-effort'`, `ack: 'none'`, or the same asked through `qos`) never comes back, so no receiver waits for it:
     from the moment it takes its position it is a hole to every later stamp, and the stream keeps nothing of it. A
     receiver that gets a later message first hands that one over at once, reports the skipped position as an
@@ -417,15 +418,20 @@ Message ownership is concentrated under [`messages/`](./messages/):
     refused `unsupported` once the connect names the server's peer id
     ([`validateEdgeOrderPeer`](./messages/edge-order/validate-edge-order-send.ts)): the server is not behind
     Rallar Web's sorter. The position it took is closed, so it leaves no hole anyone waits for.
-  - **Supersedence.** A send may ask `qos.supersedence` latest-wins. A send its carrier settles `superseded` never
-    arrives, so it ends as a hole like a refused one, and the next message says so. That alone would leave the
-    newest value waiting: the stamp of the send that replaces another is made before the carrier settles
-    anything, and a copy that arrives after its replacement is dropped on receipt without a receipt, so the
-    replaced send can stay open at the sender until its deadline. So a latest-wins send that names a
-    `supersedenceKey` makes every earlier open send of that key in its stream a hole when it takes its position
-    ([EdgeOrderSender.openSend](./messages/edge-order/edge-order-sender.ts)): a receiver hands the newest value
-    over at once, hands a replaced one over only if it arrived first, and drops it as late otherwise. Sends of
-    another key, or of none, are waited for as before.
+  - **Supersedence.** A send may ask `qos.supersedence` latest-wins with a `supersedenceKey`. A send its carrier
+    settles `superseded` never arrives, so it ends as a hole like a refused one, and the next message says so.
+    That alone would leave the newest value waiting: the stamp of the send that replaces another is made before
+    the carrier settles anything, and ALM drops a copy that arrives after its replacement on receipt, with no
+    receipt, so the replaced send can stay open at the sender until its deadline. So the stamp of a latest-wins
+    send states every earlier open retried send of its key in its stream as a hole
+    ([EdgeOrderSender.stampSend](./messages/edge-order/edge-order-sender.ts)): a receiver that gets the newest
+    value hands it over at once, hands a replaced one over only if it arrived first, and drops it as late
+    otherwise. Only that stamp says so, and the stream itself is not changed: a receiver the replacing send never
+    reaches (nothing retries it and it was lost) still waits for the send it would have replaced, which is then
+    the newest of its key there, and a replacing send that never sets out changes nothing. Sends of another key,
+    or of none, are waited for as before. Latest-wins without a `supersedenceKey`, and `replacesMsgId`, are
+    refused: ALM would still supersede under its default key or by message id, and nothing here would tell a
+    receiver which earlier send not to wait for.
   - **A live channel.** Nothing retries a live value, so a live channel is newest-wins as above. Two things differ,
     because a live channel paces its values on a stage before admission and replaces a staged value with a newer
     one of its stream. First, one edge stream is one publication stream: the channel, room, audience and
@@ -434,7 +440,8 @@ Message ownership is concentrated under [`messages/`](./messages/):
     value of another drop it as late, though it is that resource's newest. Second, the position is taken when the
     value leaves the stage, not at the call: `BrowserRallarMessageDispatch` calls the publication request's
     `stampAtOpportunity` once, when the stage's opportunity selects the value and before its leg is written, and
-    `BrowserRallarMessageSender.stampLivePublication` wraps the payload with the position taken then. A value
+    [`toBrowserPublicationRequest`](./messages/publication/to-browser-publication-request.ts) wraps the payload with
+    the position taken then. A value
     displaced on the stage, cancelled there, or expired or refused before it leaves takes no position, so it
     leaves no hole: a gap a
     receiver reports on a live channel is a value that left the sender and did not arrive in time. The payload
@@ -515,8 +522,9 @@ Message ownership is concentrated under [`messages/`](./messages/):
     ([`validate-edge-order-send.ts`](./messages/edge-order/validate-edge-order-send.ts)): `ack: 'group-leader'`
     and a `qos.ack` other than `receiver` or `none`, because a hop's or a leader's receipt does not say the
     recipients have the message, so the sender could call a send over that a recipient still waits for;
-    `scope: 'world'`, which names no room; `orderingKey` and `seq`, which ask for hop order; a `qos.durability`
-    other than `volatile`; and the `ws-then-rtc` strategy. After the connect: a `peerId` that is the server's.
+    `scope: 'world'`, which names no room; `orderingKey` and `seq`, which ask for hop order; a
+    `qos.supersedence` that is not latest-wins with a `supersedenceKey` and no `replacesMsgId`; a
+    `qos.durability` other than `volatile`; and the `ws-then-rtc` strategy. After the connect: a `peerId` that is the server's.
   - **Limits.** Both ends must declare the channel: a receiver that did not is given the wrapped payload in
     arrival order, and a receiver that did drops a message without a stamp. The declaration, and with it
     `onOrderGap`, is per topic and type on a page, for every room; a gap report names its stream, and a stream

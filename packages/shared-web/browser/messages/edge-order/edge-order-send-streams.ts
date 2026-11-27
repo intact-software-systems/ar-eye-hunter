@@ -43,6 +43,8 @@ export namespace EdgeOrderSendStreams {
     /** A channel's send, as far as its order is concerned: what its channel declares and where it is going. */
     export interface ChannelSend {
         readonly order: 'edge' | undefined;
+        /** A live channel's value: it is staged first and takes its position when it leaves the stage. */
+        readonly staged: boolean;
         /** Absent, the channel's topic is its type. */
         readonly topicId: string | undefined;
         readonly typeId: string;
@@ -74,11 +76,12 @@ export class EdgeOrderSendStreams {
 
     /**
      * Takes the next position of the stream of the send's channel, room and audience; absent for a channel that
-     * declares no order. Called once the send's options passed validation and before the send awaits anything.
+     * declares no order and for a live channel's value. Called once the send's options passed validation and before
+     * the send awaits anything.
      */
     openSend(send: EdgeOrderSendStreams.ChannelSend): EdgeOrderOpenSend | undefined {
         const { roomRef } = send;
-        if (send.order !== 'edge' || roomRef === undefined) {
+        if (send.order !== 'edge' || send.staged || roomRef === undefined) {
             return undefined;
         }
         const { principalId, peerId, recipientPeerIds, exceptPeerIds } = send.audience;
@@ -111,7 +114,7 @@ export class EdgeOrderSendStreams {
         // Taken out and put back, so the stream last sent on is the newest and the cap pushes out the one idle longest.
         const stream = this.streams.take(key) ?? new EdgeOrderSender(this.newStreamId(), this.acknowledgedSettleMs);
         this.streams.set(key, stream);
-        return new EdgeOrderOpenSend(stream, stream.openSend(send.retried, send.supersedenceKey));
+        return new EdgeOrderOpenSend(stream, stream.openSend(send.retried, send.supersedenceKey), send.supersedenceKey);
     }
 
     /** Closes, in every stream, the sends that have ended by `nowMs`: an idle page then keeps no open send. */
@@ -156,14 +159,16 @@ export async function endEdgeOrderSendOnFailure(
 export class EdgeOrderOpenSend {
     private readonly stream: EdgeOrderSender;
     private readonly position: number;
+    private readonly supersedenceKey: string | undefined;
 
-    constructor(stream: EdgeOrderSender, position: number) {
+    constructor(stream: EdgeOrderSender, position: number, supersedenceKey: string | undefined) {
         this.stream = stream;
         this.position = position;
+        this.supersedenceKey = supersedenceKey;
     }
 
     stamp(nowMs: number): EdgeOrderStamp {
-        return this.stream.stampSend(this.position, nowMs);
+        return this.stream.stampSend(this.position, nowMs, this.supersedenceKey);
     }
 
     /**

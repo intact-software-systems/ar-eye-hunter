@@ -53,8 +53,8 @@ export class EdgeOrderSender {
      */
     private readonly slots = new Map<number, EdgeOrderSendSlot>();
     /**
-     * By position: the supersedence key of each send still open that named one. A later send of the same key
-     * replaces it, so no receiver waits for it from then on.
+     * By position: the supersedence key of each retried send still open that named one. A later send of the same
+     * key replaces it, and that send's own stamp says so.
      */
     private readonly supersedenceKeys = new Map<number, string>();
 
@@ -65,28 +65,33 @@ export class EdgeOrderSender {
 
     /**
      * `retried`: the send is at-least-once and asks a receipt, so a lost copy of it comes back. `supersedenceKey`:
-     * the key of a latest-wins send, absent for any other. Such a send replaces every earlier open send of its
-     * key: one that has not arrived before it is dropped on receipt, so each becomes a hole here and now.
+     * the key of a latest-wins send, absent for any other.
      */
     openSend(retried: boolean, supersedenceKey: string | undefined): number {
         this.lastPosition += 1;
-        if (supersedenceKey !== undefined) {
-            this.replaceOpenSends(supersedenceKey);
+        if (retried && supersedenceKey !== undefined) {
             this.supersedenceKeys.set(this.lastPosition, supersedenceKey);
         }
         this.slots.set(this.lastPosition, retried ? 'unobserved' : 'hole');
         return this.lastPosition;
     }
 
-    /** The stamp of an open send, from the sends still open below it at `nowMs` and the holes among them. */
-    stampSend(position: number, nowMs: number): EdgeOrderStamp {
+    /**
+     * The stamp of an open send, from the sends still open below it at `nowMs` and the holes among them.
+     * `supersedenceKey` is the send's own, as it was opened with. A latest-wins send replaces every earlier open
+     * send of its key: a copy of one that arrives after it is dropped on receipt, with no receipt, so this stamp
+     * states each as a hole. Only this stamp does: a receiver the replacing send never reaches still waits for the
+     * send it would have replaced, and a replacing send that never sets out changes nothing.
+     */
+    stampSend(position: number, nowMs: number, supersedenceKey: string | undefined): EdgeOrderStamp {
         this.closeEndedSends(nowMs);
+        const earlier = this.toEarlierSlots(position, supersedenceKey);
         return {
             stream: this.stream,
             position,
-            lowestOpenPosition: Math.min(this.slots.keys().next().value ?? position, position),
-            earlierCanArriveUntilMs: this.computeEarlierCanArriveUntil(position),
-            holes: this.computeHolesBelow(position)
+            lowestOpenPosition: earlier.find(([, slot]) => slot !== 'hole')?.[0] ?? position,
+            earlierCanArriveUntilMs: computeEarlierCanArriveUntil(earlier),
+            holes: computeHoles(earlier)
         };
     }
 
@@ -107,6 +112,7 @@ export class EdgeOrderSender {
         }
         if (position === this.lastPosition) {
             this.slots.delete(position);
+            this.supersedenceKeys.delete(position);
             this.lastPosition -= 1;
             return;
         }
@@ -145,54 +151,64 @@ export class EdgeOrderSender {
         }
     }
 
-    private replaceOpenSends(supersedenceKey: string): void {
-        for (const [position, key] of this.supersedenceKeys) {
-            if (key === supersedenceKey && this.slots.has(position)) {
-                this.slots.set(position, 'hole');
-            }
-        }
-    }
-
     /**
-     * The latest time a send still open below `position` can arrive: its deadline, the end of its settle time once
-     * it is acknowledged, or as long as any receiver is willing to wait while it has no deadline yet.
+     * The slots below `position`, in rising order, as the stamp of a send of `supersedenceKey` at `position` states
+     * them: one whose send that send replaces reads as a hole.
      */
-    private computeEarlierCanArriveUntil(position: number): number | undefined {
-        let latestMs: number | undefined;
-        for (const [openPosition, slot] of this.slots) {
-            if (openPosition >= position) {
+    private toEarlierSlots(
+        position: number,
+        supersedenceKey: string | undefined
+    ): ReadonlyArray<readonly [number, EdgeOrderSendSlot]> {
+        const earlier: Array<readonly [number, EdgeOrderSendSlot]> = [];
+        for (const [earlierPosition, slot] of this.slots) {
+            if (earlierPosition >= position) {
                 break;
             }
-            const canArriveUntilMs = toCanArriveUntil(slot);
-            if (canArriveUntilMs !== undefined && (latestMs === undefined || canArriveUntilMs > latestMs)) {
-                latestMs = canArriveUntilMs;
-            }
+            const replaced = supersedenceKey !== undefined &&
+                this.supersedenceKeys.get(earlierPosition) === supersedenceKey;
+            earlier.push([earlierPosition, replaced ? 'hole' : slot]);
         }
-        return latestMs;
+        return earlier;
     }
+}
 
-    private computeHolesBelow(position: number): readonly EdgeOrderPositionRun[] {
-        const holes: Array<[number, number]> = [];
-        for (const [hole, slot] of this.slots) {
-            if (hole >= position) {
-                break;
-            }
-            if (slot !== 'hole') {
-                continue;
-            }
-            const lastRun = holes.at(-1);
-            if (lastRun?.[1] === hole - 1) {
-                lastRun[1] = hole;
-            }
-            else if (holes.length === EDGE_ORDER_MAX_STATED_HOLES) {
-                break;
-            }
-            else {
-                holes.push([hole, hole]);
-            }
+/**
+ * The latest time a send still open among `earlier` can arrive: its deadline, the end of its settle time once it is
+ * acknowledged, or as long as any receiver is willing to wait while it has no deadline yet.
+ */
+function computeEarlierCanArriveUntil(
+    earlier: ReadonlyArray<readonly [number, EdgeOrderSendSlot]>
+): number | undefined {
+    let latestMs: number | undefined;
+    for (const [, slot] of earlier) {
+        const canArriveUntilMs = toCanArriveUntil(slot);
+        if (canArriveUntilMs !== undefined && (latestMs === undefined || canArriveUntilMs > latestMs)) {
+            latestMs = canArriveUntilMs;
         }
-        return holes;
     }
+    return latestMs;
+}
+
+/** The runs of holes above the lowest open send among `earlier`, the lowest first, at most as many as a stamp states. */
+function computeHoles(earlier: ReadonlyArray<readonly [number, EdgeOrderSendSlot]>): readonly EdgeOrderPositionRun[] {
+    const firstOpen = earlier.findIndex(([, slot]) => slot !== 'hole');
+    const holes: Array<[number, number]> = [];
+    for (const [hole, slot] of firstOpen === -1 ? [] : earlier.slice(firstOpen)) {
+        if (slot !== 'hole') {
+            continue;
+        }
+        const lastRun = holes.at(-1);
+        if (lastRun?.[1] === hole - 1) {
+            lastRun[1] = hole;
+        }
+        else if (holes.length === EDGE_ORDER_MAX_STATED_HOLES) {
+            break;
+        }
+        else {
+            holes.push([hole, hole]);
+        }
+    }
+    return holes;
 }
 
 /**

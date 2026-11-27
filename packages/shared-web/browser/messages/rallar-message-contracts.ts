@@ -273,8 +273,8 @@ export interface RallarTypedMessageChannelDefinition {
      * `supersedenceKey` replaced. One stream is one channel, room and audience, so a narrowed send (a list, a
      * principal, a peer, skipped sessions) is ordered among the sends to the same audience; on a `live` channel one
      * stream is one `resourceId`, numbered as its values leave the publication stage. Refused `unsupported`: a
-     * stored channel or send, a hop's or a leader's receipt, `orderingKey` and `seq`, a world send, a send addressed
-     * to the server, and the `ws-then-rtc` strategy.
+     * stored channel or send, a hop's or a leader's receipt, `orderingKey` and `seq`, latest-wins without a
+     * `supersedenceKey`, a world send, a send addressed to the server, and the `ws-then-rtc` strategy.
      */
     readonly order?: 'edge';
     /**

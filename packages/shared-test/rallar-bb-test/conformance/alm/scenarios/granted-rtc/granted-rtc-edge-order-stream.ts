@@ -26,7 +26,6 @@ import { TOPIC_SUBSCRIPTION_SELECTOR } from '../topic-subscription/topic-subscri
 import {
     toCueSendCommands,
     toCueWait,
-    toProbeWait,
     toPublicationPayload,
     toPublicationWait,
     toPublishUntilConfirmedCommands
@@ -186,6 +185,12 @@ function toNamedStreamSend(
         commandId: toCommandId(step, `send-${index}`),
         handleId: toSendHandleId({ ...step, index })
     };
+}
+
+/** A probe's arrival on the page, waited for as a publication's is: only a page whose handler is given the topic records one. */
+function toProbeWait(step: AlmConformanceStepInput, probe: string): RallarBlackBoxTestWaitCommand {
+    const wait = toPublicationWait(step, probe, false);
+    return { ...wait, match: { ...wait.match, equals: toPublicationPayload(step, probe, 'probe') } };
 }
 
 /** The wait's arrival came over RTC: only the receiver's own election is given a granted RTC copy. */

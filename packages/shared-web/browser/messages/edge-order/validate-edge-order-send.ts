@@ -62,6 +62,17 @@ export function validateEdgeOrderPeer(peer: EdgeOrderPeer): readonly RallarValid
         : [];
 }
 
+/**
+ * ALM also supersedes under a default key, and one message by its id. Neither says here which earlier sends of the
+ * stream a send replaces, so a receiver would hold the newest value for one that is dropped on receipt.
+ */
+function isKeyedLatestWins(
+    supersedence: NonNullable<NonNullable<EdgeOrderSendOptions['qos']>['supersedence']>
+): boolean {
+    return supersedence.algo === 'latest-wins' && supersedence.opts?.supersedenceKey !== undefined &&
+        supersedence.opts.replacesMsgId === undefined;
+}
+
 function toEdgeOrderSendRefusals(send: EdgeOrderSendOptions): readonly EdgeOrderSendRefusal[] {
     const { qos } = send;
     return [
@@ -83,6 +94,12 @@ function toEdgeOrderSendRefusals(send: EdgeOrderSendOptions): readonly EdgeOrder
         },
         { path: '$.orderingKey', refused: send.orderingKey !== undefined, message: NO_HOP_ORDER },
         { path: '$.seq', refused: send.seq !== undefined, message: NO_HOP_ORDER },
+        {
+            path: '$.qos.supersedence',
+            refused: qos?.supersedence !== undefined && !isKeyedLatestWins(qos.supersedence),
+            message:
+                'An edge-ordered send that is superseded is latest-wins and names its supersedenceKey alone: the key tells receivers which earlier sends not to wait for.'
+        },
         {
             path: '$.qos.durability',
             refused: qos?.durability !== undefined && qos.durability.algo !== 'volatile',
