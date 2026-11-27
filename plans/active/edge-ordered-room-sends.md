@@ -1,10 +1,10 @@
 # Edge order: ordered room sends, sorted at the two ends
 
-Status: rulings 1 to 5, 7 and 8 are made, ruling 6 is open. The verdict is **viable**: the measurement the plan
+Status: rulings 1 to 5 and 7 to 9 are made, ruling 6 is open. The verdict is **viable**: the measurement the plan
 owed is run (section 2.5, slice 1), and it holds up to 10 messages a second from one sender. Slices 1 to 5 are on
 `main` since 2026-11-27: slices 2 to 4 as PR 916 (one commit that holds PRs 916, 924 and 926), slice 5 as PR 929
-and slice 1 as PR 915 (section 3, "What the slices found"). Slice 6, a real consumer, is next and needs one
-ruling first: which stream. Edge order builds on the unordered path, which keeps up under load only with PR 885's
+and slice 1 as PR 915 (section 3, "What the slices found"). Slice 6, a real consumer, is next: ruling
+9 names the game director's event stream. Edge order builds on the unordered path, which keeps up under load only with PR 885's
 changes; they are on `main` since the same day, so edge order followed that pull request and did not replace it.
 
 Working name: **edge order**. Today's ordered mode (`orderingKey`) is called **hop order** in this document, because
@@ -416,7 +416,7 @@ Each slice is one pull request and leaves the product working. The riskiest ques
 | 3. One path end to end              | Done, on `main` (PR 916). `order: 'edge'` on a room channel; the counter taken at `send`; the sorter before the listener registries; whole-room, receipted, at-least-once sends over `ws`, `rtc` and `rtc-with-ws-fallback`. Other shapes are refused `unsupported`. | Browser tests with two pages; a conformance-lane cell `edge-order-stream` on the three carriers and one under the lane's seeded jitter; the public API snapshot; the measured bundle figure. | Holes from ended sends, the gap callback, reload, narrowed audiences, unretried sends. | 3 (where the counter rides), 4 (names) |
 | 4. Holes, reload and reports        | Done, on `main` (PR 916). The `f` floor for ended sends; the gap report to the app and the usage counters; the caps as growth surfaces; a new stream after a reload; the late joiner.                                                                                | Lane cells under the 25 % seeded loss, across a sender reload and with a late joiner; a long-run memory test.                                                                                | Unretried sends and narrowed audiences.                                                | 5 (what a reload means at receivers)   |
 | 5. Newest wins, and other audiences | Done, on `main` (PR 929). Unretried and `live` sends as "newest wins, a late one is dropped"; one stream per audience for listed, principal and peer sends; supersedence.                                                                                            | A lane cell under seeded loss: never out of order, drops counted.                                                                                                                            | Realtime lanes.                                                                        | None expected                          |
-| 6. A real consumer                  | One app stream moved to edge order; the product description, the browser README and the realtime skill updated; the measurement of slice 1 run again with the product code.                                                                                          | The hosted lane and the app's own tests.                                                                                                                                                     |                                                                                        | Which stream                           |
+| 6. A real consumer                  | The game director's event stream (ruling 9) moved to edge order; the product description, the browser README and the realtime skill updated; the measurement of slice 1 run again with the product code.                                                             | The hosted lane and the app's own tests.                                                                                                                                                     |                                                                                        | 9 (which stream)                       |
 | 7. Hop order's future               | Whatever ruling 6 says.                                                                                                                                                                                                                                              |                                                                                                                                                                                              |                                                                                        | 6                                      |
 
 **What the slices found.** Each line is the slice's own report in its pull request. Slices 2 to 4 landed together: on 2026-11-27 the maintainer chose to merge the stack top-down, so PR 926 was merged into PR 924 and PR 924 into PR 916, and PR 916 went to `main` as one commit. Slices 5 and 1 followed the same day, each as its own pull request. The sections above are as they were written before the slices ran, except sections 2.3 to 2.5, which hold slice 1's measurement.
@@ -644,3 +644,37 @@ still be dropped as late. The receiver noting a message at admission stays the e
 
 What follows from the ruling: slice 5 built both. They are receive-side and per topic and type on a page, the latest
 declaration that names one stands, and a stream follows them from its next arrival (section 3, slice 5).
+
+**9. The first consumer (before slice 6). Ruled on 2026-11-27: the game director's event stream.**
+
+A search of `apps/ar-eye-hunter-v1`, `apps/relic-hunters-v1` and `apps/rallar-black-box` on `main` (`e30b2c9f5`)
+found three streams edge order can serve. Every other order-sensitive stream is written by the server or sent to
+it (Relic's commands, hunter events, round transitions and snapshots; the director's intents, which ask a leader's
+receipt), or is a raw RTC lane (`rallar.realtime.room`: pose, motion, the snapshot lane), which edge order does not
+cover.
+
+- _The game director's event stream_ (chosen): the relay's output type (`outputTypeId`), which is
+  `room.ar-eye-hunter.director.event.v1` in AR Eye Hunter and `grumpy-town.authority.output` in Grumpy Town, sent by
+  the host page to the room through the shared relay in `packages/shared-web/browser/director/`. In AR Eye Hunter it carries match
+  started, hits, pickups, eye attacks and match ended. Order is visible to players, the stream already goes
+  `rtc-with-ws-fallback`, and it mixes receipted sends with best-effort ones. Today the shared match code
+  (`rejectByOrderedSequence` in `packages/shared-web/game/envelopes.ts`) drops an event that arrives after a later
+  one as `stale-sequence`, so a WS fallback copy of event N that arrives after event N+1 over RTC is lost, and the
+  next snapshot has to repair it.
+- _Relic's peer snapshot repair and presence_ on the authority topic (not chosen). The smallest change, but RTC
+  only, and it carries copies of a server snapshot whose revision already decides.
+- _Player motion as a `live` channel_ (not chosen): AR Eye pose or Relic motion, about 20 samples a second. It
+  changes the transport, not only the order, and nothing has measured that rate through the message layer.
+
+What follows from the ruling, for slice 6 to settle in its design before it builds:
+
+- The relay is shared code, so `apps/grumpy-town` changes with AR Eye unless the declaration is a choice of each
+  relay.
+- A page that declared the channel drops a message without a stamp. The relay's best-effort events leave through
+  raw carrier sends today, so they move onto the declared channel, and a page on the old code and a page on the new
+  code in one room do not hear each other's events.
+- A missing receipted event (30 s lifetime by default) can hold later best-effort events, so the channel sets
+  `orderGapWaitMs`.
+- The stale-drop for the `event` kind goes; the tracker stays for the kinds that keep it (snapshot, presence,
+  capability).
+- No lane or browser test checks event order across the two carriers today.
