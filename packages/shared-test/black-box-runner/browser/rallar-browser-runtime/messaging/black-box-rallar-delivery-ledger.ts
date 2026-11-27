@@ -1,3 +1,7 @@
+import type {
+    RallarMessagePayload,
+    RallarTypedMessageChannel
+} from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessageHandle } from '@shared-web/browser/rallar.ts';
 import {
     AL_DELIVERY_ADMITTED_STATES,
@@ -5,6 +9,8 @@ import {
     type ALDeliveryUnroutableReason
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
+import { isRallarValidationError, type RallarValidationError } from '@shared/api/rallar-validation.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
 import type { BlackBoxRallarRuntimeDiagnostics } from '../black-box-rallar-diagnostics.ts';
 import type {
@@ -14,6 +20,7 @@ import type {
     BlackBoxRallarDeliveryHandleInput,
     BlackBoxRallarDeliveryObservation,
     BlackBoxRallarDeliveryObserveInput,
+    BlackBoxRallarMessageCallRefusalDiagnostics,
     BlackBoxRallarMessageReplayDiagnostics,
     BlackBoxRallarMessageReplayInput,
     BlackBoxRallarMessageReplayTarget,
@@ -106,35 +113,32 @@ export class BlackBoxRallarDeliveryLedger {
 
     sendMessage = async (
         send: BlackBoxRallarMessageSendInput | BlackBoxRallarMessageReplayInput
-    ): Promise<BlackBoxRallarMessageSendDiagnostics | BlackBoxRallarMessageReplayDiagnostics> =>
-        'replayOnCarrier' in send
-            ? await this.#replayMessage(send.replayOnCarrier)
-            : await this.#sendNewMessage(send);
+    ): Promise<
+        | BlackBoxRallarMessageSendDiagnostics
+        | BlackBoxRallarMessageCallRefusalDiagnostics
+        | BlackBoxRallarMessageReplayDiagnostics
+    > => 'replayOnCarrier' in send
+        ? await this.#replayMessage(send.replayOnCarrier)
+        : await this.#sendNewMessage(send);
 
-    async #sendNewMessage(send: BlackBoxRallarMessageSendInput): Promise<BlackBoxRallarMessageSendDiagnostics> {
+    async #sendNewMessage(
+        send: BlackBoxRallarMessageSendInput
+    ): Promise<BlackBoxRallarMessageSendDiagnostics | BlackBoxRallarMessageCallRefusalDiagnostics> {
         const config = this.#input.requireConfig();
         const lease = this.#input.resources.lease();
         this.#input.resources.assertCurrent(lease, 'Rallar send completed after the runtime closed.');
         const roomRef = blackBoxRallarRoomRefOf(config, { roomRef: send.roomRef });
         const snapshotFloorOption = this.#resolveSnapshotFloor(send, roomRef);
         const audience = this.#resolveAudience(send, roomRef);
-        const channel = this.#input.typedChannels.open(config, {
-            typeId: send.typeId,
-            topicId: send.topicId,
-            roomRef,
-            access: resolveBlackBoxRallarChannelAccess(config, send.topicId),
-            durability: send.durability,
-            onStorageUnavailable: send.onStorageUnavailable,
-            purpose: send.purpose ?? (send.toPeer === undefined ? 'notification' : 'command'),
-            publication: send.publication,
-            recovery: undefined,
-            order: config.rallar.channelOrder
-        });
+        const channel = this.#openSendChannel(config, send, roomRef);
         this.#emitSendStarted(config, send, roomRef);
-        const handle = await channel.send(send.payload, {
-            ...toTypedSendOptions(send, audience),
-            ...snapshotFloorOption
-        });
+        const sending = channel.send(send.payload, { ...toTypedSendOptions(send, audience), ...snapshotFloorOption });
+        if (send.observe === 'call-refused') {
+            const refusal = await readCallRefusal(send, sending);
+            this.#input.resources.assertCurrent(lease, 'Rallar send completed after the runtime closed.');
+            return refusal;
+        }
+        const handle = await sending;
         this.#deliveryMsgIds.set(send.handleId, handle.msgId);
         this.#dropEvictedDeliveries();
         const outcome = await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES, timeoutMs: send.timeoutMs });
@@ -150,6 +154,25 @@ export class BlackBoxRallarDeliveryLedger {
         };
         this.#input.diagnostics.emitDiagnostic(config, 'rallar.browser.messages.send_completed', diagnostics);
         return diagnostics;
+    }
+
+    #openSendChannel(
+        config: BlackBoxRallarConnectionConfig,
+        send: BlackBoxRallarMessageSendInput,
+        roomRef: GroupRef | undefined
+    ): RallarTypedMessageChannel<RallarMessagePayload> {
+        return this.#input.typedChannels.open(config, {
+            typeId: send.typeId,
+            topicId: send.topicId,
+            roomRef,
+            access: resolveBlackBoxRallarChannelAccess(config, send.topicId),
+            durability: send.durability,
+            onStorageUnavailable: send.onStorageUnavailable,
+            purpose: send.purpose ?? (send.toPeer === undefined ? 'notification' : 'command'),
+            publication: send.publication,
+            recovery: undefined,
+            order: config.rallar.channelOrder
+        });
     }
 
     #emitSendStarted(
@@ -358,6 +381,44 @@ interface BlackBoxRallarRecipientListInput {
     /** Undefined while the page holds no snapshot of the room. */
     readonly roomSessions: readonly GroupPresenceSession[] | undefined;
     readonly nowMs: number;
+}
+
+/**
+ * Only a validation refusal of the call is the witnessed send's value; a handle the call opens fails the send, and any
+ * other failure of the call fails it as it would fail an ordinary send.
+ */
+async function readCallRefusal(
+    send: BlackBoxRallarMessageSendInput,
+    sending: Promise<RallarMessageHandle>
+): Promise<BlackBoxRallarMessageCallRefusalDiagnostics> {
+    const settled = await readCallSettlement(sending);
+    return settled.fold(
+        (refusal) => ({
+            handleId: send.handleId,
+            carrier: send.carrier,
+            callRefusal: refusal.issues.map(({ path, code }) => ({ path, code }))
+        }),
+        (handle) => {
+            throw new Error(
+                `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.sendNotRefused}: messages.send ${send.handleId} ` +
+                    `observes a call refusal, and the call opened ${handle.msgId}.`
+            );
+        }
+    );
+}
+
+async function readCallSettlement(
+    sending: Promise<RallarMessageHandle>
+): Promise<Either<RallarValidationError, RallarMessageHandle>> {
+    try {
+        return Either.ofRight(await sending);
+    }
+    catch (error) {
+        if (isRallarValidationError(error)) {
+            return Either.ofLeft(error);
+        }
+        throw error;
+    }
 }
 
 function toPeerUnresolvedError(

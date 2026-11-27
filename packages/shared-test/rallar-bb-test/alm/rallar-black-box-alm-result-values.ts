@@ -8,6 +8,7 @@ import type {
     ALDeliveryRefusalReason,
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 import type { BoundedHistogram } from '@shared/measurement/bounded-histogram.ts';
 import type { TransportFaultActedCounts } from '@shared/transport-faults/to-transport-fault-acted-counts.ts';
 
@@ -21,6 +22,14 @@ export interface RallarBlackBoxTestMessagesSendResultValue {
     readonly reason?: string;
     readonly traceId: string;
     readonly corrId: string;
+}
+
+/** A send that observes `call-refused` and was refused at the call opens no handle: it reports the refusal's issues. */
+export interface RallarBlackBoxTestMessagesCallRefusalResultValue {
+    readonly handleId: string;
+    readonly carrier: RallarBlackBoxTestMessagesCarrier;
+    /** Every issue of the product's validation refusal, in the product's order, without its message text. */
+    readonly callRefusal: readonly Pick<RallarValidationIssue, 'path' | 'code'>[];
 }
 
 /** A replay opens no handle of its own: it reports the replayed handle and the verdict of the carrier admission. */

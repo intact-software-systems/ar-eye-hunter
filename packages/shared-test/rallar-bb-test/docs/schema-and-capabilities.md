@@ -205,7 +205,8 @@ that refusal fails the step.
 `messages.send` takes `carrier` (`ws`, `rtc`, `rtc-with-ws-fallback`), `typeId`
 and `payload`, and optionally `connection`, `topicId`, `purpose`, `publication`, `roomRef`, `scope`, `principalId`,
 `recipientPeers`, `recipientPrincipalIds`, `reliability`, `ack`, `ownership`, `resourceId`, `durability`,
-`onStorageUnavailable`, `ttlMs`, `orderingKey`, `seq`, `handleId`, `minSnapshotVersion`, `qos`, `maxRepairs` and `toPeer`. It returns `{ handleId, msgId, carrier, status, reason?, traceId, corrId }`: the handle's `traceId`, the
+`onStorageUnavailable`, `ttlMs`, `orderingKey`, `seq`, `handleId`, `minSnapshotVersion`, `qos`, `maxRepairs`, `toPeer`
+and `observe`. It returns `{ handleId, msgId, carrier, status, reason?, traceId, corrId }`: the handle's `traceId`, the
 trace the page minted for this send, and its `corrId`, the send's own `msgId` unless the send named one.
 `orderingKey` and `seq` pass to the product send: a room send that names `orderingKey` without `seq` is sequenced by
 the page's outbound from the track's head, which both carriers of the session share, and a stated `seq` at or below
@@ -252,10 +253,22 @@ handle. The roster names no role, so a room with two recipients has no resolvabl
 `receiver`, and the three-agent family addresses no peer. `toPeer: 'server'` is a
 WS-only target, because the server is no RTC peer (C9): on `rtc` or
 `rtc-with-ws-fallback` the product's typed send refuses it before admission with
-a validation error of code `unsupported`, which carries no page prefix, so the
-command fails with `RALLAR_BLACK_BOX_ALM_INVALID_COMMAND_INPUT`, opens no handle and
-puts nothing on either carrier. The page resolves no role until that send and does
+a validation error of code `unsupported`, which carries no page prefix, so an
+ordinary send fails with `RALLAR_BLACK_BOX_ALM_INVALID_COMMAND_INPUT`, opens no handle and
+puts nothing on either carrier; a send that states `observe: 'call-refused'` returns that
+refusal as its value instead (below). The page resolves no role until that send and does
 not pre-check the carrier; `server-command` therefore runs on `ws` only.
+
+`observe: 'call-refused'` (the only value) witnesses a send the product refuses at the
+call, with the meaning `rtc.send`'s `observe: 'rejected'` has: only the product's
+validation refusal of the call (an error `isRallarValidationError` accepts) is the
+send's value, `{ handleId, carrier, callRefusal }`, where `callRefusal` lists every
+issue of that refusal in the product's order as `{ path, code }`, without its message
+text. Such a send opens no handle. A call that opens a handle fails the command with
+`RALLAR_BLACK_BOX_ALM_SEND_NOT_REFUSED`; any other failure, of the call or of the
+page before it (a role it cannot resolve, for one), fails the command as it fails an
+ordinary send. A replay names no `observe`: the control validator and the page refuse it
+beside `replayOnCarrier`.
 
 `minSnapshotVersion` is a harness floor on the room snapshot a receiver must hold
 before it admits the send: `{ absolute: n }`, or `{ aboveCurrentBy: n }`, which

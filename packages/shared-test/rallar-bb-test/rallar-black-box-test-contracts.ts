@@ -414,6 +414,8 @@ export type RallarBlackBoxTestMessagesSendCommand =
         qos?: Readonly<{ ack: Readonly<{ algo: ALAckAlgo; }>; }>;
         /** The retransmits each receiver's gap requests may draw, at least 1; absent, the product's repair budget. */
         maxRepairs?: number;
+        /** As `rtc.send`'s: only the product's validation refusal of the call is the value; a handle fails the step. */
+        observe?: 'call-refused';
     }>;
 
 /**
