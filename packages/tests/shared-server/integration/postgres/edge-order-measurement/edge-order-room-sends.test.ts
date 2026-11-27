@@ -412,8 +412,8 @@ async function sendRoomMessage(room: RoomRun, publisher: string): Promise<void> 
     const sentAt = performance.now();
     const nowMs = Date.now();
     const sender = room.senders.get(publisher)!;
-    const position = sender.openSend();
-    const stamp = sender.stampSend(position, nowMs);
+    const position = sender.openSend(true, undefined);
+    const stamp = sender.stampSend(position, nowMs, undefined);
     const sent: SentMessage = {
         msgId: `room-${room.cluster.runId}-${publisher}-m${String(position).padStart(3, '0')}`,
         publisher,
@@ -431,7 +431,7 @@ async function sendRoomMessage(room: RoomRun, publisher: string): Promise<void> 
     };
     room.sent.push(sent);
     room.sentByMsgId.set(sent.msgId, sent);
-    sender.observeSend(position, { expiresAtMs: sent.expiresAtEpochMs, retried: true, getEnd: () => toSendEnd(sent) });
+    sender.observeSend(position, { expiresAtMs: sent.expiresAtEpochMs, getEnd: () => toSendEnd(sent) });
     const unstamped = roomMessage({ msgId: sent.msgId, originPeerId: publisher, nowMs, lifetimeMs: LIFETIME_MS });
     const message: ALMessage = { ...unstamped, payload: { ...unstamped.payload, resource: sent.resource } };
     const accepted = await readInstanceOf(room.instances, publisher).service.acceptIncomingMessage(message, publisher);
