@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { writeSync, type Stats } from 'node:fs';
-import { lstat, mkdir, open, readdir, readFile, rm, stat, writeFile, type FileHandle } from 'node:fs/promises';
+import { lstat, mkdir, open, readdir, readFile, rm, rmdir, stat, writeFile, type FileHandle } from 'node:fs/promises';
 import { availableParallelism, hostname, totalmem } from 'node:os';
 
 import { RTC_BASELINE_WRITER_LOCK_STALE_AFTER_MS } from '../evidence/rtc-baseline-writer-lock.ts';
@@ -286,45 +286,66 @@ function isNotFound(error: unknown): boolean {
     return (error as NodeJS.ErrnoException).code === 'ENOENT';
 }
 
-async function readLockAgeMs(lockDir: string): Promise<number> {
-    const lockStat = await stat(lockDir);
-    return Date.now() - lockStat.mtimeMs;
+type RtcBaselineLockState = 'released' | 'live' | 'stale';
+
+async function tryCreateDirectory(directory: string): Promise<boolean> {
+    try {
+        await mkdir(directory); // atomic: exactly one caller creates it
+        return true;
+    }
+    catch (error) {
+        if (!isAlreadyExists(error)) {
+            throw error;
+        }
+        return false;
+    }
+}
+
+async function readLockState(lockDir: string): Promise<RtcBaselineLockState> {
+    try {
+        const { mtimeMs } = await stat(lockDir);
+        return Date.now() - mtimeMs < RTC_BASELINE_WRITER_LOCK_STALE_AFTER_MS ? 'live' : 'stale';
+    }
+    catch (error) {
+        if (!isNotFound(error)) {
+            throw error;
+        }
+        return 'released'; // the holder released after the failed mkdir
+    }
+}
+
+// Reading a lock's age and removing it are two filesystem calls, so reclaimers take turns on
+// the reclaim directory and read the age again while holding it. A reclaimer that saw the lock
+// stale before another one reclaimed and took it finds a live lock here and leaves it alone.
+// A reclaim directory left by a killed reclaimer blocks reclaiming until it is removed by hand:
+// ageing it out would reopen the same race one level up.
+async function removeLockIfStale(lockDir: string): Promise<void> {
+    const reclaimDir = `${lockDir}.reclaim`;
+    if (!(await tryCreateDirectory(reclaimDir))) {
+        return;
+    }
+    try {
+        if ((await readLockState(lockDir)) === 'stale') {
+            await rm(lockDir, { recursive: true, force: true });
+        }
+    }
+    finally {
+        await rmdir(reclaimDir);
+    }
 }
 
 async function tryAcquireLock(lockDir: string): Promise<boolean> {
-    for (let attempt = 0; attempt < 2; attempt++) {
-        try {
-            await mkdir(lockDir); // atomic: exactly one process succeeds
-            return true;
-        }
-        catch (error) {
-            if (!isAlreadyExists(error)) {
-                throw error;
-            }
-        }
-        // The holder may release between the failed mkdir and this stale check, so the
-        // lock dir can vanish before it is stat'd. Treat ENOENT as losing the race and
-        // retry the acquire loop.
-        try {
-            const ageMs = await readLockAgeMs(lockDir);
-            if (ageMs < RTC_BASELINE_WRITER_LOCK_STALE_AFTER_MS) {
-                return false; // live lock — never touch a fresh lock
-            }
-        }
-        catch (error) {
-            if (!isNotFound(error)) {
-                throw error;
-            }
-            continue;
-        }
-        try {
-            await rm(lockDir, { recursive: true, force: false }); // one reclaimer wins
-        }
-        catch {
-            // Lost the reclamation race; retry mkdir on the next loop.
-        }
+    if (await tryCreateDirectory(lockDir)) {
+        return true;
     }
-    return false;
+    const lockState = await readLockState(lockDir);
+    if (lockState === 'live') {
+        return false; // a live lock is never touched
+    }
+    if (lockState === 'stale') {
+        await removeLockIfStale(lockDir);
+    }
+    return tryCreateDirectory(lockDir);
 }
 
 export function wrapFileHandle(path: string, handle: FileHandle): RtcBaselineBunFile {

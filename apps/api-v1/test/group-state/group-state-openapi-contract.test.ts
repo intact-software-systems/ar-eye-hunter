@@ -458,3 +458,15 @@ test('generated event clients can offer or settle an organizer handover and read
     assert.deepEqual(handover?.required, ['offerId', 'offeredBy', 'recipientId', 'expiresAt']);
     assert.equal(handover?.properties?.expiresAt.type, 'integer');
 });
+
+test('event views document a nullable expired offer with a mandatory numeric deadline', async () => {
+    const response = await installApiDocumentationRoutes(new Hono()).request('/api/openapi.json');
+    const { components } = await response.json() as OpenApiDocument;
+    const view = components.schemas.RoomEventView;
+    assert.ok(view.required?.includes('lastExpiredOffer'));
+    assert.deepEqual(view.properties?.lastExpiredOffer.oneOf, [
+        { allOf: [{ $ref: '#/components/schemas/EventCourtOffer' }, { type: 'object', properties: { deadline: { type: 'integer' } } }] },
+        { type: 'null' }
+    ]);
+    assert.ok(components.schemas.EventCourtOffer.required?.includes('deadline'));
+});

@@ -1,3 +1,4 @@
+import { decodeWebPushCredentials } from '@shared-server/rallar-system/room-events/event-web-push.ts';
 import { decodeApiV1Group } from './decode-api-v1-group.ts';
 import { DEFAULT_SERVER_SHUTDOWN_DEADLINE_MS } from '@shared-server/process/default-server-shutdown-deadline-ms.ts';
 import {
@@ -71,7 +72,13 @@ export function decodeApiV1Configuration(
         staticClientsSource: input.staticClientsSource,
         hardwareConcurrency: input.hardwareConcurrency
     });
+    let webPush = null;
+    if (secrets.webPushVapid !== undefined) {
+        try { webPush = decodeWebPushCredentials(secrets.webPushVapid); }
+        catch { decoder.secretIssue('webPushVapid', 'invalid-secret', 'Invalid Web Push VAPID configuration.'); }
+    }
     const configuration: ApiV1Configuration = {
+        webPush,
         profile: decodeProfile(decoder, structuredValues, input),
         http: decodeHttp(decoder, structuredValues),
         publicApi: decodePublicApi(decoder),

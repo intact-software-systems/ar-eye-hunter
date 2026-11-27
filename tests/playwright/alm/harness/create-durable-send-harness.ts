@@ -239,7 +239,8 @@ function toReceiptedCommandPlanShape(sessionId: string): DurableSendPlanShape {
                     access: 'members',
                     durability: 'local-outbox',
                     onStorageUnavailable: 'refuse',
-                    publication: undefined
+                    publication: undefined,
+                    order: undefined
                 },
                 laneTtlMs: AL_CHANNEL_SEND_DEFAULTS.command.ttlMs,
                 actions: undefined

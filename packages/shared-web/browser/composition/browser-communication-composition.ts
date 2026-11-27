@@ -164,6 +164,8 @@ export function createBrowserMessagingComposition(
         sessionDeliveries: input.sessionDeliveries,
         publicationStages: input.publicationStages,
         nowMs: input.nowMs,
+        timers: createDefaultTimers(),
+        newEdgeOrderStreamId: crypto.randomUUID.bind(crypto),
         recoveryOwners: input.recoveryOwners,
         topicSubscriptions: input.topicSubscriptions,
         connect: input.session.acquireConnection,

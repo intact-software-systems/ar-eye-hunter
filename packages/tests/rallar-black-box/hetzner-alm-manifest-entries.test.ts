@@ -202,6 +202,12 @@ describe('ALM conformance hosted lane families', () => {
             ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.map((carrier) => `alm-${carrier}-lost-stream-start`),
             'alm-rtc-lost-stream-start-bounded',
             'alm-ws-seeded-jitter-stream',
+            // The edge order cells' evidence is the local full lane's too.
+            ...ALM_CONFORMANCE_CARRIERS.map((carrier) => `alm-${carrier}-edge-order-stream`),
+            'alm-ws-edge-order-jitter-stream',
+            ...['edge-order-loss-stream', 'edge-order-reload', 'edge-order-late-join'].flatMap((key) =>
+                ALM_CONFORMANCE_CARRIERS.map((carrier) => `alm-${carrier}-${key}`)
+            ),
             'alm-rtc-with-ws-fallback-backpressure-hands-over',
             'alm-rtc-backpressure-refused',
             ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.map((carrier) => `alm-${carrier}-backpressure-deferred`),

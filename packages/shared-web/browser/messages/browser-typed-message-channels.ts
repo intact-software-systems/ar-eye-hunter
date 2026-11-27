@@ -1,6 +1,11 @@
 import type { BrowserChannelRecoveryOwners } from '@shared-web/browser/messages/browser-channel-recovery-owners.ts';
 import type { BrowserMessageInputValidator } from '@shared-web/browser/messages/browser-message-input-validator.ts';
 import type { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
+import type { BrowserRallarMessageSubscriptions } from '@shared-web/browser/messages/browser-rallar-message-subscriptions.ts';
+import {
+    validateEdgeOrderSend,
+    type EdgeOrderSendOptions
+} from '@shared-web/browser/messages/edge-order/validate-edge-order-send.ts';
 import type { BrowserGrantedTopics } from '@shared-web/browser/messages/publication/browser-granted-topics.ts';
 import {
     validateBrowserLiveSend,
@@ -23,7 +28,7 @@ import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-co
 import { decodeALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { throwRallarValidation } from '@shared/api/rallar-validation.ts';
+import { throwRallarValidation, type RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 
 export namespace BrowserTypedMessageChannels {
     export interface Input {
@@ -35,6 +40,8 @@ export namespace BrowserTypedMessageChannels {
         readonly topicSubscriptions: Pick<BrowserTopicSubscriptions, 'hold'>;
         /** Where a granted channel declares its topic, so every send on it is a granted delivery. */
         readonly grantedTopics: Pick<BrowserGrantedTopics, 'declareGrantedTopic'>;
+        /** Where an edge-ordered channel declares its topic and type, so its arrivals are sorted before a handler. */
+        readonly edgeOrder: Pick<BrowserRallarMessageSubscriptions, 'declareEdgeOrder'>;
     }
 }
 
@@ -48,7 +55,10 @@ export class BrowserTypedMessageChannels {
     public channel<T>(
         definition: RallarTypedMessageChannelDefinition
     ): RallarTypedMessageChannel<T> {
-        const issues = this.input.inputValidator.validateTypedChannel(definition);
+        const issues = [
+            ...this.input.inputValidator.validateTypedChannel(definition),
+            ...validateRoomlessChannelOrder(definition)
+        ];
         if (issues.length > 0) {
             throwRallarValidation(issues);
         }
@@ -63,12 +73,16 @@ export class BrowserTypedMessageChannels {
         if (definition.access === 'granted' && definition.topicId !== undefined) {
             this.input.grantedTopics.declareGrantedTopic(definition.topicId);
         }
+        if (definition.order === 'edge') {
+            this.input.edgeOrder.declareEdgeOrder(route, definition.onOrderGap);
+        }
         const policy: BrowserTypedChannelPolicy = {
             purpose: definition.purpose,
             access: definition.access,
             durability: definition.durability,
             onStorageUnavailable: definition.onStorageUnavailable ?? 'refuse',
-            publication: definition.publication && decodeALPublicationPolicy(definition.publication).right
+            publication: definition.publication && decodeALPublicationPolicy(definition.publication).right,
+            order: definition.order
         };
         return {
             send: async (payload, options: RallarTypedMessageSendOptions<T> = {}) =>
@@ -171,13 +185,31 @@ function isRoomFrame(message: ALMessage, roomRef: GroupRef): boolean {
     return targetRoomRef !== undefined && isSameGroupRef(targetRoomRef, roomRef);
 }
 
-/** The send a channel hands its sender: a live channel's is refused here, where its policy is known, before a handle opens. */
-function toChannelSend<TSend extends BrowserLiveSendOptions>(send: TSend, policy: BrowserTypedChannelPolicy): TSend {
-    const issues = policy.publication === undefined ? [] : validateBrowserLiveSend(send);
+/**
+ * The send a channel hands its sender. A live channel's and an edge-ordered channel's are refused here, where the
+ * policy is known, before a handle opens and before an edge-ordered send takes a position.
+ */
+function toChannelSend<TSend extends BrowserLiveSendOptions & EdgeOrderSendOptions>(
+    send: TSend,
+    policy: BrowserTypedChannelPolicy
+): TSend {
+    const issues = [
+        ...(policy.publication === undefined ? [] : validateBrowserLiveSend(send)),
+        ...(policy.order === 'edge' ? validateEdgeOrderSend(send) : [])
+    ];
     if (issues.length > 0) {
         throwRallarValidation(issues);
     }
     return send;
+}
+
+/** One stream is one channel in one room, so `channel(...)`, whose sends each name their room, takes no order. */
+function validateRoomlessChannelOrder(
+    definition: RallarTypedMessageChannelDefinition
+): readonly RallarValidationIssue[] {
+    return definition.order === undefined
+        ? []
+        : [{ path: '$.order', code: 'unsupported', message: 'Only a room channel is edge-ordered: use room(...).' }];
 }
 
 /** The server holds an election per room and topic, and only a granted topic's audience asks for one. */

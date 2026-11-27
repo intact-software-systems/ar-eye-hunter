@@ -59,6 +59,16 @@ const CONGESTION_EPISODES: RallarBlackBoxTestAlmUsage['congestionEpisodes'] = {
     openEpisodes: 1,
     unrecordedSamples: 0
 };
+const EDGE_ORDER_USAGE: RallarBlackBoxTestAlmUsage['edgeOrder'] = {
+    streams: 2,
+    heldMessages: 5,
+    evictedStreams: 1,
+    lateDrops: 3,
+    gaps: 1,
+    heldDropped: 2,
+    sendStreams: 1,
+    openSends: 4
+};
 /** What a page that recorded on other bounds answers: a whole histogram, whose only fault is its bounds. */
 function toRecordedOnOtherBounds(upperBounds: readonly number[], samples: readonly number[]): BoundedHistogram {
     return computeBoundedHistogramRecorded(assertBoundedHistogram(upperBounds, 'the other bounds'), samples).histogram;
@@ -76,7 +86,8 @@ const FIRST_REPORT: RallarBlackBoxTestAlmUsage = {
     replyWaitsOpen: 1,
     publication: PUBLICATION_REPORT,
     ordering: ORDERING_COUNTERS,
-    congestionEpisodes: CONGESTION_EPISODES
+    congestionEpisodes: CONGESTION_EPISODES,
+    edgeOrder: EDGE_ORDER_USAGE
 };
 const SECOND_REPORT: RallarBlackBoxTestAlmUsage = {
     usage: { admissions: 1_500, bytes: 60_000, oldestAgeMs: 29_000, tracks: 64 },
@@ -90,7 +101,8 @@ const SECOND_REPORT: RallarBlackBoxTestAlmUsage = {
     replyWaitsOpen: 0,
     publication: { ...PUBLICATION_REPORT, lanes: 0, streams: 0, staged: 0, stagedBytes: 0 },
     ordering: { ...ORDERING_COUNTERS, entered: 900 },
-    congestionEpisodes: { ...CONGESTION_EPISODES, openEpisodes: 0 }
+    congestionEpisodes: { ...CONGESTION_EPISODES, openEpisodes: 0 },
+    edgeOrder: { ...EDGE_ORDER_USAGE, streams: 256, heldMessages: 0, openSends: 0 }
 };
 
 function createDefaultPageRuntime(
@@ -403,7 +415,8 @@ describe('the stats result rallar.alm block', () => {
                 figures: { ...PUBLICATION_FIGURES, unrecordedSamples: 0.5 }
             },
             ordering: { ...ORDERING_COUNTERS, witnessed: -1, beforeEntry: 1.5 },
-            congestionEpisodes: CONGESTION_EPISODES
+            congestionEpisodes: CONGESTION_EPISODES,
+            edgeOrder: { ...EDGE_ORDER_USAGE, heldMessages: -1, openSends: 0.5 }
         }));
 
         const result = await runtime.execute({ kind: 'stats', commandId: 'stats-1' });
@@ -416,7 +429,32 @@ describe('the stats result rallar.alm block', () => {
                 'deliveredMarkers is not a count; repliesHeld is not a count; replyWaitsOpen is not a count; ' +
                 'publication.stagedBytes is not a count; publication.limits.maxStagedBytes is not a count; ' +
                 'publication.counters.cancelled is not a count; publication.figures.unrecordedSamples is not a count; ' +
-                'ordering.witnessed is not a count; ordering.beforeEntry is not a count'
+                'ordering.witnessed is not a count; ordering.beforeEntry is not a count; ' +
+                'edgeOrder.heldMessages is not a count; edgeOrder.openSends is not a count'
+        );
+    });
+
+    it('carries the page\'s edge-order block into the stats result and the latest stats', async () => {
+        const runtime = createDefaultPageRuntime(async () => FIRST_REPORT);
+
+        const stats = await readStats(runtime, 'stats-1');
+
+        expect(stats.value).toMatchObject({ rallar: { alm: { edgeOrder: EDGE_ORDER_USAGE } } });
+        expect(runtime.state().latestStats?.rallar?.alm?.edgeOrder).toEqual(EDGE_ORDER_USAGE);
+    });
+
+    it('fails the stats command when the page answers a ledger report without its edge-order block', async () => {
+        const { edgeOrder: _edgeOrder, ...withoutEdgeOrder } = FIRST_REPORT;
+        const runtime = createDefaultPageRuntime(async () => withoutEdgeOrder);
+
+        const result = await runtime.execute({ kind: 'stats', commandId: 'stats-1' });
+
+        expect(result.ok).toBe(false);
+        expect(result.error?.message).toBe(
+            'The page\'s session ledger report is not valid: edgeOrder.streams is not a count; ' +
+                'edgeOrder.heldMessages is not a count; edgeOrder.evictedStreams is not a count; ' +
+                'edgeOrder.lateDrops is not a count; edgeOrder.gaps is not a count; edgeOrder.heldDropped is not a count; ' +
+                'edgeOrder.sendStreams is not a count; edgeOrder.openSends is not a count'
         );
     });
 
