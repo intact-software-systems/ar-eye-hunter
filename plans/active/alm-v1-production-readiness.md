@@ -207,15 +207,17 @@ readers: the bounded-histogram decoder refuses a `min` or `max` outside the buck
 
 ### #927, the measurement cell for ordered room sends
 
-A harness under `apps/api-v1/scripts/perf/alm-ordered-send/`, run with
-`npm run perf:alm:ordered-send`, with a pure report and a PostgreSQL smoke. It changes no product
+A harness under `apps/api-v1/scripts/perf/alm-room-send/`, run with
+`npm run perf:alm:room-send`, with a pure report and a PostgreSQL smoke. It changes no product
 behaviour. Merged as `bc84d58`; its `Branch Release Gate result` was green at `5ddf641` (checked),
 and the head that merged adds the merge of `main` after #923 and one README sentence. Section 5.1
 holds what its reference set shows (R1) and what building it found on `main` (R8, R15 to R19; G9
-in section 5.4). The cell offers ordered sends only (its README). On #885's tree its instances are
-built on the receipt record, as the API's are there, and one run there is in R1. Not built: the
-reference set on #885's tree, a hosted or multi-process run, a window longer than 20 s, and a
-topic declared `fanout: 'outbox'`.
+in section 5.4). As merged the cell offered ordered sends only. It has since gained a required
+`--ordering` and can offer either ordered or unordered sends, and its README holds one reference
+set of each ordering, measured apart on `main`. On #885's tree its instances are built on the
+receipt record, as the API's are there, and one run of ordered sends there is in R1. Not built:
+either reference set on #885's tree, a hosted or multi-process run, a window longer than 20 s,
+and a topic declared `fanout: 'outbox'`.
 
 ## 5. What remains
 
@@ -258,7 +260,7 @@ Notes on the rows that need them:
 - **R1.** Measured on `main`, the build before the durable receipt record, by the cell of #927:
   three API WS server instances in one
   process on one PostgreSQL, the real router, a fixed-audience authorizer and an open-loop load
-  (`apps/api-v1/scripts/perf/alm-ordered-send/` and its README). The
+  (`apps/api-v1/scripts/perf/alm-room-send/` and its README). The
   reference set is 16 runs: five publishers at two sends a second for 20 s unless stated, observed
   for 75 s after the last offer, at the API's default application pool of 5.
   - At +0 ms all six runs keep up: every expected copy is written in order and every receipt is
@@ -273,8 +275,8 @@ Notes on the rows that need them:
     its lag stays at or under 9.2 ms at the 99th percentile while offering and 3.8 ms over the
     tail.
 
-  - On #885's tree one run at +5 ms nominal (five publishers, two a second for 20 s, the client
-    stand-in, a pool of 5; 2026-11-27, a 1-minute load of 2.2 to 3.9) keeps up: 2,800 of 2,800
+  - On #885's tree one run at +5 ms nominal (`--ordering=ordering-key`, five publishers, two a second for 20 s, the client
+    stand-in, a pool of 5; 2026-11-27, a 1-minute load of 2.2 to 3.9, another machine than the reference set's) keeps up: 2,800 of 2,800
     copies written in order, the first write at p50 0.22 s and p99 0.74 s after the due time, 200
     of 200 receipts complete (p50 0.70 s and p99 1.31 s after the offer), no send handed twice, no
     NACK or repair request, no resend. n is 1. That tree holds several changes beyond `main` on
@@ -787,13 +789,14 @@ on a tree that holds #885 and #927. The measurement is the cell of #927; the sli
 - Then the open case: one track at 5 and at 10 sends a second, which A and B did not rescue
   (D784), and which writes 168 of 1,400 and 14 of 2,800 copies on `main` at +5 ms (#927).
 
-Acceptance, in the cell's terms: at +5 ms nominal the five-publisher reference shape writes 2,800
-of 2,800 copies in order and completes 200 of 200 receipts in three runs of three, with the
-sender stand-in and without it, with the median from due time to first write under 1 s over the
-expected copies; no send the server admitted ends `first-hop-exhausted`, unless decision 17 rules
-that end a stated limit; one track at 10 sends a second does not stall, or its ceiling is stated
-as a limit with a typed refusal; no send handed off more than once in the cell; the four lane
-families green on three carriers; the medium-scale gate green with no constant touched.
+Acceptance, in the cell's terms: at +5 ms nominal the five-publisher reference shape under
+`--ordering=ordering-key` writes 2,800 of 2,800 copies in order and completes 200 of 200 receipts
+in three runs of three, with the sender stand-in and without it, with the median from due time to
+first write under 1 s over the expected copies; no send the server admitted ends
+`first-hop-exhausted`, unless decision 17 rules that end a stated limit; one track at 10 sends a
+second does not stall, or its ceiling is stated as a limit with a typed refusal; no send handed off
+more than once in the cell; the four lane families green on three carriers; the medium-scale gate
+green with no constant touched.
 
 **Where `plans/active/edge-ordered-room-sends.md` meets these slices (#914).** That plan proposes
 edge order: one sender's messages kept in order by Rallar Web at the two ends, over the unordered
@@ -804,9 +807,12 @@ planned here. The two meet in three places:
 - Both follow #885. That plan builds on the unordered path, which keeps up under load only on
   #885's tree (its status line).
 - Both need a measurement through the WS server on PostgreSQL. That plan's slice 1 measures the
-  unordered path with a counter in the payload. The cell of #927 offers ordered sends only; its
-  instances, latency wrappers and report can carry that measurement once the cell has an
-  unordered shape, which is not built. Which harness that slice uses is that plan's choice.
+  unordered path with a counter in the payload. The cell of #927 offered ordered sends only; it
+  can now offer either ordering on the same instances, latency wrappers and report, with the
+  send's number in the payload under both (`--ordering`, its README). Its unordered reference set
+  on `main`, the build before the durable receipt record, wrote every copy in all sixteen runs; at
+  +5 ms a receipt completed about 30 s after its offer at the median (its README). No unordered
+  run of the cell has been made on #885's tree. Which harness that slice uses is that plan's choice.
 - One of ruling 6's choices refuses a browser send with `orderingKey`. That plan says the choice
   removes the stall it started from, which is R1. Decision 18 asks how Slice 2's levers and that
   ruling are ordered.
