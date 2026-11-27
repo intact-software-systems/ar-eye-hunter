@@ -3,11 +3,14 @@
 Review date: 2026-09-05
 
 Reviewed source: `cfcc9a6c7` (`main` after PR #731; markers refreshed 2026-10-29, originally
-written against `02d65ac4a`)
+written against `02d65ac4a`). That was the last reading of the whole document. Each pull
+request since has restated the blocks its change touched, so a block is as current as the last
+pull request that changed it.
 
 Related documents: [delivery roadmap](./alm-improvement-plan.md),
-[persistence and performance QoS plan](./alm-qos-product-plan.md), and
-[publication QoS and pub/sub addendum](./alm-publication-qos-addendum.md). The per-slice design
+[persistence and performance QoS plan](./alm-qos-product-plan.md),
+[publication QoS and pub/sub addendum](./alm-publication-qos-addendum.md), and
+[first hosted campaign targets](./alm-first-hosted-campaign-targets.md). The per-slice design
 proposals, the static audit, the assessments and the S2 diagnosis were deleted after Release 8
 completed and are in git history before `cfcc9a6c7`.
 
@@ -717,9 +720,11 @@ ruling 6; the director relay's WS unicast is gone since S3c-ii). A per-send
 receipted best-effort send is a contradiction; with an explicit `ack` the
 caller's ack wins (R-S3a-2). A WebSocket frame accepted by the browser API or an
 RTC payload accepted by `RTCDataChannel.send` is not a logical delivery receipt.
-A director command can reach the director twice after a fallback, because AL
-dedup is per carrier lane: relay commands are at-least-once, and the game's
-sequence tracker refuses the copy (S3c-ii, R-S3c-ii-4). The relay addresses a
+A director command that falls back to WS is not delivered twice for that reason:
+the session's one inbound store is shared by both carriers (D20, D54), so the
+second copy meets its first admission and is answered `duplicate`. Relay
+commands are still at-least-once, and the game's sequence tracker refuses a
+repeated command (S3c-ii, R-S3c-ii-4). The relay addresses a
 command to the director by role (`ack: 'group-leader'`, D167) and reports it
 `sent` only when the director's receipt arrives, waiting at most 30 s.
 A command the typed send refuses at validation becomes a `failed` result with
@@ -1115,7 +1120,7 @@ and zero non-probe `al-work` IndexedDB operations: a unit pin per direction, and
 the `volatile-default` conformance scenario on both pages of every carrier over a
 reset window, with the durable owners' idle probes (`work-page`, `work-probe`)
 reported beside the zero. The `durable-opt-in` scenario shows the opt-in pays for
-storage; one durable send spends 10 `al-admission` and
+storage; one durable send spends 11 `al-admission` and
 9 `al-work` operations, and the storage snapshot's durable figures are
 unchanged while the volatile default adds 0 rows. A volatile admission reads no IndexedDB and takes no
 Web Lock, so it completes within the caller's microtask turn: a burst loop of
@@ -1603,9 +1608,14 @@ anchored by
 [`live-rtc-three-browser-coverage.test.ts`](../../packages/tests/rallar-black-box/live-rtc-three-browser-coverage.test.ts).
 The current browser workload is a base for extending ALM storage and lifecycle
 instrumentation, not evidence that those completion requirements already pass.
-The conformance lane (roadmap F1) becomes the acceptance authority: one scenario
-catalog run over both carriers in the per-push Playwright lane, the Release
-Gate's Postgres lane, and the Hetzner manifests on `main`.
+The conformance lane (roadmap F1) is the acceptance authority for carrier
+conformance: one scenario catalog run over `ws`, `rtc` and
+`rtc-with-ws-fallback`. Its `smoke` scope is the required `alm-smoke` lane of
+the Release Gate, on the in-memory API. Its `full` scope runs on the PostgreSQL
+API as an observation nothing waits for (D702). Hosted runs are guidance, not
+acceptance (D434); the
+[first hosted campaign targets](./alm-first-hosted-campaign-targets.md) state
+what the first hosted campaign must show (D643).
 
 ## Product completion criteria
 

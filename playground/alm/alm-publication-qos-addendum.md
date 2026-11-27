@@ -21,11 +21,12 @@ delivery or durability guarantees. The
 [RallarActor proposal](../../plans/active/rallar-actor.md) is a consumer of this
 shared capability, alongside browsers and server producers.
 
-Statements below are proposed requirements. Preparing and publishing this
-document does not authorize their implementation or allocate new roadmap
-decision numbers. Adoption must settle the compatibility and security choices
-described here. The pull request remains the delivery record; this document is
-not a progress ledger.
+Sections 1 to 6 state requirements as they were proposed. Slices 1 to 9 built
+the advertised modes under roadmap decisions D465 to D641, and §7 records each
+as applied. The later outcomes of §7 are still proposed. Adoption is not
+decided: the compatibility and security choices of §6 and the measurement half
+of §9 are owed ("After Slice 9"). The pull request remains the delivery record;
+this document is not a progress ledger.
 
 ## 1. Intended outcome
 
@@ -501,9 +502,10 @@ repository's focused exception process; this proposal creates no exception.
 
 ## 7. Delivery horizon
 
-Only the next two implementation slices are concrete. They are proposed
-capability increments, not commitments to begin implementation in this PR.
-Recover current owners and tests again before implementing each slice.
+Slices 1 to 9 below are delivered, each with its "As applied" record. What
+follows them is under "After Slice 9" and "Later outcomes" and stays
+outcome-shaped. Recover current owners and tests again before implementing a
+further slice.
 
 ### Slice 1: bounded publication pacing
 

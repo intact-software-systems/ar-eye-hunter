@@ -10,13 +10,14 @@ and the [delivery roadmap](alm-improvement-plan.md) owns sequencing and decision
 design behind both for ALM's persistence and performance QoS. It replaces the QueueBox persistence
 QoS plan first proposed in PR #606 (D83). That plan's profiles, acceptance scenarios and measurement
 criteria map into ALM's durability vocabulary and evidence structure (section 12), and its document
-is deleted. Everything here is planned for Release 4 unless a statement names shipped behaviour.
+is deleted. Everything here was planned for Release 4, which is delivered: P1a (#627), P1b (#628), I2a (#629, #630) and I2b (#640). Section 7.6 lists what stays outcome-shaped.
 
 ## 1. Summary
 
-ALM has two persistence tiers today. `volatile` is the default since S3a (D2) and performs no
-IndexedDB work. The durable opt-in (`local-outbox`, `local-inbox`) commits every admission before
-dispatch. This plan makes performance a first-class, configurable part of ALM's QoS:
+ALM had two persistence tiers when this plan was written. `volatile` is the default since S3a (D2)
+and performs no IndexedDB work. The durable opt-in (`local-outbox`, `local-inbox`) commits every
+admission before dispatch. It has four since I2b added `local-checkpoint`. This plan made
+performance a first-class, configurable part of ALM's QoS:
 
 - **One durability axis** (D84): `volatile` < `local-checkpoint` < `local-outbox` < `local-inbox`,
   chosen per channel or send exactly as today. `local-checkpoint` is the only new tier. Its sender
