@@ -273,12 +273,19 @@ Notes on the rows that need them:
     its lag stays at or under 9.2 ms at the 99th percentile while offering and 3.8 ms over the
     tail.
 
-  - On #885's tree, where the cell's instances count in the receipt record, one run at +5 ms
-    nominal (five publishers, two a second for 20 s, the client stand-in, a pool of 5; 2026-11-27,
-    a 1-minute load of 2.2 to 3.9) keeps up: 2,800 of 2,800 copies written in order, the first
-    write at p50 0.22 s and p99 0.74 s after the due time, 200 of 200 receipts complete (p50 0.70
-    s and p99 1.31 s after the offer), no send handed twice, no NACK or repair request, no resend.
-    n is 1.
+  - On #885's tree one run at +5 ms nominal (five publishers, two a second for 20 s, the client
+    stand-in, a pool of 5; 2026-11-27, a 1-minute load of 2.2 to 3.9) keeps up: 2,800 of 2,800
+    copies written in order, the first write at p50 0.22 s and p99 0.74 s after the due time, 200
+    of 200 receipts complete (p50 0.70 s and p99 1.31 s after the offer), no send handed twice, no
+    NACK or repair request, no resend. n is 1. That tree holds several changes beyond `main` on
+    this path, and one run does not separate them: the durable receipt record the cell's
+    instances count in (D770 to D779); a receipt commit fenced on its own message's version, not
+    the server's sender version (D780); `admitted` written on the admitting socket (D781); an
+    ordered completion guarded on its position and its slot (D783); a lost inbound write tried
+    again at once (D784); and the batch that completes an ordered delivery handing on its track's
+    next one (D785). The receipt record's own runs through the WS server place the ordered stall
+    in the inbound ordered delivery, not in the record
+    (`packages/shared/alm/receipt-record/README.md`, "Measured").
 
   So the defect predates #885. The limits: one process and one event loop, with no authorizer
   reads and no other traffic; "+5 ms" is nominal and a lower bound, on the delayed round trips

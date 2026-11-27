@@ -134,11 +134,13 @@ const ROOM_PRESENCE_LIFETIME_MS = 24 * 60 * 60 * 1_000;
  *   from the receipt record, with the `admitted` receipt and the confirmations so far while the receipt is open and
  *   with its terminal receipt as a row of the WS outbox once it has ended
  *   (`WsQueueBoxServerReceiptAggregation.writeAdmittedReceipt`);
- * - a receipt: the instance that admits the send opens its receipt in the record the three instances share on
- *   PostgreSQL and writes the `admitted` receipt to the origin's socket, a row of the shared WS outbox only when no
- *   socket there took it. The instance that ends the receipt in the record writes the terminal receipt as such a row.
- *   The instance whose worker takes a row writes it to the origin's socket when that socket is its own, and
- *   otherwise announces the row's key to the others by a NOTIFY, again and again until the row expires;
+ * - a receipt: the instance that admits the send (at ingress the origin's own; for a send kept `pending-admission`,
+ *   the instance that ran its replay) opens its receipt in the record the three instances share on PostgreSQL and
+ *   writes the `admitted` receipt to the origin's sockets there, a row of the shared WS outbox only when no socket
+ *   there took it. The record's ended work, on whichever instance claims it, writes the terminal receipt as such a
+ *   row. The instance whose worker takes a row writes it to the origin's socket when that socket is its own, and
+ *   otherwise announces the row's key to the others by a NOTIFY and leaves the row to be taken again, until an
+ *   instance that holds the origin's socket takes it or the row expires (the receipt row's republication);
  * - an ACK: counted in the record by the instance its session is on, whichever instance admitted the send.
  *
  * The database latency of the shape is added to: every statement of the three instances; BEGIN and COMMIT or
@@ -167,7 +169,11 @@ const ROOM_PRESENCE_LIFETIME_MS = 24 * 60 * 60 * 1_000;
  * - the envelope carries no room send fence, which a browser's room send carries;
  * - no group and no client is in the database, so the target resolver has no snapshot to read and no connect,
  *   presence or heartbeat is written; none of the API's other workers run, no AppInbox reader among them, and no
- *   diagnostics sink is installed.
+ *   diagnostics sink is installed;
+ * - the WS server is built without three of the API's options: the outbox producer provenance read
+ *   (`readProducerProvenance`), the captured recipient eligibility filters, on the service and on the bridge
+ *   (`capturedRecipientEligibilityFilters`), and the middleware's inbound authorization (`authorizeInboundMessage`).
+ *   Whether the outbox's re-check of a row's producer or recipients judges receipt rows was not checked.
  *
  * No offer fails a run: what the entry answers is recorded as its answer, and an offer that throws, of a send, of a
  * send again or of an ACK, is recorded as `threw` with the error's name and message, and the run goes on to the end

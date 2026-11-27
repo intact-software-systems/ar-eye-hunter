@@ -86,14 +86,14 @@ describe('ALM ordered-send cell on PostgreSQL', () => {
     postgresIt(
         'writes and receipts the same sends when its publishers stand in for a client, and ends each on its complete receipt',
         async () => {
-            const { observations: run, record } = await runSmallCell({ delayMs: 0, senderRecovery: 'client-stand-in' });
+            const { observations, record } = await runSmallCell({ delayMs: 0, senderRecovery: 'client-stand-in' });
 
-            expectEverySendWrittenAndReceipted(run);
-            await expectEveryReceiptEndedCompleteInTheSharedRecord(run, record);
-            expect(run.resends.filter((resend) => ['rejected', 'threw', 'not-admitted'].includes(resend.acceptance)))
+            expectEverySendWrittenAndReceipted(observations);
+            await expectEveryReceiptEndedCompleteInTheSharedRecord(observations, record);
+            expect(observations.resends.filter((resend) => ['rejected', 'threw', 'not-admitted'].includes(resend.acceptance)))
                 .toEqual([]);
-            expect(run.sendEnds.map((end) => end.cause)).toEqual(Array.from({ length: SENDS }, () => 'terminal-receipt'));
-            expect(run.declinedRepairs.filter((declined) => declined.reason !== 'send-ended')).toEqual([]);
+            expect(observations.sendEnds.map((end) => end.cause)).toEqual(Array.from({ length: SENDS }, () => 'terminal-receipt'));
+            expect(observations.declinedRepairs.filter((declined) => declined.reason !== 'send-ended')).toEqual([]);
         },
         RUN_BUDGET_MS
     );
@@ -168,8 +168,9 @@ function expectEverySendWrittenAndReceipted(observations: OrderedSendCellObserva
         copiesReadPastAnUnreadPredecessor: 0
     });
     expect(report.recipientDelays.copiesReadBeforeTheirOffer).toBe(0);
-    // A receipt may be read again: an instance without the origin's socket publishes a receipt row to the cluster
-    // until the row expires, so `moreThanOneTerminal` is no part of what a run must show.
+    // A receipt may be read again: an instance without the origin's socket announces a receipt row to the cluster and
+    // leaves it to be taken again until an instance holding that socket takes it or the row expires, so
+    // `moreThanOneTerminal` is no part of what a run must show.
     expect(report.receipts).toMatchObject({
         expected: SENDS,
         complete: SENDS,

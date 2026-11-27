@@ -49,9 +49,12 @@ export const ORDERED_SEND_CELL_LIMITS: readonly string[] = [
     'What a browser does after `resync-required` or `receipt-exhausted` is not modelled: under either recovery a ' +
     'publisher goes on offering the next send of the same track.',
     'The three instances count each receipt in one receipt record on PostgreSQL, and no count of open receipts ' +
-    `bounds it: a receipt's rows live until ${AL_RECEIPT_DEADLINE_GRACE_MS / 1_000} s past its send's deadline, a ` +
-    'confirmation that long again, so the rows a run holds grow with its send rate. A send to more than ' +
-    `${AL_MESSAGE_RESOURCE_LIMITS.collectionEntries} recipients opens no receipt; the room's fourteen stay far below it.`,
+    `bounds it: an open receipt's rows live until ${AL_RECEIPT_DEADLINE_GRACE_MS / 1_000} s past its send's ` +
+    'deadline and a confirmation under it that long again, an ended receipt that long past the later of its ' +
+    'deadline and its end, and a confirmation counted before its receipt was opened 30 min and ' +
+    `${AL_RECEIPT_DEADLINE_GRACE_MS / 1_000} s, so the rows a run holds grow with its send rate. A send to more ` +
+    `than ${AL_MESSAGE_RESOURCE_LIMITS.collectionEntries} recipients, or one whose receipt the control cannot ` +
+    'carry, opens no receipt; the room\'s fourteen stay far below both.',
     'The database is local, on the disk and the processor of the machine that runs the cell: its own time and its ' +
     'fsync are that machine\'s, and other work on the machine shows in the load average the artifact records.',
     'The artifact holds the report and the count of every observation list. It holds in full the later offers, the ' +

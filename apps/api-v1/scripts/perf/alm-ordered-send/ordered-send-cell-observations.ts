@@ -124,12 +124,13 @@ export interface OrderedSendCellHandOff {
 /**
  * A session's socket read a receipt of a send. Every instance counts the recipients' ACKs in one receipt record on
  * PostgreSQL, the instance a recipient's socket is on counting that recipient's. The `admitted` receipt is written
- * to the origin's socket by the instance that admitted the send, which is the origin's own, and is a row of the
- * shared WS outbox only when no socket there took it. The terminal receipt is a row of the shared WS outbox, written
- * by whichever instance ended the receipt in the record. The instance whose worker takes a row writes it to the
- * origin's socket when that socket is its own; otherwise it announces the row's key by a `ws-channel` NOTIFY for the
- * origin's instance to write, and announces it again until the row expires, so the origin may read one receipt more
- * than once.
+ * to the origin's sockets on the instance that admitted the send (the origin's own at ingress; for a send kept
+ * `pending-admission`, the instance that ran its replay), and is a row of the shared WS outbox only when no socket
+ * there took it. The terminal receipt is a row of the shared WS outbox, written by the record's ended work on
+ * whichever instance claims it. The instance whose worker takes a row writes it to the origin's socket when that
+ * socket is its own; otherwise it announces the row's key by a `ws-channel` NOTIFY and leaves the row to be taken
+ * again, until an instance that holds the origin's socket takes it or the row expires (the receipt row's
+ * republication), so the origin may read one receipt more than once.
  */
 export interface OrderedSendCellReceipt {
     readonly msgId: string;

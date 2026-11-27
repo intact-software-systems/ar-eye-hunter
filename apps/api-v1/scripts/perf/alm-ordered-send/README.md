@@ -58,12 +58,15 @@ read late or read again is counted over the same time.
   of its own sessions once the publish has returned, and each other instance writes its sessions'
   copies as the NOTIFY reaches it. No copy is a row of the WS outbox.
 - **A receipt.** The instance that admits the send opens its receipt in the receipt record and
-  writes the `admitted` receipt to the origin's socket, which is its own; it stores it as a row of
-  the shared WS outbox only when no socket there took it. The instance that ends the receipt in the
-  record, whichever it is, stores the terminal receipt as such a row. The instance whose worker takes
-  a row writes it to the origin's socket when that socket is its own; otherwise it announces the
-  row's key through the QueueBox bridge's NOTIFY for the origin's instance to write, and announces it
-  again until the row expires. A publisher may therefore read one terminal receipt more than once.
+  writes the `admitted` receipt to the origin's sockets on that instance: at ingress the origin's
+  own instance, and for a send kept `pending-admission`, the instance whose worker ran its replay.
+  It stores the receipt as a row of the shared WS outbox only when no socket there took it. The
+  terminal receipt is always such a row, written by the record's ended work on whichever instance
+  claims that work, at least once under one control id. The instance whose worker takes a row writes
+  it to the origin's socket when that socket is its own; otherwise it announces the row's key through
+  the QueueBox bridge's NOTIFY and leaves the row to be taken again, until an instance that holds the
+  origin's socket takes it or the row expires: the receipt row's republication. A publisher may
+  therefore read one receipt more than once.
 - **An ACK.** A recipient's ACK is counted in the record by the instance its socket is on, whichever
   instance admitted the send. Nothing carries an ACK between instances.
 
@@ -361,9 +364,11 @@ outside a transaction holds no connection while it waits.
 - **A stand-in, not a client.** `client-stand-in` leaves out what the section above names, and
   neither recovery models what a browser does after `resync-required` or `receipt-exhausted`.
 - **Receipt rows.** The three instances count each receipt in one receipt record on PostgreSQL,
-  and no count of open receipts bounds it: a receipt's rows live until 30 s past its send's deadline,
-  a confirmation 30 s longer, so the rows a run holds grow with its send rate. A send to more than
-  256 recipients opens no receipt; the room's fourteen stay far below it.
+  and no count of open receipts bounds it: an open receipt's rows live until 30 s past its send's
+  deadline and a confirmation under it 30 s longer, an ended receipt 30 s past the later of its
+  deadline and its end, and a confirmation counted before its receipt was opened 30 min and 30 s,
+  so the rows a run holds grow with its send rate. A send to more than 256 recipients, or one whose
+  receipt the control cannot carry, opens no receipt; the room's fourteen stay far below both.
 - **A local database.** PostgreSQL shares the machine's disk and processor with the cell. Other
   work on the machine shows in the load average the artifact records.
 - **One clock, for the cell.** The cell reads and waits through one injected clock; the product's
