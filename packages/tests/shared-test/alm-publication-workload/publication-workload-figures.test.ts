@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import type { PublicationWorkloadPublisherResults } from '@shared-test/rallar-bb-test/conformance/alm/publication-workload/decode-publication-workload-publisher-figures.ts';
 import {
     toPublicationWorkloadFigures,
-    type PublicationWorkloadPublisherResults,
     type PublicationWorkloadRoomResults,
     type PublicationWorkloadRun
 } from '@shared-test/rallar-bb-test/conformance/alm/publication-workload/to-publication-workload-figures.ts';
@@ -343,9 +343,14 @@ const UNREADABLE_RUNS: readonly UnreadableRun[] = [
         paths: ['$.rooms[0].publishers[1].stats.rallar.alm.publication']
     },
     {
-        unreadable: 'the results of two rooms for a point of one room',
+        unreadable: 'the results of two rooms for a point of one room, the second the first\'s again',
         run: { parameters: POINT, rooms: [ROOM, ROOM] },
-        paths: ['$.rooms']
+        paths: [
+            '$.rooms',
+            '$.rooms[1].publishers[0].agentId',
+            '$.rooms[1].subscribers[0].agentId',
+            '$.rooms[1].subscribers[1].agentId'
+        ]
     },
     {
         unreadable: 'the results of no room',
@@ -356,6 +361,15 @@ const UNREADABLE_RUNS: readonly UnreadableRun[] = [
         unreadable: 'one subscriber result for a point of two subscribers',
         run: toRunOfRoom({ ...ROOM, subscribers: [ROOM.subscribers[0]] }),
         paths: ['$.rooms[0].subscribers']
+    },
+    {
+        unreadable: 'one subscriber result of two, and that one with no result value: the missing result, then the unread fields',
+        run: toRunOfRoom({ ...ROOM, subscribers: [{ agentId: 'agent-2', received: undefined }] }),
+        paths: [
+            '$.rooms[0].subscribers',
+            '$.rooms[0].subscribers[0].received.observed',
+            '$.rooms[0].subscribers[0].received.sampleAge'
+        ]
     },
     {
         unreadable: 'three subscriber results for a point of two subscribers',
@@ -387,6 +401,25 @@ const UNREADABLE_RUNS: readonly UnreadableRun[] = [
             rooms: [{ ...ROOM, publishers: [PUBLISHER, PUBLISHER], subscribers: [ROOM.subscribers[0]] }]
         },
         paths: ['$.rooms[0].publishers[1].agentId']
+    },
+    {
+        unreadable: 'an agent named as a subscriber of two rooms, which would count its messages twice for the point',
+        run: {
+            parameters: TWO_ROOM_POINT,
+            rooms: [ROOM, { ...SECOND_ROOM, subscribers: [ROOM.subscribers[0], SECOND_ROOM.subscribers[1]] }]
+        },
+        paths: ['$.rooms[1].subscribers[0].agentId']
+    },
+    {
+        unreadable: 'an agent named three times, as a publisher and a subscriber of one room and as a publisher of another',
+        run: {
+            parameters: TWO_ROOM_POINT,
+            rooms: [
+                { ...ROOM, subscribers: [{ ...ROOM.subscribers[0], agentId: 'agent-1' }, ROOM.subscribers[1]] },
+                { ...SECOND_ROOM, publishers: [PUBLISHER] }
+            ]
+        },
+        paths: ['$.rooms[0].subscribers[0].agentId', '$.rooms[1].publishers[0].agentId']
     },
     {
         unreadable: 'the results of one room for a point of two rooms',

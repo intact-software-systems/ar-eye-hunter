@@ -1,5 +1,4 @@
 import { AL_PUBLICATION_FIGURE_AGE_BOUNDS_MS } from '@shared/alm/outbound/publication/al-outbound-publication-figures.ts';
-import type { ALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import { isApiJsonObject, type ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { assertBoundedHistogram } from '@shared/measurement/assert-bounded-histogram.ts';
@@ -11,16 +10,16 @@ import {
 } from '@shared/measurement/compute-bounded-histogram-quantile.ts';
 import { Either, EitherCollectors } from '@shared/resilience/Either.ts';
 
-import { decodeALOutboundPublicationStageReport } from '../../../alm/decode-al-outbound-publication-stage-report.ts';
 import type { AlmReceivedSampleAge } from '../../../alm/rallar-black-box-alm-result-values.ts';
 import type { RallarBlackBoxDistributedGroupRef } from '../../../distributed-run.ts';
-import {
-    decodeFiniteNumber,
-    decodeNonNegativeInteger,
-    decodeRecord
-} from '../../../runtime/decode-runtime-result-values.ts';
+import { decodeNonNegativeInteger, decodeRecord } from '../../../runtime/decode-runtime-result-values.ts';
 
 import { computePublicationWorkloadPlan, type PublicationWorkloadPlan } from './compute-publication-workload-plan.ts';
+import {
+    decodePublicationWorkloadPublisherFigures,
+    type PublicationWorkloadPublisherFigures,
+    type PublicationWorkloadPublisherResults
+} from './decode-publication-workload-publisher-figures.ts';
 import { PUBLICATION_WORKLOAD_SENT_AT_FIELD } from './to-publication-workload-payload.ts';
 import {
     validatePublicationWorkloadParameters,
@@ -38,22 +37,15 @@ export interface PublicationWorkloadRun {
 }
 
 /**
- * The results of one room's agents, by role: one result per publisher and per subscriber of the room, each of another
- * agent. The point's `publisherCount` and its plan's `subscriberCount` state how many those are.
+ * The results of one room's agents, by role: one result per publisher and per subscriber of the room. The point's
+ * `publisherCount` and its plan's `subscriberCount` state how many those are, and no two results of a run are one
+ * agent's.
  */
 export interface PublicationWorkloadRoomResults {
     /** The group whose agents left the results, as the caller that gathered them states it. */
     readonly group: RallarBlackBoxDistributedGroupRef;
     readonly publishers: readonly PublicationWorkloadPublisherResults[];
     readonly subscribers: readonly PublicationWorkloadSubscriberResults[];
-}
-
-export interface PublicationWorkloadPublisherResults {
-    readonly agentId: string;
-    /** The `value` of the result of the publisher's `loop`. */
-    readonly loop: ApiJsonValue | undefined;
-    /** The `value` of the result of the `stats` the publisher read after its window. */
-    readonly stats: ApiJsonValue | undefined;
 }
 
 export interface PublicationWorkloadSubscriberResults {
@@ -92,25 +84,6 @@ export interface PublicationWorkloadRoomFigures {
     readonly subscribers: readonly PublicationWorkloadSubscriberFigures[];
     /** The room's subscriber results together. */
     readonly delivered: PublicationWorkloadDeliveredFigures;
-}
-
-export interface PublicationWorkloadPublisherFigures {
-    readonly agentId: string;
-    /**
-     * The loop's `passed`: the sends the harness submitted. A live send returns as soon as its value is staged or
-     * refused, so this is not what the stage handed to a carrier; `publicationStage.counters.admitted` is.
-     */
-    readonly submittedSends: number;
-    readonly completedIterations: number;
-    readonly elapsedMs: number;
-    /**
-     * The loop's `pacing.achievedRateHz`: its iterations, whether their send was accepted or not, as the n - 1
-     * intervals between them over the loop's elapsed time, which includes the last child, to four places. `null`
-     * where the loop states none, as a loop of one iteration does: the record is written as JSON, which keeps a `null`.
-     */
-    readonly achievedIterationRateHz: number | null;
-    /** The publisher page's publication stage as its `stats` read it: holdings, limits, counters and figures. */
-    readonly publicationStage: ALOutboundPublicationStageReport;
 }
 
 export interface PublicationWorkloadSubscriberFigures {
@@ -159,8 +132,6 @@ export interface PublicationWorkloadRecordedSampleAge {
     readonly p99: BoundedHistogramQuantile;
 }
 
-type PublicationWorkloadLoopFigures = Omit<PublicationWorkloadPublisherFigures, 'agentId' | 'publicationStage'>;
-
 /** A subscriber's figures beside the histogram they summarise, which a delivered figure merges. */
 interface DecodedSubscriber {
     readonly figures: PublicationWorkloadSubscriberFigures;
@@ -176,9 +147,9 @@ interface DecodedRoom {
 
 /**
  * The left names every field that cannot be read, each issue starting with the field's path: under `$.parameters` a
- * bound of the family the point breaks, at `$.rooms` and under `$.rooms[r]` what `validateRunRooms` holds the run to,
- * and under `$.rooms[r].publishers[p].loop`, `$.rooms[r].publishers[p].stats` and `$.rooms[r].subscribers[s].received`
- * a field of that result value.
+ * bound of the family the point breaks, at `$.rooms` and under `$.rooms[r]` what `validateRunRooms` and then
+ * `validateRunAgents` hold the run to, and under `$.rooms[r].publishers[p].loop`, `$.rooms[r].publishers[p].stats` and
+ * `$.rooms[r].subscribers[s].received` a field of that result value.
  */
 export function toPublicationWorkloadFigures(
     run: PublicationWorkloadRun
@@ -192,6 +163,7 @@ export function toPublicationWorkloadFigures(
     const issues = [
         ...parameterIssues,
         ...validateRunRooms(run, plan),
+        ...validateRunAgents(run.rooms),
         ...EitherCollectors.toListFoldLefts(rooms).flat(),
         ...(delivered.left === undefined ? [] : [`$.rooms give no delivered sample age: ${delivered.left}`])
     ];
@@ -214,9 +186,9 @@ export function toPublicationWorkloadFigures(
 
 /**
  * What a run of the point holds: at `$.rooms` one room per group of the point; at `$.rooms[r].group` the point's group
- * at that place, so that no room's figures stand under another room's group; at `$.rooms[r].publishers` and
- * `$.rooms[r].subscribers` one result per agent of that role, which only a point with a plan states; and at
- * `...publishers[p].agentId` and `...subscribers[s].agentId` an agent no earlier result of its role names.
+ * at that place, so that no room's figures stand under another room's group; and at `$.rooms[r].publishers` and
+ * `$.rooms[r].subscribers` one result per agent of that role, which only a point with a plan states. A result too few
+ * leaves an agent out of the record.
  */
 function validateRunRooms(run: PublicationWorkloadRun, plan: PublicationWorkloadPlan | undefined): readonly string[] {
     const { groups, publisherCount } = run.parameters;
@@ -226,46 +198,51 @@ function validateRunRooms(run: PublicationWorkloadRun, plan: PublicationWorkload
             : [`$.rooms must hold one entry per room of the point, which has ${groups.length}`]),
         ...run.rooms.flatMap((room, index) => {
             const path = `$.rooms[${index}]`;
+            const expectedPublisherCount = plan === undefined ? undefined : publisherCount;
             return [
                 ...(index >= groups.length || isSameGroupRef(groups[index], room.group)
                     ? []
                     : [`${path}.group must be the point's group at that place, ${JSON.stringify(groups[index])}`]),
-                ...validateRoleResults(
-                    room.publishers,
-                    plan === undefined ? undefined : publisherCount,
-                    `${path}.publishers`
-                ),
-                ...validateRoleResults(room.subscribers, plan?.subscriberCount, `${path}.subscribers`)
+                ...validateRoleResultCount(room.publishers.length, expectedPublisherCount, `${path}.publishers`),
+                ...validateRoleResultCount(room.subscribers.length, plan?.subscriberCount, `${path}.subscribers`)
             ];
         })
     ];
 }
 
-/**
- * A room holds one result per agent of a role. A result too few leaves an agent out of the record, and one given twice
- * counts its messages twice in every figure of the room and of the point.
- */
-function validateRoleResults(
-    results: readonly Readonly<{ agentId: string; }>[],
+function validateRoleResultCount(
+    resultCount: number,
     expectedCount: number | undefined,
     path: string
 ): readonly string[] {
-    return [
-        ...(expectedCount === undefined || results.length === expectedCount
+    return expectedCount === undefined || resultCount === expectedCount
+        ? []
+        : [`${path} must hold ${expectedCount} results, one per agent of the role; it holds ${resultCount}`];
+}
+
+/**
+ * A run names an agent once, whatever the room and the role: an agent runs one recipe in one room. A second result
+ * under its id is the same result again, which would count its messages twice in a figure of the room or of the point,
+ * or another agent's result under a wrong name. Each result after the first that names the agent is reported.
+ */
+function validateRunAgents(rooms: readonly PublicationWorkloadRoomResults[]): readonly string[] {
+    const named = rooms.flatMap((room, index) => [
+        ...room.publishers.map(({ agentId }, place) => ({ agentId, path: `$.rooms[${index}].publishers[${place}]` })),
+        ...room.subscribers.map(({ agentId }, place) => ({ agentId, path: `$.rooms[${index}].subscribers[${place}]` }))
+    ]);
+    return named.flatMap(({ agentId, path }, index) => {
+        const first = named.findIndex((earlier) => earlier.agentId === agentId);
+        return first === index
             ? []
-            : [`${path} must hold ${expectedCount} results, one per agent of the role; it holds ${results.length}`]),
-        ...results.flatMap(({ agentId }, index) => {
-            const first = results.findIndex((result) => result.agentId === agentId);
-            return first === index
-                ? []
-                : [`${path}[${index}].agentId must name another agent than ${path}[${first}].agentId, ${agentId}`];
-        })
-    ];
+            : [`${path}.agentId must name another agent than ${named[first].path}.agentId, ${agentId}`];
+    });
 }
 
 function decodeRoom(room: PublicationWorkloadRoomResults, path: string): Either<readonly string[], DecodedRoom> {
     const publishers = room.publishers
-        .map((publisher, index) => decodePublisherFigures(publisher, `${path}.publishers[${index}]`));
+        .map((publisher, index) =>
+            decodePublicationWorkloadPublisherFigures(publisher, `${path}.publishers[${index}]`)
+        );
     const subscribers = room.subscribers
         .map((subscriber, index) => decodeSubscriber(subscriber, `${path}.subscribers[${index}].received`));
     const decodedSubscribers = EitherCollectors.toListFoldRights(subscribers);
@@ -284,85 +261,6 @@ function decodeRoom(room: PublicationWorkloadRoomResults, path: string): Either<
         subscribers: decodedSubscribers,
         delivered: delivered.right
     });
-}
-
-function decodePublisherFigures(
-    publisher: PublicationWorkloadPublisherResults,
-    path: string
-): Either<readonly string[], PublicationWorkloadPublisherFigures> {
-    const loop = decodeLoopFigures(publisher.loop, `${path}.loop`);
-    const publicationStage = decodePublicationStage(publisher.stats, `${path}.stats.rallar.alm`);
-    if (loop.right === undefined || publicationStage.right === undefined) {
-        return Either.ofLeft([...(loop.left ?? []), ...(publicationStage.left ?? [])]);
-    }
-    return Either.ofRight({ agentId: publisher.agentId, ...loop.right, publicationStage: publicationStage.right });
-}
-
-function decodeLoopFigures(
-    loop: ApiJsonValue | undefined,
-    path: string
-): Either<readonly string[], PublicationWorkloadLoopFigures> {
-    const record = decodeRecord(loop);
-    const pacing = decodeRecord(record.pacing);
-    const submittedSends = decodeNonNegativeInteger(record.passed);
-    const childResultCount = decodeNonNegativeInteger(record.childResultCount);
-    const completedIterations = decodeNonNegativeInteger(pacing.completedIterations);
-    const elapsedMs = decodeFiniteNumber(pacing.elapsedMs);
-    const achievedRateHz = decodeFiniteNumber(pacing.achievedRateHz);
-    const issues = [
-        ...(submittedSends === undefined ? [`${path}.passed must be a whole number of at least 0`] : []),
-        ...validateLoopChildResultCount(childResultCount, completedIterations, path),
-        ...(completedIterations === undefined
-            ? [`${path}.pacing.completedIterations must be a whole number of at least 0`]
-            : []),
-        ...(elapsedMs === undefined || elapsedMs < 0
-            ? [`${path}.pacing.elapsedMs must be a finite number of at least 0`]
-            : []),
-        ...(pacing.achievedRateHz !== undefined && achievedRateHz === undefined
-            ? [`${path}.pacing.achievedRateHz must be a finite number where the loop states one`]
-            : [])
-    ];
-    if (
-        issues.length > 0 || submittedSends === undefined || completedIterations === undefined ||
-        elapsedMs === undefined
-    ) {
-        return Either.ofLeft(issues);
-    }
-    return Either.ofRight({
-        submittedSends,
-        completedIterations,
-        elapsedMs,
-        achievedIterationRateHz: achievedRateHz ?? null
-    });
-}
-
-/**
- * The family's loop holds one send, so it ran one child per iteration. A loop that ran another number is not the
- * family's, and its `passed` would not count submitted sends.
- */
-function validateLoopChildResultCount(
-    childResultCount: number | undefined,
-    completedIterations: number | undefined,
-    path: string
-): readonly string[] {
-    if (childResultCount === undefined) {
-        return [`${path}.childResultCount must be a whole number of at least 0`];
-    }
-    return completedIterations === undefined || childResultCount === completedIterations
-        ? []
-        : [`${path}.childResultCount must be ${path}.pacing.completedIterations, one child per iteration`];
-}
-
-/** The stage decoder names each bad field under `publication.`, the block `stats.rallar.alm` holds it in. */
-function decodePublicationStage(
-    stats: ApiJsonValue | undefined,
-    almUsagePath: string
-): Either<readonly string[], ALOutboundPublicationStageReport> {
-    const { publication } = decodeRecord(decodeRecord(decodeRecord(stats).rallar).alm);
-    return isApiJsonObject(publication)
-        ? decodeALOutboundPublicationStageReport(publication)
-            .mapLeft((issues) => issues.map((issue) => `${almUsagePath}.${issue}`))
-        : Either.ofLeft([`${almUsagePath}.publication must be an object: the stats of a page that connected`]);
 }
 
 function decodeSubscriber(

@@ -106,7 +106,8 @@ function validateGroups(parameters: PublicationWorkloadParameters): readonly Ral
 
 /**
  * Every issue of the group's own reference, or else the first rule among the point's groups it breaks: it repeats no
- * earlier group, and it is in the first group's application and workspace, where the first group names valid ones.
+ * earlier group, and it is in the first group's application and workspace. That scope depends on those two fields of
+ * the first group alone, so it is checked where they are valid, whatever the first group's own group id is.
  */
 function validateGroup(
     groups: readonly RallarBlackBoxDistributedGroupRef[],
@@ -125,12 +126,17 @@ function validateGroup(
             message: 'Expected a group that no earlier room of the point names.'
         }];
     }
-    return !validateRallarGroupRef(groups[0]).ok || isSameGroupScope(groups[0], group) ? [] : [{
+    return !hasValidGroupScope(groups[0]) || isSameGroupScope(groups[0], group) ? [] : [{
         path,
         code: 'group-outside-first-scope',
         message: `Expected the first group's application ${groups[0].applicationId} and workspace ` +
             `${groups[0].workspaceId}: a run signs every agent into one.`
     }];
+}
+
+/** A reference whose application and workspace are valid: every issue it has, if any, is at its group id. */
+function hasValidGroupScope(group: RallarBlackBoxDistributedGroupRef): boolean {
+    return validateRallarGroupRef(group).issues.every((issue) => issue.path === '$.groupId');
 }
 
 function validateParticipantCount(participantCount: number): RallarValidationIssue | undefined {

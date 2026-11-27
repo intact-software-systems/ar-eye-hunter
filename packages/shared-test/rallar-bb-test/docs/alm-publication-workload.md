@@ -34,7 +34,9 @@ Every room has the same shape, so a point has `groups.length x participantCount`
 most 50: more is `agent-count-above-limit` at `$.groups`, checked when `participantCount` holds its
 own bound. A group that repeats an earlier one is `duplicate-group`, and one outside the first
 group's application and workspace is `group-outside-first-scope`, each at `$.groups[n]`: a run signs
-every one of its agents into one application and workspace.
+every one of its agents into one application and workspace. That scope is the first group's
+`applicationId` and `workspaceId` alone, so a later group is held to it when those two are valid,
+whatever the first group's own `groupId` is.
 
 The interval, the window and the frame count are one publisher's: every publisher of a point sends
 `frameCount` frames. The rate is the integer interval, so `configuredRateHz`
@@ -56,11 +58,10 @@ that run, not a contract: no test pins it.
 per group of the point, in the groups' order, or every validation issue as its left
 (`RallarValidationIssue[]`). A role is `{ kind, recipe, agentCount }`: its `kind` is `publisher` or
 `subscriber`, and `agentCount` is how many agents of the room run its recipe. A room's roles come in
-this order: the publisher that writes the group (one agent), the joining publishers (`publisherCount
-
-- 1` agents, absent for one publisher), the subscribers. Which agent runs which recipe is not the
-  family's to say, since it holds no manifest: the caller's role-map manifest gives each recipe to its
-  agents. In the local point's manifest the first agent of the run publishes.
+this order: the publisher that writes the group (one agent), the joining publishers
+(`publisherCount - 1` agents, absent for one publisher), the subscribers. Which agent runs which
+recipe is not the family's to say, since it holds no manifest: the caller's role-map manifest gives
+each recipe to its agents. In the local point's manifest the first agent of the run publishes.
 
 Every room runs the same commands in its own group. A recipe's `recipeId` is
 `publication-workload-room-<n>-<publisher|joining-publisher|subscriber>`, with `n` the room's place
@@ -140,17 +141,20 @@ the result values of three commands: each publisher's `publication-workload-publ
 `publication-workload-subscriber-received` (`received`), every one beside its `agentId`. `rooms`
 holds one entry per group of the point, in the groups' order, and each names the `group` its results
 were read under. A room holds one result per publisher and one per subscriber of the point,
-`publisherCount` and the plan's `subscriberCount` of them, each of another agent: a run that left
-fewer is no run of the point, and a result given twice would count its messages twice. Its left is
-`readonly string[]`: every field it could not read, each starting with the field's path, which is
-`$.parameters...`, `$.rooms` for another number of rooms than the point's, `$.rooms[r].group` for a
-room that names another group than the point's at that place, `$.rooms[r].publishers` or
-`$.rooms[r].subscribers` for another number of results than the point has agents of that role,
-`...publishers[p].agentId` or `...subscribers[s].agentId` for a result that repeats an agent of its
-role, `$.rooms[r].publishers[p].loop...`, `$.rooms[r].publishers[p].stats...` or
-`$.rooms[r].subscribers[s].received...`. A point that breaks a bound has no plan, so its results are
-not counted against it. The record keeps `configured` and `measured` apart, and it judges nothing:
-the recipes' asserts are the gates.
+`publisherCount` and the plan's `subscriberCount` of them: a run that left fewer is no run of the
+point. A run names an agent once, whatever the room and the role, since an agent runs one recipe in
+one room: a result given twice would count its messages twice, in its room's figures or, given to
+two rooms, in the point's. Its left is `readonly string[]`: every field it could not read, each
+starting with the field's path, which is `$.parameters...`, `$.rooms` for another number of rooms
+than the point's, `$.rooms[r].group` for a room that names another group than the point's at that
+place, `$.rooms[r].publishers` or `$.rooms[r].subscribers` for another number of results than the
+point has agents of that role, `...publishers[p].agentId` or `...subscribers[s].agentId` for each
+result that names an agent an earlier result of the run names, `$.rooms[r].publishers[p].loop...`,
+`$.rooms[r].publishers[p].stats...` or `$.rooms[r].subscribers[s].received...`. The issues come in
+that order: the point's, the rooms', the repeated agents', then the fields of each result. A run
+that breaks several has all of them in its left. A point that breaks a bound has no plan, so its
+results are not counted against it. The record keeps `configured` and `measured` apart, and it
+judges nothing: the recipes' asserts are the gates.
 
 `measured.rooms[]` holds one entry per room, each with its `group`: the group the run states for
 the room's results, which the record has checked against the point's group at that place. In the

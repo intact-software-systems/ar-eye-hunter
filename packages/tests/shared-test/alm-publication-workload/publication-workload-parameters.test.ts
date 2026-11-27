@@ -249,6 +249,15 @@ describe('publication workload parameters', () => {
         ]);
     });
 
+    it('holds a later group to the first group\'s application and workspace when the first group breaks only its group id', () => {
+        const groups = [{ ...GROUP, groupId: '' }, { ...GROUP, applicationId: 'other-app', groupId: 'workload-room-2' }];
+
+        expect(toPathsAndCodes({ ...POINT, groups })).toEqual([
+            { path: '$.groups[0].groupId', code: 'required' },
+            { path: '$.groups[1]', code: 'group-outside-first-scope' }
+        ]);
+    });
+
     it('returns no issue at the last valid value of each bound', () => {
         const atBounds: PublicationWorkloadParameters = {
             ...POINT,
