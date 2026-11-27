@@ -824,9 +824,10 @@ describe('WS server bounded and authorized admission', () => {
         expect(received).toEqual(['message-1', 'message-2', 'message-3', 'message-4', 'message-5']);
     });
 
-    // Each send waited for its predecessor and was found only when the rotation came round: its own batch set it aside
-    // behind the held delivery, and the batch that completed its predecessor did not run it. The engine's rounds are
-    // stopped before the hold is let go, so only that batch can deliver what follows.
+    // Pins the hand-on on the WS server: each send admitted behind the held delivery is run by the batch that completed
+    // its predecessor. Without it, a batch that followed delivered message 2, and each later send that a batch had
+    // already set aside waited for the rotation. The engine's rounds are stopped before the hold is let go, so only the
+    // batches already owed can deliver what follows.
     it('hands each ordered send admitted behind a held delivery to the application as its predecessor completes', async () => {
         const fixture = await createServerIngressFixture();
         const trackKey = toALOrderingTrackKey(createOrderedRoomMessage(1))!;

@@ -4,7 +4,8 @@ import {
     describe,
     expect,
     it,
-    onTestFinished
+    onTestFinished,
+    vi
 } from 'vitest';
 
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
@@ -77,18 +78,23 @@ describe('Postgres hand-on of an ordered successor across two instances', () => 
         }
     });
 
-    // Pins the hand-on across instances: the successor B's admission wrote, which B's own round set aside behind its
-    // predecessor, waited for the rotation after A completed that predecessor; A's batch now delivers it, once, in order.
+    // Pins the hand-on across instances: the successor B's admission wrote, which B's own round read and found behind its
+    // undelivered predecessor, waited for the rotation after A completed that predecessor; A's batch now delivers it,
+    // once, in order.
     postgresIt('delivers in the completing instance\'s batch a successor another instance admitted', async () => {
         const namespace = `${RUN_ID}-across`;
         const hold = createDispatchHold(1);
-        const a = createInstance(instanceA!, namespace, 'a', hold.gate);
-        const b = createInstance(instanceB!, namespace, 'b', undefined);
+        const a = createInstance({ sql: instanceA!, namespace, instance: 'a', gateDispatch: hold.gate });
+        const logB = createStatementLog();
+        const b = createInstance({ sql: recordPostgresStatements(instanceB!, logB, null), namespace, instance: 'b' });
         const [first, second] = [toMessage(1), toMessage(2)];
         await admit(a, first);
         await hold.entered;
         await admitPostgresInboundTestMessage(b.stores.admissionStore, second);
+        clearStatementLog(logB);
         expect(await b.queueEngine.executeOnce()).toBe(false);
+        expect(logB.statements.map((statement) => toNamedStatementShape(statement, namespace)))
+            .toEqual(toProbeBehindPredecessor(second, first));
         expect(readReceived(b)).toEqual([]);
         expect(await readWorkRow(b, second)).toEqual({ status: EntityStatus.NEW, attempts: 0 });
 
@@ -109,7 +115,7 @@ describe('Postgres hand-on of an ordered successor across two instances', () => 
     // Pins one reservation per row when both instances reach for the successor: A's hand-on is held at its locked read
     // while B's rotation comes round to the row. Held before that read, B reserves the row and A's read finds it taken;
     // held after it, A holds the row's lock and B's read skips it. Either way one instance delivers it, and the other's
-    // reservation returns no row and writes nothing for it.
+    // reservation returns no row, and no statement of its log after that point writes the row, by its key or its id.
     postgresIt.each([
         { at: 'before-locked-read' as const, winner: 'b' as const },
         { at: 'after-locked-read' as const, winner: 'a' as const }
@@ -118,24 +124,33 @@ describe('Postgres hand-on of an ordered successor across two instances', () => 
         const [logA, logB] = [createStatementLog(), createStatementLog()];
         const hold = createDispatchHold(1);
         const reservation = createReservationHold();
-        const a = createInstance(
-            holdPostgresReservation(recordPostgresStatements(instanceA!, logA, null), reservation),
+        const a = createInstance({
+            sql: holdPostgresReservation(recordPostgresStatements(instanceA!, logA, null), reservation),
             namespace,
-            'a',
-            hold.gate
-        );
-        const b = createInstance(recordPostgresStatements(instanceB!, logB, null), namespace, 'b', undefined);
+            instance: 'a',
+            gateDispatch: hold.gate
+        });
+        const b = createInstance({ sql: recordPostgresStatements(instanceB!, logB, null), namespace, instance: 'b' });
         const [first, second] = [toMessage(1), toMessage(2)];
         await admit(a, first);
         await hold.entered;
         await admitPostgresInboundTestMessage(b.stores.admissionStore, second);
+        clearStatementLog(logB);
         expect(await b.queueEngine.executeOnce()).toBe(false);
+        expect(logB.statements.map((statement) => toNamedStatementShape(statement, namespace)))
+            .toEqual(toProbeBehindPredecessor(second, first));
         expect(await readWorkRow(b, second)).toEqual({ status: EntityStatus.NEW, attempts: 0 });
         const rowId = await readWorkRowId(b, second);
 
         const held = reservation.arm(at);
         hold.release();
-        await held.arrived;
+        // A's batch either reaches its hand-on's locked read or ends without one; only the first is the hand-on.
+        expect(
+            await Promise.race([
+                held.arrived.then(() => 'held at the hand-on\'s reservation'),
+                waitForDrainNaming(a, first).then(() => 'drained without a hand-on reservation')
+            ])
+        ).toBe('held at the hand-on\'s reservation');
         logB.statements.length = 0;
         await expect.poll(async () => {
             await b.queueEngine.executeOnce();
@@ -152,7 +167,7 @@ describe('Postgres hand-on of an ordered successor across two instances', () => 
         expect(readDrainsNaming(a, first)[0]!.promoted).toBe(winner === 'a' ? 1 : 0);
         const losingLog = winner === 'a' ? logB : { statements: logA.statements.slice(reachedAt), transactions: 0 };
         expect(readLockedReads(losingLog, rowId).map((statement) => statement.rowCount)).toSatisfy(isAllZero);
-        expect(readStatementsNaming(losingLog, toEncodedDispatchId(second)).map(toRecordedPostgresStatementShape)).toEqual([]);
+        expect(readWritesOfRow(losingLog, { key: toEncodedDispatchId(second), rowId }).map(toRecordedPostgresStatementShape)).toEqual([]);
         expect(await readWorkRow(a, second)).toEqual({ status: EntityStatus.COMPLETED, attempts: 1 });
         expect((await a.stores.admissionStore.readOrderedDelivery(TRACK_KEY, 3)).completedThrough).toBe(2);
     });
@@ -185,7 +200,7 @@ describe('Postgres statements of an ordered completion', () => {
         const namespace = `${RUN_ID}-alone`;
         const log = createStatementLog();
         const hold = createDispatchHold(1);
-        const a = createInstance(recordPostgresStatements(instanceA!, log, null), namespace, 'a', hold.gate);
+        const a = createInstance({ sql: recordPostgresStatements(instanceA!, log, null), namespace, instance: 'a', gateDispatch: hold.gate });
         const first = toMessage(1);
         await admit(a, first);
         await hold.entered;
@@ -194,26 +209,25 @@ describe('Postgres statements of an ordered completion', () => {
         hold.release();
         await expect.poll(() => readDrainsNaming(a, first)).toHaveLength(1);
 
-        const nextSlot = readStatementsNaming(log, `${namespace}:buffered:${TRACK_KEY}:2`);
-        expect(nextSlot.map(toRecordedPostgresStatementShape)).toEqual([{ verb: 'select', transaction: null }]);
         expect(log.statements.filter((statement) => statement.text.includes('resource_inbox')).map(toRecordedPostgresStatementShape))
             .toEqual([{ verb: 'update', transaction: 2 }]);
-        // The completion's reads (10), its guarded write, the read of the slot after it, the batch's release.
-        expect(log.statements.map(toRecordedPostgresStatementShape)).toEqual([
-            ...toAutocommitReads(10),
+        expect(log.statements.map((statement) => toNamedStatementShape(statement, namespace))).toEqual([
+            ...toCompletionReads(first),
             { verb: 'with', transaction: 1 },
-            ...toAutocommitReads(1),
+            toAutocommitRead(toSlotKey(2)),
+            // The batch's release.
             { verb: 'update', transaction: 2 }
         ]);
     });
 
-    // Pins the price of a hand-on: beyond what the rotation spends on the same row (the readiness reads and the
-    // reservation), the slot read and the row read.
-    postgresIt('costs a hand-on its slot read and its row read beyond the rotation\'s readiness reads and reservation', async () => {
+    // Pins the price of a hand-on, beside the rotation's claim of the same kind of row below: the slot read and the row
+    // read, then the readiness reads and the reservation the rotation spends too, and the delivery's own surface read
+    // again (the message, its owner row, the progress) where the rotation's delivery reads only the progress.
+    postgresIt('costs a hand-on its slot read, its row read and a second read of its message and owner row', async () => {
         const namespace = `${RUN_ID}-hand-on`;
         const log = createStatementLog();
         const hold = createDispatchHold(1);
-        const a = createInstance(recordPostgresStatements(instanceA!, log, null), namespace, 'a', hold.gate);
+        const a = createInstance({ sql: recordPostgresStatements(instanceA!, log, null), namespace, instance: 'a', gateDispatch: hold.gate });
         const [first, second] = [toMessage(1), toMessage(2)];
         await admit(a, first);
         await hold.entered;
@@ -224,29 +238,105 @@ describe('Postgres statements of an ordered completion', () => {
         await expect.poll(() => readDrainsNaming(a, second)).toHaveLength(1);
 
         expect(readReceived(a)).toEqual(['m-1', 'm-2']);
-        // The hand-on's slot read, then the second completion's two reads of that same slot.
-        expect(readStatementsNaming(log, `${namespace}:buffered:${TRACK_KEY}:2`).map(toRecordedPostgresStatementShape))
-            .toEqual(toAutocommitReads(3));
-        expect(readStatementsNaming(log, toEncodedDispatchId(second)).map(toRecordedPostgresStatementShape)).toEqual([
-            { verb: 'select', transaction: null },
-            { verb: 'update', transaction: 2 }
-        ]);
-        expect(log.statements.map(toRecordedPostgresStatementShape)).toEqual([
-            // The first completion: its reads (10) and its guarded write.
-            ...toAutocommitReads(10),
+        expect(log.statements.map((statement) => toNamedStatementShape(statement, namespace))).toEqual([
+            ...toCompletionReads(first),
             { verb: 'with', transaction: 1 },
-            // The hand-on: the slot read, the row read, the readiness reads (the message, its owner row, the progress),
-            // and the reservation (the locked read and the update).
-            ...toAutocommitReads(5),
-            { verb: 'with', transaction: 2 },
-            { verb: 'update', transaction: 2 },
-            // The second delivery: its own surface (3), its completion's reads (10) and write, the read of the slot
-            // after it, then the batch's release of both rows.
-            ...toAutocommitReads(13),
+            ...toHandOnClaim(second),
+            // The second delivery: its own surface, read again, its completion, the read of the slot after it, then the
+            // batch's release of both rows.
+            ...toReadinessReads(second),
+            ...toCompletionReads(second),
             { verb: 'with', transaction: 3 },
-            ...toAutocommitReads(1),
+            toAutocommitRead(toSlotKey(3)),
             { verb: 'update', transaction: 4 }
         ]);
+    });
+
+    // Pins the rotation's price for the same kind of row, beside the hand-on's above: the page read, the read of rows out
+    // of attempts and the lease-timeout read serve the whole batch; on the row it spends the readiness reads and the
+    // reservation, and its delivery reads only the progress, carrying the message it read with the page. No slot read
+    // and no row read.
+    postgresIt('claims through the rotation a successor whose predecessor completed, at its readiness reads and reservation', async () => {
+        const namespace = `${RUN_ID}-rotation`;
+        const log = createStatementLog();
+        const a = createInstance({ sql: instanceA!, namespace, instance: 'a' });
+        const b = createInstance({ sql: recordPostgresStatements(instanceA!, log, null), namespace, instance: 'b' });
+        const [first, second] = [toMessage(1), toMessage(2)];
+        await admit(a, first);
+        await expect.poll(() => readDrainsNaming(a, first)).toHaveLength(1);
+        await admitPostgresInboundTestMessage(a.stores.admissionStore, second);
+
+        await b.queueEngine.executeOnce();
+        await expect.poll(() => readDrainsNaming(b, second)).toHaveLength(1);
+
+        expect(readReceived(b)).toEqual(['m-2']);
+        expect(log.statements.map((statement) => toNamedStatementShape(statement, namespace))).toEqual([
+            // The page of new rows.
+            { verb: 'select', transaction: null },
+            ...toReadinessReads(second),
+            // The read of rows out of attempts, the reservation, then the read of reserved rows whose lease ran out.
+            { verb: 'select', transaction: 1 },
+            ...toRowReservation(second, 2),
+            { verb: 'select', transaction: 3 },
+            // The delivery's own surface, its completion, the read of the slot after it, then the batch's release.
+            toAutocommitRead(`delivered:${TRACK_KEY}`),
+            ...toCompletionReads(second),
+            { verb: 'with', transaction: 4 },
+            toAutocommitRead(toSlotKey(3)),
+            { verb: 'update', transaction: 5 }
+        ]);
+    });
+
+    // Pins that a refused hand-on costs its reads and writes nothing: with the successor's delivery not ready, the
+    // completing batch reads the slot, the row and the readiness; with its row reserved by another instance, whose lease
+    // has not run out, the slot and the row only. Neither claims it, and no statement of the batch writes the row by its
+    // key or its id.
+    postgresIt.each([
+        {
+            refusal: 'not-ready' as const,
+            reads: (msg: ALMessage) => [...toSuccessorLookup(msg), ...toReadinessReads(msg)],
+            stored: { status: EntityStatus.NEW, attempts: 0 }
+        },
+        {
+            refusal: 'reserved-elsewhere' as const,
+            reads: toSuccessorLookup,
+            stored: { status: EntityStatus.RESERVED, attempts: 1 }
+        }
+    ])('reads the successor and writes nothing for it when the hand-on refuses it: $refusal', async ({ refusal, reads, stored }) => {
+        const namespace = `${RUN_ID}-refused-${refusal}`;
+        const log = createStatementLog();
+        const hold = createDispatchHold(1);
+        const a = createInstance({
+            sql: recordPostgresStatements(instanceA!, log, null),
+            namespace,
+            instance: 'a',
+            gateDispatch: hold.gate,
+            canDispatchMessage: refusal === 'not-ready' ? (msg) => msg.id.msgId !== 'm-2' : undefined
+        });
+        const [first, second] = [toMessage(1), toMessage(2)];
+        await admit(a, first);
+        await hold.entered;
+        await admitPostgresInboundTestMessage(a.stores.admissionStore, second);
+        if (refusal === 'reserved-elsewhere') {
+            await reserveWorkRowElsewhere(instanceA!, a, second);
+        }
+        const rowId = await readWorkRowId(a, second);
+
+        clearStatementLog(log);
+        hold.release();
+        await expect.poll(() => readDrainsNaming(a, first)).toHaveLength(1);
+
+        expect(readReceived(a)).toEqual(['m-1']);
+        expect(readWritesOfRow(log, { key: toEncodedDispatchId(second), rowId }).map(toRecordedPostgresStatementShape)).toEqual([]);
+        expect(log.statements.map((statement) => toNamedStatementShape(statement, namespace))).toEqual([
+            ...toCompletionReads(first),
+            { verb: 'with', transaction: 1 },
+            ...reads(second),
+            // The batch's release of its one claim.
+            { verb: 'update', transaction: 2 }
+        ]);
+        expect(readDrainsNaming(a, first)[0]).toMatchObject({ claimedEffectIds: [toDispatchId(first)], promoted: 0 });
+        expect(await readWorkRow(a, second)).toEqual(stored);
     });
 });
 
@@ -305,7 +395,10 @@ function createReservationHold(): ReservationHold {
     };
 }
 
-/** Holds, once armed, the transaction whose locked read reserves observed work rows: before or after that read runs. */
+/**
+ * Holds, once armed, the transaction whose locked read reserves observed work rows: before or after that read runs.
+ * Forwards neither a client's `savepoint` nor `getExecutorCounters`: no inbound admission or work path uses them.
+ */
 function holdPostgresReservation(source: PSqlSql, reservation: ReservationHold): PSqlSql {
     return Object.assign(createPostgresSqlCall(source, source), {
         begin: async <T>(write: (transaction: PSqlSql) => Promise<T>): Promise<T> =>
@@ -330,18 +423,38 @@ function holdLockedReservationRead(transaction: PSqlSql, reservation: Reservatio
     });
 }
 
-function createInstance(
-    sql: PSqlSql,
-    namespace: string,
-    instance: string,
-    gateDispatch: ((msg: ALMessage) => Promise<void>) | undefined
-): InboundTestRuntime {
+interface InstanceInput {
+    readonly sql: PSqlSql;
+    readonly namespace: string;
+    /** Names the instance's worker. */
+    readonly instance: string;
+    /** Absent, every dispatch runs at once. */
+    readonly gateDispatch?: (msg: ALMessage) => Promise<void>;
+    /** Absent, every delivery reads ready. */
+    readonly canDispatchMessage?: (msg: ALMessage) => boolean;
+}
+
+function createInstance(input: InstanceInput): InboundTestRuntime {
     return createInboundTestRuntime({
         carrier: 'ws',
-        stores: createPostgresInboundRuntimeStores(sql, namespace),
-        effectWorkerId: `al-inbound:${namespace}:${instance}`,
-        gateDispatch
+        stores: createPostgresInboundRuntimeStores(input.sql, input.namespace),
+        effectWorkerId: `al-inbound:${input.namespace}:${input.instance}`,
+        gateDispatch: input.gateDispatch,
+        canDispatchMessage: input.canDispatchMessage
     });
+}
+
+/** Reserves the message's work row through another instance's stores, as that instance's rotation would. */
+async function reserveWorkRowElsewhere(sql: PSqlSql, fixture: InboundTestRuntime, msg: ALMessage): Promise<void> {
+    const row = await readWorkEntry(fixture, msg);
+    const elsewhere = createPostgresInboundRuntimeStores(sql, fixture.stores.admissionStore.namespace);
+    const reserved = await elsewhere.workQueue.reserveEntries({
+        typeIds: new Set([row.typeId]),
+        statusIds: new Set([EntityStatus.NEW]),
+        reservationInput: 1,
+        observedEntries: [row]
+    });
+    expect(reserved.size).toBe(1);
 }
 
 async function admit(fixture: InboundTestRuntime, msg: ALMessage): Promise<void> {
@@ -409,15 +522,106 @@ function readLockedReads(log: PostgresStatementLog, rowId: string): readonly Rec
     );
 }
 
-function readStatementsNaming(log: PostgresStatementLog, name: string): readonly RecordedPostgresStatement[] {
-    return log.statements.filter((statement) => statement.values.some((value) => value === name));
+/** The statements that write the row: any but a read that names its key, or its id in an array of ids. */
+function readWritesOfRow(
+    log: PostgresStatementLog,
+    row: { readonly key: string; readonly rowId: string; }
+): readonly RecordedPostgresStatement[] {
+    return log.statements.filter((statement) =>
+        !statement.text.startsWith('select') &&
+        !statement.text.includes(LOCKED_RESERVATION_READ) &&
+        statement.values.some((value) =>
+            value === row.key ||
+            (Array.isArray(value) && (value.map(String).includes(row.rowId) || JSON.stringify(value).includes(row.key)))
+        )
+    );
+}
+
+/** Settles once a drain of `fixture` names `msg`; it never rejects, so a race may leave it behind. */
+async function waitForDrainNaming(fixture: InboundTestRuntime, msg: ALMessage): Promise<void> {
+    await vi.waitFor(() => expect(readDrainsNaming(fixture, msg)).toHaveLength(1), { timeout: 5_000 })
+        .catch(async () => await new Promise<void>(() => {}));
+}
+
+interface NamedStatementShape extends RecordedPostgresStatementShape {
+    /** The store key the statement names, without its namespace, or the work row key; absent when it names neither. */
+    readonly name?: string;
+}
+
+function toNamedStatementShape(statement: RecordedPostgresStatement, namespace: string): NamedStatementShape {
+    const name = statement.values.find((value): value is string =>
+        typeof value === 'string' && (value.startsWith(`${namespace}:`) || value.startsWith(encodeURIComponent('dispatch:')))
+    );
+    return { ...toRecordedPostgresStatementShape(statement), name: name?.replace(`${namespace}:`, '') };
+}
+
+function toAutocommitRead(name: string): NamedStatementShape {
+    return { verb: 'select', transaction: null, name };
+}
+
+function toSlotKey(seq: number): string {
+    return `buffered:${TRACK_KEY}:${seq}`;
+}
+
+/** A delivery's readiness reads: the message, its owner row and the track's progress. */
+function toReadinessReads(msg: ALMessage): readonly NamedStatementShape[] {
+    const { msgId, senderId } = msg.id;
+    return [`message:${senderId}:${msgId}`, `msg-owner:${msgId}:${senderId}`, `delivered:${TRACK_KEY}`].map(toAutocommitRead);
+}
+
+/**
+ * A completion's reads before its guarded write: its slot, the message and its owner row, the progress, the three
+ * control rows, then the slot, the message and the progress again.
+ */
+function toCompletionReads(msg: ALMessage): readonly NamedStatementShape[] {
+    const { msgId, senderId } = msg.id;
+    const slot = toSlotKey(msg.ordering!.seq!);
+    return [
+        slot,
+        `message:${senderId}:${msgId}`,
+        `msg-owner:${msgId}:${senderId}`,
+        `delivered:${TRACK_KEY}`,
+        `control:pending:${msgId}:${senderId}`,
+        `control:acks:${msgId}:${senderId}`,
+        `control:owners:${msgId}`,
+        slot,
+        `message:${senderId}:${msgId}`,
+        `delivered:${TRACK_KEY}`
+    ].map(toAutocommitRead);
+}
+
+/** The reservation of the message's row in its own transaction: the locked read, then the update that names the row. */
+function toRowReservation(msg: ALMessage, transaction: number): readonly NamedStatementShape[] {
+    return [{ verb: 'with', transaction }, { verb: 'update', transaction, name: toEncodedDispatchId(msg) }];
+}
+
+/** A hand-on's lookup of the successor: the slot read, then the read of the row it names. */
+function toSuccessorLookup(msg: ALMessage): readonly NamedStatementShape[] {
+    return [toAutocommitRead(toSlotKey(msg.ordering!.seq!)), toAutocommitRead(toEncodedDispatchId(msg))];
+}
+
+/** A hand-on's claim: the lookup, the readiness reads and the reservation (in transaction 2). */
+function toHandOnClaim(msg: ALMessage): readonly NamedStatementShape[] {
+    return [...toSuccessorLookup(msg), ...toReadinessReads(msg), ...toRowReservation(msg, 2)];
+}
+
+/**
+ * A round's readiness probe that finds `msg` behind its undelivered predecessor, all reads: the page of new rows, the
+ * message's readiness, the predecessor's slot, message and work row, then the pages of retried and reserved rows.
+ */
+function toProbeBehindPredecessor(msg: ALMessage, predecessor: ALMessage): readonly NamedStatementShape[] {
+    return [
+        { verb: 'select', transaction: null },
+        ...toReadinessReads(msg),
+        toAutocommitRead(toSlotKey(predecessor.ordering!.seq!)),
+        toAutocommitRead(`message:${predecessor.id.senderId}:${predecessor.id.msgId}`),
+        toAutocommitRead(toEncodedDispatchId(predecessor)),
+        { verb: 'select', transaction: null },
+        { verb: 'select', transaction: null }
+    ];
 }
 
 /** At least one row count, and every one of them zero. */
 function isAllZero(rowCounts: readonly number[]): boolean {
     return rowCounts.length > 0 && rowCounts.every((rowCount) => rowCount === 0);
-}
-
-function toAutocommitReads(count: number): readonly RecordedPostgresStatementShape[] {
-    return Array.from({ length: count }, () => ({ verb: 'select', transaction: null }));
 }
