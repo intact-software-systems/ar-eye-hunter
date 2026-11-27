@@ -1,5 +1,7 @@
 import path from 'node:path';
-import { Node } from 'ts-morph';
+import { Node, SyntaxKind } from 'ts-morph';
+
+const nodesByProject = new WeakMap();
 
 export function toRepositoryPath(sourceFile, root) {
     return path.posix.relative(root.replaceAll('\\', '/'), sourceFile.getFilePath().replaceAll('\\', '/'));
@@ -12,6 +14,34 @@ export function toSiteId(node, root) {
 export function toOwnerName(node) {
     const names = node.getAncestors().toReversed().map(toOwnerSegment).filter((name) => name !== undefined);
     return names.length === 0 ? '<module>' : names.join('.');
+}
+
+/** Every node of one kind in the project, wrapped once: the fact sets share these walks. */
+export function findProjectNodes(project, kind) {
+    const nodesByKind = nodesByProject.get(project) ?? new Map();
+    nodesByProject.set(project, nodesByKind);
+    if (!nodesByKind.has(kind)) {
+        nodesByKind.set(
+            kind,
+            project.getSourceFiles().flatMap((sourceFile) => sourceFile.getDescendantsOfKind(kind))
+        );
+    }
+    return nodesByKind.get(kind);
+}
+
+export function findProjectInvocations(project) {
+    return [
+        ...findProjectNodes(project, SyntaxKind.CallExpression),
+        ...findProjectNodes(project, SyntaxKind.NewExpression)
+    ];
+}
+
+/** The nearest enclosing declaration that names an owner segment; undefined at module level. */
+export function toOwnerDeclaration(node) {
+    return node.getAncestors().find((ancestor) =>
+        toOwnerSegment(ancestor) !== undefined &&
+        !Node.isClassDeclaration(ancestor) && !Node.isClassExpression(ancestor)
+    );
 }
 
 export function toCountedFacts(siteIds) {

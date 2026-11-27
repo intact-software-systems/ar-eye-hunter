@@ -2,6 +2,7 @@ import { Node, SyntaxKind } from 'ts-morph';
 
 import { isExactType } from '../transaction-write-check/typescript-provenance.mjs';
 import {
+    findProjectNodes,
     isCallableArgument,
     toCountedFacts,
     toSiteId
@@ -11,8 +12,7 @@ const OPENER_METHODS = new Set(['begin', 'savepoint', 'transaction']);
 const OPENER_FUNCTION = 'runInPSqlTransaction';
 
 export function computeTransactionOpenerFacts(project, scope) {
-    const siteIds = project.getSourceFiles()
-        .flatMap((sourceFile) => sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression))
+    const siteIds = findProjectNodes(project, SyntaxKind.CallExpression)
         .filter(isTransactionOpenerCall)
         .map((call) => toSiteId(call, scope.root));
     return toCountedFacts(siteIds);

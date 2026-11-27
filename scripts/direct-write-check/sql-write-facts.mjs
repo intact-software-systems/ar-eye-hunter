@@ -2,6 +2,7 @@ import { Node, SyntaxKind } from 'ts-morph';
 
 import { isExactType, unwrapExpression } from '../transaction-write-check/typescript-provenance.mjs';
 import {
+    findProjectInvocations,
     sortFacts,
     toCountedFacts,
     toRepositoryPath,
@@ -143,12 +144,8 @@ const WRITE_KEYWORD = /\b(?:insert\s+into|update|delete\s+from|truncate|merge\s+
 const LOCK_PATTERN = /\bfor\s+(?:no\s+key\s+)?update(?:\s+of\s+([a-z_][a-z0-9_]*))?/giu;
 
 function computeHandleFeedFacts(project, scope, writeFiles) {
-    const siteIds = project.getSourceFiles()
-        .filter((sourceFile) => !writeFiles.has(toRepositoryPath(sourceFile, scope.root)))
-        .flatMap((sourceFile) => [
-            ...sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression),
-            ...sourceFile.getDescendantsOfKind(SyntaxKind.NewExpression)
-        ])
+    const siteIds = findProjectInvocations(project)
+        .filter((invocation) => !writeFiles.has(toRepositoryPath(invocation.getSourceFile(), scope.root)))
         .filter((invocation) => feedsRootHandleIntoWrite(invocation, scope, writeFiles))
         .map((invocation) => toSiteId(invocation, scope.root));
     return toCountedFacts(siteIds);

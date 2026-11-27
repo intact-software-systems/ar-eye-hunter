@@ -2,6 +2,7 @@ import { Node, SyntaxKind } from 'ts-morph';
 
 import { isExactType } from '../transaction-write-check/typescript-provenance.mjs';
 import {
+    findProjectNodes,
     sortFacts,
     toCountedFacts,
     toRepositoryPath,
@@ -55,7 +56,7 @@ function holdsPostgresHandle(declaration) {
 
 function computeConstructionFacts(project, scope, postgresClasses) {
     const namespacesById = new Map();
-    for (const construction of findNodes(project, SyntaxKind.NewExpression)) {
+    for (const construction of findProjectNodes(project, SyntaxKind.NewExpression)) {
         const declarations = toResolvedSymbol(construction.getExpression())?.getDeclarations() ?? [];
         if (!declarations.some((declaration) => postgresClasses.has(declaration))) {
             continue;
@@ -96,7 +97,7 @@ function toLocalInitializerText(symbol, fallback) {
 }
 
 function computeWriteFacts(project, scope, implementationClasses) {
-    const siteIds = findNodes(project, SyntaxKind.CallExpression)
+    const siteIds = findProjectNodes(project, SyntaxKind.CallExpression)
         .filter((call) => {
             const callee = call.getExpression();
             return Node.isPropertyAccessExpression(callee) &&
@@ -145,8 +146,4 @@ function isTypeOnlyImport(declaration) {
         declaration.getNamespaceImport() === undefined &&
         named.length > 0 &&
         named.every((specifier) => specifier.isTypeOnly());
-}
-
-function findNodes(project, kind) {
-    return project.getSourceFiles().flatMap((sourceFile) => sourceFile.getDescendantsOfKind(kind));
 }
