@@ -441,3 +441,20 @@ test('organizers can bind lobby registration to a phase in the published program
     assert.deepEqual(new Set(binding.required), new Set(['operation', 'expectedRevision', 'expectedProgramRevision', 'program', 'phase']));
     assert.equal(binding.additionalProperties, false);
 });
+
+test('generated event clients can offer or settle an organizer handover and read its private identity', async () => {
+    const response = await installApiDocumentationRoutes(new Hono()).request('/api/openapi.json');
+    const document = await response.json() as OpenApiDocument;
+    const { RoomEventCommand, RoomEventView } = document.components.schemas;
+    for (const [action, field] of [['offer-handover', 'recipientId'], ['accept-handover', 'offerId'], ['cancel-handover', 'offerId']]) {
+        const command = RoomEventCommand.oneOf?.find(schema => schema.properties?.action.const === action);
+        assert.deepEqual(command?.required, ['action', field]);
+        assert.equal(command?.properties?.[field].type, 'string');
+        assert.equal(command?.additionalProperties, false);
+    }
+    assert.ok(RoomEventView.required?.includes('handover'));
+    const handover = RoomEventView.properties?.handover;
+    assert.deepEqual(handover?.type, ['object', 'null']);
+    assert.deepEqual(handover?.required, ['offerId', 'offeredBy', 'recipientId', 'expiresAt']);
+    assert.equal(handover?.properties?.expiresAt.type, 'integer');
+});

@@ -1,3 +1,5 @@
+import { fenceRuntimeStateEntry } from '../../runtime-state/guarded-batch/fence-runtime-state-entry.ts';
+import { readHandoverPresence } from './read-handover-presence.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { readRallarGroupDirectorAppointment } from '@shared/api/group-director.ts';
 import type { RoomGuestLease } from '@shared/api/room-guests/invitation.ts';
@@ -6,7 +8,6 @@ import type { GroupMember, GroupRef } from '@shared/api/group-types.ts';
 import type { RoomEvent } from '@shared/api/room-events/room-event.ts';
 import { roomGuestAccessMode } from '@shared/api/room-guests/access.ts';
 import type { RuntimeStateGuardedBatchEffect } from '../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
-import type { RuntimeStateEntry } from '../../runtime-state/runtime-state-repository.ts';
 import type { AuthSessionPersistence } from '../auth/persistence/auth-session-persistence.ts';
 import { AUTH_SESSIONS_BY_SESSION_NAMESPACE } from '../auth/persistence/auth-storage-keys.ts';
 import { GroupMutationAuthorizationError } from '../group-state/group-mutation-authority.ts';
@@ -59,8 +60,7 @@ export class RoomEventAuthority {
         const actor = active.find(member => member.principalId === input.principalId);
         if (!actor) throw new GroupMutationAuthorizationError('Event lobby access has ended.');
         const command = input.command;
-        const permitted = this.organizers.includes(input.principalId) || (Object.hasOwn(this.organizersByApplication, input.lobby.applicationId) &&
-            this.organizersByApplication[input.lobby.applicationId].includes(input.principalId));
+        const permitted = this.canOrganize(input.lobby.applicationId, input.principalId);
         if (command?.action === 'create' && (session.value.guestRoom || lobby.value.ownerPrincipalId !== input.principalId ||
             !permitted)) {
             throw new GroupMutationAuthorizationError('Configured organizer permission and control of the lobby are required.');
@@ -68,7 +68,17 @@ export class RoomEventAuthority {
         if (command?.action === 'propose' && command.players.some(player => !audience.includes(player) || event?.removed.includes(player))) {
             throw new GroupMutationAuthorizationError('A party can invite only current event players.');
         }
-        const fences = [fence(GROUPS_NAMESPACE, lobby.entry), fence(AUTH_SESSIONS_BY_SESSION_NAMESPACE, session.entry)];
+        const fences = [fenceRuntimeStateEntry(GROUPS_NAMESPACE, lobby.entry), fenceRuntimeStateEntry(AUTH_SESSIONS_BY_SESSION_NAMESPACE, session.entry)];
+        if (command?.action === 'offer-handover' || command?.action === 'accept-handover') {
+            const offering = command.action === 'offer-handover';
+            const recipientId = offering ? command.recipientId : input.principalId;
+            const recipient = active.find(member => member.principalId === recipientId);
+            if (!event || !recipient || recipient.guestLease || !this.canOrganize(input.lobby.applicationId, recipientId) ||
+                (offering ? event.organizerId !== input.principalId : event.handover?.recipientId !== input.principalId)) {
+                throw new GroupMutationAuthorizationError('Handover requires an eligible event organizer.');
+            }
+            fences.push(...await readHandoverPresence({ ...this.dependencies, event, recipientId, now, acceptingSession: offering ? undefined : input.sessionId }));
+        }
         if (command?.action === 'release' && input.principalId !== event?.organizerId) {
             const court = { ...input.lobby, groupId: command.groupId };
             if (!event?.courts.some(candidate => candidate.groupId === court.groupId) ||
@@ -83,6 +93,11 @@ export class RoomEventAuthority {
         return { fences, audience, members: active, guestLease: actor.guestLease };
     }
 
+    private canOrganize(applicationId: string, principalId: string): boolean {
+        return this.organizers.includes(principalId) || (Object.hasOwn(this.organizersByApplication, applicationId) &&
+            this.organizersByApplication[applicationId].includes(principalId));
+    }
+
     private async directorFences(court: GroupRef, actor: RoomEventActor, now: number): Promise<RuntimeStateGuardedBatchEffect[]> {
         const groups = this.dependencies.groups;
         const [group, presence, admission, member] = await Promise.all([groups.findGroupEntry(court),
@@ -95,11 +110,6 @@ export class RoomEventAuthority {
             presence.value.principalId !== actor.principalId || !isExactlyAdmitted(admission.value, presence.value)) {
             throw new GroupMutationAuthorizationError('A current court director and live appointment are required to release the court.');
         }
-        return [fence(GROUPS_NAMESPACE, group.entry), fence(SESSIONS_NAMESPACE, presence.entry), fence(PRESENCE_ADMISSIONS_NAMESPACE, admission.entry)];
+        return [fenceRuntimeStateEntry(GROUPS_NAMESPACE, group.entry), fenceRuntimeStateEntry(SESSIONS_NAMESPACE, presence.entry), fenceRuntimeStateEntry(PRESENCE_ADMISSIONS_NAMESPACE, admission.entry)];
     }
-}
-
-function fence(namespace: string, row: RuntimeStateEntry): RuntimeStateGuardedBatchEffect {
-    return { operation: 'update-exact', effectId: namespace + ':' + row.key, namespace, key: row.key, expectedRevision: row.revision,
-        expectedValue: row.value, value: row.value, expireAtTimestamp: row.expireAtTimestamp };
 }

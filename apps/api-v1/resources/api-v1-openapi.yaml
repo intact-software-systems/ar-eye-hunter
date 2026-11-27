@@ -10068,7 +10068,7 @@ components:
                           description: Claim deadline in Unix epoch milliseconds, or null for a claimed seat.
     RoomEventView:
       type: object
-      required: [lobby, principalId, revision, closesAt, closed, courts, queue, proposals, offer]
+      required: [lobby, principalId, revision, closesAt, closed, courts, queue, proposals, offer, handover]
       properties:
         lobby: { $ref: '#/components/schemas/GroupRef' }
         principalId: { type: string }
@@ -10106,8 +10106,36 @@ components:
             offerRevision: { type: integer, minimum: 1 }
             partyId: { type: string }
             deadline: { type: [integer, 'null'] }
+        handover:
+          description: Current organizer handover visible to its sender and recipient until the server deadline.
+          type: [object, 'null']
+          additionalProperties: false
+          required: [offerId, offeredBy, recipientId, expiresAt]
+          properties:
+            offerId: { type: string }
+            offeredBy: { type: string }
+            recipientId: { type: string }
+            expiresAt: { type: integer, minimum: 0, description: Unix epoch milliseconds. }
     RoomEventCommand:
       oneOf:
+        - type: object
+          additionalProperties: false
+          required: [action, recipientId]
+          properties:
+            action: { const: offer-handover }
+            recipientId: { type: string }
+        - type: object
+          additionalProperties: false
+          required: [action, offerId]
+          properties:
+            action: { const: accept-handover }
+            offerId: { type: string }
+        - type: object
+          additionalProperties: false
+          required: [action, offerId]
+          properties:
+            action: { const: cancel-handover }
+            offerId: { type: string }
         - type: object
           additionalProperties: false
           required: [action, closesAt, courts]

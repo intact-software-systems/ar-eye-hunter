@@ -17,6 +17,14 @@ async function runEventNight({ plans, controls }: ManagedClusterProof.ScenarioIn
     await requestJson(first.baseUrl, toApiMutationRequestPath(groups, crypto.randomUUID()), { method: 'POST', session: organizer,
         expectedStatus: 201, body: { groupId: 'pickup', kind: 'room', joinMode: 'invite-only', displayName: 'Pickup',
             createdByPrincipalId: organizer.clientId, maxMembers: 10 } });
+    const successor = await users.login({ principal: 'bob', label: 'recipient', apiBaseUrl: second.baseUrl,
+        wsBaseUrl: second.baseUrl.replace(/^http/, 'ws') });
+    await requestJson(first.baseUrl, toApiMutationRequestPath(lobby + '/invites/' + successor.clientId, crypto.randomUUID()), {
+        method: 'POST', session: organizer, body: {}
+    });
+    await requestJson(second.baseUrl, toApiMutationRequestPath(lobby + '/invites/accept', crypto.randomUUID()), {
+        method: 'POST', session: successor, body: {}
+    });
     const secret = randomBytes(32).toString('hex');
     await requestJson(first.baseUrl, toApiMutationRequestPath(lobby, crypto.randomUUID()), { method: 'PUT', session: organizer,
         body: { guestInvitationVerifier: await hashRoomInvitationSecret(secret) } });
@@ -102,10 +110,55 @@ async function runEventNight({ plans, controls }: ManagedClusterProof.ScenarioIn
     const releaseId = crypto.randomUUID();
     const [firstAck,secondAck] = await Promise.all([first,second].map(node => command(node.baseUrl,adminHeaders,{body:nextRelease,id:releaseId})));
     assert.deepEqual(firstAck,secondAck);
-    await command(first.baseUrl,adminHeaders,{body:{action:'close'}});
+    const successorHeaders = { authorization: 'Bearer ' + successor.accessToken, 'x-client-id': successor.clientId };
+    const sessionPath = lobby + '/sessions/' + successor.sessionId;
+    const generationId = crypto.randomUUID();
+    await requestJson(second.baseUrl, toApiMutationRequestPath(sessionPath, crypto.randomUUID()), {
+        method: 'PUT', session: successor, body: { principalId: successor.clientId, generationId, connectionGenerationId: generationId, publicationKey: null }
+    });
+    const offer = async () => {
+        await command(first.baseUrl, adminHeaders, { body: { action: 'offer-handover', recipientId: successor.clientId } });
+        const pending = requireRecord((await view(second.baseUrl, successorHeaders)).handover, 'recipient offer');
+        assert.equal((await view(second.baseUrl, a.headers)).handover, null);
+        return pending;
+    };
+    const beforeTransfer = await requestJson(first.baseUrl, organizerView, { method: 'GET', session: organizer });
+    const expired = await offer();
+    assert.ok(typeof expired.expiresAt === 'number' && expired.expiresAt - Date.now() <= 5000);
+    await new Promise(resolve => setTimeout(resolve, Math.max(0, Number(expired.expiresAt) - Date.now() + 1)));
+    await requestJson(second.baseUrl, toApiMutationRequestPath(event, crypto.randomUUID()), {
+        method: 'POST', session: successor, body: { action: 'accept-handover', offerId: expired.offerId }, expectedStatus: [400, 403]
+    });
+    for (const node of [first, second]) {
+        assert.equal((await view(node.baseUrl, successorHeaders)).handover, null);
+        assert.equal((await requestJson(node.baseUrl, organizerView, { method: 'GET', session: organizer })).organizerId, organizer.clientId);
+    }
+    let offerId = (await offer()).offerId;
+    let acceptanceId = crypto.randomUUID();
+    const decision = (origin: string, headers: Record<string,string>, request: { action: string; id: string }) =>
+        requestJson(origin, toApiMutationRequestPath(event, request.id), { method: 'POST', headers, body: { action: request.action, offerId }, expectedStatus: [200,400,403] });
+    const [cancel, accept] = await Promise.all([
+        decision(first.baseUrl, adminHeaders, { action: 'cancel-handover', id: crypto.randomUUID() }),
+        decision(second.baseUrl, successorHeaders, { action: 'accept-handover', id: acceptanceId })
+    ]);
+    assert.equal(Number(typeof cancel.revision === 'number') + Number(typeof accept.revision === 'number'), 1);
+    if (typeof cancel.revision === 'number') {
+        offerId = (await offer()).offerId;
+        acceptanceId = crypto.randomUUID();
+        await command(second.baseUrl, successorHeaders, { body: { action: 'accept-handover', offerId }, id: acceptanceId });
+    }
+    const replay = await command(first.baseUrl, successorHeaders, { body: { action: 'accept-handover', offerId }, id: acceptanceId });
+    for (const node of [first, second]) {
+        const snapshot = await requestJson(node.baseUrl, event + '/organizer', { session: successor, method: 'GET' });
+        assert.equal(snapshot.revision, replay.revision);
+        assert.equal(snapshot.organizerId, successor.clientId);
+        assert.deepEqual(snapshot.courts, beforeTransfer.courts);
+        await requestJson(node.baseUrl, event + '/organizer', { session: organizer, method: 'GET', expectedStatus: 403 });
+    }
+    await command(first.baseUrl, successorHeaders, { body: {action:'close'} });
 }
 
 if (import.meta.main) {
-    const artifacts = await runManagedClusterProof({ applicationNamePrefix: 'room-event', runScenario: runEventNight });
+    const artifacts = await runManagedClusterProof({ applicationNamePrefix: 'room-event', environmentOverrides: { RALLAR_EVENT_HANDOVER_WINDOW_MS: '5000' }, runScenario: runEventNight });
     console.log('Two courts, independent guest access, overdue worker restart and removal passed.', artifacts);
 }

@@ -1,4 +1,5 @@
 import type { ApiV1ConfigurationSourceValue } from '../../src/configuration/decode-api-v1-configuration-source.ts';
+import { readApiV1ConfigurationEnvironment } from '../../src/configuration/read-api-v1-configuration-environment.ts';
 import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import { decodeApiV1Configuration } from '../../src/configuration/decode-api-v1-configuration.ts';
@@ -31,4 +32,14 @@ test('event organizers can be granted authority per application', () => {
     for (const invalid of [{ league: 'official' }, { league: ['invalid/id'] }, { league: ['official', 'official'] }]) {
         assert.throws(() => decode(invalid));
     }
+});
+
+test('organizer handover uses a ten-minute window and accepts a positive deployment override', () => {
+    const input = validDecodeApiV1ConfigurationInput();
+    assert.equal(decodeApiV1Configuration(input).group.eventHandoverWindowMs, 600_000);
+    const decode = (eventHandoverWindowMs: number) => decodeApiV1Configuration({ ...input, environmentSource: { group: { eventHandoverWindowMs } } });
+    const { environmentSource } = readApiV1ConfigurationEnvironment({ RALLAR_EVENT_HANDOVER_WINDOW_MS: '2500' });
+    assert.equal(decodeApiV1Configuration({ ...input, environmentSource }).group.eventHandoverWindowMs, 2500);
+    assert.equal(decode(3000).group.eventHandoverWindowMs, 3000);
+    assert.throws(() => decode(0));
 });
