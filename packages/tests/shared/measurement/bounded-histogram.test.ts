@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import {
     computeBoundedHistogramAfter,
+    computeBoundedHistogramRecorded,
     createBoundedHistogram,
     decodeBoundedHistogram,
     MAX_BOUNDED_HISTOGRAM_BOUNDS,
@@ -14,6 +16,76 @@ function createRecorded(upperBounds: readonly number[], values: readonly number[
         histogram = computeBoundedHistogramAfter(histogram, value).right!;
     }
     return histogram;
+}
+
+interface DecodedExtremes {
+    readonly bucketCounts: readonly number[];
+    readonly min: number;
+    readonly max: number;
+}
+
+interface RefusedExtremes extends DecodedExtremes {
+    readonly refused: string;
+    readonly fields: readonly string[];
+}
+
+interface AcceptedExtremes extends DecodedExtremes {
+    readonly accepted: string;
+}
+
+/**
+ * On the bounds 10 and 100 a recorded sample of 0 to 10 is counted in the first bucket, one above 10 and up to 100 in
+ * the second, and one above 100 in the overflow bucket.
+ */
+const EXTREMES_OUTSIDE_THEIR_BUCKETS: readonly RefusedExtremes[] = [
+    {
+        refused: 'a min and a max above the only bucket that counts a sample',
+        bucketCounts: [3, 0, 0],
+        min: 500,
+        max: 500,
+        fields: ['h.min', 'h.max']
+    },
+    {
+        refused: 'a min above the bound of the first bucket that counts a sample',
+        bucketCounts: [1, 1, 0],
+        min: 11,
+        max: 50,
+        fields: ['h.min']
+    },
+    {
+        refused: 'a min on the bound under the first bucket that counts a sample',
+        bucketCounts: [0, 2, 0],
+        min: 10,
+        max: 50,
+        fields: ['h.min']
+    },
+    {
+        refused: 'a max above the bound of the last bucket that counts a sample',
+        bucketCounts: [1, 1, 0],
+        min: 5,
+        max: 101,
+        fields: ['h.max']
+    },
+    {
+        refused: 'a max on the bound under the overflow bucket, the last that counts a sample',
+        bucketCounts: [1, 0, 1],
+        min: 5,
+        max: 100,
+        fields: ['h.max']
+    },
+    { refused: 'a negative min', bucketCounts: [1, 1, 0], min: -1, max: 50, fields: ['h.min'] }
+];
+
+const EXTREMES_ON_THE_EDGES_OF_THEIR_BUCKETS: readonly AcceptedExtremes[] = [
+    { accepted: 'a min and a max each exactly on the bound of its bucket', bucketCounts: [1, 1, 0], min: 10, max: 100 },
+    { accepted: 'a min of 0 in the first bucket', bucketCounts: [2, 0, 0], min: 0, max: 0 },
+    { accepted: 'a min just above the last bound and any larger max', bucketCounts: [0, 0, 2], min: 100.5, max: 1e9 }
+];
+
+/** A histogram on the bounds 10 and 100 whose count is the sum of its buckets; the sum is not read against the extremes. */
+function toDecodedExtremes(bucketCounts: readonly number[], min: number, max: number): ApiJsonObject {
+    const count = bucketCounts.reduce((total, each) => total + each, 0);
+    return { upperBounds: [10, 100], bucketCounts, count, sum: count, min, max };
 }
 
 describe('BoundedHistogram', () => {
@@ -45,6 +117,19 @@ describe('BoundedHistogram', () => {
             expect(computeBoundedHistogramAfter(histogram, value).left).toEqual(expect.any(String));
         }
         expect(histogram).toEqual(createRecorded([10, 100], [5]));
+    });
+
+    it('records a list of values onto what a histogram already holds, and counts each refused value instead', () => {
+        const before = createRecorded([10, 100], [7]);
+
+        const recorded = computeBoundedHistogramRecorded(before, [5, -1, 50, Number.NaN, 500]);
+
+        expect(recorded).toEqual({
+            histogram: { upperBounds: [10, 100], bucketCounts: [2, 1, 1], count: 4, sum: 562, min: 5, max: 500 },
+            unrecordedSamples: 2
+        });
+        expect(before.count).toBe(1);
+        expect(computeBoundedHistogramRecorded(before, [])).toEqual({ histogram: before, unrecordedSamples: 0 });
     });
 
     it('does not change the histogram it records into', () => {
@@ -122,6 +207,33 @@ describe('BoundedHistogram', () => {
         expect(issues.some((issue) => issue.includes('h.bucketCounts[0]'))).toBe(true);
         expect(issues.some((issue) => issue.includes('h.bucketCounts[1]'))).toBe(true);
         expect(issues.some((issue) => issue.includes('h.sum'))).toBe(true);
+    });
+
+    it.each(EXTREMES_OUTSIDE_THEIR_BUCKETS)(
+        'refuses $refused, naming $fields',
+        ({ bucketCounts, min, max, fields }) => {
+            const decoded = decodeBoundedHistogram(toDecodedExtremes(bucketCounts, min, max), 'h');
+
+            expect(decoded.right).toBeUndefined();
+            expect(decoded.left?.map((issue) => issue.slice(0, issue.indexOf(' ')))).toEqual(fields);
+        }
+    );
+
+    it.each(EXTREMES_ON_THE_EDGES_OF_THEIR_BUCKETS)('decodes $accepted', ({ bucketCounts, min, max }) => {
+        expect(decodeBoundedHistogram(toDecodedExtremes(bucketCounts, min, max), 'h').right)
+            .toMatchObject({ bucketCounts, min, max });
+    });
+
+    it('decodes every histogram that recording produced, whichever buckets its smallest and largest sample fell in', () => {
+        // On the bounds 10 and 100: 0 and 10 close the first bucket, 10.5 and 100 the second, 100.5 and 2500 overflow.
+        const samples = [0, 10, 10.5, 100, 100.5, 2500];
+        for (let start = 0; start < samples.length; start += 1) {
+            for (let end = start + 1; end <= samples.length; end += 1) {
+                const recorded = createRecorded([10, 100], samples.slice(start, end));
+
+                expect(decodeBoundedHistogram(JSON.parse(JSON.stringify(recorded)), 'h').right).toEqual(recorded);
+            }
+        }
     });
 
     it('refuses a count beyond the safe integers, whose sum of buckets cannot be checked', () => {

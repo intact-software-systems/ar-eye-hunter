@@ -8,9 +8,9 @@ import {
 import { toReceivedCommand, toSingleArrivalReceiverCommands } from '../../alm-conformance-receiver-commands.ts';
 import { ALM_CONFORMANCE_THREE_AGENT_ROLES } from '../../alm-conformance-roles.ts';
 import { FULL_TAGS, type AlmConformanceScenarioDefinition } from '../../alm-conformance-scenario-definition.ts';
-import { WS_ROUTE_FACTS } from '../audiences/world-routing.ts';
+import { resolveAlmCarrierMatrixCellCarriers } from '../../carrier-matrix/resolve-alm-carrier-matrix-cell-carriers.ts';
 import {
-    CLAIM_WS_ROUTE_CARRIERS,
+    CLAIM_WS_ROUTE_FACTS,
     toClaim,
     toClaimSendCommand,
     toHeldByOtherVerdictCommands
@@ -34,7 +34,7 @@ export const claimFirstWins: AlmConformanceScenarioDefinition = {
     scenarioId: 'claim-first-wins',
     scenarioKey: 'claim-first-wins',
     tags: FULL_TAGS,
-    carriers: CLAIM_WS_ROUTE_CARRIERS,
+    carriers: resolveAlmCarrierMatrixCellCarriers('claim-first-wins'),
     roles: ALM_CONFORMANCE_THREE_AGENT_ROLES,
     laneFamily: 'three-agent',
     toReceiptRoles: () => BOTH_CONFIRMED,
@@ -50,7 +50,7 @@ export const claimFirstWins: AlmConformanceScenarioDefinition = {
             roles: BOTH_CONFIRMED,
             ending: 'acknowledged',
             mode: 'receiver',
-            endingFacts: WS_ROUTE_FACTS
+            endingFacts: CLAIM_WS_ROUTE_FACTS
         })
     ],
     toRecipientCommands: (recipient) =>

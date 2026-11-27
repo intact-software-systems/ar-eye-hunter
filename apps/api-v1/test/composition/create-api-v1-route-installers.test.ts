@@ -135,7 +135,7 @@ function createInput(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRunti
             mutation: { submit: rejectUnusedOperation },
             mutationQuota: { timebasedFilterMs: 60000, maxNumberToAllow: 60 }
         },
-        roomEvents: { read: rejectUnusedOperation, mutate: { submit: rejectUnusedOperation } },
+        roomEvents: { read: rejectUnusedOperation, readOrganizer: rejectUnusedOperation, mutate: { submit: rejectUnusedOperation } },
         tournaments: {
             catalog: { read: rejectUnusedOperation },
             reader: { read: rejectUnusedOperation },

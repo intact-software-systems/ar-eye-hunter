@@ -1,7 +1,6 @@
 import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
 import {
     ALM_CONFORMANCE_CARRIERS,
-    ALM_CONFORMANCE_SINGLE_HOP_CARRIERS,
     type AlmConformanceCarrier
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import { requireAlmCellParts } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-cell-parts.ts';
@@ -42,8 +41,11 @@ import { seededLossUnreceiptedStream } from '@shared-test/rallar-bb-test/conform
 import { leaderConfirms } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/leader-ack/leader-confirms.ts';
 import { leaderOutsideList } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/leader-ack/leader-outside-list.ts';
 import { noLeaderRefused } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/leader-ack/no-leader-refused.ts';
+import { fencedCatchUp } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/membership-fence/fenced-catch-up.ts';
+import { fencedDelivery } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/membership-fence/fenced-delivery.ts';
 import { fencedRejection } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/membership-fence/fenced-rejection.ts';
 import { pacedIsolationLists } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/publication/paced-isolation-lists.ts';
+import { orderingGapRepair } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/range-repair/ordering-gap-repair.ts';
 import { repairExhausted } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/range-repair/repair-exhausted.ts';
 import {
     forgedRecipientAck,
@@ -115,7 +117,7 @@ const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
     { scenarioKey: 'checkpoint-recovery', carriers: ALM_CONFORMANCE_CARRIERS },
     { scenarioKey: 'checkpoint-lag', carriers: ALM_CONFORMANCE_CARRIERS },
     // The range repair cells' lane evidence is local and the hosted full read's too; manifests 18 and 22 stay as recorded.
-    { scenarioKey: 'ordering-gap-repair', carriers: ALM_CONFORMANCE_SINGLE_HOP_CARRIERS },
+    { scenarioKey: 'ordering-gap-repair', carriers: orderingGapRepair.carriers },
     { scenarioKey: 'repair-exhausted', carriers: repairExhausted.carriers },
     // The fault stream cells' lane evidence is local: they were written to change no hosted manifest (D669).
     { scenarioKey: 'seeded-loss-stream', carriers: seededLossStream.carriers },
@@ -127,9 +129,9 @@ const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
     { scenarioKey: 'edge-order-stream', carriers: edgeOrderStream.carriers },
     { scenarioKey: 'edge-order-jitter-stream', carriers: edgeOrderJitterStream.carriers },
     // The membership fence cells' lane evidence is local and the hosted full read's; manifest 22 stays as recorded.
-    { scenarioKey: 'fenced-delivery', carriers: ALM_CONFORMANCE_SINGLE_HOP_CARRIERS },
+    { scenarioKey: 'fenced-delivery', carriers: fencedDelivery.carriers },
     // A combined recipe keeps only its first prologue, so the recipient that leaves here would miss every later cell.
-    { scenarioKey: 'fenced-catch-up', carriers: ALM_CONFORMANCE_SINGLE_HOP_CARRIERS },
+    { scenarioKey: 'fenced-catch-up', carriers: fencedCatchUp.carriers },
     // The same for the sender, which leaves before it sends.
     { scenarioKey: 'fenced-rejection', carriers: fencedRejection.carriers },
     // The leader cells' lane evidence is local and the hosted full read's; manifest 22 stays as recorded.

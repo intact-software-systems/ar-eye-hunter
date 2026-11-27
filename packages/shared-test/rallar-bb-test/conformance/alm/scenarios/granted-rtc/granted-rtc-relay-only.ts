@@ -1,8 +1,9 @@
 import { ALM_CONFORMANCE_THREE_AGENT_ROLES } from '../../alm-conformance-roles.ts';
 import { FULL_TAGS, type AlmConformanceScenarioDefinition } from '../../alm-conformance-scenario-definition.ts';
+import { resolveAlmCarrierMatrixCellCarriers } from '../../carrier-matrix/resolve-alm-carrier-matrix-cell-carriers.ts';
 import { TOPIC_SUBSCRIPTION_SELECTOR } from '../topic-subscription/topic-subscription-commands.ts';
 import { toCueWait, toPublicationWait } from '../topic-subscription/topic-subscription-publications.ts';
-import { GRANTED_RTC_CARRIERS, toPublishUntilCueCommand, toRtcArrivalWait } from './granted-rtc-commands.ts';
+import { toPublishUntilCueCommand, toRtcArrivalWait } from './granted-rtc-commands.ts';
 import { toPathMemberCommands, toPathOwnerCommands, toPathSenderCommands } from './granted-rtc-path.ts';
 import { PATH_START_GRANTS } from './granted-rtc-start-grants.ts';
 
@@ -18,7 +19,7 @@ export const grantedRtcRelayOnly: AlmConformanceScenarioDefinition = {
     scenarioKey: 'granted-rtc-relay-only',
     roomTopology: 'reshaped',
     tags: FULL_TAGS,
-    carriers: GRANTED_RTC_CARRIERS,
+    carriers: resolveAlmCarrierMatrixCellCarriers('granted-rtc-relay-only'),
     roles: ALM_CONFORMANCE_THREE_AGENT_ROLES,
     laneFamily: 'three-agent',
     principalRoles: ['receiver', 'recipient-b', 'sender'],

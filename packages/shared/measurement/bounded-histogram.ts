@@ -1,5 +1,7 @@
 import { isApiJsonObject, type ApiJsonObject } from '../api/api-json-value.ts';
 import { Either } from '../resilience/Either.ts';
+import { isFiniteNonNegative, isWholeCount } from './bounded-histogram-number-guards.ts';
+import { validateBoundedHistogramExtremes } from './validate-bounded-histogram-extremes.ts';
 
 export interface BoundedHistogram {
     readonly upperBounds: readonly number[];
@@ -10,15 +12,13 @@ export interface BoundedHistogram {
     readonly max: number | null;
 }
 
+/** A histogram after a list of samples, and how many of them it refused. */
+export interface BoundedHistogramRecorded {
+    readonly histogram: BoundedHistogram;
+    readonly unrecordedSamples: number;
+}
+
 export const MAX_BOUNDED_HISTOGRAM_BOUNDS = 32;
-
-function isFiniteNonNegative(value: unknown): value is number {
-    return typeof value === 'number' && Number.isFinite(value) && value >= 0;
-}
-
-function isWholeCount(value: unknown): value is number {
-    return isFiniteNonNegative(value) && Number.isSafeInteger(value);
-}
 
 function decodeBoundedHistogramBounds(value: unknown, path: string): Either<readonly string[], readonly number[]> {
     if (!Array.isArray(value)) {
@@ -73,6 +73,19 @@ export function computeBoundedHistogramAfter(
     });
 }
 
+/** A value the histogram refuses is counted and leaves the histogram as it was; none is clamped into a bucket. */
+export function computeBoundedHistogramRecorded(
+    histogram: BoundedHistogram,
+    values: readonly number[]
+): BoundedHistogramRecorded {
+    return values.reduce<BoundedHistogramRecorded>((recorded, value) => {
+        const after = computeBoundedHistogramAfter(recorded.histogram, value);
+        return after.right === undefined
+            ? { histogram: recorded.histogram, unrecordedSamples: recorded.unrecordedSamples + 1 }
+            : { histogram: after.right, unrecordedSamples: recorded.unrecordedSamples };
+    }, { histogram, unrecordedSamples: 0 });
+}
+
 function validateBoundedHistogramBuckets(record: ApiJsonObject, path: string): string[] {
     const { bucketCounts, upperBounds, count } = record;
     if (!Array.isArray(bucketCounts)) {
@@ -96,31 +109,6 @@ function validateBoundedHistogramBuckets(record: ApiJsonObject, path: string): s
     return issues;
 }
 
-function validateBoundedHistogramExtremes(record: ApiJsonObject, path: string): string[] {
-    const { count, min, max, sum } = record;
-    const issues: string[] = [];
-    if (!isFiniteNonNegative(sum)) {
-        issues.push(`${path}.sum must be a finite number of at least 0`);
-    }
-    if (count === 0) {
-        for (const [name, extreme] of [['min', min], ['max', max]] as const) {
-            if (extreme !== null) {
-                issues.push(`${path}.${name} must be null when ${path}.count is 0`);
-            }
-        }
-        return issues;
-    }
-    for (const [name, extreme] of [['min', min], ['max', max]] as const) {
-        if (typeof extreme !== 'number' || !Number.isFinite(extreme)) {
-            issues.push(`${path}.${name} must be a finite number when ${path}.count is above 0`);
-        }
-    }
-    if (typeof min === 'number' && typeof max === 'number' && min > max) {
-        issues.push(`${path}.min must not be above ${path}.max`);
-    }
-    return issues;
-}
-
 export function decodeBoundedHistogram(value: unknown, path: string): Either<readonly string[], BoundedHistogram> {
     if (!isApiJsonObject(value)) {
         return Either.ofLeft([`${path} must be an object`]);
@@ -129,7 +117,7 @@ export function decodeBoundedHistogram(value: unknown, path: string): Either<rea
     const issues = [
         ...(upperBounds.left ?? []),
         ...validateBoundedHistogramBuckets(value, path),
-        ...validateBoundedHistogramExtremes(value, path)
+        ...validateBoundedHistogramExtremes(value, path, upperBounds.right)
     ];
     if (issues.length > 0) {
         return Either.ofLeft(issues);
