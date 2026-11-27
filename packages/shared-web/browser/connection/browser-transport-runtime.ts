@@ -1,3 +1,4 @@
+import { toStateScope } from '@shared/api/api-type-utils.ts';
 import { BrowserALDurableWorkClaim } from '@shared-web/browser/al-runtime/browser-al-durable-work-claim.ts';
 import {
     BrowserALSessionChannel,
@@ -203,7 +204,11 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
         this.pendingConnection = reservation.promise;
         try {
             reservation.settle(
-                this.startConnection(session, { ...options, rtcCaptureConfiguration }, reservation.promise)
+                this.startConnection(session, {
+                    ...options,
+                    scope: session.guestRoom ? toStateScope(session.guestRoom) : options.scope,
+                    rtcCaptureConfiguration
+                }, reservation.promise)
             );
             return reservation.promise;
         }

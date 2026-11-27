@@ -1,3 +1,4 @@
+import { controlRoomConnection } from './control-room-connection.ts';
 import { expect, test, type Page } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import type { RoomAccessObservation, RoomTimelineObservation } from '@shared-web/browser/rallar.ts';
@@ -24,32 +25,6 @@ async function signIn(page: Page, user: FullStackUser, scope: StateScope, apiBas
     }, { username: user.username, password: user.password, apiBaseUrl, scope, sdkUrl, observerUrl });
 }
 
-async function controlConnection(page: Page) {
-    let cutConnection: (() => Promise<void>) | undefined;
-    let disconnected = false;
-    await page.routeWebSocket(url => url.host === new URL(config.apiBaseUrl).host, async socket => {
-        if (disconnected) {
-            await socket.close({ code: 1001 });
-            return;
-        }
-        const server = socket.connectToServer();
-        cutConnection = async () => {
-            await Promise.all([socket.close({ code: 1001 }), server.close({ code: 1001 })]);
-        };
-    });
-    return {
-        async disconnect() {
-            expect(cutConnection).toBeDefined();
-            disconnected = true;
-            await page.context().setOffline(true);
-            await cutConnection!();
-        },
-        async reconnect() {
-            disconnected = false;
-            await page.context().setOffline(false);
-        }
-    };
-}
 
 for (const feature of ['lobby', 'director succession'] as const) {
     test(`an owner updates ordinary room metadata with ${feature} enabled`, async ({ page }) => {
@@ -140,7 +115,7 @@ test('a member follows court A from B through pause, a missed resume and access 
     guestPage.on('request', request => {
         if (request.method() === 'GET' && new URL(request.url()).pathname === roomPath) roomReads.push(request.url());
     });
-    const network = await controlConnection(guestPage);
+    const network = await controlRoomConnection(guestPage, config.apiBaseUrl);
     try {
         const host = await signIn(page, config.userA, scope);
         const guest = await signIn(guestPage, config.userB, scope);
@@ -233,7 +208,7 @@ for (const offline of [false, true]) {
         const scope = { applicationId: 'club', workspaceId: crypto.randomUUID() };
         const court = { ...scope, groupId: 'ordinary' };
         const guestPage = await browser.newPage({ baseURL });
-        const network = await controlConnection(guestPage);
+        const network = await controlRoomConnection(guestPage, config.apiBaseUrl);
         try {
             const host = await signIn(page, config.userA, scope);
             const guest = await signIn(guestPage, config.userB, scope);

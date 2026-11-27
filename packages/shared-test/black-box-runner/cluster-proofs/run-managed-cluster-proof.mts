@@ -22,6 +22,7 @@ export namespace ManagedClusterProof {
     export interface Input {
         /** The Postgres `application_name` prefix each process connects under, suffixed with its port. */
         readonly applicationNamePrefix: string;
+        readonly environmentOverrides?: Readonly<Record<string, string>>;
         readonly runScenario: (scenario: ScenarioInput) => Promise<void>;
     }
 
@@ -40,7 +41,7 @@ export namespace ManagedClusterProof {
 export async function runManagedClusterProof(input: ManagedClusterProof.Input): Promise<string> {
     const options = parseApiV1BlackBoxArgs(process.argv.slice(2));
     assert.ok(options.backend === 'postgres' && options.secondaryPort && options.tertiaryPort && !options.recipesOnly);
-    const environment = toApiV1BlackBoxEnvironment(options, process.env);
+    const environment = toApiV1BlackBoxEnvironment(options, { ...process.env, ...input.environmentOverrides });
     const artifactDir = resolve(options.artifactDir, environment.RALLAR_BB_EXECUTION_TOKEN!);
     const repoRootPath = fileURLToPath(new URL('../../../../', import.meta.url));
     await mkdir(artifactDir, { recursive: true });

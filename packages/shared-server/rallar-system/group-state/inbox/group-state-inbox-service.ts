@@ -1,3 +1,4 @@
+import { toGuestBookingCommand, type GuestBookingCommand } from '../schedule/guest-booking-command.ts';
 import { toGroupGuestSeatExpiryCommand, type GroupGuestSeatDeadline } from '../schedule/group-guest-seat-deadline.ts';
 import { newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
@@ -285,6 +286,10 @@ export class GroupStateInboxService {
         input: GroupGuestAdmission & Readonly<{ traceId: string; }>
     ): Promise<Either<AppInboxFailure, GroupStateWritten>> {
         return await this.processGuestCommand(toGroupGuestAdmissionCommand(input), input.traceId);
+    }
+
+    async processGuestBookingUntilCompletion(input: GuestBookingCommand & { readonly traceId: string }) {
+        return await this.processGuestCommand(toGuestBookingCommand(input), input.traceId);
     }
 
     async processTemporaryGroupCreationUntilCompletion(

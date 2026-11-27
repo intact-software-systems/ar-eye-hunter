@@ -235,7 +235,8 @@ describe('browser facade restored-session setup', () => {
             },
             {
                 command: { timeoutMs: 123 }
-            }
+            },
+            runtime.middleware.session
         );
     });
 });
