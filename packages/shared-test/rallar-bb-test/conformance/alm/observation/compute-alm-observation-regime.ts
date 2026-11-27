@@ -118,8 +118,11 @@ export type ALMObservationInboundDirection =
         pendingShare: ALMObservationInboundPendingShare;
         phases: ALMObservationInboundPhases;
         claimWaits: ALMObservationInboundClaimWaits;
-        /** Every release this role's batches ran by promotion (D190), on either lane. */
-        promotedReleases: number;
+        /**
+         * Every delivery this role's batches ran by hand-on, a buffered release or an in-order delivery, on either
+         * lane (D190, D785).
+         */
+        promotedDeliveries: number;
     }>
     | Readonly<{ role: ALMObservationAgentRole; outcome: 'no-events'; }>;
 
@@ -521,8 +524,8 @@ interface ALMObservationInboundRoleEvents {
 /**
  * The drain phases and claim waits read the IndexedDB lane only, as the runner regime does (R-S3a-15):
  * F2c's acceptance figures were measured when every inbound owner was IndexedDB, and a memory lane's
- * single-digit drains would pull a slow receiver's medians into the normal band. The promoted releases
- * count both lanes: a volatile track is released on the memory lane.
+ * single-digit drains would pull a slow receiver's medians into the normal band. The promoted deliveries
+ * count both lanes: a volatile track is delivered on the memory lane.
  */
 function toInboundDirection(
     role: ALMObservationAgentRole,
@@ -537,7 +540,7 @@ function toInboundDirection(
             pendingShare: computeInboundPendingShare(outcomes),
             phases: computeInboundPhases(drains.filter((drain) => drain.lane === 'durable')),
             claimWaits: computeInboundClaimWaits(claims.filter((claim) => claim.lane === 'durable')),
-            promotedReleases: drains.reduce((total, drain) => total + drain.promoted, 0)
+            promotedDeliveries: drains.reduce((total, drain) => total + drain.promoted, 0)
         };
 }
 

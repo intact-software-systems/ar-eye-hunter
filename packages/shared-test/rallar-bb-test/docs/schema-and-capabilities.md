@@ -1015,9 +1015,10 @@ buffer drains within the default 30 s lifetime on the real runtime
 `released-2` cue, with a wait that covers the sender's body up to the cue, its storage baseline included, and then
 counts the 66 in a verdict's window; the count reads every arrival its page logged, those before the count started too.
 Each role's recipe runs that cue wait longer than an ordinary one. Over `rtc` the receiver buffered the track, so it
-also waits for an inbound `effect-drain` whose `promoted` count is above zero (D190): a `loop` with `until:
+also waits for an inbound `effect-drain` whose `promoted` count is above zero (D190, D785): a `loop` with `until:
 'first-success'` tries `"promoted":1` to `"promoted":9`, one leading digit per iteration, against the page's event
-history. Over `ws` the WS server is the hop that buffers the track and releases it when seq 2 arrives, so the receiver
+history. `promoted` counts every delivery a batch ran by hand-on, but in this cell the track's in-order copies arrive
+one at a time, so every hand-on the receiver reads is of a buffered release. Over `ws` the WS server is the hop that buffers the track and releases it when seq 2 arrives, so the receiver
 reads the 66 arrivals and no promotion: the server NACKs the gap at each later frame's arrival; those reports are one
 attempt per requester, charged once (D573), so the held seq 2 does not settle `repair-exhausted` and the release
 delivers it. `churn-bounded-tracks` (`rtc`, where the receiver is the one hop that orders a track) closes the sender and

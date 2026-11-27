@@ -1304,3 +1304,39 @@ schema-and-capabilities.md describes the stall window.
 Verification:
 npx vitest run packages/tests/shared-test/alm-received-stall-contract.test.ts packages/tests/shared-test/rallar-bb-test-alm-commands.test.ts
 ```
+
+```text
+Title: the observation's inbound direction counts promoted deliveries
+Date: 2026-11-27
+Owner: ALM conformance lane
+
+Change type:
+- Runtime semantic change (a derived observation field renamed; what it counts widened)
+
+Affected schemas:
+- None: the recipe schema and the control validator are unchanged; the observation artifact's inbound direction
+  changes
+
+Old shape:
+Each measured inbound direction named promotedReleases, the sum of the drains' promoted: the buffered releases its
+batches ran right after their predecessor (D190).
+
+New shape:
+Each measured inbound direction names promotedDeliveries, the same sum, which now counts every delivery its batches
+ran by hand-on, a buffered release or an in-order delivery, because the same track's previous delivery completed
+earlier in that batch (D190, D785). effect-drain.promoted keeps its name and type.
+
+Migration:
+None for recipes. A reader of an observation artifact written before this change finds the old name,
+promotedReleases.
+
+Golden corpus updates:
+None.
+
+Prompt/documentation updates:
+alm-observation-artifact.md describes promotedDeliveries; runtime-diagnostic-contract.md what promoted counts;
+schema-and-capabilities.md the buffered-track cell's promoted wait.
+
+Verification:
+npx vitest run packages/tests/shared-test/alm-observation-regime.test.ts
+```
