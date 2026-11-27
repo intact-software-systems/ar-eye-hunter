@@ -33,7 +33,12 @@ are grouped by the owner that makes each runtime decision:
 
 1. `envelopes.ts` defines and validates the public envelope contract.
    `match/rallar-game-match-routing-runtime.ts` owns sequence admission and
-   routes accepted presence, input, snapshot, and relay envelopes.
+   routes accepted presence, input, snapshot, and relay envelopes. Events take
+   no sequence check: the relay's output type is edge-ordered, so it hands the
+   director's events over once each, in send order, whichever carrier each came
+   over. When it gives one up, the match asks the director for a sync (reason
+   `event-order-gap`), unless the lost event was unreceipted and ended at its
+   sender; the next snapshot repairs that one.
 2. `match/rallar-game-match-status-runtime.ts` owns lifecycle flags, director
    freshness recovery, egress state, and status observers.
 3. Director-owned input is handled locally or relayed by

@@ -1,4 +1,4 @@
-import type { RallarDirectorRelayConfig, RallarDirectorRelayHandle } from '@shared-web/browser/rallar.ts';
+import type { RallarDirectorRelayConfig, RallarDirectorRelayHandle, RallarMessageOrderGap, RallarMessageOrderGapReason } from '@shared-web/browser/rallar.ts';
 import { RallarGameDirectorRelayRuntime } from '@shared-web/game/director/rallar-game-director-relay-runtime.ts';
 import type { RallarGameEnvelope } from '@shared-web/game/envelopes.ts';
 import type { RallarGameMatchConfig, RallarGameRallarFacade } from '@shared-web/game/match/rallar-game-match-contracts.ts';
@@ -106,16 +106,53 @@ describe('RallarGameDirectorRelayRuntime', () => {
             { ack: 'all-logical-recipients' }
         );
     });
+
+    it.each(
+        [
+            { reason: 'channel-wait-cap', outcome: 'asks the director for one sync', syncRequests: [{ reason: 'event-order-gap' }] },
+            { reason: 'ended-at-sender', outcome: 'asks for no sync', syncRequests: [] }
+        ] as const
+    )('$outcome on an event order gap of reason $reason', async ({ reason, syncRequests }) => {
+        const requestSync = vi.fn(async <T>(_envelope?: T) => ({ status: 'sent' as const }));
+        let relayConfig: PayloadRelayConfig | undefined;
+        const runtime = createPublishingRuntime(vi.fn(), {
+            isDirector: false,
+            relay: { requestSync },
+            recordConfig: (config) => {
+                relayConfig = config;
+            }
+        });
+        runtime.start();
+        const onOutputGap = relayConfig?.onOutputGap;
+        if (!onOutputGap) {
+            throw new Error('The match takes the relay\'s output gaps.');
+        }
+
+        await onOutputGap(toOutputGap(reason));
+
+        expect(requestSync.mock.calls).toEqual(
+            syncRequests.map((payload) => [expect.objectContaining({ kind: 'sync-request', payload })])
+        );
+    });
 });
 
+type PayloadRelayHandle = RallarDirectorRelayHandle<RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>>;
+type PayloadRelayConfig = RallarDirectorRelayConfig<RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>>;
+
+interface PublishingRuntimeOptions {
+    readonly isDirector: boolean;
+    readonly relay: Partial<PayloadRelayHandle>;
+    recordConfig(config: PayloadRelayConfig): void;
+}
+
 function createPublishingRuntime(
-    sendOutput: RallarDirectorRelayHandle<RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>>['sendOutput']
+    sendOutput: PayloadRelayHandle['sendOutput'],
+    options: PublishingRuntimeOptions = { isDirector: true, relay: {}, recordConfig: () => {} }
 ): RallarGameDirectorRelayRuntime<Payload, Payload, Payload, Payload, Payload> {
-    const createRelay = (() =>
-        toTestDouble<RallarDirectorRelayHandle<RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>>>({
-            sendOutput,
-            stop: vi.fn()
-        })) as RallarGameRallarFacade['director']['createRelay'];
+    const createRelay = ((relayConfig: PayloadRelayConfig) => {
+        options.recordConfig(relayConfig);
+        return toTestDouble<PayloadRelayHandle>({ sendOutput, stop: vi.fn(), ...options.relay });
+    }) as RallarGameRallarFacade['director']['createRelay'];
     const config = toTestDouble<RallarGameMatchConfig<Payload, Payload, Payload, Payload, Payload>>({
         protocol: 'test.game.v1',
         topicId: 'game.topic',
@@ -140,7 +177,7 @@ function createPublishingRuntime(
             isStopped: () => false,
             readFreshDirectorStatus: () =>
                 toTestDouble<ReturnType<RallarGameDirectorRelayRuntime.Input<Payload, Payload, Payload, Payload, Payload>['readFreshDirectorStatus']>>({
-                    isDirector: true,
+                    isDirector: options.isDirector,
                     appointment: {
                         version: 1,
                         mode: 'appointed-spa',
@@ -161,9 +198,22 @@ function createPublishingRuntime(
                 sentAtEpochMs: 1,
                 directorEpoch: options.directorEpoch,
                 payload
-            })
+            }),
+            syncRequested: () => {}
         })
     );
+}
+
+function toOutputGap(reason: RallarMessageOrderGapReason): RallarMessageOrderGap {
+    return {
+        topicId: 'game.topic',
+        typeId: 'event',
+        senderId: 'director-session',
+        stream: 'director-stream',
+        fromPosition: 2,
+        toPosition: 2,
+        reason
+    };
 }
 
 function toTestDouble<T>(members: Partial<T>): T {

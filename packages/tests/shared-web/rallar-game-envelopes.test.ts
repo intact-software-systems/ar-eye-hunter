@@ -350,7 +350,7 @@ describe('Rallar Game envelopes', () => {
     });
 
     it.each(
-        ['capability', 'presence', 'input', 'event', 'snapshot', 'sync-request', 'heartbeat'] as const
+        ['capability', 'presence', 'input', 'snapshot', 'sync-request', 'heartbeat'] as const
     )(
         'keeps refusing a lower %s sequence as stale (C10)',
         (kind) => {
@@ -364,6 +364,42 @@ describe('Rallar Game envelopes', () => {
             });
         }
     );
+
+    it('accepts an event of a lower or repeated sequence: edge order already released it once, in send order', () => {
+        const tracker = createRallarGameSequenceTracker();
+        const event = (seq: number) => createRallarGameEnvelope({ ...validEnvelope, kind: 'event', seq });
+
+        expect([2, 1, 1].map((seq) => tracker.accept(event(seq), eventConstraints))).toMatchObject([
+            { accepted: true },
+            { accepted: true },
+            { accepted: true }
+        ]);
+    });
+
+    it('still refuses an event of the wrong room, sender, kind or a stale epoch', () => {
+        const tracker = createRallarGameSequenceTracker();
+        const event = createRallarGameEnvelope({ ...validEnvelope, kind: 'event', directorEpoch: 4 });
+
+        expect([
+            tracker.accept(event, { ...eventConstraints, roomRef: { ...validEnvelope.roomRef, groupId: 'room-2' } }),
+            tracker.accept(event, { ...eventConstraints, senderId: 'director-2' }),
+            tracker.accept(event, { ...eventConstraints, kinds: ['snapshot'] }),
+            tracker.accept(event, { ...eventConstraints, minDirectorEpoch: 5 })
+        ]).toMatchObject([
+            { accepted: false, reason: 'wrong-room' },
+            { accepted: false, reason: 'wrong-sender' },
+            { accepted: false, reason: 'wrong-kind' },
+            { accepted: false, reason: 'stale-epoch' }
+        ]);
+    });
+
+    it('still refuses a snapshot of a lower sequence after the events it follows', () => {
+        const tracker = createRallarGameSequenceTracker();
+        const snapshot = (seq: number) => createRallarGameEnvelope({ ...validEnvelope, kind: 'snapshot', seq });
+
+        expect(tracker.accept(snapshot(5))).toMatchObject({ accepted: true });
+        expect(tracker.accept(snapshot(4))).toMatchObject({ accepted: false, reason: 'stale-sequence' });
+    });
 
     it('forgets the oldest intent sequence past its window and refuses it as stale, never as new (C10)', () => {
         const tracker = createRallarGameSequenceTracker();
@@ -408,6 +444,14 @@ describe('Rallar Game envelopes', () => {
         expect(tracker.accept(intent)).toMatchObject({ accepted: true });
     });
 });
+
+const eventConstraints = {
+    protocol: 'test.game.v1',
+    roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
+    senderId: 'peer-1',
+    minDirectorEpoch: 1,
+    kinds: ['event']
+} as const;
 
 const validEnvelope = {
     protocol: 'test.game.v1',

@@ -217,6 +217,13 @@ export class RallarGameDirectorRelayRuntime<TInput, TIntent, TSnapshot, TEvent, 
                     handler: config.onEvent,
                     requireFreshDirectorSender: true
                 }),
+            onOutputGap: async (gap) => {
+                // An unreceipted event nobody waited for ends at its sender; the next snapshot repairs it unasked.
+                // A sync request that cannot be sent is repaired the same way, so its result is not read.
+                if (gap.reason !== 'ended-at-sender') {
+                    await this.requestSync({ reason: 'event-order-gap' });
+                }
+            },
             onSnapshot: async (message) =>
                 await this.input.handleEnvelope({
                     message,

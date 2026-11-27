@@ -2,18 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { BrowserDirectorOutputChannels } from '@shared-web/browser/director/browser-director-output-channels.ts';
 import { BrowserDirectorRelayRuntime } from '@shared-web/browser/director/browser-director-relay-runtime.ts';
-import {
-    BrowserDirectorRelayTransport,
-    RALLAR_DIRECTOR_RELAY_PROTOCOL
-} from '@shared-web/browser/director/browser-director-relay-transport.ts';
-import { BrowserDirectorStatusRuntime } from '@shared-web/browser/director/browser-director-status-runtime.ts';
+import { RALLAR_DIRECTOR_RELAY_PROTOCOL } from '@shared-web/browser/director/browser-director-relay-transport.ts';
 import type {
     RallarDirectorRelayEnvelope,
     RallarDirectorRelayHandle
 } from '@shared-web/browser/director/rallar-director-facade.ts';
 import type { RallarMessageOrderGap } from '@shared-web/browser/messages/rallar-message-contracts.ts';
-import { RoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
-import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { createDefaultTestSession } from '../api-middleware-test-double.ts';
@@ -24,6 +18,7 @@ import {
     settleTurns,
     type EdgeOrderPage
 } from '../messages/edge-order/edge-order-page-fixture.ts';
+import { createDirectorRelayPage } from './director-relay-page-fixture.ts';
 
 const TOPIC_ID = 'app.game.director';
 const OUTPUT_TYPE_ID = 'game.output';
@@ -46,28 +41,6 @@ interface RelayPage extends RelayRecord {
     readonly page: EdgeOrderPage;
 }
 
-interface PageRuntime {
-    readonly page: EdgeOrderPage;
-    readonly runtime: BrowserDirectorRelayRuntime;
-}
-
-/** One page's relay runtime, whose status reads the directors the given room snapshots appoint. */
-function createPageRuntime(sessionId: string, snapshots: readonly GroupSnapshot[]): PageRuntime {
-    const page = createEdgeOrderPage({ sessionId });
-    const session: AuthSession = { ...createDefaultTestSession(), sessionId };
-    const runtime = new BrowserDirectorRelayRuntime({
-        status: createStatusRuntime(session, snapshots),
-        transport: new BrowserDirectorRelayTransport({
-            messages: page.messages,
-            readSession: () => session,
-            isWebSocketDown: () => false
-        }),
-        messages: page.messages,
-        readSession: () => session
-    });
-    return { page, runtime };
-}
-
 function openRelay(runtime: BrowserDirectorRelayRuntime, snapshot: GroupSnapshot): RelayRecord {
     const seen: number[] = [];
     const gaps: RallarMessageOrderGap[] = [];
@@ -88,39 +61,8 @@ function openRelay(runtime: BrowserDirectorRelayRuntime, snapshot: GroupSnapshot
 }
 
 function createRelayPage(sessionId: string, snapshot: GroupSnapshot): RelayPage {
-    const { page, runtime } = createPageRuntime(sessionId, [snapshot]);
+    const { page, runtime } = createDirectorRelayPage(sessionId, [snapshot]);
     return { page, ...openRelay(runtime, snapshot) };
-}
-
-/** Who the director is in each room, read from cached room snapshots whose appointments name the director sessions. */
-function createStatusRuntime(session: AuthSession, snapshots: readonly GroupSnapshot[]): BrowserDirectorStatusRuntime {
-    const { applicationId, workspaceId } = snapshots[0].group;
-    const scope = { applicationId, workspaceId };
-    const roomStateStore = new RoomStateStore({
-        runtime: {
-            currentRoomRef: () => undefined,
-            setCurrentRoom: () => {},
-            clearCurrentRoomIfMatches: () => {},
-            readDefaultScope: () => scope,
-            resolveOperationScope: () => scope
-        },
-        readSession: () => session,
-        stateCache: {
-            onCacheChange: () => () => {},
-            readGroupSnapshots: () => snapshots,
-            findGroupSnapshotByRef: (roomRef) => snapshots.find((snapshot) => snapshot.group.groupId === roomRef.groupId),
-            wasGroupSnapshotObserved: () => true,
-            findFirstGroupRefForSession: () => snapshots[0].group,
-            readClientSnapshots: () => [],
-            findClientSnapshot: () => undefined
-        }
-    });
-    return new BrowserDirectorStatusRuntime({
-        roomStateStore,
-        readWindow: () => ({ earliestEpochMs: Date.now(), latestEpochMs: Date.now() }),
-        readSession: () => session,
-        resolveDefaultRoom: () => undefined
-    });
 }
 
 /** A room whose appointment names the director session. */
@@ -163,7 +105,7 @@ interface TwoRoomPage {
 function createTwoRoomPage(): TwoRoomPage {
     const firstRoom = createRoomSnapshot('room-1', 'first-director-session');
     const secondRoom = createRoomSnapshot('room-2', 'second-director-session');
-    const client = createPageRuntime('client-session', [firstRoom, secondRoom]);
+    const client = createDirectorRelayPage('client-session', [firstRoom, secondRoom]);
     return {
         firstDirector: createRelayPage('first-director-session', firstRoom),
         secondDirector: createRelayPage('second-director-session', secondRoom),
