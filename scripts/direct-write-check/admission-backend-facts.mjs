@@ -1,0 +1,126 @@
+import { Node, SyntaxKind } from 'ts-morph';
+
+import { isExactType } from '../transaction-write-check/typescript-provenance.mjs';
+import {
+    sortFacts,
+    toCountedFacts,
+    toRepositoryPath,
+    toResolvedSymbol,
+    toSiteId,
+    toTypeSymbols
+} from './direct-write-sites.mjs';
+
+const ADMISSION_PORT_NAMES = new Set(['ALAdmissionBackend', 'ALAdmissionWorkBackend']);
+const ADMISSION_PORT_PACKAGE = 'packages/shared/alm/';
+
+export function computeAdmissionBackendFacts(project, scope) {
+    const implementations = findAdmissionBackendClasses(project, scope);
+    const postgresClasses = new Set(
+        implementations.filter((implementation) => implementation.backend === 'postgres')
+            .map((implementation) => implementation.declaration)
+    );
+    const implementationClasses = new Set(implementations.map((implementation) => implementation.declaration));
+    return {
+        admissionBackendImplementations: sortFacts(
+            implementations.map(({ id, backend }) => ({ id, backend }))
+        ),
+        admissionBackendConstructions: computeConstructionFacts(project, scope, postgresClasses),
+        admissionBackendWrites: computeWriteFacts(project, scope, implementationClasses)
+    };
+}
+
+function findAdmissionBackendClasses(project, scope) {
+    return project.getSourceFiles()
+        .flatMap((sourceFile) => sourceFile.getDescendantsOfKind(SyntaxKind.ClassDeclaration))
+        .filter((declaration) =>
+            declaration.getImplements().some((heritage) =>
+                isAdmissionPortSymbol(toResolvedSymbol(heritage.getExpression()), scope)
+            )
+        )
+        .map((declaration) => ({
+            declaration,
+            id: `${toRepositoryPath(declaration.getSourceFile(), scope.root)}#${declaration.getName()}`,
+            backend: holdsPostgresHandle(declaration) ? 'postgres' : 'not-postgres'
+        }));
+}
+
+function holdsPostgresHandle(declaration) {
+    const parameterProperties = declaration.getConstructors()
+        .flatMap((constructor) => constructor.getParameters())
+        .filter((parameter) => parameter.isParameterProperty());
+    return [...declaration.getProperties(), ...parameterProperties]
+        .some((member) => isExactType(member, 'PSqlSql'));
+}
+
+function computeConstructionFacts(project, scope, postgresClasses) {
+    const namespacesById = new Map();
+    for (const construction of findNodes(project, SyntaxKind.NewExpression)) {
+        const declarations = toResolvedSymbol(construction.getExpression())?.getDeclarations() ?? [];
+        if (!declarations.some((declaration) => postgresClasses.has(declaration))) {
+            continue;
+        }
+        const id = toSiteId(construction, scope.root);
+        namespacesById.set(id, [...(namespacesById.get(id) ?? []), toNamespaceText(construction)]);
+    }
+    return sortFacts(
+        [...namespacesById].map(([id, namespaces]) => ({
+            id,
+            count: namespaces.length,
+            namespaces: namespaces.toSorted()
+        }))
+    );
+}
+
+function toNamespaceText(construction) {
+    const input = construction.getArguments()[0];
+    if (!Node.isObjectLiteralExpression(input)) {
+        return input?.getText() ?? '<no input>';
+    }
+    const property = input.getProperty('namespace');
+    if (Node.isShorthandPropertyAssignment(property)) {
+        return toLocalInitializerText(property.getValueSymbol(), property.getText());
+    }
+    if (!Node.isPropertyAssignment(property)) {
+        return property?.getText() ?? '<no namespace>';
+    }
+    const initializer = property.getInitializerOrThrow();
+    return Node.isIdentifier(initializer)
+        ? toLocalInitializerText(initializer.getSymbol(), initializer.getText())
+        : initializer.getText();
+}
+
+function toLocalInitializerText(symbol, fallback) {
+    const declaration = symbol?.getDeclarations().find((candidate) => Node.isVariableDeclaration(candidate));
+    return declaration?.getInitializer()?.getText() ?? fallback;
+}
+
+function computeWriteFacts(project, scope, implementationClasses) {
+    const siteIds = findNodes(project, SyntaxKind.CallExpression)
+        .filter((call) => {
+            const callee = call.getExpression();
+            return Node.isPropertyAccessExpression(callee) &&
+                callee.getName() === 'write' &&
+                isAdmissionPortReceiver(callee.getExpression(), scope, implementationClasses);
+        })
+        .map((call) => toSiteId(call, scope.root));
+    return toCountedFacts(siteIds);
+}
+
+function isAdmissionPortReceiver(receiver, scope, implementationClasses) {
+    return toTypeSymbols(receiver.getType()).some((symbol) =>
+        isAdmissionPortSymbol(symbol, scope) ||
+        symbol.getDeclarations().some((declaration) => implementationClasses.has(declaration))
+    );
+}
+
+function isAdmissionPortSymbol(symbol, scope) {
+    return symbol !== undefined &&
+        ADMISSION_PORT_NAMES.has(symbol.getName()) &&
+        symbol.getDeclarations().some((declaration) =>
+            toRepositoryPath(declaration.getSourceFile(), scope.root).startsWith(ADMISSION_PORT_PACKAGE)
+        );
+}
+
+function findNodes(project, kind) {
+    return project.getSourceFiles().flatMap((sourceFile) => sourceFile.getDescendantsOfKind(kind));
+}
