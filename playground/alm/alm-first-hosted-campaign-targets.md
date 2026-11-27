@@ -59,7 +59,7 @@ cause, which applies at any room size.
 | Target             | Ruled value                                                                                                            | Rests on                                                                                                                                                                                                                                                                                                                                                          |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | First rung         | 15 agents, one room, one publisher at 2 messages a second, 3 API replicas                                              | Manifests 10 to 12 and 23 are 15-agent manifests (`apps/rallar-black-box/manifests/hetzner/`). Manifest 23 has the same load, 28 deliveries per second (`hetzner-multicast-manifest-entries.ts`, `rateHz: 2`, `participantCount: 15`). Hosted formation at 15 passed (D435, manifest 19; guidance).                                                               |
-| Stretch rung       | 50 agents as five rooms of ten, one publisher per room at 2 messages a second: 5 x 2 x 9 = 90 deliveries per second    | Manifest 21 passed at 50 agents on this fleet at about 13 deliveries per second; manifest 07 fails at 980. 50 is the fleet's design size (17 jobs of 3 agents is 51). Five rooms of ten is chosen for this campaign; it is not a repository number. A multi-room hosted run needs the workload family to name more than one room; one point names one room today. |
+| Stretch rung       | 50 agents as five rooms of ten, one publisher per room at 2 messages a second: 5 x 2 x 9 = 90 deliveries per second    | Manifest 21 passed at 50 agents on this fleet at about 13 deliveries per second; manifest 07 fails at 980. 50 is the fleet's design size (17 jobs of 3 agents is 51). Five rooms of ten is chosen for this campaign; it is not a repository number. A multi-room hosted run needs the workload family to name more than one room; a point can now, in local runs. |
 | Measurement window | 5 minutes, starting after every agent is connected and traffic-ready                                                   | The hosted windows today are 30 s (manifests 07, 09, 21) and 78 minutes (manifest 23). 30 s gives 60 frames per receiver at 2 Hz, too few for a tail; 5 minutes gives 600. 78 minutes does not fit the 75-minute job cap once connect time is added.                                                                                                              |
 | Carriers           | `rtc` is the headline. `ws` is the control. `rtc-with-ws-fallback` runs as well, and carries the fault legs with `rtc` | The addendum's "After Slice 9" names the three carriers (`packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts`). Hosted large manifests carry `messages.rtc` only (`create-alm-scale-manifest-entries.ts`). `ws` is the run that isolates the API from the browser mesh.                                                              |
 | Cadence            | Declared per run and reported beside the measured rate                                                                 | Addendum §9: never call the configured cadence a measured delivered rate.                                                                                                                                                                                                                                                                                         |
@@ -200,17 +200,19 @@ From D642 and the addendum's "After Slice 9":
    two runs of one commit on the maintainer's machine; what the band or the figure should be for it is open.
 5. **Delivered sample age from payload timestamps.** Built for one machine: the workload family's payload carries the
    publisher's clock at the send, and the harness reads each delivered message's age from it into the stage's age
-   buckets; no envelope field (D642). The age is reported per subscriber, with the median, the 95th and the 99th
-   percentile each as a bucket range. Not built: the offset between two machines' clocks, which every hosted age
-   also holds, and one figure across subscribers, which needs a histogram merge (`plans/backlog.md`).
+   buckets; no envelope field (D642). The age is reported per subscriber, per room and for the point, with the median,
+   the 95th and the 99th percentile each as a bucket range; a room's figure and the point's read the subscribers'
+   histograms merged into one. Not built: the offset between two machines' clocks, which every hosted age also holds.
 6. **Platform fault steps**, locally first: the runner `SERVER` step, the database-session cut, seeded loss and
    jittered delay.
 7. **Receipt truth and the held-send path**, so a settled receipt in the recovery rule is true.
-8. **The publication workload family.** Partly built: one room with one publisher, where the agent count, the carrier,
-   the send interval, the window, the publication policy with its drain budgets, the payload size, the lifetime, the
-   receive ratio and the send-success ratio are required parameters; a figures record of what a point asked for beside
-   what its run observed; and a local three-agent run on `rtc`
-   (`packages/shared-test/rallar-bb-test/docs/alm-publication-workload.md`). Not built: publisher count, group count, a
+8. **The publication workload family.** Partly built: one or more rooms of one shape with one or more publishers in
+   each, where the groups, a room's agent count and publisher count, the carrier, the send interval, the window, the
+   publication policy with its drain budgets, the payload size, the lifetime, the receive ratio and the send-success
+   ratio are required parameters; a figures record of what a point asked for beside what its run observed; and two
+   local runs on `rtc`, three agents in one room and six agents in two rooms of two publishers each
+   (`packages/shared-test/rallar-bb-test/docs/alm-publication-workload.md`). The stretch rung's shape, five rooms of
+   ten, passes the recipe schema, the control validation and the distributed preflight, and has not run. Not built: a
    rate above the publication cadence, subscription churn and seeded loss as parameters, and a hosted manifest whose
    roles resolve their principals at run time (`plans/backlog.md`, the entry on the hosted four-agent manifest).
 9. **Probes at the owners**, so a miss can be assigned to an owner.

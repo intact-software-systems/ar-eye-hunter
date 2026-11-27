@@ -127,11 +127,11 @@ export async function authorizeRallarServerWsIngress(
             serverSnapshotVersion: undefined
         };
     }
-    if (input.message.targets?.mode === 'unicast' && input.message.route.contextId !== roomId) {
+    if (input.message.route.contextId !== roomId) {
         return {
             authorized: false,
             reason: 'unauthorized',
-            logMessage: `Rejected room unicast for ${roomId}: its route names room ${input.message.route.contextId}.`,
+            logMessage: `Rejected room send for ${roomId}: its route names ${input.message.route.contextId}.`,
             serverSnapshotVersion: undefined
         };
     }

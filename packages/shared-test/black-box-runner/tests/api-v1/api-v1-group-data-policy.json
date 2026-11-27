@@ -552,7 +552,7 @@
           "route": {
             "topicId": "room.match",
             "resourceId": "data-policy-resource-{runId}",
-            "contextId": "{applicationId}:{workspaceId}"
+            "contextId": "{groupId}"
           },
           "targets": {
             "mode": "broadcast",
@@ -654,7 +654,7 @@
           "route": {
             "topicId": "room.crdt",
             "resourceId": "data-policy-crdt-doc-{runId}",
-            "contextId": "{applicationId}:{workspaceId}"
+            "contextId": "{groupId}"
           },
           "targets": {
             "mode": "broadcast",
@@ -905,7 +905,7 @@
           "route": {
             "topicId": "room.match",
             "resourceId": "data-policy-allowed-resource-{runId}",
-            "contextId": "{applicationId}:{workspaceId}"
+            "contextId": "{allowedGroupId}"
           },
           "targets": {
             "mode": "broadcast",
@@ -1150,7 +1150,7 @@
           "route": {
             "topicId": "room.match",
             "resourceId": "data-policy-default-resource-{runId}",
-            "contextId": "{applicationId}:{workspaceId}"
+            "contextId": "{defaultDataGroupId}"
           },
           "targets": {
             "mode": "broadcast",
@@ -1315,7 +1315,7 @@
           "route": {
             "topicId": "room.match",
             "resourceId": "data-policy-resource-{runId}",
-            "contextId": "{applicationId}:{workspaceId}"
+            "contextId": "{groupId}"
           },
           "targets": {
             "mode": "broadcast",
@@ -1561,7 +1561,7 @@
           "route": {
             "topicId": "room.match",
             "resourceId": "data-policy-resource-{runId}",
-            "contextId": "{applicationId}:{workspaceId}"
+            "contextId": "{allowedGroupId}"
           },
           "targets": {
             "mode": "broadcast",
@@ -1649,7 +1649,7 @@
           "route": {
             "topicId": "room.crdt",
             "resourceId": "data-policy-crdt-halted-doc-{runId}",
-            "contextId": "{applicationId}:{workspaceId}"
+            "contextId": "{allowedGroupId}"
           },
           "targets": {
             "mode": "broadcast",
@@ -1741,7 +1741,7 @@
           "route": {
             "topicId": "room.match",
             "resourceId": "data-policy-resource-{runId}",
-            "contextId": "{applicationId}:{workspaceId}"
+            "contextId": "{allowedGroupId}"
           },
           "targets": {
             "mode": "broadcast",

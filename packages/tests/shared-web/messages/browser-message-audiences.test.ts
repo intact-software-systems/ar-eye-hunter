@@ -254,7 +254,13 @@ describe('the audience inputs of a send', () => {
                 payload: {}
             })
         ).rejects.toMatchObject({
-            issues: [expect.objectContaining({ code: 'invalid-scope', message: 'WS scope must be room, world, or principal.' })]
+            issues: [
+                expect.objectContaining({
+                    path: '$.scope',
+                    code: 'invalid-scope',
+                    message: 'WS scope must be room, world, or principal.'
+                })
+            ]
         });
         expect(webSocketQueueBox.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
     });

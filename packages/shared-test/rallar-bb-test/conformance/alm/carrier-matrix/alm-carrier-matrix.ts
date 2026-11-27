@@ -13,8 +13,9 @@ import type { AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
 /**
  * What the send a capability names comes to on one carrier.
  *
- * `refused` names who refuses. The `call` throws a validation issue and returns no handle. The `origin` ends the
- * handle `rejected` before any carrier attempt. The `trusted-server` and a `peer` hop refuse the send at their own
+ * `refused` names who refuses. The `call` throws a validation issue and returns no handle; a reply wait's refusal is
+ * its call's resolved value instead, with that issue. The `origin` ends the handle `rejected` before any carrier
+ * attempt. The `trusted-server` and a `peer` hop refuse the send at their own
  * admission and answer the hop that sent it with a NACK. The origin admits a peer's NACK only from a peer the send
  * owes: a unicast's addressee, a peer its receipt expects, a session a server admitted the send to, or a hop its
  * carrier sends every frame through. It states an admitted NACK as a rejection by that relay, except that a
@@ -56,13 +57,14 @@ type AlmPeerRejectionReason = Extract<ALDeliveryRelayRejection, Readonly<{ relay
 
 /**
  * What shows a cell's outcome. A `lane-cell` is a scenario of the conformance catalogue, by its `scenarioKey`, which
- * runs over the cell's carrier in the `full` scope. A `unit-test` names a test file from the repository root, one test
- * in it by a part of its title, and what that test pins. A `documented-limit` names a document from the repository
- * root and the phrase of it that states the limit. An `unproven` proof names what will prove the part of the outcome
- * nothing proves yet.
+ * runs over the cell's carrier in the `full` scope; absent a `because` it shows the cell's whole outcome, and with one
+ * it shows only the part the `because` names. A `unit-test` names a test file from the repository root, one test in it
+ * by a part of its title, and what that test pins. A `documented-limit` names a document from the repository root and
+ * the phrase of it that states the limit. An `unproven` proof names what will prove the part of the outcome nothing
+ * proves yet.
  */
 export type AlmCarrierProof =
-    | Readonly<{ kind: 'lane-cell'; scenarioKey: string; }>
+    | Readonly<{ kind: 'lane-cell'; scenarioKey: string; because?: string; }>
     | Readonly<{ kind: 'unit-test'; testFile: string; testName: string; because: string; }>
     | Readonly<{ kind: 'documented-limit'; document: string; limit: string; }>
     | Readonly<{ kind: 'unproven'; closedBy: string; }>;
@@ -95,6 +97,30 @@ const CACHED_AUTHORITY_REVOCATION_BOUND = {
 } as const satisfies AlmCarrierProof;
 
 const RTC_RELAY_PUBLICATION_PROOF_TEST = 'packages/tests/shared/multicast/rtc-relay-publication-proof.test.ts';
+
+/**
+ * What a hop that holds no `subscribe` does with a granted frame. No lane run forces a frame through such a hop, so
+ * this is what either RTC strategy shows of the forwarding half.
+ */
+const RELAY_WITHOUT_SUBSCRIBE_FORWARDS = {
+    kind: 'unit-test',
+    testFile: RTC_RELAY_PUBLICATION_PROOF_TEST,
+    testName: 'forwards at a relay without subscribe, delivering nothing there, and the copy verifies at the next hop',
+    because:
+        'A hop that holds no `subscribe` forwards a granted frame to its next hop, where the copy verifies and is delivered, and delivers nothing to its own application; its admission is given the frame and its channel peer, not the strategy that sent it.'
+} as const satisfies AlmCarrierProof;
+
+/**
+ * A frozen recipient whose `subscribe` was revoked after the freeze: the frozen audience lets it deliver, so its own
+ * grant check is the only gate.
+ */
+const RELAY_REVOKED_AFTER_FREEZE_FORWARDS = {
+    kind: 'unit-test',
+    testFile: RTC_RELAY_PUBLICATION_PROOF_TEST,
+    testName: 'forwards at a frozen recipient whose subscribe was revoked after the freeze, delivering nothing there',
+    because:
+        'The grant check alone keeps a session whose `subscribe` was revoked after the origin froze it into the audience from delivering: it forwards the granted frame to its next hop, where the copy verifies and is delivered, and delivers nothing to its own application.'
+} as const satisfies AlmCarrierProof;
 
 /** The RTC cell of a publication whose sender has not read its revoke: what either RTC strategy shows of it. */
 const REVOKED_PUBLICATION_DROPPED_BY_A_HOP = {
@@ -155,9 +181,12 @@ const LEFT_SENDER_FENCED_BY_A_RECEIVER = {
                 'A room send that asked no receipt owes no peer an answer: its origin refuses the NACK and states nothing.'
         },
         {
-            kind: 'unproven',
-            closedBy:
-                'a unit pin that the origin of a room send frozen to an audience refuses a frozen recipient\'s `membership-fenced` NACK while it holds no receipt row'
+            kind: 'unit-test',
+            testFile: AL_OUTBOUND_CONTROL_ADMISSION_TEST,
+            testName:
+                'still refuses a frozen recipient\'s membership-fenced NACK for a receiptless room send frozen to an audience',
+            because:
+                'The origin of a receiptless room send frozen to an audience refuses a frozen recipient\'s `membership-fenced` NACK and states nothing.'
         },
         {
             kind: 'unproven',
@@ -241,7 +270,7 @@ export const ALM_CARRIER_MATRIX = {
                         testFile: BROWSER_MESSAGE_AUDIENCES_TEST,
                         testName: 'names the three scopes a browser WS send may take',
                         because:
-                            'A browser WS send names room, world or principal; `all` throws `invalid-scope` and enqueues nothing.'
+                            'A browser WS send names room, world or principal; `all` throws `invalid-scope` at `$.scope` and enqueues nothing.'
                     },
                     {
                         kind: 'unit-test',
@@ -249,10 +278,6 @@ export const ALM_CARRIER_MATRIX = {
                         testName: 'refuses %s from a client as %s and admits nothing',
                         because:
                             'The server refuses a client frame that names `all` as `unauthorized` and admits nothing.'
-                    },
-                    {
-                        kind: 'unproven',
-                        closedBy: 'a unit pin of the `$.scope` path of the issue that a WS send naming `all` throws'
                     }
                 ]
             },
@@ -411,7 +436,12 @@ export const ALM_CARRIER_MATRIX = {
                         testName: 'keeps the message on RTC through any run of not-ready attempts',
                         because: 'On rtc alone a run of `not-ready` attempts hands nothing over and fails no handle.'
                     },
-                    { kind: 'unproven', closedBy: 'a unit pin of the kept unicast\'s handle at its deadline' }
+                    {
+                        kind: 'unit-test',
+                        testFile: BROWSER_RTC_PEER_SEND_TEST,
+                        testName: 'ends expired at its deadline when every attempt settled not-ready',
+                        because: 'On rtc alone the kept unicast reads `expired` at its deadline, and no WS leg starts.'
+                    }
                 ]
             },
             'rtc-with-ws-fallback': {
@@ -479,11 +509,7 @@ export const ALM_CARRIER_MATRIX = {
                         because:
                             'A WS sender settles `skipped`/`repair-exhausted` and ends the message at the server\'s request past its budget.'
                     },
-                    {
-                        kind: 'unproven',
-                        closedBy:
-                            '`repair-exhausted` over this carrier, where the server is the one requester and renews its own gap'
-                    }
+                    { kind: 'lane-cell', scenarioKey: 'repair-exhausted' }
                 ]
             },
             rtc: {
@@ -528,7 +554,7 @@ export const ALM_CARRIER_MATRIX = {
                     {
                         kind: 'unproven',
                         closedBy:
-                            'a server test that delivers a granted publication to more than 256 subscribed sessions'
+                            'a server test that delivers a granted publication to more than 256 subscribed sessions; it waits for the merge of pull request 885, which changes the test file that holds the harness'
                     }
                 ]
             },
@@ -586,7 +612,8 @@ export const ALM_CARRIER_MATRIX = {
         }
     },
     'relay-payload-confidentiality': {
-        statement: 'A relay that forwards a granted publication over RTC can read its payload.',
+        statement:
+            'A relay that holds no `subscribe` forwards a granted publication over RTC and can read its payload, and it delivers nothing to its own application.',
         cells: {
             ws: {
                 kind: 'not-applicable',
@@ -597,7 +624,14 @@ export const ALM_CARRIER_MATRIX = {
                 outcome: { kind: 'delivered' },
                 proofs: [
                     RELAY_READABLE_PAYLOAD,
-                    { kind: 'lane-cell', scenarioKey: 'granted-rtc-relay-only' }
+                    {
+                        kind: 'lane-cell',
+                        scenarioKey: 'granted-rtc-relay-only',
+                        because:
+                            'The subscriber receives the publication over RTC, and the session that holds `publish` alone delivers nothing to its application. The run does not force the frame through that session, so it does not show it forwarding.'
+                    },
+                    RELAY_WITHOUT_SUBSCRIBE_FORWARDS,
+                    RELAY_REVOKED_AFTER_FREEZE_FORWARDS
                 ]
             },
             'rtc-with-ws-fallback': {
@@ -605,7 +639,15 @@ export const ALM_CARRIER_MATRIX = {
                 outcome: { kind: 'delivered' },
                 proofs: [
                     RELAY_READABLE_PAYLOAD,
-                    { kind: 'unproven', closedBy: '`granted-rtc-relay-only` over this carrier' }
+                    {
+                        kind: 'unit-test',
+                        testFile: 'packages/tests/shared-web/messages/browser-granted-channel.test.ts',
+                        testName: 'an ack: none room send under %s is admitted on RTC carrying its origin\'s proof',
+                        because:
+                            'Under the fallback strategy an `ack: none` granted room publication is admitted on RTC and carries its origin\'s proof, as under the `rtc` strategy.'
+                    },
+                    RELAY_WITHOUT_SUBSCRIBE_FORWARDS,
+                    RELAY_REVOKED_AFTER_FREEZE_FORWARDS
                 ]
             }
         }
@@ -735,9 +777,12 @@ export const ALM_CARRIER_MATRIX = {
                             'A page refuses a frame whose proof its verifier did not verify with the code `invalid-signature`.'
                     },
                     {
-                        kind: 'unproven',
-                        closedBy:
-                            '`granted-rtc-forged-sender` over this carrier; no unit test forges a sender together with its registered key id at a receiving hop'
+                        kind: 'unit-test',
+                        testFile: RTC_RELAY_PUBLICATION_PROOF_TEST,
+                        testName:
+                            'drops a frame forged to another member under that member\'s registered key id as invalid-signature, never forwarding it',
+                        because:
+                            'A hop that finds the named member\'s key drops the frame `unauthorized: invalid-signature` and forwards nothing; its admission is given the frame and its channel peer, not the strategy that sent it.'
                     }
                 ]
             }
@@ -789,13 +834,44 @@ export const ALM_CARRIER_MATRIX = {
                         testName: 'subscribes the WS inbox once as message-replies at order 15',
                         because: 'The reply inbox subscribes the WS inbox alone, so only a reply over WS is matched.'
                     },
-                    { kind: 'unproven', closedBy: '`reply-correlated` over this carrier' }
+                    { kind: 'lane-cell', scenarioKey: 'reply-correlated' }
                 ]
             },
             'rtc-with-ws-fallback': {
                 kind: 'stated',
                 outcome: { kind: 'delivered' },
                 proofs: [{ kind: 'lane-cell', scenarioKey: 'reply-correlated' }]
+            }
+        }
+    },
+    'reply-wait-on-topic-ws-cannot-carry': {
+        statement: 'A request on a topic WS cannot carry has no reply: its reply wait is refused at the call.',
+        cells: {
+            ws: {
+                kind: 'not-applicable',
+                because: 'The send itself is refused at the call, `$.topicId`: the strategy validates the WS topic.'
+            },
+            rtc: {
+                kind: 'stated',
+                outcome: { kind: 'refused', by: 'call', path: '$.topicId', code: 'invalid-ws-user-topic' },
+                proofs: [{
+                    kind: 'unit-test',
+                    testFile: 'packages/tests/shared-web/messages/browser-rallar-delivery-registry.test.ts',
+                    testName:
+                        'refuses a reply wait on a request whose topic WS cannot carry, at the call, with the issue its reply would be refused with',
+                    because:
+                        'The wait resolves `unanswerable` with the issue the responder\'s `reply()` is refused with, and arms no timer.'
+                }, {
+                    kind: 'unit-test',
+                    testFile: 'packages/tests/shared-web/messages/reply/validate-browser-reply-route.test.ts',
+                    testName: 'names a topic the platform reserves on WS',
+                    because:
+                        'A topic the platform reserves on WS reads `reserved-ws-topic` at the same path, in place of `invalid-ws-user-topic`.'
+                }]
+            },
+            'rtc-with-ws-fallback': {
+                kind: 'not-applicable',
+                because: 'The send itself is refused at the call, `$.topicId`: the strategy validates the WS topic.'
             }
         }
     },

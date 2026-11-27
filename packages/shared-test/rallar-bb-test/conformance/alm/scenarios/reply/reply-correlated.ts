@@ -20,8 +20,8 @@ const RECEIVER_CONFIRMED: AlmConformanceReceiptRoles = {
 /**
  * D445: a `command` addressed to the receiver reads `replied`. The reply names the request's msgId as its
  * `replyToMsgId` and its `corrId`, its sender is the session the request's receipt confirmed, and the receiver reads
- * its reply acknowledged. Replies travel over WS only, so over the fallback carrier the request may arrive on RTC and
- * its reply on WS.
+ * its reply acknowledged. Replies travel over WS only, whichever carrier the request took: over `rtc` the request
+ * arrives on RTC and its reply on WS, and over the fallback carrier the request may arrive on either.
  */
 export const replyCorrelated: AlmConformanceScenarioDefinition = {
     scenarioId: 'reply-correlated',
