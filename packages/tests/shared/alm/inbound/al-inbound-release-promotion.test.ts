@@ -74,7 +74,10 @@ describe('promotion of a buffered track\'s next release', () => {
     }, TEST_TIMEOUT_MS);
 
     // Pins that a delivery is handed on only behind its own track's previous delivery, with two tracks buffered at once:
-    // every hand-on a drain counts is one behind its own track's predecessor, so a cross-track hand-on reads red.
+    // every hand-on a drain counts is one behind its own track's predecessor, so a cross-track hand-on reads red, and
+    // every claim of a track after the drain's first of it is such a hand-on. Nothing orders the second gap-closer's
+    // commit against the first one's batch, so the two may share a page (claims 16 then 8) or not (12 and 12): the case
+    // pins what holds in both, not a total that depends on which.
     it('hands on a delivery only behind its own track\'s predecessor, on two buffered tracks', async () => {
         const delivered: string[] = [];
         const fixture = await startInboundRuntime('promotion-tracks', {
@@ -104,8 +107,9 @@ describe('promotion of a buffered track\'s next release', () => {
         );
         for (const drain of drains) {
             expect(drain.promoted).toBe(countDeliveriesBehindTheirPredecessor(drain, deliveries));
+            expect(drain.promoted).toBe(drain.claimedCount - countTracksClaimed(drain, deliveries));
         }
-        expect(sumPromoted(drains)).toBe(22);
+        expect(sumCompleted(drains)).toBe(2 * 12);
     });
 
     it('promotes nothing behind a release that did not complete, and delivers it on its retry before its successor', async () => {
@@ -372,6 +376,11 @@ function countDeliveriesBehindTheirPredecessor(drain: EffectDrain, deliveries: R
                 return previous?.track === delivery.track && previous.seq === delivery.seq - 1;
             });
     }).length;
+}
+
+/** How many tracks the drain claimed a delivery of: the first claim of each is the page's, never a hand-on. */
+function countTracksClaimed(drain: EffectDrain, deliveries: ReadonlyMap<string, TrackDelivery>): number {
+    return new Set(drain.claimedEffectIds.map((effectId) => deliveries.get(effectId)?.track)).size;
 }
 
 function toRelease(effectId: string): { readonly track: string; readonly seq: number; } | undefined {

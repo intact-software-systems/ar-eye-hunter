@@ -39,7 +39,7 @@ describe('the batch that completed an ordered delivery', () => {
             await admit(fixture, first);
             await hold.entered;
             await admit(fixture, second);
-            // Message 2's own commit batch waits behind the held one, so its row is untouched when the hold goes.
+            // Message 2 is not claimed while message 1's delivery is held: its row is untouched when the hold goes.
             expect(await readWorkRow(fixture, toDispatchId(second))).toMatchObject({
                 status: EntityStatus.NEW,
                 dequeueAudit: { attempts: 0 }

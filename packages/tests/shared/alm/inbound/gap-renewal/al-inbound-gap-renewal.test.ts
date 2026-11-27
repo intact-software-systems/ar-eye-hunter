@@ -865,20 +865,9 @@ describe('a receiver holding a recorded track at its start (the bounded hold)', 
     });
 
     it('waits for the run\'s last delivery when the sequence after the passed copies arrives before it completed', async () => {
-        let thirdHeld = true;
-        const fixture = createRenewalFixture('memory', {
-            canDispatchMessage: (msg) => !thirdHeld || msg.ordering?.seq !== 3
-        });
-        await fixture.runtime.admitIncomingMessage(recordedMessage(3), INBOUND_TEST_SOURCE);
-        await fixture.runtime.admitIncomingMessage(recordedMessage(4, { ttlMs: SHORT_TTL_MS }), INBOUND_TEST_SOURCE);
-        await fixture.runtime.admitIncomingMessage(recordedMessage(6), INBOUND_TEST_SOURCE);
-        await advanceThrough(fixture, [1_000, 3_000, 7_000]);
-        const askedBefore = gapControls(fixture).length;
-
-        await fixture.runtime.admitIncomingMessage(recordedMessage(5), INBOUND_TEST_SOURCE);
-        await advanceTo(fixture, 7_000);
+        const { fixture, askedBefore, releaseThird } = await admitPastPassedCopiesBehindHeldThird();
         expect(fixture.deliveredMessages).toEqual([]);
-        thirdHeld = false;
+        releaseThird();
         await advanceThrough(fixture, [8_000, 10_000]);
 
         expect(gapControls(fixture).slice(askedBefore)).toEqual([]);
@@ -891,18 +880,9 @@ describe('a receiver holding a recorded track at its start (the bounded hold)', 
     // past the passed copy (4), so its completion states 4, the slot read at 5 names message 5's row, and the batch
     // that ran 3 hands on 5 and then 6, where a read at 3's own sequence plus one would find no slot.
     it('hands on the message after the passed copies in the batch that completed the run\'s last delivery', async () => {
-        let thirdHeld = true;
-        const fixture = createRenewalFixture('memory', {
-            canDispatchMessage: (msg) => !thirdHeld || msg.ordering?.seq !== 3
-        });
-        await fixture.runtime.admitIncomingMessage(recordedMessage(3), INBOUND_TEST_SOURCE);
-        await fixture.runtime.admitIncomingMessage(recordedMessage(4, { ttlMs: SHORT_TTL_MS }), INBOUND_TEST_SOURCE);
-        await fixture.runtime.admitIncomingMessage(recordedMessage(6), INBOUND_TEST_SOURCE);
-        await advanceThrough(fixture, [1_000, 3_000, 7_000]);
-        await fixture.runtime.admitIncomingMessage(recordedMessage(5), INBOUND_TEST_SOURCE);
-        await advanceTo(fixture, 7_000);
+        const { fixture, releaseThird } = await admitPastPassedCopiesBehindHeldThird();
         const before = fixture.diagnostics.length;
-        thirdHeld = false;
+        releaseThird();
 
         await advanceThrough(fixture, [8_000, 10_000]);
 
@@ -973,6 +953,39 @@ function orderedMessage(seq: number, input: OrderedMessageInput = {}): ALMessage
 }
 
 /** The same copy as its authority recorded it: this receiver, its frozen audience, was sent every sequence below. */
+interface PassedCopiesBehindHeldThird {
+    readonly fixture: InboundTestRuntime;
+    /** The gap controls sent before message 5 arrived. */
+    readonly askedBefore: number;
+    /** Lets message 3's delivery read ready. */
+    readonly releaseThird: () => void;
+}
+
+/**
+ * Recorded copies 3, 4 (short-lived) and 6 with message 3 held at its readiness, run until 4 has passed, then 5, run
+ * again at 7 s: message 3 is the run's last delivery, still undelivered, and 5 and 6 wait behind it.
+ */
+async function admitPastPassedCopiesBehindHeldThird(): Promise<PassedCopiesBehindHeldThird> {
+    let thirdHeld = true;
+    const fixture = createRenewalFixture('memory', {
+        canDispatchMessage: (msg) => !thirdHeld || msg.ordering?.seq !== 3
+    });
+    await fixture.runtime.admitIncomingMessage(recordedMessage(3), INBOUND_TEST_SOURCE);
+    await fixture.runtime.admitIncomingMessage(recordedMessage(4, { ttlMs: SHORT_TTL_MS }), INBOUND_TEST_SOURCE);
+    await fixture.runtime.admitIncomingMessage(recordedMessage(6), INBOUND_TEST_SOURCE);
+    await advanceThrough(fixture, [1_000, 3_000, 7_000]);
+    const askedBefore = gapControls(fixture).length;
+    await fixture.runtime.admitIncomingMessage(recordedMessage(5), INBOUND_TEST_SOURCE);
+    await advanceTo(fixture, 7_000);
+    return {
+        fixture,
+        askedBefore,
+        releaseThird: () => {
+            thirdHeld = false;
+        }
+    };
+}
+
 function recordedMessage(seq: number, input: OrderedMessageInput = {}): ALMessage {
     const message = orderedMessage(seq, input);
     return { ...message, ordering: { ...message.ordering!, priorSeqByRecipient: {} } };
