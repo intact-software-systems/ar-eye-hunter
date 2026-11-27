@@ -903,13 +903,15 @@ Counted on PostgreSQL from the code, where every read of a session is its own st
 has nothing waiting costs **one statement more** than today. One that hands a message on costs the slot read, the
 row read, the readiness read (three statements for a dispatch with no supersedence key: the message, its owner row,
 the track's progress) and one reservation transaction (a locked read and an update). The readiness read and the
-reservation are what the rotation spends on the same row when it reaches it, so the addition a handed-on message
-costs is two reads; what it saves is every rotation pass that read the row and set it aside (the probe counted 1 907
-to 2 235 `waiting` readiness reads a run against 344 to 404 `ready`). Nothing is written that is not written today:
-the only write is the row's reservation. The handed-on claim then reads its own surface at delivery, as a promoted
-release does today; carrying the readiness read's surface forward, as a page's claim carries its own, would save two
-statements a message and is left to the build to measure. No statement pin exists for any of this yet; the build pins
-both shapes.
+reservation are what the rotation spends on the same row when it reaches it; the handed-on delivery then reads its own
+message and owner row again, where the rotation's delivery carries the message its page read and reads only the
+progress. Measured on PostgreSQL, a hand-on spends 10 statements on its row against the rotation's 6: four more, the
+slot read, the row read and the second read of the message and its owner row (the rotation spends three batch-level
+reads besides: its page, the rows out of attempts, the lease-timeout read). What it saves is every rotation pass that
+read the row and set it aside (the probe counted 1 907 to 2 235 `waiting` readiness reads a run against 344 to 404
+`ready`). Nothing is written that is not written today: the only write is the row's reservation. Carrying the
+readiness read's surface forward, as a page's claim carries its own, would save the second read of the message and
+its owner row and is not built. The PostgreSQL cases pin both statement shapes.
 
 **Where the position lives.** In the return value, and nowhere else. The prototype kept a map on the delivery object,
 from a claim's effect id to the position its completion had committed, read back by the batch and cleared at 1 024
@@ -1039,25 +1041,31 @@ receiver alike.
 
 **What it does not do.**
 
-- _It does not make one track carry more than its delivery cycle allows._ Measured with the prototype on a quiet
-  host: one track keeps up at 3 a second in every run and completes 80 of 80 at 4 a second in both runs, its last
-  message read 1.5 and 3.8 s behind (the built code: 41, 80, 43 and 80 of 80); at 5 a second it completed 20 and 69
-  of 100, and at 10 a second 4 and 3 of 200. At 10 a second the sends that are parked at admission dominate, which
-  this does not touch. The limit of one ordered track stays, a little higher and less sharp.
+- _It does not make one track carry more than its delivery cycle allows._ Measured on the built code on a quiet
+  host: one track keeps up at 3 a second in every run; at 4 a second it completes 80 of 80 in both runs but reads its
+  last message 5.8 and 6.4 s behind, with 13 and 6 sends parked at admission (the prototype read it 1.5 and 3.8 s
+  behind; the code before it completed 52 and 47 and ended the track); at 5 a second it completed 31 and 63 of 100
+  and ended the track `resync-required` in both, and at 10 a second 4 and 0 of 200. At 10 a second the sends that are
+  parked at admission dominate, which this does not touch. The limit of one ordered track stays, a little higher and
+  less sharp.
 - _It hands nothing on from a full batch._ A lane whose pages are full of claimable work promotes nothing and behaves
-  as built. The measured cell left room (94 to 164 successors found a run, 85 to 164 claimed). More publishers or
-  more unordered traffic on one lane were not run.
+  as before. The measured cells left room: 91 to 145 deliveries a run were handed on in the loaded cell and 173 and
+  177 at +10 ms, and in both cells the batches reached the page (16 claims, 15 of them handed on), the longest taking
+  4.1 to 4.9 s loaded and 7.5 to 8.0 s at +10 ms, against the 10 s lease. More publishers on one lane were not run.
 - _It stops at the page._ A long backlog is drained up to a page at a time; between batches the track waits for the
-  rotation again. In the loaded runs the worst lag of a run was 0.8 to 5.1 s and a lagging track caught up again, a
-  sawtooth, where the built code's lag climbed to the lifetime.
+  rotation again. In the built code's loaded runs the worst lag of a run was 1.3, 5.1 and 7.7 s: while the senders
+  kept their rate and the batches ran full pages, a lagging track's lag climbed by about 0.3 s a send, and in two of
+  the three runs no lagging track came back below a second before the sends ended. The code before it lagged to the
+  lifetime in all three.
 - _It does not follow an omission._ When the track's next message for this receiver is not the next sequence (the
   sender left this receiver out of one), no slot stands at `completedThrough + 1` and the next copy waits for the
   rotation, as today. Finding it needs a read of the track's slots, which is not proposed.
 - _It does not reach across carriers._ A successor that arrived on the other carrier belongs to that carrier's lane.
 - _It does not change the rotation's scan order,_ the retry policy, the lease, or what an admission writes.
 - _It does not order the room fan-out on the wire._ The measurement's recipients are raw sockets, and they read
-  frames of one track out of order when two hand-offs lie close together (14 in one run of the built code, 9 to 42
-  with the cheaper form, none with the prototype of this design): the WS server's fan-out to a room writes each
+  frames of one track out of order when two hand-offs lie close together (14 in one of the three loaded runs with the
+  hand-on built and none in the others; when the prototypes were measured, 14 in one run of the code before them, 9
+  to 42 with the cheaper form and none with the hand-on): the WS server's fan-out to a room writes each
   message on its own and keeps no order between two. A Rallar receiver restores the order from its own buffer.
   Older than this work and a separate question; this design neither fixes nor relies on it.
 
@@ -1163,11 +1171,9 @@ What could make it larger:
 - _The sawtooth._ If the wait between two batches matters, asking for a head read when a hand-on stopped at the page
   is the next lever. It is not in this design and was not measured.
 
-Not shown, beside the limits above: the prototype's result rests on three loaded runs, in which the built code
-beside it also completed 200, 193 and 200 (with reads of up to 29.6 s), where it completed 109 to 155 in six other
-loaded runs; the design's lookup for a release (through the slot, where the prototype kept the release's computed
-key and fell back to the slot) is not the prototype's and costs one read more per promoted release; and nothing here
-was run in a browser.
+Not shown, beside the limits above: the built code's result rests on three loaded runs (the code before it, run
+beside them, completed 141, 145 and 200, so one of its three loaded runs kept up); the lookup for a release through
+the slot is inside the built figures and was not measured apart; and nothing here was run in a browser.
 
 ## Approaches considered
 
@@ -1732,6 +1738,59 @@ brings the successor's row forward through `expedite()` instead.
   to a room keeps no order between two messages written close together; a Rallar receiver's ordered delivery
   restores it from its buffer.
 
+### Ordered room messages, with the hand-on built
+
+The cells of section 12 once more, with the same harness and shape, on two columns: the built code, and the same tree
+with section 13's production changes reversed for the run and restored after it ("before"); within a cell every run
+iterates both columns back to back. The loaded cell starts eight `yes > /dev/null` burners 45 s before each run and
+stops them after it, and its load (6.6 to 10.2 at a run's start) is recorded, not gated; every quiet run started below
+a load of 8 (2.0 to 6.7, the highest just after the loaded cell's burners stopped), and no quiet run rose to 8 during
+it. The successors handed on are the sum of the inbound `effect-drain.promoted`, and every drain's `durationMs` and
+`claimedCount` were kept (44 runs; raw results kept outside the tree).
+
+| Cell, +5 ms                                    | Before                                                                                                        | Built                                                                                                                                      |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Five ordered, 20 s, 200, loaded, 3 runs        | 141, 145, 200; 7 and 13 RETRY rows and 4 tracks ended in the two that failed; read at most 30.1, 29.6, 24.0 s | 200 each; no RETRY row, no track ended; read p50 1.9, 0.9, 1.5 s, at most 5.4, 1.7, 8.0 s; 145, 91, 133 handed on; longest drain 4.1-4.9 s |
+| Five ordered, 20 s, quiet, 2 runs              | 200 each; read 0.6 s, at most 0.9 and 0.7 s; 19.3-19.4 receipts/s                                             | 200 each; read 0.6 s, at most 0.9 s; 19.4 receipts/s; 1 handed on a run                                                                    |
+| Five ordered, 45 s, quiet, 450                 | 450; read 0.6 s, at most 0.9 s; 19.7 of 20.0 /s                                                               | 450; read 0.6 s, at most 0.9 s; 19.8 of 20.0 /s                                                                                            |
+| Five ordered, 20 s, +10 ms, quiet, 2 runs      | 75, 70; 2 and 5 tracks ended; read p50 9.4 and 9.3 s                                                          | 200 each; no track ended; read p50 8.1 and 7.2 s, at most 25.6 and 16.8 s; 173 and 177 handed on; longest drain 7.5-8.0 s                  |
+| One track, 2 and 3 a second, 40 and 60, 2 runs | 40 each, 60 each; last read 0.6-0.7 s behind                                                                  | 40 each, 60 each; last read 0.5-0.7 s behind                                                                                               |
+| One track, 4 a second, 80, 2 runs              | 52, 47; the track ended in both; last read 29.8 and 29.9 s behind                                             | 80 each; 13 and 6 sends parked; last read 5.8 and 6.4 s behind                                                                             |
+| One track, 5 a second, 100, 2 runs             | 72, 68; the track ended in one                                                                                | 31, 63; the track ended in both                                                                                                            |
+| One track, 10 a second, 200, 2 runs            | 0, 4                                                                                                          | 4, 0                                                                                                                                       |
+| One track at 5 a second beside five unordered  | track 72, 32 of 100; unordered 200 each, read p50 1.4 and 0.7 s, at most 2.8 and 2.6 s, 19.0-19.2 /s          | track 50, 70 of 100; unordered 200 each, read p50 0.7 and 0.9 s, at most 1.6 and 2.8 s, 19.3-19.4 /s; longest drain 6.0 and 6.1 s          |
+| The two unordered cells, 200, 1 run each       | 200 each; read 0.5 s, at most 0.6 and 1.1 s; 19.4-19.5 /s                                                     | 200 each; read 0.5 s, at most 1.1 and 2.1 s; 19.3-19.5 /s                                                                                  |
+
+"Read" is the recipients' read of a message, from its send to its last ACK offered; "last read" is that of a one-track
+run's last completed message. Receipts are read against 20.1 a second offered (20.0 over 45 s; 10.0 for the track of
+the mixed cell). A drain is one inbound batch's `effect-drain`.
+
+- **The loaded stall is gone on the built code.** In each of its three loaded runs every message completed by its
+  deadline, no `admitted` came later than 8 s, no RETRY row was made, no track ended `resync-required`, no message was
+  handed to the subscriber twice, every track's hand-offs were in order, no batch claimed more than 16 and the longest
+  ran 4.9 s of its 10 s lease. Batches reached the page in every loaded run, so the lag of a track that fell behind
+  climbed while its sender kept its rate (worst 1.3, 5.1 and 7.7 s) instead of falling back at once. The code before
+  it failed in two of three runs, with 7 and 13 local dispatches answering `retry` and never claimed again and four
+  tracks ended in each.
+- **The quiet five-ordered cells read as before** and meet section 12's rule on the built code: every message
+  complete, every `admitted` within 8 s, receipts at 96.5 % of the offered rate or more, nothing handed twice, no frame
+  read twice or out of order, no track ended. The unordered guards read alike on both columns.
+- **+10 ms alone produces the stall, and the hand-on answers it.** On a quiet host the code before it completed 75 and
+  70 of 200 and ended tracks; the built code completed 200 of 200 with no track ended, but read messages 7.2 and 8.1 s
+  behind at p50 and at most 25.6 s, against a 30 s lifetime: its batches ran at the page for 7.5 to 8.0 s each, so it
+  keeps every message inside its lifetime with little margin and within 2 s of the lease.
+- **One track carries 3 a second**, the highest rate at which every built run kept up (all complete, the last read
+  within a second). 4 a second is the first that did not: both runs completed all 80 but read the last 5.8 and 6.4 s
+  behind. In every one-track run the completed messages are exactly the first of the track.
+- **An over-driven track costs the unordered publishers on its lanes a few hundred milliseconds.** Beside one track at
+  5 a second the five unordered publishers completed all 200 in both runs and their receipts were read at 19.3 to 19.4
+  a second, as the guard's 19.5; their read's p50 was 0.7 and 0.9 s against the guard's 0.45 s (1.6 and 1.9 times),
+  at most 1.6 and 2.8 s against 1.1 s. The track's batches ran at the page for up to 6.1 s, and a message arriving on
+  that lane meanwhile waits for the batch. The code before it, whose buffered releases also fill pages for that track,
+  read them at 1.4 and 0.7 s.
+- **Recipients' raw sockets** read 14 frames of one track out of order in one loaded run of the built code, none in
+  the others; the subscriber's hand-offs were in order in every run. Section 13 does not order the room fan-out.
+
 ## Established in slice 1
 
 - **Unfenced rows neither conflict nor wait.** Through `PSqlAdmissionWorkBackend`, 30 concurrent writes to
@@ -1872,13 +1931,12 @@ brings the successor's row forward through `expedite()` instead.
   twice on one track at 10 a second (with the fresh attempts and without them) and when reading due retried rows with
   the new ones, nor why that lever delivered 2 of 100 on one track. What separates the arrival's attempts alone from
   all of them over 45 s rests on one run each. No cell ran in a browser, on IndexedDB or over RTC.
-- Of section 13, which is approved and not yet built: its figures are a prototype's, three loaded runs a column, and the
-  built code beside the hand-on completed 200, 193 and 200 where it completed 109 to 155 in six other loaded runs.
-  Not run: an over-driven track beside other traffic, a lane whose pages are full, more than five publishers, a
-  database slower than +5 ms on a quiet host, the PostgreSQL integration lane, the black-box recipes and the ALM lane
-  with the prototype, and any browser, IndexedDB or RTC cell. The design's lookup for a release differs from the
-  prototype's and is not measured. Why the WS server's room fan-out writes two close hand-offs of one track out of
-  order was not probed.
+- Of section 13: the built code's loaded figures rest on three runs a column, its quiet cells on one or two
+  ("Ordered room messages, with the hand-on built"). Not run: a lane whose pages are full of other claimable work,
+  more than five publishers, more than one over-driven track, an over-driven track on a loaded host, latencies above
+  +10 ms, and any browser, IndexedDB or RTC cell; so whether a full page's batch stays inside its 10 s lease beyond
+  the measured 8.0 s is not shown. Why one track at 4 a second parks 6 to 13 sends, and why the WS server's room
+  fan-out writes two close hand-offs of one track out of order, were not probed.
 - The sustained cost of an ACK that finds no head: the measurement through the WS server offers each ACK only
   after its recipient reads the message, and does not count how many found no head.
 - Leader resolution in a cluster: the group-leader case pins the cross-instance count, not how the leader is
