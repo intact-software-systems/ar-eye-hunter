@@ -30,19 +30,25 @@ interface ObserveAlmMatchingMessagesInput {
     readonly signal: AbortSignal | undefined;
 }
 
+/** One matched inbound event: the runtime clock when the event log recorded it, and its message `data`. */
+export interface AlmMatchingArrival {
+    readonly atEpochMs: number;
+    readonly copy: RallarBlackBoxTestRecord;
+}
+
 interface AlmMatchingMessages {
-    /** Each matched inbound event's message `data`, in arrival order. */
-    readonly copies: readonly RallarBlackBoxTestRecord[];
+    /** The matched inbound events the log retains, in arrival order. */
+    readonly arrivals: readonly AlmMatchingArrival[];
     /** Whether the stall window ended the observation before its deadline. */
     readonly stalled: boolean;
 }
 
 /**
- * The retained matching copies, and the event id of the newest the observation has seen. A recent history evicts the
+ * The retained matching arrivals, and the event id of the newest the observation has seen. A recent history evicts the
  * oldest events first, so it drops the newest copy only after every older one, and only a later copy names a new id.
  */
-interface AlmMatchingCopies {
-    readonly copies: readonly RallarBlackBoxTestRecord[];
+interface AlmRetainedArrivals {
+    readonly arrivals: readonly AlmMatchingArrival[];
     readonly newestEventId: string | undefined;
 }
 
@@ -61,37 +67,40 @@ const ALM_RECEIVED_POLL_INTERVAL_MS = 10;
  * no new matching copy since the observation started or since its latest copy.
  */
 export async function observeAlmMatchingMessages(input: ObserveAlmMatchingMessagesInput): Promise<AlmMatchingMessages> {
-    let matching = resolveAlmMatchingCopies(input.context.state().events, input.match);
+    let matching = resolveAlmRetainedArrivals(input.context.state().events, input.match);
     let progressEpochMs = input.port.now();
     while (input.port.now() < input.deadlineEpochMs) {
-        if (!input.holdFullWindow && matching.copies.length >= input.count) {
-            return { copies: matching.copies, stalled: false };
+        if (!input.holdFullWindow && matching.arrivals.length >= input.count) {
+            return { arrivals: matching.arrivals, stalled: false };
         }
         if (input.stallMs !== undefined && input.port.now() - progressEpochMs >= input.stallMs) {
-            return { copies: matching.copies, stalled: true };
+            return { arrivals: matching.arrivals, stalled: true };
         }
         const remainingMs = input.deadlineEpochMs - input.port.now();
         await input.port.withAbort(
             input.port.sleep(Math.min(ALM_RECEIVED_POLL_INTERVAL_MS, remainingMs)),
             input.signal
         );
-        const observed = resolveAlmMatchingCopies(input.context.state().events, input.match);
+        const observed = resolveAlmRetainedArrivals(input.context.state().events, input.match);
         const arrived = observed.newestEventId !== undefined && observed.newestEventId !== matching.newestEventId;
         progressEpochMs = arrived ? input.port.now() : progressEpochMs;
-        matching = { copies: observed.copies, newestEventId: observed.newestEventId ?? matching.newestEventId };
+        matching = { arrivals: observed.arrivals, newestEventId: observed.newestEventId ?? matching.newestEventId };
     }
-    return { copies: matching.copies, stalled: false };
+    return { arrivals: matching.arrivals, stalled: false };
 }
 
-function resolveAlmMatchingCopies(
+function resolveAlmRetainedArrivals(
     events: readonly RallarBlackBoxTestEvent[],
     match: AlmReceivedMessageMatch
-): AlmMatchingCopies {
+): AlmRetainedArrivals {
     const matching = events.flatMap((event) => {
-        const data = toAlmMatchingCopy(event, match);
-        return data === undefined ? [] : [{ eventId: event.eventId, data }];
+        const copy = toAlmMatchingCopy(event, match);
+        return copy === undefined ? [] : [{ eventId: event.eventId, atEpochMs: event.atEpochMs, copy }];
     });
-    return { copies: matching.map(({ data }) => data), newestEventId: matching.at(-1)?.eventId };
+    return {
+        arrivals: matching.map(({ atEpochMs, copy }) => ({ atEpochMs, copy })),
+        newestEventId: matching.at(-1)?.eventId
+    };
 }
 
 /** The inbound event's message `data` when it is a copy the count matches; `undefined` otherwise. */

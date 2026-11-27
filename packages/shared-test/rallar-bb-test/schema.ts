@@ -800,6 +800,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         absent: booleanSchema,
         ascendingBy: nonEmptyStringSchema,
         stallMs: { type: 'integer', minimum: 1 },
+        ageFrom: nonEmptyStringSchema,
         windowMs: { type: 'integer', minimum: 0 }
     }),
     'messages.receipts': strictCommandSchema('messages.receipts', {
