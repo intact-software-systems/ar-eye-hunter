@@ -380,13 +380,10 @@ export class ALInboundMessageAdmission {
     }
 
     /**
-     * Replays a retained admission, and replays it again at once while its write is lost, three attempts in all. A
-     * replay runs later than the arrival it replays, so each attempt asks its authority again and checks the deadline,
-     * the stored scope and the message's authorization again. Each attempt also verifies the publication proof, plans,
-     * mints its control ids, reads the store and signs its receipt controls again, so a diagnostic an attempt records
-     * before its write, such as a failed receipt signature, is recorded once per attempt; a lost attempt wrote nothing,
-     * since its bundle commits whole or not at all. A shutdown an attempt sees once it has read the store ends the
-     * attempts and answers `retry` with no verdict; a replay whose every write lost is retained still.
+     * Replays a retained admission, and replays it again at once while its write is lost (`retryALInboundLostWrite`).
+     * A replay runs later than the arrival it replays, so each attempt asks its authority again and checks the
+     * deadline, the stored scope and the message's authorization again. A shutdown an attempt sees once it has read
+     * the store ends the attempts and answers `retry` with no verdict; a replay whose every write lost is retained still.
      */
     async replay(pending: ALInboundPendingAdmission): Promise<ALInboundMessageAdmission.ReplayResult> {
         const replayed = await retryALInboundLostWrite<ALInboundReplayAttempt>({
@@ -475,7 +472,10 @@ function toRejectedReplay(rejection: ALMessageRejection): ALInboundMessageAdmiss
     };
 }
 
-/** A replay that waits for its first delivery is retained still, so it states pending again; shutdown reached no verdict. */
+/**
+ * A replay that waits for its first delivery is retained still, so it states pending again; under shutdown, a lost
+ * write included, it reached no verdict.
+ */
 function toAttemptReplay(
     attempt: ALInboundMessageAdmission.Attempt,
     shutDown: boolean

@@ -1,5 +1,3 @@
-import { RetryableConflictError, TryWithExhaustedError, TryWithPolicy } from '../../../resilience/try-with-policy.ts';
-
 export interface ALInboundLostWriteRetry<TAnswer> {
     /** One whole attempt: its reads, its decision, its validation and its conditional write. */
     readonly attempt: () => Promise<TAnswer>;
@@ -9,42 +7,19 @@ export interface ALInboundLostWriteRetry<TAnswer> {
 
 const AL_INBOUND_LOST_WRITE_ATTEMPTS = 3;
 
-class ALInboundLostWrite<TAnswer> extends RetryableConflictError {
-    readonly answer: TAnswer;
-
-    constructor(answer: TAnswer) {
-        super('Inbound write lost to a concurrent write');
-        this.answer = answer;
-    }
-}
-
-const AL_INBOUND_LOST_WRITE_RETRY = TryWithPolicy.defaults()
-    .label('inbound lost write')
-    .maxAttempts(AL_INBOUND_LOST_WRITE_ATTEMPTS)
-    .retryIf((error) => error instanceof ALInboundLostWrite)
-    .waitBeforeRetry(() => Promise.resolve());
-
 /**
  * Runs `attempt` again, at once, while it answers a lost write, three attempts in all, and answers the last
  * attempt's own answer. A lost write means the winner committed, so the next attempt's read sees it; bounded, so
- * contention never holds the caller. The conflict the retry primitive counts attempts by never leaves this
- * function, and an error that is no conflict leaves it as it was thrown, from any attempt.
+ * contention never holds the caller. Nothing passes from one attempt to the next: each runs its owner's every step
+ * again (its reads, its decision, its validation, any proof check and signing, and its write), so a diagnostic an
+ * attempt records before its write, such as a failed receipt signature, is recorded once per attempt, and a lost
+ * attempt wrote nothing, since its write commits whole or not at all. An error an attempt throws leaves as it was
+ * thrown, and no further attempt is made.
  */
 export async function retryALInboundLostWrite<TAnswer>(retry: ALInboundLostWriteRetry<TAnswer>): Promise<TAnswer> {
-    try {
-        return await AL_INBOUND_LOST_WRITE_RETRY.run(async () => {
-            const answer = await retry.attempt();
-            if (retry.isLostWrite(answer)) {
-                throw new ALInboundLostWrite(answer);
-            }
-            return answer;
-        });
+    let answer = await retry.attempt();
+    for (let made = 1; made < AL_INBOUND_LOST_WRITE_ATTEMPTS && retry.isLostWrite(answer); made += 1) {
+        answer = await retry.attempt();
     }
-    catch (error) {
-        const cause = error instanceof TryWithExhaustedError ? error.cause : error;
-        if (cause instanceof ALInboundLostWrite) {
-            return cause.answer;
-        }
-        throw cause;
-    }
+    return answer;
 }
