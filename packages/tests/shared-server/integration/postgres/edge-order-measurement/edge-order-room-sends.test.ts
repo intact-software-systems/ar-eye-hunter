@@ -8,6 +8,8 @@ import {
     createDefaultPSqlALInboundRuntimeStores,
     createDefaultPSqlALOutboundRuntimeStores
 } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
+import { createPSqlCounterScope } from '@shared-server/postgres/create-p-sql-counter-scope.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { EDGE_ORDER_RECEIVER_DEFAULT_LIMITS } from '@shared-web/browser/messages/edge-order/edge-order-receiver-limits.ts';
 import { EDGE_ORDER_ACKNOWLEDGED_SETTLE_MS, EdgeOrderSender } from '@shared-web/browser/messages/edge-order/edge-order-sender.ts';
@@ -21,6 +23,7 @@ import { computeUtf8ByteLength } from '@shared/encoding/compute-utf8-byte-length
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 
+import { createDelayedPSqlSql } from '../../../../../../apps/api-v1/scripts/perf/alm-room-send/instance/create-delayed-p-sql-sql.ts';
 import type { SimulatedWebSocket } from '../../../../shared/native-websocket-fixture.ts';
 import {
     connect,
@@ -38,7 +41,6 @@ import {
     type EdgeOrderFigures,
     type EdgeOrderSummary
 } from './compute-edge-order-figures.ts';
-import { delayPostgresRoundTrips, type PostgresRoundTripCount } from './delay-postgres-round-trips.ts';
 import type { EdgeOrderArrival } from './replay-edge-order-arrivals.ts';
 
 // The edge-order measurement: do UNORDERED receipted room sends, each stamped by the browser's edge-order sender and
@@ -101,7 +103,8 @@ interface DelayedInstanceInput {
     readonly cluster: ReceiptCluster;
     readonly name: string;
     readonly delayMs: number;
-    readonly roundTrips: PostgresRoundTripCount;
+    /** Every instance's database handle, which counts the statements issued through it. */
+    readonly databases: PSqlSql[];
 }
 
 interface MachineLoad {
@@ -179,7 +182,7 @@ const TABLE_HEADER = [
     '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|'
 ].join('\n');
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 const round1 = (value: number) => Math.round(value * 10) / 10;
 let loadWaitedMs = 0;
 
@@ -214,10 +217,10 @@ async function waitForQuietMachine(): Promise<number> {
 async function measureCell(cell: MeasuredCell, delayMs: number, attempt: { run: number; waitedMs: number; }): Promise<CellRunResult> {
     const loadAtStart = loadavg()[0]!;
     const cluster = await createReceiptCluster();
-    const roundTrips: PostgresRoundTripCount = { statements: 0, transactions: 0 };
+    const databases: PSqlSql[] = [];
     const instances: ClusterInstance[] = [];
     for (const name of INSTANCE_NAMES) {
-        instances.push(await startDelayedInstance({ cluster, name, delayMs, roundTrips }));
+        instances.push(await startDelayedInstance({ cluster, name, delayMs, databases }));
     }
     const sockets = new Map<string, SimulatedWebSocket>();
     for (const peer of PEERS) {
@@ -238,10 +241,14 @@ async function measureCell(cell: MeasuredCell, delayMs: number, attempt: { run: 
         ...toReceiptFigures(room),
         order: await computeEdgeOrderFigures(toRunRecords(room), EDGE_ORDER_RECEIVER_DEFAULT_LIMITS),
         instrument: { ...room.instrument, maxSendLateMs: round1(room.instrument.maxSendLateMs), maxAckLateMs: round1(room.instrument.maxAckLateMs) },
-        statementsPerMessage: Math.round(roundTrips.statements / room.sent.length),
+        statementsPerMessage: Math.round(countStatements(databases) / room.sent.length),
         load: { atStart: round1(loadAtStart), atEnd: round1(loadavg()[0]!), waitedMs: attempt.waitedMs },
         raw: KEEPS_RAW ? toRawRecords(room) : undefined
     };
+}
+
+function countStatements(databases: readonly PSqlSql[]): number {
+    return databases.reduce((sum, database) => sum + (database.getExecutorCounters?.().statements ?? 0), 0);
 }
 
 /** One WS server instance of the run's cluster, on a client of its own whose every round trip is `delayMs` away. */
@@ -249,7 +256,10 @@ async function startDelayedInstance(input: DelayedInstanceInput): Promise<Cluste
     const { cluster } = input;
     const client = await createRuntimeStatePostgresSql(requirePostgresDatabaseUrl(), POOL_SIZE);
     cluster.clients.push(client);
-    const repository = new PSqlRuntimeStateRepository(delayPostgresRoundTrips(client, input.delayMs, input.roundTrips));
+    const delayed = createDelayedPSqlSql({ sql: client, delayMs: input.delayMs, sleep });
+    const database = createPSqlCounterScope(delayed, { timesBeginWait: false });
+    input.databases.push(database);
+    const repository = new PSqlRuntimeStateRepository(database);
     const instance = await createClusterInstance({
         name: RECEIPT_SERVER_PEER_ID,
         outboundStores: createDefaultPSqlALOutboundRuntimeStores({
