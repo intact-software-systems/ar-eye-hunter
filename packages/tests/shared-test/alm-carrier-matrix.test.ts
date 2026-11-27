@@ -339,9 +339,6 @@ const EXPECTED_OUTCOMES = {
     'snapshot-floor-catch-up': { ws: DELIVERED, rtc: DELIVERED, 'rtc-with-ws-fallback': DELIVERED }
 } as const;
 
-const LEFT_SENDER_FROZEN_AUDIENCE_PIN =
-    'a unit pin that the origin of a room send frozen to an audience refuses a frozen recipient\'s `membership-fenced` NACK while it holds no receipt row';
-
 const LEFT_SENDER_CELL =
     'a left-sender cell over this carrier; a page that has read its own leave holds the send `pending-authority`, and nothing pins how that ends';
 
@@ -373,15 +370,8 @@ const UNPROVEN_CELLS = [
         'rtc-with-ws-fallback',
         'a receipted publication over this carrier: no hop answers the frame it drops, so the receipt runs out and the send is handed to WS, where the server refuses it `no-publish-grant`; nothing pins that chain'
     ],
-    [
-        'frame-with-forged-sender',
-        'rtc-with-ws-fallback',
-        '`granted-rtc-forged-sender` over this carrier; no unit test forges a sender together with its registered key id at a receiving hop'
-    ],
     ['reply', 'rtc', '`reply-correlated` over this carrier'],
-    ['left-sender-send', 'rtc', LEFT_SENDER_FROZEN_AUDIENCE_PIN],
     ['left-sender-send', 'rtc', LEFT_SENDER_CELL],
-    ['left-sender-send', 'rtc-with-ws-fallback', LEFT_SENDER_FROZEN_AUDIENCE_PIN],
     ['left-sender-send', 'rtc-with-ws-fallback', LEFT_SENDER_CELL],
     [
         'left-sender-send',

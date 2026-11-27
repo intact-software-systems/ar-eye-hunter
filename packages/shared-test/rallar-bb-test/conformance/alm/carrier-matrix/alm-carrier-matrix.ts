@@ -155,9 +155,12 @@ const LEFT_SENDER_FENCED_BY_A_RECEIVER = {
                 'A room send that asked no receipt owes no peer an answer: its origin refuses the NACK and states nothing.'
         },
         {
-            kind: 'unproven',
-            closedBy:
-                'a unit pin that the origin of a room send frozen to an audience refuses a frozen recipient\'s `membership-fenced` NACK while it holds no receipt row'
+            kind: 'unit-test',
+            testFile: AL_OUTBOUND_CONTROL_ADMISSION_TEST,
+            testName:
+                'still refuses a frozen recipient\'s membership-fenced NACK for a receiptless room send frozen to an audience',
+            because:
+                'The origin of a receiptless room send frozen to an audience refuses a frozen recipient\'s `membership-fenced` NACK and states nothing.'
         },
         {
             kind: 'unproven',
@@ -736,9 +739,12 @@ export const ALM_CARRIER_MATRIX = {
                             'A page refuses a frame whose proof its verifier did not verify with the code `invalid-signature`.'
                     },
                     {
-                        kind: 'unproven',
-                        closedBy:
-                            '`granted-rtc-forged-sender` over this carrier; no unit test forges a sender together with its registered key id at a receiving hop'
+                        kind: 'unit-test',
+                        testFile: RTC_RELAY_PUBLICATION_PROOF_TEST,
+                        testName:
+                            'drops a frame forged to another member under that member\'s registered key id as invalid-signature, never forwarding it',
+                        because:
+                            'A hop that finds the named member\'s key drops the frame `unauthorized: invalid-signature` and forwards nothing; its admission is given the frame and its channel peer, not the strategy that sent it.'
                     }
                 ]
             }

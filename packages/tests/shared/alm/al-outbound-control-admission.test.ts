@@ -13,6 +13,7 @@ import {
     newALNackControlMessage,
     newALRepairControlMessage
 } from '@shared/al-contracts/al-control.ts';
+import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { toALOrderingTrackKey, type ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
 import { toALSeqRangesText } from '@shared/al-contracts/al-seq-range.ts';
@@ -85,6 +86,9 @@ interface ResyncNackInput {
     readonly hints?: 'retained-track' | 'foreign-track' | 'none';
 }
 
+const ROOM_REF = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
+/** Where the receiptless room sends stand on their track, `stream:sender:0`, which a resync NACK names. */
+const RESYNC_TRACK_POSITION = { orderingKey: 'stream', epoch: 0, seq: 300 };
 const TERMINAL_NACK_REASONS = ['expired', 'unauthorized', 'stale', 'membership-fenced'] as const;
 
 /** A NACK by which the receiving hop refuses the message for good. */
@@ -457,7 +461,7 @@ describe('outbound control admission identity', () => {
         const { admissionStore, control, state } = createFixture();
         const expectedPeerIds = Array.from({ length: 256 }, (_, index) => `peer-${index}`);
         await seedObligation(admissionStore, {
-            targets: { mode: 'multicast', groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' } },
+            targets: { mode: 'multicast', groupRef: ROOM_REF },
             expectedPeerIds,
             ackedPeerIds: expectedPeerIds.slice(0, -1),
             ordering: undefined,
@@ -893,6 +897,32 @@ describe('a relay rejection of a retained send (R-S2c-ii-5)', () => {
         expect(settlements).toEqual([]);
     });
 
+    it('still refuses a frozen recipient\'s membership-fenced NACK for a receiptless room send frozen to an audience', async () => {
+        const settlements: ALOutboundSettlementFact[] = [];
+        const { admissionStore, control, state } = createFixture(settlements);
+        await seedReceiptlessObligation(
+            admissionStore,
+            toALFrozenMulticastMessage(toSentMessage({ mode: 'multicast', groupRef: ROOM_REF }, RESYNC_TRACK_POSITION), {
+                recipientPeerIds: ['receiver', 'other-receiver'],
+                snapshotVersion: 1
+            })
+        );
+        const seeded = [...state.data];
+
+        expect(await control.admit(refusalNack('receiver', 'membership-fenced'), 'peer')).toEqual({
+            kind: 'rejected',
+            reason: 'AL repair sender has no retained outbound obligation'
+        });
+        expect([...state.data]).toEqual(seeded);
+        expect(settlements).toEqual([]);
+        // The origin does know `receiver` as a recipient of this send: it takes a repair request from it, and from no other peer.
+        expect(await control.admit(controlMessage('repair', 'other-session'), 'peer')).toEqual({
+            kind: 'rejected',
+            reason: 'AL repair sender has no retained outbound obligation'
+        });
+        expect(await control.admit(controlMessage('repair', 'receiver'), 'peer')).toEqual({ kind: 'committed' });
+    });
+
     it.each(
         [
             { name: 'the same NACK from a peer', seed: 'receiptless', reason: 'unauthorized', source: 'peer' },
@@ -1119,7 +1149,7 @@ async function seedMulticastObligation(
     admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>
 ): Promise<void> {
     await seedObligation(admissionStore, {
-        targets: { mode: 'multicast', groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' } },
+        targets: { mode: 'multicast', groupRef: ROOM_REF },
         expectedPeerIds: ['receiver', 'other-receiver'],
         ackedPeerIds: [],
         ordering: undefined,
@@ -1144,35 +1174,24 @@ async function seedTrackedHopUnicastObligation(
 async function seedReceiptlessRoomObligation(
     admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>
 ): Promise<void> {
-    const msg: ALMessage = {
-        id: { v: 4, msgId: 'message', senderId: 'sender', ts: 1, traceId: 'trace-al-outbound-control-admission' },
-        route: { topicId: 'command', resourceId: 'resource', contextId: 'context' },
-        payload: { typeId: 'command.v1', resource: '{}' },
-        targets: { mode: 'broadcast', scope: 'room', groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' } },
-        constraints: { expiresAtMs: Date.now() + 30_000 },
-        ordering: { orderingKey: 'stream', epoch: 0, seq: 300 }
-    };
-    const admission = await readOutboundTestAdmission({
-        store: admissionStore,
-        message: msg,
-        creationNow: () => Temporal.Now.instant(),
-        clock: { nowMs: () => Date.now() },
-        planner: (planned) => ({ msg: planned, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })
-    });
-    await admissionStore.commitBundle(admission);
+    await seedReceiptlessObligation(
+        admissionStore,
+        toSentMessage({ mode: 'broadcast', scope: 'room', groupRef: ROOM_REF }, RESYNC_TRACK_POSITION)
+    );
 }
 
 /** A unicast that requested no receipt: only its addressee may answer it. */
 async function seedReceiptlessUnicastObligation(
     admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>
 ): Promise<void> {
-    const msg: ALMessage = {
-        id: { v: 4, msgId: 'message', senderId: 'sender', ts: 1, traceId: 'trace-al-outbound-control-admission' },
-        route: { topicId: 'command', resourceId: 'resource', contextId: 'context' },
-        payload: { typeId: 'command.v1', resource: '{}' },
-        targets: { mode: 'unicast', toPeerId: 'receiver' },
-        constraints: { expiresAtMs: Date.now() + 30_000 }
-    };
+    await seedReceiptlessObligation(admissionStore, toSentMessage({ mode: 'unicast', toPeerId: 'receiver' }, undefined));
+}
+
+/** Retains `msg` as a send that requested no receipt: sent, with no receipt row at all. */
+async function seedReceiptlessObligation(
+    admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>,
+    msg: ALMessage
+): Promise<void> {
     const admission = await readOutboundTestAdmission({
         store: admissionStore,
         message: msg,
@@ -1199,17 +1218,9 @@ async function seedObligation(
     admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>,
     input: OutboundObligationInput
 ): Promise<void> {
-    const msg: ALMessage = {
-        id: { v: 4, msgId: 'message', senderId: 'sender', ts: 1, traceId: 'trace-al-outbound-control-admission' },
-        route: { topicId: 'command', resourceId: 'resource', contextId: 'context' },
-        payload: { typeId: 'command.v1', resource: '{}' },
-        targets: input.targets,
-        constraints: { expiresAtMs: Date.now() + 30_000 },
-        ordering: input.ordering
-    };
     const admission = await readOutboundTestAdmission({
         store: admissionStore,
-        message: msg,
+        message: toSentMessage(input.targets, input.ordering),
         creationNow: () => Temporal.Now.instant(),
         clock: { nowMs: () => Date.now() },
         planner: (planned) => ({
@@ -1243,6 +1254,18 @@ async function seedObligation(
         ],
         durableEffects: []
     });
+}
+
+/** The message every seed of this file retains as sent: `sender`'s `message`, due in thirty seconds. */
+function toSentMessage(targets: NonNullable<ALMessage['targets']>, ordering: ALMessage['ordering']): ALMessage {
+    return {
+        id: { v: 4, msgId: 'message', senderId: 'sender', ts: 1, traceId: 'trace-al-outbound-control-admission' },
+        route: { topicId: 'command', resourceId: 'resource', contextId: 'context' },
+        payload: { typeId: 'command.v1', resource: '{}' },
+        targets,
+        constraints: { expiresAtMs: Date.now() + 30_000 },
+        ordering
+    };
 }
 
 function repairControl(observedAtEpochMs: number): ALMessage {
