@@ -359,7 +359,6 @@ const UNPROVEN_CELLS = [
         'ws',
         'a server test that delivers a granted publication to more than 256 subscribed sessions; it waits for the merge of pull request 885, which changes the test file that holds the harness'
     ],
-    ['relay-payload-confidentiality', 'rtc-with-ws-fallback', '`granted-rtc-relay-only` over this carrier'],
     [
         'revoked-publish-unknown-to-sender',
         'rtc-with-ws-fallback',
@@ -376,6 +375,16 @@ const UNPROVEN_CELLS = [
         'snapshot-floor-catch-up',
         'rtc-with-ws-fallback',
         'one lifecycle across the hand-over to WS, then `fenced-catch-up` over this carrier'
+    ]
+] as const;
+
+/** Every lane cell that shows only a part of its cell's outcome, and the part it shows. */
+const PARTIAL_LANE_CELLS = [
+    [
+        'relay-payload-confidentiality',
+        'rtc',
+        'granted-rtc-relay-only',
+        'The subscriber receives the publication over RTC, and the session that holds `publish` alone delivers nothing to its application. The run does not force the frame through that session, so it does not show it forwarding.'
     ]
 ] as const;
 
@@ -413,6 +422,16 @@ describe('ALM_CARRIER_MATRIX', () => {
 
         expect(unproven).toHaveLength(UNPROVEN_CELLS.length);
         expect(unproven).toEqual(expect.arrayContaining([...UNPROVEN_CELLS]));
+    });
+
+    it('names every lane cell that shows only a part of its outcome and the part it shows', () => {
+        const partial = toAlmCarrierMatrixCellProofs(ALM_CARRIER_MATRIX).flatMap(({ capabilityId, carrier, proof }) =>
+            proof.kind === 'lane-cell' && proof.because !== undefined
+                ? [[capabilityId, carrier, proof.scenarioKey, proof.because]]
+                : []
+        );
+
+        expect(partial).toEqual(PARTIAL_LANE_CELLS);
     });
 
     it('names for every unit proof a test title that its test file holds', () => {

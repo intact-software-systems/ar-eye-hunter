@@ -9,10 +9,13 @@ import { PATH_START_GRANTS } from './granted-rtc-start-grants.ts';
 
 /**
  * The owner reshapes the room into a path before the sender publishes. The receiver holds `subscribe` and an
- * election, recipient-b `publish` alone, so the sender's `ack: 'none'` publication is frozen to the receiver.
- * Whichever of the two the path puts in the middle, recipient-b delivers nothing: as the middle it forwards the frame
- * to the receiver, as a leaf the frozen audience routes no copy to it. Each page records its next hops, which name the
- * layout the run drew; the cell asserts neither which agent relays nor the hop count.
+ * election, recipient-b `publish` alone, so the sender's `ack: 'none'` publication is frozen to the receiver. The
+ * cell proves two things: the receiver gets the publication over RTC, and recipient-b, which holds no `subscribe`,
+ * delivers nothing to its application. It does not prove that recipient-b forwards the frame: the run draws the
+ * path and nothing forces recipient-b into its middle, so the frame may reach the receiver without crossing it. A
+ * hop test pins the forward, and the carrier matrix names it beside this cell under `relay-payload-confidentiality`.
+ * Each page records its next hops, which name the layout the run drew; the cell asserts neither which agent relays
+ * nor the hop count.
  */
 export const grantedRtcRelayOnly: AlmConformanceScenarioDefinition = {
     scenarioId: 'granted-rtc-relay-only',

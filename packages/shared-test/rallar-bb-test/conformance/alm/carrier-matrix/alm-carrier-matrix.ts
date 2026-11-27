@@ -56,13 +56,14 @@ type AlmPeerRejectionReason = Extract<ALDeliveryRelayRejection, Readonly<{ relay
 
 /**
  * What shows a cell's outcome. A `lane-cell` is a scenario of the conformance catalogue, by its `scenarioKey`, which
- * runs over the cell's carrier in the `full` scope. A `unit-test` names a test file from the repository root, one test
- * in it by a part of its title, and what that test pins. A `documented-limit` names a document from the repository
- * root and the phrase of it that states the limit. An `unproven` proof names what will prove the part of the outcome
- * nothing proves yet.
+ * runs over the cell's carrier in the `full` scope; absent a `because` it shows the cell's whole outcome, and with one
+ * it shows only the part the `because` names. A `unit-test` names a test file from the repository root, one test in it
+ * by a part of its title, and what that test pins. A `documented-limit` names a document from the repository root and
+ * the phrase of it that states the limit. An `unproven` proof names what will prove the part of the outcome nothing
+ * proves yet.
  */
 export type AlmCarrierProof =
-    | Readonly<{ kind: 'lane-cell'; scenarioKey: string; }>
+    | Readonly<{ kind: 'lane-cell'; scenarioKey: string; because?: string; }>
     | Readonly<{ kind: 'unit-test'; testFile: string; testName: string; because: string; }>
     | Readonly<{ kind: 'documented-limit'; document: string; limit: string; }>
     | Readonly<{ kind: 'unproven'; closedBy: string; }>;
@@ -95,6 +96,18 @@ const CACHED_AUTHORITY_REVOCATION_BOUND = {
 } as const satisfies AlmCarrierProof;
 
 const RTC_RELAY_PUBLICATION_PROOF_TEST = 'packages/tests/shared/multicast/rtc-relay-publication-proof.test.ts';
+
+/**
+ * What a hop that holds no `subscribe` does with a granted frame. No lane run forces a frame through such a hop, so
+ * this is what either RTC strategy shows of the forwarding half.
+ */
+const RELAY_WITHOUT_SUBSCRIBE_FORWARDS = {
+    kind: 'unit-test',
+    testFile: RTC_RELAY_PUBLICATION_PROOF_TEST,
+    testName: 'forwards at a relay without subscribe, delivering nothing there, and the copy verifies at the next hop',
+    because:
+        'A hop that holds no `subscribe` forwards a granted frame to its next hop, where the copy verifies and is delivered, and delivers nothing to its own application; its admission is given the frame and its channel peer, not the strategy that sent it.'
+} as const satisfies AlmCarrierProof;
 
 /** The RTC cell of a publication whose sender has not read its revoke: what either RTC strategy shows of it. */
 const REVOKED_PUBLICATION_DROPPED_BY_A_HOP = {
@@ -586,7 +599,8 @@ export const ALM_CARRIER_MATRIX = {
         }
     },
     'relay-payload-confidentiality': {
-        statement: 'A relay that forwards a granted publication over RTC can read its payload.',
+        statement:
+            'A relay that holds no `subscribe` forwards a granted publication over RTC and can read its payload, and it delivers nothing to its own application.',
         cells: {
             ws: {
                 kind: 'not-applicable',
@@ -597,7 +611,13 @@ export const ALM_CARRIER_MATRIX = {
                 outcome: { kind: 'delivered' },
                 proofs: [
                     RELAY_READABLE_PAYLOAD,
-                    { kind: 'lane-cell', scenarioKey: 'granted-rtc-relay-only' }
+                    {
+                        kind: 'lane-cell',
+                        scenarioKey: 'granted-rtc-relay-only',
+                        because:
+                            'The subscriber receives the publication over RTC, and the session that holds `publish` alone delivers nothing to its application. The run does not force the frame through that session, so it does not show it forwarding.'
+                    },
+                    RELAY_WITHOUT_SUBSCRIBE_FORWARDS
                 ]
             },
             'rtc-with-ws-fallback': {
@@ -605,7 +625,14 @@ export const ALM_CARRIER_MATRIX = {
                 outcome: { kind: 'delivered' },
                 proofs: [
                     RELAY_READABLE_PAYLOAD,
-                    { kind: 'unproven', closedBy: '`granted-rtc-relay-only` over this carrier' }
+                    {
+                        kind: 'unit-test',
+                        testFile: 'packages/tests/shared-web/messages/browser-granted-channel.test.ts',
+                        testName: 'an ack: none room send under %s is admitted on RTC carrying its origin\'s proof',
+                        because:
+                            'Under the fallback strategy an `ack: none` granted room publication is admitted on RTC and carries its origin\'s proof, as under the `rtc` strategy.'
+                    },
+                    RELAY_WITHOUT_SUBSCRIBE_FORWARDS
                 ]
             }
         }
