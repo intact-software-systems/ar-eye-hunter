@@ -183,11 +183,13 @@ export class LoopCommandExecution {
     ): Promise<RallarBlackBoxTestLoopChildResult> {
         const template = this.command.commands[commandIndex];
         const iteration = input.iterationIndex + 1;
+        const atEpochMs = this.ports.now();
         const context = {
             loopCommandId: this.command.commandId,
             index: this.results.length,
             iteration,
-            elapsedMs: Math.max(0, this.ports.now() - input.run.startedAtEpochMs),
+            elapsedMs: Math.max(0, atEpochMs - input.run.startedAtEpochMs),
+            atEpochMs,
             commandIndex
         };
         const command = toLoopChildCommand({ template, context, deadlineEpochMs: input.run.deadlineEpochMs });

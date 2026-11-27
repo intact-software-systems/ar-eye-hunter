@@ -611,7 +611,14 @@ describe('rallar-bb-test wait timeout counted from an earlier epoch', () => {
 
     // Inside a first-success loop a malformed reference would fail every iteration and surface only at the loop's
     // deadline, so the recipe is refused when it is loaded.
-    it.each(['at {resultCache.readiness.value.epoch}', '{resultCache.readiness.value.epoch}ms', 'resultCache.readiness.value', '{other.value}'])(
+    it.each([
+        'at {resultCache.readiness.value.epoch}',
+        '{resultCache.readiness.value.epoch}ms',
+        'resultCache.readiness.value',
+        '{other.value}',
+        // The loop-keyed reference admitted above, under the one loop placeholder a timeoutFrom does not take.
+        '{resultCache.stable:i{loop.atEpochMs}:c1:readiness.value.acceptedHeldSinceEpochMs}'
+    ])(
         'refuses timeoutFrom %s at the schema and the control validation',
         (timeoutFrom) => {
             const command = toQuietWait('quiet-malformed', timeoutFrom);
