@@ -645,9 +645,17 @@ export const ALM_CARRIER_MATRIX = {
                             'The server delivers an outbox-fanned room broadcast to a room of 300 sessions, and no copy lists its audience.'
                     },
                     {
-                        kind: 'unproven',
-                        closedBy:
-                            'a server test that delivers a granted publication to more than 256 subscribed sessions; it waits for the merge of pull request 885, which changes the test file that holds the harness'
+                        kind: 'unit-test',
+                        testFile: 'apps/api-v1/test/services/ws-room-granted-delivery.test.ts',
+                        testName:
+                            'a granted publication reaches each of 257 subscribed sessions once, with no audience on the wire',
+                        because:
+                            'The server delivers a granted publication to each of 257 subscribed sessions once, and no copy lists its audience: each session\'s subscription generation travels beside the stored row, not in the frame.'
+                    },
+                    {
+                        kind: 'documented-limit',
+                        document: 'packages/shared/alm/receipt-record/README.md',
+                        limit: 'A send to more than 256 recipients is admitted and gets no receipt'
                     }
                 ]
             },
