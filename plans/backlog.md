@@ -1184,7 +1184,7 @@ and it has no status list.
   and +5 ms, where one ordered track holds about 3 a second at +5 ms; at 30 a
   second they fell behind at +5 ms. A read there is the instance's write to a
   socket, with no browser. That plan lists as open: a real consumer, with the
-  measurement run again on a quiet machine with the product code; and whether
+  measurement run again (#915 owes the full table on a quiet machine); and whether
   hop order stays, which it leaves open.
 - Thirteen tests use a gap NACK that names no range as a whole-message resend,
   a shape no producer emits, so the decoder still accepts it (D692):

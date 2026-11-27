@@ -71,9 +71,11 @@ it:
    version or upgrade policy beyond "deploy web and API together", and no game uses a capability
    delivered after Release 8.
 
-The plan in section 7 covers each. Its first slice, landing #885, is done, and so are the three
-verdict fixes T2, T3 and the server half of S3. Section 7 holds what remains of the second slice,
-ordered sends under load, and the queue as it stands.
+The plan in section 7 covers each. Landing #885 is done, and so are the three verdict fixes T2,
+T3 and the server half of S3. Section 7 holds the two slices the maintainer chose on
+2026-11-27, the torn read and the server's live path (R15 to R17) and a crashed server's
+sessions leaving presence (R3); then what remains of ordered sends under load, which waits on
+decision 18; then the queue as it stands.
 
 ## 2. What was read
 
@@ -85,7 +87,7 @@ both open then, and `plans/active/edge-ordered-room-sends.md`. A statement that 
 its pull request or `704a01a`. Third reading, 2026-11-27: `main` at `bc84d58`, which holds #923
 (`6bae949`) and #927 (`bc84d58`). It changes the state of those two and nothing else; no figure
 was measured again. Fourth reading, 2026-11-27: `main` at `e30b2c9`. It covers what merged after
-the third: this file's own update (#928), edge order slices 2 to 4 (#916), and thirteen more
+the third and touches ALM, its gates or this plan: this file's own update (#928), edge order slices 2 to 4 (#916), and thirteen more
 pull requests, #885 among them, which section 4 lists beside #923 and #927. They were read from their descriptions, the two
 measurement comments on #885 and the tree; where a description and the tree disagree, the tree
 is followed. A statement that rests on this reading names its pull request or says "checked at
@@ -103,7 +105,8 @@ is followed. A statement that rests on this reading names its pull request or sa
 
 The pull requests this plan followed while they were open are all merged; section 4 lists them.
 The decision record has no row D764 to D769 (checked at `e30b2c9`). Rows D787 to D789 are added
-with this reading: they record the rulings of 2026-11-27 that #930, #937 and #939 delivered.
+with this reading: they record what #930, #937 and #939 delivered, and the rulings of
+2026-11-27 that the last two rest on. #930 quotes no ruling.
 
 `plans/active/**` on `main` holds two plans about ALM: this one, and
 `edge-ordered-room-sends.md`, which section 7 relates to. Three more files there touch ALM's
@@ -200,7 +203,10 @@ Each line says what the pull request delivered. Section 5 says what each left.
   `live` sends, narrowed audiences and supersedence. It raises the two bundle budgets to 339 and
   441 KiB (P9).
 - **#915** (`e30b2c9`). Edge order slice 1: a manual PostgreSQL suite that measures unordered
-  receipted sends sorted at the receiver, now with the product's own edge-order code.
+  receipted sends sorted at the receiver, now with the product's own edge-order code. At
+  `e30b2c9` it still calls the edge-order sender as it was before #929, which merged a minute
+  earlier, so `npm run typecheck:tests` fails on `main` in two of its files (#943). That repair
+  comes before any draft's type check is green.
 
 Edge order slices 2 to 4 merged the same day as #916 (`4f453e2`), which that plan records.
 
@@ -360,7 +366,9 @@ Notes on the rows that need them:
     against one run on `main`. A candidate cause, not established: a message's dispatch and
     completion cost more statements with the record, so they no longer always fit in the 100 ms
     between sends.
-  - n is 3 for three cells and 1 for the rest. The maintainer declined a rerun of this set on
+  - n is 3 for four cells and 1 for the other six: the three five-publisher shapes the `main`
+    set also ran three times, and one publisher at 10 a second with no latency added. The
+    comment's text says three cells; its table shows four. The maintainer declined a rerun of this set on
     #885's later heads and on `main` as merged (2026-11-27).
 
   **#885's build with the hand-on**, by that pull request's own harness, which is not the cell:
@@ -388,8 +396,11 @@ Notes on the rows that need them:
   sender-version fence (D780) and the ordered stall in the inbound ordered delivery, not in the
   record (`packages/shared/alm/receipt-record/README.md`, "Measured").
 
-  So the stall predates #885, and in every run made on its tree five publishers at two sends a
-  second no longer show it. What is left is one track faster than about 3 messages a second, and
+  So the stall predates #885. Five publishers at two sends a second no longer show it in any run
+  of the cell on its tree, nor in #885's own runs once the hand-on was built. Before the
+  hand-on, on a loaded host, #885's own runs still did: 108 of 200 in one run, and 141 and 145
+  of 200 in two of three (#885; D784, D785). The cell's set is of that earlier code on a quiet
+  machine. What is left is one track faster than about 3 messages a second, and
   the +0 ms case above. The cell's limits: one process and one event loop, with no authorizer
   reads and no other traffic; "+5 ms" is nominal and a lower bound, on the delayed round trips
   only; a copy is a frame written to a socket, not a delivery to an application. #927 states the
@@ -409,8 +420,8 @@ Notes on the rows that need them:
   crashes the server that admitted a receipted broadcast after `admitted`; the publisher,
   reconnected to a survivor, receives `complete` for that broadcast, naming both recipients as
   expected and confirmed (checked in the recipe's matrix entry at `e30b2c9`; the cluster profile
-  passed 18 of 18 in #885's gates). What #885 left on this path, from its description: a
-  memory-only server keeps nothing across a restart (C6); a send that expects more than 256
+  passed 18 of 18 in #885's gates). What #885 left on this path, from its description and the
+  record's README: a memory-only server keeps nothing across a restart (C6, the README); a send that expects more than 256
   recipients gets no receipt; one server name per cluster; a burst of terminal receipts past one
   grace; a send with no first-hop wait whose live `admitted` is lost reads its terminal receipt
   alone; a stall longer than half an ACK window on a server publication's receipt. Not shown: a
@@ -508,7 +519,8 @@ Notes on the rows that need them:
   admission, and it arrives tens of seconds late. A client ends such a send `receipt-exhausted`
   at about 8 s (`packages/shared/alm/outbound/first-hop/al-outbound-first-hop-wait.ts`; not
   measured against a browser). Since #885 `admitted` is written live on the admitting socket
-  (D781). [Measured.] On #885's tree the case did not occur at the reference shapes. In the
+  (D781). [Measured.] On #885's tree the case did not occur in any run that publishes a
+  count. In the
   twelve five-publisher ordered runs at `29e4c50c` no send ended `first-hop-exhausted`. In the
   sixteen unordered runs at `a2407688` the stand-in ended every send on its terminal receipt,
   where on `main` before #885 it ended 175 to 186 of 200 `first-hop-exhausted` at +5 ms; the
@@ -749,8 +761,8 @@ Notes on the rows that need them:
   measured capacity. It records none as taken.
 - **A3.** PL9 to PL25, PL27 and PL28 (Slice 3); every Slice 4 ruling; builder calls in Slices 5 to
   7; D607 to D641, ruled by the controller; D645's window split; D717, D719 and D757; and D783.
-  D784 to D786 are no longer on this list: their rows quote the maintainer's own rulings of
-  2026-11-26 and 2026-11-27.
+  D784 is no longer on this list: its row quotes the maintainer's own rulings of 2026-11-26.
+  D785 and D786, added since, quote rulings of 2026-11-27 and never joined it.
 - **A4.** Checked in the apps: Relic Hunters uses `messages.room` for hunter events and round
   transitions and `realtime.room` for motion; AR Eye Hunter uses `realtime.room` for combat. No
   game declares a `live` channel, a granted topic, a subscription, or relies on a signed receipt.
@@ -997,7 +1009,7 @@ Where each stands at `e30b2c9`. No criterion is changed, and none is met in full
    call is ruled and not on `main` (#943, a draft). S7 is open. S1 and S2 are not ruled
    (decision 3).
 7. _There is an upgrade rule._ Open, unchanged.
-8. _It is adopted._ Open. Of A3's list, D784 to D786 are now the maintainer's own rulings. Nothing
+8. _It is adopted._ Open. Of A3's list, D784 is now the maintainer's own ruling. Nothing
    else changed.
 
 ## 7. The plan
@@ -1016,10 +1028,10 @@ all.
 
 ### The next two slices
 
-Chosen by the maintainer on 2026-11-27, with three pieces to run beside them. Landing #885,
-the first slice of the earlier reading, is done. Each slice below starts with a plan or a
-design that reads the code again on `main`, because every note in section 5 on these items was
-written before #885 merged.
+Chosen by the maintainer on 2026-11-27, with three streams of work to run beside them. Landing
+#885, the first slice of the earlier reading, is done. Each slice below starts with a plan or
+a design that reads the code again on `main`, because the code readings in section 5's notes
+on these items predate #885's merge.
 
 **Slice 1: the torn read and the server's live path (R15 to R17).** Test first.
 
@@ -1044,23 +1056,46 @@ such a throw is stated from a test, not from reading; R16 and R17 are each close
 its own red-first test, or stated as a limit with the evidence that makes it one; the gates the
 changed path selects are green with no constant touched.
 
-**Slice 2: a crashed server's sessions leave presence (R3).** Design first; nothing is built
-before the maintainer has ruled on it. The design decides what ends a presence whose server
-died and within what bound, what a false positive costs a server that was slow and not dead,
-and how the recipe `api-v1-cluster-subscriber-instance-loss` is restated. With #885 it meets
-exit criterion 4. It meets that recipe under
-`packages/shared-test/black-box-runner/tests/api-v1/`; the product files are the design's to
-name.
+**Slice 2: a crashed server's sessions leave presence (R3).** Design first. The design decides
+what ends a presence whose server died and within what bound, what a false positive costs a
+server that was slow and not dead, and how the recipe
+`api-v1-cluster-subscriber-instance-loss` is restated. Once built, with #885, R3 meets exit
+criterion 4.
 
-Acceptance of the design: each reader of presence and what a stale session costs it, from the
-code; the options with the bound each gives and its writes at rest; a recommended bound stated
-as a contract an application developer reads; the rulings it needs, asked one at a time; and
-the slices that build it, the first with its tests named.
+The design is written, and the maintainer ruled its seven questions on 2026-11-27. It is
+published as a plan of its own in the pull request that follows this one; what the rulings
+fix:
+
+- Presence follows the socket for a session that holds one. A surviving server ends it when
+  the session's server is lost and its client has not reconnected; a client that reconnects
+  stays present under its session id.
+- The bound is 90 s, from leases already on `main`; none is retuned.
+- A pushed change whose queued work the lost server had claimed can lag by the outbox lease,
+  five minutes. That is a stated limit, with a follow-up that releases a lost process's claims.
+- The stored connect, disconnect and cleanup commands gain the id of the process holding the
+  socket, under D8.
+- A server that misses its liveness lease is fenced as a whole.
+- Presence declared without a socket ends by the lease its client named, 24 hours when it
+  named none: a stated limit.
+- The client-state row's 30-day lease stays as a backstop.
+
+It is built in four slices: recipes first (a graceful-stop reference, and the crash recipe
+declaring presence as a browser does), with no product change; then the record of which
+process holds each socket; then a survivor writing the lost process's closes, with the crash
+recipe restated to read `complete` and a recipe that proves the bound; then the false
+positive, the one-replica restart and the contract's words. The design's readings of a
+three-server cluster are from code; the first slice is the first to run them.
+
+Acceptance: `api-v1-cluster-subscriber-instance-loss` reads `complete` after the bound and no
+longer expects the lost session; a recipe that kills a process reads every session it held
+gone from the roster within 90 s and ended once; a recipe that suspends a server past its
+lease reads it fenced and its clients present again elsewhere; the gates the changed path
+selects are green with no constant touched.
 
 **Beside them**, started the same day because they meet other files: the documents of queue
-item 1; the two pieces of queue item 2 that need no ruling, the server test of a granted
-publication to more than 256 subscribed sessions and the call-time refusal witness; and seeded
-loss, the first pull request of queue item 5.
+item 1; from queue item 2, the server test of a granted publication to more than 256
+subscribed sessions and the call-time refusal witness, neither of which needs a ruling; and
+seeded loss, the first pull request of queue item 5.
 
 ### What remains of ordered room sends under load
 
@@ -1074,8 +1109,9 @@ to reach `pending-admission`: 55 cases turned red when it was prototyped, and no
 or weakened (#885). #885 also built what the slice did not name, the hand-on and its bound (D785,
 D786).
 
-The slice's acceptance, line by line. Every "met" is in the cell at that head, which predates
-the hand-on, and none is on `main` as merged.
+The slice's acceptance, line by line. Every "met" on a line about the cell is at that
+head, which predates the hand-on; the two gate lines are of #885's last head. None is on `main`
+as merged.
 
 - _At +5 ms nominal the five-publisher shape writes 2,800 of 2,800 copies in order and completes
   200 of 200 receipts in three runs of three, with the stand-in and without._ Met: three of three
@@ -1147,10 +1183,10 @@ places:
   497 ms. #915 says its later runs on `main` were on a busy machine and are not a new table, and
   that the full table on a quiet machine is owed.
 - One of ruling 6's choices refuses a browser send with `orderingKey`. That plan says the choice
-  removes the stall it started from, which is R1. Decision 18 asks how the work above and that
-  ruling are ordered.
+  removes the stall it started from, which is R1. Decision 18 asks whether one fast ordered track is
+  a 1.0 mode, and recommends ruling it together with that ruling.
 
-### The queue after them
+### The queue after the two slices
 
 Outcome-shaped, in the order proposed at the first reading; the merges changed no order. Three
 items are gone: the three verdict fixes S3, T2 and T3 are on `main` (#937, #939, #930), and the
@@ -1211,7 +1247,8 @@ matrix and its test, `docs/rallar-api-reference.md`, two READMEs and eight black
    `packages/shared-test/rallar-bb-test/conformance/alm/publication-workload/`,
    `tests/playwright/rallar-black-box/full-stack-publication-workload.spec.ts` and
    `packages/shared-test/rallar-bb-test/docs/alm-publication-workload.md`. #933 changed no
-   product file and no browser bundle.
+   product behaviour and no browser bundle; outside the test packages it added one file, the
+   histogram merge in `packages/shared/measurement/`.
 6. **Sign every ordinary RTC room send (S1, S2)**, if decision 3 says so, with a phone timing.
    Unblocked by: decision 3. Meets: `packages/shared/multicast/publication/`, where #939 changed
    the signed-publication carrier, and the bundle budgets.
@@ -1230,7 +1267,7 @@ matrix and its test, `docs/rallar-api-reference.md`, two READMEs and eight black
 
 Each with a recommendation. None is taken by this document.
 
-Five rulings of 2026-11-27 are no longer asked. Each is recorded where it applies:
+Five rulings of 2026-11-27 are made and not asked here. Each is recorded where it applies:
 `all-logical-recipients` is judged like `receiver`, and D553 is reversed for the receipted
 unicast (T2, D789). A room send routed in another room is refused by the WS server for every
 shape, and by the browser at the call, with no check at an RTC receiver (S3, D788). The five
@@ -1292,8 +1329,8 @@ reference set is not rerun on #885's later heads or on `main` as merged (R1).
     refusal and print it.
 17. **First-hop exhaustion under a slow `admitted` receipt (R19; #927, follow-up 7).** Should a
     client give up on a send whose only missing piece is the `admitted` receipt? The cell has now
-    run on #885's tree, which this decision waited for, and at its reference shapes the case did
-    not occur: no send ended `first-hop-exhausted` in the twelve five-publisher ordered runs or
+    run on #885's tree, which this decision waited for, and in every run there that publishes a
+    count the case did not occur: no send ended `first-hop-exhausted` in the twelve five-publisher ordered runs or
     in the sixteen unordered runs, and at +5 ms an unordered send's `admitted` receipt arrived at
     a median of about 150 ms where `main` before #885 read about 30 s (R19). Two cases stay
     unread: one fast ordered track, for which no first-hop count is published, and `main` as
@@ -1311,4 +1348,4 @@ reference set is not rerun on #885's later heads or on `main` as merged (R1).
     section 7 are 1.0 work. If no, state the ceiling as a limit, with a typed refusal or by
     taking ruling 6's choice that refuses a browser send with `orderingKey`. Recommend ruling
     this together with ruling 6, not before it. R1 stays a Blocker while `orderingKey` is an
-    option of a browser send with no stated ceiling.
+    option of a browser send.
