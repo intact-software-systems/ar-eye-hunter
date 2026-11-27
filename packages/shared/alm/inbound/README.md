@@ -1293,7 +1293,11 @@ write conflicts are attempted again at once, three attempts in a claim, and each
 asks the authority and checks the deadline again; a replay whose every write lost goes back
 as `retry` and consumes an ordinary processing attempt, under QueueBox's bounded retry policy.
 A readmission that waits for its first delivery answers `waiting`: it wrote nothing, is not
-attempted again, and stays retained. A pure computation does not make sending atomic with completing work:
+attempted again, and stays retained. An arrival's fresh attempts run inside the one call its
+carrier authorized and do not ask the carrier's authority again: on the WS server the socket's
+scope and the frozen room audience are read above the inbound runtime, before the call. A
+resynchronization NACK whose write is lost, which ends a track, answers `retry` and is not
+attempted again at once. A pure computation does not make sending atomic with completing work:
 crash replay can repeat an external effect, and so can an ordered completion that hands
 its work back, so protocol identity and deduplication remain necessary.
 

@@ -238,9 +238,9 @@ ACK's statements is serialized against another ACK.
 
 Real PostgreSQL, three instances, each client delaying every statement, BEGIN and COMMIT by the added latency
 (one attributed hosted run recorded about 5 ms per statement). Lag is p50 from a message's last ACK to its
-`complete`. Test-only code, not kept in the tree. Every cell but the last two bullets' sends unordered receipted
-messages, as a browser's room send is unless it states an `orderingKey` or a `seq`; the sends of those two bullets
-each state one, so they take the ordered inbound path.
+`complete`. Test-only code and the raw results, neither kept in the tree. Every cell but the last two bullets'
+sends unordered receipted messages, as a browser's room send is unless it states an `orderingKey` or a `seq`; the
+sends of those two bullets each state one, so they take the ordered inbound path.
 
 - **The record alone keeps up.** 40 messages at 2 a second, 14 recipients each, 28 ACKs a second: at +0 ms a p50 of
   5.6 to 9.0 ms, at +5 ms 60.5 to 62.8 ms, the last ten messages no slower than the first ten; 560 of 560
