@@ -25,7 +25,8 @@ export function computeAdmissionBackendFacts(project, scope) {
             implementations.map(({ id, backend }) => ({ id, backend }))
         ),
         admissionBackendConstructions: computeConstructionFacts(project, scope, postgresClasses),
-        admissionBackendWrites: computeWriteFacts(project, scope, implementationClasses)
+        admissionBackendWrites: computeWriteFacts(project, scope, implementationClasses),
+        wiringImports: computeWiringImportFacts(project, scope)
     };
 }
 
@@ -119,6 +120,31 @@ function isAdmissionPortSymbol(symbol, scope) {
         symbol.getDeclarations().some((declaration) =>
             toRepositoryPath(declaration.getSourceFile(), scope.root).startsWith(ADMISSION_PORT_PACKAGE)
         );
+}
+
+function computeWiringImportFacts(project, scope) {
+    const wiringModules = new Set(scope.wiringModules);
+    const facts = project.getSourceFiles().flatMap((sourceFile) =>
+        sourceFile.getImportDeclarations()
+            .filter((declaration) => !isTypeOnlyImport(declaration))
+            .map((declaration) => declaration.getModuleSpecifierSourceFile())
+            .filter((target) => target !== undefined && wiringModules.has(toRepositoryPath(target, scope.root)))
+            .map((target) => ({
+                id: `${toRepositoryPath(sourceFile, scope.root)}#import:${toRepositoryPath(target, scope.root)}`
+            }))
+    );
+    return sortFacts(facts);
+}
+
+function isTypeOnlyImport(declaration) {
+    if (declaration.isTypeOnly()) {
+        return true;
+    }
+    const named = declaration.getNamedImports();
+    return declaration.getDefaultImport() === undefined &&
+        declaration.getNamespaceImport() === undefined &&
+        named.length > 0 &&
+        named.every((specifier) => specifier.isTypeOnly());
 }
 
 function findNodes(project, kind) {

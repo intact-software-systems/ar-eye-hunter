@@ -94,6 +94,29 @@ describe('admission backend facts', () => {
         });
         expect(facts.admissionBackendImplementations).toHaveLength(3);
     });
+
+    it('records each runtime import of a wiring module and ignores type-only imports', () => {
+        const backendPath = 'packages/shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
+        const storesPath = 'packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
+        const facts = computeFixtureFacts({
+            ...ADMISSION_PORT_SOURCES,
+            'apps/api-v1/src/composition/create-api-v1-runtime.ts': `
+                import { createPSqlALInboundRuntimeStores } from '../../../../packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
+                import type { PSqlAdmissionWorkBackend } from '../../../../packages/shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
+                export const createRuntime = createPSqlALInboundRuntimeStores;
+                export type RuntimeBackend = PSqlAdmissionWorkBackend;
+            `,
+            'packages/shared-server/al-runtime/describe-backend.ts': `
+                import { type PSqlAdmissionWorkBackend } from './postgres/p-sql-admission-work-backend.ts';
+                export function describeBackend(backend: PSqlAdmissionWorkBackend): string { return backend.topic; }
+            `
+        });
+
+        expect(facts.wiringImports).toEqual([
+            { id: `apps/api-v1/src/composition/create-api-v1-runtime.ts#import:${storesPath}` },
+            { id: `${storesPath}#import:${backendPath}` }
+        ]);
+    });
 });
 
 function computeFixtureFacts(sources: Readonly<Record<string, string>>) {
