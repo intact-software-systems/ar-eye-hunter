@@ -5,7 +5,8 @@ restarts. The count of who confirmed a receipted room send moves out of one inst
 durable record every instance reads and writes.
 
 Status: approved by the maintainer on 2026-11-22; slices 1 to 7 built. Section 13, a completed delivery hands its
-track's next message on, is approved (ruling 17) and is to be built; nothing of it is built yet.
+track's next message on, approved on 2026-11-27 (ruling 17), is built and measured ("Ordered room messages, with the
+hand-on built"; D785).
 
 ## Why
 
@@ -72,7 +73,8 @@ rulings 14 to 17 the maintainer gave in the session that builds this work.
 14. Which option for ordered sends under load is built here (2026-11-26; option 1 was to repair today's ordered mode
     in #885): **"Let's complete 1 here in this session."** (What follows from it, as the ledger describes it, not
     the maintainer's words: today's ordered mode is repaired in #885, and the maintainer's counter idea, ordering
-    end to end in Rallar Web, is planned as its own work, in draft pull request #914.)
+    end to end in Rallar Web, is planned as its own work, in the plan "Edge order: ordered room sends, sorted at the
+    two ends", `plans/active/edge-ordered-room-sends.md`.)
 15. Which scope of that repair #885 builds (2026-11-26; asked with the measured figures of section 12 and three
     options): **"Retry-at-once only (Recommended)"**. (The option as it was put, not the maintainer's words: the
     "look again at once" repair for arriving ordered messages, and the same for replays and for held messages being
@@ -728,6 +730,9 @@ So a conflict no fresh read can resolve costs three attempts and then takes the 
 - A store failure that is not a conflict. It leaves the owner unchanged, from the first attempt or the third.
 - The control admission (an ACK, a NACK, a repair), which this does not touch, and the completion, which has the
   rule already (section 11).
+- The moved-progress guard of `reject` (`ALInboundOrderedDelivery.reject`): a rejection whose read finds the track's
+  `completedThrough` moved since its readiness read answers `retry`, a lost race that is not looked at again at once.
+  It is not what any probe saw.
 
 **A lost attempt has written nothing.** A bundle commits whole or not at all, in one write, so a lost attempt left
 no row, no work and no effect. What follows a commit runs once, after the attempt that committed: the
@@ -737,9 +742,8 @@ admitted meanwhile, by a copy on another carrier or instance, answers `duplicate
 
 **One function, one bound.** The completion's three attempts and these are one mechanism with one reason, so the
 completion's private policy becomes the inbound's: one function that runs an attempt again while it answers a lost
-write, one bound of three, no wait. It composes the shared retry primitive (`TryWithPolicy`,
-`RetryableConflictError`), which is not changed. The conflict the primitive throws to count an attempt never leaves
-that function: it answers the last attempt's own answer, and each owner maps a lost one to what it hands back.
+write, one bound of three, no wait. It is a bounded loop over the attempts that answers the last attempt's own
+answer, with no error path of its own, and each owner maps a lost one to what it hands back.
 
 **Where the attempts live.**
 
@@ -779,8 +783,8 @@ into their phases, with no change of behaviour, before they change.
   the store arbitrates is a question of the write doctrine that this work does not open.
 - _Claiming a track's next in-order dispatch in the batch that completed its predecessor_, as the batch already
   promotes the next buffered release (D190). Not prototyped when this section was written. It has been since, after
-  a probe showed what it answers ("Why ordered tracks fall behind together"), and section 13 is its design, which
-  is approved (ruling 17).
+  a probe showed what it answers ("Why ordered tracks fall behind together"), and section 13 is its design, approved
+  (ruling 17), built and measured.
 
 **The limit that stays.** Measured on the built code ("Ordered room messages, with the fresh attempts built"), one
 ordered track keeps up at 2 messages a second through the WS server at +5 ms (40 of 40 in every run, the last
@@ -794,19 +798,28 @@ about 3.1 messages a second, by halving the receipts read a second (6.2 to 6.6).
 `admitted`, so that figure is not a delivery rate, and the option put to the maintainer (ruling 15) carried it as
 "about 3 ordered messages a second". What the built runs show: 2 a second keeps up in every run, 3 a second in most
 and not reliably, and a track offered 4 a second or more falls behind and loses what passes its lifetime. Why a
-track that has fallen behind is slower than one that keeps up was not probed; the study's reading is that each
-in-order dispatch waits for its predecessor's completion and then for a later batch of the lane.
+track that has fallen behind is slower than one that keeps up was probed afterwards ("Why ordered tracks fall behind
+together"): a delivery whose predecessor had not completed was set aside, and only the rotation claimed it again,
+seconds later. Section 13 repairs that; with it built one track keeps up at 3 a second in every run, and at 4 a second
+completes 80 of 80 but reads its last message 5.8 and 6.4 s behind.
 
 A track that falls behind ends as it does today: its waiting message expires, the next release finds a gap with no
 predecessor, and the track ends `resync-required`, a NACK to its sender. On the built code that happened in each
 5-a-second run, where the code before it had stalled without ending the track. A single retried row is still enough
-to hold a track: a dispatch that ran before its predecessor's completion, a release, or an admission that loses
-three writes waits for the rotation (cause 3). No such row arose in the counted five-publisher runs of the built
-code, where the code before it made 9 to 15 a run; one built run taken beside another session's test suites (load
-7.5 rising to 13.1) made 14 such dispatch rows, none claimed again, and completed 108 of 200 with five tracks ended
-`resync-required`. And under contention an arrival now costs up to three read-and-write rounds before it is parked,
-not one: at 10 a second the progress row's lost writes rose from 433-444 of 597-613 to 813-814 of 981-982. Streams faster than one track carries are what ordering end to end in Rallar Web is for, planned as its
-own work in draft pull request #914.
+to hold a track: a release or an admission that loses three writes waits for the rotation (cause 3). No such row
+arose in the counted five-publisher runs of the built code, where the code before it made 9 to 15 a run. One built run
+taken beside other test suites on the same machine (load 7.5 rising to 13.1) completed 108 of 200 with five tracks
+ended `resync-required`. Its cause was not a retried row but the one section 13 repairs: under load a message's
+dispatch and completion outlasted the gap to its sender's next send, so the next delivery found its predecessor
+waiting and was set aside, and only the rotation claimed it again, by which time the next arrival was waiting too;
+every track sharing the rotation fell behind with it and reached the lifetime at the same send. The dispatch rows
+such a run leaves answering `retry` and never claimed again (14 in it, 8 to 11 in each probed run) are, in the probed
+runs, later successors' rejections, expired within milliseconds.
+So five ordered publishers keep up on a host and a database fast enough that a message completes before its sender's
+next one arrives. And under contention an arrival now costs up to three read-and-write rounds before it is parked,
+not one: at 10 a second the progress row's lost writes rose from 433-444 of 597-613 to 813-814 of 981-982. Streams
+faster than one track carries are what ordering end to end in Rallar Web is for, planned as its own work in the plan
+"Edge order: ordered room sends, sorted at the two ends", `plans/active/edge-ordered-room-sends.md`.
 
 **For a browser receiver.** The same lane runs in the browser, over IndexedDB for the session's durable pair and
 over memory for its volatile pair, and for an RTC receiver.
@@ -857,9 +870,9 @@ over memory for its volatile pair, and for an RTC receiver.
 
 ### 13. A completed delivery hands its track's next message on
 
-**Approved by the maintainer on 2026-11-27 (rulings 16 and 17), to be built. Nothing of it is built yet.** It rests
-on a prototype that was applied as a patch outside the tree and measured ("Why ordered tracks fall behind
-together"). The prototype is not the design: where they differ is said below.
+**Approved by the maintainer on 2026-11-27 (rulings 16 and 17), built and measured ("Ordered room messages, with the
+hand-on built"; D785).** It rested on a prototype that was applied as a patch outside the tree and measured ("Why
+ordered tracks fall behind together"). The prototype is not the design: where they differ is said below.
 
 Section 12 keeps an ordered track on its fast path as long as one message's dispatch and completion fit inside the gap
 to the next send. When they do not, the next message's delivery is found waiting for its predecessor and is set
@@ -971,10 +984,14 @@ keeps offering more than its track carries can keep every batch of the lane at a
 What that sender can do: make each batch take a full page's time, so the rotation's next page, and an arrival that
 commits while the batch runs, wait up to 15 more claims than they would have. What it cannot do: run more than a page
 in a batch, run ahead of a claim the batch holds, take the rotation's next page (the batch after reads the page the
-rotation stood at, not the track), or reserve a row that is not its own track's next. No measured cell mixes an
-over-driven track with other traffic; the proof below adds one.
+rotation stood at, not the track), or reserve a row that is not its own track's next. Measured beside one track at 5
+a second, five unordered publishers on the same server completed 200 of 200 in both runs at their receipt rate, but
+read a message at 0.715 and 0.862 s (p50) against 0.454 s without the track, at most 1.63 and 2.83 s against 1.06 s:
+the track's batches ran at the page (16 claims) for 6.0 and 6.1 s, and a message arriving on that lane waited for the
+batch. The track itself completed 50 and 70 of 100 and ended once.
 
-**What happens when the next message is not there to hand on.** Each case reserves nothing and changes no row:
+**What happens when the next message is not there to hand on.** Each case but one reserves nothing and changes no
+row; a track that has ended, the one exception, is reserved so that its dispatch rejects it:
 
 - _Not admitted yet._ No slot. When it is admitted, its predecessor has completed, so its own commit's batch reads
   it ready and claims it at the head of the queue: the fast path, as today.
@@ -1045,7 +1062,8 @@ receiver alike.
   host: one track keeps up at 3 a second in every run; at 4 a second it completes 80 of 80 in both runs but reads its
   last message 5.8 and 6.4 s behind, with 13 and 6 sends parked at admission (the prototype read it 1.5 and 3.8 s
   behind; the code before it completed 52 and 47 and ended the track); at 5 a second it completed 31 and 63 of 100
-  and ended the track `resync-required` in both, and at 10 a second 4 and 0 of 200. At 10 a second the sends that are
+  and ended the track `resync-required` in both, fewer than the 72 and 68 the code before it completed in those runs,
+  and at 10 a second 4 and 0 of 200. At 10 a second the sends that are
   parked at admission dominate, which this does not touch. The limit of one ordered track stays, a little higher and
   less sharp.
 - _It hands nothing on from a full batch._ A lane whose pages are full of claimable work promotes nothing and behaves
@@ -1055,8 +1073,8 @@ receiver alike.
 - _It stops at the page._ A long backlog is drained up to a page at a time; between batches the track waits for the
   rotation again. In the built code's loaded runs the worst lag of a run was 1.3, 5.1 and 7.7 s: while the senders
   kept their rate and the batches ran full pages, a lagging track's lag climbed by about 0.3 s a send, and in two of
-  the three runs no lagging track came back below a second before the sends ended. The code before it lagged to the
-  lifetime in all three.
+  the three runs no lagging track came back below a second before the sends ended. The prototype's loaded runs had
+  caught up between batches, at a worst lag of 0.8 to 5.1 s. The code before it lagged 23.6 to 30.2 s, to the lifetime in two of three.
 - _It does not follow an omission._ When the track's next message for this receiver is not the next sequence (the
   sender left this receiver out of one), no slot stands at `completedThrough + 1` and the next copy waits for the
   rotation, as today. Finding it needs a read of the track's slots, which is not proposed.
@@ -1173,7 +1191,11 @@ What could make it larger:
 
 Not shown, beside the limits above: the built code's result rests on three loaded runs (the code before it, run
 beside them, completed 141, 145 and 200, so one of its three loaded runs kept up); the lookup for a release through
-the slot is inside the built figures and was not measured apart; and nothing here was run in a browser.
+the slot is inside the built figures and was not measured apart; across two server instances, the room fan-out
+leaving from the instance that completed the predecessor, that instance's readiness read asking its own dispatch
+port, and an arrival's commit against a completion's commit have no case; nor has a release hand-on's second slot
+read on PostgreSQL; a head read when a hand-on stops at the page is named and not measured; and nothing here was run
+in a browser.
 
 ## Approaches considered
 
@@ -1627,7 +1649,7 @@ BEGIN and COMMIT delayed 5 ms, fifteen sessions in one room, a 30 s lifetime, no
 the built code; the same code with only the arrival's fresh attempts (the replay's and the release's undone); and the
 code before any of them, the completion's three attempts kept. Each column is the built tree with a patch undone for
 the run and restored after it, and within a cell every run iterates its columns back to back, so load drift falls on
-each alike. No run started above a 1-minute load of 8; the runs taken beside another session's test suites that ended
+each alike. No run started above a 1-minute load of 8; the runs taken beside other test suites on the same machine that ended
 above 8 were repeated on a quiet machine with their whole iteration, and the counted runs started and ended at loads
 of 1.4 to 6.9; one track at 3 and at 4 a second was also run twice more on the quiet machine.
 
@@ -1652,11 +1674,14 @@ track, how far behind its send the last completed message was read. Receipts are
   against 489 to 597 ms, and 459 against 513 ms), receipts read at 96.0 to 98.5 % of the offered rate, no RETRY row,
   no message handed to the subscriber twice, no frame read twice or out of order, and no track ended
   `resync-required`. Completions took a second attempt 0 to 8 times a run, never a third, and none handed back.
-- **One built run did not keep up**, taken beside another session's suites (its load rose from 7.5 to 13.1): 108 of
-  200 complete, recipients reading 5.4 s behind at p50 and 27.5 s at most, 13.8 receipts read a second, 14 RETRY rows,
-  each a local dispatch that ran before its predecessor's completion and was never claimed again, and five tracks
-  ended `resync-required`. Its repeat on the quiet machine kept up. It shows the hold that stays: one retried row
-  waits for the rotation and its track waits with it.
+- **One built run did not keep up**, taken beside other test suites on the same machine (its load rose from 7.5 to
+  13.1): 108 of 200 complete, recipients reading 5.4 s behind at p50 and 27.5 s at most, 13.8 receipts read a
+  second, 14 local dispatch rows answering `retry` and never claimed again, and five tracks ended `resync-required`.
+  Its repeat on the quiet machine kept up. The cause, probed afterwards ("Why ordered tracks fall behind together"):
+  under load a message's dispatch and completion outlasted the gap to its sender's next send, so the next delivery
+  found its predecessor waiting and was set aside, and only the rotation claimed it again; every track sharing the
+  rotation fell behind together, and in the probed runs the rows answering `retry` were later successors'
+  rejections. Section 13 repairs it.
 - **The arrival's attempts carry the five publishers; with the replay's and the release's they differ only over
   45 s.** Over 20 s the two columns read alike, but over 45 s with the arrival's attempts alone one message was read 20.7 s behind its
   send and receipts were read at 18.2 a second, where the built code read every message within 0.9 s and receipts at
@@ -1678,8 +1703,8 @@ track, how far behind its send the last completed message was read. Receipts are
 One run of the built code above did not keep up, and its five tracks stopped at the same send. It was
 probed: the five ordered publishers for 20 s at +5 ms on the built code, under deliberate CPU load (8 to 12 burners,
 a 1-minute load of 8.7 to 27.7 at the start), reading the lane's `dispatch-decision` dispositions, every readiness
-read and every completion. This replaces the reading given for that run above and in section 12 ("a local dispatch
-that ran before its predecessor's completion"), which the probe does not bear out.
+read and every completion. This replaces the reading first given for that run, a local dispatch that ran before its
+predecessor's completion, which the probe does not bear out; the bullet above and section 12 now state the cause.
 
 - **Reproduced in three runs of three.** 109, 116 and 127 of 200 completed; 3, 5 and 5 tracks ended
   `resync-required`; every track of a run stopped at the same send. A run on the quiet machine after them
@@ -1687,7 +1712,7 @@ that ran before its predecessor's completion"), which the probe does not bear ou
 - **The cause is not a race.** When a message's dispatch-to-completion takes longer than the gap to the next send
   (here by load: completions 1.0 to 1.6 s after the successor's send, with 500 ms between sends), the successor's
   delivery reads its predecessor `waiting` and is set aside before it is reserved; its row stays new. Nothing claims
-  it when the predecessor completes: only a buffered release's successor is promoted (`claimPromotedRelease`). It
+  it when the predecessor completes: at that head only a buffered release's successor was promoted. It
   waits for the rotation, which read its readiness again every 3 to 4 s; of about 2 400 to 2 700 readiness reads a
   run, 1 907 to 2 235 answered `waiting`. By then the next arrival has also found its predecessor unfinished, so the
   track never returns to the fast path while the sender keeps its rate; the wait from due to claim grew from 5.6 to
@@ -1926,13 +1951,17 @@ the mixed cell). A drain is one inbound batch's `effect-drain`.
   the ordered tracks stall on both trees behind admissions left `pending-admission`; and whether a sender's resend
   unblocks a track. Why such a replay lands late, and why two tracks stopped at an admitted message, is answered in
   section 12.
-- Of section 12: why one track at 3 a second kept up in three runs of four and not in the fourth, and why a track
-  that has fallen behind delivers about one message a second, were not probed; nor why recipients read room frames
+- Of section 12: why one track at 3 a second kept up in three runs of four and not in the fourth was not probed (why
+  a track that has fallen behind stays behind is answered in "Why ordered tracks fall behind together", and with
+  section 13 built 3 a second kept up in every run); nor why recipients read room frames
   twice on one track at 10 a second (with the fresh attempts and without them) and when reading due retried rows with
   the new ones, nor why that lever delivered 2 of 100 on one track. What separates the arrival's attempts alone from
   all of them over 45 s rests on one run each. No cell ran in a browser, on IndexedDB or over RTC.
 - Of section 13: the built code's loaded figures rest on three runs a column, its quiet cells on one or two
-  ("Ordered room messages, with the hand-on built"). Not run: a lane whose pages are full of other claimable work,
+  ("Ordered room messages, with the hand-on built"). The one mixed cell, one track at 5 a second beside five unordered
+  publishers, two runs, showed the unordered publishers complete (200 of 200) at their receipt rate with their read's
+  p50 at 0.715 and 0.862 s against the guard's 0.454 s, while the track's batches ran at the page for 6.0 and 6.1 s;
+  no bound per track per batch was tried against it. Not run: a lane whose pages are full of other claimable work,
   more than five publishers, more than one over-driven track, an over-driven track on a loaded host, latencies above
   +10 ms, and any browser, IndexedDB or RTC cell; so whether a full page's batch stays inside its 10 s lease beyond
   the measured 8.0 s is not shown. Why one track at 4 a second parks 6 to 13 sends, and why the WS server's room
@@ -1953,8 +1982,9 @@ the mixed cell). A drain is one inbound batch's `effect-drain`.
 
 ## Decision rows drafted
 
-Appended to `playground/alm/alm-improvement-plan.md` as D770 to D784. D784 is restated in both, here and in the
-roadmap, to what was decided on 2026-11-26, built and measured; D783 names the function its fresh attempts now share.
+Appended to `playground/alm/alm-improvement-plan.md` as D770 to D785. D784 is restated in both, here and in the
+roadmap, to what was decided on 2026-11-26, built and measured, its loaded run read by the cause D785 repairs; D783
+names the function its fresh attempts now share; D785 is section 13, decided on 2026-11-27, built and measured.
 
 | #    | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1972,4 +2002,5 @@ roadmap, to what was decided on 2026-11-26, built and measured; D783 names the f
 | D781 | **`admitted` on the admitting socket (decided 2026-11-25, D782).** An `admitted` receipt with a head behind it, one that expects somebody (`isWsQueueBoxServerHeadBackedAdmittedReceipt`), is written to the origin's sockets on the instance that answers it: the admitting one at ingress, the one whose worker runs a kept send's replay, or the one answering a re-sent copy, under a fresh control id. Its outbox row is enqueued only when no socket there took it: a connection whose socket filter refuses the frame (`acceptsOutbound`) is not called, and a write that threw is recorded `failed`; either way the receipt is a row. An `admitted` that expects nobody has no head and is the send's terminal settlement at the origin, so it keeps its row, as every terminal receipt does. An `admitted`'s row never settles the server's own pending row: only the ended work's terminal receipt does. What the row promised: one socket write once the origin has a session somewhere, never repeated, since no receipt control is acknowledged. The live send is that one write without the enqueue, the replay and the dequeue, made only after the admission and the head's `open` committed. A lost live frame is recovered where the origin resends: a send holding a first-hop wait writes its frame again at each window (2 s, three retries by default), and the copy is answered from the record. Nothing recovers it for a send with no first-hop wait (retry `none`, or a kept send whose wait the `not-yet-in-sync` NACK ended): a sender that resends nothing reads only its terminal receipt, which keeps its durable row. Observed: one `receipt-transport` per connection written (`transport: 'recipient'`, `nativeCall` from the socket's send evidence, `publisherCall: 'absent'`, `originIsHere: true`, `outcome` `sent` or `failed`) and no `receipt-outbox`, which stays the enqueue of an issued receipt; no field is added. Pinned in `ws-kept-send-receipt.test.ts` (a lost frame answered again at the first-hop window; retry `none`; the NACK-ended wait), `ws-queue-box-server-receipt-observation.test.ts` (the transport; a refused frame keeps its row) and `ws-queue-box-server-receipt-retransmission.test.ts` (an `admitted` row leaves the server's pending row unsettled). Cost if wrong: a lost live `admitted` of a send with no first-hop wait is recovered by nothing; keeping its row needs the origin's retry plan, which the server cannot read.                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | D782 | **The maintainer's rulings of 2026-11-25 on the receipts' delivery, and its measurement (D779 to D781).** Asked where the fix for the five-publisher backlog goes, the maintainer answered "Fix in #885", and in the same message "rebase onto main" (`main` came in by one merge commit instead: a rebase needs a force-push the session's permission check refused). Asked which fix to build, with the options "A + B (Recommended)", "A alone" and "All receipts live" (A: a receipt control's commits fence on its own version, not the server's sender version; B: `admitted` on the admitting socket, its row the fallback), the maintainer chose "A + B (Recommended)", and after two explanations, of where the fence is and of how a conditional write validates a read, "proceed with A + B". Asked how far A reaches, with the options "Wide (Recommended)" (every commit that read no shared sender state, D780) and "Narrow" (receipt controls only): "Wide (Recommended)". The options' descriptions are the questions', not the maintainer's words. Measured locally, three WS server instances on PostgreSQL, every statement, BEGIN and COMMIT delayed, unordered receipted room sends from one or five publishers at 2 a second each, each built run after a control run of the tree before D780 and D781, load 1.0 to 3.7: all 16 built runs keep up. Five publishers at +5 ms, 20 s, three runs each: 200 of 200 `complete` by the deadline (control 111 to 124); `admitted` p50 over the last ten 0.13 to 0.14 s (control 18.4 to 18.9 s) and `complete` 0.42 to 0.47 s (control 18.4 to 19.6 s); 19.5 of 20.1 receipts read a second (control 3.6 to 3.7); no receipt enqueue retained (control 225 to 231 of 400) and no receipt commit conflicted (control 39 to 40 % of replays, 19 to 21 % of dequeues); 223 to 225 statements a message (control 343 to 351). Over 45 s 450 of 450 (control 66). With the server's own sequenced publication every 500 ms: 200 of 200 and its 40 of 40 complete in each run (control 80 to 99, and of the 120 publications 2 complete and 3 `timed-out`), 22 to 28 batches a run written as two fence groups, none threw. One publisher, and five at +0 ms, keep up on both trees. Not shown: the hosted latency (about 5 ms from one run), latencies above +5 ms, more than five publishers, `main` in the cell, group-state deltas themselves; ordered sends are D784. The limits that stay are in `packages/shared/alm/receipt-record/README.md`. Cost if wrong: the receipts return to one serialized queue on `version:server`.                                                                                                                                                                                                                                                                                                                                                               |
 | D783 | **An ordered delivery's completion is guarded on its position and its slot, with fresh attempts (decided on the maintainer's behalf while they were away).** Cause: the completion commit made after the application was handed an ordered message was fenced on the whole message observation; the next admission on the track rewrites its delivery-progress row to extend the expiry with the same `completedThrough`, so the completion lost, answered `retry`, and its work dispatched the message again. Older than this work and reachable in production, inside one PostgreSQL round trip; the faster ingress of D781 made it reachable on every run. The guard (`commitDeliveryCompletion`, `computeALInboundDeliveryCompletionMutations`): one write that commits when the stored `completedThrough` and the stored slot, compared whole, are the ones read; it places the new position itself from them, keeps the larger expiry, and writes nothing otherwise. A write that still loses (a moved position or slot; on PostgreSQL a row version moved inside the write's own round trip) starts a fresh attempt, a full read and decision, three in all with no wait (`retryALInboundLostWrite`). What can still hand a delivered message to the application again: every attempt lost; a shutdown between dispatch and completion; two instances holding the same work after a lease expiry, the class of a crash between dispatch and completion. What cannot: the completion that cannot be placed, its predecessor not completed, never follows a dispatch. Measured with ordered receipted sends through the WS server (D784), built beside the tree before this guard: in 13 built runs none of the 1 to 200 messages a run was handed twice and no completion needed a third attempt; 22 first attempts lost, each to an expiry refresh, and each won at the next; the control handed 3.3 to 14.7 % of what it delivered at five publishers more than once, up to three times. With D784's fresh attempts five publishers' tracks keep up over 45 s, and no completion took a third attempt. The lever if it matters: refresh the progress expiry only when it moves materially. Pinned in `al-inbound-delivery-completion.test.ts` (memory and PostgreSQL), `al-inbound-ordered-delivery.test.ts` and `ws-queue-box-server-ingress.test.ts` (sends back to back, each handed once). Decided on the maintainer's behalf because this work made a latent defect reachable every run. Cost if wrong: one commit in the shared inbound runtime every carrier uses (the WS server, the WS client, an RTC receiver) that could have been its own pull request.                                                                                                                                                                                                                                                                                    |
-| D784 | **Ordered room sends under load: an inbound write that is lost is looked at again at once (decided by the maintainer on 2026-11-26: "hold for the fix"; "Let's complete 1 here in this session." (repair the ordered mode here); "Retry-at-once only (Recommended)"; the design "Approve (Recommended)").** A browser's room send is ordered by default. Five publishers of ordered receipted sends at +5 ms, one track each, on three WS servers on PostgreSQL, did not keep up before: 154-174 of 200 complete over 20 s, 26-32 parked `pending-admission`, recipients 7.1-21.0 s behind; 131 of 450 over 45 s. Causes: an admission whose read and write straddle another commit on its track (a completion, or another admission's rewrite of the progress row's expiry) lost its write and was parked; a buffered release lost the same way and answered `retry`; the work rotation reads RETRY rows only after every NEW row. Built: an arrival, a retained admission's replay (asking its authority again each time) and a buffered release that lose their conditional write make a fresh attempt in the same call, each a full read, decision and write, at most three with no wait, through `retryALInboundLostWrite`, which the completion of D783 uses too; only a lost write is tried again (a readmission waiting for its first delivery answers `waiting`); three lost writes park or retry it as before. Measured: 200 of 200 in three 20 s runs and 450 of 450, none parked, recipients 0.6-0.7 s behind (at most 1.2 s), receipts read at 19.3-19.7 /s of 20.0-20.1. One track keeps up at 2 a second in every run, at 3 in three runs of four (before: none), at 4, 5 and 10 in none. Found: at 10 a second the progress row loses more writes (813-814 of 981-982; before 433-444 of 597-613), completions no worse; at 5 a second the track ends `resync-required` in both runs (before: neither); frames read twice at 10 a second on both trees, not probed; one five-publisher run on a loaded host (load 7.5 to 13.1) completed 108 of 200, 14 retried dispatch rows never claimed again; repeated, it passed. Not built: writing the progress row only when needed (the browser's marker cap would evict a live track's marker; the prototype's guard needs a visit-once walk); reading due retried rows with the new ones (2 of 100 on one track, frames read twice); admitting a track's arrivals in turn (an in-memory queue before a conditional write); claiming a track's next dispatch in the batch that completed its predecessor (not prototyped). The limit that stays: one track at 3 a second or more, and a single retried row still holds its track; faster streams are for ordering end to end in Rallar Web, planned separately (`plans/backlog.md`, "The limit of one ordered track"). Cost if wrong: an arrival under contention costs up to three read-and-write rounds before it is parked.                      |
+| D784 | **Ordered room sends under load: an inbound write that is lost is looked at again at once (decided by the maintainer on 2026-11-26: "hold for the fix"; "Let's complete 1 here in this session." (repair the ordered mode here); "Retry-at-once only (Recommended)"; the design "Approve (Recommended)").** A browser's room send is ordered by default. Five publishers of ordered receipted sends at +5 ms, one track each, on three WS servers on PostgreSQL, did not keep up before: 154-174 of 200 complete over 20 s, 26-32 parked `pending-admission`, recipients 7.1-21.0 s behind; 131 of 450 over 45 s. Causes: an admission whose read and write straddle another commit on its track (a completion, or another admission's rewrite of the progress row's expiry) lost its write and was parked; a buffered release lost the same way and answered `retry`; the work rotation reads RETRY rows only after every NEW row. Built: an arrival, a retained admission's replay (asking its authority again each time) and a buffered release that lose their conditional write make a fresh attempt in the same call, each a full read, decision and write, at most three with no wait, through `retryALInboundLostWrite`, which the completion of D783 uses too; only a lost write is tried again (a readmission waiting for its first delivery answers `waiting`); three lost writes park or retry it as before. Measured: 200 of 200 in three 20 s runs and 450 of 450, none parked, recipients 0.6-0.7 s behind (at most 1.2 s), receipts read at 19.3-19.7 /s of 20.0-20.1. One track keeps up at 2 a second in every run, at 3 in three runs of four (before: none), at 4, 5 and 10 in none. Found: at 10 a second the progress row loses more writes (813-814 of 981-982; before 433-444 of 597-613), completions no worse; at 5 a second the track ends `resync-required` in both runs (before: neither); frames read twice at 10 a second on both trees, not probed; one five-publisher run on a loaded host (load 7.5 to 13.1) completed 108 of 200: a completion later than the next send left its successor to the rotation, so all tracks fell behind (D785). Not built: writing the progress row only when needed (the browser's marker cap would evict a live track's marker; the prototype's guard needs a visit-once walk); reading due retried rows with the new ones (2 of 100 on one track, frames read twice); admitting a track's arrivals in turn (an in-memory queue before a conditional write); claiming a track's next delivery in the batch that completed its predecessor (built since: D785). The limit that stays is D785's; faster streams are for ordering end to end in Rallar Web, planned separately (`plans/backlog.md`, "What stays of the limit of one ordered track"). Cost if wrong: an arrival under contention costs up to three read-and-write rounds before it is parked.                                   |
+| D785 | **A completed delivery hands its track's next message on (decided by the maintainer on 2026-11-27: "Show me the design first"; then "Approve, build it (Recommended)").** Cause, probed on D784's loaded run: when a message's dispatch and completion outlast the gap to its sender's next send (a loaded host, a database slower than +5 ms a statement, one slow completion, a fast sender), the next delivery reads its predecessor waiting and is set aside, its row new; only the rotation claimed it, seconds later, so the track never regained the fast path while the rate held, and every ordered track on the rotation fell behind with it and expired at one send. The rule: the batch that completes a delivery of a track, a dispatch or a release, reads the track's slot after the committed position and reserves the row it names only when it is the lane's own type, due, unexpired, ready now and as read (`claimObserved`). It runs it after every claim the batch holds, while the batch holds fewer than a page (`claim-al-inbound-ordered-successor.ts`); D190's release promotion is one case of it, its own lookup deleted. Bounds: 16 claims a batch; one reservation per row; no page read, rotation move or lease-timeout sweep; no write but the reservation; order decided again at dispatch; nothing kept between claims; a failed lookup is a reported batch failure. Measured, three WS servers on PostgreSQL at +5 ms, five ordered publishers beside eight CPU burners: 200 of 200 in 3 of 3 runs, no RETRY row, no track ended, nothing handed twice, hand-offs in order, largest batch 4.1-4.9 s at 16 claims, slowest read 5.4, 1.7, 8.0 s; before: 141, 145, 200, four tracks ended in each of two runs, slowest read 24-30 s. Quiet: 200 and 450 on both. +10 ms: 200, 200, p50 8.1, 7.2 s, batches 7.5-8.0 s of the 10 s lease; before 75, 70. One track keeps up at 3 a second; at 4 completes 80 of 80, the last 5.8 and 6.4 s behind (before 52, 47); at 5, 31 and 63 of 100, ended (before 72, 68). A track at 5 a second leaves five unordered publishers 200 of 200, p50 0.715, 0.862 s against 0.454 s. On PostgreSQL an idle completion costs one statement more, a hand-on 10 on its row against the rotation's 6. Restated: three promotion counts and the 64-message drain (16, 16, 16, 16, 1) in `al-inbound-release-promotion.test.ts`, the handler's successor cases; `effect-drain.promoted` counts every hand-on, the observation's field is `promotedDeliveries`. Does not: hand on from a full batch, follow an omission, cross carriers, order the room fan-out. Not built: a head read when a hand-on stops at the page (not measured); a per-track bound per batch (a new parameter); carrying the readiness surface on (two reads); `expedite()` instead (broke the page bound). Cost if wrong: an over-driven track holds its lane's batches at a full page, ahead of the rotation.         |

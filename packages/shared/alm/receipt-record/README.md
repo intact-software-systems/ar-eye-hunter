@@ -264,27 +264,33 @@ the last bullet's are ordered, which is what a browser's room send is by default
 - **The record stays exact.** No publisher's unordered room message, before or after, read `timed-out` or two
   terminal receipts. Of the server's own publications, the runs before ended 3 of 120 `timed-out`, 2 `complete` and
   never opened the rest; the runs after completed all 120.
-- **Five publishers of ordered sends keep up at +5 ms.** The same five publishers, each message ordered on its
-  publisher's own track and receipted. In three 20 s runs all 200 complete by their deadline, and over 45 s all 450,
-  with no send answered `pending-admission`, no message handed to the application twice and no frame read twice or out
-  of order at recipients; recipients read a message 0.6 to 0.7 s after its send (p50, at most 1.2 s), and receipts are
-  read at 19.3 to 19.4 of 20.1 a second (19.7 of 20.0 over 45 s). Before the server's inbound runtime looked again at
-  once at an admission, a replay or a release whose write was lost, the same cell completed 154 to 174 of 200, with 26
-  to 32 sends parked `pending-admission` and recipients 7.1 to 21.0 s behind, and 131 of 450 over 45 s. One run taken
-  beside another session's test suites (its 1-minute load rising from 7.5 to 13.1) completed 108 of 200 and ended five
-  tracks `resync-required`; its repeat on a quiet machine kept up (below, "Stated limits"). The stall was in the inbound
-  ordered admission on the server, not in the record; what remains of it is in `plans/backlog.md` ("The limit of one
-  ordered track", D784).
+- **Five publishers of ordered sends keep up at +5 ms when a message completes before its sender's next one.** The
+  same five publishers, each message ordered on its publisher's own track and receipted. On a quiet machine, in three
+  20 s runs all 200 complete by their deadline, and over 45 s all 450, with no send answered `pending-admission`, no
+  message handed to the application twice and no frame read twice or out of order at recipients; recipients read a
+  message 0.6 to 0.7 s after its send (p50, at most 1.2 s), and receipts are read at 19.3 to 19.4 of 20.1 a second
+  (19.7 of 20.0 over 45 s). Before the server's inbound runtime looked again at once at an admission, a replay or a
+  release whose write was lost, the same cell completed 154 to 174 of 200, with 26 to 32 sends parked
+  `pending-admission` and recipients 7.1 to 21.0 s behind, and 131 of 450 over 45 s. Under load, with eight CPU
+  burners beside the run (a 1-minute load of 6.6 to 10.2 at a run's start), all 200 complete in each of three runs,
+  with no track ended, nothing handed twice and every track's hand-offs in order, at a read of 0.9 to 1.9 s (p50; the
+  slowest 1.7 to 8.0 s), since the batch that completes a delivery now hands its track's next one on; the code before
+  that completed 141, 145 and 200 and ended four tracks in each of the two runs that failed, its slowest read 24.0 to
+  30.1 s. At +10 ms on a quiet machine all 200 complete in both runs at a read of 7.2 and 8.1 s (p50), against 75 and 70
+  before. The stall was in the inbound ordered delivery on the server, not in the record; what remains of it is in
+  `plans/backlog.md` ("What stays of the limit of one ordered track", D784, D785).
 
 ## Stated limits
 
 - **One ordered track.** A browser's room send is ordered by default. One ordered track through the WS server at
-  +5 ms keeps up at 2 messages a second in every run, at 3 a second in three runs of four, and at 4, 5 and 10 a second
-  in none: it falls behind, only the first messages of the track complete, the rest pass their 30 s lifetime and end
-  `timed-out`, and at 5 a second the track ended `resync-required`, a NACK to its sender, in both runs. A single
-  retried inbound work row still holds its track until the work rotation reaches it, so a loaded host can stall five
-  ordered publishers too (above, "Measured"). Faster streams are what ordering end to end in Rallar Web is planned
-  for.
+  +5 ms keeps up at 3 messages a second in every run. At 4 a second it completes 80 of 80 in both runs but reads its
+  last message 5.8 and 6.4 s behind; at 5 a second it completed 31 and 63 of 100 and the track ended
+  `resync-required`, a NACK to its sender, in both runs (the code before the hand-on completed 72 and 68); at 10 a
+  second it keeps up in none. Above the rate a track carries, only the first messages of the track complete and the
+  rest pass their 30 s lifetime and end `timed-out`. A track whose sender keeps its rate is handed on at most a page of
+  16 a batch and waits for the work rotation between batches, so its lag climbs while the rate holds (under load the
+  worst of each of three runs was 1.3, 5.1 and 7.7 s); a lane whose batches are already full of other claimable work hands nothing on and behaves as before, a case
+  no run covered. Faster streams are what ordering end to end in Rallar Web is planned for.
 - **The sender's version still moves.** A message end through the message-end bundle (a spent repair budget, a
   re-plan refused for good, a receipt control's included) and each ACK window fence the sender, so a server
   publication's own receipt windows keep competing for the server's version row.
@@ -334,11 +340,17 @@ the last bullet's are ordered, which is what a browser's room send is by default
   a receipt. A copy's opening names its own snapshot version, since the version its audience was read at is not
   stored.
 
-Not shown: the hosted statement latency itself (the runs were local, at +0 and +5 ms); latencies above +5 ms; more than
-five publishers in a room, so the rate at which the receipts stop keeping up; `main` in the five-publisher cell;
-group-state deltas themselves, which the measurement stood in for with one sequenced publication every 500 ms, and a
-higher server publication rate; why one ordered track at 3 a second kept up in three runs of four and not in the
-fourth, and why a track that has fallen behind completes slower than one that keeps up; why recipients read room
+Not shown: the hosted statement latency itself (the runs were local, at +0, +5 and, for ordered sends, +10 ms);
+latencies above +5 ms for unordered sends and above +10 ms for ordered ones; more than five publishers in a room, so the
+rate at which the receipts stop keeping up; `main` in the five-publisher cell; group-state deltas themselves, which the
+measurement stood in for with one sequenced publication every 500 ms, and a higher server publication rate; for ordered
+sends, a lane whose pages are full of other claimable work, more than one over-driven track, an over-driven track on a
+loaded host, and whether a batch at the page stays inside its 10 s lease beyond the 8.0 s measured at +10 ms; why one
+ordered track at 4 a second parks 6 to 13 sends at admission; why the WS server's room fan-out writes two closely
+spaced hand-offs of one track out of order at a raw socket (14 frames in one loaded run; a Rallar receiver's ordered
+delivery restores the order); across two server instances, the room fan-out leaving from the instance that completed
+the predecessor, that instance's readiness read asking its own dispatch port, and an arrival's commit against a
+completion's commit; a release handed on reading its slot a second time, on PostgreSQL; why recipients read room
 frames twice on one track at 10 a second, with the inbound's fresh attempts and without them, though the subscriber was
 handed each message once; any ordered cell in a browser, on IndexedDB or over RTC; whether a sender's resend unblocks
 a stalled track (the harness resends nothing); the recovery of a lost live `admitted` by the

@@ -723,7 +723,7 @@ Web and API deploy together.
 | Initial data admission conflict | An admission whose write is lost reads and decides again at once, in the same call, three attempts in all with no wait (`retryALInboundLostWrite`): the winner has committed, so the next read sees it. The message is retained as `admit-message` in the same inbound QueueBox namespace, with its source and original deadline, only when all three writes lose, or when it is a readmission that waits for its first delivery (`waiting`, which wrote nothing and is not attempted again), whether its plan admitted or dropped it: a bundle that writes nothing never meets the fence, so the rolled-back one carried rows or effects (a drop's NACK among them) that the replay plans afresh against the winner. Retention checks exact content and identity on reuse. | The caller receives `pending-admission`; the worker later calls `replay`, which makes up to three fresh attempts in its claim, each asking the replay's authority again. Pending storage earns no ACK and, on the WS server, no receipt: the replay that admits the message starts it. |
 | Control ingress                 | [`ALInboundControlAdmission`](./control/al-inbound-control-admission.ts) reads the tracked message and expected control peer, then [`computeALInboundControlAdmission`](./control/compute-al-inbound-control-admission.ts) and [`validateALInboundControlAdmission`](./control/validate-al-inbound-control-admission.ts) decide the candidate before a conditional commit of its state and effects. Unknown controls cannot create a pending data message.                                                                                                                                                                                                                                                                                                                  | A commit that wrote work announces it, and the configured control callback receives the acceptance. A commit conflict retains `admit-control` work, answers `pending-admission`, and the worker's replay reports the acceptance through the same callback.                             |
 | Admitted delivery               | `ALInboundAdmittedDelivery` decides on the surface its eligibility read carried, and reads that surface itself — the retained message and its stored planning state, from one session — for a claim that carries none. It then re-checks expiry and ordering before it dispatches locally or forwards through the supplied port.                                                                                                                                                                                                                                                                                                                                                                                                                                            | The worker completes or reschedules the claimed QueueBox entry.                                                                                                                                                                                                                        |
-| Buffered release                | [`ALInboundOrderedDelivery`](./al-inbound-ordered-delivery.ts) reads progress and buffered work, computes a permitted release or resynchronization result, and commits the observed transition. A release whose write is lost reads the slot and the progress and decides again in the same claim, three attempts in all with no wait; only when all three lose does it hand its work back (`retry`).                                                                                                                                                                                                                                                                                                                                                                       | Local dispatch occurs only after the required release decision; the same batch promotes the track's next release (D190), and later work becomes eligible through the same worker.                                                                                                      |
+| Buffered release                | [`ALInboundOrderedDelivery`](./al-inbound-ordered-delivery.ts) reads progress and buffered work, computes a permitted release or resynchronization result, and commits the observed transition. A release whose write is lost reads the slot and the progress and decides again in the same claim, three attempts in all with no wait; only when all three lose does it hand its work back (`retry`).                                                                                                                                                                                                                                                                                                                                                                       | Local dispatch occurs only after the required release decision; the batch that completes it hands on the track's next delivery, a release or a dispatch (D190, D785), and later work becomes eligible through the same worker.                                                         |
 | Gap renewal                     | A `renew-gap` row comes due: [`ALInboundGapRenewal`](./gap-renewal/al-inbound-gap-renewal.ts) reads the track's ordering snapshot and, while part of its range is still missing, retains the gap NACK and `missing-seq` request for that part under the row's number and the next number's timer.                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | The claim completes; the retained controls are sent as any `send-control` row is, and the next timer comes due later.                                                                                                                                                                  |
 
 **A delivery's completion.** After the application is handed an ordered message, its completion moves the track's
@@ -748,21 +748,43 @@ plan or a disabled local delivery reach it, and they hand the application nothin
 and the position has not moved past the message.
 
 **Under load.** Measured through the WS server on PostgreSQL, three instances with every statement, BEGIN and COMMIT
-delayed 5 ms, five publishers of ordered receipted room sends, one track each at 2 a second (D784): in three 20 s runs
-and one 45 s run every message completed by its deadline (200 of 200, 450 of 450), no send was parked, recipients read a
-message 0.6 to 0.7 s after its send (p50, at most 1.2 s), and receipts were read at 19.3 to 19.7 a second of the 20.0 to
-20.1 offered. Without the fresh attempts the same publishers completed 154 to 174 of 200 and 131 of 450, with recipients
-7.1 to 21.0 s behind. Every admission on a track still rewrites its delivery-progress row only to extend its expiry
-(`computeDeliveryProgressRetention`), so a completion, a buffered release or another admission that read the row still
-loses its compare-and-set; that now costs the loser another attempt rather than a parked send. A replay or a release
-that loses three writes, or a local dispatch that ran before its predecessor's completion, still goes to RETRY, which
-the work rotation reads only after every NEW row (`read-al-inbound-work-selection.ts`), and its track waits with it. One
-run of the five publishers taken beside other test suites on the same machine (its 1-minute load rising from 7.5 to
-13.1) made 14 such dispatch rows, none claimed again, completed 108 of 200 and ended five tracks `resync-required`; its
-repeat on a quiet machine kept up. One run, but it shows that a loaded host can still stall a track. One ordered track
-keeps up at 2 messages a second in every run, at 3 a second in three of four, and at 4 a second or more in none: it
-falls behind, its later messages pass their lifetime, and at 5 a second it ended `resync-required` in both runs. The
-levers not built and their known problems are in `plans/backlog.md` ("The limit of one ordered track").
+delayed 5 ms, five publishers of ordered receipted room sends, one track each at 2 a second (D784, D785): on a quiet
+host, in three 20 s runs and one 45 s run every message completed by its deadline (200 of 200, 450 of 450), no send was
+parked, recipients read a message 0.6 to 0.7 s after its send (p50, at most 1.2 s), and receipts were read at 19.3 to
+19.7 a second of the 20.0 to 20.1 offered. Without the fresh attempts the same publishers completed 154 to 174 of 200
+and 131 of 450, with recipients 7.1 to 21.0 s behind. Every admission on a track still rewrites its delivery-progress
+row only to extend its expiry (`computeDeliveryProgressRetention`), so a completion, a buffered release or another
+admission that read the row still loses its compare-and-set; that now costs the loser another attempt rather than a
+parked send. A replay or a release that loses three writes still goes to RETRY, which the work rotation reads only
+after every NEW row (`read-al-inbound-work-selection.ts`), and its track waits with it.
+
+Why ordered tracks fell behind together: when one message's dispatch and completion take longer than the gap to its
+sender's next send (a loaded host, a database slower than +5 ms a statement, one slow completion, or a sender faster
+than the cycle), the next message's delivery reads its predecessor waiting and is set aside, its row still new. Before
+a completed delivery handed its track's next one on, only the rotation claimed that row again, seconds later, by which
+time the arrival after it had found its own predecessor unfinished too. So the track did not return to the fast path
+while its sender kept its rate, every ordered track that shared the rotation fell behind with it and reached the 30 s
+lifetime at the same send, and the expired message's successor read `resync-required` and ended its track. Now the
+batch that completes a delivery claims the track's next one ("Buffered releases and the snapshot cap.", below).
+Measured with eight CPU burners beside the run (a 1-minute load of 6.6 to 10.2 at a run's start), in three runs a
+column: every message completed in each run, no RETRY row was made, no track ended, nothing was handed to the
+application twice and every track's hand-offs were in order, the largest batch ran 4.1 to 4.9 s with 16 claims, and
+the slowest read of a run was 5.4, 1.7 and 8.0 s; the code before completed 141, 145 and 200 of 200, ended four tracks
+in each of the two runs that failed, and its slowest read was 24.0 to 30.1 s. The quiet cells read the same on both. At
++10 ms on a quiet host the built code completed 200 and 200 with no track ended, at a read of 8.1 and 7.2 s (p50, at
+most 25.6 s), its batches running at the page for 7.5 to 8.0 s of their 10 s lease; the code before completed 75 and 70
+and ended tracks. So five ordered publishers keep up on a host and a database fast enough that a message completes
+before its sender's next one arrives. When one does not, the track no longer stalls, but while its sender keeps its
+rate the batches run at the page and a lagging track's lag climbs (to 1.3, 5.1 and 7.7 s, the worst of each loaded
+run), falling only once the sends end; a prototype of the rule, measured under the same load before it was built,
+caught up between batches and peaked at 0.8 to 5.1 s. One ordered track keeps up at 3 messages a second in every run.
+At 4 a second it completed 80 of 80 in both runs but read its last message 5.8 and 6.4 s behind (the prototype: 1.5
+and 3.8 s; the code before completed 52 and 47 and ended the track); at 5 a second it completed 31 and 63 of 100 and
+ended the track `resync-required` in both, fewer than the 72 and 68 the code before completed in those runs; at 10 a
+second neither keeps up. One track at 5 a second beside five unordered publishers on the same server left the unordered
+publishers complete (200 of 200 in both runs) at a read of 0.715 and 0.862 s (p50) against 0.454 s without it, since a
+message arriving on that lane waits for the track's full batch. The levers not built and their known problems are in
+`plans/backlog.md` ("What stays of the limit of one ordered track").
 
 `validateALInboundControlAdmission` returns every reason an acknowledgement is
 inadmissible; the caller joins them into one rejection reason. Only an absent pending
@@ -972,22 +994,37 @@ it is dropped `stale` with no NACK and stays unconfirmed in the origin's receipt
 
 **Buffered releases and the snapshot cap.** The message that closes a gap writes one release row per sequence it makes
 releasable, and each release is eligible only once its predecessor is delivered, so a page holds one claimable release
-of a track and defers the rest. A batch whose delivery of track T completed through seq k, a dispatch or a release,
-hands its place to the delivery T's slot at seq k + 1 names (D190, D785): the handler asks the selector's
-`claimOrderedSuccessor`, which reads that slot and then the row it names by its key
-([`claim-al-inbound-ordered-successor.ts`](./lane/claim-al-inbound-ordered-successor.ts)), not by searching the page,
-and reserves it only when it is this lane's, due, its eligibility reads claimable now and the row is still as the read
-saw it, as a new or retrying row only: a hand-on whose row moved on claims nothing and spends no lease-timeout sweep.
-The batch runs it after its other claims and asks again for its successor while the batch holds fewer than
-`AL_INBOUND_WORK_PAGE_SIZE` (16) claims. A `claimOrderedSuccessor` that throws is reported as the batch's failure and
-hands nothing on; the batch's unrun claims still run. Only a completed delivery hands on: one that did not complete
-ends its track's chain for that batch, a track never has two deliveries claimed at once, and a delivery never hands on
-another track's. A 64-message buffer drains in 5 batches (the first delivers the gap-filling message and hands on 15
-releases, each of the next three runs 16 claims, 15 of them handed on, and the last runs one), where one release per
-engine round took 65 batches: 0.4 s against 7.5 s in memory, and 0.7 s against
-13.5 s on IndexedDB with 84 % fewer IndexedDB operations. A 255-message buffer drains in 17 batches (2.1 s in memory,
-33.5 s before), well inside the 30 s default message lifetime that the old drain outlived. The `effect-drain` of such a
-batch counts the deliveries it ran by hand-on as `promoted`, and they leave its `deferred`.
+of a track and defers the rest. One rule carries a track on, whichever kind its next delivery is (D190, D785): the
+batch that completes a delivery of track T, a dispatch or a release, claims the delivery T's next message waits on.
+Who claims is the lane's own work batch that ran the completing claim (on the WS server the instance whose worker
+completed it, over the store every instance shares; in a browser the tab that owns the session's work). The completion
+states the position it committed, `completedThrough` k, and the handler hands it to the selector's
+`claimOrderedSuccessor` ([`claim-al-inbound-ordered-successor.ts`](./lane/claim-al-inbound-ordered-successor.ts)),
+which finds the successor by one read of T's slot at seq k + 1 and then the row that slot names, by its key, not by
+searching a page. It reserves the row only when it is this lane's work type, not expired, due (a new row, or a retried
+one whose delay has passed), its delivery reads ready now, by the readiness read the rotation's page makes, and the row
+is still as the read saw it, as a new or retrying row (`claimObserved`). The handed-on claim runs after every claim the
+batch already holds, and the batch asks for a successor only while it holds fewer than `AL_INBOUND_WORK_PAGE_SIZE` (16)
+claims. It claims nothing, and writes nothing, when no slot stands at k + 1 (the next message not admitted yet, behind
+a gap, or left out for this receiver), when the slot names no delivery row or one of another carrier's lane, or when
+the row is reserved elsewhere, expired, not due, not ready or moved since the read. A successor whose track has ended
+(its progress row gone, its delivery reading `resync-required`) is reserved, so that its dispatch rejects it, as the
+rotation's page reserves it. A delivery that did not complete hands nothing on, a full batch or a lane being disposed
+asks for nothing, a track never has two deliveries claimed at once, and a delivery never hands on another track's. The
+lookup reads no page, leaves the rotation's position where it was and runs no lease-timeout sweep; the only write is
+the reservation, and order is decided again at dispatch, from the store. A `claimOrderedSuccessor` that throws is
+reported as the batch's failure and hands nothing on; the completed claim stays completed and the batch's unrun claims
+still run. On PostgreSQL an ordered completion with nothing waiting costs one statement more, the slot read, and a
+hand-on spends 10 statements on its row against the rotation's 6 (the slot read, the row read, and a second read of the
+message and its owner row, since the handed-on delivery reads its own surface again), where the rotation also spends
+three reads a batch (its page, the rows out of attempts, the lease-timeout read). A 64-message buffer drains in 5
+batches of 16, 16, 16, 16 and 1 claims: the first delivers the gap-filling message and hands on 15 releases, each of
+the next three hands on 15, and the last runs one. Measured before this rule, when the first batch ran the gap-filling
+message alone and only a release was handed on, the same buffer drained in 5 batches where one release per engine round
+took 65: 0.4 s against 7.5 s in memory, and 0.7 s against 13.5 s on IndexedDB with 84 % fewer IndexedDB operations; a
+255-message buffer drained in 17 batches (2.1 s in memory, 33.5 s before), well inside the 30 s default message
+lifetime that the one-release drain outlived. Those timings were not taken again. The `effect-drain` of such a batch
+counts the deliveries it ran by hand-on as `promoted`, and they leave its `deferred`.
 
 A store built with `maxOrderingTracks` keeps at most that many ordering snapshots (D191): the browser's
 session and volatile stores pass `AL_INBOUND_MAX_ORDERING_TRACKS` (256); the WS server's Postgres stores, the
@@ -1372,7 +1409,7 @@ reservation; and `startedAtMs`, when the claim itself started — so the reserva
 serialization behind earlier claims of the run loop alone) are each named rather than left for
 a reader to subtract. `effect-drain` carries the matching `startedAtMs`, names the effects it
 ran in run order (`claimedEffectIds`, recorded by this owner as it runs them) and counts the
-releases it ran by promotion (`promoted`, D190). The due rows a page
+deliveries it ran by hand-on (`promoted`, D190, D785). The due rows a page
 saw and did not run ride on the events that already exist, never on one of their own: a
 batch that ran claims lists them in its `effect-drain.deferred`, and every completed rotation
 folds the rows it held back into its window's `rotation-alive` (`deferredRotationCount`, and
