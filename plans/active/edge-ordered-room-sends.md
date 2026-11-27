@@ -1,7 +1,7 @@
 # Edge order: ordered room sends, sorted at the two ends
 
 Status: a plan to decide on. Nothing is built. The verdict so far is **viable, with one measurement still owed**
-(section 2.5) and the maintainer's rulings in section 4: rulings 1 to 5 and 7 are made, ruling 6 is open. It
+(section 2.5) and the maintainer's rulings in section 4: rulings 1 to 5, 7 and 8 are made, ruling 6 is open. It
 builds on the unordered path, which keeps up under load only on the tree of PR 885, so it follows that pull request
 and does not replace it.
 
@@ -378,11 +378,11 @@ as they were written before the slices ran.
   - Hand-overs are serial per stream, not per page.
   - A `granted` channel is still refused. The late joiner is proven; what is missing is one lane cell through the
     publisher proof and the `subscribe` election. It moves to slice 5.
-  - The channel options for a shorter wait cap (ruling 1) and for the entry window's length (ruling 2) are not
-    built, because their names are not ruled. They move to slice 5.
+  - The channel options for a shorter wait cap (ruling 1) and for the entry window's length (ruling 2) were not
+    built, because their names were not ruled. Ruling 8 names them; they move to slice 5.
   - **An acknowledged message can be dropped for order.** Ruling 7 answers it with a short settle time.
-  - Bundle cost: `browser/rallar.ts` 335.296 to 336.186 KiB against 336, the headless agent 436.714 to 438.213 KiB
-    against 437. The budgets wait for the maintainer.
+  - Bundle cost, with ruling 7's settle time built: `browser/rallar.ts` 335.296 to 336.334 KiB, the headless agent
+    436.714 to 438.188 KiB. The maintainer had both budgets raised in that pull request, to 337 and 439.
 
 **Where the work can stop and still be useful.**
 
@@ -508,3 +508,12 @@ that time says the send can still arrive until the settle time ends, not until i
 missing such a message therefore waits at most the settle time for it. What remains, and is stated in the documents:
 a message whose delivery lane is held up for longer than the settle time after every recipient acknowledged it can
 still be dropped as late. The receiver noting a message at admission stays the exact fix if that ever matters.
+
+**8. The names of the two channel options (before slice 5). Ruled on 2026-11-27: flat fields beside `onOrderGap`.**
+
+- _`orderGapWaitMs` and `orderEntryWindowMs` on the channel definition_ (chosen). `orderGapWaitMs` is the cap ruling
+  1 allows on how long a receiver waits for a missing message; `orderEntryWindowMs` is the length of ruling 2's
+  entry window, 500 ms by default. Both are refused on a channel that is not edge-ordered.
+- _One `order` object holding the mode, both options and the gap handler_ (not chosen). It would change ruling 4's
+  `order: 'edge'` and `onOrderGap`, which slices 3 and 4 built.
+- _Do not expose them yet_ (not chosen). A channel could then not bound its worst-case wait.
