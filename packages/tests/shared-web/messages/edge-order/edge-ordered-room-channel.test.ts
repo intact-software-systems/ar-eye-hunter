@@ -473,10 +473,6 @@ describe('an edge-ordered room channel: refused shapes', () => {
 
     it.each<[string, string, (channel: RallarTypedMessageChannel<EdgeOrderTestMove>) => Promise<object>]>([
         ['a send to the room\'s leader', '$.ack', (channel) => channel.send({ n: 1 }, { ack: 'group-leader' })],
-        ['a send that skips sessions', '$.exceptPeerIds', (channel) => channel.send({ n: 1 }, { exceptPeerIds: ['bob-session'] })],
-        ['a send to a fixed list', '$.recipientPeerIds', (channel) => channel.sendWs({ n: 1 }, { recipientPeerIds: ['bob-session'] })],
-        ['a send to one principal', '$.principalId', (channel) => channel.sendWs({ n: 1 }, { scope: 'principal', principalId: 'bob' })],
-        ['a send to one peer', '$.peerId', (channel) => channel.send({ n: 1 }, { peerId: 'bob-session' })],
         ['a send to the server', '$.peerId', (channel) => channel.sendWs({ n: 1 }, { peerId: 'server' })],
         ['a world send', '$.scope', (channel) => channel.sendWs({ n: 1 }, { scope: 'world' })],
         ['a send with an ordering key', '$.orderingKey', (channel) => channel.send({ n: 1 }, { orderingKey: 'moves' })],

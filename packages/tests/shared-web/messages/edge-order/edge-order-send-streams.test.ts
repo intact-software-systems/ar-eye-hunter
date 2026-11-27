@@ -23,11 +23,14 @@ interface ObservedSend {
     setState(state: ALDeliveryState): void;
 }
 
+/** A cap a test can pass: the page's own is 256. */
+const MAX_STREAMS = 4;
+
 function createStreams(): EdgeOrderSendStreams {
     let minted = 0;
     return new EdgeOrderSendStreams({
         newStreamId: () => `stream-${minted += 1}`,
-        maxStreams: 4,
+        maxStreams: MAX_STREAMS,
         acknowledgedSettleMs: SETTLE_MS
     });
 }
@@ -50,6 +53,7 @@ function openSend(streams: EdgeOrderSendStreams): EdgeOrderOpenSend {
         topicId: EDGE_ORDER_TEST_MOVES.topicId,
         typeId: EDGE_ORDER_TEST_MOVES.typeId,
         roomRef: EDGE_ORDER_TEST_ROOM,
+        audience: {},
         retried: true
     });
     if (send === undefined) {
@@ -129,6 +133,7 @@ describe('the page\'s edge-ordered send streams: what a send\'s lifecycle tells 
             topicId: 'room.chat',
             typeId: 'chat.line',
             roomRef: EDGE_ORDER_TEST_ROOM,
+            audience: {},
             retried: true
         });
 
@@ -152,6 +157,7 @@ describe('the page\'s edge-ordered send streams: what a send\'s lifecycle tells 
                 topicId: EDGE_ORDER_TEST_MOVES.topicId,
                 typeId: EDGE_ORDER_TEST_MOVES.typeId,
                 roomRef: { ...EDGE_ORDER_TEST_ROOM, groupId: room },
+                audience: {},
                 retried: true
             });
             if (send === undefined) {
@@ -170,5 +176,37 @@ describe('the page\'s edge-ordered send streams: what a send\'s lifecycle tells 
 
         expect(stampIn('room-1')).toMatchObject({ stream: first.stream, position: 3 });
         expect(stampIn('room-2')).toMatchObject({ position: 1 });
+    });
+});
+
+describe('EdgeOrderSendStreams: one stream per audience', () => {
+    const openTo = (streams: EdgeOrderSendStreams, peerId: string): EdgeOrderStamp => {
+        const send = streams.openSend({
+            order: 'edge',
+            topicId: EDGE_ORDER_TEST_MOVES.topicId,
+            typeId: EDGE_ORDER_TEST_MOVES.typeId,
+            roomRef: EDGE_ORDER_TEST_ROOM,
+            audience: { peerId },
+            retried: false
+        });
+        if (send === undefined) {
+            throw new Error('An edge-ordered channel\'s send has a position.');
+        }
+        return send.stamp(NOW_MS);
+    };
+
+    it('counts every audience against the page\'s send streams, and starts the one idle longest anew past the cap', () => {
+        const streams = createStreams();
+        const first = openTo(streams, 'peer-0');
+        expect(openTo(streams, 'peer-0')).toMatchObject({ stream: first.stream, position: 2 });
+
+        for (let peer = 1; peer <= MAX_STREAMS; peer += 1) {
+            openTo(streams, `peer-${peer}`);
+        }
+
+        expect(streams.getUsage().sendStreams).toBe(MAX_STREAMS);
+        const restarted = openTo(streams, 'peer-0');
+        expect(restarted.position).toBe(1);
+        expect(restarted.stream).not.toBe(first.stream);
     });
 });

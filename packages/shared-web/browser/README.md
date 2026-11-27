@@ -371,7 +371,7 @@ Message ownership is concentrated under [`messages/`](./messages/):
   whichever carrier each came over. No hop orders them: the messages travel as unordered messages and the two ends
   do the work, in memory.
   - **Send.** [EdgeOrderSendStreams](./messages/edge-order/edge-order-send-streams.ts) keeps one stream per channel
-    (topic and type) and room, with an id minted in memory, never from the session id: a reload or another tab is a
+    (topic and type), room and audience, with an id minted in memory, never from the session id: a reload or another tab is a
     new stream. `BrowserRallarMessageSender` takes the send's position in the application's own call, after the
     send's options passed validation and before the connect is awaited, so a refused send takes none. When the
     message is built, [EdgeOrderSender](./messages/edge-order/edge-order-sender.ts) states the stamp: the stream,
@@ -402,6 +402,21 @@ Message ownership is concentrated under [`messages/`](./messages/):
     `ended-at-sender` gap, and drops the earlier message as `late` if it still arrives. Such a send is itself held
     for an earlier retried send that is still missing, like any message. A stream none of whose sends is retried
     never makes a receiver wait, not even at its entry.
+  - **Narrowed audiences.** A room send may narrow its room: `recipientPeerIds`, `scope: 'principal'` with
+    `principalId`, `exceptPeerIds`, or `peerId` for one browser session, over WS or RTC. A session left out of a
+    send must never wait for it, so one stream is one channel, room and audience
+    ([EdgeOrderSendStreams.openSend](./messages/edge-order/edge-order-send-streams.ts)): the whole room is one
+    audience, each principal, each peer, each set of listed sessions and each set of skipped sessions another, in
+    whatever order a send lists the sessions. A receiver needs no rule for this: it only ever sees the streams
+    whose audience it is in, and a session that comes into an audience later (a principal's new session, a
+    session that joins a room others are skipped from) is a late joiner of that stream. Each audience counts
+    against the page's 256 send streams. A page that sends to more audiences than that starts the stream it sent
+    on least recently anew at position 1, with a new id: its receivers enter the new stream at once, and nothing
+    orders it against what the old stream carried, as after a reload. So an application that gives every message
+    its own recipient list gets a stream per message and no order between them. A send addressed to the server is
+    refused `unsupported` once the connect names the server's peer id
+    ([`validateEdgeOrderPeer`](./messages/edge-order/validate-edge-order-send.ts)): the server is not behind
+    Rallar Web's sorter. The position it took is closed, so it leaves no hole anyone waits for.
   - **A live channel.** Nothing retries a live value, so a live channel is newest-wins as above. Two things differ,
     because a live channel paces its values on a stage before admission and replaces a staged value with a newer
     one of its stream. First, one edge stream is one publication stream: the channel, room, audience and

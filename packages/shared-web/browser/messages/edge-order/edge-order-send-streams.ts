@@ -15,8 +15,8 @@ export namespace EdgeOrderSendStreams {
         /** Mints a stream id in memory. Never the session id, which a reload keeps and every tab of a login shares. */
         readonly newStreamId: () => string;
         /**
-         * Past this many channel-and-room streams the one sent on least recently is forgotten, and its next send
-         * starts a new stream.
+         * Past this many streams the one sent on least recently is forgotten, and its next send starts a new
+         * stream, which its receivers enter at once and order against nothing the old stream carried.
          */
         readonly maxStreams: number;
         /** How long a send every recipient acknowledged stays open: a recipient may not have sorted it yet. */
@@ -29,6 +29,17 @@ export namespace EdgeOrderSendStreams {
         readonly openSends: number;
     }
 
+    /**
+     * Who a room send reaches when it narrows its room: one principal, one peer, a fixed list, or everyone but
+     * some sessions. A send that names none of them reaches its whole room.
+     */
+    export interface Audience {
+        readonly principalId?: string;
+        readonly peerId?: string;
+        readonly recipientPeerIds?: readonly string[];
+        readonly exceptPeerIds?: readonly string[];
+    }
+
     /** A channel's send, as far as its order is concerned: what its channel declares and where it is going. */
     export interface ChannelSend {
         readonly order: 'edge' | undefined;
@@ -37,14 +48,16 @@ export namespace EdgeOrderSendStreams {
         readonly typeId: string;
         /** Absent only for a send that names no room, which no edge-ordered channel makes. */
         readonly roomRef: GroupRef | undefined;
+        readonly audience: Audience;
         /** Whether a lost copy of the send comes back: it is at-least-once and asks a receipt. */
         readonly retried: boolean;
     }
 }
 
 /**
- * The page's edge-ordered send streams, each minted when its first send needs it: one per channel and room, and on
- * a live channel one per publication stream, which is the unit its values replace each other in.
+ * The page's edge-ordered send streams, each minted when its first send needs it: one per channel, room and
+ * audience, and on a live channel one per publication stream, which is the unit its values replace each other in. A
+ * session left out of a narrowed send never sees that send's stream, so it never waits for it.
  */
 export class EdgeOrderSendStreams {
     private readonly streams: LatestRepository<string, EdgeOrderSender>;
@@ -58,16 +71,25 @@ export class EdgeOrderSendStreams {
     }
 
     /**
-     * Takes the next position of the channel-and-room's stream; absent for a channel that declares no order.
-     * Called once the send's options passed validation and before the send awaits anything.
+     * Takes the next position of the stream of the send's channel, room and audience; absent for a channel that
+     * declares no order. Called once the send's options passed validation and before the send awaits anything.
      */
     openSend(send: EdgeOrderSendStreams.ChannelSend): EdgeOrderOpenSend | undefined {
         const { roomRef } = send;
         if (send.order !== 'edge' || roomRef === undefined) {
             return undefined;
         }
+        const { principalId, peerId, recipientPeerIds, exceptPeerIds } = send.audience;
         return this.openStreamSend(
-            JSON.stringify([send.topicId ?? send.typeId, send.typeId, toALGroupTargetKey(roomRef)]),
+            JSON.stringify([
+                send.topicId ?? send.typeId,
+                send.typeId,
+                toALGroupTargetKey(roomRef),
+                principalId ?? null,
+                peerId ?? null,
+                toSessionSetKey(recipientPeerIds),
+                toSessionSetKey(exceptPeerIds)
+            ]),
             send.retried
         );
     }
@@ -101,6 +123,11 @@ export class EdgeOrderSendStreams {
             openSends: streams.reduce((openSends, stream) => openSends + stream.getOpenSendCount(), 0)
         };
     }
+}
+
+/** One key for one set of sessions, in whatever order a send lists them; `null` when the send names none. */
+function toSessionSetKey(sessionIds: readonly string[] | undefined): readonly string[] | null {
+    return sessionIds === undefined ? null : [...sessionIds].sort();
 }
 
 /**
