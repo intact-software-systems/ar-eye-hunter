@@ -5,8 +5,8 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
+import { toOriginRefusalFacts } from '../../carrier-matrix/to-alm-carrier-outcome-facts.ts';
 import { toAlmCellPrincipalStartCommands } from '../../granted-topic/to-alm-cell-start-state.ts';
-import { toRtcRefusalFacts } from '../../to-rtc-refusal-facts.ts';
 import { GRANTED_RTC_CARRIERS, toGrantedRefusalPollCommand, UNRECEIPTED_DELIVERY } from './granted-rtc-commands.ts';
 
 /**
@@ -38,7 +38,7 @@ function toSubscribeOnlyPublisherCommands(receiver: AlmConformanceStepInput): re
         toGrantedRefusalPollCommand({
             step: receiver,
             delivery: UNRECEIPTED_DELIVERY,
-            facts: toRtcRefusalFacts('no-publish-grant')
+            facts: toOriginRefusalFacts('no-publish-grant')
         })
     ];
 }

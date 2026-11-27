@@ -441,18 +441,18 @@ moved or changed test.
       }
     },
     {
-      "id": "alm-inbound-conflict-one-admission-attempt",
+      "id": "alm-inbound-conflict-bounded-admission-attempts",
       "domain": "ALM incoming optimistic admission recovery",
       "owner": "Rallar shared maintainers",
-      "summary": "An initial incoming delivery makes one admission commit attempt; a lost conditional write retains pending work for fresh worker admission after restart.",
-      "semanticCoverage": "packages/tests/shared/al-inbound-message-runtime.test.ts#retains a stale optimistic write for fresh admission after runtime restart",
-      "coverageRelation": "The fixture commits an actual competing owner observation through the bound real store method, then lets the original bundle lose CAS. It checks one outer runtime call, pending NEW work and no premature effects, then recreates the runtime and proves ordered delivery, forwarding and duplicate handling.",
+      "summary": "An initial incoming delivery whose writes are lost makes at most three admission commit writes before it is retained as pending work for fresh worker admission after restart.",
+      "semanticCoverage": "packages/tests/shared/al-inbound-message-runtime.test.ts#retains a write lost on each of its three attempts for fresh admission after runtime restart",
+      "coverageRelation": "The fixture commits an actual competing owner observation through the bound real store method, lets the original bundle lose CAS, and loses every later write. It checks three commit attempts in one outer runtime call, pending NEW work and no premature effects, then recreates the runtime and proves ordered delivery, forwarding and duplicate handling.",
       "interactionRequirement": {
         "interactionKind": "count",
         "ownedPort": "ALInboundAdmissionStore.commitBundle called by ALInboundMessageAdmission.attempt",
         "observableEffect": "Each runtime call submits a separately computed admission candidate to the authoritative conditional persistence boundary.",
-        "requiredConstraint": "The initial runtime delivery invokes commitBundle exactly once; its conflict must be handed to retained QueueBox work rather than an inner admission retry.",
-        "failureRationale": "Eventual delivery and a pending row do not exclude an extra hidden commit attempt before retention. The count guards the one-attempt-per-delivery retry contract. The competing write performed inside the fixture is not counted as an outer runtime call."
+        "requiredConstraint": "The initial runtime delivery invokes commitBundle at most three times while each write is lost; the third conflict must be handed to retained QueueBox work rather than a fourth attempt.",
+        "failureRationale": "Eventual delivery and a pending row do not exclude an unbounded or extra hidden commit attempt before retention. The count guards the bounded attempts of one delivery. The competing write performed inside the fixture is not counted as an outer runtime call."
       }
     },
     {
@@ -9445,12 +9445,12 @@ moved or changed test.
       "id": "test-structure-coupling-3473aa2934492476",
       "path": "packages/tests/shared/al-inbound-message-runtime.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "alm-inbound-conflict-one-admission-attempt",
+      "contract": "alm-inbound-conflict-bounded-admission-attempts",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar shared maintainers",
-      "rationale": "The one outer commit invocation forbids an inner optimistic retry. The same test separately proves durable pending ownership, restart replay and final delivery; the bound competing write is fixture input, not another runtime call.",
-      "semanticCoverage": "packages/tests/shared/al-inbound-message-runtime.test.ts#retains a stale optimistic write for fresh admission after runtime restart"
+      "rationale": "The three outer commit invocations forbid a fourth optimistic attempt. The same test separately proves durable pending ownership, restart replay and final delivery; the bound competing write is fixture input, not another runtime call.",
+      "semanticCoverage": "packages/tests/shared/al-inbound-message-runtime.test.ts#retains a write lost on each of its three attempts for fresh admission after runtime restart"
     },
     {
       "id": "test-structure-coupling-0942a87639fec715",

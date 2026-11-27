@@ -1,3 +1,5 @@
+import { availableGuestSnapshot } from '@shared-server/http/available-guest-snapshot.ts';
+import { registerRoomEventRoutes, type RoomEventRouteDependencies } from '../room-events/register-room-event-routes.ts';
 import { readRoomGuestSession } from '@shared-server/http/room-guest-request.ts';
 import type { ReadAdminRoomTopologyPlans } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-topology-plans.ts';
 import type { ReadAdminRoomTopologyWork } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-topology-work.ts';
@@ -27,6 +29,7 @@ import { registerAdminOperationsRoutes } from '../admin-operations/register-admi
 import { registerAdminRoomRoutes } from '../admin-operations/register-admin-room-routes.ts';
 import type {
     ApiV1GroupAdmissionConfiguration,
+    ApiV1GroupConfiguration,
     ApiV1IceConfiguration,
     ApiV1OperatorTokenConfiguration
 } from '../configuration/api-v1-configuration.ts';
@@ -88,7 +91,7 @@ export interface ApiV1RouteInstallerTopology {
     readonly topologyPlanning: graphTopologyRoutes.GraphTopologyRoutePlanning;
     readonly adminClientIds: readonly string[];
     readonly groupStateRepository:
-        & Pick<ApiV1TopologyServices['groupStateRepository'], 'findLobbyCommitmentEntry' | 'readLobbyOccupancy'>
+        & Pick<ApiV1TopologyServices['groupStateRepository'], 'findLobbyCommitmentEntry' | 'readLobbyOccupancy' | 'isTemporaryGroupAvailable'>
         & Readonly<{
             readLifecyclePolicy: graphTopologyRoutes.GraphTopologyRouteDependencies['readLifecyclePolicy'];
         }>;
@@ -116,6 +119,7 @@ export interface CreateApiV1RouteInstallersInput<
     readonly crdtMutations: CrdtAdminMutations;
     readonly friends: Omit<FriendsRouteDependencies, 'requireSession'>;
     readonly matchmaking: Omit<MatchmakingRouteDependencies, 'requireSession'>;
+    readonly roomEvents: RoomEventRouteDependencies['events'];
     readonly tournaments: Omit<TournamentRouteDependencies, 'requireSession'>;
     readonly parties: Omit<PartyRouteDependencies, 'requireSession'>;
     readonly authUserRepository: AuthUserRepository;
@@ -123,6 +127,7 @@ export interface CreateApiV1RouteInstallersInput<
     readonly operatorToken: ApiV1OperatorTokenConfiguration;
     readonly publicConfiguration: ApiConfigResponse;
     readonly ice: ApiV1IceConfiguration;
+    readonly temporaryRoomPolicies: ApiV1GroupConfiguration['temporaryRoomPoliciesByApplication'];
     readonly groupAdmission: ApiV1GroupAdmissionConfiguration;
     readonly groupDefaultMaxMembers: number | null;
     readonly strictReadAuthorization: boolean;
@@ -160,6 +165,7 @@ interface ApiV1RouteConstruction<
     readonly requireSession: (
         request: ApiV1RouteAuthRequest
     ) => Promise<IssuedAuthSession>;
+    readonly readGuestRoom: NonNullable<wsRoutes.RegisterWsRoutesInput['readGuestRoom']>;
     readonly snapshots: ReturnType<typeof createStateSnapshotReadRouteRegistrars>;
     readonly authorizeCrdtDocumentAccess: ReturnType<typeof createApiCrdtDocumentAccessAuthorizer>;
 }
@@ -196,6 +202,8 @@ export function constructApiV1RouteInstallers<
             }
         });
         registerMatchmakingRoutes(app, { ...input.matchmaking, requireSession: construction.requireSession });
+        registerRoomEventRoutes(app, { events: input.roomEvents, requireSession: construction.requireSession,
+            nowEpochMs: input.nowEpochMs, readRoom: construction.readGuestRoom });
         registerTournamentRoutes(app, { ...input.tournaments, requireSession: construction.requireSession });
         registerPartyRoutes(app, { ...input.parties, requireSession: construction.requireSession });
         registerApiV1AdministrationRoutes(app, construction);
@@ -217,9 +225,11 @@ function createApiV1RouteConstruction<
     const requireSession = (request: ApiV1RouteAuthRequest) =>
         operations.requireApiAuthSession(request, runtime.authSessionRepository);
     const snapshots = createStateSnapshotReadRouteRegistrars(runtime, {
+        isTemporaryGroupAvailable: (group, now) => input.topology.groupStateRepository.isTemporaryGroupAvailable(group, now),
         readLobbyOccupancy: (rooms, now) => input.topology.groupStateRepository.readLobbyOccupancy(rooms, now),
         requireApiAuthSession: operations.requireApiAuthSession
     }, {
+        temporaryRoomPolicies: input.temporaryRoomPolicies,
         groupAdmission: input.groupAdmission,
         strictReadAuthorization: input.strictReadAuthorization,
         groupDefaultMaxMembers: input.groupDefaultMaxMembers,
@@ -234,6 +244,8 @@ function createApiV1RouteConstruction<
         input,
         operations,
         requireSession,
+        readGuestRoom: async ref => availableGuestSnapshot(await runtime.groupStateService.readCurrentSnapshot(ref), input.nowEpochMs(),
+            (group, now) => input.topology.groupStateRepository.isTemporaryGroupAvailable(group, now)),
         snapshots,
         authorizeCrdtDocumentAccess
     };
@@ -250,7 +262,7 @@ function createApiV1WsRouteInstaller<
         wsRoutes.registerWsRoutes(app, {
             serverPeerId: input.publicConfiguration.clockPeerId ?? input.publicConfiguration.serverPeerId,
             socketServer: input.runtime.wsQBoxServerService.socket,
-            readGuestRoom: (ref) => input.runtime.groupsRepository.readSnapshot(ref),
+            readGuestRoom: construction.readGuestRoom,
             appClientInboxService: input.runtime.appClientInboxService,
             readWsConnectTicket: (ticketDigest) =>
                 operations.readWsConnectTicket(ticketDigest, input.runtime.authSessionRepository),
@@ -269,7 +281,7 @@ function registerApiV1StateRoutes<
     const requireTransportSession = async (request: ApiV1RouteAuthRequest) =>
         await readRoomGuestSession({
             request,
-            readSnapshot: (ref) => input.runtime.groupsRepository.readSnapshot(ref),
+            readSnapshot: construction.readGuestRoom,
             nowEpochMs: input.nowEpochMs
         }) ?? await requireSession(request);
     configRoutes.registerConfigRoutes(app, {
@@ -297,6 +309,7 @@ function registerApiV1StateRoutes<
     });
     graphTopologyRoutes.registerGraphTopologyRoutes(app, {
         groupStateService: snapshots.graphGroupStateService,
+        isTemporaryGroupAvailable: (group, now) => input.topology.groupStateRepository.isTemporaryGroupAvailable(group, now),
         graphDiagnostics: {
             readScopedGlobalGraphDiagnostic,
             readGroupGraphDiagnostic

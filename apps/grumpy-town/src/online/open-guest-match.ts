@@ -6,7 +6,8 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { GuestConnectionDiagnostics } from './guest-connection-diagnostics.ts';
 import { OnlineMatch } from './online-match.ts';
-import { saveGuestVisit, type AdmittedGuestVisit } from './guest-visit.ts';
+import { forgetGuestVisit, type AdmittedGuestVisit } from './guest-visit.ts';
+import { TemporaryTownManagement } from './temporary-town-management.ts';
 import { watchTownClockLoss } from './watch-town-clock-loss.ts';
 import { GRUMPY_TOWN_SCOPE, townApiBaseUrl, townGroupPresence } from './town-server.ts';
 import './online.css';
@@ -23,20 +24,27 @@ export function openGuestMatch({ root, visit, snapshot, pageSignal }: OpenGuestM
     const signal = AbortSignal.any([pageSignal, lifetime.signal]);
     const roomRef = { ...GRUMPY_TOWN_SCOPE, groupId: visit.room };
     root.innerHTML = `<main class="online"><header><h1>Your town lobby</h1><a>Play solo</a></header>
-        <p id="town-name"></p><p>You are <output aria-label="Your nickname"></output>.</p>
+        <p id="town-name"></p><div id="lobby-sharing"><div id="sharing"></div></div><p>You are <output aria-label="Your nickname"></output>.</p>
         <p id="guest-connection" role="status">Connecting to the match…</p><div id="match-controls"></div>
-        <button type="button" hidden>Reconnect to match</button></main>`;
+        <button type="button" hidden>Reconnect to match</button></main>
+        <button id="manage-town" type="button" hidden>Manage town</button>
+        <dialog id="town-management" aria-label="Manage town"><form method="dialog"><button>Back to match</button></form></dialog>`;
     const status = root.querySelector<HTMLElement>('#guest-connection')!;
     const retry = root.querySelector('button')!;
     let stopRoomAccess: (() => void) | undefined;
     root.querySelector('a')!.href = import.meta.env.BASE_URL;
     root.querySelector('output')!.value = visit.nickname;
+    const management = new TemporaryTownManagement({
+        root: root.querySelector<HTMLElement>('#sharing')!, opener: root.querySelector<HTMLButtonElement>('#manage-town')!,
+        dialog: root.querySelector<HTMLDialogElement>('#town-management')!, browser: rallar, visit, signal
+    }, snapshot);
     const occupants = root.querySelector<HTMLElement>('#town-name')!;
     const renderOccupants = (room: GroupSnapshot) => {
-        occupants.textContent = `${room.group.displayName} · ${room.members.filter(member => member.status === 'active').length} players`;
+        const count = room.members.filter(member => member.status === 'active').length;
+        occupants.textContent = `${room.group.displayName} · ${count} ${count === 1 ? 'player' : 'players'}`;
     };
     renderOccupants(snapshot);
-    configureAuthSessionStorage('session');
+    configureAuthSessionStorage('memory');
     writeSession({ ...visit.access, username: visit.nickname, guestRoom: roomRef });
     const leave = () => location.assign(import.meta.env.BASE_URL);
     const diagnostics = new URLSearchParams(location.search).get('diagnostics') === '1'
@@ -45,6 +53,7 @@ export function openGuestMatch({ root, visit, snapshot, pageSignal }: OpenGuestM
     const unsubscribe = rallar.rooms.onChange(state => {
         if (state.currentRoom?.group.groupId === visit.room) {
             renderOccupants(state.currentRoom);
+            management.observe(state.currentRoom);
         }
         match.reconcile();
     });
@@ -101,7 +110,9 @@ export function openGuestMatch({ root, visit, snapshot, pageSignal }: OpenGuestM
         if (signal.aborted) return;
         const results = match.lastConfirmedResults;
         lifetime.abort();
-        saveGuestVisit(undefined);
+        void forgetGuestVisit(visit.room).catch(() => {
+            root.querySelector('[role=alert]')!.textContent += ' Clear site data to remove the saved visit from this device.';
+        });
         root.innerHTML = `<main class="loading"><h1></h1><ul></ul><p role="alert">Guest access has ended. Ask the owner for a fresh invitation.</p><a>Play solo</a></main>`;
         root.querySelector('h1')!.textContent = results ? 'Round complete' : 'Town invitation';
         root.querySelector('a')!.href = import.meta.env.BASE_URL;
@@ -126,6 +137,7 @@ export function openGuestMatch({ root, visit, snapshot, pageSignal }: OpenGuestM
             await enterVerifiedRoom(signal);
         }
         catch {
+            await recheckAccess();
             showRetry();
         }
     }

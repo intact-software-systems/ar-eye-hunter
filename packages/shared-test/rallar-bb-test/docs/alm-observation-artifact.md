@@ -102,7 +102,9 @@ The **plan file** states the run's plan before any family test of its carrier st
 `scope`, `backend` (`memory` or `postgres`, the API the full-stack configuration starts), and
 `families`, every lane family with the `scenarioKeys` it plans. A family that plans nothing is
 listed with no keys; in a run not narrowed by `RALLAR_BLACK_BOX_ALM_ONLY` or `_SKIP`, a carrier
-whose families plan nothing fails its plan test, and a narrowed run writes its plan as it is. It
+whose families plan nothing fails its plan test, and a narrowed run writes its plan as it is. In the
+`full` scope a run that is not narrowed also fails its plan test when the plan leaves out a lane
+cell the carrier matrix names over its carrier ([ALM carrier matrix](./alm-carrier-matrix.md)). It
 comes from the same planning function the family tests run, so a run is judged against its own plan,
 not against a later catalog. The keys are in the plan test's own order: a `shuffled` family that
 names no seed mints one per planning, so its run order may differ. Compare a plan with a result by
@@ -336,14 +338,17 @@ window is derived from them in
 [`conformance/alm/alm-conformance-receiver-commands.ts`](../conformance/alm/alm-conformance-receiver-commands.ts).
 
 Other budgets were added or raised where a GitHub runner's work outlasted the wait that covered it, not
-where a product deadline was missed: `churn-bounded-tracks` and `buffered-track-drains` extend their
-recipes' run budget by their cue wait; a family's limit is 35 minutes
+where a product deadline was missed: `churn-bounded-tracks` extends its recipes' run budget by its
+receiver's count, which fails on a stall rather than a fixed window, and `buffered-track-drains` by its
+cue wait; a family's limit is 35 minutes
 ([`conformance/alm/lane/alm-lane-family-timeout-ms.ts`](../conformance/alm/lane/alm-lane-family-timeout-ms.ts));
 a publish loop's attempt observes for 15 s, and a publication published once gives its one send the same
 15 s to reach durable admission; a poll starts its attempts for one phase and its deadline
-runs one attempt's budget past it; a `connected` barrier counts a connect's readiness wait; every
-fairness send loop has a budget of 1,500 ms a send; and the buffered track's sends live for a
-lifetime derived from that loop's budget, not a flat 90 s.
+runs one attempt's budget past it; a `connected` barrier counts a connect's readiness wait; the
+`own-share-under-inbound` flood has the 30 s an arrival counts, the buffered sends a budget of 2,000 ms
+a send, while the churn's 280 sends have only a 600 s ceiling, each send's own timeout bounding its
+iteration; and the buffered track's sends live for a lifetime derived from the buffered sends' budget,
+not a flat 90 s.
 
 ## The regime file
 
@@ -431,8 +436,10 @@ records what the runner was doing while the cell ran:
   - `pendingShare` — `{ outcome: 'measured', pendingSharePercent, outcomeCount }`, the share of
     `admission-outcome` events on that direction whose outcome was `pending`, out of `outcomeCount`;
     the count is of events, not messages: a retained admission's replay states its own event, so a
-    message whose commit conflicted counts its ingress `pending`, a further `pending` for each replay
-    that conflicted again, and its replay's verdict;
+    message whose every attempt's commit conflicted, or that waits for its first delivery, counts its
+    ingress `pending`, a further `pending` for each replay that ended so again, and its replay's
+    verdict; a conflict that the same call's next attempt recovers counts no `pending`, so the share
+    reads lower for the same traffic than a single attempt's would;
     or `{ outcome: 'unmeasured' }` when the direction reported `effect-drain` events but no
     `admission-outcome` event, because a percentage over zero outcomes is not a measurement. The
     drain medians beside it are still reported in that case.

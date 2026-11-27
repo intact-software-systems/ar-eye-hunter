@@ -19,7 +19,8 @@ import {
     INBOUND_TEST_SELF_PEER_ID,
     INBOUND_TEST_SENDER_PEER_ID,
     INBOUND_TEST_SOURCE,
-    setNextInboundCommitConflicted
+    restoreInboundWritesOnRetention,
+    setNextInboundAdmissionParked
 } from '../inbound-runtime-test-fixture.ts';
 
 import { toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
@@ -163,7 +164,8 @@ describe('the session volatile bound at the inbound admission (D74, C6)', () => 
     it('counts an arrival whose commit is replayed, as it answers pending-admission', async () => {
         const { budget, runtime, volatileStores } = createBudgetedInboundRuntime({ ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 10, maxBytes: 1_000_000 });
         await runtime.ready();
-        setNextInboundCommitConflicted(volatileStores.admissionStore);
+        // Every attempt's write of the arrival is lost, so it answers pending-admission however often it looks again.
+        restoreInboundWritesOnRetention(volatileStores, setNextInboundAdmissionParked(volatileStores.admissionStore));
 
         const admitted = await runtime.admitIncomingMessage(
             createInboundTestMessage({ msgId: 'replayed' }),

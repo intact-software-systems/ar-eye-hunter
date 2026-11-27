@@ -138,7 +138,7 @@ const CONFIGURATION_KEYS_BY_PATH: Readonly<Record<string, ReadonlySet<string>>> 
         'resetDurationMs',
         'samplingDurationMs'
     ]),
-    group: new Set(['roomLobbyPoliciesByApplication', 'defaultMaxMembers', 'currentSnapshotCacheMaxEntries', 'admission', 'roomOwnedAppDataBindings']),
+    group: new Set(['roomLobbyPoliciesByApplication', 'eventOrganizerIdsByApplication', 'temporaryRoomPoliciesByApplication', 'defaultMaxMembers', 'currentSnapshotCacheMaxEntries', 'admission', 'roomOwnedAppDataBindings']),
     'group.admission': new Set([
         'windowMs',
         'joinPrincipal',

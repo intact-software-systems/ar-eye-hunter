@@ -1,3 +1,4 @@
+import { ROOM_GUEST_LIFETIME_MS, toRoomGuestInvitation } from '@shared/api/room-guests/invitation.ts';
 import { ROOM_LOBBY_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-policy.ts';
 import { ROOM_LOBBY_REGISTRATION_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-registration.ts';
 import { GROUP_DIRECTORY_LISTING_METADATA_KEY } from '@shared/api/group-directory/group-directory-listing.ts';
@@ -71,7 +72,8 @@ export function createInitialGroup({
         updated: audit,
         archived: null,
         deleted: null,
-        expiresAtEpochMs: command.input.expiresAtEpochMs,
+        ...(command.input.temporaryCreator && { temporaryPlayerRoom: true, guestInvitation: toRoomGuestInvitation(command.input.temporaryCreator.invitationVerifier, audit.atEpochMs) }),
+        expiresAtEpochMs: command.input.temporaryCreator ? audit.atEpochMs + command.input.temporaryCreator.lifetimeMs : command.input.expiresAtEpochMs,
         emptySinceEpochMs: null,
         purgeAfterEpochMs: command.input.purgeAfterEpochMs,
         lifecycleState: lifecyclePolicy.formation === 'phased' ? 'forming' : 'active',
@@ -97,6 +99,9 @@ export function createInitialOwner(
         ...command.aggregateRef,
         principalId: command.input.createdByPrincipalId,
         role: 'owner',
+        ...(command.input.temporaryCreator && { guestLease: {
+            temporaryManager: true, admittedAtEpochMs: audit.atEpochMs, expiresAtEpochMs: audit.atEpochMs + ROOM_GUEST_LIFETIME_MS
+        } }),
         status: 'active',
         joined: audit,
         updated: audit,
@@ -170,11 +175,14 @@ export function resolveCreateGroupLifecyclePolicy(
     return command.input.lifecyclePolicy ?? createDefaultGroupLifecyclePolicy();
 }
 
-export function computeCreate(
-    command: Extract<GroupMutationCommand, { operation: 'createGroup'; }>,
-    read: GroupMutationRead,
-    facts: GroupMutationFacts
-): GroupMutationComputed {
+interface ComputeCreateInput {
+    readonly command: Extract<GroupMutationCommand, { operation: 'createGroup' }>;
+    readonly read: GroupMutationRead;
+    readonly facts: GroupMutationFacts;
+    readonly eventBinding?: Group['eventRoom'];
+}
+
+export function computeCreate({ command, read, facts, eventBinding }: ComputeCreateInput): GroupMutationComputed {
     const denial = toCreateDenial(command, read, facts);
     if (denial !== null) {
         return rejected({ command, read, facts, ...denial });
@@ -184,7 +192,7 @@ export function computeCreate(
         read.expiredGroupEntry,
         read.presenceSummary
     );
-    const initial = createInitialGroup({ command, audit, snapshotVersion });
+    const initial = { ...createInitialGroup({ command, audit, snapshotVersion }), ...(eventBinding && { eventRoom: eventBinding }) };
     const capacity = initial.maxMembers ?? facts.capacity.defaultMaxMembers;
     const eligible = initial.kind === 'room' && capacity !== null && capacity > 0;
     const policy = command.input.roomLobby === undefined && eligible ? facts.lobbyDefault : command.input.roomLobby;
@@ -231,7 +239,7 @@ function toCreateDenial(
     read: GroupMutationRead,
     facts: GroupMutationFacts
 ): GroupCreateDenial | null {
-    if (command.input.actorPrincipalId !== command.input.createdByPrincipalId) {
+    if (!command.input.temporaryCreator && command.input.actorPrincipalId !== command.input.createdByPrincipalId) {
         return {
             rejectionCode: 'group-mutation-rejected',
             message: 'Creator authority does not match createdByPrincipalId'

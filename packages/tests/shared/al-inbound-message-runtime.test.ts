@@ -37,6 +37,7 @@ import {
 } from '@shared/mod.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
+import { loseInboundWritesFromNowOn } from './alm/inbound-runtime-test-fixture.ts';
 import { readInboundTestAcknowledgements } from './alm/read-inbound-test-acknowledgements.ts';
 import { waitForSettledALInboundWork } from './wait-for-al-inbound-work.ts';
 
@@ -158,7 +159,9 @@ describe('ALInboundMessageRuntime', () => {
         });
     });
 
-    it('retains a stale optimistic write for fresh admission after runtime restart', async () => {
+    // Pins an arrival that keeps writing past its bounded attempts, or drops the message once they are spent: the first
+    // write loses to a real competing commit and the next two are lost too, so the third loss retains it.
+    it('retains a write lost on each of its three attempts for fresh admission after runtime restart', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const admission = stores.admissionStore;
@@ -173,6 +176,8 @@ describe('ALInboundMessageRuntime', () => {
             ).toBe('committed');
             return await commitBundle(bundle);
         });
+        // Were the owner to write a fourth time, that write would be lost too; the count below pins that it does not.
+        const restoreWrites = loseInboundWritesFromNowOn(admission);
         const first = createInboundHarness(stores);
         const enqueue = stores.workQueue.enqueueIfAbsent.bind(stores.workQueue);
         let disposal: Promise<void> | undefined;
@@ -190,7 +195,7 @@ describe('ALInboundMessageRuntime', () => {
         await disposal;
 
         expect(queued.right).toEqual({ kind: 'pending-admission' });
-        expect(conflict).toHaveBeenCalledTimes(1);
+        expect(conflict).toHaveBeenCalledTimes(3);
         expect(first.dispatchedTexts).toEqual([]);
         expect(first.forwardedIds).toEqual([]);
         expect(first.controlMessages).toEqual([]);
@@ -200,7 +205,7 @@ describe('ALInboundMessageRuntime', () => {
         expect(pending.entry.status).toBe(EntityStatus.NEW);
         expect(pending.payload).toEqual({ kind: 'admit-message', msg: decodePersistedALMessage(JSON.stringify(seq2)), source });
         expect(pending.expireAtTimestamp).toBe(seq2.constraints?.expiresAtMs);
-        conflict.mockRestore();
+        restoreWrites();
         retention.mockRestore();
 
         const restarted = createInboundHarness(stores);

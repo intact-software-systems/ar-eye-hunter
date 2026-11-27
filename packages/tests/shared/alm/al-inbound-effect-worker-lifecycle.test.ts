@@ -47,7 +47,8 @@ import {
     createInboundTestRuntime,
     createInboundTestStores,
     INBOUND_TEST_SOURCE,
-    setNextInboundCommitConflicted
+    restoreInboundWritesOnRetention,
+    setNextInboundAdmissionParked
 } from './inbound-runtime-test-fixture.ts';
 import { ALWorkBatchTestObserver } from './work/al-work-batch-test-observer.ts';
 
@@ -896,7 +897,8 @@ describe('inbound durable effect worker lifecycle', () => {
             effectWorkerId: 'al-inbound:replayed-dispatch'
         });
         await fixture.runtime.ready();
-        setNextInboundCommitConflicted(fixture.stores.admissionStore);
+        // Every attempt's write of the arrival is lost, so the dispatch is the retained admission's replay's.
+        restoreInboundWritesOnRetention(fixture.stores, setNextInboundAdmissionParked(fixture.stores.admissionStore));
 
         const acceptance = await fixture.runtime.admitIncomingMessage(
             createInboundTestMessage({ msgId: 'replayed-dispatch' }),

@@ -38,6 +38,7 @@ export const TEST_GROUP_SCOPE: StateScope = {
 };
 
 export interface GroupStateRouteTestRuntimeInput {
+    readonly isTemporaryGroupAvailable?: GroupStateRouteDependencies['isTemporaryGroupAvailable'];
     readonly readLobbyOccupancy?: GroupStateRouteDependencies['readLobbyOccupancy'];
     readonly session?: AuthSession & GroupStateRouteAuthSession;
     readonly groupDefaultMaxMembers?: number | null;
@@ -50,6 +51,8 @@ export interface GroupStateRouteTestRuntimeInput {
     readonly processGroupAppInbox?: GroupStateRouteDependencies[
         'processGroupAppInbox'
     ];
+    readonly temporaryRoomPolicies?: GroupStateRouteDependencies['temporaryRoomPolicies'];
+    readonly processTemporaryRoomCreation?: GroupStateRouteDependencies['processTemporaryRoomCreation'];
     readonly processGuestAdmission?: GroupStateRouteDependencies['processGuestAdmission'];
     readonly processQuickJoin?: GroupStateRouteDependencies['processQuickJoin'];
     readonly processGroupMove?: GroupStateRouteDependencies['processGroupMove'];
@@ -106,6 +109,7 @@ export function createGroupStateRouteTestDependencies(
     const session = input.session ?? createGroupStateRouteAuthSession('alice');
     const requireApiAuthSession = input.requireApiAuthSession ?? (() => Promise.resolve(session));
     return {
+        isTemporaryGroupAvailable: input.isTemporaryGroupAvailable ?? (() => Promise.reject(new Error('Unexpected temporary room availability read'))),
         readLobbyOccupancy: input.readLobbyOccupancy ?? (() => Promise.reject(new Error('Unexpected lobby occupancy read'))),
         groupStateService: createGroupStateRouteService(input.groupService),
         sessionDirectory: {
@@ -117,6 +121,8 @@ export function createGroupStateRouteTestDependencies(
         processGroupAppInbox: input.processGroupAppInbox ?? defaultProcessGroupAppInbox,
         processGroupMove: input.processGroupMove ?? (() => Promise.reject(new Error('Unexpected group move mutation'))),
         listGroupMoves: input.listGroupMoves ?? (() => Promise.reject(new Error('Unexpected group move recovery'))),
+        temporaryRoomPolicies: input.temporaryRoomPolicies ?? {},
+        processTemporaryRoomCreation: input.processTemporaryRoomCreation ?? (() => Promise.reject(new Error('Unexpected temporary room creation'))),
         processGuestAdmission: input.processGuestAdmission ?? (() => Promise.reject(new Error('Unexpected guest admission'))),
         processQuickJoin: input.processQuickJoin ?? (() => Promise.reject(new Error('Unexpected Quick Join mutation'))),
         groupAdmissionQuota: input.groupAdmissionQuota ?? createGroupAdmissionQuota({

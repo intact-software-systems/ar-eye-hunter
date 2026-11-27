@@ -1,7 +1,6 @@
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
 import { RESPONSE_MARGIN_MS } from '../../alm-conformance-budgets.ts';
-import type { AlmConformanceCarrier } from '../../alm-conformance-carriers.ts';
 import {
     toVerdictCommands,
     type AlmConformanceVerdictFact
@@ -9,10 +8,17 @@ import {
 import { toAudienceSendCommand, type AlmConformanceSendClaim } from '../../alm-conformance-receipt-commands.ts';
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId, toConnectionName, toScenarioTypeId } from '../../alm-conformance-step-identities.ts';
-import { WS_ROUTE_FACTS } from '../audiences/world-routing.ts';
+import { ALM_CARRIER_MATRIX } from '../../carrier-matrix/alm-carrier-matrix.ts';
+import { toAlmCarrierOutcomeFacts } from '../../carrier-matrix/to-alm-carrier-outcome-facts.ts';
 
-/** Only the WS server arbitrates a claim; a strategy that allows WS routes an exclusive send there at once. */
-export const CLAIM_WS_ROUTE_CARRIERS: readonly AlmConformanceCarrier[] = ['ws', 'rtc-with-ws-fallback'];
+/**
+ * Only the WS server arbitrates a claim, so a claim's one attempt is the WS one wherever a claim is sent at all. The
+ * fallback strategy routes an exclusive send there at once, which is the matrix cell these facts are read from; under
+ * `ws` there is no other carrier.
+ */
+export const CLAIM_WS_ROUTE_FACTS: readonly AlmConformanceVerdictFact[] = toAlmCarrierOutcomeFacts(
+    ALM_CARRIER_MATRIX['exclusive-claim'].cells['rtc-with-ws-fallback'].outcome
+);
 
 /**
  * The trusted server NACKs a claim another session holds after the frame left, which settles the send's one attempt:
@@ -22,7 +28,7 @@ const HELD_BY_OTHER_FACTS: readonly AlmConformanceVerdictFact[] = [
     ['relay-rejected', 'failure.kind', 'equals', 'relay-rejected'],
     ['trusted-server', 'failure.rejection.relay', 'equals', 'trusted-server'],
     ['held-by-other', 'failure.rejection.reason', 'equals', 'held-by-other'],
-    ...WS_ROUTE_FACTS
+    ...CLAIM_WS_ROUTE_FACTS
 ];
 
 /** The cell's carrier names the resource, so no cell claims a key another carrier's cell may still hold. */

@@ -26,6 +26,7 @@ import {
     type ControlFrameLabel
 } from '../../ws-receipted-send-test-controls.ts';
 import { createWorkerHold, type WorkerHold } from '../alm/create-worker-hold.ts';
+import { isInboundAdmissionWriteOf } from '../alm/inbound-runtime-test-fixture.ts';
 import {
     createWsClientCarrierStores,
     createWsClientMintingPlanner,
@@ -95,6 +96,12 @@ export interface WsReceiptedSendLink {
     holdServerNextAdmissionWrite(msg: ALMessage, stage: ServerAdmissionWriteStage): WorkerHold;
     /** The server's release of `msg`'s kept row, once its replay ran, waits at the returned hold; the row stays claimed. */
     holdServerKeptRowRelease(msg: ALMessage): WorkerHold;
+    /**
+     * The server's admission writes go to its store's own commit until one loses to the store's fence; every later
+     * admission write of that message is answered `conflict` without a write, however many attempts its owner makes,
+     * until the server retains a message. Every other write stays the store's own.
+     */
+    loseServerAdmissionWritesAfterTheFirstLoss(): void;
     /** The recipient's `delivered` ACK through the server's ingress, as its socket would send it. */
     acknowledge(msg: ALMessage): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>>;
     /** Moves the one clock, then `LINK_PASSES_PER_STEP` times: the server's engine, its answers to the client, the client's due work. */
@@ -253,14 +260,56 @@ function createLinkExchange(server: ServerIngressFixture, client: LinkClient): L
 
 function createServerWorkHolds(
     server: ServerIngressFixture
-): Pick<WsReceiptedSendLink, 'holdServerWorkClaims' | 'holdServerNextAdmissionWrite' | 'holdServerKeptRowRelease'> {
+): Pick<
+    WsReceiptedSendLink,
+    | 'holdServerWorkClaims'
+    | 'holdServerNextAdmissionWrite'
+    | 'holdServerKeptRowRelease'
+    | 'loseServerAdmissionWritesAfterTheFirstLoss'
+> {
     const { workQueue } = server.admission;
     const { admissionStore } = server;
     const reserveEntries = workQueue.reserveEntries.bind(workQueue);
     const releaseEntries = workQueue.releaseEntries.bind(workQueue);
     const commitBundle = admissionStore.commitBundle.bind(admissionStore);
+    const enqueueIfAbsent = workQueue.enqueueIfAbsent.bind(workQueue);
     const writeHolds: ServerAdmissionWriteHold[] = [];
+    let losing: 'no' | 'after-the-first-loss' | 'yes' = 'no';
+    // Only the message whose write lost first loses again; every other write is the store's own.
+    let lostMessage: Pick<ALMessage['id'], 'msgId' | 'senderId'> | undefined;
     let writesSpied = false;
+    // One routing of the store's commit serves the holds and the losses, so neither removes the other.
+    const routeWrites = (): void => {
+        if (writesSpied) {
+            return;
+        }
+        writesSpied = true;
+        vi.spyOn(admissionStore, 'commitBundle').mockImplementation(async (bundle) => {
+            if (losing === 'yes' && lostMessage !== undefined && isInboundAdmissionWriteOf(bundle, lostMessage)) {
+                return 'conflict';
+            }
+            const index = writeHolds.findIndex((held) => isInboundAdmissionWriteOf(bundle, held.msg.id));
+            const next = index < 0 ? undefined : writeHolds.splice(index, 1)[0];
+            if (next?.stage === 'before-write') {
+                await next.hold.arrive();
+            }
+            const written = commitBundle(bundle);
+            written.catch(() => next?.refuse(new Error(`The held admission write of ${next.msg.id.msgId} threw`)));
+            const status = await written;
+            if (status === 'conflict' && losing === 'after-the-first-loss' && bundle.admissionExpiresAtMs !== null) {
+                losing = 'yes';
+                lostMessage = { msgId: bundle.observations.msgId, senderId: bundle.observations.senderId };
+            }
+            if (next?.stage === 'after-commit') {
+                if (status !== 'committed') {
+                    next.refuse(new Error(`The held admission write of ${next.msg.id.msgId} answered ${status}`));
+                    return status;
+                }
+                await next.hold.arrive();
+            }
+            return status;
+        });
+    };
     return {
         holdServerWorkClaims: () => {
             let held = true;
@@ -283,32 +332,22 @@ function createServerWorkHolds(
             });
             return hold;
         },
+        loseServerAdmissionWritesAfterTheFirstLoss: () => {
+            routeWrites();
+            losing = 'after-the-first-loss';
+            vi.spyOn(workQueue, 'enqueueIfAbsent').mockImplementationOnce(async (entry) => {
+                const retained = await enqueueIfAbsent(entry);
+                losing = 'no';
+                lostMessage = undefined;
+                return retained;
+            });
+        },
         holdServerNextAdmissionWrite: (msg, stage) => {
             const hold = createWorkerHold();
             const refused = Promise.withResolvers<never>();
             onTestFinished(() => hold.release());
             writeHolds.push({ msg, hold, stage, refuse: refused.reject });
-            if (!writesSpied) {
-                writesSpied = true;
-                vi.spyOn(admissionStore, 'commitBundle').mockImplementation(async (bundle) => {
-                    const index = writeHolds.findIndex((held) => isAdmissionWriteOf(bundle, held.msg));
-                    const next = index < 0 ? undefined : writeHolds.splice(index, 1)[0];
-                    if (next?.stage === 'before-write') {
-                        await next.hold.arrive();
-                    }
-                    const written = commitBundle(bundle);
-                    written.catch(() => next?.refuse(new Error(`The held admission write of ${next.msg.id.msgId} threw`)));
-                    const status = await written;
-                    if (next?.stage === 'after-commit') {
-                        if (status !== 'committed') {
-                            next.refuse(new Error(`The held admission write of ${next.msg.id.msgId} answered ${status}`));
-                            return status;
-                        }
-                        await next.hold.arrive();
-                    }
-                    return status;
-                });
-            }
+            routeWrites();
             return { ...hold, arrived: Promise.race([hold.arrived, refused.promise]) };
         }
     };
@@ -320,11 +359,6 @@ interface ServerAdmissionWriteHold {
     readonly stage: ServerAdmissionWriteStage;
     /** Fails the hold's `arrived` with why the held write will never arrive at it. */
     readonly refuse: (reason: Error) => void;
-}
-
-function isAdmissionWriteOf(bundle: ALInboundCommitBundle, msg: ALMessage): boolean {
-    return bundle.observations.msgId === msg.id.msgId && bundle.observations.senderId === msg.id.senderId &&
-        bundle.mutations.some((mutation) => mutation.kind === 'set-inbound-message');
 }
 
 function isKeptRowOf(entry: ResourceEntry, msg: ALMessage, namespace: string): boolean {

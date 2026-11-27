@@ -278,6 +278,49 @@ describe('the receipt an RTC send tracks reaches its handle (R-S3a-4)', () => {
     });
 });
 
+// The conformance churn's sender leaves after its last track: only `acknowledged`, the receiver's own receipt, proves
+// that receiver admitted the track, since RTC `transport-accepted` is the frame leaving the page's data channel.
+describe('a default notification room send on RTC to its one recipient', () => {
+    it('stays transport-accepted until the recipient confirms it, then ends acknowledged', async () => {
+        const fixture = createRtcOriginOverlayFixture({
+            snapshot: createOriginSnapshot(['a', 'b'], 4),
+            nextHopPeerIds: ['b'],
+            publicationCrypto: ROOM_PUBLICATION_CRYPTO
+        });
+        const harness = createDispatchHarness({
+            registry: createRegistry(),
+            carrier: 'rtc',
+            admits: { rtc: (message) => fixture.manager.enqueueIfAbsent(message) },
+            publication: MEMBERS_PUBLICATION
+        });
+        const defaults = resolveALChannelSendDefaults({ purpose: 'notification', durability: undefined, hasLogicalAudience: true });
+        const handle = harness.send(newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: toRoute('rtc-default'),
+            groupRef: ORIGIN_ROOM,
+            typeId: 'chat.message.v1',
+            resource: { text: 'track' },
+            options: { reliability: defaults.reliability, ack: defaults.ack, ttlMs: defaults.ttlMs }
+        }));
+
+        const isSent = (settlement: ALDeliverySettlement) => settlement.kind === 'attempt-settled' && settlement.outcome === 'sent';
+        await expect.poll(() => fixture.settlements.some(isSent)).toBe(true);
+        fixture.settlements.forEach((settlement) => harness.registry.record(settlement));
+        expect(handle.lifecycle().state).toBe('transport-accepted');
+        await acknowledgeAtOrigin(fixture.manager, {
+            msgId: handle.msgId,
+            fromPeerId: 'b',
+            logicalRecipientPeerId: 'b',
+            status: 'delivered',
+            key: ROOM_PUBLICATION_CRYPTO
+        });
+        await recordCompleteAcknowledgement({ fixture, harness, wsAdmissions: [] });
+
+        expect(handle.lifecycle()).toMatchObject({ state: 'acknowledged', receiptAlgo: 'receiver' });
+    });
+});
+
 describe('the receipt a WS fallback leg tracks reaches its handle (R-S3a-4)', () => {
     afterEach(() => {
         vi.unstubAllGlobals();

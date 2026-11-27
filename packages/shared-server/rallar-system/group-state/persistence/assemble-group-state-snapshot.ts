@@ -1,3 +1,4 @@
+import { hasOffCourtOrganizer } from '@shared/api/room-events/room-event-binding.ts';
 import { readRoomLobbyPolicy } from '@shared/api/room-lobbies/room-lobby-policy.ts';
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import type { GroupPublicationGrant } from '@shared/api/group-publication/group-publication-grants.ts';
@@ -157,7 +158,7 @@ function assertStoredRoster(
     if (
         input.group.activeMemberCount !== activeMembers.length ||
         (input.group.maxMembers !== null && !readRoomLobbyPolicy(input.group.metadata) &&
-            activeMembers.filter((member) => member.role !== 'spectator').length > input.group.maxMembers) ||
+            activeMembers.filter((member) => member.role !== 'spectator').length - Number(hasOffCourtOrganizer(input.group)) > input.group.maxMembers) ||
         activeOwners.length !== 1 ||
         activeOwners[0]?.principalId !== input.group.ownerPrincipalId
     ) {

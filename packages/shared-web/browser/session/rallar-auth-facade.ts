@@ -1,3 +1,4 @@
+import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type {
     RallarOnChangeOptions,
@@ -11,6 +12,12 @@ import type {
     RegisterRequest,
     RegisterResponse
 } from '@shared/api/api-config.ts';
+
+export interface RallarGuestSessionInput {
+    readonly room: GroupRef;
+    readonly access: Pick<AuthSession, 'clientId' | 'accessToken' | 'sessionId' | 'expiresAtEpochMs'>;
+    readonly username: string;
+}
 
 export type RallarAuthChangeReason =
     | 'current'
@@ -32,6 +39,7 @@ export interface RallarRegisterOptions extends RallarOperationOptions {
 }
 
 export interface RallarAuthFacade {
+    activateGuest(input: RallarGuestSessionInput): Promise<void>;
     login(
         request: LoginRequest,
         options?: RallarOperationOptions

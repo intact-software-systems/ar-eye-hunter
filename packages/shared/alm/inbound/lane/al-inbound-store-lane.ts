@@ -28,6 +28,7 @@ import {
 } from '../../work/al-work-queue-port.ts';
 import { AL_WORK_UNDESCRIBED_COMMIT } from '../../work/al-work-readiness-memory.ts';
 import { resolveALWorkEntryDueAtMs } from '../../work/read-al-work-ready-at.ts';
+import { retryALInboundLostWrite } from '../admission/retry-al-inbound-lost-write.ts';
 import type { ALInboundGapRenewalEffect, ALInboundPlanner } from '../al-inbound-admission-store.ts';
 import { ALInboundAdmittedDelivery } from '../al-inbound-admitted-delivery.ts';
 import { toALInboundLocalDeliveryEffectIds } from '../al-inbound-effect-intent.ts';
@@ -198,20 +199,32 @@ export class ALInboundStoreLane {
         );
     }
 
+    /**
+     * Attempts the admission again at once while its write is lost (`retryALInboundLostWrite`), under the source and
+     * the authorization its caller read for this call: for a data message that authorization is a function of the
+     * envelope, the source and this runtime's own peer id, so a fresh read would answer the same. A lane disposed before
+     * a later attempt's shutdown check, which follows its store read, answers `disposed`, as an arrival during disposal
+     * does, and the earlier lost write is not retained; disposed after that check, the attempt either commits or loses
+     * its own write, which is then retained.
+     */
     private async admitDataInStore(
         msg: ALMessage,
         source: ALInboundMessageRuntime.Source,
         planIncomingMessage: ALInboundPlanner
     ): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>> {
-        const attempt = await this.admission.attempt(msg, source, planIncomingMessage);
+        const attempt = await retryALInboundLostWrite({
+            attempt: () => this.admission.attempt(msg, source, planIncomingMessage),
+            isLostWrite: (answer) => !this.disposed && answer.right?.kind === 'conflict'
+        });
         if (attempt.left) {
             return Either.ofLeft(attempt.left);
         }
         const result = attempt.right!;
-        if (result.kind === 'conflict') {
-            // Every conflicted admission is retained, a dropped one included: a bundle that writes nothing never
-            // meets the fence, so the rolled-back one carried rows or effects — a NACK among them — that its
-            // replay plans afresh against the winner. Only a retention that left a claimable row is announced —
+        if (result.kind !== 'completed') {
+            // An admission that lost every attempt's write, or that waits for its first delivery, is retained, a
+            // dropped one included: a bundle that writes nothing never meets the fence, so the rolled-back one carried
+            // rows or effects — a NACK among them — that its replay plans afresh against the winner. A lane being
+            // disposed makes no further attempt. Only a retention that left a claimable row is announced —
             // `pending-admission`, whether this call wrote the row or found one a previous attempt wrote; a
             // message past its deadline is rejected before the write, or as a row written already expired; and a
             // row in a terminal status holds no work for the worker.

@@ -40,6 +40,15 @@ describe('group key allowlists against keyof Group', () => {
         ).not.toThrow();
     });
 
+    it('delivers a temporary room manager through the room WebSocket delta', () => {
+        const envelope = createDeltaEnvelopeFixture({ audienceSessionIds: ['alice-session'] });
+        const snapshot = createDeltaEnvelopeFixtureGroupSnapshot();
+        const group = { ...envelope.group, temporaryPlayerRoom: true, expiresAtEpochMs: 10_000 };
+        const owner = { ...snapshot.members[0], guestLease: { temporaryManager: true, admittedAtEpochMs: 0, expiresAtEpochMs: 14_400_000 } };
+        expect(() => validateGroupStateDeltaEnvelope({ ...envelope, group, members: [owner] })).not.toThrow();
+        expect(() => validateGroupStateDeltaEnvelope({ ...envelope, members: [owner] })).toThrow(/manager/i);
+    });
+
     it('accepts a compile-complete group through the stored list', () => {
         const group = JSON.parse(JSON.stringify(createTestGroup(ref)));
         expect(() => validatePersistedGroup(group, ref)).not.toThrow();

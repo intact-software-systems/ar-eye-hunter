@@ -1,3 +1,4 @@
+import { availableGuestSnapshot } from '@shared-server/http/available-guest-snapshot.ts';
 import type { Hono } from 'hono';
 
 import { type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -35,6 +36,7 @@ export interface ApiV1StateSnapshotRouteRuntime {
     readonly groupStateInboxService: Pick<
         ApiV1Runtime['groupStateInboxService'],
         | 'processAuthenticatedGroupEntryUntilCompletion'
+        | 'processTemporaryGroupCreationUntilCompletion'
         | 'processGuestAdmissionUntilCompletion'
         | 'processQuickJoinUntilCompletion'
         | 'processGroupMoveUntilCompletion'
@@ -74,6 +76,7 @@ export interface ApiV1StateSnapshotAuthRequest {
 }
 
 export interface ApiV1StateSnapshotRouteOperations<Runtime extends ApiV1StateSnapshotRouteRuntime> {
+    readonly isTemporaryGroupAvailable: GroupStateRouteDependencies['isTemporaryGroupAvailable'];
     readonly readLobbyOccupancy: GroupStateRouteDependencies['readLobbyOccupancy'];
     readonly requireApiAuthSession: (
         request: ApiV1StateSnapshotAuthRequest,
@@ -82,6 +85,7 @@ export interface ApiV1StateSnapshotRouteOperations<Runtime extends ApiV1StateSna
 }
 
 export interface ApiV1StateSnapshotRoutePolicy {
+    readonly temporaryRoomPolicies: GroupStateRouteDependencies['temporaryRoomPolicies'];
     readonly groupAdmission: ApiV1GroupAdmissionConfiguration;
     readonly strictReadAuthorization: boolean;
     readonly groupDefaultMaxMembers: number | null;
@@ -98,7 +102,7 @@ export function createStateSnapshotReadRouteRegistrars<Runtime extends ApiV1Stat
         client: (app: Hono) =>
             clientStateRoutes.registerClientStateRoutes(app, {
                 clientStateService: runtime.clientStateService,
-                readGuestRoom: ref => runtime.groupStateService.readCurrentSnapshot(ref),
+                readGuestRoom: async ref => availableGuestSnapshot(await runtime.groupStateService.readCurrentSnapshot(ref), policy.nowEpochMs(), operations.isTemporaryGroupAvailable),
                 nowEpochMs: policy.nowEpochMs,
                 strictReadAuthorization: policy.strictReadAuthorization,
                 requireApiAuthSession: (request) =>
@@ -115,6 +119,7 @@ export function createStateSnapshotReadRouteRegistrars<Runtime extends ApiV1Stat
         group: (app: Hono) =>
             groupStateRoutes.registerGroupStateRoutes(app, {
                 groupStateService: runtime.groupStateService,
+                isTemporaryGroupAvailable: operations.isTemporaryGroupAvailable,
                 readLobbyOccupancy: operations.readLobbyOccupancy,
                 sessionDirectory: runtime.groupStateService.sessionDirectory,
                 rtcRttRepository: runtime.topologyServices.rttRepository,
@@ -128,6 +133,8 @@ export function createStateSnapshotReadRouteRegistrars<Runtime extends ApiV1Stat
                     runtime.groupStateInboxService.processGroupMoveUntilCompletion(input, authority),
                 listGroupMoves: (scope, principalId) =>
                     runtime.groupStateService.move.listForPrincipal(scope, principalId),
+                temporaryRoomPolicies: policy.temporaryRoomPolicies,
+                processTemporaryRoomCreation: input => runtime.groupStateInboxService.processTemporaryGroupCreationUntilCompletion(input),
                 processGuestAdmission: input => runtime.groupStateInboxService.processGuestAdmissionUntilCompletion(input),
                 processQuickJoin: (input, authority) =>
                     runtime.groupStateInboxService.processQuickJoinUntilCompletion(input, authority),

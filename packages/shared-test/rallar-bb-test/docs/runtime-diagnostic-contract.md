@@ -883,7 +883,8 @@ publication succeed. The event's `data` is the event itself:
   per replay that reaches a verdict, under the same `msgId`, trace, carrier
   and runtime `workerId` (never `…/volatile`):
   - the acceptance its commit reached, mapped as an ingress's is;
-  - `pending` / `pending-admission` again when it conflicts again;
+  - `pending` / `pending-admission` again when every attempt's commit
+    conflicts again, or when it still waits for its first delivery;
   - `rejected` / `expired` past its deadline;
   - `unauthorized` / `unauthorized` when its current authority refuses the
     message, or when that authority's source no longer covers the scope a

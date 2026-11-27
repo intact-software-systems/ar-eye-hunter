@@ -47,6 +47,9 @@ it('accepts pending room admission and rejects an active membership without a jo
     expect(validate({ ...active, role: 'member', guestLease })).toBe(true);
     expect(validate({ ...active, role: 'owner' })).toBe(true);
     expect(validate({ ...active, role: 'owner', guestLease })).toBe(false);
+    const manager = { ...guestLease, temporaryManager: true };
+    expect(validate({ ...active, role: 'owner', guestLease: manager })).toBe(true);
+    expect(validate({ ...active, role: 'member', guestLease: manager })).toBe(false);
     expect(validate({ ...active, role: 'admin', guestLease })).toBe(false);
 });
 

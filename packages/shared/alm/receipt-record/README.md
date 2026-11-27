@@ -264,25 +264,27 @@ the last bullet's are ordered, which is what a browser's room send is by default
 - **The record stays exact.** No publisher's unordered room message, before or after, read `timed-out` or two
   terminal receipts. Of the server's own publications, the runs before ended 3 of 120 `timed-out`, 2 `complete` and
   never opened the rest; the runs after completed all 120.
-- **Five publishers of ordered sends do not keep up at +5 ms.** The same five publishers, each message ordered on
-  its publisher's own track and receipted, beside the tree before the record's last changes. Over 20 s all 200
-  receipts complete in time (before: 26 to 34) and no message is handed to the application twice (before: 3.3 to
-  14.7 % of those delivered, up to three times, and 70 to 252 frames a run read out of order at recipients), but
-  recipients read a message 5 to 17 s after its send (p50, up to 28.5 s), 5 or 6 `admitted` a run arrive 10.5 to
-  26.4 s late, and receipts are read at 12.5 to 15.1 of 20.1 a second. Over 45 s only 93 to 166 of 450 are
-  delivered (before: 29), the rest `timed-out`. One ordered track at 5 messages a second or more stalls on both
-  trees; at 2 a second both keep up. The stall is in the inbound ordered admission on the server, not in the
-  record: an admission that loses its write to the track's progress row is parked `pending-admission`, and its
-  track waits behind its replay. Its causes, the levers prototyped and why they are not built here are in
-  `plans/backlog.md` ("Ordered room sends under load", D784). It is older than this work, which improves it and does
-  not remove it.
+- **Five publishers of ordered sends keep up at +5 ms.** The same five publishers, each message ordered on its
+  publisher's own track and receipted. In three 20 s runs all 200 complete by their deadline, and over 45 s all 450,
+  with no send answered `pending-admission`, no message handed to the application twice and no frame read twice or out
+  of order at recipients; recipients read a message 0.6 to 0.7 s after its send (p50, at most 1.2 s), and receipts are
+  read at 19.3 to 19.4 of 20.1 a second (19.7 of 20.0 over 45 s). Before the server's inbound runtime looked again at
+  once at an admission, a replay or a release whose write was lost, the same cell completed 154 to 174 of 200, with 26
+  to 32 sends parked `pending-admission` and recipients 7.1 to 21.0 s behind, and 131 of 450 over 45 s. One run taken
+  beside another session's test suites (its 1-minute load rising from 7.5 to 13.1) completed 108 of 200 and ended five
+  tracks `resync-required`; its repeat on a quiet machine kept up (below, "Stated limits"). The stall was in the inbound
+  ordered admission on the server, not in the record; what remains of it is in `plans/backlog.md` ("The limit of one
+  ordered track", D784).
 
 ## Stated limits
 
-- **Ordered sends under load.** Five publishers of ordered receipted sends at +5 ms do not keep up (above,
-  "Measured"): every receipt completes over 20 s, but recipients read a message seconds late and over 45 s most
-  messages end `timed-out`; one ordered track at 5 a second stalls. A browser's room send is ordered by default, so
-  this limit outweighs the unordered cells' result.
+- **One ordered track.** A browser's room send is ordered by default. One ordered track through the WS server at
+  +5 ms keeps up at 2 messages a second in every run, at 3 a second in three runs of four, and at 4, 5 and 10 a second
+  in none: it falls behind, only the first messages of the track complete, the rest pass their 30 s lifetime and end
+  `timed-out`, and at 5 a second the track ended `resync-required`, a NACK to its sender, in both runs. A single
+  retried inbound work row still holds its track until the work rotation reaches it, so a loaded host can stall five
+  ordered publishers too (above, "Measured"). Faster streams are what ordering end to end in Rallar Web is planned
+  for.
 - **The sender's version still moves.** A message end through the message-end bundle (a spent repair budget, a
   re-plan refused for good, a receipt control's included) and each ACK window fence the sender, so a server
   publication's own receipt windows keep competing for the server's version row.
@@ -335,9 +337,11 @@ the last bullet's are ordered, which is what a browser's room send is by default
 Not shown: the hosted statement latency itself (the runs were local, at +0 and +5 ms); latencies above +5 ms; more than
 five publishers in a room, so the rate at which the receipts stop keeping up; `main` in the five-publisher cell;
 group-state deltas themselves, which the measurement stood in for with one sequenced publication every 500 ms, and a
-higher server publication rate; whether the ordered delivery's completion keeps to two attempts where ordered tracks
-keep up for longer than 20 s, since at five publishers over 45 s and on one fast track they stall first; whether a
-sender's resend unblocks a stalled track (the harness resends nothing); the recovery of a lost live `admitted` by the
+higher server publication rate; why one ordered track at 3 a second kept up in three runs of four and not in the
+fourth, and why a track that has fallen behind completes slower than one that keeps up; why recipients read room
+frames twice on one track at 10 a second, with the inbound's fresh attempts and without them, though the subscriber was
+handed each message once; any ordered cell in a browser, on IndexedDB or over RTC; whether a sender's resend unblocks
+a stalled track (the harness resends nothing); the recovery of a lost live `admitted` by the
 first-hop resend under load or across instances (it is pinned with one origin and one server); the sustained cost of an
 ACK that finds no head; how a cluster resolves a group leader (the group-leader case pins the cross-instance count); a
 survivor taking over a work row whose lease a killed process held (a "lost" instance in the PostgreSQL cluster cases is

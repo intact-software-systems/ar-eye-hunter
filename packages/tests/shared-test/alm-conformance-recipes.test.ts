@@ -768,8 +768,10 @@ describe('alm-conformance recipe family', () => {
                 // The capacity sender reconnects before it sends; that wait is pinned in
                 // alm-conformance-addressed-scenarios.
                 const capacityReceived1 = /-capacity-receiver-received-1$/.test(command.commandId ?? '');
-                // The own-share cell's sender counts across its receiver's reconnect; pinned in alm-conformance-fairness.
-                const fairnessWindow = /-own-share-under-inbound-sender-received-1$/.test(command.commandId ?? '');
+                // The own-share cell's sender counts across its receiver's reconnect, and the churn's receiver across the
+                // sender's whole body; pinned in alm-conformance-fairness.
+                const fairnessWindow = /-(own-share-under-inbound-sender|churn-bounded-tracks-receiver)-received-1$/
+                    .test(command.commandId ?? '');
                 // The paced cells' windows span their opportunities and open their absence at the last expected
                 // arrival; pinned in alm-conformance-publication-scenarios.
                 const pacedWindow = /-paced-[a-z-]+-receiver-received-\d+$/.test(command.commandId ?? '');

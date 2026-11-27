@@ -17,7 +17,7 @@ import {
 } from './admission/al-outbound-admission-store.ts';
 import { toALOutboundSentPolicy } from './admission/al-outbound-admission-validation.ts';
 import { toALOutboundRecordedSentPositions } from './admission/to-al-outbound-recorded-sent-positions.ts';
-import { toALOutboundMessageReference } from './al-outbound-canonical-message.ts';
+import { isALOutboundReadSignedHeldRow, toALOutboundMessageReference } from './al-outbound-canonical-message.ts';
 import type {
     ALOutboundDispatchPhase,
     ALOutboundDispatchPlan,
@@ -342,7 +342,7 @@ function toEarlyDispatchResult<TPrepared>(
         return toALOutboundComputedResult({ kind: 'unroutable', reason: 'no-route', detail }, detail);
     }
     if (input.intent === 'enqueue' && read.sentSnapshot) {
-        return toDuplicateDispatchResult(read, input.outboxEntry);
+        return toDuplicateDispatchResult(input, read.sentSnapshot);
     }
     if (read.supersedenceAcceptance?.observation.status === 'superseded') {
         const detail = `Skipping superseded outbound message ${read.msg.id.msgId}`;
@@ -351,20 +351,37 @@ function toEarlyDispatchResult<TPrepared>(
     return undefined;
 }
 
+/**
+ * A replay answers `duplicate`. One whose read signed the row its sender still holds unsigned also stores that row,
+ * frozen and signed, and leaves the send to the row's dequeue. Nothing orders the replay behind the dequeue that
+ * freezes the row (ruling 22): the version fence lets one of the two store the proof, and the other reads it.
+ */
 function toDuplicateDispatchResult<TPrepared>(
-    read: ALOutboundMessageReadDto<TPrepared>,
-    outboxEntry: ResourceEntry
+    input: ComputeALOutboundDispatchInput<TPrepared>,
+    sentSnapshot: ALOutboundSentMessageSnapshot
 ): ALOutboundComputedDto<TPrepared> {
-    const entry = read.sentSnapshot?.outboxKey
-        ? { ...outboxEntry, key: read.sentSnapshot.outboxKey }
-        : undefined;
-    return {
+    const { read } = input;
+    const entry = sentSnapshot.outboxKey ? { ...input.outboxEntry, key: sentSnapshot.outboxKey } : undefined;
+    const duplicate: ALOutboundComputedDto<TPrepared> = {
         ...toALOutboundComputedResult(
             { kind: 'duplicate' },
             `Duplicate outbound message ${read.msg.id.msgId}`,
             entry ? [entry] : []
         ),
         trackedReceiptAlgo: toALOutboundTrackedReceiptAlgo(read.storedMessage?.policy.ackTracking)
+    };
+    if (!isALOutboundReadSignedHeldRow(read)) {
+        return duplicate;
+    }
+    // The read holds the row it signed, so the entry already carries that row's key.
+    const canonicalEntry = toChangedALMessageRow(input.outboxEntry, { status: EntityStatus.NEW });
+    return {
+        ...duplicate,
+        entries: [canonicalEntry],
+        bundle: toDispatchBundle(input, canonicalEntry, {
+            mutations: [toSentMessageMutation(read, canonicalEntry, false)],
+            durableEffects: []
+        })
     };
 }
 
