@@ -1,7 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
+import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 
+import { toTestALNackPayload } from '../../../../al-control-test-payloads.ts';
 import type { SimulatedWebSocket } from '../../../../shared/native-websocket-fixture.ts';
 import { readOriginReceipts, receiverAck, roomMessage } from '../../../../shared/services/ws-queue-box-server-receipt-fixture.ts';
 import {
@@ -9,6 +12,7 @@ import {
     connectLiveRoomSession,
     createLiveRoomClusterFixture,
     readDataCopies,
+    readDeliveryWorkStatuses,
     settleLiveRoomCluster,
     type LiveRoomClusterFixture,
     type LiveRoomInstance
@@ -111,7 +115,74 @@ describe('a room send on an undeclared topic, live-only across two instances', (
         expect(readDataCopies(r2)).toEqual(['m-1']);
         expect(readReceiptLines(origin, 'm-2')).toEqual(['admitted:', 'admitted:r1']);
     });
+
+    // P4, receipted. Turned by rulings M1 and M7 (option 1), slices 2 and 3: a send whose NOTIFY failed is published
+    // again. Pins today's completed delivery work with no copy written anywhere.
+    it('completes the delivery work of a receipted send whose publication failed and writes no copy', async () => {
+        const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const fixture = await createLiveRoomClusterFixture({ roomSessionIds: ROOM, volatileInbound: false });
+        const { a, b } = fixture.instances;
+        const origin = await connectLiveRoomSession(a, ORIGIN, KEEPS_ALL);
+        const r1 = await connectLiveRoomSession(a, 'r1', KEEPS_ALL);
+        const r2 = await connectLiveRoomSession(b, 'r2', KEEPS_ALL);
+        fixture.bus.failNextPublish();
+
+        await offerAndConfirm(fixture, { sends: [receipted(fixture, 'm-1')], confirmations: [] });
+        await advanceLiveRoomClock(fixture, ACK_TIMEOUT_MS);
+
+        expect([readDataCopies(r1), readDataCopies(r2)]).toEqual([[], []]);
+        expect([...a.handledMsgIds, ...b.handledMsgIds]).toEqual(['m-1']);
+        expect(await readDeliveryWorkStatuses(fixture)).toEqual(['COMPLETED']);
+        expect(errors.mock.calls).toEqual([[PUBLICATION_FAILED_LINE]]);
+        await advanceLiveRoomClock(fixture, LIFETIME_MS);
+        expect(readReceiptLines(origin, 'm-1')).toEqual(['admitted:', 'timed-out:']);
+    });
+
+    // P4, unreceipted. Turned by ruling M7 (option 1), slice 3: an at-least-once send whose NOTIFY failed is
+    // published again, receipted or not. Pins today's loss, which no receipt reports.
+    it('completes the delivery work of an unreceipted send whose publication failed and writes no copy', async () => {
+        const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const fixture = await createLiveRoomClusterFixture({ roomSessionIds: ROOM, volatileInbound: false });
+        const { a, b } = fixture.instances;
+        const origin = await connectLiveRoomSession(a, ORIGIN, KEEPS_ALL);
+        const r1 = await connectLiveRoomSession(a, 'r1', KEEPS_ALL);
+        const r2 = await connectLiveRoomSession(b, 'r2', KEEPS_ALL);
+        fixture.bus.failNextPublish();
+
+        await offerAndConfirm(fixture, { sends: [unreceipted(fixture, 'm-1')], confirmations: [] });
+        await advanceLiveRoomClock(fixture, ACK_TIMEOUT_MS);
+
+        expect([readDataCopies(r1), readDataCopies(r2)]).toEqual([[], []]);
+        expect([...a.handledMsgIds, ...b.handledMsgIds]).toEqual(['m-1']);
+        expect(await readDeliveryWorkStatuses(fixture)).toEqual(['COMPLETED']);
+        expect(errors.mock.calls).toEqual([[PUBLICATION_FAILED_LINE]]);
+        await advanceLiveRoomClock(fixture, LIFETIME_MS);
+        expect([readDataCopies(r1), readDataCopies(r2)]).toEqual([[], []]);
+        expect(readReceiptLines(origin, 'm-1')).toEqual([]);
+    });
+
+    // P6. No ruling turns it: ruling M8 (option 1) keeps hop order on an undeclared topic a stated limit. Pins the
+    // refusal of a recipient's gap NACK for a live-path message, which has no outbound row to repair from.
+    it('refuses a recipient\'s gap NACK for a hop-ordered send on a default topic', async () => {
+        const fixture = await createLiveRoomClusterFixture({ roomSessionIds: ROOM, volatileInbound: false });
+        const { a, b } = fixture.instances;
+        await connectLiveRoomSession(a, ORIGIN, KEEPS_ALL);
+        await connectLiveRoomSession(a, 'r1', KEEPS_ALL);
+        const r2 = await connectLiveRoomSession(b, 'r2', (frame) => frame.id.msgId === 'm-2');
+        const sends = [1, 2, 3].map((seq) => ordered(fixture, seq));
+        await offerAndConfirm(fixture, { sends, confirmations: [] });
+        expect(readDataCopies(r2)).toEqual(['m-1', 'm-3']);
+
+        const answer = await b.service.acceptIncomingMessage(gapNack(fixture, sends[2]!), 'r2');
+        await settleLiveRoomCluster(fixture);
+
+        expect(answer.left).toEqual({ code: 'unauthorized', message: 'AL repair request names no relayed message admitted to its sender' });
+        expect(readDataCopies(r2)).toEqual(['m-1', 'm-3']);
+    });
 });
+
+/** The line `publishRallarServerLiveWsNotice` prints for an admitted message whose notice failed to publish. */
+const PUBLICATION_FAILED_LINE = 'Rallar server WS admitted publication failed for room.notification (m-1): NOTIFY failed';
 
 /** Each recipient's ACK, offered on the instance its socket is on: instance, recipient, msgId. */
 type Confirmation = readonly [LiveRoomInstance, string, string];
@@ -124,6 +195,35 @@ interface OfferAndConfirmInput {
 /** The receipt fixture's room send from the origin: at-least-once, receipted by every receiver, living `LIFETIME_MS`. */
 function receipted(fixture: LiveRoomClusterFixture, msgId: string): ALMessage {
     return roomMessage({ msgId, originPeerId: ORIGIN, nowMs: fixture.clock.nowMs, lifetimeMs: LIFETIME_MS });
+}
+
+/** The lane send: at-least-once, no receipt. */
+function unreceipted(fixture: LiveRoomClusterFixture, msgId: string): ALMessage {
+    return { ...receipted(fixture, msgId), delivery: { reliability: 'at-least-once', ack: 'none' } };
+}
+
+/** The `seq`th unreceipted send of the origin's one ordering key, as `m-<seq>`. */
+function ordered(fixture: LiveRoomClusterFixture, seq: number): ALMessage {
+    return { ...unreceipted(fixture, `m-${seq}`), ordering: { orderingKey: 'k', epoch: 1, seq } };
+}
+
+/** The gap NACK a recipient sends the origin on reading `later` while it misses the sequence before it. */
+function gapNack(fixture: LiveRoomClusterFixture, later: ALMessage): ALMessage {
+    const nowMs = fixture.clock.nowMs;
+    const missingSeq = later.ordering!.seq! - 1;
+    return newALNackControlMessage(
+        { v: 4, msgId: 'r2-gap-1', senderId: 'r2', ts: nowMs, traceId: 'trace-live-path-missed-copy' },
+        toTestALNackPayload({
+            msgId: later.id.msgId,
+            fromPeerId: 'r2',
+            toPeerId: ORIGIN,
+            reason: 'gap',
+            observedAtEpochMs: nowMs,
+            orderingKey: toALOrderingTrackKey(later)!,
+            expectedSeq: missingSeq,
+            missingRanges: [{ from: missingSeq, to: missingSeq }]
+        })
+    );
 }
 
 /** Offers each send from the origin on instance a and settles the cluster after each, then offers the ACKs. */
