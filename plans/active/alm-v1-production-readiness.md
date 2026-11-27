@@ -244,10 +244,11 @@ What it left, by where this plan carries it:
 2. The receipt path's stated limits (R2) and the memory-only server (C6).
 3. A batch that outlives its work lease can hand an unordered message to the application twice
    (R8).
-4. The AppInbox sentence. Its record is written at WS ingress and not through AppInbox, which
-   the maintainer approved on 2026-11-22 (D779, point 5; D770). `AGENTS.md` and `CLAUDE.md` still
-   say AppInbox is mandatory for every incoming database mutation with no exception (checked at
-   `e30b2c9`). Decision 2.
+4. Its record is written at WS ingress and not through AppInbox (D770). D779 records, as its
+   point 5, that this was asked of the maintainer and approved on 2026-11-22. The maintainer
+   said on 2026-11-27 that they were not aware of it, and revisits it before 1.0. `AGENTS.md`
+   and `CLAUDE.md` say AppInbox is mandatory for every incoming database mutation with no
+   exception (checked at `e30b2c9`). Decision 2.
 5. D783's row is still headed "decided on the maintainer's behalf" (decision 1).
 6. Not established, from its description: the hosted statement latency; more than five
    publishers in a room; an in-order hand-on in a real browser, which no cell exercises; a killed
@@ -760,7 +761,9 @@ Notes on the rows that need them:
   revocation contract, the requirement-to-evidence matrix for the advertised modes, and current
   measured capacity. It records none as taken.
 - **A3.** PL9 to PL25, PL27 and PL28 (Slice 3); every Slice 4 ruling; builder calls in Slices 5 to
-  7; D607 to D641, ruled by the controller; D645's window split; D717, D719 and D757; and D783.
+  7; D607 to D641, ruled by the controller; D645's window split; D717, D719 and D757; D783; and
+  D770, the record written outside AppInbox, which the maintainer revisits before 1.0 (decision
+  2).
   D784 is no longer on this list: its row quotes the maintainer's own rulings of 2026-11-26.
   D785 and D786, added since, quote rulings of 2026-11-27 and never joined it.
 - **A4.** Checked in the apps: Relic Hunters uses `messages.room` for hunter events and round
@@ -1283,11 +1286,18 @@ reference set is not rerun on #885's later heads or on `main` as merged (R1).
    still asked: whether that confirms D783, so that its row and A3 can say so. Recommend yes: it
    is a narrow fix with red-first tests; #885's own runs handed nothing to a subscriber twice, and
    neither did the cell's twelve five-publisher runs on its tree.
-2. **The receipt record writes outside AppInbox** (D770). Answered as a design: D779 records
-   that you approved it on 2026-11-22, asked alone (its point 5). What is still asked is the
-   sentence. `AGENTS.md` and `CLAUDE.md` still say AppInbox is mandatory for every incoming
-   database mutation (checked at `e30b2c9`). Recommend one sentence in both naming the ALM
-   runtime stores as the stated exception, so the rule and the code agree.
+2. **The receipt record writes outside AppInbox** (D770). Not answered. D779 records an
+   approval of 2026-11-22, asked alone as its point 5. Asked again on 2026-11-27, the maintainer
+   said they were not aware of it, and ruled three things. First, it is revisited before ALM
+   is completed, so D770 joins A3's list and exit criterion 8 covers it. Second, the revisit
+   starts from a written review: what the design solved, why AppInbox was not chosen, what it
+   would cost, the pros and cons, and every other write on an incoming path that goes outside
+   AppInbox. D770 says the record is written "as the AL runtime's inbound and outbound stores
+   are", so the receipt record is not the only one. Third, no agent proposes a write outside
+   AppInbox without saying so explicitly. `AGENTS.md` and `CLAUDE.md` say AppInbox is mandatory
+   for every incoming database mutation (checked at `e30b2c9`); no sentence that names an
+   exception is added to either before the revisit. What is asked next is the review's own
+   question: confirm the direct writes with a written boundary, or move them behind AppInbox.
 3. **Sign every ordinary RTC room send?** Recommend yes for 1.0. Without it the contract must say
    that a room member can speak as another on any unreceipted send, which is the default for
    `live`.
