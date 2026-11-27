@@ -1,7 +1,8 @@
 # ALM 1.0: status and the plan to production readiness
 
 Read 2026-11-26, twice: at `main` `1d19596` with pull request #885 at `8dece84` (draft), and again
-at `main` `704a01a`. Section 2 says what each reading covers.
+at `main` `704a01a`. A third reading on 2026-11-27, at `main` `bc84d58`, records only that #923
+and #927 merged. Section 2 says what each reading covers.
 
 This file answers three questions: where ALM stands, what is left before it can be called a
 reliable part of the Rallar product, and in what order to do it. It is a written multi-slice spec
@@ -31,7 +32,7 @@ it:
    the WS server on PostgreSQL once database latency is added. On `main` all six runs at +0 ms
    keep up and none of ten at +5 ms nominal does (measured: five publishers at two sends a second
    for 20 s, and one publisher at 5 and at 10 a second, through three server instances in one
-   process; #927, open). D784 measured the same on the #885 branch: over 45 s, 93 to 166 of 450
+   process; #927). D784 measured the same on the #885 branch: over 45 s, 93 to 166 of 450
    are delivered. So the defect predates #885. A room send is ordered only when it names an
    `orderingKey` or a `seq` (`packages/shared-web/browser/messages/browser-rallar-message-sender.ts`),
    and no app in the repository sends one (`plans/active/edge-ordered-room-sends.md`, section
@@ -44,7 +45,7 @@ it:
    that nothing waits for (D702). It was green on all five legs at `main` `6ccebbb` (checked, run
    45815136110), and four cells are known intermittents.
 4. **Nothing is measured at scale.** The publication workload family is one local point: one
-   room, one publisher and three agents over `rtc`, built in #923 (open). The first hosted
+   room, one publisher and three agents over `rtc`, built in #923. The first hosted
    campaign has not run, and no latency or memory level is set (D643). The last hosted 50-agent
    delivery runs failed, on a cause that is fixed in code and has no hosted read.
 5. **Security has open rulings.** Any room member can still deliver an unreceipted RTC room send
@@ -68,9 +69,11 @@ keep up under load, read lever by lever in the measurement cell of #927.
 First reading, 2026-11-26: `main` at `1d19596`, #885 at `8dece84`. Second reading, 2026-11-26:
 `main` at `704a01a`, #923 at `46386e2`, #927 at `5ddf641`, and #885 at `4265b1d`, of which the
 description and the commit list were read and the branch was not. The second reading covers what
-merged between the two (#912, #913 which added this file, #914, #917 and #922), the two open pull
-requests, and `plans/active/edge-ordered-room-sends.md`. A statement that rests on it names its
-pull request or `704a01a`.
+merged between the two (#912, #913 which added this file, #914, #917 and #922), #923 and #927,
+both open then, and `plans/active/edge-ordered-room-sends.md`. A statement that rests on it names
+its pull request or `704a01a`. Third reading, 2026-11-27: `main` at `bc84d58`, which holds #923
+(`6bae949`) and #927 (`bc84d58`). It changes the state of those two and nothing else; no figure
+was measured again.
 
 | Document                                              | Role                                                       | State                                                          |
 | ----------------------------------------------------- | ---------------------------------------------------------- | -------------------------------------------------------------- |
@@ -84,18 +87,18 @@ pull request or `704a01a`.
 | Pull request #885                                     | The crash-surviving receipt                                | Built, draft, body stale; `main` `704a01a` merged at `4265b1d` |
 | Pull request #912                                     | `durable-takeover` lane cell, D763                         | Merged                                                         |
 | Pull request #922                                     | The carrier matrix (T4)                                    | Merged                                                         |
-| Pull request #923                                     | Publication workload family, first slice                   | Open at `46386e2`; release gate green (checked)                |
-| Pull request #927                                     | Measurement cell for ordered room sends                    | Open at `5ddf641`; release gate not finished                   |
+| Pull request #923                                     | Publication workload family, first slice                   | Merged as `6bae949`                                            |
+| Pull request #927                                     | Measurement cell for ordered room sends                    | Merged as `bc84d58`                                            |
 | `plans/active/edge-ordered-room-sends.md`             | Another author's plan for ordered room sends (#914)        | A plan to decide on; nothing built                             |
 
 `plans/active/**` on `main` holds two plans about ALM: this one, and
 `edge-ordered-room-sends.md`, which section 7 relates to. Three more files there touch ALM's
 carriers and are not ALM plans: `group-dynamics-damping.md` (the reshape gate),
 `rtc-establishment-diagnostics.md` and `rallar-actor.md` (a consumer proposal). No untracked ALM
-document exists in this checkout. Three more ALM documents live outside both folders, in
+document exists in this checkout. Four more ALM documents live outside both folders, in
 `packages/shared-test/rallar-bb-test/docs/`: `alm-delivery-diagnostics.md`,
-`alm-observation-artifact.md` and `alm-carrier-matrix.md` (#922). #923 adds
-`alm-publication-workload.md` there.
+`alm-observation-artifact.md`, `alm-carrier-matrix.md` (#922) and `alm-publication-workload.md`
+(#923).
 
 ## 3. What is delivered
 
@@ -141,7 +144,7 @@ The roadmap's requirement-to-evidence matrix marks 27 of 30 rows resolved, one d
 partial (F9 and PC10, both the schema-mismatch reclaim). It was last baselined before Release 9 and
 has no row for Releases 9 to 16.
 
-## 4. The open pull requests
+## 4. The pull requests read
 
 ### #885, the crash-surviving receipt
 
@@ -198,20 +201,19 @@ What stands between it and `main`, as read at `8dece84` unless a line says other
 ### #923, the publication workload family's first slice
 
 Test-side and measurement code: one room, one publisher, a figures record and a local three-agent
-proof on `rtc`. Its `Branch Release Gate result` is green at `46386e2` (checked). P1 in section 5.3
-says what it builds and what it leaves. One change reaches product readers: the bounded-histogram
-decoder refuses a `min` or `max` outside the bucket that counts it. It carries the same move of
-`computeBoundedHistogramRecorded` as #927, so `packages/shared/measurement/README.md` needs a hand
-merge in whichever lands second (both descriptions say so).
+proof on `rtc`. Merged as `6bae949`; its `Branch Release Gate result` was green at `46386e2`
+(checked). P1 in section 5.3 says what it builds and what it leaves. One change reaches product
+readers: the bounded-histogram decoder refuses a `min` or `max` outside the bucket that counts it.
 
 ### #927, the measurement cell for ordered room sends
 
 A harness under `apps/api-v1/scripts/perf/alm-ordered-send/`, run with
 `npm run perf:alm:ordered-send`, with a pure report and a PostgreSQL smoke. It changes no product
-behaviour. Its release gate had not finished at `5ddf641`. Section 5.1 holds what its reference set
-shows (R1) and what building it found on `main` (R8, R15 to R19; G9 in section 5.4). The cell
-offers ordered sends only (its README). Not built: a run on #885's tree, a hosted or multi-process
-run, a window longer than 20 s, and a topic declared `fanout: 'outbox'`.
+behaviour. Merged as `bc84d58`; its `Branch Release Gate result` was green at `5ddf641` (checked),
+and the head that merged adds the merge of `main` after #923 and one README sentence. Section 5.1
+holds what its reference set shows (R1) and what building it found on `main` (R8, R15 to R19; G9
+in section 5.4). The cell offers ordered sends only (its README). Not built: a run on #885's tree,
+a hosted or multi-process run, a window longer than 20 s, and a topic declared `fanout: 'outbox'`.
 
 ## 5. What remains
 
@@ -251,9 +253,9 @@ the evidence level that pull request gives it, in brackets, and each class is a 
 
 Notes on the rows that need them:
 
-- **R1.** Measured on `main` by the cell of #927 (open): three API WS server instances in one
+- **R1.** Measured on `main` by the cell of #927: three API WS server instances in one
   process on one PostgreSQL, the real router, a fixed-audience authorizer and an open-loop load
-  (`apps/api-v1/scripts/perf/alm-ordered-send/` and its README, in that pull request). The
+  (`apps/api-v1/scripts/perf/alm-ordered-send/` and its README). The
   reference set is 16 runs: five publishers at two sends a second for 20 s unless stated, observed
   for 75 s after the last offer, at the API's default application pool of 5.
   - At +0 ms all six runs keep up: every expected copy is written in order and every receipt is
@@ -398,24 +400,24 @@ Notes on the rows that need them:
   | Make-before-break routing                                            | Built; no hosted read                            |
   | Publication figures                                                  | Built; admission-to-native-submission age is not |
   | Same-regime baseline                                                 | Local half built; hosted half not                |
-  | Delivered sample age from payload timestamps                         | Built in #923 (open), per subscriber             |
+  | Delivered sample age from payload timestamps                         | Built (#923), per subscriber                     |
   | Platform fault steps, local                                          | Built                                            |
   | Receipt truth and the held-send path                                 | Built; #885 completes it                         |
-  | Publication workload family and a run-time-principal hosted manifest | First slice in #923 (open); no hosted manifest   |
+  | Publication workload family and a run-time-principal hosted manifest | First slice built (#923); no hosted manifest     |
   | Probes at the owners                                                 | Not built                                        |
   | Byte sizes of the games' frames                                      | Not measured (checked)                           |
   | Hosted fault step over the api role's units                          | Not built (checked)                              |
   | Connect fix                                                          | Met (#813)                                       |
   | The campaign's own go-ahead, about 14 runs                           | Not given; two guidance runs are approved        |
 
-  The family's first slice is built in #923 (open, so not on `main`): one room, one publisher,
-  every parameter required, a figures record that keeps `configured` apart from `measured`, a
-  delivered-sample-age figure as bucket ranges per subscriber, and a local three-agent proof on
-  `rtc` (`packages/shared-test/rallar-bb-test/docs/alm-publication-workload.md` in that pull
-  request). Not built: more than one room or publisher, a rate above the publication cadence,
-  churn, seeded loss, a hosted manifest, a histogram merge across subscribers, and the clock
-  offset between machines, which every hosted age holds. Only the `rtc` point has a test that runs
-  it, and no CI lane runs that test.
+  The family's first slice is on `main` (#923): one room, one publisher, every parameter required,
+  a figures record that keeps `configured` apart from `measured`, a delivered-sample-age figure as
+  bucket ranges per subscriber, and a local three-agent proof on `rtc`
+  (`packages/shared-test/rallar-bb-test/docs/alm-publication-workload.md`). Not built: more than
+  one room or publisher, a rate above the publication cadence, churn, seeded loss, a hosted
+  manifest, a histogram merge across subscribers, and the clock offset between machines, which
+  every hosted age holds. Only the `rtc` point has a test that runs it, and no CI lane runs that
+  test.
 
 - **P2.** Manifests 07 and 09 failed at 50 agents on a layout re-plan landing inside the stream.
   Two guidance runs after the merge are approved and have no recorded result. Which server path
@@ -721,7 +723,7 @@ all.
 
 | Milestone            | Outcome                                                                       | Closes                          |
 | -------------------- | ----------------------------------------------------------------------------- | ------------------------------- |
-| A. In flight         | #885, #923 and #927 on `main`; documents state the truth                      | R2, A6                          |
+| A. In flight         | #885 on `main`, as #923 and #927 are; documents state the truth               | R2, A6                          |
 | B. Reliability       | No Blocker left in 5.1; each Decide ruled; one lifecycle across the hand-over | R1, R3 to R19, T1 to T3, T5, T6 |
 | C. A lane that gates | Full scope required on three carriers; no `unproven` proof in a 1.0 mode      | G1 to G3, G6, G9, T4            |
 | D. Trust             | Authorization debts closed; signing ruled; server limits enforced             | S1 to S8                        |
