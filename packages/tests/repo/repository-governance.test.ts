@@ -24,6 +24,14 @@ describe('repository pull request governance', () => {
         expect(template).toContain('None');
         expect(template).not.toMatch(/```|sha|digest|reviewer|plan-adaptation|changed paths/iu);
     });
+
+    it('makes the author state the writes outside AppInbox a pull request adds or alters', () => {
+        const template = readRepo('.github/PULL_REQUEST_TEMPLATE.md');
+        const changes = template.slice(template.indexOf('## Changes'), template.indexOf('## Acceptance'));
+        const statement = changes.split('\n').find((line) => line.includes('Writes outside AppInbox added or altered'));
+
+        expect(statement).toMatch(/: None$/u);
+    });
     it('publishes the historical-plan navigation policy', () => {
         const navigation = readRepo('plans/README.md');
 
