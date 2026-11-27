@@ -1,3 +1,4 @@
+import type { RallarEdgeOrderUsage } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { ALInboundOrderingCounters } from '@shared/alm/inbound/admission/al-inbound-ordering-counters.ts';
 import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundCongestionEpisodes } from '@shared/alm/outbound/congestion/al-outbound-congestion-episodes.ts';
@@ -21,8 +22,9 @@ import type { RallarBlackBoxEventHistory } from './event-history.ts';
  * and the delivered markers its inbound stores state they hold, each store's latest statement since the page's last
  * `close`, summed; `repliesHeld` and `replyWaitsOpen`, the replies its retained deliveries hold and the reply
  * waits in flight; `publication`, its connect's publication stage report (D480); `ordering`, the ordering
- * positions its connect's arrivals stated, by status (S4ii-R6); and `congestionEpisodes`, how long each message a
- * carrier of its connect deferred waited for it (D665).
+ * positions its connect's arrivals stated, by status (S4ii-R6); `congestionEpisodes`, how long each message a
+ * carrier of its connect deferred waited for it (D665); and `edgeOrder`, what the page's edge-ordered channels keep
+ * and gave up.
  */
 export interface RallarBlackBoxTestAlmUsage extends ALVolatileSessionReport {
     readonly orderingTracks: number;
@@ -32,6 +34,7 @@ export interface RallarBlackBoxTestAlmUsage extends ALVolatileSessionReport {
     readonly publication: ALOutboundPublicationStageReport;
     readonly ordering: ALInboundOrderingCounters;
     readonly congestionEpisodes: ALOutboundCongestionEpisodes.Figures;
+    readonly edgeOrder: RallarEdgeOrderUsage;
 }
 
 export interface RallarBlackBoxIndexedDbStoreCensus {

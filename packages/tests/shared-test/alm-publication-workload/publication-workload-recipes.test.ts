@@ -25,6 +25,7 @@ import { toIdleALOutboundCongestionEpisodeFigures } from '@shared/alm/outbound/c
 import { toIdleALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
+import { IDLE_RALLAR_EDGE_ORDER_USAGE } from '../idle-rallar-edge-order-usage.ts';
 import { toNestedCommands } from '../to-nested-commands.ts';
 
 const GROUP = { applicationId: 'workload-app', workspaceId: 'workload-workspace', groupId: 'workload-room' };
@@ -266,7 +267,8 @@ function toPublisherAlmUsage(admitted: number): RallarBlackBoxTestAlmUsage {
             counters: { ...stage.counters, staged: 60, admitted, expired: 60 - admitted }
         },
         ordering: { entered: 0, omitted: 0, witnessed: 0, beforeEntry: 0 },
-        congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures()
+        congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures(),
+        edgeOrder: IDLE_RALLAR_EDGE_ORDER_USAGE
     };
 }
 

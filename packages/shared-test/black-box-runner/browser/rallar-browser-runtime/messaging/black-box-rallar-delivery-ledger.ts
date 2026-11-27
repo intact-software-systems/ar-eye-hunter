@@ -127,7 +127,8 @@ export class BlackBoxRallarDeliveryLedger {
             onStorageUnavailable: send.onStorageUnavailable,
             purpose: send.purpose ?? (send.toPeer === undefined ? 'notification' : 'command'),
             publication: send.publication,
-            recovery: undefined
+            recovery: undefined,
+            order: config.rallar.channelOrder
         });
         this.#emitSendStarted(config, send, roomRef);
         const handle = await channel.send(send.payload, {

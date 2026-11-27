@@ -5,6 +5,12 @@ import { BrowserMessageInputValidator } from '@shared-web/browser/messages/brows
 import { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
 import { BrowserRallarMessageSubscriptions } from '@shared-web/browser/messages/browser-rallar-message-subscriptions.ts';
 import { BrowserTypedMessageChannels } from '@shared-web/browser/messages/browser-typed-message-channels.ts';
+import { EDGE_ORDER_RECEIVER_DEFAULT_LIMITS } from '@shared-web/browser/messages/edge-order/edge-order-receiver-limits.ts';
+import {
+    EDGE_ORDER_MAX_SEND_STREAMS,
+    EdgeOrderSendStreams
+} from '@shared-web/browser/messages/edge-order/edge-order-send-streams.ts';
+import { EDGE_ORDER_ACKNOWLEDGED_SETTLE_MS } from '@shared-web/browser/messages/edge-order/edge-order-sender.ts';
 import type { BrowserGrantedTopics } from '@shared-web/browser/messages/publication/browser-granted-topics.ts';
 import type {
     RallarMessageHandler,
@@ -26,7 +32,9 @@ import type { BrowserWebSocketInbox } from '@shared-web/browser/websocket/browse
 import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import type { Timers } from '@shared/resilience/timers.ts';
 
+import { readBrowserServerExpiryEpochMs } from '../connection/server-clock/browser-server-clock-session.ts';
 import type { BrowserRallarDeliveryRegistry } from './browser-rallar-delivery-registry.ts';
 import { BrowserRallarMessageDispatch } from './browser-rallar-message-dispatch.ts';
 import type { BrowserSessionDeliveries } from './browser-session-deliveries.ts';
@@ -39,6 +47,10 @@ export namespace BrowserRallarMessagesController {
         readonly sessionDeliveries: BrowserSessionDeliveries;
         readonly publicationStages: BrowserPublicationStages;
         readonly nowMs: () => number;
+        /** The page's timers: edge order releases what it holds by them. */
+        readonly timers: Pick<Timers, 'schedule'>;
+        /** Mints an edge-ordered send stream's id in memory; never derived from the session. */
+        readonly newEdgeOrderStreamId: () => string;
         readonly wsInbox: BrowserWebSocketInbox;
         /** Where `channel(...)` registers a definition's recovery owner, for the resync recovery to find. */
         readonly recoveryOwners: BrowserChannelRecoveryOwners;
@@ -72,7 +84,12 @@ export class BrowserRallarMessagesController {
         const inputValidator = new BrowserMessageInputValidator({
             readMaxPayloadBytes: input.readMessageMaxPayloadBytes
         });
-        const sender = createMessageSender(input, inputValidator);
+        const edgeOrderStreams = new EdgeOrderSendStreams({
+            newStreamId: input.newEdgeOrderStreamId,
+            maxStreams: EDGE_ORDER_MAX_SEND_STREAMS,
+            acknowledgedSettleMs: EDGE_ORDER_ACKNOWLEDGED_SETTLE_MS
+        });
+        const sender = createMessageSender(input, inputValidator, edgeOrderStreams);
         this.sender = sender;
         const sendReply: RallarMessageReplySender = async (request, payload, options) =>
             await sender.sendReply(request, payload, options);
@@ -80,7 +97,9 @@ export class BrowserRallarMessagesController {
             wsInbox: input.wsInbox,
             sendReply,
             readMiddleware: input.readMiddleware,
-            readInboundDiagnostics: input.readInboundDiagnostics
+            readInboundDiagnostics: input.readInboundDiagnostics,
+            edgeOrderLimits: EDGE_ORDER_RECEIVER_DEFAULT_LIMITS,
+            timers: input.timers
         });
         new BrowserMessageReplyInbox({
             wsInbox: input.wsInbox,
@@ -94,12 +113,14 @@ export class BrowserRallarMessagesController {
             input,
             () => {
                 const context = input.requireMiddleware();
+                edgeOrderStreams.closeEndedSends(readBrowserServerExpiryEpochMs(context.serverTime));
                 return {
                     ...context.middleware.volatileBudget.readReport(input.nowMs()),
                     ...input.deliveries.getReplyCounts(),
                     publication: input.publicationStages.readReport(context),
                     ordering: context.middleware.orderingCounters.readReport(),
-                    congestionEpisodes: context.middleware.congestionEpisodes.readReport()
+                    congestionEpisodes: context.middleware.congestionEpisodes.readReport(),
+                    edgeOrder: { ...this.subscriptions.getEdgeOrderUsage(), ...edgeOrderStreams.getUsage() }
                 };
             }
         );
@@ -135,7 +156,8 @@ export class BrowserRallarMessagesController {
             ws,
             recoveryOwners: channelOwners.recoveryOwners,
             topicSubscriptions: channelOwners.topicSubscriptions,
-            grantedTopics: channelOwners.grantedTopics
+            grantedTopics: channelOwners.grantedTopics,
+            edgeOrder: this.subscriptions
         });
         return {
             rtc,
@@ -153,7 +175,8 @@ export class BrowserRallarMessagesController {
 
 function createMessageSender(
     input: BrowserRallarMessagesController.Input,
-    inputValidator: BrowserMessageInputValidator
+    inputValidator: BrowserMessageInputValidator,
+    edgeOrderStreams: EdgeOrderSendStreams
 ): BrowserRallarMessageSender {
     return new BrowserRallarMessageSender({
         creation: input.creation,
@@ -167,6 +190,7 @@ function createMessageSender(
         }),
         sessionDeliveries: input.sessionDeliveries,
         inputValidator,
+        edgeOrderStreams,
         connect: input.connect,
         requireSession: input.requireSession,
         resolveDefaultRoom: input.resolveDefaultRoom,

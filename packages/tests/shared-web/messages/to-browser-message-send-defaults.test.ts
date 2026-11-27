@@ -44,7 +44,8 @@ function toChannel(access: BrowserTypedChannelPolicy['access']): BrowserTypedCha
         access,
         durability: undefined,
         onStorageUnavailable: 'refuse',
-        publication: undefined
+        publication: undefined,
+        order: undefined
     };
 }
 

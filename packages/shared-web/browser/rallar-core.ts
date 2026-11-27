@@ -61,6 +61,9 @@ export type {
     RallarMessageHandle,
     RallarMessageHandler,
     RallarMessageLane,
+    RallarMessageOrder,
+    RallarMessageOrderGap,
+    RallarMessageOrderGapReason,
     RallarMessageReplyOptions,
     RallarMessageReplyOutcome,
     RallarMessageReplyWaitOptions,
@@ -178,12 +181,22 @@ export type { BoundedHistogram } from '@shared/measurement/bounded-histogram.ts'
 export { RallarRtcCaptureConnectionRequiredError } from '@shared-web/browser/connection/rallar-rtc-capture-connection-required-error.ts';
 export { RallarRtcCaptureUnverifiedError } from '@shared-web/browser/connection/rallar-rtc-capture-unverified-error.ts';
 
-export type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
-export type { RoomAccessObservation } from './state-read/watch-room-access.ts';
-export type { RoomClockObservation, RoomDeadlineObservation, RoomTimelineObservation } from './rooms/time/room-time-operations.ts';
-export type { RoomSchedule } from '@shared/api/group-deadlines/room-schedule.ts';
-export type { RoomTimeline, RoomTimelineAdvance, RoomTimelineExtension, RoomTimelineSuccessor, RoomTimelineSuccessorChange } from '@shared/api/group-deadlines/room-timeline.ts';
 export type { RoomClock, RoomClockCommand } from '@shared/api/group-deadlines/room-clock.ts';
 export type { RoomDeadline, RoomDeadlineChange } from '@shared/api/group-deadlines/room-deadline.ts';
+export type { RoomSchedule } from '@shared/api/group-deadlines/room-schedule.ts';
+export type {
+    RoomTimeline,
+    RoomTimelineAdvance,
+    RoomTimelineExtension,
+    RoomTimelineSuccessor,
+    RoomTimelineSuccessorChange
+} from '@shared/api/group-deadlines/room-timeline.ts';
+export type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
+export type {
+    RoomClockObservation,
+    RoomDeadlineObservation,
+    RoomTimelineObservation
+} from './rooms/time/room-time-operations.ts';
+export type { RoomAccessObservation } from './state-read/watch-room-access.ts';
 
 export type { GroupJoinCodeResponse } from '@shared/api/state-types.ts';

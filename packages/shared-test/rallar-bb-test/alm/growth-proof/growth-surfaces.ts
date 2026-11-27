@@ -16,6 +16,12 @@ const AL_ORDERING_TRACKS_PER_STORE = 256;
 const AL_DELIVERED_MARKERS_PER_STORE = 256;
 const BROWSER_INBOUND_STORES = 2;
 const BROWSER_DELIVERY_REGISTRY_ENTRIES = 512;
+const EDGE_ORDER_RECEIVED_STREAMS = 256;
+const EDGE_ORDER_EVICTED_STREAM_RECORDS = 256;
+const EDGE_ORDER_HELD_MESSAGES_PER_STREAM = 256;
+const EDGE_ORDER_SEND_STREAMS = 256;
+/** The deadline every send gets when its channel names no `ttlMs`, the workload's sends among them. */
+const EDGE_ORDER_DEFAULT_SEND_DEADLINE_MS = 30_000;
 
 const HEAP: GrowthClassification = { growthClass: 'heap' };
 /** The committed `appInbox.finishedRetentionMs` default; the run keeps it, so these rows grow for its whole length. */
@@ -692,5 +698,45 @@ export const GROWTH_SURFACES: readonly GrowthSurface[] = [
             missingBound: 'one wait per awaitReply call; each ends by its required timeoutMs and no count caps them'
         },
         readers: [toBrowserReading('rallar', 'alm', 'replyWaitsOpen')]
+    },
+    {
+        id: 85,
+        name: 'browser edge-order received streams (not in the survey)',
+        owner: 'packages/shared-web/browser/messages/edge-order/edge-order-receiver.ts',
+        classification: { growthClass: 'count-capped', cap: EDGE_ORDER_RECEIVED_STREAMS },
+        readers: [toBrowserReading('rallar', 'alm', 'edgeOrder', 'streams')]
+    },
+    {
+        id: 86,
+        name: 'browser edge-order evicted stream records (not in the survey)',
+        owner: 'packages/shared-web/browser/messages/edge-order/edge-order-receiver.ts',
+        classification: { growthClass: 'count-capped', cap: EDGE_ORDER_EVICTED_STREAM_RECORDS },
+        readers: [toBrowserReading('rallar', 'alm', 'edgeOrder', 'evictedStreams')]
+    },
+    {
+        id: 87,
+        name: 'browser edge-order held messages, at most 256 for each of 256 received streams (not in the survey)',
+        owner: 'packages/shared-web/browser/messages/edge-order/compute-edge-order-stream-step.ts',
+        classification: {
+            growthClass: 'count-capped',
+            cap: EDGE_ORDER_RECEIVED_STREAMS * EDGE_ORDER_HELD_MESSAGES_PER_STREAM
+        },
+        readers: [toBrowserReading('rallar', 'alm', 'edgeOrder', 'heldMessages')]
+    },
+    {
+        id: 88,
+        name: 'browser edge-order send streams (not in the survey)',
+        owner: 'packages/shared-web/browser/messages/edge-order/edge-order-send-streams.ts',
+        classification: { growthClass: 'count-capped', cap: EDGE_ORDER_SEND_STREAMS },
+        readers: [toBrowserReading('rallar', 'alm', 'edgeOrder', 'sendStreams')]
+    },
+    {
+        id: 89,
+        name: 'browser edge-order open sends and stated holes (not in the survey)',
+        owner: 'packages/shared-web/browser/messages/edge-order/edge-order-sender.ts',
+        // No count caps them: each open send leaves by its deadline, and a hole once the sends below it ended. The
+        // read itself closes every ended send before it counts, so no sweep stands between a deadline and the reading.
+        classification: { growthClass: 'ttl-within-run', ttlMs: EDGE_ORDER_DEFAULT_SEND_DEADLINE_MS, sweepMs: 0 },
+        readers: [toBrowserReading('rallar', 'alm', 'edgeOrder', 'openSends')]
     }
 ];

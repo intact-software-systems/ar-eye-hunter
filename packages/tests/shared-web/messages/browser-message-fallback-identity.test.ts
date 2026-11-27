@@ -1,6 +1,3 @@
-import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
-import { ROOM_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
-import { signALPublicationProof, verifyALPublicationProof } from '@shared/al-contracts/publication-proof/al-publication-proof.ts';
 import { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
 import type {
     RallarStorageUnavailablePolicy,
@@ -13,6 +10,7 @@ import {
     newALUnicastMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
+import { signALPublicationProof, verifyALPublicationProof } from '@shared/al-contracts/publication-proof/al-publication-proof.ts';
 import { computeRtcFrozenAudienceRefusal } from '@shared/multicast/web-rtc-overlay-frozen-audience.ts';
 import {
     afterEach,
@@ -25,6 +23,8 @@ import {
 } from 'vitest';
 import { createDefaultOutboundTestRuntime, createVolatileOutboundTestStores } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 import type { OutboundTestPayload } from '../../shared/alm/outbound-test-payload.ts';
+import { ROOM_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
+import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
 
 import { BrowserChannelRecoveryOwners } from '@shared-web/browser/messages/browser-channel-recovery-owners.ts';
 import { BrowserMessageFallbackController } from '@shared-web/browser/messages/browser-message-fallback-controller.ts';
@@ -34,6 +34,7 @@ import { BrowserRallarMessageDispatch } from '@shared-web/browser/messages/brows
 import { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
 import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import { BrowserTypedMessageChannels } from '@shared-web/browser/messages/browser-typed-message-channels.ts';
+import { EdgeOrderSendStreams } from '@shared-web/browser/messages/edge-order/edge-order-send-streams.ts';
 import { BrowserGrantedTopics } from '@shared-web/browser/messages/publication/browser-granted-topics.ts';
 import { BrowserPublicationStages } from '@shared-web/browser/messages/publication/browser-publication-stages.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -63,16 +64,25 @@ describe('typed message fallback identity', () => {
             serverNowMs: () => serverNowMs,
             firstVerdict: ADMITTED_VERDICT,
             firstPlanner: (msg) => ({ msg, lane: 'volatile', preparedMessages: [], dropReasonCode: undefined, recordsSentPositions: ['b'] }),
-            firstSigner: async (message) => (await signALPublicationProof({ subtle, keyPair, message }))
-                .mapBoth((failure) => failure.message, (signed) => signed)
+            firstSigner: async (message) =>
+                (await signALPublicationProof({ subtle, keyPair, message }))
+                    .mapBoth((failure) => failure.message, (signed) => signed)
         });
         const handle = await fixture.channel.send({ action: 'ready' }, { ttlMs: 1000, ack: 'receiver' });
         await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
         serverNowMs = 100_999;
         fixture.settlements.rtc({
-            kind: 'receipt-exhausted', msgId: handle.msgId, carrier: 'rtc', atMs: serverNowMs,
-            mode: 'receiver', confirmedPeerIds: [], unconfirmedPeerIds: ['b'], outsideAudiencePeerIds: [],
-            cause: 'budget', detail: 'Receipt budget elapsed.', traceId: handle.traceId
+            kind: 'receipt-exhausted',
+            msgId: handle.msgId,
+            carrier: 'rtc',
+            atMs: serverNowMs,
+            mode: 'receiver',
+            confirmedPeerIds: [],
+            unconfirmedPeerIds: ['b'],
+            outsideAudiencePeerIds: [],
+            cause: 'budget',
+            detail: 'Receipt budget elapsed.',
+            traceId: handle.traceId
         });
         await vi.waitFor(() => expect(fixture.attempts.map((attempt) => attempt.carrier)).toEqual(['rtc', 'ws']));
         const copy = fixture.attempts[1]!.message;
@@ -647,6 +657,11 @@ function createChannel(input: ChannelInput): ChannelFixture {
     sessionDeliveries.beginSession(context.session);
     const epoch = feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
     const sender = new BrowserRallarMessageSender({
+        edgeOrderStreams: new EdgeOrderSendStreams({
+            newStreamId: () => crypto.randomUUID(),
+            maxStreams: 256,
+            acknowledgedSettleMs: 500
+        }),
         sessionDeliveries,
         creation: {
             createUnicast: newALUnicastMessage,
@@ -683,7 +698,8 @@ function createChannel(input: ChannelInput): ChannelFixture {
                 throw new Error('No channel in this test subscribes.');
             }
         },
-        grantedTopics: new BrowserGrantedTopics({ findGroupSnapshot: () => undefined })
+        grantedTopics: new BrowserGrantedTopics({ findGroupSnapshot: () => undefined }),
+        edgeOrder: { declareEdgeOrder: () => {} }
     });
     return {
         originalRoom: admission.originalRoom,
