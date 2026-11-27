@@ -133,6 +133,7 @@ function toGrantedTopicRoute(
         onStorageUnavailable: undefined,
         purpose: 'notification',
         publication: undefined,
-        recovery: undefined
+        recovery: undefined,
+        order: undefined
     };
 }

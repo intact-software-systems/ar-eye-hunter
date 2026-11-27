@@ -5,7 +5,7 @@ import { ArenaTournamentsEnabled } from './arena-tournaments-enabled.ts';
 
 /** A room is classified before the browser director may start; failed reads never select casual authority. */
 export function useArenaTournament(roomId: string | undefined, session: AuthSession | undefined) {
-    const enabled = useContext(ArenaTournamentsEnabled);
+    const enabled = useContext(ArenaTournamentsEnabled) && !session?.guestRoom;
     const owner = useMemo(() => enabled && roomId && session ? ArenaTournamentClient.createBrowser(roomId) : null, [
         enabled,
         roomId,

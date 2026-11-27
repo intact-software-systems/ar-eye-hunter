@@ -71,7 +71,8 @@ export function decodeBlackBoxRallarConfigFields(value: unknown): Partial<BlackB
         logoutOnClose: optionalBoolean(record.logoutOnClose),
         almVolatileLimits: decodeAlmVolatileLimits(record.almVolatileLimits),
         almPublicationLimits: decodeAlmPublicationLimits(record.almPublicationLimits),
-        recoveryOwner: optionalChoice(record.recoveryOwner, ['record'])
+        recoveryOwner: optionalChoice(record.recoveryOwner, ['record']),
+        channelOrder: optionalChoice(record.channelOrder, ['edge'])
     };
 }
 

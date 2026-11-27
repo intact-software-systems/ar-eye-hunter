@@ -49,7 +49,11 @@ export function useArenaConnectionSessionLifecycle(
     ]);
     useEffect(() => {
         void connect();
+        const unsubscribe = rallar.auth.onChange(state => {
+            if (state.session?.guestRoom) void connect();
+        }, { emitCurrent: false });
         return () => {
+            unsubscribe();
             void arenaRecentRooms.stop();
             arenaRoomEntry.stop();
         };

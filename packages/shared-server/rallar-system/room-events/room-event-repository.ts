@@ -1,3 +1,4 @@
+import { computeCourtAlertSignals } from './room-event-court-alert.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { decodeRoomEvent } from '@shared/api/room-events/decode-room-event.ts';
@@ -38,15 +39,19 @@ export class RoomEventRepository {
             readonly retentionMs: number; readonly audience: readonly string[];
         }) {
         const { applicationId, workspaceId, groupId } = after.lobby;
-        const notice = computeViewInvalidationPublication({
-            ...facts, resource: 'room-event', scope: { applicationId, workspaceId }, groupId, principalIds: facts.audience,
+        const publication = {
+            ...facts, scope: { applicationId, workspaceId }, groupId,
             changeId: computeSha256CanonicalJson({ lobby: after.lobby, revision: after.revision })
+        };
+        const notice = computeViewInvalidationPublication({ ...publication, resource: 'room-event', principalIds: facts.audience });
+        const organizerNotice = computeViewInvalidationPublication({
+            ...publication, resource: 'room-event-organizer', principalIds: before ? [before.value.organizerId, after.organizerId] : [after.organizerId]
         });
         const row = { namespace: ROOM_EVENTS_NAMESPACE, key: groupStateGroupStorageKey(after.lobby), value: JSON.stringify(after),
             expireAtTimestamp: after.closed ? facts.createdAtEpochMs + facts.retentionMs : NEVER_EXPIRE_AT_TIMESTAMP };
         const guard = before ? { ...row, operation: 'update' as const, expectedRevision: before.entry.revision }
             : { ...row, operation: 'insert' as const };
-        return computeGuardedViewPublication({ guard, effects: [...fences, ...notice.provenance] },
-            [...notice.outbox, ...computeRoomEventWake(before?.value ?? null, after, facts)]);
+        return computeGuardedViewPublication({ guard, effects: [...fences, ...notice.provenance, ...organizerNotice.provenance] },
+            [...notice.outbox, ...organizerNotice.outbox, ...computeCourtAlertSignals(before?.value ?? null, after, facts), ...computeRoomEventWake(before?.value ?? null, after, facts)]);
     }
 }

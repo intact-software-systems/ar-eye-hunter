@@ -58,6 +58,11 @@ export function registerBrowserTransportLifecycle(
         detach: (context) => input.messageSubscriptions.detachRtc(context)
     });
     input.lifecycle.register({
+        id: 'edge-order-held-messages',
+        order: 35,
+        detach: () => input.messageSubscriptions.dropHeldEdgeOrderMessages()
+    });
+    input.lifecycle.register({
         id: 'ws-inbox',
         order: 40,
         attach: (context) => input.wsInbox.attach(context),

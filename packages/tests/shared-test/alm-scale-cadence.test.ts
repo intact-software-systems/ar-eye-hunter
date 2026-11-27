@@ -61,6 +61,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 
 import { createBrowserRallarRequiredMethodsTestDouble } from './browser-rallar-required-methods-test-double.ts';
+import { IDLE_RALLAR_EDGE_ORDER_USAGE } from './idle-rallar-edge-order-usage.ts';
 import {
     facade,
     loadRuntime,
@@ -96,12 +97,16 @@ afterEach(() => {
 function openShot(payload: ScaleWirePayload, starts: ShotStart[]): RallarMessageHandle {
     const msgId = `shot-${starts.length + 1}`;
     const registry = facade.deliveries;
-    const handle = registry.open({ message: {
-        id: { v: 4, msgId, ts: Date.now(), senderId: facade.session.sessionId, traceId: 'trace-alm-scale-cadence' },
-        route: { topicId: 'room.ar-eye-hunter.director', contextId: GROUP.groupId, resourceId: GROUP.groupId },
-        payload: { typeId: payload.typeId, contentType: 'application/json', resource: JSON.stringify(payload.payload) },
-        delivery: { ack: 'group-leader', reliability: 'at-least-once' }
-    }, carrier: 'rtc', readDeadlineEpochMs: Date.now });
+    const handle = registry.open({
+        message: {
+            id: { v: 4, msgId, ts: Date.now(), senderId: facade.session.sessionId, traceId: 'trace-alm-scale-cadence' },
+            route: { topicId: 'room.ar-eye-hunter.director', contextId: GROUP.groupId, resourceId: GROUP.groupId },
+            payload: { typeId: payload.typeId, contentType: 'application/json', resource: JSON.stringify(payload.payload) },
+            delivery: { ack: 'group-leader', reliability: 'at-least-once' }
+        },
+        carrier: 'rtc',
+        readDeadlineEpochMs: Date.now
+    });
     starts.push({ atMs: Date.now(), msgId, payload });
     registry.record({
         kind: 'admission',
@@ -380,7 +385,8 @@ class ScaleActor {
                     replyWaitsOpen: 0,
                     publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS),
                     ordering: createALInboundOrderingCounters(),
-                    congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures()
+                    congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures(),
+                    edgeOrder: IDLE_RALLAR_EDGE_ORDER_USAGE
                 }),
                 readCongestionCounters: async () => ({ dropped: 0, deferred: 0, handedOver: 0, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 }),
                 readStorageCounters: async (command) =>
@@ -717,13 +723,17 @@ class ScaleCohort {
 
     send(actor: ScaleActor, payload: ScaleWirePayload): RallarMessageHandle {
         const msgId = `${actor.agentId}-message-${actor.starts.length + 1}`;
-        const handle = actor.registry.open({ message: {
-            id: { v: 4, msgId, ts: Date.now(), senderId: actor.session.sessionId, traceId: 'trace-alm-scale-cadence' },
-            route: { topicId: 'room.ar-eye-hunter.director', contextId: GROUP.groupId, resourceId: GROUP.groupId },
-            payload: { typeId: payload.typeId, contentType: 'application/json', resource: JSON.stringify(payload) },
-            delivery: { ack: actor.role === 'player' ? 'group-leader' : 'all-logical-recipients', reliability: 'at-least-once' },
-            constraints: { expiresAtMs: Date.now() + 30_000 }
-        }, carrier: 'rtc', readDeadlineEpochMs: Date.now });
+        const handle = actor.registry.open({
+            message: {
+                id: { v: 4, msgId, ts: Date.now(), senderId: actor.session.sessionId, traceId: 'trace-alm-scale-cadence' },
+                route: { topicId: 'room.ar-eye-hunter.director', contextId: GROUP.groupId, resourceId: GROUP.groupId },
+                payload: { typeId: payload.typeId, contentType: 'application/json', resource: JSON.stringify(payload) },
+                delivery: { ack: actor.role === 'player' ? 'group-leader' : 'all-logical-recipients', reliability: 'at-least-once' },
+                constraints: { expiresAtMs: Date.now() + 30_000 }
+            },
+            carrier: 'rtc',
+            readDeadlineEpochMs: Date.now
+        });
         actor.starts.push({ atMs: Date.now(), msgId, payload });
         const admit = () => {
             actor.registry.record({

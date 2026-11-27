@@ -25,6 +25,7 @@ import {
 } from '../../shared-test/rallar-bb-test/mod.ts';
 import type { RallarBlackBoxTestAlmUsage } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { sleepWithAbort } from '../../shared-test/rallar-bb-test/runtime/sleep-with-abort.ts';
+import { IDLE_RALLAR_EDGE_ORDER_USAGE } from './idle-rallar-edge-order-usage.ts';
 import { createDeterministicRuntime } from './rallar-bb-runtime/create-deterministic-runtime.ts';
 
 describe('runtime construction', () => {
@@ -112,7 +113,8 @@ describe('runtime construction', () => {
             overloaded: false,
             publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS),
             ordering: createALInboundOrderingCounters(),
-            congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures()
+            congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures(),
+            edgeOrder: IDLE_RALLAR_EDGE_ORDER_USAGE
         };
         const initialCongestion = { dropped: 2, deferred: 3, handedOver: 4, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 };
         const input = {

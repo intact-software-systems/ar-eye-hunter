@@ -1,3 +1,5 @@
+import { withoutEventAlerts } from './room-event-alerts.ts';
+import { clearEventHandover } from './room-event-handover.ts';
 import type { RoomEvent } from './room-event.ts';
 import { requirePositiveInteger } from '../exact-object-decoding.ts';
 
@@ -14,6 +16,15 @@ export function playerOffer(event: RoomEvent, principalId: string): RoomEvent.Of
     return null;
 }
 
+/** A late expiry worker cannot make an elapsed seat claimable in the private read model. */
+export function projectPlayerOffers(event: RoomEvent, principalId: string, now?: number): Pick<RoomEvent.View, 'offer' | 'lastExpiredOffer'> {
+    const offer = playerOffer(event, principalId);
+    if (offer && offer.deadline !== null && now !== undefined && now >= offer.deadline) {
+        return { offer: null, lastExpiredOffer: { ...offer, deadline: offer.deadline } };
+    }
+    return { offer, lastExpiredOffer: event.expiredOffers?.find(entry => entry.principalId === principalId)?.offer ?? null };
+}
+
 /** Queue order is the order of final consent, including when two commands share a clock reading. */
 export function offerCourts(event: RoomEvent, now: number): RoomEvent {
     const queue: RoomEvent.Party[] = [];
@@ -28,14 +39,28 @@ export function offerCourts(event: RoomEvent, now: number): RoomEvent {
     return queue.length === event.queue.length ? event : { ...event, courts, queue };
 }
 
+export function forgetExpiredOffers(event: RoomEvent, principals: readonly string[]): RoomEvent {
+    if (!event.expiredOffers) return event;
+    const { expiredOffers, ...rest } = event;
+    const retained = expiredOffers.filter(entry => !principals.includes(entry.principalId));
+    return retained.length === expiredOffers.length ? event : retained.length ? { ...rest, expiredOffers: retained } : rest;
+}
+
 export function settleOffers(event: RoomEvent, now: number): RoomEvent {
     if (event.closed) return event;
     if (event.closesAt <= now) return closeEvent(event);
+    const expired = new Map(event.expiredOffers?.map(entry => [entry.principalId, entry]));
     const courts = event.courts.map(court => {
-        const seats = court.seats.filter(seat => seat.deadline === null || seat.deadline > now);
+        const seats = court.seats.filter(seat => {
+            if (seat.deadline === null || seat.deadline > now) return true;
+            expired.set(seat.principalId, { principalId: seat.principalId, offer: { groupId: court.groupId, occurrence: court.occurrence,
+                partyId: seat.partyId, offerRevision: seat.offerRevision, deadline: seat.deadline } });
+            return false;
+        });
         return afterSeatRemoval(court, seats);
     });
-    return courts.some((court, i) => court !== event.courts[i]) ? offerCourts({ ...event, courts }, now) : event;
+    return courts.some((court, i) => court !== event.courts[i])
+        ? offerCourts({ ...event, expiredOffers: [...expired.values()], courts }, now) : event;
 }
 
 export function removeCourtPlayer(court: RoomEvent.Court, principalId: string): RoomEvent.Court {
@@ -49,7 +74,8 @@ function afterSeatRemoval(court: RoomEvent.Court, seats: readonly RoomEvent.Seat
 }
 
 export function closeEvent(event: RoomEvent): RoomEvent {
-    return { ...event, closed: true, proposals: [], queue: [], courts: event.courts.map(court => ({ ...court, seats: [] })) };
+    const { expiredOffers, ...closing } = event;
+    return { ...withoutEventAlerts(clearEventHandover(closing), () => true), closed: true, proposals: [], queue: [], courts: event.courts.map(court => ({ ...court, seats: [] })) };
 }
 
 export function changeCourt(event: RoomEvent, command: Extract<RoomEvent.Command, {groupId: string}>, player: string): RoomEvent {

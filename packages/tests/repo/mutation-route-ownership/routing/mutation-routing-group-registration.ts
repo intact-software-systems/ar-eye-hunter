@@ -55,6 +55,8 @@ const ROOT_FAMILY_CALLS: readonly RootFamilyRegistration[] = [
             'get /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/session'
         ]
     },
+    { name: 'registerGuestBookingRoutes', sourcePath: './guests/register-guest-booking-routes.ts', requiresAuthorization: false,
+        readRoutes: ['post /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/session/guest/preview'] },
     { name: 'registerGroupStateMutationRoutes', sourcePath: './register-group-state-mutation-routes.ts', requiresAuthorization: true },
     { name: 'registerGroupLifecycleRoutes', sourcePath: './register-group-lifecycle-routes.ts', requiresAuthorization: false },
     { name: 'registerTemporaryRoomRoutes', sourcePath: './guests/register-temporary-room-routes.ts', requiresAuthorization: false,

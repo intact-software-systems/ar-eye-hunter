@@ -56,6 +56,7 @@ interface EnvironmentSetting {
 const SECRET_SETTING_KEYS = [
     ['DATABASE_URL', 'databaseUrl'],
     ['RALLAR_AUTH_CREDENTIAL_SECRET', 'authenticationCredentialSecret'],
+    ['RALLAR_WEB_PUSH_VAPID_JSON', 'webPushVapid'],
     ['METERED_API_KEY', 'meteredApiKey'],
     ['RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET', 'blackBoxOperatorTokenSecret']
 ] as const;
@@ -286,6 +287,11 @@ const ENVIRONMENT_SETTINGS: readonly EnvironmentSetting[] = [
         name: 'RALLAR_STATE_STRICT_READ_AUTH',
         decode: decodeBoolean,
         apply: (source, value) => source.stateApi.strictReadAuthorization = value
+    },
+    {
+        name: 'RALLAR_EVENT_HANDOVER_WINDOW_MS',
+        decode: decodeNumber,
+        apply: (source, value) => source.group.eventHandoverWindowMs = value
     },
     {
         name: 'RALLAR_GROUP_DEFAULT_MAX_MEMBERS',

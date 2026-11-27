@@ -1,3 +1,4 @@
+import type { EventWebPush } from '@shared-server/rallar-system/room-events/event-web-push.ts';
 import type { TemporaryRoomPolicy } from '@shared/api/room-guests/temporary-room-policy.ts';
 import type { RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import type { RoomOwnedAppData } from '@shared-server/app-data/room-owned-app-data.ts';
@@ -130,7 +131,9 @@ export interface ApiV1GroupAdmissionConfiguration {
 }
 
 export interface ApiV1GroupConfiguration {
+    readonly eventHandoverWindowMs: number;
     readonly eventOrganizerIdsByApplication: Readonly<Record<string, readonly string[]>>;
+    readonly guestBookingByApplication: Readonly<Record<string, boolean>>;
     readonly temporaryRoomPoliciesByApplication: Readonly<Record<string, TemporaryRoomPolicy>>;
     readonly roomLobbyPoliciesByApplication: Readonly<Record<string, RoomLobby.Policy>>;
     readonly roomOwnedAppDataBindings: readonly RoomOwnedAppData.Binding[];
@@ -329,6 +332,7 @@ export interface ApiV1TournamentConfiguration {
 }
 
 export interface ApiV1Configuration {
+    readonly webPush: EventWebPush.Credentials | null;
     readonly profile: ApiV1ConfigurationProfile;
     readonly http: ApiV1HttpConfiguration;
     readonly publicApi: ApiV1PublicApiConfiguration;

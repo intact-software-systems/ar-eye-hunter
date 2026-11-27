@@ -1,5 +1,6 @@
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import { BrowserRallarMessageSubscriptions } from '@shared-web/browser/messages/browser-rallar-message-subscriptions.ts';
+import { EDGE_ORDER_RECEIVER_DEFAULT_LIMITS } from '@shared-web/browser/messages/edge-order/edge-order-receiver-limits.ts';
 import type { RallarMessage } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessageReplySender } from '@shared-web/browser/messages/to-rallar-message.ts';
 import { createRallarFacade } from '@shared-web/browser/rallar.ts';
@@ -10,6 +11,7 @@ import type {
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
@@ -194,7 +196,9 @@ function createSubscriptionsFixture(): SubscriptionsFixture {
         maxEntries: 512,
         cancel: () => {}
     });
-    const sendReply = vi.fn<RallarMessageReplySender>(async (request) => await Promise.resolve(registry.open({ message: request, carrier: 'ws', readDeadlineEpochMs: Date.now })));
+    const sendReply = vi.fn<RallarMessageReplySender>(async (request) =>
+        await Promise.resolve(registry.open({ message: request, carrier: 'ws', readDeadlineEpochMs: Date.now }))
+    );
     const middleware = createDefaultApiMiddlewareTestDouble();
     const rtcCallbacks = new Map<string, Parameters<typeof middleware.middleware.rtcRxStreamer.onInboxMessageDo>[1]>();
     vi.mocked(middleware.middleware.rtcRxStreamer.onInboxMessageDo).mockImplementation((typeId, callback) => {
@@ -209,7 +213,9 @@ function createSubscriptionsFixture(): SubscriptionsFixture {
         wsInbox,
         sendReply,
         readMiddleware: () => middleware,
-        readInboundDiagnostics: () => (event) => diagnostics.push(event)
+        readInboundDiagnostics: () => (event) => diagnostics.push(event),
+        edgeOrderLimits: EDGE_ORDER_RECEIVER_DEFAULT_LIMITS,
+        timers: createDefaultTimers()
     });
     return {
         subscriptions,
