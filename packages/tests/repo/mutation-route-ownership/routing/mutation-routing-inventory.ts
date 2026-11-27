@@ -2,6 +2,7 @@ import { parse } from '@babel/parser';
 import { readFileSync } from 'node:fs';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
 import { MutationRouteResultMemo, type MutationRouteResult } from './mutation-route-result-memo.ts';
 import { findAstNode, type MutationRoutingAstNode } from './mutation-routing-call-graph.ts';
@@ -36,13 +37,32 @@ export interface MutationRouteValidationOptions {
     readonly sourceOverrides?: ReadonlyMap<string, string>;
 }
 
-interface AstMarkerCheckInput {
-    readonly issues: string[];
+interface AstMarkerIssuesInput {
     readonly filePath: string;
     readonly marker: string;
     readonly label: string;
     readonly item: MutationRouteInventoryEntry;
     readonly sources: SourceReader;
+}
+
+/** A source that could not be read or parsed; each caller words it as its own issue. */
+interface SourceReadFailure {
+    readonly filePath: string;
+}
+
+type SourceRead = Either<SourceReadFailure, MutationRoutingAstNode>;
+
+interface SourceReader {
+    readonly readPaths: ReadonlySet<string>;
+    readProgram(filePath: string): SourceRead;
+}
+
+interface CallChainPrograms {
+    readonly source: MutationRoutingAstNode;
+    readonly enqueueSource: MutationRoutingAstNode;
+    readonly ownerSource: MutationRoutingAstNode;
+    readonly typeOwnerSource: MutationRoutingAstNode;
+    readonly dispatchSource: MutationRoutingAstNode;
 }
 
 const CANONICAL_INVENTORY_FIELDS = [
@@ -61,7 +81,7 @@ const CANONICAL_INVENTORY_FIELDS = [
     'constructionRootMarker'
 ] as const;
 
-const CANONICAL_INVENTORY_BY_KEY = new Map(MUTATION_ROUTE_INVENTORY.map((item) => [key(item), item]));
+const CANONICAL_INVENTORY_BY_KEY = new Map(MUTATION_ROUTE_INVENTORY.map((item) => [toRouteKey(item), item]));
 
 // One memo per test file: Vitest isolates modules per file, so remembered results never cross files.
 const MUTATION_ROUTE_RESULT_MEMO = new MutationRouteResultMemo();
@@ -85,9 +105,9 @@ export function validateMutationRouteInventoryWithMemo(
     const programs = new Map<string, MutationRoutingAstNode>();
     const issues = [...validateInventoryKeys(inventory)];
     for (const item of inventory) {
-        const canonical = CANONICAL_INVENTORY_BY_KEY.get(key(item));
+        const canonical = CANONICAL_INVENTORY_BY_KEY.get(toRouteKey(item));
         if (!canonical) {
-            issues.push(`Unknown mutation route: ${key(item)}`);
+            issues.push(`Unknown mutation route: ${toRouteKey(item)}`);
             continue;
         }
         const remembered = memo.getIssues(item, sourceOverrides);
@@ -102,11 +122,153 @@ export function validateMutationRouteInventoryWithMemo(
     return issues;
 }
 
+function readMutationRouteResult(
+    item: MutationRouteInventoryEntry,
+    canonical: MutationRouteInventoryEntry,
+    sources: SourceReader
+): MutationRouteResult {
+    const issues = [
+        ...validateCanonicalFields(item, canonical),
+        ...readRegistrationIssues(item, sources),
+        ...readAstMarkerIssues({
+            filePath: item.enqueueSourcePath,
+            marker: item.enqueueMarker,
+            label: 'enqueue',
+            item,
+            sources
+        }),
+        ...readAstMarkerIssues({
+            filePath: item.typeOwnerSourcePath,
+            marker: item.type.startsWith('app:') ? `'${item.type}'` : `AppInboxType.${item.type}`,
+            label: 'type ownership',
+            item,
+            sources
+        }),
+        ...readOwnerMethodIssues(item, sources),
+        ...readCallChainIssues(item, sources)
+    ];
+    return { issues, readPaths: sources.readPaths };
+}
+
+function readRegistrationIssues(item: MutationRouteInventoryEntry, sources: SourceReader): readonly string[] {
+    if (item.transport !== 'HTTP') {
+        return readAstMarkerIssues({
+            filePath: item.sourcePath,
+            marker: item.registrationMarker,
+            label: 'registration',
+            item,
+            sources
+        });
+    }
+    return sources.readProgram(item.sourcePath).fold(
+        (failure) => [toSourceFailureIssue(item, 'registration', failure)],
+        (program) => readHttpRegistrationIssues(item, program, sources)
+    );
+}
+
+function readHttpRegistrationIssues(
+    item: MutationRouteInventoryEntry,
+    program: MutationRoutingAstNode,
+    sources: SourceReader
+): readonly string[] {
+    const rootRead = item.constructionRootSourcePath ? sources.readProgram(item.constructionRootSourcePath) : undefined;
+    const rootIssues = rootRead ? toSourceReadIssues(item, 'registration root', rootRead) : [];
+    const [method, routePath] = item.entrypoint.split(' ');
+    const handler = findExactHttpRouteHandler({
+        program,
+        method: method.toLowerCase(),
+        routePath,
+        registrationMarker: item.registrationMarker,
+        familyRegistrationMarker: item.familyRegistrationMarker,
+        expectedFamilyRouteCount: computeCanonicalFamilyRouteCount(item)
+    });
+    if (handler && hasRegistrationRoot(item, rootRead?.right)) {
+        return rootIssues;
+    }
+    return [...rootIssues, `${toRouteKey(item)} registration is absent from ${item.sourcePath}`];
+}
+
+function readAstMarkerIssues({
+    filePath,
+    marker,
+    label,
+    item,
+    sources
+}: AstMarkerIssuesInput): readonly string[] {
+    return sources.readProgram(filePath).fold(
+        (failure) => [toSourceFailureIssue(item, label, failure)],
+        (program) => hasExactMarker(program, marker) ? [] : [`${toRouteKey(item)} ${label} marker is absent from ${filePath}`]
+    );
+}
+
+function readOwnerMethodIssues(item: MutationRouteInventoryEntry, sources: SourceReader): readonly string[] {
+    const method = item.owner.split('.').at(-1) ?? '';
+    return sources.readProgram(item.ownerSourcePath).fold(
+        (failure) => [toSourceFailureIssue(item, 'owner', failure)],
+        (program) =>
+            hasOwnerCallable(program, method)
+                ? []
+                : [`${toRouteKey(item)} owner method is absent from ${item.ownerSourcePath}`]
+    );
+}
+
+function readCallChainIssues(item: MutationRouteInventoryEntry, sources: SourceReader): readonly string[] {
+    const source = sources.readProgram(item.sourcePath);
+    const enqueueSource = sources.readProgram(item.enqueueSourcePath);
+    const ownerSource = sources.readProgram(item.ownerSourcePath);
+    const typeOwnerSource = sources.readProgram(item.typeOwnerSourcePath);
+    const dispatchSource = sources.readProgram(item.dispatchSourcePath);
+    const readIssues = [
+        ...toSourceReadIssues(item, 'call chain', source),
+        ...toSourceReadIssues(item, 'call chain', enqueueSource),
+        ...toSourceReadIssues(item, 'owner', ownerSource),
+        ...toSourceReadIssues(item, 'type owner', typeOwnerSource),
+        ...toSourceReadIssues(item, 'owner dispatch', dispatchSource)
+    ];
+    if (
+        !source.right || !enqueueSource.right || !ownerSource.right || !typeOwnerSource.right ||
+        !dispatchSource.right
+    ) {
+        return readIssues;
+    }
+    return readReachabilityIssues(item, {
+        source: source.right,
+        enqueueSource: enqueueSource.right,
+        ownerSource: ownerSource.right,
+        typeOwnerSource: typeOwnerSource.right,
+        dispatchSource: dispatchSource.right
+    }, sources);
+}
+
+function readReachabilityIssues(
+    item: MutationRouteInventoryEntry,
+    programs: CallChainPrograms,
+    sources: SourceReader
+): readonly string[] {
+    // The analyzer loads owner dependencies while it runs; their failures precede its own issues.
+    const loaderIssues: string[] = [];
+    const reachabilityIssues = findMutationRouteReachabilityIssues({
+        item,
+        ...programs,
+        containsMarker: hasExactMarker,
+        matchesMarker: hasDirectExactMarker,
+        loadProgram: (filePath) =>
+            sources.readProgram(filePath).fold(
+                (failure) => {
+                    loaderIssues.push(toSourceFailureIssue(item, 'owner dependency', failure));
+                    return undefined;
+                },
+                (program) => program
+            )
+    });
+    return [...loaderIssues, ...reachabilityIssues];
+}
+
 function validateInventoryKeys(inventory: readonly MutationRouteInventoryEntry[]): readonly string[] {
     const issues: string[] = [];
     const seen = new Set<string>();
     for (const item of inventory) {
-        const itemKey = key(item);
+        const itemKey = toRouteKey(item);
         if (seen.has(itemKey)) {
             issues.push(`Duplicate mutation route: ${itemKey}`);
         }
@@ -120,94 +282,37 @@ function validateInventoryKeys(inventory: readonly MutationRouteInventoryEntry[]
     return issues;
 }
 
-function readMutationRouteResult(
+function validateCanonicalFields(
     item: MutationRouteInventoryEntry,
-    canonical: MutationRouteInventoryEntry,
-    sources: SourceReader
-): MutationRouteResult {
-    const issues: string[] = [];
-    for (const field of CANONICAL_INVENTORY_FIELDS) {
-        if (item[field] !== canonical[field]) {
-            issues.push(`${key(item)} has incorrect ${field}`);
-        }
-    }
-    checkRegistration(issues, item, sources);
-    checkAstMarker({
-        issues,
-        filePath: item.enqueueSourcePath,
-        marker: item.enqueueMarker,
-        label: 'enqueue',
-        item,
-        sources
-    });
-    checkAstMarker({
-        issues,
-        filePath: item.typeOwnerSourcePath,
-        marker: item.type.startsWith('app:') ? `'${item.type}'` : `AppInboxType.${item.type}`,
-        label: 'type ownership',
-        item,
-        sources
-    });
-    checkOwnerMethod(issues, item, sources);
-    checkRegisteredHandlerCallChain(issues, item, sources);
-    return { issues, readPaths: sources.readPaths };
+    canonical: MutationRouteInventoryEntry
+): readonly string[] {
+    return CANONICAL_INVENTORY_FIELDS
+        .filter((field) => item[field] !== canonical[field])
+        .map((field) => `${toRouteKey(item)} has incorrect ${field}`);
 }
 
-function key(item: MutationRouteInventoryEntry): string {
-    return `${item.transport}:${item.entrypoint}:${item.type}`;
-}
-
-function checkRegistration(
-    issues: string[],
+function hasRegistrationRoot(
     item: MutationRouteInventoryEntry,
-    sources: SourceReader
-): void {
-    if (item.transport !== 'HTTP') {
-        checkAstMarker({
-            issues,
-            filePath: item.sourcePath,
-            marker: item.registrationMarker,
-            label: 'registration',
-            item,
-            sources
-        });
-        return;
+    rootProgram: MutationRoutingAstNode | undefined
+): boolean {
+    if (!item.familyRegistrationMarker) {
+        return true;
     }
-    const [method, routePath] = item.entrypoint.split(' ');
-    const program = sources.readProgram({ issues, filePath: item.sourcePath, label: 'registration', item });
-    if (!program) {
-        return;
-    }
-    const rootProgram = item.constructionRootSourcePath
-        ? sources.readProgram({ issues, filePath: item.constructionRootSourcePath, label: 'registration root', item })
-        : undefined;
-    const handler = findExactHttpRouteHandler({
-        program,
-        method: method.toLowerCase(),
-        routePath,
-        registrationMarker: item.registrationMarker,
-        familyRegistrationMarker: item.familyRegistrationMarker,
-        expectedFamilyRouteCount: readCanonicalFamilyRouteCount(item)
-    });
-    const hasRoot = !item.familyRegistrationMarker ||
-        Boolean(
-            rootProgram &&
-                item.constructionRootMarker &&
-                item.constructionRootSourcePath &&
-                hasExactGroupRegistrationRoot({
-                    program: rootProgram,
-                    rootOwnerName: item.constructionRootMarker,
-                    rootSourcePath: item.constructionRootSourcePath,
-                    familyOwnerName: item.familyRegistrationMarker,
-                    familySourcePath: item.sourcePath
-                })
-        );
-    if (!handler || !hasRoot) {
-        issues.push(`${key(item)} registration is absent from ${item.sourcePath}`);
-    }
+    return Boolean(
+        rootProgram &&
+            item.constructionRootMarker &&
+            item.constructionRootSourcePath &&
+            hasExactGroupRegistrationRoot({
+                program: rootProgram,
+                rootOwnerName: item.constructionRootMarker,
+                rootSourcePath: item.constructionRootSourcePath,
+                familyOwnerName: item.familyRegistrationMarker,
+                familySourcePath: item.sourcePath
+            })
+    );
 }
 
-function readCanonicalFamilyRouteCount(
+function computeCanonicalFamilyRouteCount(
     item: MutationRouteInventoryEntry
 ): number | undefined {
     if (!item.familyRegistrationMarker) {
@@ -218,42 +323,16 @@ function readCanonicalFamilyRouteCount(
     ).length;
 }
 
-function checkAstMarker({
-    issues,
-    filePath,
-    marker,
-    label,
-    item,
-    sources
-}: AstMarkerCheckInput): void {
-    const program = sources.readProgram({ issues, filePath, label, item });
-    if (program && !hasExactMarker(program, marker)) {
-        issues.push(`${key(item)} ${label} marker is absent from ${filePath}`);
-    }
+function toRouteKey(item: MutationRouteInventoryEntry): string {
+    return `${item.transport}:${item.entrypoint}:${item.type}`;
 }
 
-function checkOwnerMethod(
-    issues: string[],
-    item: MutationRouteInventoryEntry,
-    sources: SourceReader
-): void {
-    const method = item.owner.split('.').at(-1) ?? '';
-    const program = sources.readProgram({ issues, filePath: item.ownerSourcePath, label: 'owner', item });
-    if (program && !hasOwnerCallable(program, method)) {
-        issues.push(`${key(item)} owner method is absent from ${item.ownerSourcePath}`);
-    }
+function toSourceReadIssues(item: MutationRouteInventoryEntry, label: string, read: SourceRead): readonly string[] {
+    return read.fold((failure) => [toSourceFailureIssue(item, label, failure)], () => []);
 }
 
-interface ReadMutationInventoryProgramInput {
-    readonly issues: string[];
-    readonly filePath: string;
-    readonly label: string;
-    readonly item: MutationRouteInventoryEntry;
-}
-
-interface SourceReader {
-    readonly readPaths: ReadonlySet<string>;
-    readProgram(input: ReadMutationInventoryProgramInput): MutationRoutingAstNode | undefined;
+function toSourceFailureIssue(item: MutationRouteInventoryEntry, label: string, failure: SourceReadFailure): string {
+    return `${toRouteKey(item)} ${label} source cannot be parsed: ${failure.filePath}`;
 }
 
 // Programs are shared by every route of one call; readPaths belongs to the one route this reader serves.
@@ -264,11 +343,11 @@ function createSourceReader(
     const readPaths = new Set<string>();
     return {
         readPaths,
-        readProgram: ({ issues, filePath, label, item }) => {
+        readProgram: (filePath) => {
             readPaths.add(filePath);
             const cached = programs.get(filePath);
             if (cached) {
-                return cached;
+                return Either.ofRight<SourceReadFailure, MutationRoutingAstNode>(cached);
             }
             try {
                 const source = sourceOverrides.get(filePath) ?? readFileSync(filePath, 'utf8');
@@ -280,42 +359,13 @@ function createSourceReader(
                     }).program
                 };
                 programs.set(filePath, program);
-                return program;
+                return Either.ofRight<SourceReadFailure, MutationRoutingAstNode>(program);
             }
             catch {
-                issues.push(`${key(item)} ${label} source cannot be parsed: ${filePath}`);
-                return undefined;
+                return Either.ofLeft<SourceReadFailure, MutationRoutingAstNode>({ filePath });
             }
         }
     };
-}
-
-function checkRegisteredHandlerCallChain(
-    issues: string[],
-    item: MutationRouteInventoryEntry,
-    sources: SourceReader
-): void {
-    const source = sources.readProgram({ issues, filePath: item.sourcePath, label: 'call chain', item });
-    const enqueue = sources.readProgram({ issues, filePath: item.enqueueSourcePath, label: 'call chain', item });
-    const owner = sources.readProgram({ issues, filePath: item.ownerSourcePath, label: 'owner', item });
-    const typeOwner = sources.readProgram({ issues, filePath: item.typeOwnerSourcePath, label: 'type owner', item });
-    const dispatch = sources.readProgram({ issues, filePath: item.dispatchSourcePath, label: 'owner dispatch', item });
-    if (!source || !enqueue || !owner || !typeOwner || !dispatch) {
-        return;
-    }
-    issues.push(
-        ...findMutationRouteReachabilityIssues({
-            item,
-            source,
-            enqueueSource: enqueue,
-            ownerSource: owner,
-            typeOwnerSource: typeOwner,
-            dispatchSource: dispatch,
-            containsMarker: hasExactMarker,
-            matchesMarker: hasDirectExactMarker,
-            loadProgram: (filePath) => sources.readProgram({ issues, filePath, label: 'owner dependency', item })
-        })
-    );
 }
 
 function hasExactMarker(program: MutationRoutingAstNode, marker: string): boolean {
@@ -325,45 +375,49 @@ function hasExactMarker(program: MutationRoutingAstNode, marker: string): boolea
 function hasDirectExactMarker(program: MutationRoutingAstNode, marker: string): boolean {
     const member = marker.match(/^(\w+)\.(\w+)$/);
     if (member) {
-        const memberPath = readMemberPath(program);
+        const memberPath = toMemberPath(program);
         return memberPath === marker || memberPath.endsWith(`.${marker}`);
     }
     const quoted = marker.match(/^'([^']+)'$/);
     if (quoted) {
-        return readString(program) === quoted[1];
+        return toStringValue(program) === quoted[1];
     }
     const comparison = marker.match(/^([\w.]+) === '([^']+)'$/);
     if (comparison) {
         return (
             program.type === 'BinaryExpression' &&
             program.operator === '===' &&
-            readMemberPath(asNode(program.left)) === comparison[1] &&
-            readString(asNode(program.right)) === comparison[2]
+            toMemberPath(asNode(program.left)) === comparison[1] &&
+            toStringValue(asNode(program.right)) === comparison[2]
         );
     }
     const call = marker.match(/^(?:(\w+)\.)?(\w+)\((?:[^']*'([^']+)')?/);
     if (call) {
-        if (program.type !== 'CallExpression') {
-            return false;
-        }
-        const callee = asNode(program.callee);
-        if (readCallName(callee) !== call[2]) {
-            return false;
-        }
-        if (call[1] && readIdentifier(asNode(callee?.object)) !== call[1]) {
-            return false;
-        }
-        return (
-            !call[3] ||
-            asNodes(program.arguments).some((argument) => someNode(argument, (node) => readString(node) === call[3]))
-        );
+        return hasExactCallMarker(program, call);
     }
     const property = marker.replace(/:$/, '');
     return (
-        readIdentifier(program) === property ||
-        readMemberName(program) === property ||
+        toIdentifier(program) === property ||
+        toMemberName(program) === property ||
         ((program.type === 'ObjectProperty' || program.type === 'ObjectMethod') &&
-            readIdentifier(asNode(program.key)) === property)
+            toIdentifier(asNode(program.key)) === property)
+    );
+}
+
+function hasExactCallMarker(program: MutationRoutingAstNode, call: RegExpMatchArray): boolean {
+    if (program.type !== 'CallExpression') {
+        return false;
+    }
+    const callee = asNode(program.callee);
+    if (toCallName(callee) !== call[2]) {
+        return false;
+    }
+    if (call[1] && toIdentifier(asNode(callee?.object)) !== call[1]) {
+        return false;
+    }
+    return (
+        !call[3] ||
+        asNodes(program.arguments).some((argument) => someNode(argument, (node) => toStringValue(node) === call[3]))
     );
 }
 
@@ -372,11 +426,11 @@ function hasOwnerCallable(program: MutationRoutingAstNode, method: string): bool
         program,
         (node) =>
             ((node.type === 'ClassMethod' || node.type === 'ClassPrivateMethod') &&
-                readIdentifier(asNode(node.key)) === method) ||
-            (node.type === 'FunctionDeclaration' && readIdentifier(asNode(node.id)) === method) ||
+                toIdentifier(asNode(node.key)) === method) ||
+            (node.type === 'FunctionDeclaration' && toIdentifier(asNode(node.id)) === method) ||
             (node.type === 'ImportSpecifier' &&
-                (readIdentifier(asNode(node.local)) === method ||
-                    readIdentifier(asNode(node.imported)) === method))
+                (toIdentifier(asNode(node.local)) === method ||
+                    toIdentifier(asNode(node.imported)) === method))
     );
 }
 
@@ -384,17 +438,17 @@ function someNode(value: unknown, predicate: (node: MutationRoutingAstNode) => b
     return findAstNode(value, predicate) !== undefined;
 }
 
-function readCallName(node: MutationRoutingAstNode | undefined): string {
-    return readIdentifier(node) || readMemberName(node);
+function toCallName(node: MutationRoutingAstNode | undefined): string {
+    return toIdentifier(node) || toMemberName(node);
 }
 
-function readMemberName(node: MutationRoutingAstNode | undefined): string {
+function toMemberName(node: MutationRoutingAstNode | undefined): string {
     return node?.type === 'MemberExpression' || node?.type === 'OptionalMemberExpression'
-        ? readIdentifier(asNode(node.property))
+        ? toIdentifier(asNode(node.property))
         : '';
 }
 
-function readMemberPath(node: MutationRoutingAstNode | undefined): string {
+function toMemberPath(node: MutationRoutingAstNode | undefined): string {
     if (!node) {
         return '';
     }
@@ -402,21 +456,21 @@ function readMemberPath(node: MutationRoutingAstNode | undefined): string {
         return 'this';
     }
     if (node.type === 'Identifier') {
-        return readIdentifier(node);
+        return toIdentifier(node);
     }
     if (node.type !== 'MemberExpression' && node.type !== 'OptionalMemberExpression') {
         return '';
     }
-    const object = readMemberPath(asNode(node.object));
-    const property = readIdentifier(asNode(node.property));
+    const object = toMemberPath(asNode(node.object));
+    const property = toIdentifier(asNode(node.property));
     return object && property ? `${object}.${property}` : '';
 }
 
-function readIdentifier(node: MutationRoutingAstNode | undefined): string {
+function toIdentifier(node: MutationRoutingAstNode | undefined): string {
     return node && typeof node.name === 'string' ? node.name : '';
 }
 
-function readString(node: MutationRoutingAstNode | undefined): string {
+function toStringValue(node: MutationRoutingAstNode | undefined): string {
     return node && typeof node.value === 'string' ? node.value : '';
 }
 
