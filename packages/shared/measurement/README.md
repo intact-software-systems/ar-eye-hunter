@@ -1,6 +1,6 @@
 # Measurement
 
-Import the owning module directly. This folder has no local barrel; it holds the five measurement primitives that
+Import the owning module directly. This folder has no local barrel; it holds the six measurement primitives that
 runtime code, the harness and the reports share, so that no feature carries its own copy (D642, D650).
 
 | Owner                                                                    | What it answers                                                                                                                              |
@@ -9,6 +9,7 @@ runtime code, the harness and the reports share, so that no feature carries its 
 | [computeNumberExtrema](compute-number-extrema.ts)                        | The smallest and the largest of a list of values, absent for no values.                                                                      |
 | [BoundedHistogram](bounded-histogram.ts)                                 | A fixed-bound histogram of non-negative numbers: its creation, one more sample or a list of them, and the decoding of one read from outside. |
 | [computeBoundedHistogramQuantile](compute-bounded-histogram-quantile.ts) | The bucket that holds the nearest-rank sample of a bounded histogram, narrowed by its smallest and largest sample.                           |
+| [computeBoundedHistogramMerged](compute-bounded-histogram-merged.ts)     | Two bounded histograms on the same bounds as one: the histogram of both sample lists.                                                        |
 | [computeSameRegimeComparison](compute-same-regime-comparison.ts)         | Whether two sides of runs measured under the same regime differ in a figure by more than a declared band, or cannot be compared at all.      |
 
 ## Nearest rank
@@ -37,11 +38,23 @@ outside the last: a bucket holds the samples above the bound before it, from 0 f
 the overflow bucket every sample above the last bound. `decodeBoundedHistogramOnBounds` also refuses a histogram on
 other bounds than the ones its owner declares, so two reads stay comparable bucket by bucket.
 [assertBoundedHistogram](assert-bounded-histogram.ts) creates the empty histogram of a declared set of bounds and throws
-on a set that is not valid, a programmer's error. There is no merge; the first reader that needs one adds it.
+on a set that is not valid, a programmer's error.
 The decoder's rules for `sum`, `min` and `max` are
 [validateBoundedHistogramExtremes](validate-bounded-histogram-extremes.ts), and the two number tests every rule of the
 histogram shares are in [bounded-histogram-number-guards.ts](bounded-histogram-number-guards.ts); both belong to this
 primitive and are not primitives of their own.
+
+## Bounded histogram merge
+
+`computeBoundedHistogramMerged(left, right)` returns an `Either`: the histogram that recording every sample of both
+would give, or a refusal, as a value, of two histograms that are not on the same bounds (as many bounds, each equal),
+since a bucket of one is then no bucket of the other. Bucket counts are added bucket by bucket, `count` and `sum` are
+added, `min` is the smaller and `max` the larger of the ones that are not `null`, and the bounds are the left's. A
+histogram that holds no sample therefore merges into the other unchanged, which makes the empty histogram of a set of
+bounds the start of a fold over any number of histograms, none included. For whole-number samples the result equals
+the one histogram exactly; for others `sum` can differ in its last digits, as any sum added in another order does. It
+does not validate either histogram again, as `computeBoundedHistogramAfter` does not: each is one this package
+created, recorded into or decoded.
 
 ## Bounded histogram quantile
 
