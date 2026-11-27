@@ -113,7 +113,7 @@ describe('admission backend facts', () => {
                 import { createPSqlALInboundRuntimeStores } from '../../../../packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
                 import type { PSqlAdmissionWorkBackend } from '../../../../packages/shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
                 export const createRuntime = createPSqlALInboundRuntimeStores;
-                export type RuntimeBackend = PSqlAdmissionWorkBackend;
+                export function describeRuntime(backend: PSqlAdmissionWorkBackend): string { return backend.topic; }
             `,
             'packages/shared-server/al-runtime/describe-backend.ts': `
                 import { type PSqlAdmissionWorkBackend } from './postgres/p-sql-admission-work-backend.ts';

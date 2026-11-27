@@ -139,10 +139,10 @@ function validateUnderReview(review) {
     const issues = ANSWER_FIELDS
         .filter((field) => field in review)
         .map((field) => `an under-review entry carries no ${field} field`);
-    const unknown = Object.keys(review).filter((field) =>
+    const unexpectedFields = Object.keys(review).filter((field) =>
         !UNDER_REVIEW_FIELDS.includes(field) && !ANSWER_FIELDS.includes(field)
     );
-    issues.push(...unknown.map((field) => `an under-review entry carries no ${field} field`));
+    issues.push(...unexpectedFields.map((field) => `an under-review entry carries no ${field} field`));
     if (!isIsoDate(review.since)) {
         issues.push('since must be an ISO date (YYYY-MM-DD)');
     }

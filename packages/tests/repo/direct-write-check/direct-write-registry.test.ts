@@ -170,12 +170,18 @@ describe('the committed direct-write registry', () => {
     });
 });
 
-interface RegistryOverrides {
-    readonly review?: Readonly<Record<string, unknown>>;
-    readonly transactionOpeners?: readonly Readonly<Record<string, unknown>>[];
+type JsonValue = string | number | boolean | null | readonly JsonValue[] | JsonObject;
+
+interface JsonObject {
+    readonly [field: string]: JsonValue;
 }
 
-function registryWith(overrides: RegistryOverrides): Readonly<Record<string, unknown>> {
+interface RegistryOverrides {
+    readonly review?: JsonObject;
+    readonly transactionOpeners?: readonly JsonObject[];
+}
+
+function registryWith(overrides: RegistryOverrides): JsonObject {
     return {
         version: 1,
         owner: 'Repository-governance maintainers',
@@ -205,11 +211,11 @@ function registryWith(overrides: RegistryOverrides): Readonly<Record<string, unk
     };
 }
 
-function underReview(): Readonly<Record<string, unknown>> {
+function underReview(): JsonObject {
     return { state: 'under-review', since: '2026-11-27', raised: 'The maintainer revisit of 2026-11-27.' };
 }
 
-function approvedReview(): Readonly<Record<string, unknown>> {
+function approvedReview(): JsonObject {
     return {
         state: 'approved',
         question: 'This writes outside AppInbox: may the store keep its own transaction?',
