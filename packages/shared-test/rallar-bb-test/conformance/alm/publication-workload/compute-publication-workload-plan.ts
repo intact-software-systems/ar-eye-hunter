@@ -1,3 +1,4 @@
+import { computePublicationWorkloadLostFrameCount } from './compute-publication-workload-lost-frame-count.ts';
 import type { PublicationWorkloadParameters } from './validate-publication-workload-parameters.ts';
 
 /** What one point of the family sends and expects, in whole messages. */
@@ -11,11 +12,20 @@ export interface PublicationWorkloadPlan {
     readonly agentCount: number;
     /** The agents of one room that only subscribe. */
     readonly subscriberCount: number;
-    /** The frames one publisher's publication stage is expected to hand to a carrier. */
+    /**
+     * The frames one publisher's publication stage is expected to hand to a carrier. A loss acts later, on the written
+     * frame, so it takes none of them away.
+     */
     readonly expectedAdmissions: number;
     /**
+     * One publisher's admissions the plan expects no subscriber to get: over `ws` the frames the point's seeded loss
+     * drops, derived from its seed and never read from a run; 0 with no loss and on the RTC carriers, whose first hop
+     * sends a refused frame again.
+     */
+    readonly expectedLostFrames: number;
+    /**
      * What one subscriber is to receive, in the words of the artifact analysis's `ReceiverDeliverySpec`: the expected
-     * admissions of every publisher of its room together.
+     * admissions of every publisher of its room together, less the frames each one loses.
      */
     readonly expectedInboundMessages: number;
     /** The fewest of them that reach `minReceiveRatio`, again for one subscriber. */
@@ -26,7 +36,10 @@ export interface PublicationWorkloadPlan {
      * submitted is not yet one.
      */
     readonly minAcceptedSends: number;
-    /** Every publisher's expected admissions to every other member of its room, publishers included, over all rooms. */
+    /**
+     * Every publisher's expected admissions less its expected lost frames, to every other member of its room,
+     * publishers included, over all rooms.
+     */
     readonly logicalFanoutMessages: number;
 }
 
@@ -43,7 +56,8 @@ export function computePublicationWorkloadPlan(parameters: PublicationWorkloadPa
     const roomCount = parameters.groups.length;
     const frameCount = computePublicationWorkloadFrameCount(parameters);
     const expectedAdmissions = frameCount;
-    const expectedInboundMessages = expectedAdmissions * publisherCount;
+    const expectedLostFrames = computePublicationWorkloadLostFrameCount(parameters, frameCount);
+    const expectedInboundMessages = (expectedAdmissions - expectedLostFrames) * publisherCount;
     return {
         frameCount,
         configuredRateHz: 1_000 / parameters.publishIntervalMs,
@@ -51,9 +65,13 @@ export function computePublicationWorkloadPlan(parameters: PublicationWorkloadPa
         agentCount: roomCount * participantCount,
         subscriberCount: participantCount - publisherCount,
         expectedAdmissions,
+        expectedLostFrames,
         expectedInboundMessages,
-        minExpectedInboundMessages: computeMinimumCount(expectedInboundMessages, parameters.minReceiveRatio),
-        minAcceptedSends: computeMinimumCount(expectedAdmissions, parameters.minSendSuccessRatio),
+        minExpectedInboundMessages: computePublicationWorkloadMinimumCount(
+            expectedInboundMessages,
+            parameters.minReceiveRatio
+        ),
+        minAcceptedSends: computePublicationWorkloadMinimumCount(expectedAdmissions, parameters.minSendSuccessRatio),
         logicalFanoutMessages: expectedInboundMessages * (participantCount - 1) * roomCount
     };
 }
@@ -62,7 +80,7 @@ export function computePublicationWorkloadPlan(parameters: PublicationWorkloadPa
  * The smallest whole count whose share of `expected` reaches the ratio. The count is tested as a share because the
  * product alone can land under the whole number it stands for: 100 x 0.57 is 56.99999999999999.
  */
-function computeMinimumCount(expected: number, ratio: number): number {
+export function computePublicationWorkloadMinimumCount(expected: number, ratio: number): number {
     const floor = Math.floor(expected * ratio);
     return floor / expected >= ratio ? floor : floor + 1;
 }

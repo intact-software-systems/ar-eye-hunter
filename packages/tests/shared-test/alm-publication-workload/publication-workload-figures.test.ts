@@ -31,7 +31,8 @@ const POINT: PublicationWorkloadParameters = {
     ttlMs: 5_000,
     minReceiveRatio: 0.95,
     minSendSuccessRatio: 0.95,
-    readyTimeoutMs: 45_000
+    readyTimeoutMs: 45_000,
+    loss: { kind: 'none' }
 };
 
 /**
@@ -481,6 +482,7 @@ describe('toPublicationWorkloadFigures', () => {
                     agentCount: 3,
                     subscriberCount: 2,
                     expectedAdmissions: 60,
+                    expectedLostFrames: 0,
                     expectedInboundMessages: 60,
                     minExpectedInboundMessages: 57,
                     minAcceptedSends: 57,

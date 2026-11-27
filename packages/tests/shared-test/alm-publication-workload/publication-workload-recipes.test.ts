@@ -48,7 +48,8 @@ const POINT: PublicationWorkloadParameters = {
     ttlMs: 5_000,
     minReceiveRatio: 0.95,
     minSendSuccessRatio: 0.95,
-    readyTimeoutMs: 45_000
+    readyTimeoutMs: 45_000,
+    loss: { kind: 'none' }
 };
 
 /** `{"seq":60,"sentAtEpochMs":9999999999999,"pad":""}` is 49 bytes, so 256 bytes take 207 of filler. */

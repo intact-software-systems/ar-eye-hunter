@@ -85,7 +85,8 @@ const LOCAL_POINTS: readonly LocalPoint[] = [
             ttlMs: 5_000,
             minReceiveRatio: 0.95,
             minSendSuccessRatio: 0.95,
-            readyTimeoutMs: 45_000
+            readyTimeoutMs: 45_000,
+            loss: { kind: 'none' }
         }
     },
     {
@@ -104,7 +105,8 @@ const LOCAL_POINTS: readonly LocalPoint[] = [
             ttlMs: 5_000,
             minReceiveRatio: 0.9,
             minSendSuccessRatio: 0.95,
-            readyTimeoutMs: 45_000
+            readyTimeoutMs: 45_000,
+            loss: { kind: 'none' }
         }
     }
 ];

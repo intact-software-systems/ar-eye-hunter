@@ -29,6 +29,7 @@ field holds its own bound; a group with an issue of its own is held to no rule a
 | `minReceiveRatio`     | A share above 0 and at most 1.                                                                                                       |
 | `minSendSuccessRatio` | A share above 0 and at most 1: the share of its frames each publisher's publication stage must hand to a carrier.                    |
 | `readyTimeoutMs`      | A positive whole number of milliseconds: the setup's allowance.                                                                      |
+| `loss`                | `{ kind: 'none' }`, or `{ kind: 'seeded', ratio, seed }`: a ratio and a seed the platform's seeded loss accepts, the ratio below 1.  |
 
 Every room has the same shape, so a point has `groups.length x participantCount` agents, and at
 most 50: more is `agent-count-above-limit` at `$.groups`, checked when `participantCount` holds its
@@ -212,9 +213,10 @@ table, `room` is one of them.
 | `measured.delivered`                      | The same over the subscriber results of every room.                                                                                                                  |
 
 `configured.plan` holds `roomCount` and `agentCount`; one room's `subscriberCount`; one publisher's
-`frameCount`, `configuredRateHz`, `expectedAdmissions` and `minAcceptedSends`; one subscriber's
-`expectedInboundMessages` and `minExpectedInboundMessages`; and `logicalFanoutMessages`, every
-publisher's expected admissions to every other member of its room, over all rooms.
+`frameCount`, `configuredRateHz`, `expectedAdmissions`, `expectedLostFrames` and `minAcceptedSends`;
+one subscriber's `expectedInboundMessages` and `minExpectedInboundMessages`; and
+`logicalFanoutMessages`, every publisher's expected admissions less its expected lost frames, to
+every other member of its room, over all rooms.
 
 Read each figure with these limits:
 
