@@ -237,8 +237,9 @@ function expectEveryCopyWrittenInTrackOrder(observations: RoomSendCellObservatio
 
 /**
  * Pins that the three instances count in one record on PostgreSQL: every send's head there ended `complete`, naming
- * each of its fourteen recipients confirmed, though five of them ACKed on each instance. A record an instance kept in
- * its own memory would leave no head on PostgreSQL, and one instance's count would never complete a send.
+ * each of its fourteen recipients confirmed, though they ACKed on three instances, four, five and five. A record an
+ * instance kept in its own memory would leave no head on PostgreSQL, and one instance's count would never complete a
+ * send.
  */
 async function expectEveryReceiptEndedCompleteInTheSharedRecord(
     observations: RoomSendCellObservations,

@@ -275,9 +275,9 @@ Notes on the rows that need them:
     its lag stays at or under 9.2 ms at the 99th percentile while offering and 3.8 ms over the
     tail.
 
-  - On #885's tree one run at +5 ms nominal (`--ordering=ordering-key`, five publishers, two a second for 20 s, the client
-    stand-in, a pool of 5; 2026-11-27, a 1-minute load of 2.2 to 3.9, another machine than the reference set's) keeps up: 2,800 of 2,800
-    copies written in order, the first write at p50 0.22 s and p99 0.74 s after the due time, 200
+  - On #885's tree one run at +5 ms nominal (`--ordering=ordering-key`, five publishers, two a
+    second for 20 s, the client stand-in, a pool of 5; 2026-11-27, a 1-minute load of 2.2 to 3.9,
+    another machine than the reference set's) keeps up: 2,800 of 2,800 copies written in order, the first write at p50 0.22 s and p99 0.74 s after the due time, 200
     of 200 receipts complete (p50 0.70 s and p99 1.31 s after the offer), no send handed twice, no
     NACK or repair request, no resend. n is 1. That tree holds several changes beyond `main` on
     this path, and one run does not separate them: the durable receipt record the cell's

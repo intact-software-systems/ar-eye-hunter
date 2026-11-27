@@ -160,9 +160,10 @@ On the build before the receipt record, which stored `admitted` as an outbox row
 that 2 s wait was thin at the reference load even with no latency added: in one reference run of
 ordered sends at +0 ms the 99th percentile from offer to complete receipt reached 1.95 s
 ([reference figures](#reference-figures)), which is why a healthy run there could still show a few
-first-hop resends. On the build with the record, one run of ordered sends at +5 ms read `admitted`
-at a 99th percentile of 0.53 s and `complete` at 1.31 s after the offer, and no publisher resent a
-send ([one run on the build with the record](#one-run-on-the-build-with-the-receipt-record)).
+first-hop resends. On the build with the record, one run of ordered sends at +5 ms, on another
+machine than the reference sets' (so not a comparison with them), read `admitted` at a 99th
+percentile of 0.53 s and `complete` at 1.31 s after the offer, and no publisher resent a send
+([one run on the build with the record](#one-run-on-the-build-with-the-receipt-record)).
 
 ## Running it
 
@@ -557,10 +558,11 @@ Every figure this README states from a run is from one of two reference sets of 
 one machine, one run at a time, or from the one run on the build with the receipt record below.
 Both sets were measured on the build before the durable receipt record, which counted a receipt in
 the memory of the instance that admitted its send, relayed an ACK to it from the others, and stored
-`admitted` as an outbox row. None of their figures is measured on the build with the record, where
-the instances count in one record on PostgreSQL and `admitted` is written on the admitting socket:
-the unordered set not at all, and of the ordered set only the five-publisher shape at +5 ms under
-`client-stand-in`, once.
+`admitted` as an outbox row. No figure of either set is of the build with the record, where the
+instances count in one record on PostgreSQL and `admitted` is written on the admitting socket. On
+that build one run was made, of the ordered set's five-publisher shape at +5 ms under
+`client-stand-in`, on another machine; its figures are stated apart, below, and are of that build
+only.
 
 ### The ordered set
 
@@ -638,9 +640,9 @@ timing.
 
 One run of ordered sends, `--ordering=ordering-key`, five publishers at 2 sends a second for 20 s,
 +5 ms, `client-stand-in`, the API's default pool of 5, on 2026-11-27 at a 1-minute load of 2.2 to
-3.9, on another machine than the sets': a 12-core Apple M2 Max with PostgreSQL 16.12 in a container, Bun 1.4.5. It wrote 2,800 of 2,800 copies in order, none more than
-once, the first write at a median of 0.22 s and a 99th percentile of 0.74 s after the due time; all
-200 receipts completed, at a median of 0.70 s and a 99th percentile of 1.31 s after the offer, and
+3.9, on another machine than the sets': a 12-core Apple M2 Max with PostgreSQL 16.12, Bun 1.4.5.
+It wrote 2,800 of 2,800 copies in order, none more than once, the first write at a median of
+0.22 s and a 99th percentile of 0.74 s after the due time; all 200 receipts completed, at a median of 0.70 s and a 99th percentile of 1.31 s after the offer, and
 `admitted` at a 99th percentile of 0.53 s; no send was handed off twice, no NACK or repair request
 was sent, and no publisher resent a send. n is 1. The build holds several changes beyond the one the
 sets were measured on, on this path, and one run does not separate them: the durable receipt record
