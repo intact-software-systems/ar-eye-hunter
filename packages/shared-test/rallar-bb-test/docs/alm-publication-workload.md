@@ -61,7 +61,7 @@ per group of the point, in the groups' order, or every validation issue as its l
 this order: the publisher that writes the group (one agent), the joining publishers
 (`publisherCount - 1` agents, absent for one publisher), the subscribers. Which agent runs which
 recipe is not the family's to say, since it holds no manifest: the caller's role-map manifest gives
-each recipe to its agents. In the local point's manifest the first agent of the run publishes.
+each recipe to its agents.
 
 Every room runs the same commands in its own group. A recipe's `recipeId` is
 `publication-workload-room-<n>-<publisher|joining-publisher|subscriber>`, with `n` the room's place
@@ -103,35 +103,53 @@ the family names none. A barrier id is used once per control run, so each run ne
 its own. A subscriber whose count fails stops there: its `received` value is recorded, its `stats`
 is not. A publisher that fails before `complete` fails every other agent of the run at that barrier.
 
-## The local point
+## The local points
 
 ```sh
 npm run test:rallar:full-stack:memory:publication-workload
+RALLAR_BLACK_BOX_PUBLICATION_WORKLOAD_POINT=two-rooms npm run test:rallar:full-stack:memory:publication-workload
 ```
 
-`tests/playwright/rallar-black-box/full-stack-publication-workload.spec.ts` runs one point as a
-distributed run on three headless agents against the in-memory API: one publisher and two
-subscribers, 60 frames 500 ms apart on `rtc`, 256-byte payloads, a 5 s lifetime, both ratios 0.95. It
-takes about a minute. Playwright always starts the in-memory API itself and refuses to run while
-its port already answers. It starts the headless SPA and the control server only when nothing
-answers on their ports; with `CI` set it starts those two itself as well. The API must be new to the
-run: every launch gives the same three users, `controller-01` to `controller-03`, a new password.
-The control server keeps whole results only in recorder storage, which the script puts under
-`tmp/publication-workload/recorder` unless `RALLAR_BLACK_BOX_STORAGE_DIR` names another directory.
-The default directory is reused from run to run and grows with each.
+`tests/playwright/rallar-black-box/full-stack-publication-workload.spec.ts` holds two points, one
+test each. A run of the script runs the point `RALLAR_BLACK_BOX_PUBLICATION_WORKLOAD_POINT` names,
+`one-room` where the variable is unset, and skips the other test. A point is a distributed run on
+headless agents against the in-memory API. Both points send on `rtc`, 500 ms apart, 256-byte
+payloads with a 5 s lifetime, at a send-success ratio of 0.95.
 
-The test asserts that the run passed and that the figures record could be read, then on the record:
-the stage admitted at least `minAcceptedSends`; each subscriber observed at least
-`minExpectedInboundMessages` and at most `frameCount`, left no sample unrecorded, and its oldest
-sample is younger than the window; each page ran on a `full` event history with no evicted event and
-no capture gap. It asserts no latency level, no percentile and no rate. The record is attached to the
-test as `publication-workload-figures.json`, beside the operator's native evidence in `observation/`.
+| Point       | Rooms | Agents a room | Publishers a room | Window | Frames a publisher | `minReceiveRatio` |
+| ----------- | ----- | ------------- | ----------------- | ------ | ------------------ | ----------------- |
+| `one-room`  | 1     | 3             | 1                 | 30 s   | 60                 | 0.95              |
+| `two-rooms` | 2     | 3             | 2                 | 15 s   | 30                 | 0.9               |
 
-No CI lane runs the test. The app browser lane's `npm run test:rallar` lists the file, as it lists
-every full-stack spec, and skips the test because it does not set the opt-in environment. Only the
-`rtc` point of one room and one publisher has a test that runs it. A `ws` and an
-`rtc-with-ws-fallback` point, a point of two publishers on each carrier, and five rooms of ten are
-checked against the recipe schema, the control validation and the distributed preflight only.
+The test's manifest is a role map with one role per recipe, named by the recipe's id, so each recipe
+runs on its own agents and on no other. The agents are handed out in the order the rooms and their
+roles come: in `two-rooms`, `controller-01` and `controller-02` publish in the first room and
+`controller-03` subscribes there, and `controller-04` to `controller-06` do the same in the second.
+
+A run of the script runs one point. Playwright always starts the in-memory API itself and refuses to
+run while its port already answers. It starts the headless SPA and the control server only when
+nothing answers on their ports; with `CI` set it starts those two itself as well. The API must be new
+to the point: every launch gives the same users, `controller-01` onward, a new password, so two
+points cannot share one API. The control server keeps whole results only in recorder storage, which
+the script puts under `tmp/publication-workload/recorder` unless `RALLAR_BLACK_BOX_STORAGE_DIR` names
+another directory. The default directory is reused from run to run and grows with each.
+
+The test asserts that the run passed and that the figures record could be read, then on the record,
+for each room: it holds the figures of every publisher and every subscriber; each publisher's stage
+admitted at least `minAcceptedSends`; each subscriber observed at least `minExpectedInboundMessages`
+and at most `expectedInboundMessages`, left no sample unrecorded, and its oldest sample is younger
+than the window; the room's `delivered` figure states a sample age and counts the messages of all
+its subscribers. For the point, the delivered sample age holds as many ages as the rooms' together.
+Each page, a publisher's too, ran on a `full` event history with no evicted event and no capture
+gap, and its `stats` read `rallar.alm.overloaded` as `false`. The test asserts no latency level, no
+percentile and no rate. The record is attached to the test as `publication-workload-figures.json`,
+beside the operator's native evidence in `observation/`.
+
+No CI lane runs the tests. The app browser lane's `npm run test:rallar` lists the file, as it lists
+every full-stack spec, and skips both tests because it does not set the opt-in environment. Only
+these two `rtc` points have a test that runs them. A `ws` and an `rtc-with-ws-fallback` point, a
+point of two publishers on `ws` and on `rtc-with-ws-fallback`, and five rooms of ten are checked
+against the recipe schema, the control validation and the distributed preflight only.
 
 ## The figures record
 
