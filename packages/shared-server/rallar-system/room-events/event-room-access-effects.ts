@@ -94,6 +94,11 @@ function eventRoomChanges(input: EventRoomAccessEffects.Input): Map<string, Room
         for (const court of after.courts) add(court.groupId, { kind: 'open', capacity: court.capacity });
         return changes;
     }
+    if (before.organizerId !== after.organizerId) {
+        for (const id of [lobbyRef.groupId, ...after.courts.map(court => court.groupId)]) {
+            add(id, { kind: 'handover', priorOrganizer: before.organizerId });
+        }
+    }
     for (const court of after.courts) {
         const old = before.courts.find(c => c.groupId === court.groupId)!;
         const previous = new Set(old.seats.filter(seat => seat.deadline === null).map(seat => seat.principalId));
@@ -121,6 +126,9 @@ function roomCommand(input: EventRoomAccessEffects.Input, roomRef: GroupRef, cha
         kind: 'room', joinMode: 'invite-only', directoryListing: 'unlisted', expiresAtEpochMs: input.after.closesAt,
         maxMembers: change.capacity, maxSpectators: 0
     }}), () => requestId);
+    if (change.kind === 'handover') return toMembershipMutationCommand(mutationDescriptor({ ...scope, operation: 'upsertMember',
+        targetPrincipalId: change.priorOrganizer, request: { ...actor, status: 'active' }
+    }), () => requestId);
     if ('principal' in change) return toMembershipMutationCommand(mutationDescriptor({ ...scope, operation: 'upsertMember',
         targetPrincipalId: change.principal, request: { ...actor, status: change.kind === 'admit' ? 'active' : 'left' }
     }), () => requestId);

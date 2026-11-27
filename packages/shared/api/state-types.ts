@@ -110,6 +110,7 @@ export interface CreateGroupRequest extends MutationActorInput {
     readonly retention?: GroupRetentionIntent;
     /** Creates a scheduled room; lobby and reservation windows are server policy. */
     readonly scheduledStartAtEpochMs?: number;
+    readonly guestBooking?: boolean;
     readonly maxMembers?: number;
     readonly maxSpectators?: number;
     readonly maxSessionsPerMember?: number;

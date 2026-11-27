@@ -1241,6 +1241,27 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
+  /api/room-event-alerts/public-key:
+    get:
+      tags: [Group State]
+      summary: Discover court-ready Web Push support
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+      responses:
+        '200':
+          description: Public VAPID key, or null when the server has disabled delivery.
+          headers:
+            x-request-id: { $ref: '#/components/headers/XRequestId' }
+            Cache-Control: { $ref: '#/components/headers/NoStore' }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [publicKey]
+                properties:
+                  publicKey: { type: [string, 'null'] }
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/event:
     get:
       tags: [Group State]
@@ -1262,6 +1283,26 @@ paths:
                 oneOf:
                   - { $ref: '#/components/schemas/RoomEventView' }
                   - { type: 'null' }
+        '403': { $ref: '#/components/responses/ApiMutationFailure' }
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/event/organizer:
+    get:
+      tags: [Group State]
+      summary: Read the current organizer's private event roster from any room
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/XRequestId'
+      responses:
+        '200':
+          description: Current allocation, including waiting parties in queue order.
+          headers:
+            x-request-id: { $ref: '#/components/headers/XRequestId' }
+            Cache-Control: { $ref: '#/components/headers/NoStore' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RoomEventOrganizerView' }
+        '401': { $ref: '#/components/responses/ApiMutationFailure' }
         '403': { $ref: '#/components/responses/ApiMutationFailure' }
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/event/requests/{requestId}:
     post:
@@ -1540,6 +1581,83 @@ paths:
           $ref: '#/components/responses/ApiMutationFailure'
         '404':
           $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/session/guest/preview:
+    post:
+      tags: [Group State]
+      summary: Read the booking held by this browser
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/XRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [guestSecret]
+              properties:
+                guestSecret: { type: string, pattern: '^[0-9a-f]{64}$', writeOnly: true }
+      responses:
+        '200':
+          description: Private result for this browser and scoped room.
+          headers:
+            x-request-id: { $ref: '#/components/headers/XRequestId' }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSessionPreview'
+        '400': { $ref: '#/components/responses/ApiMutationFailure' }
+        '403': { $ref: '#/components/responses/ApiMutationFailure' }
+        '404': { $ref: '#/components/responses/ApiMutationFailure' }
+        '409': { $ref: '#/components/responses/ApiMutationFailure' }
+        '429': { $ref: '#/components/responses/ApiMutationFailure' }
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/session/guest/requests/{requestId}:
+    post:
+      tags: [Group State]
+      summary: Reserve, withdraw or claim a scheduled lobby seat as a guest
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [guestSecret, action, expectedScheduleRevision]
+              properties:
+                guestSecret: { type: string, pattern: '^[0-9a-f]{64}$', writeOnly: true }
+                action: { type: string, enum: [reserve, withdraw, claim] }
+                expectedScheduleRevision: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Private result for this browser and scoped room.
+          headers:
+            x-request-id: { $ref: '#/components/headers/XRequestId' }
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/RoomGuestAccess'
+                  - type: object
+                    required: [accepted]
+                    additionalProperties: false
+                    properties:
+                      accepted: { const: true }
+        '400': { $ref: '#/components/responses/ApiMutationFailure' }
+        '403': { $ref: '#/components/responses/ApiMutationFailure' }
+        '404': { $ref: '#/components/responses/ApiMutationFailure' }
+        '409': { $ref: '#/components/responses/ApiMutationFailure' }
+        '429': { $ref: '#/components/responses/ApiMutationFailure' }
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/session/requests/{requestId}:
     post:
       tags: [Group State]
@@ -9286,6 +9404,7 @@ components:
       additionalProperties: false
       required: [revision, startsAtEpochMs, cancelledAtEpochMs]
       properties:
+        guestBooking: { const: true, description: The organizer enabled browser-bound guest reservations. }
         revision:
           type: integer
           minimum: 1
@@ -9423,6 +9542,9 @@ components:
           description: Listing intent, independent of admission credentials. Unlisted rooms are excluded from discovery and Quick Join; scoped entry still uses normal admission. The setting is returned in metadata.rallarDirectoryListing.
         retention:
           $ref: '#/components/schemas/GroupRetentionIntent'
+        guestBooking:
+          type: boolean
+          description: Enable browser-bound guest reservations for this scheduled room when the application permits guest booking.
         scheduledStartAtEpochMs:
           type: integer
           format: int64
@@ -10007,9 +10129,57 @@ components:
       properties:
         id: { type: string }
         players: { type: array, items: { type: string }, uniqueItems: true }
+    RoomEventOrganizerView:
+      type: object
+      required: [lobby, organizerId, revision, closesAt, closed, players, queue, courts]
+      properties:
+        lobby: { $ref: '#/components/schemas/GroupRef' }
+        organizerId: { type: string }
+        revision: { type: integer, minimum: 1 }
+        closesAt: { type: integer }
+        closed: { type: boolean }
+        players:
+          type: array
+          items:
+            type: object
+            required: [principalId, displayName]
+            properties:
+              principalId: { type: string }
+              displayName: { type: string }
+        queue: { type: array, items: { $ref: '#/components/schemas/EventParty' } }
+        courts:
+          type: array
+          items:
+            allOf:
+              - { $ref: '#/components/schemas/EventCourtSetup' }
+              - type: object
+                required: [occurrence, seats]
+                properties:
+                  occurrence: { type: integer, minimum: 1 }
+                  seats:
+                    type: array
+                    items:
+                      type: object
+                      required: [principalId, partyId, offerRevision, deadline]
+                      properties:
+                        principalId: { type: string }
+                        partyId: { type: string }
+                        offerRevision: { type: integer, minimum: 1 }
+                        deadline:
+                          type: [integer, 'null']
+                          description: Claim deadline in Unix epoch milliseconds, or null for a claimed seat.
+    EventCourtOffer:
+      type: object
+      required: [groupId, occurrence, offerRevision, partyId, deadline]
+      properties:
+        groupId: { type: string }
+        occurrence: { type: integer, minimum: 1 }
+        offerRevision: { type: integer, minimum: 1 }
+        partyId: { type: string }
+        deadline: { type: [integer, 'null'] }
     RoomEventView:
       type: object
-      required: [lobby, principalId, revision, closesAt, closed, courts, queue, proposals, offer]
+      required: [lobby, principalId, revision, closesAt, closed, courts, queue, proposals, offer, handover, lastExpiredOffer]
       properties:
         lobby: { $ref: '#/components/schemas/GroupRef' }
         principalId: { type: string }
@@ -10039,16 +10209,67 @@ components:
                   proposalRevision: { type: integer, minimum: 1 }
                   accepted: { type: array, items: { type: string }, uniqueItems: true }
         offer:
+          oneOf:
+            - { $ref: '#/components/schemas/EventCourtOffer' }
+            - { type: 'null' }
+        lastExpiredOffer:
+          description: This player's most recent expired court offer, cleared when the player rejoins the queue.
+          oneOf:
+            - allOf:
+                - { $ref: '#/components/schemas/EventCourtOffer' }
+                - type: object
+                  properties:
+                    deadline: { type: integer }
+            - { type: 'null' }
+        handover:
+          description: Current organizer handover visible to its sender and recipient until the server deadline.
           type: [object, 'null']
-          required: [groupId, occurrence, offerRevision, partyId, deadline]
+          additionalProperties: false
+          required: [offerId, offeredBy, recipientId, expiresAt]
           properties:
-            groupId: { type: string }
-            occurrence: { type: integer, minimum: 1 }
-            offerRevision: { type: integer, minimum: 1 }
-            partyId: { type: string }
-            deadline: { type: [integer, 'null'] }
+            offerId: { type: string }
+            offeredBy: { type: string }
+            recipientId: { type: string }
+            expiresAt: { type: integer, minimum: 0, description: Unix epoch milliseconds. }
     RoomEventCommand:
       oneOf:
+        - type: object
+          additionalProperties: false
+          required: [action, subscription]
+          properties:
+            action: { const: enable-court-alerts }
+            subscription:
+              type: object
+              additionalProperties: false
+              required: [endpoint, p256dh, auth]
+              properties:
+                endpoint: { type: string, format: uri, maxLength: 2048, writeOnly: true }
+                p256dh: { type: string, minLength: 87, maxLength: 87, writeOnly: true }
+                auth: { type: string, minLength: 22, maxLength: 22, writeOnly: true }
+        - type: object
+          additionalProperties: false
+          required: [action, endpoint]
+          properties:
+            action: { const: disable-court-alerts }
+            endpoint: { type: string, format: uri, maxLength: 2048, writeOnly: true }
+        - type: object
+          additionalProperties: false
+          required: [action, recipientId]
+          properties:
+            action: { const: offer-handover }
+            recipientId: { type: string }
+        - type: object
+          additionalProperties: false
+          required: [action, offerId]
+          properties:
+            action: { const: accept-handover }
+            offerId: { type: string }
+        - type: object
+          additionalProperties: false
+          required: [action, offerId]
+          properties:
+            action: { const: cancel-handover }
+            offerId: { type: string }
         - type: object
           additionalProperties: false
           required: [action, closesAt, courts]

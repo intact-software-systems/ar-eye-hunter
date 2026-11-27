@@ -525,6 +525,13 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         constructionRootMarker: 'registerGroupStateRoutes'
     },
     {
+        transport: 'HTTP', entrypoint: `POST ${GROUP_ITEM_ROUTE}/session/guest${MUTATION_REQUEST_ROUTE}`,
+        type: 'GROUP_GUEST_ADMIT', source: 'guestBooking', registrationMarker: 'registerGuestBookingRoutes',
+        enqueueSource: 'guestBooking', enqueueMarker: 'processGuestBooking', ownerSource: 'groupHandler',
+        owner: 'GroupStateInboxHandler.processGroupStateMutation', typeOwnerSource: 'groupContracts', dispatchSource: 'groupInbox',
+        familyRegistrationMarker: 'registerGuestBookingRoutes', rootSource: 'groupRoot', constructionRootMarker: 'registerGroupStateRoutes'
+    },
+    {
         transport: 'HTTP', entrypoint: 'POST /api/state/apps/:applicationId/workspaces/:workspaceId/temporary-rooms/requests/:requestId',
         type: 'GROUP_GUEST_ADMIT', source: 'temporaryCreation', registrationMarker: 'registerTemporaryRoomRoutes',
         enqueueSource: 'temporaryCreation', enqueueMarker: 'processTemporaryRoomCreation', ownerSource: 'groupHandler',

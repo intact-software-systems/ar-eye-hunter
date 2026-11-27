@@ -34,7 +34,7 @@ export function roomEventDeadlineRoute(deadline: RoomEventDeadline) {
 /** The earliest pending offer or event closure owns the single next wake. Obsolete deliveries settle current state. */
 export function nextRoomEventDeadline(event: RoomEvent | null): number | null {
     if (!event || event.closed) return null;
-    let due = event.closesAt;
+    let due = Math.min(event.closesAt, event.handover?.expiresAt ?? event.closesAt);
     for (const court of event.courts) {
         for (const seat of court.seats) {
             if (seat.deadline !== null) due = Math.min(due, seat.deadline);

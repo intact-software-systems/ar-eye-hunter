@@ -380,7 +380,9 @@ export interface GroupStateRouteDependencies {
         request: GroupStateRouteRequest
     ) => Promise<GroupStateRouteAuthSession>;
     readonly processGroupAppInbox: ProcessGroupAppInbox;
+    readonly guestBookingByApplication: Readonly<Record<string, boolean>>;
     readonly temporaryRoomPolicies: Readonly<Record<string, TemporaryRoomPolicy>>;
+    readonly processGuestBooking: GroupStateInboxService['processGuestBookingUntilCompletion'];
     readonly processTemporaryRoomCreation: GroupStateInboxService['processTemporaryGroupCreationUntilCompletion'];
     readonly processGuestAdmission: GroupStateInboxService['processGuestAdmissionUntilCompletion'];
     readonly processQuickJoin: GroupStateInboxService['processQuickJoinUntilCompletion'];

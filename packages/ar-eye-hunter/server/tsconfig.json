@@ -5,6 +5,6 @@
     "../../shared-server/**/*.d.ts"
   ],
   "compilerOptions": {
-    "types": []
+    "types": ["node"]
   }
 }

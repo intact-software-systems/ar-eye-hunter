@@ -1,4 +1,6 @@
-import { assertCourtCapacity, changeCourt, closeEvent, offerCourts, playerOffer, removeCourtPlayer, settleOffers } from './room-event-courts.ts';
+import { enableEventAlerts, withoutEventAlerts, type EventAlertConsent, type EventPushSubscription } from './room-event-alerts.ts';
+import { changeEventHandover, clearEventHandover } from './room-event-handover.ts';
+import { assertCourtCapacity, changeCourt, closeEvent, forgetExpiredOffers, offerCourts, playerOffer, projectPlayerOffers, removeCourtPlayer, settleOffers } from './room-event-courts.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '../../persistence/PersistenceProvider.ts';
 import type { GroupRef } from '../group-types.ts';
 import { assertValidRallarRouteId } from '../rallar-validation.ts';
@@ -7,15 +9,18 @@ import { requireEpoch, requirePositiveInteger } from '../exact-object-decoding.t
 export interface RoomEvent {
     readonly lobby: GroupRef;
     readonly organizerId: string;
+    readonly handover?: RoomEvent.Handover;
     readonly createdAt: number;
     readonly emptyReturnWindowMs: number;
     readonly revision: number;
     readonly closesAt: number;
     readonly claimWindowMs: number;
     readonly closed: boolean;
+    readonly expiredOffers?: readonly { readonly principalId: string; readonly offer: RoomEvent.ExpiredOffer }[];
     readonly courts: readonly RoomEvent.Court[];
     readonly queue: readonly RoomEvent.Party[];
     readonly proposals: readonly RoomEvent.Proposal[];
+    readonly alerts?: readonly EventAlertConsent[];
     readonly removed: readonly string[];
 }
 
@@ -26,7 +31,20 @@ export namespace RoomEvent {
     export interface Court extends CourtSetup { readonly occurrence: number; readonly seats: readonly Seat[]; }
     export interface Seat { readonly principalId: string; readonly partyId: string; readonly offerRevision: number; readonly deadline: number | null; }
     export interface Offer { readonly groupId: string; readonly occurrence: number; readonly partyId: string; readonly offerRevision: number; readonly deadline: number | null; }
+    export interface ExpiredOffer extends Offer { readonly deadline: number; }
+    export interface OrganizerView {
+        readonly organizerId: string;
+        readonly lobby: GroupRef;
+        readonly revision: number;
+        readonly closesAt: number;
+        readonly closed: boolean;
+        readonly courts: readonly Court[];
+        readonly queue: readonly Party[];
+        readonly players: readonly { readonly principalId: string; readonly displayName: string }[];
+    }
+    export interface Handover { readonly offerId: string; readonly recipientId: string; readonly offeredBy: string; readonly expiresAt: number; }
     export interface View {
+        readonly handover: Handover | null;
         readonly principalId: string;
         readonly lobby: GroupRef;
         readonly revision: number;
@@ -36,9 +54,28 @@ export namespace RoomEvent {
         readonly queue: Party | null;
         readonly proposals: readonly Proposal[];
         readonly offer: Offer | null;
+        readonly lastExpiredOffer: ExpiredOffer | null;
+    }
+    export interface ChangeInput {
+        readonly event: RoomEvent;
+        readonly principalId: string;
+        readonly command: Command;
+        readonly nowEpochMs: number;
+        readonly handoverWindowMs?: number;
+    }
+    export interface ChangeInput {
+        readonly event: RoomEvent;
+        readonly principalId: string;
+        readonly command: Command;
+        readonly nowEpochMs: number;
+        readonly handoverWindowMs?: number;
     }
     export type Command =
         | { readonly action: 'create'; readonly courts: readonly CourtSetup[]; readonly closesAt: number; readonly claimWindowMs?: number; readonly emptyReturnWindowMs?: number }
+        | { readonly action: 'enable-court-alerts'; readonly subscription: EventPushSubscription }
+        | { readonly action: 'disable-court-alerts'; readonly endpoint: string }
+        | { readonly action: 'offer-handover'; readonly recipientId: string }
+        | { readonly action: 'cancel-handover' | 'accept-handover'; readonly offerId: string }
         | { readonly action: 'propose'; readonly partyId: string; readonly players: readonly string[] }
         | { readonly action: 'accept'; readonly partyId: string; readonly proposalRevision: number }
         | { readonly action: 'leave-queue' | 'close' | 'settle' }
@@ -70,13 +107,16 @@ export function createRoomEvent(input: {
         courts, queue: [], proposals: [], removed: [] };
 }
 
-export function projectRoomEvent(event: RoomEvent, principalId: string): RoomEvent.View {
+export function projectRoomEvent(event: RoomEvent, principalId: string, nowEpochMs?: number): RoomEvent.View {
     if (event.removed.includes(principalId)) throw new TypeError('Event access has ended.');
     const courts = event.courts.map(({ groupId, capacity, occurrence, seats }) =>
         ({ groupId, capacity, occurrence, availableSeats: event.closed ? 0 : capacity - seats.length }));
-    return { principalId, lobby: event.lobby, closesAt: event.closesAt, revision: event.revision, closed: event.closed, courts,
+    const pending = event.handover;
+    const handover = pending && (nowEpochMs === undefined || pending.expiresAt > nowEpochMs) &&
+        (principalId === pending.recipientId || principalId === pending.offeredBy) ? pending : null;
+    return { principalId, handover, ...projectPlayerOffers(event, principalId, nowEpochMs), lobby: event.lobby, closesAt: event.closesAt, revision: event.revision, closed: event.closed, courts,
         queue: event.queue.find(party => party.players.includes(principalId)) ?? null,
-        proposals: event.proposals.filter(party => party.players.includes(principalId)), offer: playerOffer(event, principalId) };
+        proposals: event.proposals.filter(party => party.players.includes(principalId)) };
 }
 
 function withoutPlayers(queue: readonly RoomEvent.Party[], leaving: readonly string[]): RoomEvent.Party[] {
@@ -93,7 +133,8 @@ function acceptParty(event: RoomEvent, proposal: RoomEvent.Proposal, player: str
         return { ...event, proposals: event.proposals.map(p => p.id === proposal.id ? { ...p, accepted } : p) };
     }
     if (proposal.players.some(id => playerOffer(event, id))) throw new TypeError('A party member has an outstanding assignment.');
-    return { ...event, queue: [...withoutPlayers(event.queue, proposal.players), { id: proposal.id, players: proposal.players }],
+    return { ...forgetExpiredOffers(event, proposal.players),
+        queue: [...withoutPlayers(event.queue, proposal.players), { id: proposal.id, players: proposal.players }],
         proposals: event.proposals.filter(p => p.id !== proposal.id && !p.accepted.some(id => proposal.players.includes(id))) };
 }
 
@@ -107,9 +148,14 @@ function proposeParty(event: RoomEvent, command: Extract<RoomEvent.Command, { ac
     return acceptParty({ ...event, proposals: [...event.proposals, proposal] }, proposal, player);
 }
 
-function applyCommand(event: RoomEvent, command: RoomEvent.Command, player: string): RoomEvent {
+function applyCommand(input: RoomEvent.ChangeInput): RoomEvent {
+    const { event, command, principalId: player } = input;
     switch (command.action) {
+        case 'offer-handover': case 'accept-handover': case 'cancel-handover':
+            return changeEventHandover({ ...input, command });
         case 'create': throw new TypeError('Event already exists.');
+        case 'enable-court-alerts': return enableEventAlerts(event, player, command.subscription);
+        case 'disable-court-alerts': return withoutEventAlerts(event, consent => consent.principalId === player && consent.subscription.endpoint === command.endpoint);
         case 'propose': return proposeParty(event, command, player);
         case 'accept': {
             const proposal = event.proposals.find(p => p.id === command.partyId && p.proposalRevision === command.proposalRevision);
@@ -122,7 +168,8 @@ function applyCommand(event: RoomEvent, command: RoomEvent.Command, player: stri
         case 'close': return closeEvent(event);
         case 'remove': {
             if (command.targetId === event.organizerId) throw new TypeError('The organizer cannot be removed.');
-            return { ...event, removed: [...new Set([...event.removed, command.targetId])],
+            const remaining = event.handover?.recipientId === command.targetId ? clearEventHandover(event) : event;
+            return { ...withoutEventAlerts(forgetExpiredOffers(remaining, [command.targetId]), consent => consent.principalId === command.targetId), removed: [...new Set([...event.removed, command.targetId])],
                 queue: withoutPlayers(event.queue, [command.targetId]), proposals: event.proposals.filter(p => !p.players.includes(command.targetId)),
                 courts: event.courts.map(court => removeCourtPlayer(court, command.targetId)) };
         }
@@ -131,11 +178,11 @@ function applyCommand(event: RoomEvent, command: RoomEvent.Command, player: stri
 }
 
 /** The service fences membership, organizer permission and the court director in the same write. */
-export function changeRoomEvent(input: { event: RoomEvent; command: RoomEvent.Command; principalId: string; nowEpochMs: number }): RoomEvent {
+export function changeRoomEvent(input: RoomEvent.ChangeInput): RoomEvent {
     const { event, command, principalId, nowEpochMs } = input;
-    const settled = settleOffers(event, nowEpochMs);
+    const settled = settleOffers(event.handover && nowEpochMs >= event.handover.expiresAt ? clearEventHandover(event) : event, nowEpochMs);
     if (command.action !== 'settle' && (settled.closed || event.removed.includes(principalId))) throw new TypeError('Event access has ended.');
     if ((command.action === 'close' || command.action === 'remove') && principalId !== event.organizerId) throw new TypeError('Organizer permission required.');
-    const next = command.action === 'settle' ? settled : offerCourts(applyCommand(settled, command, principalId), nowEpochMs);
+    const next = command.action === 'settle' ? settled : offerCourts(applyCommand({ ...input, event: settled }), nowEpochMs);
     return next === event ? event : { ...next, revision: event.revision + 1 };
 }

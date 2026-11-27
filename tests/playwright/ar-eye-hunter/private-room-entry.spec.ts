@@ -283,9 +283,22 @@ roomBrowserTest(
     async ({ page: host, guest }, testInfo) => {
         roomBrowserTest.skip(process.env.RALLAR_ARENA_FULL_STACK !== '1', 'Requires the local API-v1 memory fixture.');
         const hostOperations = await openOperations(host, '/');
-        await signIn(host, 'alice');
-        await expect(hostOperations.getByRole('button', { name: 'New unlisted arena', exact: true })).toBeVisible();
-        await hostOperations.getByRole('button', { name: 'New unlisted arena', exact: true }).click();
+        const ticketRequested = Promise.withResolvers<void>();
+        const releaseTicket = Promise.withResolvers<void>();
+        await host.route('**/api/auth/ws-ticket/requests/*', async route => {
+            ticketRequested.resolve();
+            await releaseTicket.promise;
+            await route.continue();
+        }, { times: 1 });
+        const create = hostOperations.getByRole('button', { name: 'New unlisted arena', exact: true });
+        try {
+            await signIn(host, 'alice');
+            await ticketRequested.promise;
+            expect(await create.isDisabled()).toBe(true);
+        } finally {
+            releaseTicket.resolve();
+        }
+        await create.click();
         await expect(hostOperations.getByRole('button', { name: 'List room', exact: true })).toBeEnabled();
         const link = await hostOperations.getByLabel('Room link', { exact: true }).inputValue();
         expect(link).toContain('#rallar-room?');

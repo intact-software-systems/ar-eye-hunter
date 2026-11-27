@@ -1306,6 +1306,85 @@ npx vitest run packages/tests/shared-test/alm-received-stall-contract.test.ts pa
 ```
 
 ```text
+Title: a loop child may carry the agent's clock as {loop.atEpochMs}
+Date: 2026-11-26
+Owner: ALM publication workload family
+
+Change type:
+- Runtime semantic change (a new loop placeholder; an agent built before it leaves the text in place)
+
+Affected schemas:
+- None: the recipe schema and the control validator are unchanged; a placeholder is text in any string of a loop child
+
+Old shape:
+A loop wrote {loop.index}, {loop.iteration}, {loop.elapsedMs} and {loop.commandIndex} into the strings of a child
+command. No placeholder was an absolute time, so a child could not carry the moment it was sent.
+
+New shape:
+A loop also writes {loop.atEpochMs}: the agent's clock in epoch milliseconds when the child is resolved, from the same
+clock read as {loop.elapsedMs}. A string that is exactly the placeholder becomes that number; inside a longer string
+it is written as text. A wait.timeoutFrom reference is still keyed only by the first four placeholders.
+
+Migration:
+None for existing recipes. An agent built before this change does not know the placeholder and leaves the literal
+text {loop.atEpochMs} in the child command, with no validation issue and no failure. A recipe that reads the stamp as
+a number must therefore check on the receiving side that it is one.
+
+Golden corpus updates:
+None.
+
+Prompt/documentation updates:
+schema-and-capabilities.md lists the placeholder and names the four a wait.timeoutFrom reference accepts;
+ai-recipe-prompt-guide.md lists it for paced send loops.
+
+Verification:
+npx vitest run packages/tests/shared-test/rallar-bb-runtime/loop-epoch-placeholder.test.ts
+```
+
+```text
+Title: messages.received may read the age of the copies it matched
+Date: 2026-11-26
+Owner: ALM publication workload family
+
+Change type:
+- Compatible optional addition
+
+Affected schemas:
+- RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA (messages.received branch)
+- validateRallarBlackBoxTestCommand messages.received
+- RallarBlackBoxTestMessagesReceivedResultValue
+
+Old shape:
+messages.received named connection, typeId, msgId, count, absent, ascendingBy, stallMs and windowMs. Its result named
+each matched copy's identity and dropped the instant the agent recorded it, so no recipe could read how old a copy was
+when it arrived.
+
+New shape:
+messages.received may also name ageFrom, a top-level field of each copy's payload that holds the epoch in milliseconds
+at which the copy was sent. Its result and diagnostic then carry sampleAge: { from, ageMs, unrecordedSamples }. ageMs
+is a bounded histogram on AL_PUBLICATION_FIGURE_AGE_BOUNDS_MS with one sample per matched copy, the agent's clock when
+its event log recorded the copy less the number at that field. A copy with no finite number there, or stamped after it
+arrived, counts in unrecordedSamples and is never clamped, so ageMs.count + unrecordedSamples equals observed. The
+reading fails no count. A blank ageFrom is refused by the schema and by command validation; ageFrom beside
+absent: true by command validation.
+
+Migration:
+None: a command that names no ageFrom validates, runs and reports as before, with no sampleAge. A recipe that names
+ageFrom dispatched to an agent built before this change is refused at command validation as an unsupported field. A
+sender built before {loop.atEpochMs} leaves that text in the payload, which this reading counts as unrecorded.
+
+Golden corpus updates:
+None.
+
+Prompt/documentation updates:
+schema-and-capabilities.md describes the reading, its two clocks and what it leaves unrecorded; the messages.received
+capability description names ageFrom and sampleAge.
+
+Verification:
+npx vitest run packages/tests/shared-test/alm-received-sample-age-contract.test.ts packages/tests/shared-test/alm-received-sample-age.test.ts packages/tests/shared-test/rallar-bb-test-alm-commands.test.ts
+```
+
+```text
 Title: the observation's inbound direction counts promoted deliveries
 Date: 2026-11-27
 Owner: ALM conformance lane

@@ -51,7 +51,9 @@ export interface GroupStateRouteTestRuntimeInput {
     readonly processGroupAppInbox?: GroupStateRouteDependencies[
         'processGroupAppInbox'
     ];
+    readonly guestBookingByApplication?: GroupStateRouteDependencies['guestBookingByApplication'];
     readonly temporaryRoomPolicies?: GroupStateRouteDependencies['temporaryRoomPolicies'];
+    readonly processGuestBooking?: GroupStateRouteDependencies['processGuestBooking'];
     readonly processTemporaryRoomCreation?: GroupStateRouteDependencies['processTemporaryRoomCreation'];
     readonly processGuestAdmission?: GroupStateRouteDependencies['processGuestAdmission'];
     readonly processQuickJoin?: GroupStateRouteDependencies['processQuickJoin'];
@@ -121,7 +123,9 @@ export function createGroupStateRouteTestDependencies(
         processGroupAppInbox: input.processGroupAppInbox ?? defaultProcessGroupAppInbox,
         processGroupMove: input.processGroupMove ?? (() => Promise.reject(new Error('Unexpected group move mutation'))),
         listGroupMoves: input.listGroupMoves ?? (() => Promise.reject(new Error('Unexpected group move recovery'))),
+        guestBookingByApplication: input.guestBookingByApplication ?? {},
         temporaryRoomPolicies: input.temporaryRoomPolicies ?? {},
+        processGuestBooking: input.processGuestBooking ?? (() => Promise.reject(new Error('Unexpected guest booking'))),
         processTemporaryRoomCreation: input.processTemporaryRoomCreation ?? (() => Promise.reject(new Error('Unexpected temporary room creation'))),
         processGuestAdmission: input.processGuestAdmission ?? (() => Promise.reject(new Error('Unexpected guest admission'))),
         processQuickJoin: input.processQuickJoin ?? (() => Promise.reject(new Error('Unexpected Quick Join mutation'))),

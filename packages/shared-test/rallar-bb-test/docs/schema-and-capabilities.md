@@ -106,8 +106,9 @@ accepted layout at the readiness group revision, and a layout that settled earli
 the buffered events and released at once. The accepted overlay's `updatedAtEpochMs` is no anchor: it is
 the server's planning time, before the promotion. An epoch later than the wait's start counts from the
 start, so the wait never outlasts its own timeout. A recipe whose `timeoutFrom` is not one token, which a
-loop child may key by its `{loop.*}` placeholders, is refused when it is loaded; at run time a token
-naming no finite number fails the wait with `RALLAR_BLACK_BOX_WAIT_INVALID`.
+loop child may key by `{loop.index}`, `{loop.iteration}`, `{loop.elapsedMs}` or `{loop.commandIndex}` and
+by no other placeholder, is refused when it is loaded; at run time a token naming no finite number fails
+the wait with `RALLAR_BLACK_BOX_WAIT_INVALID`.
 
 `formation.readiness` reports `acceptedHeldSinceEpochMs` beside the formation summary and omits it while
 no layout is accepted, so the scale recipes gate the stable-layout loop on its presence and fail within
@@ -1274,6 +1275,22 @@ whose copies keep arriving may then take its whole `windowMs`, so a slow runner 
 it within `stallMs`. An absence claim holds its whole window: command validation refuses
 `stallMs` beside `absent: true`.
 
+`ageFrom` names a field of each copy's payload, a top-level field like `ascendingBy` and not a path,
+that holds the epoch in milliseconds at which the copy was sent (a paced sender writes it with
+`{loop.atEpochMs}`). The result and the diagnostic then carry
+`sampleAge: { from, ageMs, unrecordedSamples }`, and neither is present when no age was asked for.
+`from` repeats the field. `ageMs` is a bounded histogram on the publication stage's age bounds
+(`AL_PUBLICATION_FIGURE_AGE_BOUNDS_MS`, the bounds of `selectionAgeMs`) with one sample per matched
+copy: the agent's clock when its event log recorded the copy, less the number the payload holds at
+that field. A copy with no finite number there, the unresolved text of a placeholder included, or one
+stamped after it arrived has no age the histogram records: it adds one to `unrecordedSamples` and is
+never clamped into a bucket, so `ageMs.count + unrecordedSamples` equals `observed`. The reading
+claims nothing and fails no count; a recipe that needs every copy aged asserts `unrecordedSamples`
+itself. The age is taken across two clocks, the sender's and this agent's, so between machines every
+sample also carries their offset, and it covers only the copies that arrived. A `recent` event history
+that evicted a copy has dropped its sample with it. An absence claim asks for no copy: command
+validation refuses `ageFrom` beside `absent: true`.
+
 `fault.inject` schedules a scripted `drop` for the next `remaining` matching
 frames on the `ws` or `rtc` carrier; `{ delayMs }` and `not-ready` are `ws` only
 (the `rtc` carrier accepts `drop` and `backpressure`), and `not-ready` answers a
@@ -1793,6 +1810,16 @@ but they must stay transport-neutral and bounded by the exported composite
 limits. Runtime execution for `loop` is available for sequential repeated child
 commands. Runtime execution for `parallel` is available for bounded concurrent
 groups with sequential child commands inside each group.
+
+A `loop` writes its placeholders into every string of a child command before
+the child runs: `{loop.index}` (zero-based, counted over every child the loop
+has run), `{loop.iteration}` (from 1), `{loop.commandIndex}` (the child's
+zero-based position in `commands`), `{loop.elapsedMs}` (milliseconds since the
+loop started) and `{loop.atEpochMs}` (the agent's clock in epoch milliseconds).
+A string that is exactly one placeholder becomes that number; a placeholder
+inside a longer string is written as text. `elapsedMs` and `atEpochMs` come
+from one clock read, taken when the child is resolved. A `wait.timeoutFrom`
+reference may be keyed by the first four, not by `{loop.atEpochMs}`.
 
 Schema-authoring views and catalog previews should inspect nested child
 commands recursively. A top-level `loop` or `parallel` can still require live

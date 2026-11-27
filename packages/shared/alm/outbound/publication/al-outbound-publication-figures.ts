@@ -1,6 +1,6 @@
 import type { ALPublicationDrainBudget } from '../../../al-contracts/publication/al-publication-policy.ts';
 import { assertBoundedHistogram } from '../../../measurement/assert-bounded-histogram.ts';
-import { computeBoundedHistogramAfter, type BoundedHistogram } from '../../../measurement/bounded-histogram.ts';
+import { computeBoundedHistogramRecorded, type BoundedHistogram } from '../../../measurement/bounded-histogram.ts';
 
 export const AL_PUBLICATION_FIGURE_AGE_BOUNDS_MS: readonly number[] = [
     1,
@@ -48,11 +48,6 @@ export namespace ALOutboundPublicationFigures {
     }
 }
 
-interface ALPublicationFigureRecorded {
-    readonly histogram: BoundedHistogram;
-    readonly unrecordedSamples: number;
-}
-
 export function toIdleALOutboundPublicationFigures(): ALOutboundPublicationFigures {
     const idleAge = assertBoundedHistogram(
         AL_PUBLICATION_FIGURE_AGE_BOUNDS_MS,
@@ -73,23 +68,11 @@ export function toIdleALOutboundPublicationFigures(): ALOutboundPublicationFigur
     };
 }
 
-function computeALPublicationFigureRecorded(
-    histogram: BoundedHistogram,
-    values: readonly number[]
-): ALPublicationFigureRecorded {
-    return values.reduce<ALPublicationFigureRecorded>((recorded, value) => {
-        const after = computeBoundedHistogramAfter(recorded.histogram, value);
-        return after.right === undefined
-            ? { histogram: recorded.histogram, unrecordedSamples: recorded.unrecordedSamples + 1 }
-            : { histogram: after.right, unrecordedSamples: recorded.unrecordedSamples };
-    }, { histogram, unrecordedSamples: 0 });
-}
-
 export function computeALOutboundPublicationFiguresAfterSelection(
     figures: ALOutboundPublicationFigures,
     selection: ALOutboundPublicationFigures.Selection
 ): ALOutboundPublicationFigures {
-    const ages = computeALPublicationFigureRecorded(
+    const ages = computeBoundedHistogramRecorded(
         figures.selectionAgeMs,
         selection.stagedAtMs.map((stagedAtMs) => selection.atMs - stagedAtMs)
     );
@@ -105,13 +88,13 @@ export function computeALOutboundPublicationFiguresAfterSubmission(
     figures: ALOutboundPublicationFigures,
     submission: ALOutboundPublicationFigures.Submission
 ): ALOutboundPublicationFigures {
-    const admission = computeALPublicationFigureRecorded(figures.selectionToAdmissionMs, [
+    const admission = computeBoundedHistogramRecorded(figures.selectionToAdmissionMs, [
         submission.settledAtMs - submission.atMs
     ]);
-    const messages = computeALPublicationFigureRecorded(figures.drainMessagesPercent, [
+    const messages = computeBoundedHistogramRecorded(figures.drainMessagesPercent, [
         (100 * submission.selected) / submission.drain.messages
     ]);
-    const bytes = computeALPublicationFigureRecorded(figures.drainBytesPercent, [
+    const bytes = computeBoundedHistogramRecorded(figures.drainBytesPercent, [
         (100 * submission.selectedBytes) / submission.drain.bytes
     ]);
     return {

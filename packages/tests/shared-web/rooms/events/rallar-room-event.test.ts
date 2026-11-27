@@ -15,7 +15,7 @@ const grant = { clientId: 'alice', username: 'Alice', sessionId: 'lobby-seat',
 const courtAccess = { clientId: 'alice', sessionId: 'court-seat', issuedAtEpochMs: 1,
     expiresAtEpochMs: 14_400_001, accessToken: 'court-proof' };
 const view: RoomEvent.View = {
-    principalId: 'alice', lobby, closesAt: 14_400_000, revision: 3, closed: false,
+    principalId: 'alice', handover: null, lastExpiredOffer: null, lobby, closesAt: 14_400_000, revision: 3, closed: false,
     courts: [{ groupId: 'court', capacity: 4, occurrence: 1, availableSeats: 3 }],
     queue: null, proposals: [], offer: { groupId: 'court', occurrence: 1, offerRevision: 3, partyId: 'friends', deadline: 1000 }
 };
@@ -297,4 +297,33 @@ it('finishes court entry when a refresh reads the old session during transport s
         await entry;
         expect(fixture.selected()).toEqual(court);
     } finally { disconnected.resolve(); event.stop(); }
+});
+
+it('watches the organizer roster across reconnect, clears it on denial and stays idle between notices', async () => {
+    const fixture = trial();
+    fixture.switchSession({ ...grant, guestRoom: undefined });
+    const event = fixture.open();
+    const requests: string[] = [];
+    let denied = false;
+    vi.stubGlobal('fetch', async (url: string) => {
+        requests.push(url);
+        if (denied) return new Response(null, { status: 403 });
+        return Response.json({ lobby, organizerId: 'alice', revision: 1, closesAt: 10_000, closed: false,
+            queue: [], courts: [{ groupId: 'court', capacity: 1, occurrence: 1, seats: [] }],
+            players: [{ principalId: 'alice', displayName: 'Alice' }] });
+    });
+    const roster = event.organizerView();
+    try {
+        vi.useFakeTimers();
+        await roster.start();
+        expect(roster.getState().view?.players).toEqual([{ principalId: 'alice', displayName: 'Alice' }]);
+        await vi.advanceTimersByTimeAsync(300_000);
+        expect(requests).toHaveLength(1);
+        expect(requests[0]).toMatch(/\/event\/organizer$/);
+        vi.useRealTimers();
+        denied = true;
+        fixture.push.reopen();
+        await expect.poll(() => roster.getState().view).toBeNull();
+        expect(roster.getState().error).toContain('403');
+    } finally { roster.stop(); }
 });

@@ -126,3 +126,52 @@ the admission Rallar returned for that room. After a page reload, restore the sa
 by passing their previously saved room admission to `activateGuest` again. A signed-out event
 watcher waits for authentication. With an active court visit, the watcher retrieves the
 same player's lobby grant from the protected credential store before reading the event.
+
+A signed-in event organizer can mount `event.organizerView()` independently of the player view.
+Call `start()`, subscribe with `onChange`, and call `stop()` when the roster closes.
+Its snapshot contains event-local player names, parties in queue order, court occurrences,
+and seats. A seat's numeric deadline is its claim cutoff; a null deadline identifies a
+claimed seat. Private changes, foreground return and reconnect refresh the roster.
+Watching another court preserves room selection. A denied read clears the roster.
+
+To hand over an event, the current organizer sends `offer-handover` with a
+`recipientId`. The recipient must be an app-authorized organizer with a live
+session in the lobby or their claimed court. The sender and recipient see the
+pending offer on their private event view. Pass its `offerId` to
+`cancel-handover` or `accept-handover`. Acceptance rechecks presence,
+authorization and server time. The former organizer then loses event management
+and roster access; occupied courts keep their existing clock and allocation.
+
+
+### Scheduled guest reservations
+
+For a scheduled room in an enabled application, pass `guestBooking: true` to
+`RallarScheduledSessions.create`. A signed-out client opens the usual session link and creates a
+`GuestSessionBooking` for its scoped room. Call `preview()` to read current timing, availability
+and that browser’s participation. Pass the displayed revision to `change('reserve', revision)`
+or `change('withdraw', revision)`. At arrival, `claim(revision)` returns the scoped guest
+admission used by `auth.activateGuest`. The SDK stores the browser proof separately from the link
+and can retry interrupted writes. A second browser needs its own available seat.
+
+### Court-ready notifications
+
+For optional device alerts, import `readCourtAlertPublicKey`, `enableCourtReadyNotifications`
+and `disableCourtReadyNotifications` from `events/court-ready-notifications.ts`.
+Read the public key while mounting the event. A null value means delivery is disabled.
+From the player's tap handler, call
+`enableCourtReadyNotifications(event, registration.pushManager, publicKey)`.
+The same operations apply to an admitted guest and a signed-in player. Disabling alerts
+withdraws consent for that device and event. Enabling alerts checks the browser subscription’s
+application server key before storing consent. On a key mismatch, an organizer can restore
+the previous VAPID identity or enroll under a separate service-worker registration.
+
+In the service worker, use `courtReadyNotification` to display the generic alert and
+`openCourtAlertClick` to remember the tapped offer before focusing or opening the app.
+On startup, foreground return or the `COURT_ALERT_OPENED` worker message, read
+`readCourtAlertClick` for this exact event and refresh the player's private view.
+Use `courtAlertStatus` to compare the clicked offer against current authority. The player's
+private `view.lastExpiredOffer` also reports an unclaimed deadline after a bare app launch,
+even when the OS supplies no notification data. Rallar clears the missed offer on
+requeue or reassignment. Call `clearCourtAlertClick` after their successful action.
+The installable [pickup example](../../../../examples/pickup-event/README.md) shows the
+full journey.
