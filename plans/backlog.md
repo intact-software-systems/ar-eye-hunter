@@ -297,8 +297,9 @@ and it has no status list.
   same statement, is still its `rejected` verdict (the 303 rejected
   `not-subscribed` NACK rows of one full-scope RTC run all came from
   `granted-rtc-ordered-relay`'s probe loop), and the WS server's receipt
-  aggregation refuses a repeated confirmation as a refusal under its guard
-  `already-confirmed`, with no `duplicate` label.
+  record answers a repeated confirmation `repeated` and writes nothing, which
+  the server's `ack-count` observation states as an ordinary count, with no
+  `duplicate` label.
 - The inbound work engine's idle busy poll (found while building the relay
   statement rules; on `main` at `d70f2f165`): an idle relay's two inbound
   rotation lanes report ready from rotation progress, not from a row, so its
@@ -784,32 +785,28 @@ and it has no status list.
   is no receipt and no later frame to reveal the gap (a stated limit of the
   design, pinned by `lost-repair-frame-stream.test.ts`). Open decision: whether
   an `ack: 'none'` stream states its end, so a receiver can see a lost tail.
-- A WS send can end `failed` although delivered when the server that admitted
-  it no longer holds its receipt: another cluster instance, a restart, an
-  aggregate that completed and whose `complete` was also lost, or a runtime
-  being disposed (D678). The server's repeated `admitted` answers only from a
-  live aggregate. Open decision: a stored or cluster-wide receipt lookup on a
-  duplicate. A send the server retains behind its room view no longer ends so:
+- A retained WS send the server loses in a restart, before it admits it, is
+  not recovered by the client, and its handle reads `expired` at its deadline:
   the server's `not-yet-in-sync` ends the first-hop wait (D694), and the send
-  reads its receipt once the server admits it (D697). What remains of that
-  case: a retained send the server then loses (a restart) is not recovered by
-  the client, and its handle reads `expired` at its deadline. No step ruled;
-  for the maintainer.
+  reads its receipt only once the server admits it (D697). No step ruled; for
+  the maintainer. (A duplicate of an admitted send is answered from the receipt
+  record on any instance, its terminal receipt included, so the rest of D678's
+  case is closed on a server with a shared record; a memory-only server's
+  restart loses the record, so a duplicate there is still answered nothing.)
 - The WS server does not report to its sender a retained send that reaches its
   deadline still kept: the handle reads `expired` at the deadline. It stays so
   by the maintainer's ruling of 2026-11-20 ("No, the handle's own deadline",
   D696); a retained send its room refuses is answered with the refusal's NACK
   when the refusal sends one (D698).
-- In a cluster a kept send's receipt lives on the instance whose replay admits
-  it (D696). Without a relay publisher an ACK that lands on another instance
-  is lost and its recipient stays unconfirmed.
 - A kept send that names no deadline keeps the kept row's deadline as its
   receipt deadline (D696). The WS client stamps one (`ts + 30 000`), so only a
   frame that reaches the server without a TTL, a runner's, would read its
   `timed-out` later than a fresh one would. That such a raw frame keeps the
   kept row's deadline at the server is read from
   `al-inbound-message-admission.ts:233-234` and
-  `ws-queue-box-server-receipt-aggregation.ts:466-469`, not run.
+  `toWsQueueBoxServerReceiptOpening`
+  (`ws-queue-box-server/receipt/to-ws-queue-box-server-receipt-opening.ts`),
+  not run.
 - Built by the maintainer's ruling of 2026-11-21 ("Expect the captured
   audience", D701): a send kept after a lost commit race whose recipients have
   all left the room by its replay expects the recipients captured at ingress;
@@ -817,13 +814,6 @@ and it has no status list.
   them unconfirmed, and the handle reads `expired` at its deadline
   (`ws-kept-send-receipt.test.ts`, "a send kept after a lost race whose
   captured audience has left by its replay expects that audience").
-- A cap-evicted `timed-out` that confirmed nobody ends the server's own row of
-  an outbox-fanned room message before its deadline, and the server sends its
-  recipients nothing more (a characterization in
-  `ws-queue-box-server-receipt-aggregation.test.ts`). The same run with the
-  `timed-out` condition of `compute-al-outbound-receipt-admission.ts` put back
-  as it was before the held-send slice shows the same, so the slice did not
-  change it. Ruled 2026-11-21: leave it recorded.
 - Every lost-race admission of a receipted room send awaits one outbox write
   inside the inbound worker, whose concurrency is one; no figure exists.
 - The publisher recipe adds a fixed 41 s wait to the cluster profile. Ruled
@@ -891,26 +881,307 @@ and it has no status list.
   write does not stop it (the window supersession has; D686). A cancel adds
   one interleaving of it: its end names a retained admission that another
   tab's replay is committing, and the replay's send row is reserved before the
-  end row runs (D754). Next step, as the review named it: fence the guard read
-  on the sender version; no step ruled.
+  end row runs (D754). A plain message's commits no longer move its sender's
+  version, so the lever is the message's own version: fence the guard read on
+  it; no step ruled.
 - A superseded `ack-timeout` row is left pending when a dispatch moves its
   receipt's deadline; it fires later, finds no receipt or a moved one, and
   completes, one no-op work item per moved deadline. Predates the slice; the
   end of a message completes only the current timer (D692). The option Task
   11 named: a dispatch that moves an open receipt's deadline completes the
   timer it replaces; no step ruled; for the maintainer.
-- The inbound lane can dispatch a message to its consumer twice: when the next
-  sequence's admission commits while the previous message's batch is between
-  its dispatch and its completion commit, the completion gets `conflict` and
-  returns `retry`, and the retried row dispatches again; nothing deduplicates.
-  Reproduced on memory and IndexedDB: with admissions awaited back to back and
-  no drain, 10 of 10 runs; with a started engine and admissions 5 ms apart,
-  IndexedDB 4 of 10 and memory 0; with work drained between admissions, 0.
-  First deliveries stay in order. It predates the slice (from #521; on `main`
-  `al-inbound-release-promotion.test.ts` says a completion that loses its
-  commit is dispatched again), and the inbound README does not state it. The
-  lane cells did not meet it. Open decision: a delivered marker written with
-  the dispatch.
+- The inbound lane can still hand an ordered message to the application again
+  when its own work runs twice: a completion that loses all three of its
+  attempts, one the shutdown signal aborts, or two instances that hold the
+  same work after a lease expiry (the same class as a crash between dispatch
+  and completion). A completion that cannot be placed because its predecessor
+  has not completed hands its work back too, but follows no dispatch: only a
+  dropped plan or a disabled local delivery reach it. An admission's expiry refresh or a control row written during
+  the completion no longer does: the completion is guarded on its position and
+  its slot alone. In-process subscribers that are not idempotent per message id
+  are where a repeat would show (on the WS server: router handlers and proxies,
+  an ordered RTC signal's relay, an ordered RTT sample, game and app topic
+  handlers with no msgId-keyed command). Measured under load through the WS
+  server with ordered arrivals (D784): in 13 runs none of the 1 to 200
+  messages a run was handed twice, no completion took a third attempt, and
+  each of the 22 lost writes, every one to an admission's expiry refresh of
+  the track's progress row, was won at the next attempt.
+- What stays of the limit of one ordered track (D784, D785, D786). Built: an
+  inbound write that is lost is looked at again at once (an arriving ordered
+  message's admission, a retained admission's replay, a buffered message's
+  release and an ordered delivery's completion, three attempts with no wait,
+  through `retryALInboundLostWrite` in
+  `packages/shared/alm/inbound/admission/retry-al-inbound-lost-write.ts`), and
+  the batch that completes an ordered delivery claims its track's next one, a
+  release or a dispatch, found by one read of the track's slot after the
+  completed position and reserved only when it is the lane's own, due, ready
+  now and as read, after the batch's own claims and while the batch holds
+  fewer than a page of 16
+  (`packages/shared/alm/inbound/lane/claim-al-inbound-ordered-successor.ts`);
+  and such a batch hands nothing on once it has run half its work lease
+  ("A batch past its lease", below).
+  Five publishers of ordered receipted room sends, one track each at 2 a
+  second, through three WS server instances on PostgreSQL with every
+  statement, BEGIN and COMMIT delayed 5 ms, fifteen sessions in one room and a
+  30 s lifetime, keep up on a quiet machine (200 of 200 in three 20 s runs and
+  450 of 450 over 45 s, recipients 0.6 to 0.7 s behind at p50), where the code
+  before the fresh attempts completed 154 to 174 of 200 and 131 of 450. Under
+  eight CPU burners they completed 200 of 200 in 3 of 3 runs, with no RETRY
+  row, no track ended, nothing handed twice and the hand-offs in order, where
+  the code before the hand-on completed 141, 145 and 200 and ended four tracks
+  in each of the two runs that failed, and at +10 ms on a quiet machine 200 and
+  200 where the code before completed 75 and 70.
+
+  Why the tracks fell behind together, before the hand-on: when one message's
+  dispatch and completion take longer than the gap to its sender's next send (a
+  loaded host, a database slower than +5 ms a statement, one slow completion,
+  or a sender faster than the cycle), the next message's delivery reads its
+  predecessor waiting and is set aside, its row still new; only the rotation
+  claimed it again, seconds later, by which time the next arrival had found its
+  own predecessor unfinished too, so the track stayed off the fast path while
+  its sender kept its rate, every ordered track sharing the rotation fell
+  behind with it, and all reached the 30 s lifetime at the same send. So five
+  ordered publishers keep up on a host and a database fast enough that a
+  message completes before its sender's next one arrives; when one does not,
+  the track is now carried a page a batch. The limit binds a send that asks
+  for hop order, by stating an `orderingKey` or a `seq`: a browser's room send
+  is unordered unless it states one, and a room channel declared
+  `order: 'edge'` sends unordered messages that the receiving page sorts, so
+  neither enters the ordered inbound path.
+
+  What remains, each enough to resume from:
+  - One sender above 3 messages a second, the highest rate at which the built
+    code kept up in both of its runs. At 4 a second every message still
+    completes (80 of 80 in both runs) but the track runs seconds behind: its
+    last message was read 5.8 and 6.4 s after its send, with 13 and 6 sends
+    parked at admission, and 15.7 and 7.5 s after it with the batch-age bound
+    below, further behind in both runs (a prototype of the hand-on, measured
+    before it was built, read no message later than 1.5 and 3.8 s after its
+    send; the code before completed 52 and 47 and ended the track; two runs
+    each, not separable). At 5 a second only the track's first messages
+    complete, on both codes: the hand-on completed 20 to 69 of 100 over four
+    runs (20 and 69 as a prototype, 31 and 63 built), the code before it 11 to
+    72 over eight; with the hand-on built the track ended `resync-required` in
+    both runs, the code before it in one of its two in the same campaign (the
+    earlier campaigns recorded completions only). At 10 a second the sends
+    parked at admission dominate (144 and 146 a run) and the track is not ended:
+    4 and 0 of 200 completed, against 0 and 4 before. The hand-on does not touch
+    the parked sends, and three attempts cost more writes on one overloaded
+    track (at 10 a second the progress row lost 813 to 814 of 981 to 982 writes
+    a run, against 433 to 444 of 597 to 613 before the fresh attempts). Why one
+    track at 4 a second parks 6 to 13 sends was not probed.
+  - The full batch. A lane whose pages are already full of claimable work
+    hands nothing on and behaves as before: the page bound
+    (`ALWorkHandler`, `packages/shared/alm/work/al-work-handler.ts`) asks for a
+    successor only while the batch holds fewer than 16 claims. No measured cell
+    had a lane full of other work.
+  - The climbing lag. A backlog is handed on up to a page at a time. Under load
+    the batches ran at the page while the senders kept their rate, and a lagging
+    track's lag climbed by about 0.3 s a send and fell only once the sends ended
+    (the worst of each loaded run 1.3, 5.1 and 7.7 s; the prototype's loaded
+    runs peaked at 0.8 to 5.1 s, three runs each, on different days and loads,
+    not separable). At +10 ms the built code read messages 8.1 and 7.2 s behind
+    at p50, at most 25.6 s, against the 30 s lifetime. What is known: the batch
+    after a full page is already owed a head read while sends continue; a full
+    batch spent about a third of its time outside its claims' runs, most of it,
+    by the code, the hand-ons' own reads and reservations (the ten longest
+    loaded drains took 4.1 to 4.9 s with 2.8 to 3.3 s in the runs); at +10 ms
+    the lanes were saturated. Which of these the loaded lag is was not
+    separated: only each run's five longest drains were kept. The measurement of
+    the batch-age bound below recorded every drain: instances sat idle for 6 to
+    16 s at +10 ms while a track lagged, in the mixed cell and at 4 a second,
+    and for 0.8 to 8.9 s in the loaded cell, a hint that the rows the bound
+    declines wait for the rotation or a wake, not a measured cause.
+  - A batch past its lease. A claim's work row stays reserved until its batch
+    ends, so a batch that runs longer than its 10 s lease lets another
+    instance claim the rows it completed early: an ordered one reads
+    `completed` and is not dispatched again, an unordered one is handed to the
+    application a second time. Built (D786): a batch hands nothing on once it
+    has run half its lease (`AL_INBOUND_HAND_ON_BATCH_AGE_MS`, 5 s), counted
+    from the batch's first clock reading, before every reservation; the check
+    precedes any read, and a successor refused for age stays as it is and is
+    found by the head read or the rotation. Before it, at +10 ms a statement
+    21 of the 33 inbound drains of two runs held 16 claims and the five
+    longest of each run took 7.3 to 8.0 s. With it, in three runs, no drain
+    held 16 claims, the longest took 5.8 to 6.1 s and none came near the
+    lease, but 44 of the 61 drains that handed on ran past 5 s (worst 6.07 s
+    with 13 claims, 1 068 ms past): the bound stops new hand-ons, not the
+    claims the batch already holds, which still run (at +10 ms about one for
+    each lagging track). Its
+    cost: at +10 ms the recipients' read p50 rose to 8.6 to 10.7 s from 7.2
+    and 8.1 s (later in every run) and receipts were read at 14.4 to 14.7 a
+    second against 14.8 and 15.1 (fewer in every run), and one track at 4 a
+    second ended further behind; loaded, quiet and the unordered guard were
+    not told apart.
+    What stays: the claims a batch already holds when it stops, and a page of
+    its own 16 claims with no hand-on, which still passes the lease at about
+    0.6 s a claim and is older than this work. Releasing a row when its claim
+    ends, instead of at the batch's end, is the change that would close it;
+    not tried.
+  - A track that continues after an omission. When the sender left this
+    receiver out of a sequence, no slot stands after the completed position and
+    the next copy waits for the rotation; finding it needs a read of the
+    track's slots.
+  - A successor on another carrier. It belongs to that carrier's lane and is
+    not handed across: where a track's next copy arrived on the other carrier,
+    it waits for that lane's rotation.
+  - A replay or a release that loses three writes still goes to RETRY, which
+    the rotation reads only after every NEW row (`SCAN_STATUSES` NEW, RETRY,
+    RESERVED, pages of `AL_INBOUND_WORK_PAGE_SIZE` 16,
+    `packages/shared/alm/inbound/read-al-inbound-work-selection.ts`), and its
+    track waits with it. No such row arose in the measured runs of the built
+    code.
+  - `reject`'s moved-progress guard
+    (`packages/shared/alm/inbound/al-inbound-ordered-delivery.ts`) answers
+    `retry` for a lost race and is not looked at again at once, as the four
+    owners above are. It was not what any probe saw.
+  - The room fan-out's wire order, an open point of its own and older than
+    this work. When one track's messages are handed to the application closely
+    spaced on one instance, the WS server's fan-out to a room writes each on
+    its own and keeps no order between two: a raw socket read 14 frames out of
+    order in one loaded run of the built code and none in the others (9 to 42
+    in the loaded runs of the cheaper form below), and 5 frames twice in one
+    run of one track at 10 a second. A Rallar receiver's ordered delivery
+    restores the order from its buffer, and the subscriber was handed nothing
+    twice and nothing out of order in any run. Not probed.
+  - What one over-driven track costs other traffic on its server. One track at
+    5 a second beside five unordered publishers: the unordered publishers
+    completed 200 of 200 in both runs and read 19.3 to 19.4 receipts a second,
+    as without it, but their read's p50 was 0.715 and 0.862 s against 0.454 s
+    without the track (1.6 and 1.9 times), at most 1.63 and 2.83 s against
+    1.06 s, because before the bound the track's batches ran at the page (16
+    claims) for 6.0 and 6.1 s and a message arriving on that lane waits for the
+    batch; the track
+    itself completed 50 and 70 of 100 and ended once. With the batch-age bound
+    their p50 read 0.829 and 1.436 s (two runs each, not told apart; the
+    second 3.2 times the guard's), the track's longest batches 5.31 and 5.25 s
+    with 15 claims. The code before the hand-on, whose buffered releases also
+    fill pages for such a track, read the unordered publishers at 1.378 and
+    0.698 s, not told apart. Not run: more than one
+    over-driven track, or one on a loaded host.
+  - What can still hand a delivered message to the application again: every
+    completion attempt lost, a shutdown or a crash between dispatch and
+    completion, and a lease that ended while its batch still ran, after which
+    another instance claims the row again. The last is the one to watch. One
+    batch's page claims share one reservation instant and each lease is 10 s;
+    a handed-on claim's lease starts at its hand-on, later than its batch's;
+    a claim can take up to three attempts; and batches reach a page more
+    often, since every lagging track now fills one. The largest batch ran 4.9 s
+    loaded and 8.0 s at +10 ms before the batch-age bound, 6.07 s with it,
+    against the 10 s lease (above, "A batch past its lease"). An ordered row run
+    again after its lease reads `completed` and is not dispatched again; an
+    unordered row of the same batch could be. Nothing was handed twice in any
+    run.
+  - Not shown: across two server instances, the room fan-out leaving from the
+    instance that completed the predecessor, that instance's readiness read
+    asking its own dispatch port, and an arrival's commit against a
+    completion's commit; and, on PostgreSQL, a released message handed on
+    reading its slot a second time.
+
+  Not built, each with its result and its known problem (the progress-row,
+  retried-row and arrivals-in-turn figures were taken on the code before the
+  fresh attempts):
+  - Carrying the readiness read's surface into the handed-on delivery, as a
+    page's claim carries its own: the listed change most likely to move a
+    figure, since about a third of a full batch went outside its claims' runs,
+    most of it, by the code, the hand-ons' own work. A
+    hand-on spends 10 statements on its row on PostgreSQL against the
+    rotation's 6; this would save the second read of the message and its owner
+    row. Not tried and not measured; its expected problem, reasoned from the
+    code, is a second path for the delivery's surface beside the page's. The
+    claim (`lane/claim-al-inbound-ordered-successor.ts`) and the selection
+    (`read-al-inbound-work-selection.ts`) read "is this row claimable now" in
+    two places, differing by design in one answer (a row that cannot be
+    decoded: the page claims it to reject it, the hand-on leaves it); this
+    change is where they become one.
+  - Releasing a claim's row when its claim ends, instead of at the batch's
+    end, so that no row a batch completed early stays reserved past it (above,
+    "A batch past its lease"). Not tried and not measured.
+  - A bound on hand-ons per track per batch. Not tried and not measured. It
+    would cap what one over-driven track costs the lane's other traffic
+    (above, 0.26 to 0.41 s on the unordered p50 before the bound, 0.38 and
+    0.98 s with it); its expected problem,
+    reasoned and not measured, is a new parameter that lowers what a lagging
+    track is carried per batch.
+  - A head read when a hand-on stops at the page. Not tried and not measured,
+    and less likely to move a figure than the surface above: while sends
+    continue the batch after a full page is already owed a head read. Its
+    expected problem, reasoned from the code and not measured, is that it puts
+    the track ahead of the rotation's next page once more.
+  - The cheaper form, which brings the successor's row due through
+    `expedite()` instead of claiming it, measured as a prototype before the
+    hand-on was built. It removed the loaded stall too (200 of 200 in three
+    loaded runs) but broke the page bound: an expedited claim is taken before
+    the batch's next claim and outside the page count, so a 64-message track
+    drained in one batch, ahead of every claim the batch held; it needed the
+    lane to hand the delivery a callback, and one track at 4 a second read no
+    message later than 14.3 and 15.3 s after its send.
+  - Writing the progress row only when it is new, when a witness moves its
+    position, or when its stored expiry is earlier than what the track needs
+    (the later of `now + orderingTrackTtlMs` and the expiry of every slot the
+    admission buffers); a write then sets the later of the stored expiry, `now +
+    2 * orderingTrackTtlMs` and those slots' expiries, two lifetimes because the
+    row must outlive the ordering snapshot each admission writes
+    (`isALOrderingSnapshotLive`). Every admission on a track rewrites the row
+    only to extend its expiry today (`computeDeliveryProgressRetention`,
+    `packages/shared/alm/inbound/prepare-al-inbound-commit-bundle.ts`), so every
+    other writer on the track that read it loses its compare-and-set. Writing
+    the row only then removes every expiry conflict (every completion in one
+    attempt), but alone it is not enough (two of three 20 s five-publisher runs
+    still parked 20 to 23 sends and read 7.5 to 9.5 s behind), and on top of
+    fresh attempts it changed no figure a publisher or a recipient reads. Its
+    problem is the browser's delivered-marker cap
+    (`ALInboundDeliveredMarkerIndex`,
+    `packages/shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts`;
+    256 markers on the session's IndexedDB and volatile pairs, which an RTC
+    receiver uses too; the server passes no cap): it ranks a track by when its
+    progress row's expiry last moved and evicts the head, so a live track's
+    marker, now written about once a lifetime, can be evicted under a live
+    ordering snapshot, and the track's next release reads `resync-required`.
+    Feeding the index from each committed ordering snapshot is not enough alone:
+    the index is in memory, and after a restart its load orders by expiry again.
+    The prototype's guard, "never evict a marker whose ordering snapshot is
+    live", reads a stored fact and survives a restart, and in the browser keeps
+    the cap exact, since the snapshot pass (cap 256) runs first. But its
+    eviction walk re-inserts a kept marker into the map it is iterating, so a
+    pass that finds no marker it may evict loops forever: a unit sweep with it
+    applied hung, and six cases of
+    `evict-al-inbound-delivered-markers-past-cap.test.ts` build a store with a
+    marker cap and no snapshot cap. The fix is a walk that visits each marker
+    once a pass and moves the live ones behind after it. Markers then live one
+    to two lifetimes instead of one, which the delivered markers' growth surface
+    (`growth-surfaces.ts`) and three tests must restate, and `browser/rallar.ts`
+    measured 0.5 KiB more minified, over its budget.
+  - Reading due retried rows with every page of new ones. It shortens a due
+    retried row's wait (at most 7.7 to 14.2 s, against 17.9 to 20.2 s) and does
+    not end the stall (five publishers still parked 31 to 38 sends, read 9.4 to
+    11.4 s behind, 202 of 450 over 45 s). On one track at 5 a second it
+    delivered 2 of 100 in both runs, against 16 to 17 without it, and at 10 a
+    second recipients read 5 frames twice in both runs though the subscriber was
+    handed each message once; neither is explained and neither was probed.
+    Changing `SCAN_STATUSES` alone would also move the head read a commit asks
+    for, and the row a hand-on misses is a new one, not a retried one.
+  - Admitting one track's arrivals one after another inside an instance. Alone
+    it does nothing (180 of 200, 31 parked, one run). With fresh attempts and
+    the progress-row lever it removes one fast track's contention (no send
+    parked at 5 and at 30 a second) and brings 10 and 30 a second to 31 to 34
+    messages before the lifetime cuts the track off. It is an in-memory queue in
+    front of a conditional write that is correct without it, it orders the
+    arrivals of one instance only, and it holds a track to one admission at a
+    time; whether the inbound may serialize in memory what the store arbitrates
+    is a question of the write doctrine.
+
+  Built by other work: a room channel declared `order: 'edge'` sends unordered
+  messages that the receiving page puts back in its sending page's order, for
+  whole-room, receipted, at-least-once, volatile sends; other shapes are
+  refused `unsupported` (`packages/shared-web/browser/README.md`, "Edge
+  order"). Whether it carries a stream faster than one ordered track is its
+  plan's open measurement. That plan, "Edge order: ordered room sends, sorted
+  at the two ends" (`plans/active/edge-ordered-room-sends.md`), also lists as
+  open: that measurement, for one fast sender and for five; newest wins for
+  unretried and `live` sends; streams for listed, principal and peer
+  audiences; a real consumer, with the measurement run again on the product
+  code; and whether hop order stays, which it leaves open.
 - Thirteen tests use a gap NACK that names no range as a whole-message resend,
   a shape no producer emits, so the decoder still accepts it (D692):
   `al-indexeddb-runtime-stores.test.ts`, `al-outbound-durable-effects.test.ts`
@@ -1085,19 +1356,70 @@ and it has no status list.
   defaults is not stamped into its `qos` (#868, D712: explicit plans never
   stamp), so a fresh WS client of such a track can ask for a sequence superseded
   before it was sent and wait for the bounded hold.
-- After the instance that admitted a publication crashes, the publisher,
-  reconnected to a survivor, reads neither `complete` nor `timed-out` for it
-  (`api-v1-cluster-publisher-instance-loss`, D700); a receipt that survives a
-  server crash is its own slice. In one of three runs a survivor delivered the
-  crashed server's `admitted` for that publication to the reconnected publisher
-  three times, asserted neither way; the recipe's `timed-out` absence was
-  never shown firing.
+- The receipt row's republication delivers one receipt more than once under
+  one control id until its origin acknowledges it: in one of three runs of
+  `api-v1-cluster-publisher-instance-loss` a survivor delivered the crashed
+  server's `admitted` to the reconnected publisher three times. An `admitted`
+  with a head behind it is now a row only when its origin had no socket on the
+  instance that answered it, so the repetition can still occur for such an
+  `admitted`, for one that expects nobody, and for every terminal receipt. The
+  publisher admits an identical repeat without a write; no recipe asserts the
+  count.
 - A session whose server crashed stays in the room's presence: the receipt of
   a later broadcast still expects it and ends `timed-out` (D669,
   `api-v1-cluster-subscriber-instance-loss`). What ends such a presence, and
   when, is not read by any recipe.
-- Unread: in an exploratory run of that recipe a second `admitted` receipt for
-  one broadcast reached the publisher after the first was consumed.
+- Unread: in an exploratory run of the publisher recipe a second `admitted`
+  receipt for one broadcast reached the publisher after the first was consumed.
+  It is either the receipt row's republication (one control id, above), which
+  an `admitted` now takes only when its origin had no socket on the instance
+  that answered it, or the answer to a re-sent copy (a fresh control id); the
+  run did not read which.
+- The WS server's receipts were measured at five publishers and +5 ms per
+  round trip, locally; still not run: the hosted statement latency itself,
+  latencies above +5 ms, more than five publishers (so the rate at which the
+  receipts stop keeping up is unknown), `main` in the five-publisher cell,
+  group-state deltas themselves (stood in for by one sequenced server
+  publication every 500 ms) and a higher server publication rate.
+- The commits that still fence a sender whatever their message: a message end
+  through the message-end bundle, each ACK window, a first-hop wait's own
+  commits, a repair hint's follow-up and the not-yet-in-sync retry schedule. A
+  server publication's own receipt windows so keep competing for the server's
+  version row. The lever: the same read-derived rule for those commits, with the
+  schedule fenced on the message's version.
+- A stray `nack-retry`: the not-yet-in-sync schedule is fenced against an end
+  only through the sender's version, and an end made by a control, or by a
+  dispatch that completes its receipt and fences no sender, does not move it.
+  So one retry can be scheduled for a message that just ended; its dispatch
+  answers `message-ended`, writes nothing, and the retry record expires.
+  Accepted; the lever is the schedule fenced on the message's version.
+- Three levers for the receipts' delivery measured or weighed and set aside:
+  delivering receipts from the receipt record's own work rows, which needs a
+  cluster notice and an at-least-once rule of its own for the ended work row;
+  more claims at once on the outbound worker, which with four turned queueing
+  on the server's version row into conflicts on it (126 of 200); and every
+  receipt written live when the origin's socket is local (200 of 200 in the
+  prototype), which leaves a lost live terminal receipt redelivered by
+  nothing, since the client resends no message it holds `admitted` for.
+- Two cheap economies of the receipt record, not taken: the runtime refusal
+  hook lists a head's confirmations it does not use (a head-only read would
+  make a client's ACK 7 round trips instead of 8), and a completed receipt's
+  deadline row stays until its deadline, when the worker claims it for one
+  `end` that answers `conflict` (expiring the deadline slot in `end`'s commit
+  would save that claim, at the cost of a work-slot read in every `end`).
+- A stall longer than half an ACK window on a server publication's receipt
+  (D778): when the receipt record's end and its ended work together take
+  longer (a stalled instance; a survivor that learns of the row only at its
+  next readiness read, up to 3 s), the row's retransmission budget ends first
+  and the admin read says `receipt-exhausted` naming nobody confirmed, while
+  the record's head stays exact. Derived from the code; no test holds the
+  stall. Two levers, both in `alm/outbound`: state the record's settlement
+  when the row refuses the terminal receipt, which duplicates the runtime's
+  settlement stamping, or a pending row that says its receipt is counted
+  elsewhere.
+- A survivor taking over a receipt record work row whose lease a killed process
+  held is not shown: the PostgreSQL cluster cases lose an instance by disposing
+  it, and only the black-box cluster recipe kills a process.
 - The database-session recipe (D666) proves delivery to the cut process's
   socket resumes; it does not say by which path. The secondary's log shows one
   `listener-subscribe`, at start, and no error after the cut, so whether the

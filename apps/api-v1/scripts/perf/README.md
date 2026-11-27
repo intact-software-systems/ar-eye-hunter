@@ -106,7 +106,8 @@ dropdb -h 127.0.0.1 -U app alm_cell_run
 
 It is a measurement and gates nothing. One event loop runs the three instances and the load, so an
 absolute figure with no latency added varies from run to run and measures the harness as much as
-the product. Its README holds one reference set of each ordering, measured apart.
+the product. Its README holds one reference set of each ordering, measured apart, both on the
+build before the durable receipt record, and one run on the build with it.
 Every option, how to read each figure under each ordering, what the unordered shape stands for,
 which round trips the latency covers and every limit of the cell are in
 [`alm-room-send/README.md`](./alm-room-send/README.md).

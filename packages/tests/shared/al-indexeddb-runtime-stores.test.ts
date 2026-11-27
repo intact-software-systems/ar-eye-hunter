@@ -100,7 +100,8 @@ describe('IndexedDB AL runtime stores', () => {
         });
         const message = { ...original, id: { ...original.id, msgId: 'message-default-schema' } };
         await expect(
-            inboundStores.admissionStore.commitMutations({
+            inboundStores.admissionStore.commitBundle({
+                admissionExpiresAtMs: null,
                 senderId: 'peer-default-schema',
                 observations: (await readInboundAdmission(inboundStores.admissionStore, message)).observations,
                 mutations: [{
@@ -118,7 +119,8 @@ describe('IndexedDB AL runtime stores', () => {
                         originAuthenticated: false
                     },
                     expireAtTimestamp: Date.now() + 60_000
-                }]
+                }],
+                durableEffects: []
             })
         ).resolves.toBe('committed');
         await expect(outboundStores.admissionStore.ready()).resolves.toBeUndefined();
@@ -387,7 +389,8 @@ describe('IndexedDB AL runtime stores', () => {
         const planner = createInboundPlanner();
 
         expect(
-            await stores.admissionStore.commitMutations({
+            await stores.admissionStore.commitBundle({
+                admissionExpiresAtMs: null,
                 senderId: msg.id.senderId,
                 observations: (await readInboundAdmission(stores.admissionStore, msg)).observations,
                 mutations: [
@@ -433,7 +436,8 @@ describe('IndexedDB AL runtime stores', () => {
                         },
                         expireAtTimestamp: Date.now() + 20
                     }
-                ]
+                ],
+                durableEffects: []
             })
         ).toBe('committed');
 

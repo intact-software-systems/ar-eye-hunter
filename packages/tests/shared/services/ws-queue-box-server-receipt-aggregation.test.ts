@@ -14,7 +14,7 @@ import {
     type ALAckStatus,
     type ALReceiptPayload
 } from '@shared/al-contracts/al-control.ts';
-import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { decodePersistedALMessage, type ALMessageRejection } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import {
     createInMemoryALAdmissionState,
     InMemoryAdmissionBackend,
@@ -26,24 +26,24 @@ import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-life
 import { createALInboundAdmissionStore, type ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
-import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALOutboundRuntimeDiagnosticsEvent, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { toALReceiptRecordHeadKey } from '@shared/alm/receipt-record/al-receipt-record-keys.ts';
+import { createInMemoryALReceiptRecordStores, type ALReceiptRecordStores } from '@shared/alm/receipt-record/al-receipt-record-stores.ts';
+import { ALReceiptRecord } from '@shared/alm/receipt-record/al-receipt-record.ts';
+import { AL_RECEIPT_RECORD_WINDOW_MS } from '@shared/alm/receipt-record/validate-al-receipt-record-opening.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import type { WsQueueBoxServerLiveDelivery } from '@shared/services/ws-queue-box-server/ws-queue-box-server-live-delivery.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
-import {
-    WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES,
-    WS_QUEUE_BOX_SERVER_RECEIPT_WINDOW_MS,
-    WsQueueBoxServerReceiptAggregation
-} from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts';
-import type {
-    WsQueueBoxServerReceiptObservation,
-    WsQueueBoxServerReceiptObserver
-} from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
+import { WsQueueBoxServerReceiptAggregation } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts';
+import type { WsQueueBoxServerReceiptObservation } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { createWorkerHold } from '../alm/create-worker-hold.ts';
+import { holdALAdmissionWrite } from '../alm/hold-al-admission-write.ts';
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 import { settleQueueEngine } from './ws-queue-box-server-receipt-fixture.ts';
 
@@ -70,6 +70,8 @@ interface ReceiptFixture {
     readonly remoteOrigin: SimulatedWebSocket | undefined;
     /** What the server's own outbound owner stated about the messages it originated. */
     readonly settlements: ALDeliverySettlement[];
+    /** What the server's own outbound owner recorded through its diagnostics sink. */
+    readonly diagnostics: ALOutboundRuntimeDiagnosticsEvent[];
     /** The server's own outbound admission store, where its pending row for a fanned-out message lives. */
     readonly admissionStore: ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>;
 }
@@ -83,8 +85,6 @@ interface ReceiptFixtureOptions {
     readonly authorizedPeerIds?: readonly string[];
     /** The audience the router admits an outbox-fanned message to, which its dequeue records; none when absent. */
     readonly admittedAudience?: readonly string[];
-    /** The messages the router fans out to the outbox; every admitted message when absent. */
-    readonly fannedOutMsgIds?: readonly string[];
 }
 
 describe('WS server receipt aggregation for receiver acknowledgements', () => {
@@ -98,7 +98,32 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         expect(admitted.right?.kind).toBe('control');
     });
 
-    it('refuses at ingress, as its typed return value, a relayed ACK the aggregate cannot count', async () => {
+    it('refuses at ingress, as its typed return value, a receiver ACK not addressed to the origin it names', async () => {
+        const fixture = await createReceiptFixture({ fanout: 'forward', origin: 'local' });
+        await admitRoomMessage(fixture);
+        const misaddressed = newALAckControlMessage(
+            { v: 4, msgId: 'ack-b-misaddressed', senderId: 'b', ts: fixture.clock.nowMs, traceId: 'trace-ws-queue-box-server-receipt-aggregation' },
+            toTestALAckPayload({
+                ackedMsgId: 'room-message-1',
+                fromPeerId: 'b',
+                toPeerId: 'c',
+                originPeerId: 'a',
+                logicalRecipientPeerId: 'b',
+                carrier: 'ws',
+                status: 'delivered',
+                observedAtEpochMs: fixture.clock.nowMs
+            })
+        );
+
+        const refused = await fixture.service.acceptIncomingMessage(misaddressed, 'b');
+
+        expect(refused.left).toEqual({
+            code: 'unauthorized',
+            message: 'AL acknowledgement is not addressed to the origin it names'
+        });
+    });
+
+    it('admits a repeated receiver ACK and counts it once', async () => {
         const fixture = await createReceiptFixture({ fanout: 'forward', origin: 'local' });
         await admitRoomMessage(fixture);
         await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'b'), 'b');
@@ -108,10 +133,11 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
             'b'
         );
 
-        expect(repeated.left).toEqual({
-            code: 'unauthorized',
-            message: 'AL acknowledgement confirms a peer the receipt already counted'
-        });
+        expect(repeated.left).toBeUndefined();
+        await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'c'), 'c');
+        await expect.poll(() => readSentReceipts(fixture.sockets.a).map((receipt) => receipt.phase)).toEqual(['admitted', 'complete']);
+        await settleQueueEngine(fixture.engine);
+        expect(readSentReceipts(fixture.sockets.a).map((receipt) => receipt.phase)).toEqual(['admitted', 'complete']);
     });
 
     it('refuses a WS session ACK that names another recipient of a message the server originated', async () => {
@@ -146,13 +172,13 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         expect(fixture.settlements.flatMap((settlement) => settlement.kind === 'acknowledgement' ? settlement.confirmedHopPeerIds : [])).not.toContain('b');
     });
 
-    it('caps the aggregate deadline at the server receipt window whatever deadline the message names', async () => {
+    it('caps the receipt deadline at the record window whatever deadline the message names', async () => {
         const fixture = await createReceiptFixture({ fanout: 'forward', origin: 'local' });
         const farFuture = { ...roomMessage(fixture.clock.nowMs), constraints: { expiresAtMs: fixture.clock.nowMs + 10 * 24 * 60 * 60_000 } };
         expect((await fixture.service.acceptIncomingMessage(farFuture, 'a')).right?.kind).toBe('admitted');
         await expect.poll(() => readSentReceipts(fixture.sockets.a).map((receipt) => receipt.phase)).toEqual(['admitted']);
 
-        fixture.clock.nowMs += WS_QUEUE_BOX_SERVER_RECEIPT_WINDOW_MS;
+        fixture.clock.nowMs += AL_RECEIPT_RECORD_WINDOW_MS;
 
         await expect.poll(async () => {
             await fixture.engine.executeOnce();
@@ -160,25 +186,28 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         }).toEqual(['admitted', 'timed-out']);
     });
 
-    it('answers the origin with the admitted audience at once and the complete aggregate as one more row', async () => {
+    // The origin is connected to the admitting instance, so its admitted receipt is written to its socket and only the
+    // terminal receipt is a row.
+    it('answers the origin on its socket with the admitted audience at once and the complete aggregate as its one row', async () => {
         const fixture = await createReceiptFixture({ fanout: 'forward', origin: 'local' });
         await admitRoomMessage(fixture);
-        await expect.poll(() => readReceiptRows(fixture)).toEqual([
+        expect(readSentReceipts(fixture.sockets.a)).toEqual([
             expect.objectContaining({ phase: 'admitted', expectedRecipientPeerIds: ['b', 'c'], confirmedRecipientPeerIds: [] })
         ]);
-        expect((await readReceiptRows(fixture))[0]).toMatchObject({
+        expect(readSentReceipts(fixture.sockets.a)[0]).toMatchObject({
             msgId: 'room-message-1',
             originPeerId: 'a',
             snapshotVersion: SNAPSHOT_VERSION
         });
+        expect(await readReceiptRows(fixture)).toEqual([]);
 
         await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'b'), 'b');
-        expect((await readReceiptRows(fixture)).map((receipt) => receipt.phase)).toEqual(['admitted']);
+        expect(await readReceiptRows(fixture)).toEqual([]);
         await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'c'), 'c');
 
+        await expect.poll(async () => (await readReceiptRows(fixture)).map((receipt) => receipt.phase)).toEqual(['complete']);
         const receipts = await readReceiptRows(fixture);
-        expect(receipts.map((receipt) => receipt.phase)).toEqual(['admitted', 'complete']);
-        expect(receipts[1]).toMatchObject({
+        expect(receipts[0]).toMatchObject({
             expectedRecipientPeerIds: ['b', 'c'],
             confirmedRecipientPeerIds: ['b', 'c'],
             snapshotVersion: SNAPSHOT_VERSION
@@ -207,7 +236,7 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         expect(readRoomMessageCopies(fixture.sockets.c)).toBe(1);
     });
 
-    it('answers nothing for a duplicate once its receipt has ended: the stated limit', async () => {
+    it('answers a duplicate once its receipt has ended with its terminal phase, from the record', async () => {
         const fixture = await createReceiptFixture({ fanout: 'forward', origin: 'local', authorizedPeerIds: ['a', 'b'] });
         await admitRoomMessage(fixture);
         await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'b'), 'b');
@@ -216,17 +245,16 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         const again = await fixture.service.acceptIncomingMessage(roomMessage(fixture.clock.nowMs), 'a');
 
         expect(again.right?.kind).toBe('duplicate');
-        await settleQueueEngine(fixture.engine);
-        expect(readSentReceipts(fixture.sockets.a).map((receipt) => receipt.phase)).toEqual(['admitted', 'complete']);
+        await expect.poll(() => readSentReceipts(fixture.sockets.a).map((receipt) => [receipt.phase, receipt.confirmedRecipientPeerIds]))
+            .toEqual([['admitted', []], ['complete', ['b']], ['complete', ['b']]]);
         expect(readSentReceipts(fixture.sockets.b)).toEqual([]);
         expect(readRoomMessageCopies(fixture.sockets.b)).toBe(1);
     });
 
-    it('times the aggregate out at the message deadline, naming a recipient whose ACK this instance never saw', async () => {
+    it('times the receipt out at the message deadline, naming a recipient that never acknowledged', async () => {
         const fixture = await createReceiptFixture({ fanout: 'forward', origin: 'local' });
         await admitRoomMessage(fixture);
         await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'b'), 'b');
-        // c's ACK landed on another instance (D37): this instance's aggregate never counts it.
         await expect.poll(() => readSentReceipts(fixture.sockets.a).map((receipt) => receipt.phase)).toEqual(['admitted']);
 
         fixture.clock.nowMs += ROOM_MESSAGE_LIFETIME_MS;
@@ -251,9 +279,10 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'b'), 'b');
         await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'c'), 'c');
 
-        const complete = (await readReceiptMessages(fixture)).find((message) =>
-            decodeALReceiptPayload(JSON.parse(message.payload.resource)).phase === 'complete'
-        );
+        const readComplete = async () =>
+            (await readReceiptMessages(fixture)).find((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource)).phase === 'complete');
+        await expect.poll(readComplete).toBeDefined();
+        const complete = await readComplete();
         expect(complete?.constraints?.expiresAtMs).toBe(admittedAtMs + ROOM_MESSAGE_LIFETIME_MS + AL_RECEIPT_DEADLINE_GRACE_MS);
 
         // The row is dispatched one second past the grace counted from the observed complete, as for an origin away that long.
@@ -269,7 +298,8 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         await admitRoomMessage(fixture);
         await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'b'), 'b');
         await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'c'), 'c');
-        await expect.poll(async () => (await readReceiptRows(fixture)).length).toBe(2);
+        // The admitted receipt went to the origin's socket; the complete receipt is the one row.
+        await expect.poll(async () => (await readReceiptRows(fixture)).length).toBe(1);
         await settleQueueEngine(fixture.engine);
 
         const acknowledgementsToOrigin = fixture.sockets.a.sent
@@ -317,6 +347,7 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         expect(readSentReceipts(fixture.sockets.a)).toEqual([]);
     });
 
+    // No socket of the origin is on the admitting instance, so the admitted receipt is a row, as the complete one is.
     it('reaches an origin whose live session is on another instance with the admitted and the complete receipt', async () => {
         const fixture = await createReceiptFixture({ fanout: 'forward', origin: 'remote' });
         await admitRoomMessage(fixture);
@@ -339,9 +370,10 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'c'), 'c');
         await settleQueueEngine(fixture.engine);
 
+        // The origin is connected here: its admitted receipt went to its socket, and the complete receipt is the one row.
         const receipts = await readReceiptRows(fixture);
-        expect(receipts.filter((receipt) => receipt.phase === 'complete')).toHaveLength(1);
-        expect(receipts.map((receipt) => receipt.phase)).toEqual(['admitted', 'complete']);
+        expect(receipts.map((receipt) => receipt.phase)).toEqual(['complete']);
+        expect(readSentReceipts(fixture.sockets.a)[0]?.phase).toBe('admitted');
 
         // Past the ack timeout a server still expecting b and c would send them the message again.
         fixture.clock.nowMs += ROOM_MESSAGE_ACK_TIMEOUT_MS + 1_000;
@@ -376,51 +408,6 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         }
     );
 
-    // Filling the cap takes about six seconds of admissions; the case states the eviction, not their pace. Only the
-    // subject fans out: the fillers' own outbox rows are not under test, and dequeuing 4096 of them costs the case its
-    // timeout.
-    it(
-        'characterization: a cap-evicted timed-out that confirmed nobody ends the server\'s own row of an outbox-fanned room message, which sends its recipients nothing more',
-        async () => {
-            const fixture = await createReceiptFixture({ fanout: 'outbox', origin: 'local', fannedOutMsgIds: ['room-message-1'] });
-            await admitRoomMessage(fixture);
-            await expect.poll(() => readRoomMessageCopies(fixture.sockets.c)).toBe(1);
-
-            // One admission past the cap evicts the oldest aggregate, the subject's, long before its deadline. The fillers
-            // arrive one after another: a burst of one sender's commits at once contends on its version fence instead.
-            const fillers: (string | undefined)[] = [];
-            for (let offset = 0; offset < WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES; offset += 1) {
-                const filler = roomMessage(fixture.clock.nowMs);
-                fillers.push(
-                    (await fixture.service.acceptIncomingMessage({ ...filler, id: { ...filler.id, msgId: `room-message-${offset + 2}` } }, 'a')).right?.kind
-                );
-                await yieldToTimers();
-            }
-            await settleQueueEngine(fixture.engine);
-
-            expect(new Set(fillers)).toEqual(new Set(['admitted']));
-            expect((await readReceiptRows(fixture)).filter((receipt) => receipt.msgId === 'room-message-1')).toMatchObject([
-                { phase: 'admitted', expectedRecipientPeerIds: ['b', 'c'], confirmedRecipientPeerIds: [] },
-                { phase: 'timed-out', expectedRecipientPeerIds: ['b', 'c'], confirmedRecipientPeerIds: [] }
-            ]);
-            expect(fixture.settlements.filter((settlement) => settlement.msgId === 'room-message-1').at(-1)).toMatchObject({
-                kind: 'acknowledgement',
-                complete: false,
-                unconfirmedRecipientPeerIds: ['b', 'c']
-            });
-            expect((await fixture.admissionStore.readStoredMessage('room-message-1'))?.ended).toBe(true);
-
-            // A row left open sends b and c a second copy by this reading.
-            fixture.clock.nowMs += ROOM_MESSAGE_ACK_TIMEOUT_MS * 4 + 1_000;
-            for (let pass = 0; pass < 24; pass += 1) {
-                await fixture.engine.executeOnce();
-            }
-            expect(readRoomMessageCopies(fixture.sockets.b)).toBe(1);
-            expect(readRoomMessageCopies(fixture.sockets.c)).toBe(1);
-        },
-        30_000
-    );
-
     it('retains a terminal receipt the server pending row could not take as work, and completes the row when its replay commits', async () => {
         const fixture = await createReceiptFixture({ fanout: 'outbox', origin: 'local' });
         await admitRoomMessage(fixture);
@@ -441,15 +428,21 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'b'), 'b');
         await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'c'), 'c');
 
-        expect(conflicts).toBe(RECEIPT_ADMISSION_ATTEMPTS);
         await expect.poll(async () => {
             await fixture.engine.executeOnce();
             return fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement' && settlement.complete);
         }).toEqual([expect.objectContaining({ msgId: 'room-message-1', confirmedRecipientPeerIds: ['b', 'c'] })]);
+        // The terminal receipt's three inline attempts conflicted, so it was retained as work; its replay committed.
+        expect(readReceiptConfirmationOutcomes(fixture, 'room-message-1')).toEqual([
+            [1, 'conflict'],
+            [2, 'conflict'],
+            [3, 'conflict'],
+            [1, 'committed']
+        ]);
     });
 });
 
-describe('WS server receipt aggregate', () => {
+describe('WS server receipt aggregation over the receipt record', () => {
     it.each([
         {
             name: 'a recipient outside the frozen audience',
@@ -457,195 +450,200 @@ describe('WS server receipt aggregate', () => {
             reason: 'AL acknowledgement confirms no recipient of the frozen audience'
         },
         {
-            name: 'a sender speaking for another recipient',
-            ack: { fromPeerId: 'b', logicalRecipientPeerId: 'c' },
-            reason: 'AL acknowledgement speaks for another recipient than its sender'
-        },
-        {
             name: 'another message of the origin',
             ack: { fromPeerId: 'b', logicalRecipientPeerId: 'b', ackedMsgId: 'other-message' },
-            reason: 'AL acknowledgement names no receipt this server aggregates'
+            reason: 'AL acknowledgement names no message its origin admitted to this sender'
         }
     ])('refuses $name as a typed rejection that counts nothing', async ({ ack, reason }) => {
-        const enqueued: ALMessage[] = [];
-        const aggregation = createAggregation(enqueued);
-        aggregation.recordAdmission(admission());
+        const fixture = createAggregation();
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
 
-        expect(aggregation.readRelayedAckRejection(aggregateAck(ack))).toEqual({ code: 'unauthorized', message: reason });
-        await aggregation.acceptControlMessage(aggregateAckControl(aggregateAck(ack)));
-        await aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })));
+        expect(await readRuntimeRejection(fixture, aggregateAck(ack))).toEqual({ code: 'unauthorized', message: reason });
+        await fixture.aggregation.acceptControlMessage(aggregateAckControl(aggregateAck(ack)));
+        await fixture.aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })));
+        await runWorker(fixture);
 
-        expect(enqueued).toEqual([]);
+        expect(readPhases(fixture)).toEqual(['admitted']);
+        expect((await fixture.record.read(RECORD_REF)).right?.tally.confirmedRecipientPeerIds).toEqual(['b']);
     });
 
-    it('refuses a repeat ACK for a counted recipient and answers complete exactly once', async () => {
-        const enqueued: ALMessage[] = [];
-        const aggregation = createAggregation(enqueued);
-        aggregation.recordAdmission(admission());
-        await aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })));
+    // The count checks the sender, which the ingress hook leaves to the authority before it: a session's word is its own.
+    it('counts nothing for a sender speaking for another recipient', async () => {
+        const fixture = createAggregation();
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
 
-        expect(aggregation.readRelayedAckRejection(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' }))?.message)
-            .toBe('AL acknowledgement confirms a peer the receipt already counted');
-        await aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })));
-        await aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c' })));
-        await aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c' })));
+        await fixture.aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'c' })));
 
-        expect(enqueued.map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource))))
-            .toMatchObject([{ phase: 'complete', confirmedRecipientPeerIds: ['b', 'c'] }]);
-        expect(enqueued.map((message) => message.id.traceId)).toEqual(['trace-room-message-1']);
-        expect(aggregation.readRelayedAckRejection(aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c' }))?.message)
+        expect((await fixture.record.read(RECORD_REF)).right?.tally).toMatchObject({
+            confirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: []
+        });
+    });
+
+    // Pins an ACK addressed to the server that is no recipient's own word being refused by the record, which counts
+    // only that word, instead of reaching the server's outbound owner, which judges every other control addressed to it.
+    it('leaves to the outbound owner an ACK of a server publication that is no recipient\'s own word', async () => {
+        const fixture = createAggregation();
+        const relayed = aggregateAckControl(toTestALAckPayload({
+            ackedMsgId: 'delta-1',
+            fromPeerId: 'relay',
+            toPeerId: 'server',
+            originPeerId: 'server',
+            logicalRecipientPeerId: 'b',
+            carrier: 'rtc',
+            status: 'delivered',
+            observedAtEpochMs: 1_000
+        }));
+
+        await fixture.aggregation.acceptControlMessage(relayed);
+
+        expect(fixture.ownerControls).toEqual([relayed]);
+        expect((await fixture.record.read({ originPeerId: 'server', msgId: 'delta-1' })).left).toEqual({ kind: 'head-absent' });
+    });
+
+    it('counts a repeat once and answers complete exactly once', async () => {
+        const fixture = createAggregation();
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
+        const ackOf = (recipient: string) => aggregateAckControl(aggregateAck({ fromPeerId: recipient, logicalRecipientPeerId: recipient }));
+
+        await fixture.aggregation.acceptControlMessage(ackOf('b'));
+        expect(await readRuntimeRejection(fixture, aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' }))).toBeUndefined();
+        await fixture.aggregation.acceptControlMessage(ackOf('b'));
+        await fixture.aggregation.acceptControlMessage(ackOf('c'));
+        await fixture.aggregation.acceptControlMessage(ackOf('c'));
+        await runWorker(fixture);
+
+        expect(readReceipts(fixture)).toMatchObject([{ phase: 'admitted' }, { phase: 'complete', confirmedRecipientPeerIds: ['b', 'c'] }]);
+        expect(fixture.enqueued.map((message) => message.id.traceId)).toEqual([
+            'trace-ws-queue-box-server-receipt-aggregation',
+            'trace-ws-queue-box-server-receipt-aggregation'
+        ]);
+        expect((await readRuntimeRejection(fixture, aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c' })))?.message)
             .toBe('AL acknowledgement names no receipt this server aggregates');
-        expect(aggregation.sweep(Number.MAX_SAFE_INTEGER)).toEqual([]);
     });
 
     it('records a recipient whose ACK ends its hop delivering nothing outside the audience, never confirmed, and completes with it', async () => {
-        const enqueued: ALMessage[] = [];
-        const aggregation = createAggregation(enqueued);
-        aggregation.recordAdmission(admission());
+        const fixture = createAggregation();
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
         const notSubscribed = aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c', status: 'subtree-complete-not-subscribed' });
 
-        await aggregation.acceptControlMessage(aggregateAckControl(notSubscribed));
-        const repeated = aggregation.readRelayedAckRejection(aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c' }));
-        await aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })));
+        await fixture.aggregation.acceptControlMessage(aggregateAckControl(notSubscribed));
+        await fixture.aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c' })));
+        await fixture.aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })));
+        await runWorker(fixture);
 
-        expect(repeated?.message).toBe('AL acknowledgement answers for a peer the receipt already records outside the audience');
-        expect(enqueued.map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource)))).toMatchObject([{
+        expect(readReceipts(fixture).at(-1)).toMatchObject({
             phase: 'complete',
             expectedRecipientPeerIds: ['b', 'c'],
             confirmedRecipientPeerIds: ['b'],
             outsideAudienceRecipientPeerIds: ['c']
-        }]);
+        });
     });
 
     it('records a session the server sent nothing outside the audience from the server own ACK, expected set unchanged', async () => {
-        const enqueued: ALMessage[] = [];
-        const aggregation = createAggregation(enqueued);
-        aggregation.recordAdmission(admission());
+        const fixture = createAggregation();
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
 
-        await aggregation.acceptControlMessage(
+        await fixture.aggregation.acceptControlMessage(
             aggregateAckControl(aggregateAck({ fromPeerId: 'server', logicalRecipientPeerId: 'c', status: 'subtree-complete-not-subscribed' }))
         );
-        await aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })));
+        await fixture.aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })));
+        await runWorker(fixture);
 
-        expect(enqueued.map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource)))).toMatchObject([{
+        expect(readReceipts(fixture).at(-1)).toMatchObject({
             phase: 'complete',
             expectedRecipientPeerIds: ['b', 'c'],
             confirmedRecipientPeerIds: ['b'],
             outsideAudienceRecipientPeerIds: ['c']
-        }]);
-    });
-
-    it('refuses a server ACK that would confirm a recipient: the server speaks for one only to say it sent it nothing', () => {
-        const aggregation = createAggregation();
-        aggregation.recordAdmission(admission());
-
-        expect(aggregation.readRelayedAckRejection(aggregateAck({ fromPeerId: 'server', logicalRecipientPeerId: 'c' }))?.message)
-            .toBe('AL acknowledgement speaks for another recipient than its sender');
-        expect(
-            aggregation.readRelayedAckRejection(
-                aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'c', status: 'subtree-complete-not-subscribed' })
-            )?.message
-        ).toBe('AL acknowledgement speaks for another recipient than its sender');
-    });
-
-    it('refuses the ACK of a recipient this server never sent the message, at ingress and at the count, as a typed rejection', async () => {
-        const observed: WsQueueBoxServerReceiptObservation[] = [];
-        const enqueued: ALMessage[] = [];
-        const aggregation = createAggregation(enqueued, () => 1_000, (observation) => observed.push(observation));
-        aggregation.recordAdmission({ ...admission(), expectedRecipientPeerIds: ['b'], neverSentRecipientPeerIds: ['b'] });
-        const ack = aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' });
-        const control = aggregateAckControl(ack);
-
-        expect(aggregation.readRelayedAckRejection(ack, { stage: 'ingress-protocol', controlIdentity: control.id })).toEqual({
-            code: 'unauthorized',
-            message: 'AL acknowledgement comes from a recipient this server never sent the message'
         });
-        await aggregation.acceptControlMessage(control);
-
-        expect(observed).toMatchObject([
-            { kind: 'ack-rejection', owner: 'receipt-aggregation', failedGuards: ['never-sent'] },
-            { kind: 'ack-count', outcome: 'rejected', rejectionCode: 'unauthorized' }
-        ]);
-        expect(enqueued).toEqual([]);
     });
 
-    it('counts the ACK of a recipient this server sent the message', async () => {
-        const observed: WsQueueBoxServerReceiptObservation[] = [];
-        const enqueued: ALMessage[] = [];
-        const aggregation = createAggregation(enqueued, () => 1_000, (observation) => observed.push(observation));
-        aggregation.recordAdmission({ ...admission(), expectedRecipientPeerIds: ['b'], neverSentRecipientPeerIds: [] });
-        const ack = aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' });
+    it('counts no server ACK that would confirm a recipient: the server speaks for one only to say it sent it nothing', async () => {
+        const fixture = createAggregation();
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
 
-        expect(aggregation.readRelayedAckRejection(ack)).toBeUndefined();
-        await aggregation.acceptControlMessage(aggregateAckControl(ack));
-
-        expect(observed.filter(({ kind }) => kind === 'ack-count'))
-            .toMatchObject([{ kind: 'ack-count', outcome: 'complete', rejectionCode: undefined }]);
-        expect(enqueued.map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource))))
-            .toMatchObject([{ phase: 'complete', confirmedRecipientPeerIds: ['b'] }]);
-    });
-
-    it('records the server own not-subscribed ACK for a recipient it never sent the message outside the audience', async () => {
-        const aggregation = createAggregation();
-        aggregation.recordAdmission({ ...admission(), neverSentRecipientPeerIds: ['b'] });
-
-        await aggregation.acceptControlMessage(
-            aggregateAckControl(aggregateAck({ fromPeerId: 'server', logicalRecipientPeerId: 'b', status: 'subtree-complete-not-subscribed' }))
+        await fixture.aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'server', logicalRecipientPeerId: 'c' })));
+        await fixture.aggregation.acceptControlMessage(
+            aggregateAckControl(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'c', status: 'subtree-complete-not-subscribed' }))
         );
 
-        expect(aggregation.sweep(Number.MAX_SAFE_INTEGER).map(({ receipt }) => receipt)).toMatchObject([{
-            phase: 'timed-out',
+        expect((await fixture.record.read(RECORD_REF)).right?.tally).toMatchObject({
             confirmedRecipientPeerIds: [],
-            outsideAudienceRecipientPeerIds: ['b']
-        }]);
+            outsideAudienceRecipientPeerIds: []
+        });
     });
 
     it('keeps a receipt whose every recipient answered outside open until its deadline, as it confirmed nobody', async () => {
-        const enqueued: ALMessage[] = [];
-        const aggregation = createAggregation(enqueued);
-        aggregation.recordAdmission({ ...admission(), expectedRecipientPeerIds: ['c'] });
+        const fixture = createAggregation();
+        await fixture.aggregation.writeAdmittedReceipt({
+            ...admittedRoomMessage({ kind: 'admitted' }),
+            roomAudience: { recipientPeerIds: ['a', 'c'], snapshotVersion: SNAPSHOT_VERSION }
+        });
 
-        await aggregation.acceptControlMessage(
+        await fixture.aggregation.acceptControlMessage(
             aggregateAckControl(aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c', status: 'subtree-complete-not-subscribed' }))
         );
+        await runWorker(fixture);
+        expect(readPhases(fixture)).toEqual(['admitted']);
 
-        expect(enqueued).toEqual([]);
-        expect(aggregation.sweep(Number.MAX_SAFE_INTEGER).map(({ receipt }) => receipt)).toMatchObject([{
+        fixture.clock.nowMs += ROOM_MESSAGE_LIFETIME_MS;
+        await runWorker(fixture);
+
+        expect(readReceipts(fixture).at(-1)).toMatchObject({
             phase: 'timed-out',
             confirmedRecipientPeerIds: [],
             outsideAudienceRecipientPeerIds: ['c']
-        }]);
+        });
     });
 
+    // Its `readIngressAudience` answers `undefined`, as for a send no admission committed.
     it('starts no receipt for a message kept for admission', async () => {
-        const enqueued: ALMessage[] = [];
-        const aggregation = createAggregation(enqueued);
+        const fixture = createAggregation();
 
-        await aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'pending-admission' }));
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'pending-admission' }));
 
-        expect(enqueued).toEqual([]);
-        expect(aggregation.sweep(Number.MAX_SAFE_INTEGER)).toEqual([]);
-        expect(aggregation.readRelayedAckRejection(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' }))?.message)
-            .toBe('AL acknowledgement names no receipt this server aggregates');
+        expect(fixture.enqueued).toEqual([]);
+        expect((await fixture.record.read(RECORD_REF)).left).toEqual({ kind: 'head-absent' });
+        expect((await readRuntimeRejection(fixture, aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })))?.message)
+            .toBe('AL acknowledgement names no message its origin admitted to this sender');
     });
 
     it.each(['pending-admission', 'duplicate'] as const)(
-        'answers a copy the runtime accepts %s while its aggregate lives with admitted again, from the aggregate it started',
+        'answers a copy the runtime accepts %s while its head is open with admitted again, from the head it opened',
         async (kind) => {
-            const enqueued: ALMessage[] = [];
-            const aggregation = createAggregation(enqueued);
+            const fixture = createAggregation();
             const admitted = admittedRoomMessage({ kind: 'admitted' });
 
-            await aggregation.writeAdmittedReceipt(admitted);
-            await aggregation.writeAdmittedReceipt({ ...admitted, acceptance: { kind } });
+            await fixture.aggregation.writeAdmittedReceipt(admitted);
+            await fixture.aggregation.writeAdmittedReceipt({ ...admitted, acceptance: { kind } });
 
-            expect(enqueued.map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource)))).toMatchObject([
+            expect(readReceipts(fixture)).toMatchObject([
                 { phase: 'admitted', expectedRecipientPeerIds: ['b', 'c'] },
                 { phase: 'admitted', expectedRecipientPeerIds: ['b', 'c'] }
             ]);
-            expect(aggregation.sweep(Number.MAX_SAFE_INTEGER)).toHaveLength(1);
+            expect((await fixture.record.read(RECORD_REF)).right?.head.phase).toBe('open');
         }
     );
+
+    // Pins a copy that finds its head open and complete, the count that completed it having lost its `end`, answering
+    // `admitted` and leaving the head open until a window or its deadline ends it.
+    it('ends a complete open head a re-sent copy finds, and its ended work delivers the complete receipt', async () => {
+        const fixture = createAggregation();
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
+        for (const recipientPeerId of ['b', 'c']) {
+            expect((await fixture.record.count({ ...RECORD_REF, recipientPeerId, kind: 'confirmed' })).right?.disposition).toBe('counted');
+        }
+
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'duplicate' }));
+        await runWorker(fixture);
+
+        expect((await fixture.record.read(RECORD_REF)).right?.head.phase).toBe('complete');
+        expect(readReceipts(fixture)).toMatchObject([
+            { phase: 'admitted', confirmedRecipientPeerIds: [] },
+            { phase: 'admitted', confirmedRecipientPeerIds: ['b', 'c'] },
+            { phase: 'complete', confirmedRecipientPeerIds: ['b', 'c'] }
+        ]);
+    });
 
     it.each<{ readonly name: string; readonly acceptance: ALInboundMessageRuntime.Acceptance; }>([
         { name: 'not-admitted as expired', acceptance: { kind: 'not-admitted', reason: 'expired' } },
@@ -654,157 +652,387 @@ describe('WS server receipt aggregate', () => {
         { name: 'admitted', acceptance: { kind: 'admitted' } },
         { name: 'as a control', acceptance: { kind: 'control', handled: true } },
         { name: 'by a disposed runtime', acceptance: { kind: 'disposed' } }
-    ])('answers nothing for a copy accepted $name though its aggregate lives, and leaves the aggregate as it was', async ({ acceptance }) => {
-        const enqueued: ALMessage[] = [];
-        const aggregation = createAggregation(enqueued);
-        await aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
+    ])('answers nothing for a copy accepted $name though its head is open, and leaves the head as it was', async ({ acceptance }) => {
+        const fixture = createAggregation();
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
+        const opened = (await fixture.record.read(RECORD_REF)).right;
 
-        await aggregation.writeAdmittedReceipt(admittedRoomMessage(acceptance));
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage(acceptance));
 
-        expect(enqueued.map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource)).phase)).toEqual(['admitted']);
-        expect(aggregation.sweep(Number.MAX_SAFE_INTEGER).map(({ receipt }) => receipt)).toMatchObject([
-            { phase: 'timed-out', expectedRecipientPeerIds: ['b', 'c'], confirmedRecipientPeerIds: [] }
+        expect(readPhases(fixture)).toEqual(['admitted']);
+        expect((await fixture.record.read(RECORD_REF)).right).toEqual(opened);
+    });
+
+    // A re-sent copy is answered with its receipt again on whichever instance it reaches: every instance reads the
+    // record, so the one a copy reaches answers it, and opens nothing more.
+    it('answers a duplicate on another instance from the record they share, and opens nothing more', async () => {
+        const admitting = createAggregation();
+        const other = createAggregation({ ingressAudience: undefined, recordStores: admitting.recordStores, originSocket: 'elsewhere' });
+        await admitting.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
+
+        await other.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'duplicate' }));
+
+        expect(readPhases(admitting)).toEqual(['admitted']);
+        expect(readPhases(other)).toEqual(['admitted']);
+        expect(readHeadKeys(admitting)).toHaveLength(1);
+    });
+});
+
+describe('WS server receipt aggregation of the admitted receipt on the origin\'s socket', () => {
+    // Pins `admitted` waiting behind every other receipt on the outbound worker.
+    it('writes admitted to the origin\'s socket on the admitting instance and enqueues no row for it', async () => {
+        const fixture = createAggregation({ ingressAudience: undefined, recordStores: undefined, originSocket: 'here' });
+
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
+
+        expect(fixture.live.map(toReceipt)).toMatchObject([{ phase: 'admitted', originPeerId: 'a', expectedRecipientPeerIds: ['b', 'c'] }]);
+        expect(fixture.enqueued).toEqual([]);
+        expect((await fixture.record.read(RECORD_REF)).right?.head.phase).toBe('open');
+        const controlId = fixture.live[0]!.id.msgId;
+        expect(fixture.observations.filter((observation) => observation.kind === 'receipt-transport')).toMatchObject([
+            { receiptControlMsgId: controlId, transport: 'recipient', originIsHere: true, outcome: 'sent' }
+        ]);
+        expect(fixture.observations.filter((observation) => observation.kind === 'receipt-outbox')).toEqual([]);
+    });
+
+    // Pins an `admitted` lost when the origin's socket is on another instance.
+    it('enqueues the admitted row as before when the origin has no socket on this instance', async () => {
+        const fixture = createAggregation();
+
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
+
+        expect(readPhases(fixture)).toEqual(['admitted']);
+        expect(fixture.observations.filter((observation) => observation.kind === 'receipt-outbox')).toMatchObject([
+            { receipt: { phase: 'admitted' }, verdict: { kind: 'admitted' } }
+        ]);
+        expect(fixture.observations.filter((observation) => observation.kind === 'receipt-transport')).toEqual([]);
+    });
+
+    // Pins a write the origin's socket refused going unobserved, or leaving the `admitted` on neither a socket nor a row.
+    it('records a refused write as a failed transport and enqueues the admitted row', async () => {
+        const fixture = createAggregation({ ingressAudience: undefined, recordStores: undefined, originSocket: 'refused' });
+
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
+
+        expect(readPhases(fixture)).toEqual(['admitted']);
+        expect(fixture.observations.filter((observation) => observation.kind === 'receipt-outbox')).toMatchObject([
+            { receipt: { phase: 'admitted' }, verdict: { kind: 'admitted' } }
+        ]);
+        expect(fixture.observations.filter((observation) => observation.kind === 'receipt-transport')).toMatchObject([
+            { receiptControlMsgId: fixture.enqueued[0]!.id.msgId, connectionId: 'a', nativeCall: 'invoked', outcome: 'failed' }
         ]);
     });
 
-    it('answers nothing for a duplicate on an instance that holds no aggregate for it, and starts none', async () => {
-        const enqueued: ALMessage[] = [];
-        const admitting = createAggregation(enqueued);
-        const other = createAggregation(enqueued);
-        await admitting.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
+    // Pins an `admitted` written to two origin sockets here observed as fewer transports than connections it called.
+    it('records one transport per origin socket it wrote', async () => {
+        const fixture = createAggregation({ ingressAudience: undefined, recordStores: undefined, originSocket: 'two-here' });
 
-        await other.writeAdmittedReceipt(admittedRoomMessage({ kind: 'duplicate' }));
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
 
-        expect(enqueued.map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource)).phase)).toEqual(['admitted']);
-        expect(other.sweep(Number.MAX_SAFE_INTEGER)).toEqual([]);
-        expect(other.readRelayedAckRejection(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' }))?.message)
-            .toBe('AL acknowledgement names no receipt this server aggregates');
-    });
-
-    it('answers an empty audience complete at admission and keeps nothing to sweep', () => {
-        const aggregation = createAggregation();
-
-        expect(aggregation.recordAdmission({ ...admission(), expectedRecipientPeerIds: [] }).admitted).toMatchObject({
-            phase: 'admitted',
-            expectedRecipientPeerIds: []
-        });
-        expect(aggregation.readRelayedAckRejection(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' }))?.message)
-            .toBe('AL acknowledgement names no receipt this server aggregates');
-        expect(aggregation.sweep(Number.MAX_SAFE_INTEGER)).toEqual([]);
-    });
-});
-
-describe('WS server receipt aggregates at their cap', () => {
-    it('holds every aggregate up to the cap until its deadline', () => {
-        const aggregation = createAggregation();
-
-        const evicted = admitAggregates(aggregation, WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES);
-
-        expect(evicted).toEqual([]);
-        expect(aggregation.sweep(Number.MAX_SAFE_INTEGER)).toHaveLength(WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES);
-    });
-
-    it('ends the oldest aggregate, as its deadline would, when an admission finds the cap reached', async () => {
-        const aggregation = createAggregation();
-        admitAggregates(aggregation, 1);
-        await aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })));
-        admitAggregates(aggregation, WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES - 1, 1);
-
-        const [evicted] = admitAggregates(aggregation, 1, WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES);
-
-        expect(evicted).toEqual({
-            receipt: {
-                msgId: 'room-message-1',
-                originPeerId: 'a',
-                expectedRecipientPeerIds: ['b', 'c'],
-                confirmedRecipientPeerIds: ['b'],
-                outsideAudienceRecipientPeerIds: [],
-                snapshotVersion: SNAPSHOT_VERSION,
-                phase: 'timed-out',
-                observedAtEpochMs: 1_000
-            },
-            deadlineAtMs: 30_000,
-            traceId: 'trace-room-message-1'
-        });
-        expect(aggregation.readRelayedAckRejection(aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c' }))?.message)
-            .toBe('AL acknowledgement names no receipt this server aggregates');
-        const swept = aggregation.sweep(Number.MAX_SAFE_INTEGER);
-        expect(swept).toHaveLength(WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES);
-        expect(swept.map((issued) => issued.receipt.msgId)).not.toContain('room-message-1');
-    });
-
-    it('writes the evicted aggregate\'s timed-out receipt beside the new admission\'s', async () => {
-        const enqueued: ALMessage[] = [];
-        const aggregation = createAggregation(enqueued);
-        admitAggregates(aggregation, WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES, 1);
-
-        await aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
-
-        expect(enqueued.map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource))))
-            .toMatchObject([
-                { msgId: 'room-message-2', phase: 'timed-out' },
-                { msgId: 'room-message-1', phase: 'admitted' }
-            ]);
-    });
-});
-
-describe('WS server receipt aggregates past their deadline', () => {
-    it('leaves a deadline at the window to the sweep, which a late read must not pre-empt', async () => {
-        const clock = { nowMs: 1_000 };
-        const aggregation = createAggregation([], () => clock.nowMs);
-        const deadlineAtMs = clock.nowMs + WS_QUEUE_BOX_SERVER_RECEIPT_WINDOW_MS;
-        aggregation.recordAdmission({ ...admission(), deadlineAtMs });
-        clock.nowMs = deadlineAtMs + 2;
-
-        await aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })));
-
-        expect(aggregation.sweep(clock.nowMs)).toMatchObject([
-            { receipt: { msgId: 'room-message-1', phase: 'timed-out' }, traceId: 'trace-room-message-1' }
+        expect(fixture.live.map(toReceipt)).toMatchObject([{ phase: 'admitted' }]);
+        const controlId = fixture.live[0]!.id.msgId;
+        expect(fixture.observations.filter((observation) => observation.kind === 'receipt-transport')).toMatchObject([
+            { receiptControlMsgId: controlId, connectionId: 'a-1', outcome: 'sent' },
+            { receiptControlMsgId: controlId, connectionId: 'a-2', outcome: 'sent' }
         ]);
+        expect(fixture.enqueued).toEqual([]);
     });
-});
 
-/** Admits `count` aggregates numbered from `first + 1`, and returns what each admission evicted. */
-function admitAggregates(
-    aggregation: WsQueueBoxServerReceiptAggregation,
-    count: number,
-    first = 0
-): readonly WsQueueBoxServerReceiptAggregation.IssuedReceipt[] {
-    const evicted: WsQueueBoxServerReceiptAggregation.IssuedReceipt[] = [];
-    for (let index = first + 1; index <= first + count; index += 1) {
-        const recorded = aggregation.recordAdmission({
-            ...admission(),
-            msgId: `room-message-${index}`,
-            traceId: `trace-room-message-${index}`
+    // Pins a live `admitted` with no observer attached left off the origin's socket, or written there and enqueued too.
+    it('writes a live admitted through the counting send when no observer is attached', async () => {
+        const fixture = createAggregation({ ingressAudience: undefined, recordStores: undefined, originSocket: 'here' }, 'none');
+
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
+
+        expect(fixture.live.map(toReceipt)).toMatchObject([{ phase: 'admitted', originPeerId: 'a', expectedRecipientPeerIds: ['b', 'c'] }]);
+        expect(fixture.enqueued).toEqual([]);
+        expect((await fixture.record.read(RECORD_REF)).right?.head.phase).toBe('open');
+    });
+
+    // Pins an `admitted` the counting send wrote to no socket, with no observer attached, left without its row.
+    it('enqueues the admitted row when the counting send reaches no socket and no observer is attached', async () => {
+        const fixture = createAggregation({ ingressAudience: undefined, recordStores: undefined, originSocket: 'elsewhere' }, 'none');
+
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
+
+        expect(readPhases(fixture)).toEqual(['admitted']);
+        expect(fixture.live).toEqual([]);
+    });
+
+    // Pins the only answer of a send admitted to nobody, which has no head to answer a resend from, leaving its
+    // durable row. It also pins that answer opening a head.
+    it('keeps the row of an admitted that expects nobody', async () => {
+        const fixture = createAggregation({ ingressAudience: undefined, recordStores: undefined, originSocket: 'here' });
+
+        await fixture.aggregation.writeAdmittedReceipt({
+            ...admittedRoomMessage({ kind: 'admitted' }),
+            roomAudience: { recipientPeerIds: ['a'], snapshotVersion: SNAPSHOT_VERSION }
         });
-        if (recorded.evicted !== undefined) {
-            evicted.push(recorded.evicted);
+
+        expect(readReceipts(fixture)).toMatchObject([{ phase: 'admitted', expectedRecipientPeerIds: [] }]);
+        expect(fixture.live).toEqual([]);
+        expect((await fixture.record.read(RECORD_REF)).left).toEqual({ kind: 'head-absent' });
+    });
+
+    // Pins a terminal receipt, the ended work's or a re-sent copy's, losing its durable row to a live write.
+    it('keeps the row of every terminal receipt, the ended work\'s and a re-sent copy\'s', async () => {
+        const fixture = createAggregation({ ingressAudience: undefined, recordStores: undefined, originSocket: 'here' });
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
+        for (const recipient of ['b', 'c']) {
+            await fixture.aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: recipient, logicalRecipientPeerId: recipient })));
         }
-    }
-    return evicted;
+        await runWorker(fixture);
+        expect((await fixture.record.read(RECORD_REF)).right?.head.phase).toBe('complete');
+
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'duplicate' }));
+
+        expect(readPhases(fixture)).toEqual(['complete', 'complete']);
+        expect(fixture.live.map((message) => toReceipt(message).phase)).toEqual(['admitted']);
+    });
+});
+
+describe('WS server receipt aggregation of recipients never sent the message (D708)', () => {
+    // Pins a never-sent recipient's own ACK being counted, or refused as anything but a typed `unauthorized` whose
+    // observations name the guard and the refused count.
+    it('refuses at the runtime check the own ACK of a recipient this server never sent the message, and counts nothing', async () => {
+        const fixture = createAggregation();
+        await fixture.aggregation.writeAdmittedReceipt({ ...admittedRoomMessage({ kind: 'admitted' }), neverSentRecipientPeerIds: ['c'] });
+        const ack = aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c' });
+        const control = aggregateAckControl(ack);
+
+        expect(await fixture.aggregation.readRelayedAckRejection(ack, { stage: 'runtime-protocol', controlIdentity: control.id })).toEqual({
+            code: 'unauthorized',
+            message: 'AL acknowledgement comes from a recipient this server never sent the message'
+        });
+        await fixture.aggregation.acceptControlMessage(control);
+
+        expect(fixture.observations.filter(({ kind }) => kind === 'ack-rejection' || kind === 'ack-count')).toMatchObject([
+            { kind: 'ack-rejection', owner: 'receipt-aggregation', stage: 'runtime-protocol', failedGuards: ['never-sent'] },
+            { kind: 'ack-count', outcome: 'rejected', rejectionCode: 'unauthorized' }
+        ]);
+        expect((await fixture.record.read(RECORD_REF)).right?.tally.confirmedRecipientPeerIds).toEqual([]);
+    });
+
+    // The record takes any `not-sent` as the owner's word, so a recipient's own ACK must never become one.
+    it.each(['delivered', 'subtree-complete-not-subscribed'] as const)(
+        'counts the server\'s not-sent for a never-sent recipient, never that recipient\'s own %s ACK',
+        async (status) => {
+            const fixture = createAggregation();
+            await fixture.aggregation.writeAdmittedReceipt({ ...admittedRoomMessage({ kind: 'admitted' }), neverSentRecipientPeerIds: ['c'] });
+
+            await fixture.aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c', status })));
+            await fixture.aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })));
+            await runWorker(fixture);
+            expect(readPhases(fixture)).toEqual(['admitted']);
+
+            await fixture.aggregation.acceptControlMessage(
+                aggregateAckControl(aggregateAck({ fromPeerId: 'server', logicalRecipientPeerId: 'c', status: 'subtree-complete-not-subscribed' }))
+            );
+            await runWorker(fixture);
+
+            expect(readReceipts(fixture).at(-1)).toMatchObject({
+                phase: 'complete',
+                confirmedRecipientPeerIds: ['b'],
+                outsideAudienceRecipientPeerIds: ['c']
+            });
+        }
+    );
+});
+
+describe('WS server receipt aggregation of a re-sent copy whose admission opened no head', () => {
+    // Pins a copy opening from its own room audience or never-sent list instead of the audience its admission row froze.
+    it('opens the record for a copy whose admission row names recipients and whose head is absent', async () => {
+        const fixture = createAggregation({ ingressAudience: ['a', 'b', 'c'], recordStores: undefined, originSocket: 'elsewhere' });
+
+        await fixture.aggregation.writeAdmittedReceipt({
+            ...admittedRoomMessage({ kind: 'duplicate' }),
+            roomAudience: { recipientPeerIds: ['a', 'b'], snapshotVersion: SNAPSHOT_VERSION + 2 }
+        });
+
+        expect(readReceipts(fixture)).toMatchObject([
+            { phase: 'admitted', expectedRecipientPeerIds: ['b', 'c'], snapshotVersion: SNAPSHOT_VERSION + 2 }
+        ]);
+        expect((await fixture.record.read(RECORD_REF)).right?.head.opening).toMatchObject({
+            expectedRecipientPeerIds: ['b', 'c'],
+            neverSentRecipientPeerIds: [],
+            snapshotVersion: SNAPSHOT_VERSION + 2
+        });
+    });
+
+    // Pins a copy opening a head, or answering, for an admission whose audience leaves nobody to expect.
+    it('opens nothing for a copy whose admission row freezes to nobody', async () => {
+        const fixture = createAggregation({ ingressAudience: ['a'], recordStores: undefined, originSocket: 'elsewhere' });
+
+        await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'duplicate' }));
+
+        expect(fixture.enqueued).toEqual([]);
+        expect((await fixture.record.read(RECORD_REF)).left).toEqual({ kind: 'head-absent' });
+    });
+
+    // Pins a copy giving a second life to a receipt whose first head may already have ended and expired.
+    it.each([
+        { name: 'names no deadline', toMessage: (message: ALMessage): ALMessage => ({ ...message, constraints: undefined }) },
+        {
+            name: 'names a deadline beyond the window',
+            toMessage: (message: ALMessage): ALMessage => ({ ...message, constraints: { expiresAtMs: 1_000 + AL_RECEIPT_RECORD_WINDOW_MS + 1 } })
+        },
+        {
+            name: 'is as old as the window by its own stamp',
+            toMessage: (message: ALMessage): ALMessage => ({ ...message, id: { ...message.id, ts: 1_000 - AL_RECEIPT_RECORD_WINDOW_MS } })
+        }
+    ])('opens nothing for a copy of a message that $name', async ({ toMessage }) => {
+        const fixture = createAggregation({ ingressAudience: ['a', 'b', 'c'], recordStores: undefined, originSocket: 'elsewhere' });
+        const copy = admittedRoomMessage({ kind: 'duplicate' });
+
+        await fixture.aggregation.writeAdmittedReceipt({ ...copy, message: toMessage(copy.message) });
+
+        expect(fixture.enqueued).toEqual([]);
+        expect((await fixture.record.read(RECORD_REF)).left).toEqual({ kind: 'head-absent' });
+    });
+
+    // Pins a copy that loses its `open` to another instance answering nothing instead of the winner's head.
+    it('answers from the record when the copy\'s open loses to another instance\'s', async () => {
+        const hold = createWorkerHold();
+        const recordStores = createInMemoryALReceiptRecordStores('server-ws-qbox:test', () => 1_000);
+        const copying = createAggregation({
+            ingressAudience: ['a', 'b', 'c'],
+            recordStores: { ...recordStores, backend: holdALAdmissionWrite(recordStores.backend, hold) },
+            originSocket: 'elsewhere'
+        });
+        const admitting = createAggregation({ ingressAudience: undefined, recordStores, originSocket: 'elsewhere' });
+
+        const answering = copying.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'duplicate' }));
+        await hold.arrived;
+        await admitting.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
+        hold.release();
+        await answering;
+
+        expect(readReceipts(copying)).toMatchObject([{ phase: 'admitted', expectedRecipientPeerIds: ['b', 'c'] }]);
+        expect(readHeadKeys(admitting)).toHaveLength(1);
+    });
+});
+
+const RECORD_REF = { originPeerId: 'a', msgId: 'room-message-1' };
+
+interface AggregationFixture {
+    readonly aggregation: WsQueueBoxServerReceiptAggregation;
+    readonly engine: InboxOutboxEngine;
+    readonly enqueued: ALMessage[];
+    /** The controls written to the origin's socket on this instance. */
+    readonly live: ALMessage[];
+    /** The controls the aggregation handed to the server's own outbound owner. */
+    readonly ownerControls: ALMessage[];
+    readonly clock: { nowMs: number; };
+    readonly recordStores: ALReceiptRecordStores;
+    /** The test's own reader of the record the aggregation counts in. */
+    readonly record: ALReceiptRecord;
+    /** What the aggregation recorded through its receipt observer. */
+    readonly observations: WsQueueBoxServerReceiptObservation[];
 }
 
+interface AggregationFixtureOptions {
+    /** The audience the admission row holds; `undefined`, no admission of the message committed. */
+    readonly ingressAudience: readonly string[] | undefined;
+    /** Stores another aggregation already counts in; `undefined`, a record of its own. */
+    readonly recordStores: ALReceiptRecordStores | undefined;
+    /**
+     * `here`: the origin has one socket on this instance, which takes every control written to it; `two-here`: two
+     * such sockets; `refused`: one socket whose native call throws.
+     */
+    readonly originSocket: 'here' | 'two-here' | 'refused' | 'elsewhere';
+}
+
+const ORIGIN_SOCKET_SENDS: Readonly<Record<AggregationFixtureOptions['originSocket'], WsQueueBoxServerLiveDelivery.EvidencedPeerSend>> = {
+    here: { sentCount: 1, writes: [{ connectionId: 'a', nativeCall: 'returned', written: true }] },
+    'two-here': {
+        sentCount: 2,
+        writes: [{ connectionId: 'a-1', nativeCall: 'returned', written: true }, { connectionId: 'a-2', nativeCall: 'returned', written: true }]
+    },
+    refused: { sentCount: 0, writes: [{ connectionId: 'a', nativeCall: 'invoked', written: false }] },
+    elsewhere: { sentCount: 0, writes: [] }
+};
+
+/** `none`: the aggregation is built without a receipt observer, so it records no observation. */
+type AggregationObserver = 'attached' | 'none';
+
 function createAggregation(
-    enqueued: ALMessage[] = [],
-    nowMs: () => number = () => 1_000,
-    receiptObserver?: WsQueueBoxServerReceiptObserver
-): WsQueueBoxServerReceiptAggregation {
+    options: AggregationFixtureOptions = { ingressAudience: undefined, recordStores: undefined, originSocket: 'elsewhere' },
+    observer: AggregationObserver = 'attached'
+): AggregationFixture {
+    const clock = { nowMs: 1_000 };
+    const engine = new InboxOutboxEngine({ nowEpochMs: () => clock.nowMs, random: () => 0, reportTaskFailure: () => undefined });
+    const enqueued: ALMessage[] = [];
+    const live: ALMessage[] = [];
+    const ownerControls: ALMessage[] = [];
+    const observations: WsQueueBoxServerReceiptObservation[] = [];
+    const recordStores = options.recordStores ?? createInMemoryALReceiptRecordStores('server-ws-qbox:test', () => clock.nowMs);
+    const sendToOrigin = (message: ALMessage): WsQueueBoxServerLiveDelivery.EvidencedPeerSend => {
+        const sent = ORIGIN_SOCKET_SENDS[options.originSocket];
+        if (sent.sentCount > 0) {
+            live.push(message);
+        }
+        return sent;
+    };
     const aggregation = new WsQueueBoxServerReceiptAggregation({
         serverPeerId: 'server',
-        receiptObserver,
-        clock: { nowMs },
-        newControlId: () => 'receipt',
+        receiptObserver: observer === 'attached' ? (observation) => observations.push(observation) : undefined,
+        clock: { nowMs: () => clock.nowMs },
+        random: () => 0,
+        newControlId: () => `receipt-${enqueued.length + live.length + 1}`,
         qosProvider: undefined,
-        queueEngine: new InboxOutboxEngine(),
+        queueEngine: engine,
+        recordStores,
+        readIngressAudience: async () => options.ingressAudience,
         enqueueOutbox: async (message) => {
             enqueued.push(message);
             return { verdict: { kind: 'admitted', durable: true, queuedAttempts: 0 }, message, entries: [], trackedReceiptAlgo: 'receiver' };
         },
-        acceptServerControl: async () => ({ kind: 'not-handled' }),
-        acceptServerReceipt: async () => ({ kind: 'not-handled' })
+        liveDelivery: {
+            sendToResolvedPeer: ({ message }) => sendToOrigin(message).sentCount,
+            sendToResolvedPeerWithEvidence: ({ message }) => sendToOrigin(message)
+        },
+        acceptServerControl: async (message) => {
+            ownerControls.push(message);
+            return { kind: 'not-handled' };
+        },
+        acceptServerReceipt: async () => ({ kind: 'not-handled' }),
+        readOwnPendingReceipt: async () => undefined,
+        readOwnPendingAck: async () => undefined
     });
     onTestFinished(() => aggregation.dispose());
-    return aggregation;
+    const record = new ALReceiptRecord({ ...recordStores, nowMs: () => clock.nowMs });
+    return { aggregation, engine, enqueued, live, ownerControls, clock, recordStores, record, observations };
+}
+
+/** Drives the record's worker as its own tests do: `executeOnce` starts a batch it does not wait for. */
+async function runWorker(fixture: AggregationFixture): Promise<void> {
+    for (let round = 0; round < 4; round += 1) {
+        await fixture.engine.executeOnce();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+}
+
+async function readRuntimeRejection(fixture: AggregationFixture, ack: ALAckPayload): Promise<ALMessageRejection | undefined> {
+    return await fixture.aggregation.readRelayedAckRejection(ack, { stage: 'runtime-protocol', controlIdentity: undefined });
+}
+
+function readReceipts(fixture: AggregationFixture): readonly ALReceiptPayload[] {
+    return fixture.enqueued.map(toReceipt);
+}
+
+function toReceipt(message: ALMessage): ALReceiptPayload {
+    return decodeALReceiptPayload(JSON.parse(message.payload.resource));
+}
+
+function readPhases(fixture: AggregationFixture): readonly ALReceiptPayload['phase'][] {
+    return readReceipts(fixture).map((receipt) => receipt.phase);
+}
+
+function readHeadKeys(fixture: AggregationFixture): readonly string[] {
+    const backend = fixture.recordStores.backend;
+    return backend instanceof InMemoryAdmissionBackend
+        ? backend.peekKeys().filter((key) => key === toALReceiptRecordHeadKey(fixture.recordStores.namespace, RECORD_REF))
+        : [];
 }
 
 /** `a`'s room message as ingress hands it over: authorized to the whole room, accepted as `acceptance`. */
@@ -816,18 +1044,6 @@ function admittedRoomMessage(
         originPeerId: 'a',
         roomAudience: { recipientPeerIds: ['a', 'b', 'c'], snapshotVersion: SNAPSHOT_VERSION },
         acceptance,
-        neverSentRecipientPeerIds: []
-    };
-}
-
-function admission(): WsQueueBoxServerReceiptAggregation.Admission {
-    return {
-        msgId: 'room-message-1',
-        originPeerId: 'a',
-        traceId: 'trace-room-message-1',
-        expectedRecipientPeerIds: ['b', 'c'],
-        snapshotVersion: SNAPSHOT_VERSION,
-        deadlineAtMs: 30_000,
         neverSentRecipientPeerIds: []
     };
 }
@@ -870,6 +1086,7 @@ async function createReceiptFixture(options: ReceiptFixtureOptions): Promise<Rec
     const outbox = new InMemoryQueueBox(new Map(), () => Temporal.Instant.fromEpochMilliseconds(clock.nowMs));
     const admission = createInMemoryALAdmissionState(new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(clock.nowMs)));
     const settlements: ALDeliverySettlement[] = [];
+    const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
     const nowMs = () => clock.nowMs;
     const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({
         nowMs,
@@ -894,7 +1111,8 @@ async function createReceiptFixture(options: ReceiptFixtureOptions): Promise<Rec
         },
         inboundStores: { admissionStore: createTestInboundStore(admission, clock), workQueue: admission.workQueue },
         outboundStores,
-        outboundSettlements: (settlement) => settlements.push(settlement)
+        outboundSettlements: (settlement) => settlements.push(settlement),
+        outboundDiagnostics: (event) => diagnostics.push(event)
     });
     const remoteOrigin = options.origin === 'remote'
         ? await createRemoteOriginInstance(service, outbox, outboundStores)
@@ -905,7 +1123,26 @@ async function createReceiptFixture(options: ReceiptFixtureOptions): Promise<Rec
         await engine.stop();
         vi.restoreAllMocks();
     });
-    return { service, engine, outbox, sockets, clock, remoteOrigin, settlements, admissionStore: outboundStores.admissionStore };
+    return {
+        service,
+        engine,
+        outbox,
+        sockets,
+        clock,
+        remoteOrigin,
+        settlements,
+        diagnostics,
+        admissionStore: outboundStores.admissionStore
+    };
+}
+
+/** Each attempt of the server's own row to take a terminal receipt of `msgId`, with its commit's outcome. */
+function readReceiptConfirmationOutcomes(fixture: ReceiptFixture, msgId: string): readonly (readonly [number, string])[] {
+    return fixture.diagnostics.flatMap((event) =>
+        event.kind === 'receipt-confirmation' && event.targetMsgId === msgId && event.phase !== 'admitted'
+            ? [[event.attempt, event.commitOutcome] as const]
+            : []
+    );
 }
 
 function registerReceiptFixtureRouting(service: WsQueueBoxServerService, options: ReceiptFixtureOptions): void {
@@ -921,7 +1158,7 @@ function registerReceiptFixtureRouting(service: WsQueueBoxServerService, options
     });
     service.onAnyInboxMessageDo('router', {
         onMessage: async (message) => {
-            if (options.fanout === 'outbox' && (options.fannedOutMsgIds?.includes(message.id.msgId) ?? true)) {
+            if (options.fanout === 'outbox') {
                 await service.enqueueOutboxIfAbsent(message, toRouterAuthority(options.admittedAudience));
             }
         }
@@ -997,14 +1234,6 @@ function createTestInboundStore(admission: ALAdmissionMemoryState, clock: { nowM
         maxOrderingTracks: undefined,
         maxDeliveredMarkers: undefined
     });
-}
-
-/**
- * The in-memory stores never leave the microtask queue, so a loop of admissions would starve every timer: a commit
- * retry's backoff and the engine's next pass would wait until the loop ended, and the case's pace would depend on that.
- */
-async function yieldToTimers(): Promise<void> {
-    await new Promise((resolve) => setImmediate(resolve));
 }
 
 async function admitRoomMessage(fixture: ReceiptFixture): Promise<void> {

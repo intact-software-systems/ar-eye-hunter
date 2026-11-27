@@ -57,8 +57,8 @@ it.each(['memory', 'indexeddb'] as const)('owns a real first-admission conflict 
     };
     const store = createALOutboundAdmissionStore(options);
     const stores = { admissionStore: store, workQueue: backend.workQueue };
-    // A competing sender wins the version fence inside each of its commit attempts, so the admission below is
-    // told its own bundle conflicted and must retain a pending admission instead.
+    // Another commit of the message wins its version fence inside each of its commit attempts, so the admission below
+    // is told its own bundle conflicted and must retain a pending admission instead.
     loseOutboundCommitAttempts(store);
     const claims = holdOutboundClaims(stores);
     const original = createOutboundMessage('pending-unique-payload', { ttlMs: 10_000 });

@@ -8,6 +8,7 @@ import {
     toALOutboundOrderingTrackMutations,
     type ALOutboundAdmissionMutation
 } from './admission/al-outbound-admission-mutations.ts';
+import { hasALOutboundSenderSharedRead } from './admission/al-outbound-admission-reads.ts';
 import {
     toALOutboundMessageFence,
     type ALOutboundCommitBundle,
@@ -166,7 +167,7 @@ function toDispatchBundle<TPrepared>(
         claimedCanonical: options.claimedOutboxEntry,
         senderId: read.msg.id.senderId,
         expectedVersion: read.clientRecord?.version,
-        fencesSender: true,
+        fencesSender: hasALOutboundSenderSharedRead(read),
         message: toALOutboundMessageFence(
             { originPeerId: read.msg.id.senderId, msgId: read.msg.id.msgId },
             read.messageVersion,

@@ -1,3 +1,4 @@
+import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
 import { EntityStatus, NOT_COMPLETED_RETRYABLE_STATUSES } from '../../queuebox/ResourceEntry.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
 import { toError } from '../../resilience/to-error.ts';
@@ -12,7 +13,6 @@ import {
     computeALOrderingDeliveryPredecessorSeq,
     isALInboundDeliveryReaching
 } from './admission/al-inbound-delivery-progress.ts';
-import type { ALInboundDeliveryPredecessor, ALInboundOrderedDeliveryRead } from './al-inbound-admission-store.ts';
 import { decodeALInboundDeliveryProgress, decodeALInboundOrderingSnapshot } from './al-inbound-ordering-validation.ts';
 import {
     assertALInboundDeliveryOwner,
@@ -26,6 +26,21 @@ import {
     toALInboundWorkKey,
     type ALInboundDurableEffectWrite
 } from './al-inbound-work-entry.ts';
+
+export interface ALInboundOrderedDeliveryRead {
+    readonly completedThrough: number;
+    readonly predecessor: ALInboundDeliveryPredecessor | undefined;
+}
+
+export type ALInboundDeliveryPredecessor =
+    | { readonly kind: 'effect'; }
+    | { readonly kind: 'resync-required'; };
+
+/** The delivery row a track's slot names, and the carrier whose lane claims it. */
+export interface ALInboundOrderedSuccessor {
+    readonly effectId: string;
+    readonly carrier: ALDeliveryCarrier;
+}
 
 export namespace ALInboundDurableEffectStore {
     export interface Dependencies {
@@ -80,6 +95,19 @@ export class ALInboundDurableEffectStore {
                     ? await this.readOrderingPredecessor(session, trackKey, predecessorSeq)
                     : await this.readSlotPredecessor(session, predecessor)
             };
+        });
+    }
+
+    /** The delivery row the track's slot after `completedThrough` names, and that slot's carrier. */
+    async readOrderedSuccessor(
+        trackKey: string,
+        completedThrough: number
+    ): Promise<ALInboundOrderedSuccessor | undefined> {
+        return await this.backend.readWithin(async (session) => {
+            const next = await this.readSlot(session, trackKey, completedThrough + 1);
+            return next?.delivery === undefined
+                ? undefined
+                : { effectId: next.delivery.effectId, carrier: next.carrier };
         });
     }
 

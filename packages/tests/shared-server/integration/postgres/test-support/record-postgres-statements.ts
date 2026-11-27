@@ -1,5 +1,7 @@
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 
+import { createPostgresSqlCall } from './create-postgres-sql-call.ts';
+
 export interface RecordedPostgresStatement {
     /** The recorded transaction the statement ran in, numbered from one; `null` for an autocommit statement. */
     readonly transaction: number | null;
@@ -8,33 +10,39 @@ export interface RecordedPostgresStatement {
     readonly rowCount: number;
 }
 
+/** What a statement-count pin compares: the statement's leading verb and the transaction it ran in. */
+export interface RecordedPostgresStatementShape {
+    readonly verb: string;
+    readonly transaction: number | null;
+}
+
 export interface PostgresStatementLog {
     readonly statements: RecordedPostgresStatement[];
     transactions: number;
 }
 
-/** Records every template statement with its values, its row count and the transaction it ran in, as it answers. */
+export function toRecordedPostgresStatementShape(statement: RecordedPostgresStatement): RecordedPostgresStatementShape {
+    return { verb: statement.text.split(' ', 1)[0] ?? '', transaction: statement.transaction };
+}
+
+/**
+ * Records every template statement with its values, its row count and the transaction it ran in, as it answers.
+ * Forwards a client's `savepoint`, recording inside it; does not forward `getExecutorCounters`.
+ */
 export function recordPostgresStatements(
     source: PSqlSql,
     log: PostgresStatementLog,
     transaction: number | null
 ): PSqlSql {
-    function recording<Result>(strings: TemplateStringsArray, ...values: readonly PSqlParameter[]): Promise<Result>;
-    function recording(values: readonly PSqlParameter[]): object;
-    function recording<Result>(
-        stringsOrValues: TemplateStringsArray | readonly PSqlParameter[],
-        ...values: readonly PSqlParameter[]
-    ): Promise<Result> | object {
-        if (!Object.hasOwn(stringsOrValues, 'raw')) {
-            return source(stringsOrValues as readonly PSqlParameter[]);
-        }
-        const strings = stringsOrValues as TemplateStringsArray;
-        const text = strings.join('?').replace(/\s+/gu, ' ').trim().toLowerCase();
-        return source<Result>(strings, ...values).then((rows) => {
+    const recording = createPostgresSqlCall(
+        source,
+        async <Result>(strings: TemplateStringsArray, ...values: readonly PSqlParameter[]): Promise<Result> => {
+            const text = strings.join('?').replace(/\s+/gu, ' ').trim().toLowerCase();
+            const rows = await source<Result>(strings, ...values);
             log.statements.push({ transaction, text, values, rowCount: Array.isArray(rows) ? rows.length : 0 });
             return rows;
-        });
-    }
+        }
+    );
     const savepoint = (source as Partial<{ savepoint: PSqlSql['begin']; }>).savepoint;
     return Object.assign(recording, {
         begin: async <T>(write: (transaction: PSqlSql) => Promise<T>): Promise<T> => {

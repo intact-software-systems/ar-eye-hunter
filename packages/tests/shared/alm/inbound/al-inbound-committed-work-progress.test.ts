@@ -25,7 +25,8 @@ import {
     INBOUND_TEST_SOURCE,
     planInboundTestMessage,
     readInboundTestAdmission,
-    setNextInboundCommitConflicted
+    restoreInboundWritesOnRetention,
+    setNextInboundAdmissionParked
 } from '../inbound-runtime-test-fixture.ts';
 
 afterEach(() => vi.restoreAllMocks());
@@ -160,8 +161,9 @@ it.each(['committed', 'retained', 'failed'] as const)('announces only durable wo
     });
     await fixture.runtime.ready();
     const wake = vi.spyOn(fixture.queueEngine, 'wake');
+    // A retained arrival loses every attempt's write, so it is parked however often its owner looks again.
     if (outcome === 'retained') {
-        setNextInboundCommitConflicted(fixture.stores.admissionStore);
+        restoreInboundWritesOnRetention(fixture.stores, setNextInboundAdmissionParked(fixture.stores.admissionStore));
     }
     if (outcome === 'failed') {
         vi.spyOn(fixture.stores.admissionStore, 'commitBundle').mockRejectedValueOnce(new Error('write aborted'));

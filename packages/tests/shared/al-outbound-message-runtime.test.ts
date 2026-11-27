@@ -251,7 +251,11 @@ describe('ALOutboundMessageRuntime', () => {
                 }
             })
         });
-        const msg = createOutboundMessage('msg-owner-expiry', { ttlMs: 15_000 });
+        // A message on a track: its admission writes the sender version an acknowledgement must leave alone.
+        const msg: ALMessage = {
+            ...createOutboundMessage('msg-owner-expiry', { ttlMs: 15_000 }),
+            ordering: { orderingKey: 'conversation', epoch: 1, seq: 1 }
+        };
 
         await enqueueOutboundOrThrow(runtime, msg);
 

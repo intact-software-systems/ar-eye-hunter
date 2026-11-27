@@ -1,6 +1,6 @@
 import { expect, vi } from 'vitest';
 
-import { resolveALInboundWorkDueAtMs } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import { resolveALWorkEntryDueAtMs } from '@shared/alm/work/read-al-work-ready-at.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus, NOT_COMPLETED_RETRYABLE_STATUSES } from '@shared/queuebox/ResourceEntry.ts';
 
@@ -48,7 +48,7 @@ export async function readInboundTestWorkDueAtMs(workQueue: QueueBoxResourceEntr
         ) {
             continue;
         }
-        const rowDueAtMs = row.status === EntityStatus.RESERVED ? nowMs : resolveALInboundWorkDueAtMs(row);
+        const rowDueAtMs = row.status === EntityStatus.RESERVED ? nowMs : resolveALWorkEntryDueAtMs(row);
         dueAtMs = Math.min(dueAtMs ?? rowDueAtMs, rowDueAtMs);
     }
     return dueAtMs;

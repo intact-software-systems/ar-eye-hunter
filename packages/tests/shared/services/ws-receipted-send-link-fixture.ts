@@ -1,15 +1,18 @@
-import { expect, vi } from 'vitest';
+import { expect, onTestFinished, vi } from 'vitest';
 
 import { newALBroadcastMessage, newALRoute, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage, type ALMessageRejection } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ALInboundCommitBundle } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/read-al-outbound-recipient-proof.ts';
 import { toALOutboundFirstHopTimeoutEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { acceptWsQueueBoxClientControlMessage } from '@shared/services/ws-queue-box-client/ws-queue-box-client-receipt-tracking.ts';
 import type { WsServerInboundAuthorization } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
@@ -22,6 +25,8 @@ import {
     toWsDeliveredAckMessage,
     type ControlFrameLabel
 } from '../../ws-receipted-send-test-controls.ts';
+import { createWorkerHold, type WorkerHold } from '../alm/create-worker-hold.ts';
+import { isInboundAdmissionWriteOf } from '../alm/inbound-runtime-test-fixture.ts';
 import {
     createWsClientCarrierStores,
     createWsClientMintingPlanner,
@@ -32,6 +37,7 @@ import {
     type WsClientCarrierStores
 } from '../alm/outbound-runtime-test-fixture.ts';
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
+import { reserveNoResourceEntries } from '../reserve-no-resource-entries.ts';
 import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
 import { createServerIngressFixture, type ServerIngressFixture } from './ws-queue-box-server-ingress-fixture.ts';
 
@@ -41,8 +47,10 @@ export const LINK_START_MS = Date.UTC(2026, 10, 20, 12);
 export const LINK_MESSAGE_TTL_MS = 30_000;
 const LINK_ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 /**
- * Passes of one step: a send the server's replay admits is delivered after six passes and its `admitted` reaches the
- * sender after nine, so twelve carry a replayed send to its sender within the step that let the server admit it.
+ * Passes of one step: a send the server's replay admits has its `admitted` written to the origin's socket by that
+ * replay, and the sender reads it in the third pass; it read it in the ninth while every `admitted` was an outbox row.
+ * Twelve carry a replayed send's answers to its sender within the step that let the server admit it, an outbox row's
+ * answer included.
  */
 const LINK_PASSES_PER_STEP = 12;
 
@@ -52,6 +60,9 @@ const LINK_PASSES_PER_STEP = 12;
  * peer-c-joined: authorized, audience [origin, peer-b, peer-c], snapshotVersion 4.
  */
 export type WsReceiptedSendRoomView = 'in-sync' | 'behind' | 'fenced' | 'peer-b-left' | 'peer-c-joined';
+
+/** Where `holdServerNextAdmissionWrite` holds a write. */
+export type ServerAdmissionWriteStage = 'before-write' | 'after-commit';
 
 /** One control the server sent the origin, `nack:<reason>` or `receipt:<phase>`, and what the origin's outbound owner decided. */
 export interface WsReceiptedSendServerControl extends ControlFrameLabel {
@@ -73,6 +84,24 @@ export interface WsReceiptedSendLink {
     writeHeldFramesSideBySide(): Promise<readonly string[]>;
     /** Hands one more copy of a written frame to ingress; its acceptance kind, or `rejected`. */
     writeCopy(msg: ALMessage): Promise<string>;
+    /** The next `count` frames the server writes the origin, counted from this call, are lost on the wire. */
+    loseFramesToOrigin(count: number): void;
+    /** Each claim the server makes of its inbound work from now claims nothing, until the returned release. */
+    holdServerWorkClaims(): () => void;
+    /**
+     * The server's next write of `msg`'s admission not already held waits at the returned hold: `before-write` after its
+     * reads and before it enters the store, `after-commit` once it committed and before its writer reads the answer.
+     * Writes of other messages pass. `arrived` fails with the reason when the held write throws or does not commit.
+     */
+    holdServerNextAdmissionWrite(msg: ALMessage, stage: ServerAdmissionWriteStage): WorkerHold;
+    /** The server's release of `msg`'s kept row, once its replay ran, waits at the returned hold; the row stays claimed. */
+    holdServerKeptRowRelease(msg: ALMessage): WorkerHold;
+    /**
+     * The server's admission writes go to its store's own commit until one loses to the store's fence; every later
+     * admission write of that message is answered `conflict` without a write, however many attempts its owner makes,
+     * until the server retains a message. Every other write stays the store's own.
+     */
+    loseServerAdmissionWritesAfterTheFirstLoss(): void;
     /** The recipient's `delivered` ACK through the server's ingress, as its socket would send it. */
     acknowledge(msg: ALMessage): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>>;
     /** Moves the one clock, then `LINK_PASSES_PER_STEP` times: the server's engine, its answers to the client, the client's due work. */
@@ -121,6 +150,8 @@ export async function createWsReceiptedSendLink(startView: WsReceiptedSendRoomVi
         holdFrames: client.holdFrames,
         writeHeldFramesSideBySide: client.writeHeldFramesSideBySide,
         writeCopy: client.writeCopy,
+        loseFramesToOrigin: exchange.loseFrames,
+        ...createServerWorkHolds(server),
         acknowledge: async (msg) => await server.service.acceptIncomingMessage(toWireCopy(toPeerAck(msg)), LINK_PEER_ID),
         advance: async (ms) => {
             vi.setSystemTime(Date.now() + ms);
@@ -193,16 +224,30 @@ function createLinkClient(server: ServerIngressFixture): LinkClient {
     };
 }
 
-function createLinkExchange(
-    server: ServerIngressFixture,
-    client: LinkClient
-): { readonly serverControls: readonly WsReceiptedSendServerControl[]; run(): Promise<void>; } {
+/** The relay of the server's frames to the origin's sender, which can lose frames on the wire. */
+interface LinkExchange {
+    readonly serverControls: readonly WsReceiptedSendServerControl[];
+    run(): Promise<void>;
+    loseFrames(count: number): void;
+}
+
+function createLinkExchange(server: ServerIngressFixture, client: LinkClient): LinkExchange {
     const serverControls: WsReceiptedSendServerControl[] = [];
+    const lost = new Set<number>();
     let relayed = 0;
+    const loseFrames = (count: number): void => {
+        const from = server.socket.sent.length;
+        for (let frame = from; frame < from + count; frame += 1) {
+            lost.add(frame);
+        }
+    };
     const run = async (): Promise<void> => {
         for (let pass = 0; pass < LINK_PASSES_PER_STEP; pass += 1) {
             await drainEngine(server.engine);
             for (; relayed < server.socket.sent.length; relayed += 1) {
+                if (lost.has(relayed)) {
+                    continue;
+                }
                 const answer = decodePersistedALMessage(String(server.socket.sent[relayed]));
                 const admission = (await acceptWsQueueBoxClientControlMessage(client.ws, answer)).kind;
                 serverControls.push({ ...toControlLabel(answer), admission });
@@ -210,7 +255,115 @@ function createLinkExchange(
             await drainOutboundWorkDueNow(client.ws, client.stores);
         }
     };
-    return { serverControls, run };
+    return { serverControls, run, loseFrames };
+}
+
+function createServerWorkHolds(
+    server: ServerIngressFixture
+): Pick<
+    WsReceiptedSendLink,
+    | 'holdServerWorkClaims'
+    | 'holdServerNextAdmissionWrite'
+    | 'holdServerKeptRowRelease'
+    | 'loseServerAdmissionWritesAfterTheFirstLoss'
+> {
+    const { workQueue } = server.admission;
+    const { admissionStore } = server;
+    const reserveEntries = workQueue.reserveEntries.bind(workQueue);
+    const releaseEntries = workQueue.releaseEntries.bind(workQueue);
+    const commitBundle = admissionStore.commitBundle.bind(admissionStore);
+    const enqueueIfAbsent = workQueue.enqueueIfAbsent.bind(workQueue);
+    const writeHolds: ServerAdmissionWriteHold[] = [];
+    let losing: 'no' | 'after-the-first-loss' | 'yes' = 'no';
+    // Only the message whose write lost first loses again; every other write is the store's own.
+    let lostMessage: Pick<ALMessage['id'], 'msgId' | 'senderId'> | undefined;
+    let writesSpied = false;
+    // One routing of the store's commit serves the holds and the losses, so neither removes the other.
+    const routeWrites = (): void => {
+        if (writesSpied) {
+            return;
+        }
+        writesSpied = true;
+        vi.spyOn(admissionStore, 'commitBundle').mockImplementation(async (bundle) => {
+            if (losing === 'yes' && lostMessage !== undefined && isInboundAdmissionWriteOf(bundle, lostMessage)) {
+                return 'conflict';
+            }
+            const index = writeHolds.findIndex((held) => isInboundAdmissionWriteOf(bundle, held.msg.id));
+            const next = index < 0 ? undefined : writeHolds.splice(index, 1)[0];
+            if (next?.stage === 'before-write') {
+                await next.hold.arrive();
+            }
+            const written = commitBundle(bundle);
+            written.catch(() => next?.refuse(new Error(`The held admission write of ${next.msg.id.msgId} threw`)));
+            const status = await written;
+            if (status === 'conflict' && losing === 'after-the-first-loss' && bundle.admissionExpiresAtMs !== null) {
+                losing = 'yes';
+                lostMessage = { msgId: bundle.observations.msgId, senderId: bundle.observations.senderId };
+            }
+            if (next?.stage === 'after-commit') {
+                if (status !== 'committed') {
+                    next.refuse(new Error(`The held admission write of ${next.msg.id.msgId} answered ${status}`));
+                    return status;
+                }
+                await next.hold.arrive();
+            }
+            return status;
+        });
+    };
+    return {
+        holdServerWorkClaims: () => {
+            let held = true;
+            vi.spyOn(workQueue, 'reserveEntries').mockImplementation(async (request) =>
+                held ? await reserveNoResourceEntries(request) : await reserveEntries(request)
+            );
+            return () => {
+                held = false;
+                server.engine.wake();
+            };
+        },
+        holdServerKeptRowRelease: (msg) => {
+            const hold = createWorkerHold();
+            onTestFinished(() => hold.release());
+            vi.spyOn(workQueue, 'releaseEntries').mockImplementation(async (releases) => {
+                if (releases.some(({ entry }) => isKeptRowOf(entry, msg, server.admissionStore.namespace))) {
+                    await hold.arrive();
+                }
+                return await releaseEntries(releases);
+            });
+            return hold;
+        },
+        loseServerAdmissionWritesAfterTheFirstLoss: () => {
+            routeWrites();
+            losing = 'after-the-first-loss';
+            vi.spyOn(workQueue, 'enqueueIfAbsent').mockImplementationOnce(async (entry) => {
+                const retained = await enqueueIfAbsent(entry);
+                losing = 'no';
+                lostMessage = undefined;
+                return retained;
+            });
+        },
+        holdServerNextAdmissionWrite: (msg, stage) => {
+            const hold = createWorkerHold();
+            const refused = Promise.withResolvers<never>();
+            onTestFinished(() => hold.release());
+            writeHolds.push({ msg, hold, stage, refuse: refused.reject });
+            routeWrites();
+            return { ...hold, arrived: Promise.race([hold.arrived, refused.promise]) };
+        }
+    };
+}
+
+interface ServerAdmissionWriteHold {
+    readonly msg: ALMessage;
+    readonly hold: WorkerHold;
+    readonly stage: ServerAdmissionWriteStage;
+    /** Fails the hold's `arrived` with why the held write will never arrive at it. */
+    readonly refuse: (reason: Error) => void;
+}
+
+function isKeptRowOf(entry: ResourceEntry, msg: ALMessage, namespace: string): boolean {
+    const { payload } = decodeALInboundWorkEntry(entry, namespace);
+    return payload.kind === 'admit-message' && payload.msg.id.msgId === msg.id.msgId;
 }
 
 function createLinkSenderReads(

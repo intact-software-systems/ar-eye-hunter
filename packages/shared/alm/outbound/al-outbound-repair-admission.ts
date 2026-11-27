@@ -309,14 +309,16 @@ export class ALOutboundRepairAdmission<TPrepared> {
         }
     }
 
-    /** A receipt whose message is gone has nothing left to retry. */
+    /**
+     * A receipt whose payload or sent row is gone has nothing left to retry. The sent row names the sender whose
+     * versions fence the receipt's end, so the end is written only while that row is there; with it gone, nothing is.
+     */
     private async commitOrphanedReceiptCleanup(msgId: string, read: ALOutboundMessageEndRead): Promise<void> {
-        if (!read.clientRecord) {
+        const senderId = read.storedMessage?.reference.senderId;
+        if (senderId === undefined) {
             return;
         }
-        const status = await this.admissionStore.commitBundle(
-            toALOutboundEndReceiptBundle(read.clientRecord.senderId, msgId, read)
-        );
+        const status = await this.admissionStore.commitBundle(toALOutboundEndReceiptBundle(senderId, msgId, read));
         if (status === 'conflict') {
             throw new RetryableConflictError('Expired outbound acknowledgement cleanup commit conflict');
         }

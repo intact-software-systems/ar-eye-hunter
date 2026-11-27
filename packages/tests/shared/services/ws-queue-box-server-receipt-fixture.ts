@@ -8,17 +8,32 @@ import {
 import type { RallarAlmReceiptDiagnosticsRecorder } from '@shared-server/rallar-system/observability/alm-receipt-diagnostics.ts';
 import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
 import type { QueueBoxPubSubBridge, QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
-import { isRoomScopedALMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { isRoomScopedALMessage, newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
-import { newALAckControlMessage, type ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
+import { decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
+import { newALAckControlMessage, type ALAckStatus, type ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import { InMemoryAdmissionBackend, type ALAdmissionMemoryState } from '@shared/alm/al-admission-backend.ts';
-import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import { createInMemoryALAdmissionState, InMemoryAdmissionBackend, type ALAdmissionMemoryState } from '@shared/alm/al-admission-backend.ts';
+import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
+import { createDefaultInMemoryALInboundRuntimeStores, createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import type { ALInboundRuntimeStores, ALVolatileInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { toALReceiptRecordNamespace, type ALReceiptRecordRef } from '@shared/alm/receipt-record/al-receipt-record-keys.ts';
+import type { ALReceiptRecordStores } from '@shared/alm/receipt-record/al-receipt-record-stores.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import type {
+    WsCapturedRecipientEligibilityFilters,
+    WsServerInboundAuthorization
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
+import type {
+    WsQueueBoxServerReceiptObservation,
+    WsQueueBoxServerReceiptObserver,
+    WsQueueBoxServerReceiptOutboxVerdict
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 import { createDefaultWsQueueBoxServerService, WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
@@ -53,16 +68,78 @@ export interface CreateReceiptServerInput {
     readonly peerIds: readonly string[];
     readonly recorder: RallarAlmReceiptDiagnosticsRecorder | undefined;
     readonly nowMs: () => number;
+    readonly inboundStores: ALInboundRuntimeStores;
+    readonly inboundVolatileStores: ALVolatileInboundRuntimeStores | undefined;
+    readonly receiptRecordStores: ALReceiptRecordStores;
+    /** The backend the outbound owner writes through; undefined, a memory backend over `state`. */
+    readonly outboundBackend: ALAdmissionWorkBackend | undefined;
+    /** Durable presence and its siblings; undefined, no filter, so every captured session stays eligible. */
+    readonly capturedRecipientEligibilityFilters: WsCapturedRecipientEligibilityFilters | undefined;
+    readonly receiptObserver: WsQueueBoxServerReceiptObserver | undefined;
 }
+
+/** The inbound admission and receipt record state every instance of one test shares, as instances share PostgreSQL. */
+export interface ReceiptClusterState {
+    readonly inbound: ALAdmissionMemoryState;
+    readonly record: ALAdmissionMemoryState;
+}
+
+/** One instance's own store objects over its cluster's shared state. */
+export interface ReceiptInstanceStores {
+    readonly inboundStores: ALInboundRuntimeStores;
+    readonly receiptRecordStores: ALReceiptRecordStores;
+}
+
+/** Whether the room authority's view is current: a room message is kept for admission while it is not. */
+export interface ReceiptRoomView {
+    inSync: boolean;
+}
+
+/** Message identity and clock of one room message, named by each caller. */
+export interface RoomMessageInput {
+    readonly msgId: string;
+    readonly originPeerId: string;
+    readonly nowMs: number;
+    readonly lifetimeMs: number;
+}
+
+/** The ACK `recipient` sends for the room message `msgId` of `originPeerId`. */
+export interface ReceiverAckInput {
+    readonly msgId: string;
+    readonly originPeerId: string;
+    readonly recipient: string;
+    readonly nowMs: number;
+}
+
+/** One receipt control a socket was sent: its control id and its receipt. */
+export interface SentReceipt {
+    readonly controlId: string;
+    readonly receipt: ALReceiptPayload;
+}
+
+/** One refusal, count or receipt the receipt aggregation recorded: `kind`, then the count's outcome or the receipt's phase and outbox verdict. */
+export interface RowEndedPoll {
+    readonly store: Pick<ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>, 'readStoredMessage'>;
+    readonly msgId: string;
+    readonly advance: () => Promise<void>;
+    readonly timeoutMs: number;
+}
+
+export type ReceiptAggregationVerdict =
+    | 'ack-rejection'
+    | `ack-count:${Extract<WsQueueBoxServerReceiptObservation, { readonly kind: 'ack-count'; }>['outcome']}`
+    | `receipt-outbox:${ALReceiptPayload['phase']}:${WsQueueBoxServerReceiptOutboxVerdict['kind']}`;
 
 /** The peer id of the server the receipt suites build; a session's ACK names it. */
 export const RECEIPT_SERVER_PEER_ID = 'server';
+/** Vitest's own poll timeout, enough for memory stores, which settle on microtasks. */
+export const MEMORY_POLL_TIMEOUT_MS = 1_000;
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
 const SCOPE = { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId };
 const SESSION_SCOPE_LIFETIME_MS = 60_000;
 const SNAPSHOT_VERSION = 7;
-const ROOM_MESSAGE_LIFETIME_MS = 30_000;
+const RECEIPT_CLUSTER_NAMESPACE = 'server-ws-qbox:receipt-cluster';
 
 interface ReceiptWorkClaim {
     readonly worker: string;
@@ -92,6 +169,11 @@ interface ReceiptWorkerHandoffResult {
 interface CreateClusterInstanceInput {
     readonly name: string;
     readonly outboundStores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
+    readonly inboundStores: ALInboundRuntimeStores;
+    readonly inboundVolatileStores: ALVolatileInboundRuntimeStores | undefined;
+    readonly receiptRecordStores: ALReceiptRecordStores;
+    readonly receiptObserver: WsQueueBoxServerReceiptObserver | undefined;
+    readonly roomView: ReceiptRoomView;
     readonly bus: QueueBoxPubSubBridge;
     readonly publisherId: string;
     readonly engine: InboxOutboxEngine;
@@ -114,6 +196,28 @@ export function createReceiptOutbox(clock: ReceiptClock): InMemoryQueueBox {
     return new InMemoryQueueBox(new Map(), () => Temporal.Instant.fromEpochMilliseconds(clock.nowMs));
 }
 
+export function createReceiptClusterState(nowMs: () => number): ReceiptClusterState {
+    const toInstant = () => Temporal.Instant.fromEpochMilliseconds(nowMs());
+    return {
+        inbound: createInMemoryALAdmissionState(new InMemoryQueueBox(new Map(), toInstant)),
+        record: createInMemoryALAdmissionState(new InMemoryQueueBox(new Map(), toInstant))
+    };
+}
+
+export function createReceiptInstanceStores(state: ReceiptClusterState, nowMs: () => number): ReceiptInstanceStores {
+    return {
+        inboundStores: createDefaultInMemoryALInboundRuntimeStores({
+            nowMs,
+            namespace: RECEIPT_CLUSTER_NAMESPACE,
+            inboundBackend: new InMemoryAdmissionBackend(state.inbound, nowMs)
+        }),
+        receiptRecordStores: {
+            backend: new InMemoryAdmissionBackend(state.record, nowMs),
+            namespace: toALReceiptRecordNamespace(RECEIPT_CLUSTER_NAMESPACE)
+        }
+    };
+}
+
 export async function createReceiptServer(input: CreateReceiptServerInput): Promise<ReceiptServerInstance> {
     const socketServer = new JsonWebSocketServer();
     const sockets: Record<string, SimulatedWebSocket> = {};
@@ -126,7 +230,9 @@ export async function createReceiptServer(input: CreateReceiptServerInput): Prom
     const recipients = () => [...socketServer.connections.keys()].map((peerId) => ({ peerId, connectionId: peerId }));
     const engine = new InboxOutboxEngine();
     const service = createDefaultWsQueueBoxServerService({
-        inboundVolatileStores: undefined,
+        inboundStores: input.inboundStores,
+        inboundVolatileStores: input.inboundVolatileStores,
+        receiptRecordStores: input.receiptRecordStores,
         outbox: input.outbox,
         socket: socketServer,
         name: RECEIPT_SERVER_PEER_ID,
@@ -139,8 +245,10 @@ export async function createReceiptServer(input: CreateReceiptServerInput): Prom
         outboundStores: createDefaultInMemoryALOutboundRuntimeStores({
             nowMs: input.nowMs,
             decodePrepared: decodeWsQueueBoxServerPreparedMessage,
-            outboundBackend: new InMemoryAdmissionBackend(input.state, input.nowMs)
+            outboundBackend: input.outboundBackend ?? new InMemoryAdmissionBackend(input.state, input.nowMs)
         }),
+        capturedRecipientEligibilityFilters: input.capturedRecipientEligibilityFilters,
+        receiptObserver: input.receiptObserver,
         outboundSettlements: input.recorder?.settlements,
         targetResolver: {
             requiresFrozenAudience: () => false,
@@ -173,7 +281,10 @@ export async function createClusterInstance(input: CreateClusterInstanceInput): 
             connectionId: connection.id
         }));
     const service = createDefaultWsQueueBoxServerService({
-        inboundVolatileStores: undefined,
+        inboundStores: input.inboundStores,
+        inboundVolatileStores: input.inboundVolatileStores,
+        receiptRecordStores: input.receiptRecordStores,
+        receiptObserver: input.receiptObserver,
         outbox: input.outboundStores.workQueue,
         outboundStores: input.outboundStores,
         socket: server,
@@ -192,10 +303,7 @@ export async function createClusterInstance(input: CreateClusterInstanceInput): 
     });
     service.authorizeInboundMessagesWith({
         sendNacks: true,
-        authorize: async (message) =>
-            isRoomScopedALMessage(message)
-                ? { authorized: true, roomAudience: { recipientPeerIds: [...input.roomPeerIds], snapshotVersion: SNAPSHOT_VERSION } }
-                : { authorized: true }
+        authorize: async (message) => toClusterRoomAuthorization(message, input)
     });
     service.onAnyInboxMessageDo('router', {
         onMessage: async (message) => {
@@ -211,6 +319,21 @@ export async function createClusterInstance(input: CreateClusterInstanceInput): 
     });
     await installQueueBoxPubSubBridge({ wsQBoxServerService: service, bridge: input.bus, channel: 'ws', publisherId: input.publisherId });
     return { service, engine, server };
+}
+
+function toClusterRoomAuthorization(message: ALMessage, input: CreateClusterInstanceInput): WsServerInboundAuthorization {
+    if (!isRoomScopedALMessage(message)) {
+        return { authorized: true };
+    }
+    return input.roomView.inSync
+        ? { authorized: true, roomAudience: { recipientPeerIds: [...input.roomPeerIds], snapshotVersion: SNAPSHOT_VERSION } }
+        : {
+            authorized: false,
+            reason: 'not-yet-in-sync',
+            logMessage: 'The room view is behind the message',
+            sendNack: true,
+            serverSnapshotVersion: SNAPSHOT_VERSION - 1
+        };
 }
 
 export async function connect(instance: ClusterInstance, peerId: string): Promise<SimulatedWebSocket> {
@@ -232,32 +355,158 @@ export function createBridgeBus(): QueueBoxPubSubBridge {
     };
 }
 
-export function roomMessage(nowMs: number): ALMessage {
+export function roomMessage(input: RoomMessageInput): ALMessage {
+    const { msgId, originPeerId, nowMs } = input;
     return {
-        id: { v: 4, msgId: 'room-message-1', ts: nowMs, senderId: 'a', traceId: 'trace-ws-queue-box-server-receipt-fixture' },
+        id: { v: 4, msgId, ts: nowMs, senderId: originPeerId, traceId: 'trace-ws-queue-box-server-receipt-fixture' },
         route: { topicId: 'room.notification', resourceId: 'resource', contextId: ROOM.groupId },
         targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM },
-        constraints: { expiresAtMs: nowMs + ROOM_MESSAGE_LIFETIME_MS },
+        constraints: { expiresAtMs: nowMs + input.lifetimeMs },
         delivery: { reliability: 'at-least-once', ack: 'receiver' },
         payload: { typeId: 'message.v1', contentType: 'application/json', resource: '{}' }
     };
 }
 
-/** The ACK `recipient` sends for `roomMessage`, naming origin `a`. */
-export function receiverAck(recipient: string, nowMs: number): ALMessage {
+export function receiverAck(input: ReceiverAckInput): ALMessage {
+    const { recipient, nowMs } = input;
     return newALAckControlMessage(
-        { v: 4, msgId: `ack-${recipient}`, senderId: recipient, ts: nowMs, traceId: 'trace-ws-queue-box-server-receipt-fixture' },
+        { v: 4, msgId: `ack-${recipient}-${input.msgId}`, senderId: recipient, ts: nowMs, traceId: 'trace-ws-queue-box-server-receipt-fixture' },
         toTestALAckPayload({
-            ackedMsgId: 'room-message-1',
+            ackedMsgId: input.msgId,
             fromPeerId: recipient,
-            toPeerId: 'a',
-            originPeerId: 'a',
+            toPeerId: input.originPeerId,
+            originPeerId: input.originPeerId,
             logicalRecipientPeerId: recipient,
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs: nowMs
         })
     );
+}
+
+/** A room notification of the server's own that asks the receipt `ack` and lives `ttlMs`. */
+export function serverNotification(msgId: string, ack: 'receiver' | 'hop' | 'subtree', ttlMs: number): ALMessage {
+    const message = newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: RECEIPT_SERVER_PEER_ID,
+        route: newALRoute('room.snapshot', ROOM.groupId, msgId),
+        scope: 'room',
+        typeId: 'snapshot.v1',
+        resource: { msgId },
+        options: { groupRef: ROOM, reliability: 'at-least-once', qos: { ack: { algo: ack } }, ttlMs }
+    });
+    return { ...message, id: { ...message.id, msgId } };
+}
+
+/** A session's ACK of a publication of the server's: addressed to the server, its origin, under the message's trace. */
+export function sessionAck(message: ALMessage, recipient: string, status: ALAckStatus): ALMessage {
+    return newALAckControlMessage(
+        { v: 4, msgId: `ack-${message.id.msgId}-${recipient}-${status}`, senderId: recipient, ts: Date.now(), traceId: message.id.traceId },
+        toTestALAckPayload({
+            ackedMsgId: message.id.msgId,
+            fromPeerId: recipient,
+            toPeerId: RECEIPT_SERVER_PEER_ID,
+            originPeerId: RECEIPT_SERVER_PEER_ID,
+            logicalRecipientPeerId: recipient,
+            carrier: 'ws',
+            status,
+            observedAtEpochMs: Date.now()
+        })
+    );
+}
+
+/** The receipt record's reference of a publication of the server's own. */
+export function toOwnReceiptRef(message: ALMessage): ALReceiptRecordRef {
+    return { originPeerId: RECEIPT_SERVER_PEER_ID, msgId: message.id.msgId };
+}
+
+/**
+ * Polls until the server's stored row of `msgId` is ended: its terminal receipt, or its own budget, ended it.
+ * `advance` runs before each read: the work that may end the row, or nothing when the instances run it themselves.
+ */
+export async function pollRowEnded(poll: RowEndedPoll): Promise<void> {
+    const { store, msgId, advance, timeoutMs } = poll;
+    await expect.poll(async () => {
+        await advance();
+        return (await store.readStoredMessage(msgId))?.ended;
+    }, { timeout: timeoutMs }).toBe(true);
+}
+
+/** Every receipt the sockets were sent for the message `msgId`, in the order each socket was sent them. */
+export function readSocketReceipts(sockets: readonly SimulatedWebSocket[], msgId: string): readonly SentReceipt[] {
+    return sockets.flatMap((socket) =>
+        socket.sent
+            .map((frame) => decodePersistedALMessage(frame))
+            .filter((control) => control.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID)
+            .map((control) => ({ controlId: control.id.msgId, receipt: decodeALReceiptPayload(JSON.parse(control.payload.resource)) }))
+            .filter(({ receipt }) => receipt.msgId === msgId)
+    );
+}
+
+/**
+ * The origin's receipts for the message, each once whichever of its sockets carried it, in the order the server observed
+ * them: a receipt row released for a retry may arrive after a later one, and an `admitted` observed at the same instant
+ * as a terminal receipt precedes it.
+ */
+export function readOriginReceipts(originSockets: readonly SimulatedWebSocket[], msgId: string): readonly SentReceipt[] {
+    const unique = new Map(readSocketReceipts(originSockets, msgId).map((sent) => [sent.controlId, sent]));
+    const toOrder = ({ receipt }: SentReceipt) => [receipt.observedAtEpochMs, receipt.phase === 'admitted' ? 0 : 1] as const;
+    return [...unique.values()].sort((left, right) => {
+        const [leftAtMs, leftRank] = toOrder(left);
+        const [rightAtMs, rightRank] = toOrder(right);
+        return leftAtMs - rightAtMs || leftRank - rightRank;
+    });
+}
+
+export function readOriginReceiptPhases(originSockets: readonly SimulatedWebSocket[], msgId: string): readonly ALReceiptPayload['phase'][] {
+    return readOriginReceipts(originSockets, msgId).map(({ receipt }) => receipt.phase);
+}
+
+/** The origin's first terminal receipt for the message; undefined while it has read none. */
+export function readOriginTerminalReceipt(originSockets: readonly SimulatedWebSocket[], msgId: string): ALReceiptPayload | undefined {
+    return readOriginReceipts(originSockets, msgId).find(({ receipt }) => receipt.phase !== 'admitted')?.receipt;
+}
+
+/**
+ * Each distinct terminal receipt the sockets hold for the message, read from every frame without deduplication: its
+ * control id, phase and sets. "Exactly one terminal receipt" is exactly one entry, however often the outbox delivered
+ * it: the outbox resends a receipt control the origin never acknowledges, under the same id. A second `end`'s receipt
+ * would carry the same message-derived id, so the id alone cannot tell it apart; its phase or sets can, whatever
+ * order the frames arrived in.
+ */
+export function readTerminalReceiptIdentities(sockets: readonly SimulatedWebSocket[], msgId: string): readonly string[] {
+    const terminals = readSocketReceipts(sockets, msgId).filter(({ receipt }) => receipt.phase !== 'admitted');
+    return [
+        ...new Set(terminals.map(({ controlId, receipt }) => JSON.stringify({ controlId, phase: receipt.phase, ...toReceiptSets(receipt) })))
+    ];
+}
+
+/**
+ * Every refusal, count and receipt the receipt aggregation recorded for the message, sorted, since instances record in
+ * no fixed order. An `ack-rejection` carries only its control's identity, so every one the observations hold is listed.
+ */
+export function readReceiptAggregationVerdicts(
+    observations: readonly WsQueueBoxServerReceiptObservation[],
+    msgId: string
+): readonly ReceiptAggregationVerdict[] {
+    return observations.flatMap((observation): ReceiptAggregationVerdict[] => {
+        if (observation.kind === 'ack-rejection') {
+            return ['ack-rejection'];
+        }
+        if (observation.kind === 'ack-count') {
+            return observation.ack.ackedMsgId === msgId ? [`ack-count:${observation.outcome}`] : [];
+        }
+        return observation.kind === 'receipt-outbox' && observation.receipt.msgId === msgId
+            ? [`receipt-outbox:${observation.receipt.phase}:${observation.verdict.kind}`]
+            : [];
+    }).sort();
+}
+
+export function toReceiptSets(
+    receipt: ALReceiptPayload
+): Pick<ALReceiptPayload, 'expectedRecipientPeerIds' | 'confirmedRecipientPeerIds' | 'outsideAudienceRecipientPeerIds'> {
+    const { expectedRecipientPeerIds, confirmedRecipientPeerIds, outsideAudienceRecipientPeerIds } = receipt;
+    return { expectedRecipientPeerIds, confirmedRecipientPeerIds, outsideAudienceRecipientPeerIds };
 }
 
 /** Runs A's real dequeue task, then B's real send task; neither engine starts a timer loop. */
@@ -268,10 +517,26 @@ export async function runReceiptWorkerHandoff(input: ReceiptWorkerHandoffInput):
     const runA = captureOutboundWorkRunnable(engineA);
     const runB = captureOutboundWorkRunnable(engineB);
     const roomPeerIds = ['a', 'b', 'c'];
-    const local = await createClusterInstance({ name: 'server', outboundStores: input.storesA, bus, publisherId: 'local', engine: engineA, roomPeerIds });
+    // Each instance keeps its own inbound admissions and receipt record: only the outbound pair is under test here.
+    const local = await createClusterInstance({
+        name: 'server',
+        outboundStores: input.storesA,
+        ...createReceiptInstanceStores(createReceiptClusterState(Date.now), Date.now),
+        inboundVolatileStores: undefined,
+        receiptObserver: undefined,
+        roomView: { inSync: true },
+        bus,
+        publisherId: 'local',
+        engine: engineA,
+        roomPeerIds
+    });
     const remote = await createClusterInstance({
         name: 'remote-server',
         outboundStores: input.storesB,
+        ...createReceiptInstanceStores(createReceiptClusterState(Date.now), Date.now),
+        inboundVolatileStores: undefined,
+        receiptObserver: undefined,
+        roomView: { inSync: true },
         bus,
         publisherId: 'remote',
         engine: engineB,
@@ -282,7 +547,10 @@ export async function runReceiptWorkerHandoff(input: ReceiptWorkerHandoffInput):
     const claims: ReceiptWorkClaim[] = [];
     let worker: 'A' | 'B' = 'A';
     holdReceiptWorkForWorker({ ...input, claims, readWorker: () => worker });
-    expect((await local.service.acceptIncomingMessage(roomMessage(input.nowMs), 'a')).right?.kind).toBe('admitted');
+    // The origin's socket refuses the live `admitted` once, so its receipt is the row the two workers hand over.
+    refuseNextNativeSend(alice);
+    expect((await local.service.acceptIncomingMessage(roomMessage(toHandoffRoomMessageInput(input.nowMs)), 'a')).right?.kind)
+        .toBe('admitted');
     // Admission may have started A already; settle that batch and its commit-triggered follow-up.
     await runA();
     await runA();
@@ -293,6 +561,41 @@ export async function runReceiptWorkerHandoff(input: ReceiptWorkerHandoffInput):
     const receiptDequeue = claims.find((claim) => claim.worker === 'A' && claim.payloadType === AL_CONTROL_RECEIPT_TYPE_ID)!;
     expect(claims.filter((claim) => claim.worker === 'B' && claim.msgId === receiptDequeue.msgId).map((claim) => claim.action)).toEqual(['send-prepared']);
     return { receipts: readSentReceipts(alice), wrongFrames: wrong.sent, claims };
+}
+
+/** The console's own error printer, taken before any case spies on it. */
+const printConsoleError = console.error.bind(console);
+/** The refusals whose printed lines are silenced in the running case. */
+const silencedRefusals = new Set<Error>();
+
+/**
+ * The socket's next native send throws, as a socket closing under it would; its later sends are its own. Only the
+ * line the server prints for that refusal is silenced, and only until the case ends; a case may refuse several.
+ */
+export function refuseNextNativeSend(socket: SimulatedWebSocket): void {
+    const send = socket.send.bind(socket);
+    const refusal = new Error('Native WebSocket refused the frame');
+    if (silencedRefusals.size === 0) {
+        const silenced = vi.spyOn(console, 'error').mockImplementation((...lines) => {
+            if (!lines.some((line) => silencedRefusals.has(line))) {
+                printConsoleError(...lines);
+            }
+        });
+        onTestFinished(() => {
+            silencedRefusals.clear();
+            silenced.mockRestore();
+        });
+    }
+    silencedRefusals.add(refusal);
+    socket.send = () => {
+        socket.send = send;
+        throw refusal;
+    };
+}
+
+/** The room message the handoff and its storage cleanup name. */
+export function toHandoffRoomMessageInput(nowMs: number): RoomMessageInput {
+    return { msgId: 'room-message-1', originPeerId: 'a', nowMs, lifetimeMs: 30_000 };
 }
 
 /** Restricts only public claims; the real stores still read, commit and release every selected row. */

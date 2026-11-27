@@ -1,3 +1,4 @@
+import { createServerWsQBoxALReceiptRecordStores } from '@shared-server/al-runtime/postgres/create-p-sql-al-receipt-record-stores.ts';
 import { decodeGroupGuestSeatDeadline, GROUP_GUEST_SEAT_DEADLINE_TOPIC, groupGuestSeatDeadlineRoute } from '@shared-server/rallar-system/group-state/schedule/group-guest-seat-deadline.ts';
 import { installDurableDeadline } from '@shared-server/rallar-system/app-outbox/install-durable-deadline.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
@@ -20,6 +21,8 @@ import {
     validateAppInboxAttemptDeadlineMargin,
     type AppInboxOptions
 } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
+import { isInstanceLocalRtcSignal } from '@shared-server/rallar-system/communication/is-instance-local-rtc-signal.ts';
+import { GroupLobbyExpiry } from '@shared-server/rallar-system/group-state/lobby/group-lobby-expiry.ts';
 import type { GroupPolicyCapacityConfig } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
 import {
     DEFAULT_PRESENCE_EXPIRY_RECONCILIATION_INTERVAL_MSECS,
@@ -28,7 +31,6 @@ import {
 import {
     startGroupRetentionReconciliation
 } from '@shared-server/rallar-system/group-state/retention/reconcile-group-retention.ts';
-import { GroupLobbyExpiry } from '@shared-server/rallar-system/group-state/lobby/group-lobby-expiry.ts';
 import { GroupSessionDeadlineService } from '@shared-server/rallar-system/group-state/schedule/group-session-deadline-service.ts';
 import { GroupSessionViewWatch } from '@shared-server/rallar-system/group-state/schedule/group-session-view-watch.ts';
 import { installGroupSessionDeadline } from '@shared-server/rallar-system/group-state/schedule/install-group-session-deadline.ts';
@@ -88,7 +90,6 @@ import {
     createApiV1LiveWsNoticeTransport
 } from '../db/api-v1-live-ws-notice-transport.ts';
 import { createApiV1AppInboxCompletionNotices } from '../db/create-postgres-app-inbox-completion-notice-transport.ts';
-import { createApiV1RelayedAckNotices } from '../db/create-postgres-relayed-ack-notice-transport.ts';
 import type { LocalQueuePubSubBus } from '../db/local-queue-pubsub-bridge.ts';
 import {
     readAuthorisedWsConnectionEligibility,
@@ -246,8 +247,12 @@ export function createApiV1Runtime(input: CreateApiV1RuntimeInput): ApiV1Runtime
     startGroupMaintenance({ runtime, mutation, input });
     startSessionDeadlines({ appInbox, runtime, mutation, input });
     const lobbyExpiry = new GroupLobbyExpiry({
-        appInbox, database: input.database, groups: mutation.groupsRepository, nowEpochMs: input.nowEpochMs,
-        serviceId: input.serviceId, retentionMs: input.appInboxFinishedRetentionMs
+        appInbox,
+        database: input.database,
+        groups: mutation.groupsRepository,
+        nowEpochMs: input.nowEpochMs,
+        serviceId: input.serviceId,
+        retentionMs: input.appInboxFinishedRetentionMs
     });
     lobbyExpiry.listen(runtime.outboxQueueReader);
     installDurableDeadline({
@@ -448,11 +453,6 @@ function createSharedMiddleware(
 ): RallarMiddlewareRuntime {
     const { mutation, rtcTopology } = input;
     const { inboundStores } = input;
-    const relayedAckNotices = createApiV1RelayedAckNotices({
-        mode: input.databasePubSubMode,
-        notification: input.databaseNotification,
-        publisherId: input.queuePubSubPublisherId
-    });
     const runtime = createRallarMiddleware({
         inbox: mutation.queueBox,
         outbox: mutation.queueBox,
@@ -463,7 +463,12 @@ function createSharedMiddleware(
         wsRuntimeName: input.wsRuntimeName,
         inboundStores,
         inboundVolatileStores: createServerWsQBoxALVolatileInboundRuntimeStores(input.wsRuntimeName),
+        keepsVolatileMessageInMemory: input.databasePubSubMode === 'postgres' ? isInstanceLocalRtcSignal : undefined,
         outboundStores: resolveServerWsQBoxALOutboundRuntimeStores(input.wsRuntimeName),
+        receiptRecordStores: createServerWsQBoxALReceiptRecordStores(
+            input.wsRuntimeName,
+            mutation.runtimeStateRepository
+        ),
         wsDeliveryDiagnostics: mutation.groupFormationMetrics.wsDelivery,
         wsOutboundDiagnostics: mutation.groupFormationMetrics.outboundWork,
         wsOutboundSettlements: input.almReceiptDiagnostics.settlements,
@@ -486,7 +491,6 @@ function createSharedMiddleware(
         rtcTopologyReplay: rtcTopology.topologyReplay,
         queuePubSubBridge: createApiV1QueuePubSubBridge(input),
         liveWsNoticeSubscriber: createApiV1LiveWsNoticeSubscriber(input),
-        relayedAckNotices,
         appInboxCompletionNotices: input.appInboxCompletionNotices,
         readiness: rtcTopology.readiness,
         healthFailure: rtcTopology.healthFailure

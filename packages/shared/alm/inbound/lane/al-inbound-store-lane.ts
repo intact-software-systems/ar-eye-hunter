@@ -15,7 +15,9 @@ import {
 import {
     AL_WORK_PROBE_EVERY_ROUND,
     ALWorkHandler,
+    toALWorkOutcome,
     type ALWorkBatchDiagnostics,
+    type ALWorkClaimResult,
     type ALWorkDiagnostics,
     type ALWorkObservationDeferral,
     type ALWorkReadySelection
@@ -27,11 +29,14 @@ import {
     type ALWorkQueuePort
 } from '../../work/al-work-queue-port.ts';
 import { AL_WORK_UNDESCRIBED_COMMIT } from '../../work/al-work-readiness-memory.ts';
+import { resolveALWorkEntryDueAtMs } from '../../work/read-al-work-ready-at.ts';
+import { retryALInboundLostWrite } from '../admission/retry-al-inbound-lost-write.ts';
 import type { ALInboundGapRenewalEffect, ALInboundPlanner } from '../al-inbound-admission-store.ts';
 import { ALInboundAdmittedDelivery } from '../al-inbound-admitted-delivery.ts';
 import { toALInboundLocalDeliveryEffectIds } from '../al-inbound-effect-intent.ts';
 import { ALInboundMessageAdmission } from '../al-inbound-message-admission.ts';
 import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '../al-inbound-message-runtime.ts';
+import type { ALInboundOrderedDelivery } from '../al-inbound-ordered-delivery.ts';
 import type { ALInboundPendingAdmission } from '../al-inbound-pending-admission.ts';
 import {
     recordALInboundAdmissionOutcome,
@@ -41,10 +46,10 @@ import {
 } from '../al-inbound-runtime-diagnostics.ts';
 import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
 import {
+    AL_INBOUND_HAND_ON_BATCH_AGE_MS,
     AL_INBOUND_WORK_LEASE_MS,
     assertALInboundWorkCarrier,
     decodeALInboundWorkEntry,
-    resolveALInboundWorkDueAtMs,
     toALInboundWorkKey,
     toALInboundWorkType,
     type ALPersistedInboundEffect
@@ -65,6 +70,7 @@ import {
     type ALInboundWorkSelector
 } from '../read-al-inbound-work-selection.ts';
 import type { ALInboundRotationPage } from './al-inbound-rotation-page.ts';
+import { toALInboundSuccessionResult } from './claim-al-inbound-ordered-successor.ts';
 import {
     AL_INBOUND_ROTATION_WINDOW_UNOPENED,
     computeALInboundRotationWindow,
@@ -120,7 +126,7 @@ export class ALInboundStoreLane {
     private readonly delivery: ALInboundAdmittedDelivery;
     private readonly gapRenewal: ALInboundGapRenewal;
     private readonly workSelector: ALInboundWorkSelector;
-    private readonly work: ALWorkHandler;
+    private readonly work: ALWorkHandler<ALInboundOrderedDelivery.Position>;
     private readonly storageRecovery: ALStorageRecoveryReporter | undefined;
     private readonly removeForeignCommitListener: (() => void) | undefined;
     private nextEvictionAtMs = Number.NEGATIVE_INFINITY;
@@ -146,6 +152,7 @@ export class ALInboundStoreLane {
         });
         this.workSelector = createALInboundWorkSelector({
             delivery: this.delivery,
+            admissionStore: input.stores.admissionStore,
             namespace: input.stores.admissionStore.namespace,
             // Selection schedules work; delivery rechecks authority with the strict runtime clock.
             nowMs: () => this.dependencies.workClock.nowMs(),
@@ -198,20 +205,32 @@ export class ALInboundStoreLane {
         );
     }
 
+    /**
+     * Attempts the admission again at once while its write is lost (`retryALInboundLostWrite`), under the source and
+     * the authorization its caller read for this call: for a data message that authorization is a function of the
+     * envelope, the source and this runtime's own peer id, so a fresh read would answer the same. A lane disposed before
+     * a later attempt's shutdown check, which follows its store read, answers `disposed`, as an arrival during disposal
+     * does, and the earlier lost write is not retained; disposed after that check, the attempt either commits or loses
+     * its own write, which is then retained.
+     */
     private async admitDataInStore(
         msg: ALMessage,
         source: ALInboundMessageRuntime.Source,
         planIncomingMessage: ALInboundPlanner
     ): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>> {
-        const attempt = await this.admission.attempt(msg, source, planIncomingMessage);
+        const attempt = await retryALInboundLostWrite({
+            attempt: () => this.admission.attempt(msg, source, planIncomingMessage),
+            isLostWrite: (answer) => !this.disposed && answer.right?.kind === 'conflict'
+        });
         if (attempt.left) {
             return Either.ofLeft(attempt.left);
         }
         const result = attempt.right!;
-        if (result.kind === 'conflict') {
-            // Every conflicted admission is retained, a dropped one included: a bundle that writes nothing never
-            // meets the fence, so the rolled-back one carried rows or effects — a NACK among them — that its
-            // replay plans afresh against the winner. Only a retention that left a claimable row is announced —
+        if (result.kind !== 'completed') {
+            // An admission that lost every attempt's write, or that waits for its first delivery, is retained, a
+            // dropped one included: a bundle that writes nothing never meets the fence, so the rolled-back one carried
+            // rows or effects — a NACK among them — that its replay plans afresh against the winner. A lane being
+            // disposed makes no further attempt. Only a retention that left a claimable row is announced —
             // `pending-admission`, whether this call wrote the row or found one a previous attempt wrote; a
             // message past its deadline is rejected before the write, or as a row written already expired; and a
             // row in a terminal status holds no work for the worker.
@@ -391,7 +410,7 @@ export class ALInboundStoreLane {
                 startedAtMs: event.startedAtMs,
                 claimedEffectIds: runOrder?.batchStartedAtMs === event.startedAtMs ? runOrder.effectIds : [],
                 deferred: toOldestFirstALInboundDeferredEffects(this.workSelector.getUnreservedDue()),
-                promoted: this.workSelector.getPromotedCount()
+                promoted: this.workSelector.getHandOnCount()
             });
         }
         catch { /* Optional diagnostics cannot change mandatory work. */ }
@@ -429,7 +448,7 @@ export class ALInboundStoreLane {
         claim: ALWorkClaim,
         batchStartedAtMs: number,
         deferObservation: ALWorkObservationDeferral | undefined
-    ): Promise<ALWorkOutcome> {
+    ): Promise<ALWorkClaimResult<ALInboundOrderedDelivery.Position>> {
         const effect = decodeALInboundWorkEntry(claim.entry, this.input.stores.admissionStore.namespace);
         assertALInboundWorkCarrier(effect, this.dependencies.carrier);
         this.recordClaimStarted(batchStartedAtMs, effect.effectId);
@@ -445,9 +464,10 @@ export class ALInboundStoreLane {
             claimStartedAtMs: startedAtMs,
             defer: deferObservation
         });
-        let result: ALWorkOutcome['status'] | undefined;
+        let settled: ALWorkOutcome['status'] | undefined;
         try {
-            const outcome = await this.runInboundEffect(effect, evidence);
+            const result = await this.runInboundEffect(effect, evidence);
+            const outcome = toALWorkOutcome(result);
             this.recordClaimSettled({
                 claim,
                 effect,
@@ -456,11 +476,11 @@ export class ALInboundStoreLane {
                 batchStartedAtMs,
                 startedAtMs
             });
-            result = outcome.status;
-            return outcome;
+            settled = outcome.status;
+            return result;
         }
         finally {
-            evidence?.publishClaim(result ?? 'threw');
+            evidence?.publishClaim(settled ?? 'threw');
         }
     }
 
@@ -474,7 +494,9 @@ export class ALInboundStoreLane {
 
     private recordClaimSettled(settled: ALInboundClaimSettlement): void {
         try {
-            const dueAtMs = resolveALInboundWorkDueAtMs(settled.claim.entry);
+            // A reservation clears the retry stamp, so a claimed row that had been retried answers from when it was
+            // written; the wait a batch reports precisely is the one read before the reservation.
+            const dueAtMs = resolveALWorkEntryDueAtMs(settled.claim.entry);
             this.dependencies.diagnostics?.({
                 kind: 'claim-settled',
                 lane: this.input.lane,
@@ -518,7 +540,7 @@ export class ALInboundStoreLane {
     private async runInboundEffect(
         effect: ALPersistedInboundEffect,
         evidence: ALInboundAcknowledgementEvidence | undefined
-    ): Promise<ALWorkOutcome> {
+    ): Promise<ALWorkClaimResult<ALInboundOrderedDelivery.Position>> {
         const payload = effect.payload;
         if (payload.kind === 'admit-message') {
             const replayed = await this.admission.replay(payload);
@@ -537,9 +559,9 @@ export class ALInboundStoreLane {
         if (payload.kind === 'renew-gap') {
             return await this.renewGap(effect, payload);
         }
-        return {
-            status: await this.delivery.deliver(effect, this.workSelector.getDeliveryObservation(effect.effectId))
-        };
+        return toALInboundSuccessionResult(
+            await this.delivery.deliver(effect, this.workSelector.getDeliveryObservation(effect.effectId))
+        );
     }
 
     /**
@@ -622,9 +644,12 @@ export class ALInboundStoreLane {
         return handedOver?.kind === 'storage-unavailable' ? { status: 'retry' } : replayed.outcome;
     }
 
-    private createWorkHandler(workPort: ALWorkQueuePort, workType: string): ALWorkHandler {
+    private createWorkHandler(
+        workPort: ALWorkQueuePort,
+        workType: string
+    ): ALWorkHandler<ALInboundOrderedDelivery.Position> {
         const { input, dependencies } = this;
-        return new ALWorkHandler({
+        return new ALWorkHandler<ALInboundOrderedDelivery.Position>({
             workerId: input.workerId,
             port: workPort,
             queueEngine: dependencies.queueEngine,
@@ -637,7 +662,10 @@ export class ALInboundStoreLane {
             // refreshes -- so every engine pass walks the rotation again: no answer stands.
             readinessMemoryMs: AL_WORK_PROBE_EVERY_ROUND,
             selectReady: (port, pageSize) => this.selectInboundWork(port, pageSize),
-            claimSuccessor: (port, completed) => this.workSelector.claimPromotedRelease(port, completed),
+            claimSuccessor: {
+                claim: (port, position) => this.workSelector.claimOrderedSuccessor(port, position),
+                untilBatchAgeMs: AL_INBOUND_HAND_ON_BATCH_AGE_MS
+            },
             batchObservations: dependencies.diagnostics?.acknowledgementCapture?.batchObservations,
             runClaim: (claim, batchStartedAtMs, defer) => this.runInboundClaim(claim, batchStartedAtMs, defer),
             diagnostics: (event) => this.recordWorkDiagnostics(event),
@@ -695,7 +723,7 @@ function createALInboundLaneControlAdmission(
 }
 
 function isALInboundRetryDueAfter(entry: ResourceEntry, nowMs: number): boolean {
-    return entry.status === EntityStatus.RETRY && resolveALInboundWorkDueAtMs(entry) > nowMs;
+    return entry.status === EntityStatus.RETRY && resolveALWorkEntryDueAtMs(entry) > nowMs;
 }
 
 function toALInboundRetryDueAt(entry: ResourceEntry, nowMs: number): ResourceEntry {

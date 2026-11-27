@@ -188,8 +188,9 @@ the deadline, and the dedup window, which the deadline now floors (section 5).
 ### 7.1 Cost model
 
 In the browser, a durable decision costs its IndexedDB operations times the main-thread latency of
-each operation. No queue or lock orders a sender's commits: a commit that loses the sender-version
-fence to another reads and writes again, up to three attempts, so contention costs reads, not waits.
+each operation. No queue or lock orders a sender's commits: a commit that loses a fence it took, its
+message's for an unordered send and its sender's too for one on an ordering track or under a
+supersedence key, reads and writes again, up to three attempts, so contention costs reads, not waits.
 
 | Fact                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Evidence                                                                                             | Label                        |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- | ---------------------------- |

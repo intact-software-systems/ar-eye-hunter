@@ -84,7 +84,6 @@ was measured again.
 | `playground/alm/alm-qos-product-plan.md`              | Durability tiers and storage budgets                       | Delivered (P1, I2a, I2b); four later outcomes open             |
 | `playground/alm/alm-first-hosted-campaign-targets.md` | Targets of the first hosted campaign (D643)                | Ruled; not started                                             |
 | `plans/backlog.md`                                    | Future outcomes, 229 lines, most of them ALM               | Current                                                        |
-| `plans/active/alm-crash-surviving-receipt.md`         | Design of #885, on its branch only                         | Built; status line stale                                       |
 | Pull request #885                                     | The crash-surviving receipt                                | Built, draft, body stale; `main` `704a01a` merged at `4265b1d` |
 | Pull request #912                                     | `durable-takeover` lane cell, D763                         | Merged                                                         |
 | Pull request #922                                     | The carrier matrix (T4)                                    | Merged                                                         |
@@ -215,8 +214,10 @@ and the head that merged adds the merge of `main` after #923 and one README sent
 holds what its reference set shows (R1) and what building it found on `main` (R8, R15 to R19; G9
 in section 5.4). As merged the cell offered ordered sends only. It has since gained a required
 `--ordering` and can offer either ordered or unordered sends, and its README holds one reference
-set of each ordering, measured apart. Not built: a run on #885's tree,
-a hosted or multi-process run, a window longer than 20 s, and a topic declared `fanout: 'outbox'`.
+set of each ordering, measured apart on `main`. On #885's tree its instances are built on the
+receipt record, as the API's are there, and one run of ordered sends there is in R1. Not built:
+either reference set on #885's tree, a hosted or multi-process run, a window longer than 20 s,
+and a topic declared `fanout: 'outbox'`.
 
 ## 5. What remains
 
@@ -256,7 +257,8 @@ the evidence level that pull request gives it, in brackets, and each class is a 
 
 Notes on the rows that need them:
 
-- **R1.** Measured on `main` by the cell of #927: three API WS server instances in one
+- **R1.** Measured on `main`, the build before the durable receipt record, by the cell of #927:
+  three API WS server instances in one
   process on one PostgreSQL, the real router, a fixed-audience authorizer and an open-loop load
   (`apps/api-v1/scripts/perf/alm-room-send/` and its README). The
   reference set is 16 runs: five publishers at two sends a second for 20 s unless stated, observed
@@ -272,6 +274,21 @@ Notes on the rows that need them:
   - The single event loop does not explain delays of tens of seconds: in the five-publisher runs
     its lag stays at or under 9.2 ms at the 99th percentile while offering and 3.8 ms over the
     tail.
+
+  - On #885's tree one run at +5 ms nominal (`--ordering=ordering-key`, five publishers, two a
+    second for 20 s, the client stand-in, a pool of 5; 2026-11-27, a 1-minute load of 2.2 to 3.9,
+    another machine than the reference set's) keeps up: 2,800 of 2,800 copies written in order, the first write at p50 0.22 s and p99 0.74 s after the due time, 200
+    of 200 receipts complete (p50 0.70 s and p99 1.31 s after the offer), no send handed twice, no
+    NACK or repair request, no resend. n is 1. That tree holds several changes beyond `main` on
+    this path, and one run does not separate them: the durable receipt record the cell's
+    instances count in (D770 to D779); a receipt commit fenced on its own message's version, not
+    the server's sender version (D780); `admitted` written on the admitting socket (D781); an
+    ordered completion guarded on its position and its slot (D783); a lost inbound write tried
+    again at once (D784); and the batch that completes an ordered delivery handing on its track's
+    next one (D785). The receipt record README's own runs, a different harness, separate some of
+    them: they place the five-publisher receipt backlog in the server's sender-version fence
+    (D780) and the ordered stall in the inbound ordered delivery, not in the record
+    (`packages/shared/alm/receipt-record/README.md`, "Measured").
 
   So the defect predates #885. The limits: one process and one event loop, with no authorizer
   reads and no other traffic; "+5 ms" is nominal and a lower bound, on the delayed round trips
@@ -338,7 +355,9 @@ Notes on the rows that need them:
   it or the row expires
   (`packages/shared/services/ws-queue-box-server/ws-queue-box-server-cluster-publication.ts`). In
   the four five-publisher runs at +0 ms a publisher reads 1.3 to 2.1 `admitted` frames a send.
-  The path is not read on #885's tree.
+  On #885's tree the admitting instance writes `admitted` to the origin's socket and stores it as
+  a row only when no socket there took it; the terminal receipt still travels as a row. In its one
+  run at +5 ms a publisher read 1.0 `admitted` and 2.6 `complete` frames a send.
 - **R18.** [Probe, one run; cause not verified.] Under +5 ms, admissions on one sender track
   conflict, and retained admissions stop being replayed well short of their 20 allowed attempts (4
   of 22 retained admissions in that run). It sits beside D784's second cause, so Slice 2 reads it.
@@ -775,7 +794,7 @@ backlog lines gone.
 **Slice 2: ordered room sends keep up under load (R1, D784).** Its own pull request, test-first,
 on a tree that holds #885 and #927. The measurement is the cell of #927; the slice builds none.
 
-- Run the reference set of #927 on that tree. It has not run there. D780 and D781 change what a
+- Run the reference set of #927 on that tree. One run of it has run there (R1); the set has not. D780 and D781 change what a
   sender hears on admission, and the titles of #885's commits after `8dece84` say a lost inbound
   write is tried again at once (section 4). The run says how much of R1, R18 and R19 that tree
   still shows.
@@ -812,8 +831,9 @@ planned here. The two meet in three places:
   unordered path with a counter in the payload. The cell of #927 offered ordered sends only; it
   can now offer either ordering on the same instances, latency wrappers and report, with the
   send's number in the payload under both (`--ordering`, its README). Its unordered reference set
-  on `main` wrote every copy in all sixteen runs; at +5 ms a receipt completed about 30 s after its
-  offer at the median (its README). Which harness that slice uses is that plan's choice.
+  on `main`, the build before the durable receipt record, wrote every copy in all sixteen runs; at
+  +5 ms a receipt completed about 30 s after its offer at the median (its README). No unordered
+  run of the cell has been made on #885's tree. Which harness that slice uses is that plan's choice.
 - One of ruling 6's choices refuses a browser send with `orderingKey`. That plan says the choice
   removes the stall it started from, which is R1. Decision 18 asks how Slice 2's levers and that
   ruling are ordered.

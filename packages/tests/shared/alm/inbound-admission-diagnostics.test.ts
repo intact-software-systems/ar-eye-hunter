@@ -13,7 +13,8 @@ import {
     createInboundTestRuntime,
     createInboundTestStores,
     INBOUND_TEST_SENDER_PEER_ID,
-    setNextInboundCommitConflicted,
+    restoreInboundWritesOnRetention,
+    setNextInboundAdmissionParked,
     type InboundTestRuntime,
     type InboundTestStorage
 } from './inbound-runtime-test-fixture.ts';
@@ -287,7 +288,8 @@ it.each(
         const message = createInboundTestMessage({ msgId: `retained-${outcome}`, traceId: `trace-retained-${outcome}` });
 
         await runtime.ready();
-        setNextInboundCommitConflicted(stores.admissionStore);
+        // Every attempt's write of the arrival is lost, so the claim settled is the retained admission's replay.
+        restoreInboundWritesOnRetention(stores, setNextInboundAdmissionParked(stores.admissionStore));
         const admitted = await runtime.admitIncomingMessage(
             message,
             { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID }
@@ -330,7 +332,8 @@ it('an expired retained admission states rejected / expired once', async () => {
     const message = createInboundTestMessage({ msgId: 'retained-expired', traceId: 'trace-retained-expired' });
 
     await runtime.ready();
-    setNextInboundCommitConflicted(stores.admissionStore);
+    // Every attempt's write of the arrival is lost, so the expiry is met by the retained admission's replay.
+    restoreInboundWritesOnRetention(stores, setNextInboundAdmissionParked(stores.admissionStore));
     const admitted = await runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID });
 
     expect(admitted.right).toEqual({ kind: 'pending-admission' });

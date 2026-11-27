@@ -17,13 +17,10 @@ import { toAppInboxEntryCompletionAwaitability } from '../app-inbox/app-inbox-co
 import { isAppInboxRetryableConflict } from '../app-inbox/app-inbox-error-classification.ts';
 import { AppInboxDequeuePassTiming } from '../app-inbox/handler/app-inbox-dequeue-pass-timing.ts';
 import { validateRtcSignalingMessage } from '../communication/decode-rtc-signaling-route.ts';
-import { isInstanceLocalRtcSignal } from '../communication/is-instance-local-rtc-signal.ts';
 import { nowMs } from '../observability/timing.ts';
 import { installAppInboxCompletionNoticeSubscriber } from '../queue-pubsub/app-inbox-completion-notice.ts';
 import { installLiveWsNoticeSubscriber, sendReceivedLiveWsNotice } from '../queue-pubsub/live-ws-notice-subscriber.ts';
 import { installQueueBoxPubSubBridge } from '../queue-pubsub/queue-box-pub-sub-bridge.ts';
-import { installRelayedAckNoticeSubscriber } from '../queue-pubsub/relayed-ack-notice-subscriber.ts';
-import { createRelayedAckPublisher } from '../queue-pubsub/relayed-ack-notice.ts';
 import { createWsServerTargetResolver } from '../websocket/targets/create-ws-server-target-resolver.ts';
 import { initialiseRallarServerCacheRepositories } from './cache-repositories.ts';
 import type {
@@ -99,12 +96,6 @@ export function createRallarMiddlewareInfrastructure(
             targetResolver,
             wsQBoxServerService
         }),
-        options.relayedAckNotices
-            ? installRelayedAckNoticeSubscriber({
-                ...options.relayedAckNotices,
-                acceptRelayedAck: (message, publisherId) => wsQBoxServerService.acceptRelayedAck(message, publisherId)
-            })
-            : Promise.resolve(),
         installMiddlewareAppInboxCompletionNoticeSubscriber(options)
     ]).then(() => undefined);
 
@@ -189,8 +180,9 @@ function createMiddlewareWsQueueBoxServer(
         readAuthenticatedConnectionScope: options.readAuthenticatedConnectionScope,
         inboundStores: options.inboundStores,
         inboundVolatileStores: options.inboundVolatileStores,
-        keepsVolatileMessageInMemory: options.relayedAckNotices === undefined ? undefined : isInstanceLocalRtcSignal,
+        keepsVolatileMessageInMemory: options.keepsVolatileMessageInMemory,
         outboundStores: options.outboundStores,
+        receiptRecordStores: options.receiptRecordStores,
         dequeueResilience: options.resilience.outbox,
         deliveryDiagnostics: options.wsDeliveryDiagnostics,
         outboundDiagnostics: options.wsOutboundDiagnostics,
@@ -199,9 +191,6 @@ function createMiddlewareWsQueueBoxServer(
         receiptObserver: options.wsReceiptObserver,
         dequeueTiming: options.wsDequeueTiming,
         authorizeInboundMessage: authorizeMiddlewareALIngress,
-        publishRelayedAck: options.relayedAckNotices
-            ? createRelayedAckPublisher(options.relayedAckNotices)
-            : undefined,
         forwardsRoomScopedMessages: false
     });
 }

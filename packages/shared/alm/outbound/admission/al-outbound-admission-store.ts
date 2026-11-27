@@ -53,7 +53,6 @@ import {
     type CreateALOutboundControlAdmissionInput
 } from '../control/al-outbound-control-admission.ts';
 import type { ALOutboundReceiptAdmissionSurface } from '../control/compute-al-outbound-receipt-admission.ts';
-import { toALOutboundOutsideAudienceCommit } from '../control/to-al-outbound-outside-audience-commit.ts';
 import { writeALOutboundTimeoutCompletions } from '../control/write-al-outbound-timeout-completions.ts';
 import type { ALOutboundFirstHopWaitSnapshot } from '../first-hop/compute-al-outbound-first-hop-wait.ts';
 import type { ALOutboundEndedReason } from '../lane/al-outbound-send-controls.ts';
@@ -538,16 +537,6 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
         input: { trackKey: string; seq: number; msgId: string; }
     ) => Promise<'deleted' | 'absent' | 'other-message' | 'conflict'>;
 
-    /**
-     * Records recipients the server sent its own message nothing outside the audience of its pending receipt, under the
-     * origin's version fence: `absent` when no receipt is pending (none, or one already complete), `committed` without
-     * a write when every recipient is already outside.
-     */
-    readonly commitOutsideAudience: (
-        receipt: ALOutboundPendingAckRef,
-        recipientPeerIds: readonly string[]
-    ) => Promise<'committed' | 'conflict' | 'absent'>;
-
     /** The receipt state in its own session; only tests read it. */
     readonly readReceiptState: (receipt: ALOutboundPendingAckRef) => Promise<ALOutboundPendingAckSnapshot | undefined>;
 
@@ -573,7 +562,10 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
         observation?: ALOutboundCommitObservation<TPrepared>
     ) => Promise<'committed' | 'conflict' | 'expired'>;
 
-    /** Commits bundles decided against one read of the version of one sender under one version fence. */
+    /**
+     * Commits as one write bundles of one sender that take one fence: a group that fences the sender was decided against
+     * one read of its version, which the write fences once; a group that fences no sender writes no sender version.
+     */
     readonly commitBundles: (
         bundles: readonly ALOutboundCommitBundle<TPrepared>[]
     ) => Promise<'committed' | 'conflict' | 'expired'>;
@@ -608,13 +600,6 @@ export function createVolatileALOutboundAdmissionStore<TPrepared>(
 interface ALOutboundPairAdmissionStoreInput<TPrepared> extends CreateALOutboundAdmissionStoreInput<TPrepared> {
     readonly durability: ALStoreDurability;
 }
-
-/** A message that expired before its receipt's outside class was written has no receipt left to record in. */
-const OUTSIDE_AUDIENCE_COMMIT_RESULTS = {
-    committed: 'committed',
-    conflict: 'conflict',
-    expired: 'absent'
-} as const satisfies Record<'committed' | 'conflict' | 'expired', 'committed' | 'conflict' | 'absent'>;
 
 class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdmissionStore<TPrepared> {
     readonly namespace: string;
@@ -828,29 +813,6 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         }
     }
 
-    async commitOutsideAudience(
-        receipt: ALOutboundPendingAckRef,
-        recipientPeerIds: readonly string[]
-    ): Promise<'committed' | 'conflict' | 'absent'> {
-        const surface = await this.backend.readWithin(async (session) => {
-            const [clientRecord, messageVersion] = await Promise.all([
-                this.reads.readClientRecord(session, receipt.originPeerId),
-                this.reads.readMessageVersion(session, receipt)
-            ]);
-            return {
-                clientRecord,
-                messageVersion,
-                pending: await this.reads.readPendingAck(session, receipt),
-                stored: await this.reads.readStoredMessage(session, receipt.msgId)
-            };
-        });
-        const commit = toALOutboundOutsideAudienceCommit<TPrepared>({ ...surface, receipt, recipientPeerIds });
-        if (commit.status !== 'write') {
-            return commit.status;
-        }
-        return OUTSIDE_AUDIENCE_COMMIT_RESULTS[await this.commitBundle(commit.bundle)];
-    }
-
     async readPendingAck(receipt: ALOutboundPendingAckRef): Promise<ALOutboundPendingAckSnapshot | undefined> {
         return await this.backend.readWithin((session) => this.reads.readPendingAck(session, receipt));
     }
@@ -899,8 +861,9 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
     }
 
     /**
-     * Bundles decided against one read of the version of one sender commit as one: one snapshot, one
-     * write that fences that version once and the own rows of every bundle, and one version bump. Two
+     * Bundles of one sender that take one fence commit as one: one snapshot and one write of the own rows and message
+     * version of every bundle. A group that fences the sender was decided against one read of its version, and its
+     * write fences that version once and bumps it once; a group that fences no sender writes no sender version. Two
      * bundles that write the same row were each decided without the write of the other, which sequential
      * commits never are, so that group answers `conflict` before it writes.
      */
@@ -1003,16 +966,14 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
     }
 
     /**
-     * `candidates` is one non-empty group: every bundle shares the sender and the version it expects. Its versions keep
-     * the expiry its rows were computed with at `nowMs`.
+     * `candidates` is one non-empty group: every bundle shares the sender and the sender fence, and when they fence the
+     * sender, the version they expect. Its versions keep the expiry its rows were computed with at `nowMs`.
      */
     private async writeCommit(
         candidates: readonly ALOutboundCommitCandidate<TPrepared>[],
         nowMs: number
     ): Promise<'committed' | 'conflict' | 'expired'> {
         const { bundle, versionExpireAt } = candidates[0]!;
-        const version = { senderId: bundle.senderId, version: (bundle.expectedVersion ?? 0) + 1 };
-        const versionKey = toALOutboundVersionKey(this.namespace, bundle.senderId);
         const canonicalWrites = candidates.flatMap((candidate) => candidate.canonicalWrites);
         const effects = candidates.flatMap((candidate) => candidate.effects);
         const mutations = candidates.flatMap((candidate) => candidate.mutations);
@@ -1038,7 +999,11 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
                 await this.mutations.writeStateWrites(tx, mutations);
                 await writeALOutboundTimeoutCompletions(tx, this.namespace, endedTimeoutEffectIds);
                 if (bundle.fencesSender) {
-                    await tx.setFence(versionKey, version, versionExpireAt);
+                    await tx.setFence(
+                        toALOutboundVersionKey(this.namespace, bundle.senderId),
+                        { senderId: bundle.senderId, version: (bundle.expectedVersion ?? 0) + 1 },
+                        versionExpireAt
+                    );
                 }
                 for (const candidate of candidates) {
                     await this.mutations.writeMessageVersion(tx, candidate.bundle.message, nowMs);
@@ -1068,8 +1033,8 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
 
     /**
      * Every fence the commit owes, re-read inside the write and all at once: the one sender version of
-     * the group, then the fences of each bundle. The version decides first and the bundles in order
-     * after it, so the read order never changes which fence leaves the write.
+     * the group when the group fences it, then the fences of each bundle. That version decides first and
+     * the bundles in order after it, so the read order never changes which fence leaves the write.
      */
     private async assertCurrentCommitFence(
         tx: ALAdmissionWorkWriteContext,
@@ -1137,18 +1102,18 @@ function hasALOutboundBundleWrites<TPrepared>(bundle: ALOutboundCommitBundle<TPr
         bundle.endedTimeoutEffectIds.length > 0;
 }
 
-/** Every bundle of one group was decided against the same read of the version of one sender. */
+/** Every bundle of one group takes one sender's one fence; a group that fences the sender read one version of it. */
 function assertALOutboundBundleGroup<TPrepared>(bundles: readonly ALOutboundCommitBundle<TPrepared>[]): void {
     const [first] = bundles;
     if (
         first !== undefined &&
         bundles.some((bundle) =>
-            bundle.senderId !== first.senderId || bundle.expectedVersion !== first.expectedVersion ||
-            bundle.fencesSender !== first.fencesSender
+            bundle.senderId !== first.senderId || bundle.fencesSender !== first.fencesSender ||
+            (first.fencesSender && bundle.expectedVersion !== first.expectedVersion)
         )
     ) {
         throw new TypeError(
-            'An outbound bundle group must share one sender, one expected version and one sender fence'
+            'An outbound bundle group must share one sender and one sender fence, and a sender-fenced one one expected version'
         );
     }
 }

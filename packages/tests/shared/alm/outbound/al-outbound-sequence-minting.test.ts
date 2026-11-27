@@ -22,13 +22,12 @@ import { computeALOutboundSequenceMint } from '@shared/alm/outbound/admission/se
 import { toALOutboundMintingPlan } from '@shared/alm/outbound/admission/sequencing/to-al-outbound-minting-plan.ts';
 import { toALOutboundCanonicalKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import type { ALOutboundDispatchPlan, ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { AL_OUTBOUND_COMMIT_ATTEMPTS } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
 
 import {
-    commitCompetingOutboundSend,
     createDefaultOutboundTestRuntime,
     createDefaultOutboundTestStores,
     createVolatileOutboundTestStores,
+    loseOutboundCommitAttempts,
     OUTBOUND_TEST_SEND_PLANNER,
     readOutboundTestAdmission,
     runOutboundWorkTask,
@@ -135,7 +134,9 @@ describe('outbound sequence minting', () => {
         const { runtime, sent } = createMintingRuntime(stores);
         const late = createRoundEvent('late', { orderingKey: 'game-1', epoch: 1 });
         const early = createRoundEvent('early', { orderingKey: 'game-1', epoch: 1 });
-        interleaveAfterEveryAttemptDecisionRead(stores, async () => {
+        // The earlier frame of the track commits before the first attempt, and another commit of the message before
+        // each later one, so every attempt loses a fence it took and the admission retains its request.
+        loseOutboundCommitAttempts(stores.admissionStore, async (commit) => {
             const bundle = await readOutboundTestAdmission({
                 store: stores.admissionStore,
                 message: early,
@@ -143,7 +144,7 @@ describe('outbound sequence minting', () => {
                 clock: { nowMs: () => Date.now() },
                 planner: MINTING_PLANNER
             });
-            expect(await stores.admissionStore.commitBundle(bundle)).toBe('committed');
+            expect(await commit(bundle)).toBe('committed');
         });
 
         const result = await runtime.enqueueIfAbsent(late);
@@ -169,7 +170,9 @@ describe('outbound sequence minting', () => {
         const { runtime } = createMintingRuntime(stores);
         const late = createRoundEvent('late', { orderingKey: 'game-1', epoch: 1 });
         const early = createRoundEvent('early', { orderingKey: 'game-1', epoch: 1 });
-        interleaveAfterEveryAttemptDecisionRead(stores, async () => {
+        // The earlier frame of the track commits before the first attempt, and another commit of the message before
+        // each later one, so every attempt loses a fence it took and the admission retains its request.
+        loseOutboundCommitAttempts(stores.admissionStore, async (commit) => {
             const bundle = await readOutboundTestAdmission({
                 store: stores.admissionStore,
                 message: early,
@@ -177,7 +180,7 @@ describe('outbound sequence minting', () => {
                 clock: { nowMs: () => Date.now() },
                 planner: MINTING_PLANNER
             });
-            expect(await stores.admissionStore.commitBundle(bundle)).toBe('committed');
+            expect(await commit(bundle)).toBe('committed');
         });
         expect((await runtime.enqueueIfAbsent(late)).verdict.kind).toBe('pending');
 
@@ -442,28 +445,6 @@ async function enqueueMintedSeq(
     const result = await runtime.enqueueIfAbsent(message);
     expect(result.verdict.kind).toBe('admitted');
     return result.message.ordering?.seq;
-}
-
-/**
- * Lets `interleaved` commit right after the next decision read, and a send of no copies after each of that commit's
- * attempts that follow, so every attempt's commit finds the sender moved and the admission retains its request.
- */
-function interleaveAfterEveryAttemptDecisionRead(stores: OutboundTestStores, interleaved: () => Promise<void>): void {
-    const store = stores.admissionStore;
-    const readOutgoingDecision = store.readOutgoingDecision.bind(store);
-    const commitBundle = store.commitBundle.bind(store);
-    let attempts = 0;
-    vi.spyOn(store, 'readOutgoingDecision').mockImplementation(async (input, decide) => {
-        const observed = await readOutgoingDecision(input, decide);
-        attempts += 1;
-        if (attempts === 1) {
-            await interleaved();
-        }
-        else if (attempts <= AL_OUTBOUND_COMMIT_ATTEMPTS) {
-            await commitCompetingOutboundSend(store, commitBundle, { senderId: input.msg.id.senderId, resourceId: `competing-send-${attempts}` });
-        }
-        return observed;
-    });
 }
 
 /** A clock that moves only when the test moves it, for every reader of the current time. */

@@ -587,7 +587,8 @@ Examples: `tests/api-v1/api-v1-cluster-instance-loss.json`,
 server that holds a subscriber's socket and reads how the receipt ends, and
 `tests/api-v1/api-v1-cluster-publisher-instance-loss.json`, which crashes the
 server that admitted a receipted broadcast and reads that the publisher,
-reconnected to a survivor, receives no terminal receipt for it.
+reconnected to a survivor, receives the complete receipt for it, counted by the
+survivors in the shared receipt record.
 
 ## Safe Transforms
 

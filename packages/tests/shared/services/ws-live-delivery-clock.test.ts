@@ -13,6 +13,7 @@ import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
 } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import { createInMemoryALReceiptRecordStores } from '@shared/alm/receipt-record/al-receipt-record-stores.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { createDefaultBackgroundTimers } from '@shared/resilience/timers.ts';
@@ -93,6 +94,40 @@ it('uses the injected clock for resolved-peer delivery and rejects the exact exp
     expect(fixture.first.sent).toHaveLength(1);
 });
 
+// Pins a live send that can say neither which connection it wrote nor what the native call did.
+it('answers each connection a live send wrote, with the native call it returned', () => {
+    const fixture = createClockFixture();
+    const live = new WsQueueBoxServerLiveDelivery({
+        socket: fixture.socket,
+        clock: fixture.clock,
+        targetResolution: new WsQueueBoxServerTargetResolution({
+            socket: fixture.socket,
+            targetResolver: {
+                requiresFrozenAudience: () => false,
+                resolvePeerRecipients: () => [{ peerId: 'first', connectionId: 'first' }, { peerId: 'first', connectionId: 'second' }]
+            }
+        }),
+        deliveryReporting: new WsQueueBoxServerDeliveryReporting({}),
+        readAuthenticatedConnectionScope: () => ({ scope: SCOPE, expiresAtEpochMs: 2000 })
+    });
+    vi.spyOn(fixture.second, 'send').mockImplementation(() => {
+        throw new Error('socket closing');
+    });
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    onTestFinished(() => {
+        vi.restoreAllMocks();
+    });
+
+    expect(live.sendToResolvedPeerWithEvidence({ peerId: 'first', message: createMessage(2000), inboundScope: SCOPE })).toEqual({
+        sentCount: 1,
+        writes: [
+            { connectionId: 'first', nativeCall: 'returned', written: true },
+            { connectionId: 'second', nativeCall: 'invoked', written: false }
+        ]
+    });
+    expect(fixture.first.sent).toHaveLength(1);
+});
+
 class LiveTestClock {
     epochMs = 1000;
 
@@ -137,6 +172,7 @@ function createClockService(fixture: LiveClockFixture): WsQueueBoxServerService 
             decodePrepared: decodeWsQueueBoxServerPreparedMessage,
             nowMs: () => fixture.clock.nowMs()
         }),
+        receiptRecordStores: createInMemoryALReceiptRecordStores('server', () => fixture.clock.nowMs()),
         dequeueResilience: createDefaultALOutboundDequeueResilience(),
         outboundDiagnostics: undefined,
         outboundSettlements: undefined,
@@ -145,7 +181,6 @@ function createClockService(fixture: LiveClockFixture): WsQueueBoxServerService 
         deliveryDiagnostics: undefined,
         authorizeInboundMessage: Either.ofRight,
         readAuthenticatedConnectionScope: () => ({ scope: SCOPE, expiresAtEpochMs: 2000 }),
-        publishRelayedAck: undefined,
         forwardsRoomScopedMessages: false
     });
     onTestFinished(() => service.dispose());

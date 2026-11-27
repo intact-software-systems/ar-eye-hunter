@@ -1,16 +1,11 @@
-import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '../../al-contracts/al-contract.ts';
+import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import {
-    AL_RECEIPT_DEADLINE_GRACE_MS,
     decodeALControlMessage,
-    newALReceiptControlMessage,
     type ALAckPayload,
+    type ALNackPayload,
     type ALReceiptPayload
 } from '../../al-contracts/al-control.ts';
-import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
-import {
-    decodePersistedALMessageValue,
-    type ALMessageRejection
-} from '../../al-contracts/al-message-persistence-validation.ts';
+import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import {
     normalizeALQosPolicy,
     resolveALMessageExpireAtMs,
@@ -18,10 +13,8 @@ import {
     type ALQosInputProvider
 } from '../../al-contracts/al-policy.ts';
 import { isALUnicastAddressedTo } from '../../al-contracts/is-al-unicast-addressed-to.ts';
-import { isALOwnWord } from '../../al-contracts/receipt-proof/al-receipt-proof.ts';
 import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
-import { DEFAULT_AL_EPHEMERAL_TTL_MS } from '../../alm/ALStoreRetention.ts';
-import { isALRecipientConfirmationAck } from '../../alm/delivery/is-al-recipient-confirmation-ack.ts';
+import type { ALOutboundPendingAckSnapshot } from '../../alm/al-runtime-state-stores.ts';
 import type { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
 import type {
     ALOutboundDispatchPlan,
@@ -29,78 +22,128 @@ import type {
     ALOutboundMessageRuntime
 } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundControlAdmissionResult } from '../../alm/outbound/control/read-al-outbound-recipient-proof.ts';
-import { isALOutboundReceiptComplete } from '../../alm/outbound/transition-al-outbound-pending-ack.ts';
-import { LatestRepository } from '../../cache/LatestRepository.ts';
-import { Either } from '../../resilience/Either.ts';
+import type { ALReceiptRecordRef } from '../../alm/receipt-record/al-receipt-record-keys.ts';
+import type {
+    ALReceiptRecordEndedHead,
+    ALReceiptRecordOpening
+} from '../../alm/receipt-record/al-receipt-record-rows.ts';
+import type { ALReceiptRecordStores } from '../../alm/receipt-record/al-receipt-record-stores.ts';
+import { ALReceiptRecordWorker } from '../../alm/receipt-record/al-receipt-record-worker.ts';
+import { ALReceiptRecord } from '../../alm/receipt-record/al-receipt-record.ts';
+import {
+    validateALReceiptRecordConfirmation,
+    type ALReceiptRecordConfirmationIssue,
+    type ALReceiptRecordConfirmationIssueCode
+} from '../../alm/receipt-record/validate-al-receipt-record-confirmation.ts';
+import {
+    validateALReceiptRecordOpening,
+    type ALReceiptRecordOpeningIssue
+} from '../../alm/receipt-record/validate-al-receipt-record-opening.ts';
+import type { Either } from '../../resilience/Either.ts';
 import type { InboxOutboxEngine } from '../inbox-outbox-engine.ts';
+import {
+    resolveWsQueueBoxServerHeadAbsentAck,
+    type WsQueueBoxServerHeadAbsentAck
+} from './receipt/resolve-ws-queue-box-server-head-absent-ack.ts';
+import {
+    isWsQueueBoxServerCountableAck,
+    toWsQueueBoxServerAckConfirmation,
+    toWsQueueBoxServerCountedAck,
+    WS_QUEUE_BOX_SERVER_REJECTED_COUNT,
+    type WsQueueBoxServerCountedAck
+} from './receipt/to-ws-queue-box-server-counted-ack.ts';
+import { toWsQueueBoxServerLiveReceiptTransports } from './receipt/to-ws-queue-box-server-live-receipt-transport.ts';
+import {
+    isWsQueueBoxServerOwnOutsideAudienceNack,
+    toWsQueueBoxServerOutsideAudienceConfirmation,
+    toWsQueueBoxServerUnrecordedOutsideConfirmations
+} from './receipt/to-ws-queue-box-server-outside-audience-confirmation.ts';
+import {
+    toWsQueueBoxServerOwnReceiptOpening,
+    type WsQueueBoxServerOwnPendingReceipt
+} from './receipt/to-ws-queue-box-server-own-receipt-opening.ts';
+import {
+    isWsQueueBoxServerHeadBackedAdmittedReceipt,
+    isWsQueueBoxServerReceiptEncodable,
+    toWsQueueBoxServerEndedReceipt,
+    toWsQueueBoxServerReceiptControlMessage,
+    toWsQueueBoxServerReceiptPayload,
+    type WsQueueBoxServerIssuedReceipt,
+    type WsQueueBoxServerReceiptSets
+} from './receipt/to-ws-queue-box-server-receipt-control.ts';
+import {
+    toWsQueueBoxServerCopyReceiptOpening,
+    toWsQueueBoxServerFrozenAudience,
+    toWsQueueBoxServerReceiptOpening,
+    type WsQueueBoxServerReceiptTerms
+} from './receipt/to-ws-queue-box-server-receipt-opening.ts';
 import type { WsServerRoomAudience } from './ws-queue-box-server-contracts.ts';
+import type { WsQueueBoxServerLiveDelivery } from './ws-queue-box-server-live-delivery.ts';
 import type { WsQueueBoxServerPreparedMessage } from './ws-queue-box-server-outbound-planning.ts';
-import { WsQueueBoxServerReceiptDeadlineIndex } from './ws-queue-box-server-receipt-deadline-index.ts';
 import {
     recordWsQueueBoxServerReceiptObservation,
+    toImmutableWsQueueBoxServerReceipt,
     toImmutableWsQueueBoxServerReceiptAck,
     toImmutableWsQueueBoxServerReceiptAggregate,
     toWsQueueBoxServerReceiptOutboxVerdict,
-    type WsQueueBoxServerReceiptAggregateFacts,
-    type WsQueueBoxServerReceiptCountSource,
-    type WsQueueBoxServerReceiptObservation,
     type WsQueueBoxServerReceiptObserver
 } from './ws-queue-box-server-receipt-observation.ts';
 
-/**
- * The longest the server holds a receipt aggregate in memory: the retention of the durable effect and
- * pending-control rows the same outbound owner keeps (`DEFAULT_AL_EPHEMERAL_TTL_MS`). The origin accepts
- * a terminal receipt until its own deadline plus the receipt grace, so an earlier `timed-out` still lands.
- */
-export const WS_QUEUE_BOX_SERVER_RECEIPT_WINDOW_MS = DEFAULT_AL_EPHEMERAL_TTL_MS;
+/** What one `open` answered. */
+type WsQueueBoxServerOpenedReceipt = Either<
+    ALReceiptRecord.InvalidOpening | ALReceiptRecord.Conflict,
+    ALReceiptRecord.View
+>;
 
-/**
- * The most receipt aggregates one server instance holds (D191). An admission that finds the cap reached
- * ends the oldest admitted aggregate as a passed deadline would, so churn cannot grow the set within the window.
- */
-export const WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES = 4096;
-
-interface WsQueueBoxServerReceiptAggregate extends WsQueueBoxServerReceiptAggregation.Admission {
-    readonly confirmedRecipientPeerIds: readonly string[];
-    /** Expected recipients whose ACK ended their hop delivering nothing: never confirmed, no longer owed. */
-    readonly outsideAudienceRecipientPeerIds: readonly string[];
-}
-
-interface WsQueueBoxServerReceiptCountObservation {
-    readonly ack: ALAckPayload;
+/** One ACK's count, as its `ack-count` observation states it. */
+interface WsQueueBoxServerCountObservationInput {
     readonly control: ALMessage['id'];
-    readonly source: WsQueueBoxServerReceiptCountSource;
-    /** The counted aggregate's trace, else the counted control's when no aggregate is live. */
-    readonly traceId: string;
-    readonly before: WsQueueBoxServerReceiptAggregateFacts | undefined;
-    readonly after: WsQueueBoxServerReceiptAggregateFacts | undefined;
+    readonly ack: ALAckPayload;
+    readonly counted: WsQueueBoxServerCountedAck;
     readonly countAtEpochMs: number;
-    readonly outcome: 'rejected' | 'partial' | 'complete';
 }
 
-interface WsQueueBoxServerReplayedRecipients {
-    readonly recipientPeerIds: readonly string[];
-    readonly neverSentRecipientPeerIds: readonly string[];
+interface WsQueueBoxServerAckRefusal {
+    readonly issues: readonly [
+        WsQueueBoxServerReceiptAggregation.AckValidationIssue,
+        ...WsQueueBoxServerReceiptAggregation.AckValidationIssue[]
+    ];
+    /** The deadline of the head the refusal read; absent when it read none. */
+    readonly deadlineAtMs: number | undefined;
 }
 
-interface WsQueueBoxServerReceiptAckValidationContext {
-    readonly nowMs: number;
-    readonly serverPeerId: string;
+/** A confirmation issue of a head still open; extending the ACK issue ties every such record code to a server guard. */
+interface WsQueueBoxServerOpenReceiptIssue extends WsQueueBoxServerReceiptAggregation.AckValidationIssue {
+    readonly code: Exclude<ALReceiptRecordConfirmationIssueCode, 'head-ended'>;
 }
 
-interface WsQueueBoxServerReceiptCountDecision {
-    readonly result: Either<ALMessageRejection, WsQueueBoxServerReceiptAggregation.CountedAck>;
-    readonly observation: Extract<WsQueueBoxServerReceiptObservation, { readonly kind: 'ack-count'; }> | undefined;
-}
+const NO_CONFIRMATIONS: WsQueueBoxServerReceiptSets = {
+    confirmedRecipientPeerIds: [],
+    outsideAudienceRecipientPeerIds: []
+};
+const ORIGIN_ADDRESSEE_MISMATCH: WsQueueBoxServerReceiptAggregation.AckValidationIssue = {
+    code: 'origin-addressee-mismatch',
+    message: 'AL acknowledgement is not addressed to the origin it names'
+};
+const UNPROVEN_SENDER: WsQueueBoxServerReceiptAggregation.AckValidationIssue = {
+    code: 'aggregate-absent',
+    message: 'AL acknowledgement names no message its origin admitted to this sender'
+};
+const ENDED_RECEIPT: WsQueueBoxServerReceiptAggregation.AckValidationIssue = {
+    code: 'aggregate-absent',
+    message: 'AL acknowledgement names no receipt this server aggregates'
+};
+/** The server's own refusal to open a receipt it could never answer: no receipt control can carry its largest form. */
+const UNENCODABLE_RECEIPT = {
+    code: 'receipt-not-encodable',
+    message: 'AL receipt control cannot carry the largest receipt of this opening'
+} as const;
 
 export namespace WsQueueBoxServerReceiptAggregation {
     export type AckGuard =
         | 'aggregate-absent'
         | 'origin-addressee-mismatch'
-        | 'sender-recipient-mismatch'
         | 'outside-frozen-audience'
-        | 'already-confirmed'
-        | 'already-outside'
         | 'deadline-expired'
         | 'never-sent';
 
@@ -111,40 +154,39 @@ export namespace WsQueueBoxServerReceiptAggregation {
 
     export interface ProtocolObservation {
         readonly stage: 'ingress-protocol' | 'runtime-protocol';
+        /** Absent when no receipt observer is wired. */
         readonly controlIdentity: ALMessage['id'] | undefined;
-    }
-
-    /**
-     * What the server froze when it admitted a `receiver` room message: the audience its receipt answers for, and the
-     * message's trace, which every receipt of it carries.
-     */
-    export interface Admission {
-        readonly msgId: string;
-        readonly originPeerId: string;
-        readonly traceId: string;
-        readonly expectedRecipientPeerIds: readonly string[];
-        readonly snapshotVersion: number;
-        readonly deadlineAtMs: number;
-        /** Expected recipients this server never sent the message: their own ACK cannot count. */
-        readonly neverSentRecipientPeerIds: readonly string[];
     }
 
     export interface Dependencies {
         readonly serverPeerId: string;
         readonly receiptObserver?: WsQueueBoxServerReceiptObserver;
         readonly clock: ALOutboundMessageRuntime.Clock;
+        readonly random: () => number;
         readonly newControlId: () => string;
         readonly qosProvider: ALQosInputProvider | undefined;
-        /** The engine the service's queues run on; the deadline sweep rides it as one more task. */
+        /** The engine the service's queues run on; the record's worker rides it. */
         readonly queueEngine: InboxOutboxEngine;
+        readonly recordStores: ALReceiptRecordStores;
         /**
-         * The service's outbound owner admitting one receipt as a durable `WS_OUTBOX` row, so its
-         * dequeue reaches the origin through the cluster publisher wherever the origin is connected.
+         * The audience the origin's message was admitted under, from the store that admitted it; undefined when no
+         * admission of it committed. It proves an ACK that finds no head and is the audience a re-sent copy opens with.
+         */
+        readonly readIngressAudience: (msgId: string, originPeerId: string) => Promise<readonly string[] | undefined>;
+        /**
+         * The service's outbound owner admitting one receipt as a durable `WS_OUTBOX` row, so its dequeue reaches the
+         * origin through the cluster publisher wherever the origin is connected. An `admitted` receipt with a head
+         * behind it goes to the origin's sockets here first, and is a row only when no socket here took it.
          */
         readonly enqueueOutbox: (
             message: ALMessage,
             plan: ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage>
         ) => Promise<ALOutboundEnqueueResult>;
+        /** Writes a control to the sockets this instance holds for a peer, with what each native call did. */
+        readonly liveDelivery: Pick<
+            WsQueueBoxServerLiveDelivery,
+            'sendToResolvedPeer' | 'sendToResolvedPeerWithEvidence'
+        >;
         /** The server's own outbound owner, which answers every control addressed to the server itself. */
         readonly acceptServerControl: (message: ALMessage) => Promise<ALOutboundControlAdmissionResult>;
         /**
@@ -153,6 +195,18 @@ export namespace WsQueueBoxServerReceiptAggregation {
          * `ack-timeout` retries, so a complete receipt ends its retransmission on every instance.
          */
         readonly acceptServerReceipt: (control: ALMessage) => Promise<ALOutboundControlAdmissionResult>;
+        /**
+         * The server's pending receipt row of a logically receipted message it sent, with the sent message; undefined
+         * for any other message, for a row already complete, and for a message that has ended, whose kept incomplete
+         * row it does not return. It proves an ACK that finds no head and an outside-audience NACK, and opens a head
+         * its dequeue did not.
+         */
+        readonly readOwnPendingReceipt: (msgId: string) => Promise<WsQueueBoxServerOwnPendingReceipt | undefined>;
+        /**
+         * The server's pending receipt row alone, of a logically receipted message it sent; undefined for any other
+         * message and for a row already complete. Its outside recipients are the ones a window counts outside.
+         */
+        readonly readOwnPendingAck: (msgId: string) => Promise<ALOutboundPendingAckSnapshot | undefined>;
     }
 
     export interface AdmittedMessage {
@@ -160,417 +214,563 @@ export namespace WsQueueBoxServerReceiptAggregation {
         readonly originPeerId: string;
         readonly roomAudience: WsServerRoomAudience | undefined;
         readonly acceptance: ALInboundMessageRuntime.Acceptance | undefined;
+        /** Expected recipients this server never sent the message (D708): `[]` at ingress. */
         readonly neverSentRecipientPeerIds: readonly string[];
-    }
-
-    export interface CountedAck {
-        readonly receipt: ALReceiptPayload | undefined;
-        /** The aggregate's message deadline, which the receipt row outlives by the receipt grace. */
-        readonly deadlineAtMs: number;
-        readonly traceId: string;
-    }
-
-    /** A receipt the server writes for its aggregate: the row outlives the message deadline by the receipt grace. */
-    export interface IssuedReceipt {
-        readonly receipt: ALReceiptPayload;
-        readonly deadlineAtMs: number;
-        readonly traceId: string;
-    }
-
-    export interface RecordedAdmission {
-        readonly admitted: ALReceiptPayload;
-        /** The `timed-out` receipt of the oldest aggregate, absent unless this admission found the cap reached. */
-        readonly evicted: IssuedReceipt | undefined;
     }
 }
 
 /**
- * The receipts of the `receiver` room messages this instance admitted, counted in memory (D37) and
- * answered to the origin as one durable outbox row per phase; each terminal receipt also settles the
- * server's own pending row for the message, so the receipt is the one settlement authority. It is also
- * the server's control router: a receiver ACK relayed for an origin is counted here, every other control
- * goes to the server's own outbound owner. An aggregate leaves when its audience is confirmed, its deadline
- * passes, or an admission finds the cap reached while it is the oldest admitted.
+ * The receipts of the `receiver` room messages the server admitted, counted in the receipt record every instance
+ * shares and answered to the origin as one durable outbox row per phase. An `admitted` receipt with a head behind it,
+ * which a re-sent copy is answered again from, goes to the origin's sockets on this instance first, and is a row only
+ * when no socket here took it; every other receipt is always a row. The terminal receipt is written by the
+ * record's ended work, on whichever instance claims it, and also settles the server's own pending row for the
+ * message. The server's own logically receipted publications are counted in the same record, opened from the
+ * server's pending row; their terminal receipt only settles that row, since the server is their origin. It is also
+ * the server's control router: a receiver ACK for an origin and an ACK of the server's own publication are counted
+ * here, every other control goes to the server's own outbound owner.
  */
 export class WsQueueBoxServerReceiptAggregation {
-    /**
-     * The deadline sweep ends an aggregate on time, and an admission at the cap takes the oldest itself to answer
-     * it, so the repository never drops one on its own: its TTL is above every deadline (the window), or a read
-     * after a deadline and before the sweep would drop the aggregate without its `timed-out` receipt.
-     */
-    readonly #aggregates = new LatestRepository<string, WsQueueBoxServerReceiptAggregate>({
-        ttlMs: WS_QUEUE_BOX_SERVER_RECEIPT_WINDOW_MS + AL_RECEIPT_DEADLINE_GRACE_MS,
-        maxEntries: WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES,
-        evictsPerWindow: 0
-    });
-    readonly #deadlines = new WsQueueBoxServerReceiptDeadlineIndex();
     readonly #dependencies: WsQueueBoxServerReceiptAggregation.Dependencies;
-    readonly #sweepTaskId: string;
+    readonly #record: ALReceiptRecord;
+    readonly #worker: ALReceiptRecordWorker;
 
     constructor(dependencies: WsQueueBoxServerReceiptAggregation.Dependencies) {
         this.#dependencies = dependencies;
-        this.#sweepTaskId = `${dependencies.serverPeerId}:receipt-sweep`;
-        dependencies.queueEngine.includeTask(this.#sweepTaskId, {
-            name: this.#sweepTaskId,
-            maxConcurrency: () => 1,
-            isWork: () => {
-                this.scheduleNextSweep();
-                return this.hasDueAggregate();
-            },
-            runnable: () => this.writeTimedOutReceipts(),
-            ongoingTasks: []
+        const { recordStores, clock } = dependencies;
+        this.#record = new ALReceiptRecord({ ...recordStores, nowMs: () => clock.nowMs() });
+        this.#worker = new ALReceiptRecordWorker({
+            record: this.#record,
+            stores: recordStores,
+            workerId: `${dependencies.serverPeerId}:receipt-record`,
+            queueEngine: dependencies.queueEngine,
+            clock,
+            random: dependencies.random,
+            writeEndedReceipt: (ended) => this.writeEndedReceipt(ended)
         });
     }
 
-    dispose(): void {
-        this.#dependencies.queueEngine.excludeTask(this.#sweepTaskId);
+    async dispose(): Promise<void> {
+        await this.#worker.dispose();
     }
 
-    /** The typed reason a relayed receiver ACK may not count, read against the live aggregate at ingress. */
-    readRelayedAckRejection(
+    /**
+     * The typed reason a receiver ACK may not count. Ingress checks only what needs no store; the runtime's check reads
+     * the record, and proves an ACK that finds no head against the admission its sender was sent.
+     */
+    async readRelayedAckRejection(
         ack: ALAckPayload,
-        observation?: WsQueueBoxServerReceiptAggregation.ProtocolObservation
-    ): ALMessageRejection | undefined {
+        observation: WsQueueBoxServerReceiptAggregation.ProtocolObservation
+    ): Promise<ALMessageRejection | undefined> {
         const nowMs = this.#dependencies.clock.nowMs();
-        const aggregate = this.#aggregates.readAt(toReceiptAggregateKey(ack.originPeerId, ack.ackedMsgId), nowMs);
-        const issues = validateWsQueueBoxServerReceiptAck(aggregate, ack, this.toAckValidationContext(nowMs));
-        if (issues.length === 0) {
+        const refusal: WsQueueBoxServerAckRefusal | undefined = ack.toPeerId !== ack.originPeerId
+            ? { issues: [ORIGIN_ADDRESSEE_MISMATCH], deadlineAtMs: undefined }
+            : observation.stage === 'runtime-protocol'
+            ? await this.readRecordRefusal(ack, nowMs)
+            : undefined;
+        if (refusal === undefined) {
             return undefined;
         }
-        const rejection: ALMessageRejection = {
-            code: 'unauthorized',
-            message: issues.map((issue) => issue.message).join('; ')
-        };
-        if (this.#dependencies.receiptObserver !== undefined && observation?.controlIdentity !== undefined) {
-            try {
-                recordWsQueueBoxServerReceiptObservation(this.#dependencies.receiptObserver, {
-                    kind: 'ack-rejection',
-                    serverPeerId: this.#dependencies.serverPeerId,
-                    controlMsgId: observation.controlIdentity.msgId,
-                    controlSenderId: observation.controlIdentity.senderId,
-                    controlCreatedAtEpochMs: observation.controlIdentity.ts,
-                    traceId: observation.controlIdentity.traceId,
-                    rejectionCode: 'unauthorized',
-                    owner: 'receipt-aggregation',
-                    stage: observation.stage,
-                    failedGuards: Object.freeze(
-                        issues.map((issue) => issue.code) as [
-                            WsQueueBoxServerReceiptAggregation.AckGuard,
-                            ...WsQueueBoxServerReceiptAggregation.AckGuard[]
-                        ]
-                    ),
-                    validationAtEpochMs: nowMs,
-                    deadlineAtMs: aggregate?.deadlineAtMs
-                });
-            }
-            catch { /* Projection failure loses optional evidence, never the already-constructed refusal. */ }
-        }
-        return rejection;
-    }
-
-    /** Whether this instance holds the receipt aggregate the ACK names. */
-    holdsReceiptFor(ack: ALAckPayload): boolean {
-        return this.readAggregate(toReceiptAggregateKey(ack.originPeerId, ack.ackedMsgId)) !== undefined;
+        this.recordAckRejection(observation, refusal, nowMs);
+        return { code: 'unauthorized', message: refusal.issues.map((issue) => issue.message).join('; ') };
     }
 
     /**
-     * The `admitted` receipt the origin receives at once, and the aggregate this admission ended at the cap,
-     * for a message whose aggregate is not live. An empty audience is complete as it is admitted.
-     */
-    recordAdmission(
-        admission: WsQueueBoxServerReceiptAggregation.Admission
-    ): WsQueueBoxServerReceiptAggregation.RecordedAdmission {
-        const key = toReceiptAggregateKey(admission.originPeerId, admission.msgId);
-        const nowMs = this.#dependencies.clock.nowMs();
-        const aggregate = { ...admission, confirmedRecipientPeerIds: [], outsideAudienceRecipientPeerIds: [] };
-        if (aggregate.expectedRecipientPeerIds.length === 0) {
-            return { admitted: toReceiptPayload(aggregate, 'admitted', nowMs), evicted: undefined };
-        }
-        const evicted = this.takeOldestAggregateAtCap(nowMs);
-        this.#aggregates.acceptAt({ key, value: aggregate, nowEpochMs: nowMs });
-        this.#deadlines.add(key, aggregate.deadlineAtMs);
-        return { admitted: toReceiptPayload(aggregate, 'admitted', nowMs), evicted };
-    }
-
-    /** A counted ACK; its `complete` receipt when it answers for the last expected recipient, none before. */
-    private countAck(
-        ack: ALAckPayload,
-        control: ALMessage['id'],
-        source: WsQueueBoxServerReceiptCountSource
-    ): WsQueueBoxServerReceiptCountDecision {
-        const key = toReceiptAggregateKey(ack.originPeerId, ack.ackedMsgId);
-        const nowMs = this.#dependencies.clock.nowMs();
-        const aggregate = this.#aggregates.readAt(key, nowMs);
-        const before = this.#dependencies.receiptObserver
-            ? toImmutableWsQueueBoxServerReceiptAggregate(aggregate)
-            : undefined;
-        const ackFacts = this.#dependencies.receiptObserver ? toImmutableWsQueueBoxServerReceiptAck(ack) : undefined;
-        const issues = validateWsQueueBoxServerReceiptAck(aggregate, ack, this.toAckValidationContext(nowMs));
-        let result: Either<ALMessageRejection, WsQueueBoxServerReceiptAggregation.CountedAck>;
-        let after = aggregate;
-        let outcome: WsQueueBoxServerReceiptCountObservation['outcome'];
-        if (issues.length > 0 || aggregate === undefined) {
-            result = Either.ofLeft({ code: 'unauthorized', message: issues.map((issue) => issue.message).join('; ') });
-            outcome = 'rejected';
-        }
-        else {
-            after = toCountedAggregate(aggregate, ack);
-            const complete = isReceiptAggregateComplete(after);
-            if (complete) {
-                this.deleteAggregate(key);
-            }
-            else {
-                this.#aggregates.acceptAt({ key, value: after, nowEpochMs: nowMs });
-            }
-            result = Either.ofRight({
-                receipt: complete ? toReceiptPayload(after, 'complete', nowMs) : undefined,
-                deadlineAtMs: after.deadlineAtMs,
-                traceId: after.traceId
-            });
-            outcome = complete ? 'complete' : 'partial';
-        }
-        return {
-            result,
-            observation: ackFacts === undefined ? undefined : this.toCountObservation({
-                ack: ackFacts,
-                control,
-                source,
-                traceId: aggregate?.traceId ?? control.traceId,
-                before,
-                after,
-                countAtEpochMs: nowMs,
-                outcome
-            })
-        };
-    }
-
-    private toAckValidationContext(nowMs: number): WsQueueBoxServerReceiptAckValidationContext {
-        return { nowMs, serverPeerId: this.#dependencies.serverPeerId };
-    }
-
-    private toCountObservation(
-        count: WsQueueBoxServerReceiptCountObservation
-    ): Extract<WsQueueBoxServerReceiptObservation, { readonly kind: 'ack-count'; }> {
-        return Object.freeze({
-            kind: 'ack-count',
-            serverPeerId: this.#dependencies.serverPeerId,
-            ack: count.ack,
-            controlMsgId: count.control.msgId,
-            controlSenderId: count.control.senderId,
-            controlCreatedAtEpochMs: count.control.ts,
-            traceId: count.traceId,
-            source: count.source.source,
-            relayPublisherId: count.source.relayPublisherId,
-            before: count.before,
-            after: toImmutableWsQueueBoxServerReceiptAggregate(count.after),
-            countAtEpochMs: count.countAtEpochMs,
-            outcome: count.outcome,
-            rejectionCode: count.outcome === 'rejected' ? 'unauthorized' : undefined
-        });
-    }
-
-    /** The `timed-out` receipt of every aggregate whose deadline has passed; each leaves the map. */
-    sweep(nowMs: number): readonly WsQueueBoxServerReceiptAggregation.IssuedReceipt[] {
-        return this.#deadlines.takeDue(nowMs).flatMap((key) => {
-            const aggregate = this.#aggregates.take(key);
-            return aggregate === undefined ? [] : [toIssuedReceipt(aggregate, 'timed-out', nowMs)];
-        });
-    }
-
-    /**
-     * A message the server admitted starts its receipt here, once; one it keeps for admission starts none until its
-     * replay admits it. A copy its sender sent again that ingress accepts as a duplicate or a pending admission finds
-     * the aggregate live and is answered `admitted` again with what the aggregate has counted, to that sender alone,
-     * so a lost `admitted` does not leave the sender resending into silence; a copy accepted any other way is answered
-     * nothing. Where no aggregate is live (it has ended, or another instance holds it) a copy is answered
-     * nothing either: the stated limit.
+     * A message the server admitted opens its receipt here, once; one it keeps for admission opens none until its
+     * replay admits it. A copy its sender sent again that ingress accepts as a duplicate or a pending admission is
+     * answered from the record, to that sender alone, so a lost receipt does not leave the sender resending into
+     * silence; a copy that finds no head opens the record its admission never opened.
      */
     async writeAdmittedReceipt(admitted: WsQueueBoxServerReceiptAggregation.AdmittedMessage): Promise<void> {
-        const kind = admitted.acceptance?.kind;
-        if (admitted.roomAudience === undefined) {
+        const { message, originPeerId, neverSentRecipientPeerIds, roomAudience, acceptance } = admitted;
+        if (roomAudience === undefined) {
             return;
         }
-        const nowMs = this.#dependencies.clock.nowMs();
-        const live = this.#aggregates.readAt(
-            toReceiptAggregateKey(admitted.originPeerId, admitted.message.id.msgId),
-            nowMs
-        );
-        if (live !== undefined) {
-            if (kind === 'duplicate' || kind === 'pending-admission') {
-                await this.writeReceipt(toIssuedReceipt(live, 'admitted', nowMs));
-            }
+        const terms = this.resolveReceiptTerms(admitted);
+        if (terms === undefined) {
             return;
         }
-        if (kind !== 'admitted') {
-            return;
+        if (acceptance?.kind === 'admitted') {
+            await this.openAdmittedReceipt(toWsQueueBoxServerReceiptOpening({
+                message,
+                originPeerId,
+                neverSentRecipientPeerIds,
+                roomAudience,
+                terms,
+                nowMs: this.nowMs()
+            }));
         }
-        const admission = this.toAdmission(admitted, admitted.roomAudience);
-        if (admission === undefined) {
-            return;
+        else if (acceptance?.kind === 'duplicate' || acceptance?.kind === 'pending-admission') {
+            await this.answerCopy(admitted, roomAudience, terms);
         }
-        const recorded = this.recordAdmission(admission);
-        if (recorded.evicted !== undefined) {
-            await this.writeReceipt(recorded.evicted);
-        }
-        await this.writeReceipt({
-            receipt: recorded.admitted,
-            deadlineAtMs: admission.deadlineAtMs,
-            traceId: admission.traceId
-        });
     }
 
     /**
-     * A receiver ACK the server admitted as its origin's relay hop is counted here and never reaches
-     * the server's own outbound owner, which answers only the controls addressed to the server. Ingress
-     * already refused an ACK that could not count; one that loses a race to the sweep counts nothing.
+     * A receiver ACK, and the ACK of the server's own publication the record counts, is counted here; one the record
+     * does not count, and every other control, goes to the server's own outbound owner. A count whose view is complete
+     * is ended; a losing `end` is routine, since the last two ACKs of a message often both read a complete set, and
+     * the winner's ended work delivers the receipt.
      */
-    async acceptControlMessage(message: ALMessage, relayPublisherId?: string, relayed = false): Promise<void> {
+    async acceptControlMessage(message: ALMessage): Promise<void> {
         const control = decodeALControlMessage(message).right;
-        if (control?.type !== 'ack' || control.payload.toPeerId === this.#dependencies.serverPeerId) {
+        const { serverPeerId } = this.#dependencies;
+        if (
+            control?.type === 'ack' &&
+            (control.payload.toPeerId !== serverPeerId || isWsQueueBoxServerCountableAck(control.payload, serverPeerId))
+        ) {
+            await this.acceptAck(message, control.payload);
+            return;
+        }
+        await this.#dependencies.acceptServerControl(message);
+        if (control?.type === 'nack' && isWsQueueBoxServerOwnOutsideAudienceNack(control.payload, serverPeerId)) {
+            await this.writeOutsideAudienceNack(control.payload);
+        }
+    }
+
+    /**
+     * The record's view of the receipt a retry of `message` serves; undefined when the message opened none. At the
+     * row's window a server publication heals what its record lost: a head its dequeue did not open opens from its
+     * pending row, and an open head counts the outside recipients that row proves.
+     */
+    async writeRepairView(message: ALMessage): Promise<ALReceiptRecord.View | undefined> {
+        const ref = { originPeerId: message.id.senderId, msgId: message.id.msgId };
+        const read = await this.#record.read(ref);
+        if (ref.originPeerId !== this.#dependencies.serverPeerId) {
+            return read.right;
+        }
+        return read.right === undefined
+            ? await this.openOwnRepairView(ref)
+            : await this.writeUnrecordedOutside(read.right);
+    }
+
+    /**
+     * Opens the record of a server publication from its pending row; answers the view it opened, or undefined. An
+     * `open` that answers `conflict` (the head exists: a row dequeued again) writes nothing and tells the worker nothing.
+     */
+    async writeOwnReceiptOpening(own: WsQueueBoxServerOwnPendingReceipt): Promise<ALReceiptRecord.View | undefined> {
+        const view = (await this.openOwnReceipt(own))?.right;
+        if (view?.tally.complete === true) {
+            await this.endReceipt(view.head.opening);
+        }
+        return view;
+    }
+
+    /** Only `end`'s result is authoritative; one that loses to another `end` leaves the winner's work to deliver. */
+    async endReceipt(ref: ALReceiptRecordRef): Promise<void> {
+        const ended = await this.#record.end(ref);
+        if (ended.right !== undefined) {
+            this.#worker.committed({ kind: 'ended', ref }, ended.right.endedAtEpochMs);
+        }
+    }
+
+    private nowMs(): number {
+        return this.#dependencies.clock.nowMs();
+    }
+
+    /** An `open` that lost to another (`conflict`) answers the head that won; any other refusal opened nothing. */
+    private async openOwnRepairView(ref: ALReceiptRecordRef): Promise<ALReceiptRecord.View | undefined> {
+        const own = await this.#dependencies.readOwnPendingReceipt(ref.msgId);
+        const opened = own === undefined ? undefined : await this.openOwnReceipt(own);
+        return opened?.left?.kind === 'conflict' ? (await this.#record.read(ref)).right : opened?.right;
+    }
+
+    /** A count that failed after the server's row admitted an outside-audience NACK is written at the next window. */
+    private async writeUnrecordedOutside(view: ALReceiptRecord.View): Promise<ALReceiptRecord.View | undefined> {
+        if (view.head.phase !== 'open') {
+            return view;
+        }
+        const pending = await this.#dependencies.readOwnPendingAck(view.head.opening.msgId);
+        const unrecorded = toWsQueueBoxServerUnrecordedOutsideConfirmations(view, pending);
+        if (unrecorded.length === 0) {
+            return view;
+        }
+        for (const confirmation of unrecorded) {
+            await this.#record.count(confirmation);
+        }
+        return (await this.#record.read(view.head.opening)).right;
+    }
+
+    private async acceptAck(message: ALMessage, ack: ALAckPayload): Promise<void> {
+        const countAtEpochMs = this.nowMs();
+        const counted = await this.writeConfirmation(ack);
+        if (counted === 'own-not-sent-unproven') {
+            return;
+        }
+        if (counted === 'outbound-owner') {
             await this.#dependencies.acceptServerControl(message);
             return;
         }
-        const counted = this.countAck(control.payload, message.id, {
-            source: relayed ? 'relayed' : 'local',
-            relayPublisherId
-        });
         try {
-            const result = counted.result.right;
-            if (result?.receipt !== undefined) {
-                await this.writeReceipt({ ...result, receipt: result.receipt });
+            if (counted.outcome === 'complete') {
+                await this.endReceipt(toReceiptRecordRef(ack));
             }
         }
         finally {
-            if (counted.observation !== undefined) {
-                recordWsQueueBoxServerReceiptObservation(this.#dependencies.receiptObserver, counted.observation);
-            }
+            this.recordCountObservation({ control: message.id, ack, counted, countAtEpochMs });
         }
     }
 
+    private async readRecordRefusal(ack: ALAckPayload, nowMs: number): Promise<WsQueueBoxServerAckRefusal | undefined> {
+        const head = (await this.#record.read(toReceiptRecordRef(ack))).right?.head;
+        if (head === undefined) {
+            const audience = await this.#dependencies.readIngressAudience(ack.ackedMsgId, ack.originPeerId);
+            return audience?.includes(ack.fromPeerId) === true
+                ? undefined
+                : { issues: [UNPROVEN_SENDER], deadlineAtMs: undefined };
+        }
+        const issues = validateALReceiptRecordConfirmation(
+            head,
+            toWsQueueBoxServerAckConfirmation(ack, this.#dependencies.serverPeerId),
+            nowMs
+        );
+        if (!isOpenReceiptIssueList(issues)) {
+            return { issues: [ENDED_RECEIPT], deadlineAtMs: undefined };
+        }
+        const [first, ...rest] = issues;
+        return first === undefined ? undefined : { issues: [first, ...rest], deadlineAtMs: head.opening.deadlineAtMs };
+    }
+
+    private recordAckRejection(
+        observation: WsQueueBoxServerReceiptAggregation.ProtocolObservation,
+        refusal: WsQueueBoxServerAckRefusal,
+        nowMs: number
+    ): void {
+        const { controlIdentity, stage } = observation;
+        if (this.#dependencies.receiptObserver === undefined || controlIdentity === undefined) {
+            return;
+        }
+        const [first, ...rest] = refusal.issues.map((issue) => issue.code);
+        try {
+            recordWsQueueBoxServerReceiptObservation(this.#dependencies.receiptObserver, {
+                kind: 'ack-rejection',
+                serverPeerId: this.#dependencies.serverPeerId,
+                controlMsgId: controlIdentity.msgId,
+                controlSenderId: controlIdentity.senderId,
+                controlCreatedAtEpochMs: controlIdentity.ts,
+                traceId: controlIdentity.traceId,
+                rejectionCode: 'unauthorized',
+                owner: 'receipt-aggregation',
+                stage,
+                failedGuards: Object.freeze([first, ...rest] as const),
+                validationAtEpochMs: nowMs,
+                deadlineAtMs: refusal.deadlineAtMs
+            });
+        }
+        catch { /* Projection failure loses optional evidence, never the already-constructed refusal. */ }
+    }
+
+    /** `count` runs first, so an ACK that finds its head reads nothing else; one that finds none is routed. */
+    private async writeConfirmation(
+        ack: ALAckPayload
+    ): Promise<WsQueueBoxServerCountedAck | 'outbound-owner' | 'own-not-sent-unproven'> {
+        const { serverPeerId } = this.#dependencies;
+        if (!isWsQueueBoxServerCountableAck(ack, serverPeerId)) {
+            return WS_QUEUE_BOX_SERVER_REJECTED_COUNT;
+        }
+        const confirmation = toWsQueueBoxServerAckConfirmation(ack, serverPeerId);
+        const counted = await this.#record.count(confirmation);
+        if (counted.left?.kind !== 'head-absent') {
+            return toWsQueueBoxServerCountedAck(counted);
+        }
+        const route = resolveWsQueueBoxServerHeadAbsentAck(await this.readHeadAbsentAck(ack));
+        if (route === 'count-ahead') {
+            return toWsQueueBoxServerCountedAck(await this.#record.countAhead(confirmation));
+        }
+        return route === 'rejected' ? WS_QUEUE_BOX_SERVER_REJECTED_COUNT : route;
+    }
+
+    /** Only an ACK of a server publication reads the server's pending row, its one proof. */
+    private async readHeadAbsentAck(ack: ALAckPayload): Promise<WsQueueBoxServerHeadAbsentAck> {
+        const { serverPeerId, readOwnPendingReceipt } = this.#dependencies;
+        const own = ack.originPeerId === serverPeerId ? await readOwnPendingReceipt(ack.ackedMsgId) : undefined;
+        const opening = own === undefined ? undefined : this.toOwnOpening(own);
+        return { ack, serverPeerId, own, ownOpeningOpens: opening !== undefined && this.wouldOpen(opening) };
+    }
+
+    /** The record's own opening rules and the server's encodability rule, without the warning an attempt writes. */
+    private wouldOpen(opening: ALReceiptRecordOpening): boolean {
+        return validateALReceiptRecordOpening(opening, this.nowMs()).length === 0 &&
+            isWsQueueBoxServerReceiptEncodable(opening, this.#dependencies.serverPeerId);
+    }
+
     /**
-     * A `receiver` room message is aggregated, and a `leader` one as the receipt of its one leader; a message
-     * without a deadline answers within its ACK timeout, and no aggregate outlives the server's receipt window,
-     * whatever deadline the client named.
-     * A message addressed to the server itself is answered by the server's own ACK, never aggregated.
+     * A recipient that answers a server publication with an outside-audience NACK alone is outside its receipt: the
+     * server's pending row naming it outside proves it, whatever this admission answered, and the record, which ends
+     * the receipt, counts it outside. An ended message's kept row proves nothing, as for a session's ACK.
      */
-    private toAdmission(
-        admitted: WsQueueBoxServerReceiptAggregation.AdmittedMessage,
-        roomAudience: WsServerRoomAudience
-    ): WsQueueBoxServerReceiptAggregation.Admission | undefined {
-        const { message, originPeerId, neverSentRecipientPeerIds } = admitted;
-        const { serverPeerId, qosProvider, clock } = this.#dependencies;
+    private async writeOutsideAudienceNack(nack: ALNackPayload): Promise<void> {
+        const own = await this.#dependencies.readOwnPendingReceipt(nack.msgId);
+        if (own?.pending.outsideAudiencePeerIds.includes(nack.logicalRecipientPeerId) !== true) {
+            return;
+        }
+        const confirmation = toWsQueueBoxServerOutsideAudienceConfirmation(nack);
+        const counted = await this.#record.count(confirmation);
+        const view = toWsQueueBoxServerCountedAck(
+            counted.left?.kind === 'head-absent' ? await this.#record.countAhead(confirmation) : counted
+        );
+        if (view.outcome === 'complete') {
+            await this.endReceipt(confirmation);
+        }
+    }
+
+    private recordCountObservation(input: WsQueueBoxServerCountObservationInput): void {
+        if (this.#dependencies.receiptObserver === undefined) {
+            return;
+        }
+        const { control, ack, counted, countAtEpochMs } = input;
+        const { view } = counted;
+        recordWsQueueBoxServerReceiptObservation(this.#dependencies.receiptObserver, {
+            kind: 'ack-count',
+            serverPeerId: this.#dependencies.serverPeerId,
+            ack: toImmutableWsQueueBoxServerReceiptAck(ack),
+            controlMsgId: control.msgId,
+            controlSenderId: control.senderId,
+            controlCreatedAtEpochMs: control.ts,
+            traceId: view?.head.opening.traceId ?? control.traceId,
+            after: view === undefined ? undefined : toImmutableWsQueueBoxServerReceiptAggregate({
+                ...view.head.opening,
+                confirmedRecipientPeerIds: view.tally.confirmedRecipientPeerIds
+            }),
+            countAtEpochMs,
+            outcome: counted.outcome,
+            rejectionCode: counted.outcome === 'rejected' ? 'unauthorized' : undefined
+        });
+    }
+
+    /**
+     * A `receiver` room message is aggregated, and a `leader` one as the receipt of its one leader. A message
+     * addressed to the server itself is answered by the server's own ACK, never aggregated.
+     */
+    private resolveReceiptTerms(
+        { message, originPeerId }: WsQueueBoxServerReceiptAggregation.AdmittedMessage
+    ): WsQueueBoxServerReceiptTerms | undefined {
+        const { serverPeerId, qosProvider } = this.#dependencies;
         const qos = resolveALQosNormalizationInput(
             message,
             { selfPeerId: serverPeerId, fromPeerId: originPeerId, direction: 'inbound' },
             qosProvider
         );
         const effective = normalizeALQosPolicy(message, qos).effective;
-        const aggregated = isALLogicalReceiptMode(effective.ack.algo) &&
-            !isALUnicastAddressedTo(message, serverPeerId);
-        return !aggregated ? undefined : {
-            msgId: message.id.msgId,
-            originPeerId,
-            traceId: message.id.traceId,
-            expectedRecipientPeerIds: toFrozenAudience(message, originPeerId, roomAudience.recipientPeerIds),
-            snapshotVersion: roomAudience.snapshotVersion,
-            deadlineAtMs: Math.min(
-                resolveALMessageExpireAtMs(message, effective) ?? clock.nowMs() + effective.ack.opts.timeoutMs,
-                clock.nowMs() + WS_QUEUE_BOX_SERVER_RECEIPT_WINDOW_MS
-            ),
-            neverSentRecipientPeerIds
-        };
+        return !isALLogicalReceiptMode(effective.ack.algo) || isALUnicastAddressedTo(message, serverPeerId)
+            ? undefined
+            : {
+                ownDeadlineAtMs: resolveALMessageExpireAtMs(message, effective),
+                ackTimeoutMs: effective.ack.opts.timeoutMs
+            };
     }
 
-    private readAggregate(key: string): WsQueueBoxServerReceiptAggregate | undefined {
-        return this.#aggregates.readAt(key, this.#dependencies.clock.nowMs());
-    }
-
-    /** The oldest admitted aggregate, ended as a passed deadline ends it, when one more would pass the cap. */
-    private takeOldestAggregateAtCap(nowMs: number): WsQueueBoxServerReceiptAggregation.IssuedReceipt | undefined {
-        if (this.#aggregates.size() < WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES) {
-            return undefined;
+    private async openAdmittedReceipt(opening: ALReceiptRecordOpening): Promise<void> {
+        if (!this.isEncodable(opening)) {
+            return;
         }
-        const [oldest] = this.#aggregates.keys();
-        const aggregate = this.#aggregates.take(oldest);
-        this.#deadlines.delete(oldest);
-        return aggregate === undefined ? undefined : toIssuedReceipt(aggregate, 'timed-out', nowMs);
-    }
-
-    private deleteAggregate(key: string): void {
-        this.#aggregates.delete(key);
-        this.#deadlines.delete(key);
-    }
-
-    /** The engine forgets a wake once it fires, so each poll arms the next deadline again. */
-    private scheduleNextSweep(): void {
-        this.#dependencies.queueEngine.wakeAt(this.#sweepTaskId, this.#deadlines.getNextDeadlineAtMs());
-    }
-
-    private hasDueAggregate(): boolean {
-        const nextDeadlineAtMs = this.#deadlines.getNextDeadlineAtMs();
-        return nextDeadlineAtMs !== undefined && nextDeadlineAtMs <= this.#dependencies.clock.nowMs();
-    }
-
-    private async writeTimedOutReceipts(): Promise<void> {
-        const nowMs = this.#dependencies.clock.nowMs();
-        for (const issued of this.sweep(nowMs)) {
-            await this.writeReceipt(issued);
+        if (opening.expectedRecipientPeerIds.length === 0) {
+            await this.writeAnswer(opening, NO_CONFIRMATIONS, 'admitted');
+            return;
+        }
+        const opened = await this.openReceipt(opening);
+        if (opened.right !== undefined) {
+            await this.answerOpened(opened.right);
         }
     }
 
-    /** A receipt row outlives its message's deadline by the receipt grace, as the origin's receipt row does. */
-    private async writeReceipt(issued: WsQueueBoxServerReceiptAggregation.IssuedReceipt): Promise<void> {
-        const { receipt, deadlineAtMs } = issued;
-        const id = {
-            v: AL_MESSAGE_ENVELOPE_VERSION,
-            msgId: this.#dependencies.newControlId(),
-            senderId: this.#dependencies.serverPeerId,
-            ts: receipt.observedAtEpochMs,
-            traceId: issued.traceId
-        };
-        const expiresAtMs = Math.max(deadlineAtMs, receipt.observedAtEpochMs) + AL_RECEIPT_DEADLINE_GRACE_MS;
-        const message = decodePersistedALMessageValue({
-            ...newALReceiptControlMessage(id, receipt),
-            constraints: { expiresAtMs }
+    /** Opening writes no `admitted` receipt: the server is the publication's origin, so there is nobody to answer. */
+    private async openOwnReceipt(
+        own: WsQueueBoxServerOwnPendingReceipt
+    ): Promise<WsQueueBoxServerOpenedReceipt | undefined> {
+        const opening = this.toOwnOpening(own);
+        return opening === undefined || !this.isEncodable(opening) ? undefined : await this.openReceipt(opening);
+    }
+
+    private toOwnOpening(own: WsQueueBoxServerOwnPendingReceipt): ALReceiptRecordOpening | undefined {
+        return toWsQueueBoxServerOwnReceiptOpening({
+            ...own,
+            serverPeerId: this.#dependencies.serverPeerId,
+            nowMs: this.nowMs()
         });
-        const receiptControlMsgId = id.msgId;
-        const frozenReceipt = this.#dependencies.receiptObserver
-            ? Object.freeze({
-                ...receipt,
-                expectedRecipientPeerIds: Object.freeze([...receipt.expectedRecipientPeerIds]),
-                confirmedRecipientPeerIds: Object.freeze([...receipt.confirmedRecipientPeerIds]),
-                outsideAudienceRecipientPeerIds: Object.freeze([...receipt.outsideAudienceRecipientPeerIds])
-            })
-            : undefined;
+    }
+
+    /** An opened head's deadline is the worker's; an opening the record refuses is never opened, with one warning. */
+    private async openReceipt(opening: ALReceiptRecordOpening): Promise<WsQueueBoxServerOpenedReceipt> {
+        const opened = await this.#record.open(opening);
+        if (opened.right !== undefined) {
+            this.#worker.committed({ kind: 'deadline', ref: opening }, opening.deadlineAtMs);
+        }
+        else if (opened.left?.kind === 'invalid-opening') {
+            writeNotOpenedWarning(opening, opened.left.issues);
+        }
+        return opened;
+    }
+
+    /** An ACK may have overtaken the head, so the admitted receipt carries the view's tally and may end the receipt. */
+    private async answerOpened(view: ALReceiptRecord.View): Promise<void> {
+        const { opening } = view.head;
+        await this.writeAnswer(opening, view.tally, 'admitted');
+        if (view.tally.complete) {
+            await this.endReceipt(opening);
+        }
+    }
+
+    private async answerCopy(
+        { message, originPeerId, neverSentRecipientPeerIds }: WsQueueBoxServerReceiptAggregation.AdmittedMessage,
+        roomAudience: WsServerRoomAudience,
+        terms: WsQueueBoxServerReceiptTerms
+    ): Promise<void> {
+        const ref = { originPeerId, msgId: message.id.msgId };
+        const read = await this.#record.read(ref);
+        if (read.right !== undefined) {
+            await this.answerFromView(read.right);
+            return;
+        }
+        const ingressAudience = await this.#dependencies.readIngressAudience(ref.msgId, ref.originPeerId);
+        const opening = toWsQueueBoxServerCopyReceiptOpening({
+            message,
+            originPeerId,
+            neverSentRecipientPeerIds,
+            roomAudience,
+            ingressAudience,
+            terms,
+            nowMs: this.nowMs()
+        });
+        const opened = opening === undefined || !this.isEncodable(opening)
+            ? undefined
+            : await this.openReceipt(opening);
+        if (opened?.right !== undefined) {
+            await this.answerOpened(opened.right);
+        }
+        else if (opened?.left?.kind === 'conflict') {
+            const again = await this.#record.read(ref);
+            if (again.right !== undefined) {
+                await this.answerFromView(again.right);
+            }
+        }
+    }
+
+    /** A receipt no control could carry is never opened, a server publication's as a client's, with one warning. */
+    private isEncodable(opening: ALReceiptRecordOpening): boolean {
+        if (isWsQueueBoxServerReceiptEncodable(opening, this.#dependencies.serverPeerId)) {
+            return true;
+        }
+        writeNotOpenedWarning(opening, [UNENCODABLE_RECEIPT]);
+        return false;
+    }
+
+    /** An open head the copy finds complete lost its `end`; the copy ends it, as an opening that finds it complete does. */
+    private async answerFromView(view: ALReceiptRecord.View): Promise<void> {
+        const { head, tally } = view;
+        if (head.phase === 'open') {
+            await this.answerOpened(view);
+            return;
+        }
+        await this.writeAnswer(head.opening, tally, head.phase);
+    }
+
+    private async writeAnswer(
+        opening: ALReceiptRecordOpening,
+        { confirmedRecipientPeerIds, outsideAudienceRecipientPeerIds }: WsQueueBoxServerReceiptSets,
+        phase: ALReceiptPayload['phase']
+    ): Promise<void> {
+        await this.writeReceipt({
+            receipt: toWsQueueBoxServerReceiptPayload(opening, {
+                confirmedRecipientPeerIds,
+                outsideAudienceRecipientPeerIds,
+                phase,
+                observedAtEpochMs: this.nowMs()
+            }),
+            opening,
+            controlId: this.#dependencies.newControlId(),
+            settlesServerRow: false
+        });
+    }
+
+    /** A receipt of the server's own publication has no origin to reach: it only settles the server's row. */
+    private async writeEndedReceipt(ended: ALReceiptRecordEndedHead): Promise<void> {
+        const issued = toWsQueueBoxServerEndedReceipt(ended);
+        const { serverPeerId } = this.#dependencies;
+        if (ended.opening.originPeerId === serverPeerId) {
+            await this.admitServerReceipt(toWsQueueBoxServerReceiptControlMessage(issued, serverPeerId));
+            return;
+        }
+        await this.writeReceipt(issued);
+    }
+
+    /**
+     * A receipt row outlives its message's deadline by the receipt grace, as the origin's receipt row does. A terminal
+     * receipt the outbox could not store, or the server's row could not take, throws so the ended work retries it.
+     */
+    private async writeReceipt(issued: WsQueueBoxServerIssuedReceipt): Promise<void> {
+        const { receipt, opening } = issued;
+        const { receiptObserver, serverPeerId } = this.#dependencies;
+        const message = toWsQueueBoxServerReceiptControlMessage(issued, serverPeerId);
+        // Only an `admitted` is written live, and only the ended work's terminal receipt settles the server's row.
+        if (this.writeLiveReceipt(issued, message)) {
+            return;
+        }
         const enqueued = await this.#dependencies.enqueueOutbox(
             message,
             toWsQueueBoxServerReceiptDispatchPlan(message)
         );
-        const enqueueFacts = this.#dependencies.receiptObserver
-            ? Object.freeze({
+        // The enqueue facts are copied before the settlement, which may change the verdict object it returned.
+        const observation = receiptObserver === undefined ? undefined : Object.freeze(
+            {
+                kind: 'receipt-outbox',
+                serverPeerId,
+                receiptControlMsgId: issued.controlId,
+                traceId: opening.traceId,
+                receipt: toImmutableWsQueueBoxServerReceipt(receipt),
+                deadlineAtMs: opening.deadlineAtMs,
                 verdict: toWsQueueBoxServerReceiptOutboxVerdict(enqueued.verdict),
                 entryCount: enqueued.entries.length,
                 trackedReceiptAlgo: enqueued.trackedReceiptAlgo
-            })
-            : undefined;
-        // Two commits: a crash between them leaves the server row unsettled, which costs only retransmissions its budget bounds.
+            } as const
+        );
         try {
-            if (receipt.phase !== 'admitted') {
-                await this.#dependencies.acceptServerReceipt(message);
+            if (issued.settlesServerRow) {
+                await this.settleServerRow(message, enqueued);
             }
         }
         finally {
-            if (frozenReceipt !== undefined && enqueueFacts !== undefined) {
-                recordWsQueueBoxServerReceiptObservation(this.#dependencies.receiptObserver, {
-                    kind: 'receipt-outbox',
-                    serverPeerId: this.#dependencies.serverPeerId,
-                    receiptControlMsgId,
-                    traceId: issued.traceId,
-                    receipt: frozenReceipt,
-                    deadlineAtMs,
-                    ...enqueueFacts
-                });
+            if (observation !== undefined) {
+                recordWsQueueBoxServerReceiptObservation(receiptObserver, observation);
             }
+        }
+    }
+
+    /**
+     * Writes an `admitted` receipt with a head behind it, which a re-sent copy is answered from, to the origin's
+     * sockets here, and, with an observer attached, records one `receipt-transport` per connection it called; whether
+     * a socket took it. A sender that resends nothing reads only its terminal receipt when this copy is lost on the
+     * wire. Any other receipt is not written here and answers false.
+     */
+    private writeLiveReceipt(issued: WsQueueBoxServerIssuedReceipt, message: ALMessage): boolean {
+        if (!isWsQueueBoxServerHeadBackedAdmittedReceipt(issued.receipt)) {
+            return false;
+        }
+        const { liveDelivery, receiptObserver, serverPeerId } = this.#dependencies;
+        const peerSend = { peerId: issued.receipt.originPeerId, message };
+        if (receiptObserver === undefined) {
+            return liveDelivery.sendToResolvedPeer(peerSend) > 0;
+        }
+        const sent = liveDelivery.sendToResolvedPeerWithEvidence(peerSend);
+        for (const transport of toWsQueueBoxServerLiveReceiptTransports(issued, sent.writes, serverPeerId)) {
+            recordWsQueueBoxServerReceiptObservation(receiptObserver, transport);
+        }
+        return sent.sentCount > 0;
+    }
+
+    /** Two commits: a crash between them leaves the server row unsettled until the ended work delivers again. */
+    private async settleServerRow(message: ALMessage, enqueued: ALOutboundEnqueueResult): Promise<void> {
+        const kind = enqueued.verdict.kind;
+        if (kind === 'storage-unavailable' || kind === 'failed') {
+            throw new Error(`AL terminal receipt ${message.id.msgId} was not stored: ${kind}`);
+        }
+        await this.admitServerReceipt(message);
+    }
+
+    /** A terminal receipt the server's row could not take throws, so the ended work retries it. */
+    private async admitServerReceipt(message: ALMessage): Promise<void> {
+        const settled = await this.#dependencies.acceptServerReceipt(message);
+        if (settled.kind === 'storage-unavailable') {
+            throw new Error(`AL terminal receipt ${message.id.msgId} did not settle the server row: ${settled.cause}`);
         }
     }
 }
@@ -589,32 +789,48 @@ export function toWsQueueBoxServerReplayedAdmittedMessage(
     if (source.kind !== 'ws-client' || source.groupRecipientPeerIds === undefined || snapshotVersion === undefined) {
         return undefined;
     }
-    const { recipientPeerIds, neverSentRecipientPeerIds } = resolveReplayedRecipients(
-        replayed,
-        source.groupRecipientPeerIds
-    );
+    const captured = resolveCapturedRecipientPeerIds(replayed, source.groupRecipientPeerIds);
     return {
         message: replayed.msg,
         originPeerId: source.peerId,
-        roomAudience: { recipientPeerIds, snapshotVersion },
+        roomAudience: { recipientPeerIds: captured ?? source.groupRecipientPeerIds, snapshotVersion },
         acceptance: { kind: 'admitted' },
-        neverSentRecipientPeerIds
+        neverSentRecipientPeerIds: captured === undefined
+            ? []
+            : toWsQueueBoxServerFrozenAudience(replayed.msg, source.peerId, captured)
     };
 }
 
-function resolveReplayedRecipients(
+/** The audience captured at ingress, when the replay's own audience leaves nobody to expect and it does not. */
+function resolveCapturedRecipientPeerIds(
     { msg, pendingSource }: ALInboundMessageRuntime.ReplayedAdmission,
     replayedRecipientPeerIds: readonly string[]
-): WsQueueBoxServerReplayedRecipients {
-    const replayed = { recipientPeerIds: replayedRecipientPeerIds, neverSentRecipientPeerIds: [] };
+): readonly string[] | undefined {
     if (pendingSource.kind !== 'ws-client' || pendingSource.groupRecipientPeerIds === undefined) {
-        return replayed;
+        return undefined;
     }
     const { peerId: originPeerId, groupRecipientPeerIds: captured } = pendingSource;
-    const capturedFrozen = toFrozenAudience(msg, originPeerId, captured);
-    return toFrozenAudience(msg, originPeerId, replayedRecipientPeerIds).length === 0 && capturedFrozen.length > 0
-        ? { recipientPeerIds: captured, neverSentRecipientPeerIds: capturedFrozen }
-        : replayed;
+    return toWsQueueBoxServerFrozenAudience(msg, originPeerId, replayedRecipientPeerIds).length === 0 &&
+            toWsQueueBoxServerFrozenAudience(msg, originPeerId, captured).length > 0
+        ? captured
+        : undefined;
+}
+
+function isOpenReceiptIssueList(
+    issues: readonly ALReceiptRecordConfirmationIssue[]
+): issues is readonly WsQueueBoxServerOpenReceiptIssue[] {
+    return issues.every(({ code }) => code !== 'head-ended');
+}
+
+function writeNotOpenedWarning(
+    opening: ALReceiptRecordOpening,
+    issues: readonly (ALReceiptRecordOpeningIssue | typeof UNENCODABLE_RECEIPT)[]
+): void {
+    console.warn(`AL receipt of ${opening.msgId} for ${opening.originPeerId} was not opened`, issues);
+}
+
+function toReceiptRecordRef(ack: ALAckPayload): ALReceiptRecordRef {
+    return { originPeerId: ack.originPeerId, msgId: ack.ackedMsgId };
 }
 
 /**
@@ -631,151 +847,5 @@ function toWsQueueBoxServerReceiptDispatchPlan(
         dropReasonCode: undefined,
         lane: 'durable',
         preparedMessages: []
-    };
-}
-
-/** Every reason this ACK may not count; an absent aggregate makes the rest moot. */
-function validateWsQueueBoxServerReceiptAck(
-    aggregate: WsQueueBoxServerReceiptAggregate | undefined,
-    ack: ALAckPayload,
-    { nowMs, serverPeerId }: WsQueueBoxServerReceiptAckValidationContext
-): readonly WsQueueBoxServerReceiptAggregation.AckValidationIssue[] {
-    if (aggregate === undefined) {
-        return [{ code: 'aggregate-absent', message: 'AL acknowledgement names no receipt this server aggregates' }];
-    }
-    const issues: WsQueueBoxServerReceiptAggregation.AckValidationIssue[] = [];
-    if (ack.toPeerId !== ack.originPeerId) {
-        issues.push({
-            code: 'origin-addressee-mismatch',
-            message: 'AL acknowledgement is not addressed to the origin it names'
-        });
-    }
-    if (!isALOwnWord(ack) && !isWsQueueBoxServerOutsideAudienceAck(ack, serverPeerId)) {
-        issues.push({
-            code: 'sender-recipient-mismatch',
-            message: 'AL acknowledgement speaks for another recipient than its sender'
-        });
-    }
-    if (!aggregate.expectedRecipientPeerIds.includes(ack.logicalRecipientPeerId)) {
-        issues.push({
-            code: 'outside-frozen-audience',
-            message: 'AL acknowledgement confirms no recipient of the frozen audience'
-        });
-    }
-    if (aggregate.confirmedRecipientPeerIds.includes(ack.logicalRecipientPeerId)) {
-        issues.push({
-            code: 'already-confirmed',
-            message: 'AL acknowledgement confirms a peer the receipt already counted'
-        });
-    }
-    if (aggregate.outsideAudienceRecipientPeerIds.includes(ack.logicalRecipientPeerId)) {
-        issues.push({
-            code: 'already-outside',
-            message: 'AL acknowledgement answers for a peer the receipt already records outside the audience'
-        });
-    }
-    if (aggregate.deadlineAtMs <= nowMs) {
-        issues.push({ code: 'deadline-expired', message: 'AL acknowledgement arrived after its receipt deadline' });
-    }
-    if (
-        aggregate.neverSentRecipientPeerIds.includes(ack.logicalRecipientPeerId) &&
-        !isWsQueueBoxServerOutsideAudienceAck(ack, serverPeerId)
-    ) {
-        issues.push({
-            code: 'never-sent',
-            message: 'AL acknowledgement comes from a recipient this server never sent the message'
-        });
-    }
-    return issues;
-}
-
-/** The server speaks for a recipient only to say it sent that recipient nothing, which confirms nobody. */
-function isWsQueueBoxServerOutsideAudienceAck(ack: ALAckPayload, serverPeerId: string): boolean {
-    return ack.fromPeerId === serverPeerId && !isALRecipientConfirmationAck(ack);
-}
-
-/**
- * The unicast addressee alone when the room admitted it (D53); a room send's authorized sessions but its origin.
- * A multicast the origin froze (an RTC leg handed to WS) keeps that audience verbatim, so a session that left since
- * reads unconfirmed (Q12); delivery stays the authorized sessions, so the expected set may exceed the delivered set by
- * design.
- */
-function toFrozenAudience(
-    message: ALMessage,
-    originPeerId: string,
-    authorizedPeerIds: readonly string[]
-): readonly string[] {
-    const targets = message.targets;
-    if (targets?.mode === 'unicast') {
-        return targets.toPeerId !== originPeerId && authorizedPeerIds.includes(targets.toPeerId)
-            ? [targets.toPeerId]
-            : [];
-    }
-    const frozen = resolveALFrozenMulticastAudience(targets);
-    if (frozen !== undefined) {
-        return frozen.recipientPeerIds.filter((peerId) => peerId !== originPeerId);
-    }
-    return [...new Set(authorizedPeerIds)].filter((peerId) =>
-        peerId !== originPeerId &&
-        (targets?.mode !== 'broadcast' ||
-            (!targets.exceptPeerIds?.includes(peerId) &&
-                (targets.recipientPeerIds === undefined ||
-                    targets.recipientPeerIds.includes(peerId))))
-    );
-}
-
-/**
- * A recipient that delivered nothing ends its hop with an ACK that confirms nobody: it is recorded outside the
- * audience, as the RTC origin records its `not-subscribed` answer, and never confirmed.
- */
-function toCountedAggregate(
-    aggregate: WsQueueBoxServerReceiptAggregate,
-    ack: ALAckPayload
-): WsQueueBoxServerReceiptAggregate {
-    const recipient = ack.logicalRecipientPeerId;
-    return isALRecipientConfirmationAck(ack)
-        ? { ...aggregate, confirmedRecipientPeerIds: [...aggregate.confirmedRecipientPeerIds, recipient] }
-        : { ...aggregate, outsideAudienceRecipientPeerIds: [...aggregate.outsideAudienceRecipientPeerIds, recipient] };
-}
-
-/** Complete as the origin's own receipt row completes: every expected recipient confirmed or outside, one confirmed. */
-function isReceiptAggregateComplete(aggregate: WsQueueBoxServerReceiptAggregate): boolean {
-    return isALOutboundReceiptComplete({
-        expectedPeerIds: aggregate.expectedRecipientPeerIds,
-        ackedPeerIds: aggregate.confirmedRecipientPeerIds,
-        outsideAudiencePeerIds: aggregate.outsideAudienceRecipientPeerIds
-    });
-}
-
-function toReceiptAggregateKey(originPeerId: string, msgId: string): string {
-    return JSON.stringify([originPeerId, msgId]);
-}
-
-function toIssuedReceipt(
-    aggregate: WsQueueBoxServerReceiptAggregate,
-    phase: ALReceiptPayload['phase'],
-    observedAtEpochMs: number
-): WsQueueBoxServerReceiptAggregation.IssuedReceipt {
-    return {
-        receipt: toReceiptPayload(aggregate, phase, observedAtEpochMs),
-        deadlineAtMs: aggregate.deadlineAtMs,
-        traceId: aggregate.traceId
-    };
-}
-
-function toReceiptPayload(
-    aggregate: WsQueueBoxServerReceiptAggregate,
-    phase: ALReceiptPayload['phase'],
-    observedAtEpochMs: number
-): ALReceiptPayload {
-    return {
-        msgId: aggregate.msgId,
-        originPeerId: aggregate.originPeerId,
-        expectedRecipientPeerIds: aggregate.expectedRecipientPeerIds,
-        confirmedRecipientPeerIds: aggregate.confirmedRecipientPeerIds,
-        outsideAudienceRecipientPeerIds: aggregate.outsideAudienceRecipientPeerIds,
-        snapshotVersion: aggregate.snapshotVersion,
-        phase,
-        observedAtEpochMs
     };
 }
