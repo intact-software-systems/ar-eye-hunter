@@ -7,6 +7,10 @@ const STORE_PATH = 'packages/shared-server/runtime-state/runtime-state-json-stor
 const CLIENT_PATH = 'packages/shared-server/rallar-system/client-state/client-state-repository.ts';
 const ROUTE_PATH = 'apps/api-v1/src/routes/client-state-routes.ts';
 
+interface RepositoryWriteFact {
+    readonly id: string;
+}
+
 const REPOSITORY_SOURCES = {
     'packages/shared-server/runtime-state/runtime-state-repository.ts': `
         export interface RuntimeStateRepositoryLike {
@@ -70,7 +74,7 @@ describe('repository write facts', () => {
             `
         });
 
-        expect(facts.map((fact) => fact.id)).toEqual([
+        expect(facts.map((fact: { readonly id: string; }) => fact.id)).toEqual([
             `${ROUTE_PATH}#ClientConnectRoute`,
             `${ROUTE_PATH}#ClientConnectService`,
             `${ROUTE_PATH}#onClientFrame`,

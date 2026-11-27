@@ -5,6 +5,15 @@ import { ADMISSION_PORT_SOURCES, createDirectWriteFixture } from './direct-write
 
 const STORE_PATH = 'packages/shared/alm/inbound/al-inbound-admission-store.ts';
 
+interface ConstructionFact {
+    readonly id: string;
+    readonly namespaces: readonly string[];
+}
+
+interface RowFamilyFact {
+    readonly id: string;
+}
+
 describe('admission backend facts', () => {
     it('names each port implementation, each PostgreSQL construction with its namespace, and each write', () => {
         const facts = computeFixtureFacts(ADMISSION_PORT_SOURCES);
@@ -36,7 +45,7 @@ describe('admission backend facts', () => {
             `
         });
 
-        expect(facts.admissionBackendConstructions.map((fact) => [fact.id, fact.namespaces])).toEqual([
+        expect(facts.admissionBackendConstructions.map((fact: ConstructionFact) => [fact.id, fact.namespaces])).toEqual([
             [
                 'packages/shared-server/al-runtime/postgres/create-p-sql-al-receipt-record-stores.ts#createPSqlALReceiptRecordStores',
                 ['\'receipt:record\'']
@@ -142,7 +151,7 @@ describe('admission backend facts', () => {
             { id: `${keysPath}#toALOutboundMessageOwnerKey` },
             { id: `${keysPath}#toALOutboundOrderingTrackPrefix` }
         ]);
-        expect(widened.rowFamilies.filter((fact) => !base.rowFamilies.some((known) => known.id === fact.id))).toEqual([
+        expect(widened.rowFamilies.filter((fact: RowFamilyFact) => !base.rowFamilies.some((known: RowFamilyFact) => known.id === fact.id))).toEqual([
             { id: `${topicsPath}#AL_ADMISSION_WORK_COMPLETED_RETENTION.AL_OUTBOUND_RESEND` },
             { id: `${keysPath}#toALOutboundResendScheduleKey` }
         ]);
