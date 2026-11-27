@@ -44,8 +44,9 @@ it:
 3. **No gate blocks an ALM regression outside the smoke scope.** The full scope is an observation
    that nothing waits for (D702). It was green on all five legs at `main` `6ccebbb` (checked, run
    45815136110), and four cells are known intermittents.
-4. **Nothing is measured at scale.** The publication workload family is one local point: one
-   room, one publisher and three agents over `rtc`, built in #923. The first hosted
+4. **Nothing is measured at scale.** The publication workload family is two local points over
+   `rtc`: one room of three agents with one publisher (#923), and two rooms of three agents with
+   two publishers each. The first hosted
    campaign has not run, and no latency or memory level is set (D643). The last hosted 50-agent
    delivery runs failed, on a cause that is fixed in code and has no hosted read.
 5. **Security has open rulings.** Any room member can still deliver an unreceipted RTC room send
@@ -410,14 +411,15 @@ Notes on the rows that need them:
   | Connect fix                                                          | Met (#813)                                       |
   | The campaign's own go-ahead, about 14 runs                           | Not given; two guidance runs are approved        |
 
-  The family's first slice is on `main` (#923): one room, one publisher, every parameter required,
-  a figures record that keeps `configured` apart from `measured`, a delivered-sample-age figure as
-  bucket ranges per subscriber, and a local three-agent proof on `rtc`
-  (`packages/shared-test/rallar-bb-test/docs/alm-publication-workload.md`). Not built: more than
-  one room or publisher, a rate above the publication cadence, churn, seeded loss, a hosted
-  manifest, a histogram merge across subscribers, and the clock offset between machines, which
-  every hosted age holds. Only the `rtc` point has a test that runs it, and no CI lane runs that
-  test.
+  The family's first slice is on `main` (#923), and its second adds rooms and publishers: one or
+  more rooms of one shape with one or more publishers in each, every parameter required, a figures
+  record that keeps `configured` apart from `measured`, a delivered-sample-age figure as bucket
+  ranges per subscriber, per room and for the point, the last two from the subscribers' histograms
+  merged, and two local proofs on `rtc`, three agents in one room and six in two rooms
+  (`packages/shared-test/rallar-bb-test/docs/alm-publication-workload.md`). Not built: a rate above
+  the publication cadence, churn, seeded loss, a hosted manifest, and the clock offset between
+  machines, which every hosted age holds. Only the two `rtc` points have a test that runs them, and
+  no CI lane runs those tests.
 
 - **P2.** Manifests 07 and 09 failed at 50 agents on a layout re-plan landing inside the stream.
   Two guidance runs after the merge are approved and have no recorded result. Which server path
@@ -823,9 +825,10 @@ Slices 1 and 2 because they touch other files.
 7. **The server-peer send and the left member's send (T5, T6).** T5 follows decision 16. T6 traces
    how a `pending-authority` hold ends, then states one end at the origin and adds the left-sender
    cell over the RTC carriers.
-8. **The rest of the publication workload family (P1).** After #923: publisher count, group
-   count, a rate above the publication cadence, churn and seeded loss as parameters; a histogram
-   merge across subscribers; the clock offset between machines; the games' frame sizes measured;
+8. **The rest of the publication workload family (P1).** After #923 and the slice that adds
+   publisher count, group count and a histogram merge across subscribers: seeded loss and churn
+   as parameters; a rate above the publication cadence, reported before it is gated, with the
+   stage's lateness measured; the clock offset between machines; the games' frame sizes measured;
    a hosted manifest whose roles resolve their principals at run time, which also unblocks G4.
    Beside it, run the two approved guidance runs of manifests 07 and 09 (P2).
 9. **Sign every ordinary RTC room send (S1, S2)**, if decision 3 says so, with a phone timing.

@@ -48,9 +48,9 @@ together: with two publishers of 60 frames, 114 of 120.
 Each frame's payload is `{ seq, sentAtEpochMs, pad }`. `payloadBytes` is its serialised size at the
 last sequence number; an earlier frame is smaller by the digits its sequence number lacks.
 `payloadBytes <= publication.drain.bytes` is necessary, not sufficient: the stage charges the whole
-message envelope against the drain budget. One run of the local point charged about 1.5 KiB for a
-256-byte payload (`drainBytesPercent` of 2.27 on a 65,536-byte budget). That is an observation of
-that run, not a contract: no test pins it.
+message envelope against the drain budget. One run of the `one-room` local point charged about
+1.5 KiB for a 256-byte payload (`drainBytesPercent` of 2.27 on a 65,536-byte budget). That is an
+observation of that run, not a contract: no test pins it.
 
 ## What a run does
 
@@ -69,7 +69,8 @@ among the groups counted from 1, and its `name` carries the same number. Nothing
 room: command ids, connection names and barrier ids are the same in every room. So every room's
 results are read by the same command ids, and all rooms meet at the same four barriers and start
 their windows together. It also means that an agent that fails before a barrier fails the agents of
-every room there, not only its own room's.
+every room there, not only its own room's, and that an agent that stalls holds every room at the
+next barrier until that barrier times out.
 
 Every role first runs the cohort setup the scale family also uses (`conformance/alm/cohort/`): sign
 in, the first publisher's group, the connects, the audience wait, an accepted RTC layout that stays
@@ -101,7 +102,8 @@ The subscriber's recipe asks for a `full` event history, because the count reads
 inbound log. A distributed manifest that names its own `eventHistory` replaces it, so a manifest of
 the family names none. A barrier id is used once per control run, so each run needs a control run of
 its own. A subscriber whose count fails stops there: its `received` value is recorded, its `stats`
-is not. A publisher that fails before `complete` fails every other agent of the run at that barrier.
+is not. A publisher that fails in its window fails every other agent of the run, in every room, at
+the `complete` barrier.
 
 ## The local points
 
@@ -125,6 +127,22 @@ The test's manifest is a role map with one role per recipe, named by the recipe'
 runs on its own agents and on no other. The agents are handed out in the order the rooms and their
 roles come: in `two-rooms`, `controller-01` and `controller-02` publish in the first room and
 `controller-03` subscribes there, and `controller-04` to `controller-06` do the same in the second.
+The test's worker gives every agent the manifest's one group as its identity, which is the first
+room's, so a second room's agents register under the first room's group. The run still resolves its
+targets, because every agent reports the group the manifest names; an agent's reported group is
+therefore no evidence of the room it ran in. Its recipe id is.
+
+Three runs in a row of each point passed on one 4-CPU machine that other work was using at the time
+(a one-minute load average of 2.6 to 4.3 as each run started). From the command to its exit,
+`one-room` took 58.8, 62.4 and 63.5 s, and `two-rooms` took 52.3, 50.0 and 52.1 s; the tests
+themselves took 52.5 to 57.5 s and 45.0 to 46.4 s. `two-rooms` is the shorter because its window is
+half as long, though it has twice the agents. In all six runs
+every publisher's stage admitted every one of its frames, and every subscriber observed every frame
+of its room, 120 messages a point: two subscribers of 60 frames in `one-room`, and two rooms of one
+subscriber of 2 x 30 frames in `two-rooms`. The point's delivered sample age had its median in the
+10 to 20 ms bucket in all six runs; its largest age was 63, 72 and 31 ms in `one-room` and 105, 72
+and 78 ms in `two-rooms`. These are observations of those runs on one machine, where the two clocks
+of an age are one clock. No test pins them, and none of them is a level.
 
 A run of the script runs one point. Playwright always starts the in-memory API itself and refuses to
 run while its port already answers. It starts the headless SPA and the control server only when
@@ -219,6 +237,23 @@ Read each figure with these limits:
 - **A delivery level of several publishers is over their frames together.** A subscriber's count
   and its `observed` do not tell one publisher's frames from another's, so neither does a level read
   from them.
+- **Nothing counts the publishers' share of the fan-out.** `logicalFanoutMessages` takes every other
+  member of a room as a receiver, publishers included: a publisher's page opens the frame's channel
+  and hears the room's other publishers. Only a subscriber counts, and only a subscriber has a gate.
+  With more than one publisher, `measured.delivered.observed` therefore cannot reach
+  `logicalFanoutMessages`, and no assert covers the difference. For 5 publishers among 15 agents
+  over 600 frames, the fan-out is 600 x 5 x 14 = 42,000, the 10 subscribers can observe
+  600 x 5 x 10 = 30,000, and the other 600 x 5 x 4 = 12,000 are deliveries to publishers' pages. In
+  the `two-rooms` local point the three numbers are 240, 120 and 120.
+- **A room that stalls takes the point's record with it.** All rooms share the four barriers, and a
+  barrier's timeout is sized for one room. An agent that fails before a barrier fails every room's
+  agents there. An agent that only stalls holds every room until the barrier times out, and they
+  fail then. After either, the point has no figures record at all: an agent that failed at a barrier
+  ran none of its later commands, and the record needs the results of every agent of every room. It
+  gives none for the rooms that ran well.
+- **The plan takes every frame to be admitted.** `expectedAdmissions` is `frameCount`, whatever
+  `publication.drain.bytes` is. A fitting `payloadBytes` does not make that true, since the stage
+  charges the envelope against the budget.
 - **A percentile is a bucket.** `p50`, `p95` and `p99` are `{ atLeast, atMost }`: the bucket of the
   nearest-rank sample on `AL_PUBLICATION_FIGURE_AGE_BOUNDS_MS`, narrowed by `min` and `max`. They
   compare bucket by bucket with the stage's `selectionAgeMs`, and are not exact values.
@@ -239,8 +274,14 @@ Read each figure with these limits:
 
 ## Not built
 
-- A rate above the publication cadence.
-- Subscription churn, and seeded loss or delay.
+- A rate above the publication cadence: a `publishIntervalMs` below `publication.cadenceMs` is
+  refused (`publish-interval-below-cadence`). The stage's boundary follows the previous opportunity,
+  so what a point above cadence should admit depends on measured lateness, and the family has no
+  such measurement yet.
+- Seeded loss and subscription churn as parameters. They are the family's next pull request, loss
+  first: a loss point needs the frames sent during the fault counted apart from the frames sent
+  after it, and churn needs a ruling on what churns.
+- Seeded delay.
 - Hosted manifests, and the clock offset a hosted age needs.
 - One histogram across runs: a record covers one run.
 - The bound on a frame's size in the stage: `payloadBytes` is not the envelope.
