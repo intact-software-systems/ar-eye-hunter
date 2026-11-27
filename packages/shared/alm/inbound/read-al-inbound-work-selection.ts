@@ -117,8 +117,11 @@ type ALInboundRowEligibility =
     }>
     | Readonly<{ kind: 'deferred'; effect: ALPersistedInboundEffect; }>;
 
+/** The one read the selection asks a delivery for: whether a row is ready now, and the surface it read. */
+type ALInboundWorkSelectionDelivery = Pick<ALInboundAdmittedDelivery, 'readReadiness'>;
+
 interface ALInboundWorkSelectorDependencies {
-    readonly delivery: ALInboundAdmittedDelivery;
+    readonly delivery: ALInboundWorkSelectionDelivery;
     /** Names the delivery a track's next slot holds, which a completed delivery hands its place to. */
     readonly admissionStore: Pick<ALInboundAdmissionStore, 'readOrderedSuccessor'>;
     readonly namespace: string;
@@ -164,10 +167,10 @@ export interface ALInboundWorkSelector {
         position: ALInboundOrderedDelivery.Position
     ): Promise<ALWorkClaim | undefined>;
     /**
-     * How many deliveries the last batch ran because the same track's previous delivery completed earlier in it; each
-     * left that batch's unreserved due rows.
+     * How many deliveries the last batch ran because the same track's previous delivery completed earlier in it, its
+     * hand-ons; each left that batch's unreserved due rows.
      */
-    getPromotedCount(): number;
+    getHandOnCount(): number;
     requestHeadRead(): void;
     isHeadReadPending(): boolean;
 }
@@ -175,7 +178,7 @@ export interface ALInboundWorkSelector {
 /** Reads message eligibility before reservation so waiting work does not spend processing attempts. */
 async function readALInboundWorkSelection(
     input: ALInboundWorkSelectionReadInput,
-    delivery: ALInboundAdmittedDelivery
+    delivery: ALInboundWorkSelectionDelivery
 ): Promise<ALInboundWorkSelection> {
     const page = await input.port.readPage({
         status: SCAN_STATUSES[input.scan.statusIndex],
@@ -218,7 +221,7 @@ async function readALInboundWorkSelection(
 async function readALInboundPageEligibility(
     entries: readonly ResourceEntry[],
     input: ALInboundWorkSelectionReadInput,
-    delivery: ALInboundAdmittedDelivery
+    delivery: ALInboundWorkSelectionDelivery
 ): Promise<ALInboundPageEligibility> {
     let page: ALInboundPageEligibility = {
         claimable: [],
@@ -286,7 +289,7 @@ function computeALInboundPageEligibilityWithRow(
 async function readALInboundRowEligibility(
     entry: ResourceEntry,
     input: ALInboundWorkSelectionReadInput,
-    delivery: ALInboundAdmittedDelivery
+    delivery: ALInboundWorkSelectionDelivery
 ): Promise<ALInboundRowEligibility> {
     const readyAt = resolveALWorkEntryReadyAt(entry, AL_INBOUND_WORK_LEASE_MS);
     if (readyAt > input.nowMs) {
@@ -338,7 +341,7 @@ export function createALInboundWorkSelector(
     });
     let claimedObservations: ReadonlyMap<string, ALInboundDeliveryObservation> = new Map();
     let unreservedDue: readonly ALInboundDeferredEffect[] = [];
-    let promotedCount = 0;
+    let handOnCount = 0;
     let claimedControlSends: readonly ALInboundClaimedControlSend[] = [];
     return {
         readNextReadyAtMs: (port, nowMs) => readALInboundNextReadyAtMs(page, port, nowMs),
@@ -352,12 +355,12 @@ export function createALInboundWorkSelector(
             });
             claimedObservations = claimed.observations;
             unreservedDue = claimed.unreservedDue;
-            promotedCount = 0;
+            handOnCount = 0;
             claimedControlSends = claimed.controlSends;
             return claimed.selection;
         },
         claimOrderedSuccessor: async (port, position) => {
-            const promoted = await claimALInboundOrderedSuccessor({
+            const handedOn = await claimALInboundOrderedSuccessor({
                 port,
                 position,
                 admissionStore: dependencies.admissionStore,
@@ -365,13 +368,13 @@ export function createALInboundWorkSelector(
                 namespace: dependencies.namespace,
                 nowMs: dependencies.nowMs()
             });
-            if (promoted !== undefined) {
-                unreservedDue = unreservedDue.filter((due) => due.effectId !== promoted.effectId);
-                promotedCount += 1;
+            if (handedOn !== undefined) {
+                unreservedDue = unreservedDue.filter((due) => due.effectId !== handedOn.effectId);
+                handOnCount += 1;
             }
-            return promoted?.claim;
+            return handedOn?.claim;
         },
-        getPromotedCount: () => promotedCount,
+        getHandOnCount: () => handOnCount,
         getDeliveryObservation: (effectId) => claimedObservations.get(effectId),
         getUnreservedDue: () => unreservedDue,
         getClaimedControlSends: () => claimedControlSends,

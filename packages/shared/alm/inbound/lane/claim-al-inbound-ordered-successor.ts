@@ -20,7 +20,7 @@ export namespace ClaimALInboundOrderedSuccessor {
         /** Where the delivery the batch just completed left its track. */
         readonly position: ALInboundOrderedDelivery.Position;
         readonly admissionStore: Pick<ALInboundAdmissionStore, 'readOrderedSuccessor'>;
-        readonly delivery: ALInboundAdmittedDelivery;
+        readonly delivery: Pick<ALInboundAdmittedDelivery, 'readReadiness'>;
         readonly namespace: string;
         readonly nowMs: number;
     }

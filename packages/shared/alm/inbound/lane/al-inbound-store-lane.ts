@@ -410,7 +410,7 @@ export class ALInboundStoreLane {
                 startedAtMs: event.startedAtMs,
                 claimedEffectIds: runOrder?.batchStartedAtMs === event.startedAtMs ? runOrder.effectIds : [],
                 deferred: toOldestFirstALInboundDeferredEffects(this.workSelector.getUnreservedDue()),
-                promoted: this.workSelector.getPromotedCount()
+                promoted: this.workSelector.getHandOnCount()
             });
         }
         catch { /* Optional diagnostics cannot change mandatory work. */ }

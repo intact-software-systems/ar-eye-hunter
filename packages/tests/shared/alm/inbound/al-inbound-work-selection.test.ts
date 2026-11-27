@@ -662,7 +662,7 @@ describe('ALInboundWorkSelector ordered successor', () => {
         expect(claim?.entry.key).toEqual(fixture.successorEntry.key);
         expect(fixture.readKeys).toEqual([toKeyAsString(fixture.successorEntry.key)]);
         expect((await fixture.readSuccessorRow())?.status).toBe(EntityStatus.RESERVED);
-        expect(fixture.selector.getPromotedCount()).toBe(1);
+        expect(fixture.selector.getHandOnCount()).toBe(1);
     });
 
     // Pins that a row another claim holds is never reserved twice.

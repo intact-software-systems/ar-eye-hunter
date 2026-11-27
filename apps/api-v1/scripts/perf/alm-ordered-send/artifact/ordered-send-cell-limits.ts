@@ -1,5 +1,6 @@
 import { AL_RECEIPT_DEADLINE_GRACE_MS } from '@shared/al-contracts/al-control.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
+import { AL_RECEIPT_RECORD_WINDOW_MS } from '@shared/alm/receipt-record/validate-al-receipt-record-opening.ts';
 
 /** The round trips to the database a run adds its shape's latency to. */
 export const ORDERED_SEND_DELAYED_ROUND_TRIPS: readonly string[] = [
@@ -51,7 +52,8 @@ export const ORDERED_SEND_CELL_LIMITS: readonly string[] = [
     'The three instances count each receipt in one receipt record on PostgreSQL, and no count of open receipts ' +
     `bounds it: an open receipt's rows live until ${AL_RECEIPT_DEADLINE_GRACE_MS / 1_000} s past its send's ` +
     'deadline and a confirmation under it that long again, an ended receipt that long past the later of its ' +
-    'deadline and its end, and a confirmation counted before its receipt was opened 30 min and ' +
+    'deadline and its end, and a confirmation counted before its receipt was opened ' +
+    `${AL_RECEIPT_RECORD_WINDOW_MS / 60_000} min and ` +
     `${AL_RECEIPT_DEADLINE_GRACE_MS / 1_000} s, so the rows a run holds grow with its send rate. A send to more ` +
     `than ${AL_MESSAGE_RESOURCE_LIMITS.collectionEntries} recipients, or one whose receipt the control cannot ` +
     'carry, opens no receipt; the room\'s fourteen stay far below both.',
