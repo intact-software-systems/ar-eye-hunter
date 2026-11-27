@@ -394,9 +394,14 @@ describe('edge-order-late-join', () => {
 
 describe('edge-order-unretried-loss-stream', () => {
     const KEY = 'edge-order-unretried-loss-stream';
-    /** What the seeded loss takes of sends 2 to 19, as three carriers lost them on 2026-11-27. */
-    const LOST_RUNS = [[2, 3], [9, 9], [13, 13], [16, 16]] as const;
-    const ARRIVING = 15;
+    /**
+     * What the seeded loss takes of sends 2 to 19 over `ws`, where a lost frame is gone and each send is one draw. Over
+     * the RTC carriers the page submits a dropped frame again after 50 ms, and each new attempt is a draw of its own:
+     * a hosted run of 2026-11-27 lost 2, 3, 9, 11, 14 and 19 where three local runs lost 2, 3, 9, 13 and 16.
+     */
+    const WS_LOST_RUNS = [[2, 3], [9, 9], [13, 13], [16, 16]] as const;
+    const WS_ARRIVING = 15;
+    const RTC_CARRIERS = ALM_CONFORMANCE_CARRIERS.filter((carrier) => carrier !== 'ws');
 
     it.each(ALM_CONFORMANCE_CARRIERS)('over %s runs in the full scope with both pages edge-ordered', (carrier) => {
         const cell = requireCell(KEY, carrier);
@@ -431,57 +436,58 @@ describe('edge-order-unretried-loss-stream', () => {
         expect(findCommand(sender, 'assert-loss-dropped')).toMatchObject({ operator: 'gte', expected: 1 });
     });
 
-    it.each(ALM_CONFORMANCE_CARRIERS)(
-        'over %s the receiver records exactly the sends that arrive, in send order, and states each lost run as a gap',
-        (carrier) => {
-            const receiver = requireCell(KEY, carrier).receiver;
-            const typeId = toTypeId(KEY, carrier);
+    it.each(ALM_CONFORMANCE_CARRIERS)('over %s the receiver waits for the last send, which leaves after the loss', (carrier) => {
+        const receiver = requireCell(KEY, carrier).receiver;
 
-            expect(findCommand(receiver, 'received-last-send')).toMatchObject({
-                kind: 'wait',
-                match: { equals: { marker: KEY, seq: LOSS_STREAM_SENDS }, payloadFields: { 'data.typeId': typeId } }
-            });
-            expect(findCommand(receiver, `received-${ARRIVING}`)).toMatchObject({ typeId, count: ARRIVING, absent: false, ascendingBy: 'seq' });
-            expect(findCommand(receiver, `received-${ARRIVING + 1}`)).toMatchObject({ typeId, count: ARRIVING + 1, absent: true });
-            expect(toPlace(receiver, 'received-last-send')).toBeLessThan(toPlace(receiver, `received-${ARRIVING}`));
-            for (const [from, to] of LOST_RUNS) {
-                const gap = findCommand(receiver, `gap-${from}-${to}`);
-                expect(gap).toMatchObject({
-                    kind: 'wait',
-                    match: {
-                        payloadFields: {
-                            'data.kind': 'edge-order-gap',
-                            'data.typeId': typeId,
-                            'data.fromPosition': from,
-                            'data.toPosition': to,
-                            'data.reason': 'ended-at-sender'
-                        }
-                    }
-                });
-                expect(gap).not.toHaveProperty('absent');
+        expect(findCommand(receiver, 'received-last-send')).toMatchObject({
+            kind: 'wait',
+            match: {
+                equals: { marker: KEY, seq: LOSS_STREAM_SENDS },
+                payloadFields: { 'data.typeId': toTypeId(KEY, carrier) }
             }
-        }
-    );
+        });
+    });
 
-    it('states a late drop only over the RTC carriers, whose transport takes a dropped frame up again', () => {
-        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
-            const receiver = requireCell(KEY, carrier).receiver;
-            const late = receiver.commands.find((command) => command.commandId === `${receiver.recipeId}-late-lost-send`);
+    it('over ws the receiver records exactly the sends that arrive, in send order, and states each lost run as a gap', () => {
+        const receiver = requireCell(KEY, 'ws').receiver;
+        const typeId = toTypeId(KEY, 'ws');
 
-            if (carrier === 'ws') {
-                expect(late).toBeUndefined();
-                continue;
-            }
-            expect(late).toMatchObject({
+        expect(findCommand(receiver, `received-${WS_ARRIVING}`)).toMatchObject({ typeId, count: WS_ARRIVING, absent: false, ascendingBy: 'seq' });
+        expect(findCommand(receiver, `received-${WS_ARRIVING + 1}`)).toMatchObject({ typeId, count: WS_ARRIVING + 1, absent: true });
+        expect(toPlace(receiver, 'received-last-send')).toBeLessThan(toPlace(receiver, `received-${WS_ARRIVING}`));
+        for (const [from, to] of WS_LOST_RUNS) {
+            const gap = findCommand(receiver, `gap-${from}-${to}`);
+            expect(gap).toMatchObject({
                 kind: 'wait',
                 match: {
                     payloadFields: {
-                        'data.kind': 'edge-order-arrival',
-                        'data.outcome': 'late',
-                        'data.typeId': toTypeId(KEY, carrier)
+                        'data.kind': 'edge-order-gap',
+                        'data.typeId': typeId,
+                        'data.fromPosition': from,
+                        'data.toPosition': to,
+                        'data.reason': 'ended-at-sender'
                     }
                 }
             });
+            expect(gap).not.toHaveProperty('absent');
         }
     });
+
+    it.each(RTC_CARRIERS)(
+        'over %s the receiver claims only what holds at any pace: what it was handed is in send order, none twice',
+        (carrier) => {
+            const receiver = requireCell(KEY, carrier).receiver;
+
+            expect(findCommand(receiver, 'received-2')).toMatchObject({
+                typeId: toTypeId(KEY, carrier),
+                count: 2,
+                absent: false,
+                ascendingBy: 'seq'
+            });
+            expect(toPlace(receiver, 'received-last-send')).toBeLessThan(toPlace(receiver, 'received-2'));
+            const claimed = receiver.commands.map((command) => (command.commandId ?? '').slice(receiver.recipeId.length + 1));
+            expect(claimed.filter((name) => name.startsWith('received-'))).toEqual(['received-last-send', 'received-2']);
+            expect(claimed.filter((name) => name.startsWith('gap-') || name.startsWith('late-'))).toEqual([]);
+        }
+    );
 });
