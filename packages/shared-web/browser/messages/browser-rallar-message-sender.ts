@@ -65,7 +65,8 @@ import type { BrowserSessionDeliveries } from './browser-session-deliveries.ts';
 import {
     createBrowserUnicastMessage,
     validateBrowserPeerInput,
-    validateBrowserPeerServer
+    validateBrowserPeerServer,
+    validateRoomContext
 } from './create-browser-unicast-message.ts';
 import { toBrowserPublicationDelivery } from './publication/to-browser-publication-delivery.ts';
 import { toBrowserPublicationRequest } from './publication/to-browser-publication-request.ts';
@@ -254,7 +255,8 @@ export class BrowserRallarMessageSender {
         throwIfMessageIssues([
             ...this.input.inputValidator.validateWs(resolved),
             ...this.input.inputValidator.validateWsOrdering(resolved),
-            ...validateBrowserPeerInput({ send, roomRef })
+            ...validateBrowserPeerInput(send),
+            ...validateRoomContext(send.contextId, roomRef)
         ]);
 
         const scopedMessage: ScopedMessageSend<T> = {
@@ -558,7 +560,10 @@ export class BrowserRallarMessageSender {
         const roomId = this.input.toRoomId(room);
 
         const roomRef = this.input.resolveRoomRef(room);
-        const issues = [...this.input.inputValidator.validateRtc(input, roomId)];
+        const issues = [
+            ...this.input.inputValidator.validateRtc(input, roomId),
+            ...validateRoomContext(input.contextId, roomRef)
+        ];
         if (!roomId) {
             issues.push({
                 path: '$.roomId',

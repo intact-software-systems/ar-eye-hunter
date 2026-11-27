@@ -1178,7 +1178,8 @@ identity survives fallback and repair, and so does trace identity (I1b-i).
   The browser validates `corrId` as a non-empty string of at most 128 UTF-8 bytes.
 - The delivery handle carries `corrId` and `replyToMsgId` and
   `awaitReply<T>({ timeoutMs, signal? })`, which never throws and resolves
-  `replied` with the reply message, `timeout`, `aborted` or `undelivered`, each
+  `replied` with the reply message, `timeout`, `aborted`, `undelivered` or
+  `unanswerable` with its issues, each
   with the request's lifecycle. The timeout is required. Three clocks stay
   independent: the ACK timeout ends one receipt attempt, the message deadline
   ends the request's lifetime, and the reply timeout ends only the caller's wait.
@@ -1187,6 +1188,9 @@ identity survives fallback and repair, and so does trace identity (I1b-i).
   `acknowledged` (or `transport-accepted` where no receipt is awaited), and also
   when the request's deadline lapses during the wait. A reply that arrives after
   the deadline is still matched and kept, so a later `awaitReply` resolves `replied`.
+  A wait on a request whose topic WS cannot carry resolves `unanswerable` at
+  once and arms no timer; its issue is the `$.topicId` one the responder's
+  `reply()` would be refused with (D787).
 - Each browser delivery-registry entry owns one reply slot, so the registry's
   retention bounds it (60 s after the terminal state, 512 entries; an entry with
   an open reply wait is spared by the age rule). The first accepted reply is
@@ -1210,13 +1214,16 @@ identity survives fallback and repair, and so does trace identity (I1b-i).
   its local companion as the fallback. The conformance `reply` family
   (`reply-correlated`, `reply-timeout-late`, `reply-first-wins`,
   `reply-undelivered`) proves the outcomes over the WS carrier and the
-  RTC-with-WS-fallback strategy; a wrong responder is pinned at the matcher's unit level.
+  RTC-with-WS-fallback strategy; `reply-correlated` runs over `rtc` too, where
+  the request rides RTC and the reply comes back over WS; a wrong responder is
+  pinned at the matcher's unit level.
 
 **Limits of I1a:** replies travel over WS only. A request may travel on any
 carrier, but a reply that arrives over RTC is never matched; when the page
 subscribes to its type over RTC it is dropped with `reply-late` (cause
 `unobserved`), even while the request is awaited. A request
-on a topic that WS cannot carry cannot be replied to. A room reply routes in the
+on a topic that WS cannot carry cannot be replied to, and its reply wait
+resolves `unanswerable` at the call (D787). A room reply routes in the
 room's id, not in a request's custom `contextId`. There is one reply per request,
 no registered response schema (the caller validates), and no reply wait that
 survives a reload.

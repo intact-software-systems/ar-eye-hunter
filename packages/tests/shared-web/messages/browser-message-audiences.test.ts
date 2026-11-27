@@ -33,6 +33,14 @@ const ROOMLESS_EXCLUSIVE_ISSUE = {
     message: 'An exclusive send claims a resource in its room: it names a room.'
 };
 
+const CONTEXT_NAMES_ANOTHER_ROOM_ISSUE = {
+    path: '$.contextId',
+    code: 'context-room-mismatch',
+    message: 'A room send routes in the room it names: contextId must equal the room id.'
+};
+
+const ROOM_SEND = { topicId: 'room.chat', typeId: 'chat.message.v1', payload: { text: 'elsewhere' } };
+
 const mocks = getRallarFacadeMocks();
 let rtcRxStreamer = vi.mocked(mocks.apiMiddleware.middleware.rtcRxStreamer);
 let webSocketQueueBox = vi.mocked(mocks.apiMiddleware.middleware.webSocketQueueBox);
@@ -473,6 +481,88 @@ describe('an exclusive send', () => {
             })
         ).rejects.toMatchObject({ issues: [ROOMLESS_EXCLUSIVE_ISSUE] });
         expect(webSocketQueueBox.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+    });
+});
+
+describe('a room send whose contextId is not its room (D82)', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        resetRallarFacadeTestRuntime();
+        rtcRxStreamer = vi.mocked(mocks.apiMiddleware.middleware.rtcRxStreamer);
+        webSocketQueueBox = vi.mocked(mocks.apiMiddleware.middleware.webSocketQueueBox);
+        setRallarFacadeRoomSnapshots([createGroupSnapshotFixture({ ...ROOM_REF, sessionIds: ['session-1', 'peer-1'] })]);
+    });
+
+    it.each<RallarTypedMessageSendStrategy>(['ws', 'rtc', 'rtc-with-ws-fallback', 'ws-then-rtc'])(
+        'refuses a room send whose contextId names another room at the call on %s, before the connect and before either carrier',
+        async (strategy) => {
+            const facade = createRallarTestFacade();
+
+            await expect(createRoomChannel(facade).send({ text: 'elsewhere' }, { strategy, contextId: 'another-room' }))
+                .rejects.toMatchObject({ issues: [CONTEXT_NAMES_ANOTHER_ROOM_ISSUE] });
+            expect(rtcRxStreamer.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+            expect(webSocketQueueBox.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+            expect(facade.isConnected()).toBe(false);
+        }
+    );
+
+    it.each([
+        {
+            shape: 'messages.rtc.send to a roomRef',
+            send: () => createRallarTestFacade().messages.rtc.send({ ...ROOM_SEND, roomRef: ROOM_REF, contextId: 'another-room' })
+        },
+        {
+            shape: 'messages.ws.send to a roomRef',
+            send: () => createRallarTestFacade().messages.ws.send({ ...ROOM_SEND, roomRef: ROOM_REF, contextId: 'another-room' })
+        },
+        {
+            shape: 'messages.ws.send to a principal in its room',
+            send: () =>
+                createRallarTestFacade().messages.ws.send({
+                    ...ROOM_SEND,
+                    roomRef: ROOM_REF,
+                    scope: 'principal',
+                    principalId: 'principal-1',
+                    contextId: 'another-room'
+                })
+        },
+        {
+            shape: 'a typed send to a fixed list',
+            send: () => createRoomChannel().send({ text: 'listed' }, { recipientPeerIds: ['peer-1'], contextId: 'another-room' })
+        },
+        {
+            shape: 'a typed send that excludes peers',
+            send: () => createRoomChannel().send({ text: 'others' }, { exceptPeerIds: ['peer-1'], contextId: 'another-room' })
+        }
+    ])('refuses $shape whose contextId names another room on its default strategy', async ({ send }) => {
+        await expect(send()).rejects.toMatchObject({ issues: [CONTEXT_NAMES_ANOTHER_ROOM_ISSUE] });
+        expect(rtcRxStreamer.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+        expect(webSocketQueueBox.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+    });
+
+    it.each<RallarTypedMessageSendStrategy>(['ws', 'rtc', 'rtc-with-ws-fallback', 'ws-then-rtc'])(
+        'admits a room send whose contextId is its room id on %s, routed in that room',
+        async (strategy) => {
+            await createRoomChannel().send({ text: 'here' }, { strategy, contextId: ROOM_REF.groupId });
+
+            const [first] = [...rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls, ...webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls];
+            expect(first![0].route).toMatchObject({ contextId: ROOM_REF.groupId });
+        }
+    );
+
+    it('admits a world send in a context of its own', async () => {
+        await createRallarTestFacade().messages.ws.send({
+            scope: 'world',
+            topicId: WORLD_TOPIC_ID,
+            typeId: 'chat.message.v1',
+            contextId: 'thread-1',
+            payload: { text: 'world' }
+        });
+
+        expect(webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls[0]![0]).toMatchObject({
+            route: { contextId: 'thread-1' },
+            targets: { mode: 'broadcast', scope: 'world' }
+        });
     });
 });
 
