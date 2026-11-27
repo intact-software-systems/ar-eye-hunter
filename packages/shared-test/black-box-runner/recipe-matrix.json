@@ -2672,7 +2672,7 @@
           }
         ]
       },
-      "description": "No-browser API-v1 join-admission limiting: one probe principal fires 70 rapid upsert-self join attempts at a single open group so the per-principal window (60/min) actually engages, then a deterministic over-limit request must answer 429 with Retry-After: 60 while the founder still joins the same group successfully (per-principal isolation, no group-wide collateral)."
+      "description": "No-browser API-v1 join-admission limiting: one probe principal fires 70 rapid upsert-self join attempts at a single open group so the per-principal window (60/min) actually engages, then an over-limit request, resent until the drained per-principal bucket refuses it (the bucket refills continuously, so a single probe sent after the storm can be admitted), must answer 429 with Retry-After: 60 while the founder still joins the same group successfully (per-principal isolation, no group-wide collateral)."
     },
     {
       "id": "api-v1-group-ban-governance",
@@ -2840,7 +2840,7 @@
           }
         ]
       },
-      "description": "No-browser API-v1 WS topic subscriptions over REST: a session subscribes only with a live client-state session, effective subscribe and its current connection generation; subscribed, an equal replay, a changed-body idempotency conflict and renewed; the self-session read lists the leased row while the group revision stays, and another session's read is forbidden; a reconnect re-subscribes under the new generation and an old-generation unsubscribe keeps the row; a revoke of subscribe deletes the row and a re-grant does not revive it; unsubscribed then not-subscribed; and a leave deletes the row."
+      "description": "No-browser API-v1 WS topic subscriptions over REST: once the joins' background group writes (the topology promotion and the activation status for the settled layout) have landed, a session subscribes only with a live client-state session, effective subscribe and its current connection generation; subscribed, an equal replay, a changed-body idempotency conflict and renewed; the self-session read lists the leased row while the group revision stays, and another session's read is forbidden; a reconnect re-subscribes under the new generation and an old-generation unsubscribe keeps the row; a revoke of subscribe deletes the row and a re-grant does not revive it; unsubscribed then not-subscribed; and a leave deletes the row."
     },
     {
       "id": "api-v1-group-join-code-admission",
