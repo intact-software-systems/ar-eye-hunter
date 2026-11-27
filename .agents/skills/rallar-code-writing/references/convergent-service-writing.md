@@ -8,6 +8,7 @@ skills add domain facts; they do not replace or restate this contract.
 
 - [Human-readable service shape](#human-readable-service-shape)
 - [Transaction and retry ownership](#transaction-and-retry-ownership)
+- [Writes outside AppInbox](#writes-outside-appinbox)
 - [Specialized ResourceInbox transaction ownership](#specialized-resourceinbox-transaction-ownership)
 - [Optimistic persistence](#optimistic-persistence)
 - [Permissive convergence](#permissive-convergence)
@@ -71,6 +72,37 @@ The write callback obeys the closed database-result grammar in the authoritative
 repository code standard. A redelivered attempt repeats the whole
 `read -> compute -> validate -> write(transaction, computed)` sequence with
 fresh data.
+
+## Writes outside AppInbox
+
+A database write on an incoming path that does not pass through AppInbox is
+never implied. An incoming path is an HTTP request, a WebSocket frame, or a
+peer message that leads to a write. A database write includes a transport's
+own rows: deduplication, ordering, receipt, work, and outbox rows.
+
+A plan, decision record, question, or pull request that adds, moves, or widens
+such a write:
+
+- says "This writes outside AppInbox" as its own statement, never folded into
+  a larger design;
+- quotes the rule it departs from: "AppInbox is mandatory for incoming
+  database mutations";
+- lists every row written, the incoming path that writes it, the transaction
+  that holds the write, and its first conditional guard;
+- states what AppInbox would cost instead from a measurement, or says "not
+  measured";
+- records the question put to the maintainer word for word, with every option
+  and the recommended one, and the answer word for word.
+
+Code follows only after the maintainer approves that statement. "As an
+existing store already does" is a description, never a reason and never an
+approval. An earlier answer covers the write it was asked about and no other.
+
+`docs/app-inbox-direct-write-registry.md` records every direct database write
+the source contains, and `npm run check:direct-writes` fails when the source
+and that registry differ. An entry is a record that the write exists. An entry
+marked `under review` has no ruling from the maintainer; it is not an approval
+and it is not precedent.
 
 ## Specialized ResourceInbox transaction ownership
 

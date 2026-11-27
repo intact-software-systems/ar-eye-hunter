@@ -150,6 +150,9 @@ limit.
   commit message, and all affected full commit IDs; asking for permission
   immediately before the commit; and receiving explicit approval. This includes
   commit, amend, merge, revert, cherry-pick, rebase, and squash operations.
+  An operation that changes `docs/app-inbox-direct-write-registry.md` quotes
+  that file's whole diff in the permission request, under its own heading, and
+  says in words whether any entry moved to approved.
   Editing files or working directly on the default branch, standing preferences,
   deadlines, or task-start approval do not count. Each default-branch commit
   requires a new permission request and approval; any content, message, input,
@@ -198,6 +201,18 @@ limit.
   reference owns its transaction/retry rules, optimistic compare-and-set
   semantics, permissive convergence, immutable facts, locking boundaries, and
   verification requirements. Specialist skills contain only domain deltas.
+- A database write on an incoming path that does not pass through AppInbox is
+  never implied. A plan, decision record, question, or pull request that adds,
+  moves, or widens one says "This writes outside AppInbox", names the rule
+  above as the one it departs from, lists the rows written and the path that
+  writes them, states what AppInbox would cost instead or "not measured", and
+  records the question put to the maintainer word for word with every option
+  and the answer. Code follows only after the maintainer approves that
+  statement. "As an existing store already does" is never a reason and never
+  an approval. The canonical service reference owns the detail.
+  `npm run check:direct-writes` fails on a direct write that
+  `docs/app-inbox-direct-write-registry.md` does not record; an entry there is
+  a record that the write exists, not an approval.
 - Authoritative persisted and shared contracts use mandatory fields by default;
   sparse input and migration shapes remain separate.
 

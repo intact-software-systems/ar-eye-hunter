@@ -190,6 +190,7 @@ Style and governance checkers (warning-only by default):
 ```sh
 npm run check:repo-style
 npm run check:repo-style:changed -- origin/main HEAD   # what branch CI enforces
+npm run check:direct-writes     # blocking: source against docs/app-inbox-direct-write-registry.md
 npm run test:repo-governance    # after touching skills, plugin metadata, or examples
 ```
 
@@ -234,6 +235,16 @@ deleted architecture notes are not current authority.
 **AppInbox is mandatory for every incoming database mutation** — HTTP and WS, including
 client/group/topology, auth/session/ticket, CRDT append/admin, and mutating admin paths. There is no
 direct-mutation fallback.
+
+**A database write on an incoming path outside AppInbox is never implied.** A plan, decision
+record, question, or pull request that adds, moves, or widens one says "This writes outside
+AppInbox", names this rule as the one it departs from, lists the rows written and the path that
+writes them, states what AppInbox would cost instead or "not measured", and records the question
+put to the maintainer word for word with every option and the answer. Code follows only after the
+maintainer approves that statement. "As an existing store already does" is never a reason and never
+an approval. `npm run check:direct-writes`, a governance-gate phase, fails on a direct write that
+`docs/app-inbox-direct-write-registry.md` does not record; an entry there is a record that the
+write exists, not an approval.
 
 ```text
 HTTP/WS mutation -> APP_INBOX -> read -> compute -> validate

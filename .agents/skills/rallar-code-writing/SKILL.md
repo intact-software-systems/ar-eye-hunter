@@ -190,6 +190,8 @@ checker does not substitute for following production symbols.
 - Follow the complete doctrine in `references/convergent-service-writing.md`.
 - AppInbox is mandatory for incoming database mutations and owns the transaction
   and retry boundary.
+- A write outside AppInbox is never implied; follow "Writes outside AppInbox" in
+  `references/convergent-service-writing.md` before proposing one.
 - Keep `read -> compute -> validate -> write(transaction, computed)` visible.
   `compute` and `validate` are pure; `compute` produces persistence-ready data.
   Do not add a post-compute preparation phase. Do not add another mutation phase

@@ -479,6 +479,37 @@ describe('authoritative mutation guidance integrity', () => {
             ]);
         }
     );
+
+    it('states that a write outside AppInbox is never implied, and names the registry as a record, not an approval', () => {
+        const agents = normalizeWhitespace(readRepo('AGENTS.md'));
+        const claude = normalizeWhitespace(readRepo('CLAUDE.md'));
+        const doctrine = normalizeWhitespace(readRepo(canonicalServiceWritingPath));
+        const codeWriting = normalizeWhitespace(readRepo('.agents/skills/rallar-code-writing/SKILL.md'));
+        const explicitnessRule = [
+            'This writes outside AppInbox',
+            'never implied',
+            'not measured',
+            'word for word',
+            'As an existing store already does',
+            'docs/app-inbox-direct-write-registry.md',
+            'not an approval'
+        ];
+
+        expectAll(agents, [...explicitnessRule, 'AppInbox is mandatory for incoming database mutations']);
+        expectAll(claude, [...explicitnessRule, 'AppInbox is mandatory for every incoming database mutation']);
+        expectAll(doctrine, [
+            ...explicitnessRule,
+            'An incoming path is an HTTP request, a WebSocket frame, or a peer message that leads to a write',
+            'A database write includes a transport\'s own rows'
+        ]);
+        expect(codeWriting).toContain('A write outside AppInbox is never implied');
+        expect(agents).toContain('changes `docs/app-inbox-direct-write-registry.md` quotes that file\'s whole diff');
+        expect(existsSync(path.join(repoRoot, 'docs/app-inbox-direct-write-registry.md'))).toBe(true);
+        for (const [filePath, guidance] of [['AGENTS.md', agents], ['CLAUDE.md', claude], ['doctrine', doctrine]]) {
+            expect(guidance, filePath).not.toMatch(/(?:stated|approved|confirmed) exception/iu);
+            expect(guidance, filePath).not.toMatch(/outside AppInbox unless/iu);
+        }
+    });
 });
 
 function readRepo(filePath: string): string {
