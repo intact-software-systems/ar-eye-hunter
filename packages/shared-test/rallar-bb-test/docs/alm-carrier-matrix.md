@@ -23,7 +23,9 @@ A capability is one row: a `statement` and one cell for each of `ws`, `rtc` and
 
 Who refuses (`by`):
 
-- `call`: the send call throws a validation issue, at `path` with `code`. No handle exists.
+- `call`: the send call throws a validation issue, at `path` with `code`. No handle exists. A reply
+  wait's refusal is its call's resolved value instead: the request has a handle, whose `awaitReply`
+  never throws and resolves `unanswerable` with that issue.
 - `origin`: the sender's page ends the handle `rejected` before any carrier attempt.
 - `trusted-server`: the WS server refuses the send at its own admission and answers the sender with a
   NACK.

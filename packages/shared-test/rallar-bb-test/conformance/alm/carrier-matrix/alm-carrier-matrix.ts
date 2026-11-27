@@ -13,8 +13,9 @@ import type { AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
 /**
  * What the send a capability names comes to on one carrier.
  *
- * `refused` names who refuses. The `call` throws a validation issue and returns no handle. The `origin` ends the
- * handle `rejected` before any carrier attempt. The `trusted-server` and a `peer` hop refuse the send at their own
+ * `refused` names who refuses. The `call` throws a validation issue and returns no handle; a reply wait's refusal is
+ * its call's resolved value instead, with that issue. The `origin` ends the handle `rejected` before any carrier
+ * attempt. The `trusted-server` and a `peer` hop refuse the send at their own
  * admission and answer the hop that sent it with a NACK. The origin admits a peer's NACK only from a peer the send
  * owes: a unicast's addressee, a peer its receipt expects, a session a server admitted the send to, or a hop its
  * carrier sends every frame through. It states an admitted NACK as a rejection by that relay, except that a
@@ -796,6 +797,31 @@ export const ALM_CARRIER_MATRIX = {
                 kind: 'stated',
                 outcome: { kind: 'delivered' },
                 proofs: [{ kind: 'lane-cell', scenarioKey: 'reply-correlated' }]
+            }
+        }
+    },
+    'reply-wait-on-topic-ws-cannot-carry': {
+        statement: 'A request on a topic WS cannot carry has no reply: its reply wait is refused at the call.',
+        cells: {
+            ws: {
+                kind: 'not-applicable',
+                because: 'The send itself is refused at the call, `$.topicId`: the strategy validates the WS topic.'
+            },
+            rtc: {
+                kind: 'stated',
+                outcome: { kind: 'refused', by: 'call', path: '$.topicId', code: 'invalid-ws-user-topic' },
+                proofs: [{
+                    kind: 'unit-test',
+                    testFile: 'packages/tests/shared-web/messages/browser-rallar-delivery-registry.test.ts',
+                    testName:
+                        'refuses a reply wait on a request whose topic WS cannot carry, at the call, with the issue its reply would be refused with',
+                    because:
+                        'The wait resolves `unanswerable` with the issue the responder\'s `reply()` is refused with, and arms no timer.'
+                }]
+            },
+            'rtc-with-ws-fallback': {
+                kind: 'not-applicable',
+                because: 'The send itself is refused at the call, `$.topicId`: the strategy validates the WS topic.'
             }
         }
     },
