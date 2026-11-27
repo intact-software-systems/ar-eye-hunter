@@ -2,9 +2,10 @@ import {
     toBrowserRtcCaptureIntent,
     type BrowserRtcCaptureIntent
 } from '@shared-web/browser/connection/browser-rtc-capture-intent.ts';
-import type {
-    BrowserMessageInputValidator,
-    ResolvedWsMessageInput
+import {
+    validateRoomContext,
+    type BrowserMessageInputValidator,
+    type ResolvedWsMessageInput
 } from '@shared-web/browser/messages/browser-message-input-validator.ts';
 import {
     endEdgeOrderSendOnFailure,
@@ -71,7 +72,6 @@ import {
     validateBrowserRtcPeerSend,
     type BrowserRtcPeerSend
 } from './validate-browser-rtc-peer-send.ts';
-import { validateRoomContext } from './validate-room-context.ts';
 
 interface ResolvedRtcMessageTarget {
     readonly room: string | GroupRef | undefined;
