@@ -22,14 +22,22 @@ import {
     type ALWorkReadinessProbeCause
 } from './al-work-readiness-memory.ts';
 
-/** A completed claim that names what its owner's `claimSuccessor` finds the row it hands its place in the batch to by. */
+/**
+ * A completed claim that also names its succession: the value its owner's `claimSuccessor` reads to find the row that
+ * takes this claim's place in the batch.
+ */
 export interface ALWorkCompletedWithSuccession<TSuccession> {
     readonly status: 'completed-with-succession';
     readonly succession: TSuccession;
 }
 
-/** What one claim's run answers: an outcome, or a completion that names a succession. */
-export type ALWorkClaimResult<TSuccession = never> = ALWorkOutcome | ALWorkCompletedWithSuccession<TSuccession>;
+/**
+ * What one claim's run answers: an outcome, or a completion that names a succession. An owner with no succession
+ * (`never`) answers outcomes only.
+ */
+export type ALWorkClaimResult<TSuccession = never> =
+    | ALWorkOutcome
+    | ([TSuccession] extends [never] ? never : ALWorkCompletedWithSuccession<TSuccession>);
 
 export type ALWorkAttemptResult<TSuccession = never> =
     | ALWorkClaimResult<TSuccession>
@@ -92,11 +100,11 @@ export interface ALWorkHandlerDependencies<TSuccession = never> {
     /**
      * Reserves the claim a completed one hands its place in the batch to, found by the succession that claim named,
      * which the batch then runs after the claims it holds. Asked only for a claim that completed naming one, while
-     * the batch has fewer than `pageSize` claims and is not disposed. Undefined for an owner that hands nothing on.
+     * the batch has fewer than `pageSize` claims and is not disposed. Undefined for an owner that hands nothing on,
+     * and only undefined for one with no succession (`never`), whose claims never name one.
      */
-    readonly claimSuccessor:
-        | ((port: ALWorkQueuePort, succession: TSuccession) => Promise<ALWorkClaim | undefined>)
-        | undefined;
+    readonly claimSuccessor: [TSuccession] extends [never] ? undefined :
+        ((port: ALWorkQueuePort, succession: TSuccession) => Promise<ALWorkClaim | undefined>) | undefined;
     /**
      * Runs one claim. The instant the batch's run loop started comes with it -- after the selection
      * and the reservation, before the first claim runs -- so an owner that reports per-claim timing
