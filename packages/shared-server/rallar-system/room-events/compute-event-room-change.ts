@@ -1,3 +1,4 @@
+import { transferEventRoom } from './transfer-event-room.ts';
 import { GROUP_RETENTION_METADATA_KEY } from '@shared/api/group-retention.ts';
 import type { Group, GroupRef } from '@shared/api/group-types.ts';
 import { toRoomGuestInvitation } from '@shared/api/room-guests/invitation.ts';
@@ -13,6 +14,7 @@ import { computeMemberPresenceAdmission } from '../group-state/mutation/presence
 import { computeGroupMembershipWrite } from '../group-state/mutation/write/compute-group-membership-write.ts';
 
 export type RoomChange =
+    | { readonly kind: 'handover'; readonly priorOrganizer: string }
     | { readonly kind: 'open'; readonly capacity: number }
     | { readonly kind: 'attach' | 'close' }
     | { readonly kind: 'rotate'; readonly verifier: string }
@@ -44,6 +46,7 @@ export function computeEventRoomChange(input: EventRoomAccessEffects.Input, chan
             joinMode: 'invite-only', expiresAtEpochMs: input.after.closesAt, eventRoom: binding });
     }
     if (!stored.eventRoom || stored.eventRoom.lobbyGroupId !== binding.lobbyGroupId) throw new TypeError('Room belongs to another event.');
+    if (change.kind === 'handover') return transferEventRoom(input, data);
     if (change.kind === 'close') {
         const { guestInvitation: _retired, ...group } = stored;
         return publishGroup(data, { ...group, status: 'archived', archived: auditStamp(command, facts, undefined), deleted: null });

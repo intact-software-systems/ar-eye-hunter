@@ -41,6 +41,7 @@ export namespace RallarScheduledSessions {
         readonly displayName: string;
         readonly startsAtEpochMs: number;
         readonly maxPlayers: number;
+        readonly guestBooking?: boolean;
     }
     export interface CreateRequest extends Create {
         readonly groupId: string;

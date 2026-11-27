@@ -186,6 +186,12 @@ in `packages/shared-react/scheduled-sessions-panel.tsx`; both games import it di
 start time in its authoritative AppInbox attempt. AR Eye checks fresh server permission and rechecks
 current director authority before accepting the start into the latest simulation snapshot.
 
+For an opted-in schedule, `GuestSessionBooking` retains a room-scoped browser proof in encrypted
+credential storage. Guest preview and reservation routes derive the principal from that proof.
+Guest and account reservations share the room CAS, cutoff and reschedule revision. A successful
+explicit claim creates the normal room-scoped guest transport in the membership transaction. The
+anonymous preview refreshes on a return to the browser and on demand.
+
 ## Scoped matchmaking
 
 `MatchmakingService` registers public intent and private expiry operations with the server AppInbox

@@ -254,6 +254,20 @@ describe('room directory freshness', () => {
     });
 });
 
+it('keeps the account directory idle for a room-scoped guest until an account signs in', async () => {
+    const browser = new DirectoryBrowser();
+    browser.session = { ...ALICE, guestRoom: { ...SCOPE, groupId: 'reserved-lobby' } };
+    await browser.directory.start();
+    await browser.directory.refresh();
+    await browser.timers.advance(60_000);
+    expect(browser.requests).toHaveLength(0);
+    expect(browser.timers.pendingCount()).toBe(0);
+    browser.authenticate(ALICE);
+    await browser.directory.refresh();
+    expect(browser.requests).toHaveLength(1);
+    browser.directory.stop();
+});
+
 it('stops directory timers and restarts after a subscription cleanup failure', async () => {
     const browser = new DirectoryBrowser();
     await browser.directory.start();

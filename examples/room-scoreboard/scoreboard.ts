@@ -1,3 +1,4 @@
+import { mountEventRoster } from './mount-event-roster.ts';
 import { renderCourtProgram } from './render-court-program.ts';
 import { rallar, type RoomSchedule, type RoomClockCommand, type RoomClockObservation, type RoomTimelineAdvance } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -16,6 +17,7 @@ const error = document.querySelector<HTMLElement>('[role="alert"]')!;
 const scope = { applicationId: 'room-scoreboard', workspaceId: 'default' };
 rallar.configure({ apiBaseUrl: import.meta.env.VITE_RALLAR_API_BASE_URL ?? 'http://localhost:8080' });
 rallar.setDefaults(scope);
+mountEventRoster(rallar, document.querySelector<HTMLFormElement>('#event-watch')!, document.querySelector<HTMLElement>('#event-roster')!);
 let room: GroupRef | undefined;
 let state: RoomClockObservation = { status: 'stale', clock: null };
 let schedule: RoomSchedule.Observation = { status: 'stale', schedule: null };

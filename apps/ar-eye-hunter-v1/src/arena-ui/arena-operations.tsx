@@ -52,7 +52,7 @@ export function ArenaOperations(props: ArenaOperationsProps) {
     return (
         <section className="hud hud--side" aria-label="Arena operations">
             <ArenaRoomEntry arena={arena} />
-            {arena.session && <ArenaSocialControls arena={arena} />}
+            {arena.session && !arena.session.guestRoom && <ArenaSocialControls arena={arena} />}
             {arena.connectionState === 'signed-out' || !arena.session
                 ? (
                     <ArenaAuthForm
@@ -217,7 +217,9 @@ function ArenaSessionPanel({ arena, localColor, matchRemainingMs }: ArenaOperati
             </label>
             <ArenaQuickJoin arena={arena} />
             <div className="room-actions">
-                <button type="button" onClick={() => void arena.createArenaRoom()}>New Arena</button>
+                <button type="button" disabled={arena.connectionState !== 'connected'} onClick={() => void arena.createArenaRoom()}>
+                    New Arena
+                </button>
                 <button type="button" onClick={arena.refreshRooms}>Refresh</button>
                 <button type="button" onClick={arena.logout}>Logout</button>
             </div>
@@ -231,7 +233,7 @@ function ArenaSessionPanel({ arena, localColor, matchRemainingMs }: ArenaOperati
                     type="button"
                     className="primary"
                     disabled={arena.tournament.mode !== 'casual' || arena.spectating || !arena.roomId ||
-                        arena.directorStatus.isDirector ||
+                        Boolean(arena.session?.guestRoom) || arena.directorStatus.isDirector ||
                         arena.directorAttempt.status === 'pending'}
                     onClick={arena.appointSelfAsDirector}
                 >
