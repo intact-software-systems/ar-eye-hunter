@@ -1,7 +1,7 @@
 import { toSendCommand } from '../../alm-conformance-message-commands.ts';
 import { FULL_TAGS, type AlmConformanceScenarioDefinition } from '../../alm-conformance-scenario-definition.ts';
 import { resolveAlmCarrierMatrixCellCarriers } from '../../carrier-matrix/resolve-alm-carrier-matrix-cell-carriers.ts';
-import { toCallRefusalAssertions } from './call-refusal-commands.ts';
+import { toCallRefusalAssertions } from './to-call-refusal-assertions.ts';
 
 /**
  * C9 at the call: a send to the WS server's peer under a strategy that leads with RTC is refused by the product's typed
