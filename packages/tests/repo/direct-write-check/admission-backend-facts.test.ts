@@ -117,6 +117,36 @@ describe('admission backend facts', () => {
             { id: `${storesPath}#import:${backendPath}` }
         ]);
     });
+
+    it('records each exported key builder of a key module and each retained work topic', () => {
+        const keysPath = 'packages/shared/alm/outbound/al-outbound-admission-keys.ts';
+        const topicsPath = 'packages/shared/alm/al-admission-work-backend.ts';
+        const keys = `
+            export function toALOutboundAdmissionNamespace(storeNamespace: string): string { return storeNamespace; }
+            export function toALOutboundMessageOwnerKey(namespace: string, msgId: string): string { return namespace + msgId; }
+            function toALOutboundPrivateKey(namespace: string): string { return namespace; }
+            export function toALOutboundOrderingTrackPrefix(namespace: string): string { return toALOutboundPrivateKey(namespace); }
+        `;
+        const topics = ADMISSION_PORT_SOURCES[topicsPath] +
+            'export const AL_ADMISSION_WORK_COMPLETED_RETENTION = { typeIds: [\'WS_OUTBOX\'], topicIds: [\'AL_OUTBOUND\'] };\n';
+        const base = computeFixtureFacts({ ...ADMISSION_PORT_SOURCES, [keysPath]: keys, [topicsPath]: topics });
+        const widened = computeFixtureFacts({
+            ...ADMISSION_PORT_SOURCES,
+            [keysPath]: `${keys}\nexport function toALOutboundResendScheduleKey(namespace: string): string { return namespace; }`,
+            [topicsPath]: topics.replace('topicIds: [\'AL_OUTBOUND\']', 'topicIds: [\'AL_OUTBOUND\', \'AL_OUTBOUND_RESEND\']')
+        });
+
+        expect(base.rowFamilies).toEqual([
+            { id: `${topicsPath}#AL_ADMISSION_WORK_COMPLETED_RETENTION.AL_OUTBOUND` },
+            { id: `${topicsPath}#AL_ADMISSION_WORK_COMPLETED_RETENTION.WS_OUTBOX` },
+            { id: `${keysPath}#toALOutboundMessageOwnerKey` },
+            { id: `${keysPath}#toALOutboundOrderingTrackPrefix` }
+        ]);
+        expect(widened.rowFamilies.filter((fact) => !base.rowFamilies.some((known) => known.id === fact.id))).toEqual([
+            { id: `${topicsPath}#AL_ADMISSION_WORK_COMPLETED_RETENTION.AL_OUTBOUND_RESEND` },
+            { id: `${keysPath}#toALOutboundResendScheduleKey` }
+        ]);
+    });
 });
 
 function computeFixtureFacts(sources: Readonly<Record<string, string>>) {

@@ -13,6 +13,7 @@ import {
 
 const ADMISSION_PORT_NAMES = new Set(['ALAdmissionBackend', 'ALAdmissionWorkBackend']);
 const ADMISSION_PORT_PACKAGE = 'packages/shared/alm/';
+const ROW_KEY_BUILDER = /^toAL\w*(?:Key|Prefix)$/u;
 
 export function computeAdmissionBackendFacts(project, scope) {
     const implementations = findAdmissionBackendClasses(project, scope);
@@ -27,7 +28,8 @@ export function computeAdmissionBackendFacts(project, scope) {
         ),
         admissionBackendConstructions: computeConstructionFacts(project, scope, postgresClasses),
         admissionBackendWrites: computeWriteFacts(project, scope, implementationClasses),
-        wiringImports: computeWiringImportFacts(project, scope)
+        wiringImports: computeWiringImportFacts(project, scope),
+        rowFamilies: computeRowFamilyFacts(project, scope)
     };
 }
 
@@ -135,6 +137,31 @@ function computeWiringImportFacts(project, scope) {
             }))
     );
     return sortFacts(facts);
+}
+
+function computeRowFamilyFacts(project, scope) {
+    const keyModules = new Set(scope.keyModules);
+    const topicConstants = new Map(scope.workTopicConstants.map((topic) => [topic.path, topic.name]));
+    const facts = project.getSourceFiles().flatMap((sourceFile) => {
+        const repositoryPath = toRepositoryPath(sourceFile, scope.root);
+        const keyBuilders = keyModules.has(repositoryPath)
+            ? sourceFile.getFunctions()
+                .filter((declaration) => declaration.isExported() && ROW_KEY_BUILDER.test(declaration.getName() ?? ''))
+                .map((declaration) => `${repositoryPath}#${declaration.getName()}`)
+            : [];
+        const topicName = topicConstants.get(repositoryPath);
+        return [
+            ...keyBuilders,
+            ...(topicName === undefined ? [] : toWorkTopicIds(sourceFile, repositoryPath, topicName))
+        ];
+    });
+    return sortFacts(facts.map((id) => ({ id })));
+}
+
+function toWorkTopicIds(sourceFile, repositoryPath, constantName) {
+    const initializer = sourceFile.getVariableDeclaration(constantName)?.getInitializer();
+    return (initializer?.getDescendantsOfKind(SyntaxKind.StringLiteral) ?? [])
+        .map((literal) => `${repositoryPath}#${constantName}.${literal.getLiteralText()}`);
 }
 
 function isTypeOnlyImport(declaration) {
