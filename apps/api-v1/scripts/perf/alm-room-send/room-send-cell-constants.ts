@@ -15,7 +15,8 @@ export interface RoomSendCellConstants {
     readonly poolIdleTimeoutSeconds: number;
     /**
      * How long a send lives, as the `ttlMs` of its envelope: the server gives its receipt this long to complete
-     * before it answers `timed-out`. It is the lifetime of the browser's default room send.
+     * before it answers `timed-out`. It is the lifetime the purpose `notification` gives the sends of a browser's
+     * typed channel.
      */
     readonly sendLifetimeMs: number;
     /**

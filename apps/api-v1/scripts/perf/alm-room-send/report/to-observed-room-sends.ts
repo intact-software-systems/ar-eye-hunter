@@ -11,10 +11,14 @@ import type {
     RoomSendCellSendEnd
 } from '../room-send-cell-observations.ts';
 
-/** One write of a copy to its recipient's socket, as the cell read it there: its instant and its place in `arrivals`. */
+/**
+ * One write of a copy to its recipient's socket, as the cell read it there: its instant, its place in `arrivals`, and
+ * whether the envelope of its frame named an ordering key.
+ */
 export interface ObservedRoomSendRead {
     readonly atMs: number;
     readonly arrivalPosition: number;
+    readonly namesOrderingKey: boolean;
 }
 
 /** One expected recipient's share of a send. */
@@ -96,7 +100,8 @@ function toObservedRoomSendCopies(
         recipientPeerId,
         reads: (arrivalsByRecipient.get(recipientPeerId) ?? []).map(({ arrival, arrivalPosition }) => ({
             atMs: arrival.atMs,
-            arrivalPosition
+            arrivalPosition,
+            namesOrderingKey: arrival.namesOrderingKey
         }))
     }));
 }

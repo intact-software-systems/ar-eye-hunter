@@ -48,7 +48,8 @@ const RUN_TABLES = ['resource_inbox', 'runtime_state_store'];
  * or on whether a publisher offered a send again for a slow receipt. Of sends on a track nothing depends on whether
  * the server reported a gap either. Of unordered sends the absence of a gap control is itself what the run proves: a
  * send that names no ordering key is on no track, so the server has no gap to report and the stand-in no repair to
- * offer.
+ * offer. Which of the two a run offered is read off the frames its sockets read, never off its shape: every copy of
+ * a run on the ordering key names one, and no copy of an unordered run does.
  */
 describe('ALM room-send cell on PostgreSQL', () => {
     postgresIt(
@@ -107,6 +108,7 @@ describe('ALM room-send cell on PostgreSQL', () => {
             const run = await runSmallCell({ ordering: 'unordered', delayMs: 0, senderRecovery: 'client-stand-in' });
 
             expectEverySendWrittenAndReceipted(run);
+            expect(computeRoomSendReport(run).delivery.copiesNamingAnOrderingKey).toBe(0);
             expect(computeRoomSendReport(run).tracks).toEqual({ kind: 'not-applicable' });
             expect(run.controls.filter(isGapControl)).toEqual([]);
             expect(run.resends.filter((resend) => resend.cause === 'repair')).toEqual([]);
@@ -188,12 +190,13 @@ function expectEverySendWrittenAndReceipted(observations: RoomSendCellObservatio
 }
 
 /**
- * Of sends that name the room's ordering key: no copy reached a socket ahead of an earlier send of its publisher, and
- * none past a predecessor never written. The absence of a NACK or a repair request is no part of it: the server
- * reports a gap whenever a later send of a track is admitted first.
+ * Of sends that name the room's ordering key: the envelope of every copy a socket read named one, no copy reached a
+ * socket ahead of an earlier send of its publisher, and none past a predecessor never written. The absence of a NACK
+ * or a repair request is no part of it: the server reports a gap whenever a later send of a track is admitted first.
  */
 function expectEveryCopyWrittenInTrackOrder(observations: RoomSendCellObservations): void {
     const report = computeRoomSendReport(observations);
+    expect(report.delivery.copiesNamingAnOrderingKey).toBe(COPIES);
     expect(report.delivery.copiesReadOutOfOfferOrder).toBe(0);
     expect(report.tracks).toMatchObject({ kind: 'ordering-key', copiesReadPastAnUnreadPredecessor: 0 });
 }

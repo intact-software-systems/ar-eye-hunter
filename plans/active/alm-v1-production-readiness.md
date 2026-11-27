@@ -769,13 +769,14 @@ on a tree that holds #885 and #927. The measurement is the cell of #927; the sli
 - Then the open case: one track at 5 and at 10 sends a second, which A and B did not rescue
   (D784), and which writes 168 of 1,400 and 14 of 2,800 copies on `main` at +5 ms (#927).
 
-Acceptance, in the cell's terms: at +5 ms nominal the five-publisher reference shape writes 2,800
-of 2,800 copies in order and completes 200 of 200 receipts in three runs of three, with the
-sender stand-in and without it, with the median from due time to first write under 1 s over the
-expected copies; no send the server admitted ends `first-hop-exhausted`, unless decision 17 rules
-that end a stated limit; one track at 10 sends a second does not stall, or its ceiling is stated
-as a limit with a typed refusal; no send handed off more than once in the cell; the four lane
-families green on three carriers; the medium-scale gate green with no constant touched.
+Acceptance, in the cell's terms: at +5 ms nominal the five-publisher reference shape under
+`--ordering=ordering-key` writes 2,800 of 2,800 copies in order and completes 200 of 200 receipts
+in three runs of three, with the sender stand-in and without it, with the median from due time to
+first write under 1 s over the expected copies; no send the server admitted ends
+`first-hop-exhausted`, unless decision 17 rules that end a stated limit; one track at 10 sends a
+second does not stall, or its ceiling is stated as a limit with a typed refusal; no send handed off
+more than once in the cell; the four lane families green on three carriers; the medium-scale gate
+green with no constant touched.
 
 **Where `plans/active/edge-ordered-room-sends.md` meets these slices (#914).** That plan proposes
 edge order: one sender's messages kept in order by Rallar Web at the two ends, over the unordered

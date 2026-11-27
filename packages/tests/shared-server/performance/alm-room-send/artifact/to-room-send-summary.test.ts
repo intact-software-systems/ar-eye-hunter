@@ -92,7 +92,8 @@ const STALLED_RUN: RoomSendSummarySource = {
             deliveredToAnyRecipient: 31,
             copiesExpected: 2_800,
             copiesRead: 434,
-            copiesReadMoreThanOnce: 56
+            copiesReadMoreThanOnce: 56,
+            copiesNamingAnOrderingKey: 434
         },
         recipientDelays: {
             ...NO_FIGURES.recipientDelays,
@@ -172,7 +173,7 @@ describe('toRoomSendSummary', () => {
             'sends offered: 200; the entry answered admitted 180, pending-admission 20',
             'offers that threw: none',
             'lateness of an offer against its due time: p50 0.2 ms, p95 1.3 ms, max 12.5 ms',
-            'copies written to the recipient\'s socket: 434 of 2800 expected; ' +
+            'copies written to the recipient\'s socket: 434 of 2800 expected, 434 naming an ordering key; ' +
             'sends written to every recipient 31, to at least one 31',
             'due time to first write, over the 2800 expected copies: p50 not reached, p95 not reached, p99 not reached',
             'due time to first write, over the 434 written copies: p50 43.1 ms, p95 1.23 s, max 2.10 s',
@@ -215,7 +216,8 @@ describe('toRoomSendSummary', () => {
                     deliveredToEveryRecipient: 200,
                     deliveredToAnyRecipient: 200,
                     copiesRead: 2_800,
-                    copiesReadMoreThanOnce: 0
+                    copiesReadMoreThanOnce: 0,
+                    copiesNamingAnOrderingKey: 2_800
                 },
                 recipientDelays: {
                     ...STALLED_RUN.report.recipientDelays,
@@ -252,7 +254,7 @@ describe('toRoomSendSummary', () => {
                 'load average 1.20 at start, 2.10 at end'
         );
         expect(lines.slice(5, 8)).toEqual([
-            'copies written to the recipient\'s socket: 2800 of 2800 expected; ' +
+            'copies written to the recipient\'s socket: 2800 of 2800 expected, 2800 naming an ordering key; ' +
             'sends written to every recipient 200, to at least one 200',
             'due time to first write, over the 2800 expected copies: p50 43.1 ms, p95 65.0 ms, p99 80.0 ms',
             'due time to first write, over the 2800 written copies: p50 43.1 ms, p95 65.0 ms, max 120.0 ms'
@@ -281,13 +283,17 @@ describe('toRoomSendSummary', () => {
         );
     });
 
-    it('names an unordered run as one in its first line, and prints not applicable in place of the predecessor count and the before-first-control line', () => {
+    it('names an unordered run as one in its first line, prints that none of its copies named an ordering key, and prints not applicable in place of the predecessor count and the before-first-control line', () => {
         const unordered: RoomSendSummarySource = {
             ...STALLED_RUN,
             shape: { ...STALLED_RUN.shape, ordering: 'unordered' },
             report: {
                 ...STALLED_RUN.report,
-                delivery: { ...STALLED_RUN.report.delivery, copiesReadOutOfOfferOrder: 7 },
+                delivery: {
+                    ...STALLED_RUN.report.delivery,
+                    copiesReadOutOfOfferOrder: 7,
+                    copiesNamingAnOrderingKey: 0
+                },
                 tracks: { kind: 'not-applicable' }
             }
         };
@@ -299,6 +305,10 @@ describe('toRoomSendSummary', () => {
             'ALM room-send cell: ordering unordered; 5 publishers x 2 sends/s for 20 s; ' +
                 '+5 ms nominal on the delayed database round trips; ' +
                 'sender recovery client-stand-in; application pool 5 (API default 5)'
+        );
+        expect(lines[5]).toBe(
+            'copies written to the recipient\'s socket: 434 of 2800 expected, 0 naming an ordering key; ' +
+                'sends written to every recipient 31, to at least one 31'
         );
         expect(lines[8]).toBe(
             'copies written more than once 56, ahead of an earlier send of their publisher 7; ' +

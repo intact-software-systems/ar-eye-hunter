@@ -24,13 +24,14 @@ const NO_TRACK = 'not applicable: unordered sends have no track';
  * The lines a run prints once it has ended, in the order to print them. The first line names the ordering of the
  * run's sends as its shape states it. The delay of that line is nominal: it is what the shape asks for, added to the
  * round trips the artifact lists as delayed and no others, and each wait is a timer that fires late. A copy is
- * "written to the recipient's socket": a frame on the wire, which is no delivery to an application. A control a send
- * drew is counted as drawn, never as a send lost. An offer that threw is printed with the name of its error and the
- * first message under that name, which `toRoomSendThrownError` bounded and cleared of URLs when it was recorded. The
- * copies written out of the order offered are worded by the ordering of the run's sends, and the two figures that
- * need a track, the copies past a predecessor never written and the view before each track's first control, are
- * printed as not applicable for a run of unordered sends. The last three lines are there only when a count of theirs
- * is above zero.
+ * "written to the recipient's socket": a frame on the wire, which is no delivery to an application. How many of the
+ * written copies named an ordering key is counted from those frames, so the copies line shows what the first line
+ * states. A control a send drew is counted as drawn, never as a send lost. An offer that threw is printed with the
+ * name of its error and the first message under that name, which `toRoomSendThrownError` bounded and cleared of URLs
+ * when it was recorded. The copies written out of the order offered are worded by the ordering of the run's sends,
+ * and the two figures that need a track, the copies past a predecessor never written and the view before each
+ * track's first control, are printed as not applicable for a run of unordered sends. The last three lines are there
+ * only when a count of theirs is above zero.
  */
 export function toRoomSendSummary(source: RoomSendSummarySource): readonly string[] {
     return [
@@ -75,7 +76,8 @@ function toCopyLines(report: RoomSendReport): readonly string[] {
     const overExpected = recipientDelays.dueToFirstReadOverExpectedCopiesMs;
     const overWritten = recipientDelays.dueToFirstReadMs;
     return [
-        `copies written to the recipient's socket: ${delivery.copiesRead} of ${delivery.copiesExpected} expected; ` +
+        `copies written to the recipient's socket: ${delivery.copiesRead} of ${delivery.copiesExpected} expected, ` +
+        `${delivery.copiesNamingAnOrderingKey} naming an ordering key; ` +
         `sends written to every recipient ${delivery.deliveredToEveryRecipient}, ` +
         `to at least one ${delivery.deliveredToAnyRecipient}`,
         `due time to first write, over the ${overExpected.count} expected copies: ` +

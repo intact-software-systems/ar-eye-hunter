@@ -113,13 +113,13 @@ describe('RoomSendObservationLog', () => {
         expect(repeatedRead?.ackOwedCopy).toBeUndefined();
         expect(repeatedRead?.read).toEqual({
             kind: 'arrival',
-            arrival: { msgId: 'session-01-a-send-1', recipientPeerId: 'session-02-b', atMs: 11.25 }
+            arrival: { msgId: 'session-01-a-send-1', recipientPeerId: 'session-02-b', atMs: 11.25, namesOrderingKey: true }
         });
         expect(otherSessionRead?.ackOwedCopy?.id.msgId).toBe('session-01-a-send-1');
         expect(log.endObservation().arrivals).toEqual([
-            { msgId: 'session-01-a-send-1', recipientPeerId: 'session-02-b', atMs: 10.5 },
-            { msgId: 'session-01-a-send-1', recipientPeerId: 'session-02-b', atMs: 11.25 },
-            { msgId: 'session-01-a-send-1', recipientPeerId: 'session-03-c', atMs: 12 }
+            { msgId: 'session-01-a-send-1', recipientPeerId: 'session-02-b', atMs: 10.5, namesOrderingKey: true },
+            { msgId: 'session-01-a-send-1', recipientPeerId: 'session-02-b', atMs: 11.25, namesOrderingKey: true },
+            { msgId: 'session-01-a-send-1', recipientPeerId: 'session-03-c', atMs: 12, namesOrderingKey: true }
         ]);
     });
 
@@ -128,7 +128,7 @@ describe('RoomSendObservationLog', () => {
 
         expect(log.recordSocketFrame(PUBLISHER, toCopyFrame(2))?.ackOwedCopy).toBeUndefined();
         expect(log.endObservation().arrivals)
-            .toEqual([{ msgId: 'session-01-a-send-2', recipientPeerId: 'session-01-a', atMs: 5 }]);
+            .toEqual([{ msgId: 'session-01-a-send-2', recipientPeerId: 'session-01-a', atMs: 5, namesOrderingKey: true }]);
     });
 
     it('records a receipt frame as a receipt of its phase, never as an arrival, and owes no ACK for it', () => {
@@ -215,7 +215,7 @@ describe('RoomSendObservationLog', () => {
         expect([observingBeforeItsEnd, log.isObserving()]).toEqual([true, false]);
         expect([lateCopy, lateReceipt, lateNack]).toEqual([undefined, undefined, undefined]);
         const recordedWhileObserving = {
-            arrivals: [{ msgId: 'session-01-a-send-1', recipientPeerId: 'session-02-b', atMs: 40 }],
+            arrivals: [{ msgId: 'session-01-a-send-1', recipientPeerId: 'session-02-b', atMs: 40, namesOrderingKey: true }],
             handOffs: [],
             receipts: [],
             controls: [],

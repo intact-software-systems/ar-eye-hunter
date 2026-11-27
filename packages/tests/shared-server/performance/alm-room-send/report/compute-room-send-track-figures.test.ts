@@ -41,7 +41,7 @@ describe('computeRoomSendReport: the figures of a track', () => {
                 { ...SEND, msgId: 'never-written', seq: 1 },
                 { ...SEND, msgId: 'written', seq: 2 }
             ],
-            arrivals: [{ msgId: 'written', recipientPeerId: 'recipient-1', atMs: 10 }],
+            arrivals: [{ msgId: 'written', recipientPeerId: 'recipient-1', atMs: 10, namesOrderingKey: false }],
             controls: [{ type: 'repair', msgId: 'written', reason: 'retransmit', atMs: 20 }]
         });
 
@@ -65,18 +65,18 @@ describe('computeRoomSendReport: the figures of a track', () => {
                 { ...SEND, msgId: 'b2', seq: 2, publisherPeerId: 'publisher-2', expectedRecipientPeerIds: everyRecipient }
             ],
             arrivals: [
-                { msgId: 'a1', recipientPeerId: 'misses-the-second', atMs: 10 },
-                { msgId: 'a1', recipientPeerId: 'reads-in-full', atMs: 11 },
-                { msgId: 'a2', recipientPeerId: 'reads-in-full', atMs: 12 },
-                { msgId: 'a2', recipientPeerId: 'not-in-the-first-audience', atMs: 13 },
-                { msgId: 'a3', recipientPeerId: 'misses-the-second', atMs: 14 },
-                { msgId: 'a3', recipientPeerId: 'reads-in-full', atMs: 15 },
-                { msgId: 'a3', recipientPeerId: 'not-in-the-first-audience', atMs: 16 },
-                { msgId: 'b1', recipientPeerId: 'misses-the-second', atMs: 17 },
-                { msgId: 'b1', recipientPeerId: 'reads-in-full', atMs: 18 },
-                { msgId: 'b2', recipientPeerId: 'misses-the-second', atMs: 19 },
-                { msgId: 'b2', recipientPeerId: 'reads-in-full', atMs: 20 },
-                { msgId: 'b2', recipientPeerId: 'not-in-the-first-audience', atMs: 21 }
+                { msgId: 'a1', recipientPeerId: 'misses-the-second', atMs: 10, namesOrderingKey: true },
+                { msgId: 'a1', recipientPeerId: 'reads-in-full', atMs: 11, namesOrderingKey: true },
+                { msgId: 'a2', recipientPeerId: 'reads-in-full', atMs: 12, namesOrderingKey: true },
+                { msgId: 'a2', recipientPeerId: 'not-in-the-first-audience', atMs: 13, namesOrderingKey: true },
+                { msgId: 'a3', recipientPeerId: 'misses-the-second', atMs: 14, namesOrderingKey: true },
+                { msgId: 'a3', recipientPeerId: 'reads-in-full', atMs: 15, namesOrderingKey: true },
+                { msgId: 'a3', recipientPeerId: 'not-in-the-first-audience', atMs: 16, namesOrderingKey: true },
+                { msgId: 'b1', recipientPeerId: 'misses-the-second', atMs: 17, namesOrderingKey: true },
+                { msgId: 'b1', recipientPeerId: 'reads-in-full', atMs: 18, namesOrderingKey: true },
+                { msgId: 'b2', recipientPeerId: 'misses-the-second', atMs: 19, namesOrderingKey: true },
+                { msgId: 'b2', recipientPeerId: 'reads-in-full', atMs: 20, namesOrderingKey: true },
+                { msgId: 'b2', recipientPeerId: 'not-in-the-first-audience', atMs: 21, namesOrderingKey: true }
             ]
         });
 
@@ -105,11 +105,11 @@ describe('computeRoomSendReport: the figures of a track', () => {
                 toSend('publisher-1', 4, 400)
             ],
             arrivals: [
-                { msgId: 'publisher-1-send-1', recipientPeerId: 'recipient-1', atMs: 130 },
-                { msgId: 'publisher-2-send-1', recipientPeerId: 'recipient-1', atMs: 190 },
-                { msgId: 'publisher-1-send-2', recipientPeerId: 'recipient-1', atMs: 260 },
-                { msgId: 'publisher-2-send-2', recipientPeerId: 'recipient-1', atMs: 270 },
-                { msgId: 'publisher-1-send-4', recipientPeerId: 'recipient-1', atMs: 420 }
+                { msgId: 'publisher-1-send-1', recipientPeerId: 'recipient-1', atMs: 130, namesOrderingKey: true },
+                { msgId: 'publisher-2-send-1', recipientPeerId: 'recipient-1', atMs: 190, namesOrderingKey: true },
+                { msgId: 'publisher-1-send-2', recipientPeerId: 'recipient-1', atMs: 260, namesOrderingKey: true },
+                { msgId: 'publisher-2-send-2', recipientPeerId: 'recipient-1', atMs: 270, namesOrderingKey: true },
+                { msgId: 'publisher-1-send-4', recipientPeerId: 'recipient-1', atMs: 420, namesOrderingKey: true }
             ],
             controls: [
                 { type: 'nack', msgId: 'unknown', reason: 'gap', atMs: 120 },

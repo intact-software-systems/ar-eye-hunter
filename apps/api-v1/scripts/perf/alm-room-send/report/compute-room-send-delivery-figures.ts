@@ -48,6 +48,12 @@ export interface RoomSendDeliveryFigures {
      * that name no ordering key nothing puts the order back.
      */
     readonly copiesReadOutOfOfferOrder: number;
+    /**
+     * Expected copies whose first write to their recipient's socket was a frame whose envelope named an ordering
+     * key. It is counted from the frames, never from the ordering the run's shape states, so it proves what the run
+     * offered: every written copy of a run on the ordering key, and none of a run of unordered sends.
+     */
+    readonly copiesNamingAnOrderingKey: number;
 }
 
 export function computeRoomSendDeliveryFigures(
@@ -75,7 +81,8 @@ export function computeRoomSendDeliveryFigures(
         copiesRead: copies.filter(isRead).length,
         copiesReadMoreThanOnce: copies.filter((copy) => copy.reads.length > 1).length,
         copiesReadOutOfOfferOrder: toRoomSendCopiesInOfferOrder(observedSends)
-            .reduce((total, copiesInOfferOrder) => total + computeReadsBeforeAnEarlierOffer(copiesInOfferOrder), 0)
+            .reduce((total, copiesInOfferOrder) => total + computeReadsBeforeAnEarlierOffer(copiesInOfferOrder), 0),
+        copiesNamingAnOrderingKey: copies.filter((copy) => copy.reads.at(0)?.namesOrderingKey === true).length
     };
 }
 

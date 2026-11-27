@@ -4,11 +4,11 @@ import { ROOM_SEND_API_V1_DEFAULTS } from './room-send-api-v1-defaults.ts';
 import { ROOM_SEND_ORDERINGS, type RoomSendOrdering } from './room-send-ordering.ts';
 import {
     ROOM_SEND_SENDER_RECOVERIES,
-    validateRoomSendShapeBesideOrdering,
+    validateRoomSendShapeWithoutOrdering,
     type RoomSendSenderRecovery,
     type RoomSendShape,
-    type RoomSendShapeBesideOrdering,
-    type RoomSendShapeIssue
+    type RoomSendShapeIssue,
+    type RoomSendShapeWithoutOrdering
 } from './validate-room-send-shape.ts';
 
 /** Where the run's artifact goes: a file the run names after its start and its shape, or the file `--out` names. */
@@ -45,12 +45,12 @@ export interface RoomSendCellOptionIssue {
 }
 
 /**
- * The shape of the reference run, beside its ordering. A shape flag the command line leaves out takes its value from
+ * The shape of the reference run, without its ordering. A shape flag the command line leaves out takes its value from
  * here; the application pool's is the API's own default, so a run that names no pool has the pool an API instance
  * starts with. The ordering has no reference value: a run's sends are on the ordering key or unordered because its
  * command line says so, never by omission.
  */
-export const ROOM_SEND_REFERENCE_SHAPE: RoomSendShapeBesideOrdering = {
+export const ROOM_SEND_REFERENCE_SHAPE: RoomSendShapeWithoutOrdering = {
     publishers: 5,
     sendsPerSecond: 2,
     durationS: 20,
@@ -165,9 +165,9 @@ function toOptionValues(argv: readonly string[]): OptionValuesRead {
 }
 
 /**
- * A flag that does not decode is an issue of its own, and the fields beside the ordering are then checked with the
- * reference value in its place. An ordering that is absent or unknown leaves no shape, and those fields are checked
- * all the same.
+ * A flag that does not decode is an issue of its own, and the shape without its ordering is then checked with the
+ * reference value in its place. An ordering that is absent or unknown leaves no shape, and its other fields are
+ * checked all the same.
  */
 function decodeShape(values: ReadonlyMap<string, string>): ShapeDecoded {
     const ordering = decodeOrdering(values.get('ordering'));
@@ -181,7 +181,7 @@ function decodeShape(values: ReadonlyMap<string, string>): ShapeDecoded {
         'application-pool',
         ROOM_SEND_REFERENCE_SHAPE.applicationPoolMaxConnections
     );
-    const shapeBesideOrdering: RoomSendShapeBesideOrdering = {
+    const shapeWithoutOrdering: RoomSendShapeWithoutOrdering = {
         publishers: publishers.value,
         sendsPerSecond: sendsPerSecond.value,
         durationS: durationS.value,
@@ -190,7 +190,7 @@ function decodeShape(values: ReadonlyMap<string, string>): ShapeDecoded {
         applicationPoolMaxConnections: applicationPool.value
     };
     return {
-        shape: ordering.value === undefined ? undefined : { ordering: ordering.value, ...shapeBesideOrdering },
+        shape: ordering.value === undefined ? undefined : { ordering: ordering.value, ...shapeWithoutOrdering },
         issues: [
             ...ordering.issues,
             ...publishers.issues,
@@ -199,7 +199,7 @@ function decodeShape(values: ReadonlyMap<string, string>): ShapeDecoded {
             ...delayMs.issues,
             ...senderRecovery.issues,
             ...applicationPool.issues,
-            ...validateRoomSendShapeBesideOrdering(shapeBesideOrdering)
+            ...validateRoomSendShapeWithoutOrdering(shapeWithoutOrdering)
         ]
     };
 }

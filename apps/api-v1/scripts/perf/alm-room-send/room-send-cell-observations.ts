@@ -115,6 +115,11 @@ export interface RoomSendCellArrival {
     readonly msgId: string;
     readonly recipientPeerId: string;
     readonly atMs: number;
+    /**
+     * Whether the envelope of the frame named an ordering key: read off the frame the socket read, never taken from
+     * the run's shape. So the copies show which ordering the run offered, whatever it was asked for.
+     */
+    readonly namesOrderingKey: boolean;
 }
 
 /**
@@ -207,8 +212,8 @@ export interface RoomSendCellDeclinedRepair {
  */
 export interface RoomSendCellObservations {
     /**
-     * Whether the sends of the run named an ordering key, every one alike. The report states the figures that need a
-     * track for `ordering-key` alone.
+     * The ordering the run's shape states for its sends, every one alike. The report states the figures that need a
+     * track for `ordering-key` alone. What the frames on the wire named is each arrival's own `namesOrderingKey`.
      */
     readonly ordering: RoomSendOrdering;
     readonly sends: readonly RoomSendCellSend[];

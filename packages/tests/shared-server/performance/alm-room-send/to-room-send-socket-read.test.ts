@@ -8,6 +8,7 @@ import {
     newALRepairControlMessage
 } from '@shared/al-contracts/al-control.ts';
 
+import type { RoomSendOrdering } from '../../../../../apps/api-v1/scripts/perf/alm-room-send/room-send-ordering.ts';
 import { toRoomSendMessage } from '../../../../../apps/api-v1/scripts/perf/alm-room-send/to-room-send-message.ts';
 import { toRoomSendSocketRead } from '../../../../../apps/api-v1/scripts/perf/alm-room-send/to-room-send-socket-read.ts';
 
@@ -40,30 +41,42 @@ const GAP_NACK = newALNackControlMessage(CONTROL_ID, {
     proof: null
 });
 
+/** The third send of the publisher as the cell offers it under one ordering: the frame a recipient's socket reads. */
+function toCopy(ordering: RoomSendOrdering): ALMessage {
+    return toRoomSendMessage({
+        send: {
+            msgId: SEND_MSG_ID,
+            publisherPeerId: PUBLISHER,
+            seq: 3,
+            publisherInstanceIndex: 0,
+            dueOffsetMs: 0,
+            expectedRecipientPeerIds: ['session-02-b']
+        },
+        roomRef: { applicationId: 'room-send-cell', workspaceId: 'default', groupId: 'room-run-1' },
+        createdAtEpochMs: 1_800_000_000_000,
+        ordering
+    });
+}
+
 function toRead(message: ALMessage) {
     return toRoomSendSocketRead({ message, readerPeerId: PUBLISHER, atMs: 41.625 });
 }
 
 describe('toRoomSendSocketRead', () => {
     it('reads a message that is no control as an arrival of it at the session that read it', () => {
-        const copy = toRoomSendMessage({
-            send: {
-                msgId: SEND_MSG_ID,
-                publisherPeerId: PUBLISHER,
-                seq: 3,
-                publisherInstanceIndex: 0,
-                dueOffsetMs: 0,
-                expectedRecipientPeerIds: ['session-02-b']
-            },
-            roomRef: { applicationId: 'room-send-cell', workspaceId: 'default', groupId: 'room-run-1' },
-            createdAtEpochMs: 1_800_000_000_000,
-            ordering: 'ordering-key'
-        });
+        expect(toRoomSendSocketRead({ message: toCopy('ordering-key'), readerPeerId: 'session-02-b', atMs: 41.625 }))
+            .toEqual({
+                kind: 'arrival',
+                arrival: { msgId: SEND_MSG_ID, recipientPeerId: 'session-02-b', atMs: 41.625, namesOrderingKey: true }
+            });
+    });
 
-        expect(toRoomSendSocketRead({ message: copy, readerPeerId: 'session-02-b', atMs: 41.625 })).toEqual({
-            kind: 'arrival',
-            arrival: { msgId: SEND_MSG_ID, recipientPeerId: 'session-02-b', atMs: 41.625 }
-        });
+    it('reads off the envelope of a copy that it names no ordering key', () => {
+        expect(toRoomSendSocketRead({ message: toCopy('unordered'), readerPeerId: 'session-02-b', atMs: 41.625 }))
+            .toEqual({
+                kind: 'arrival',
+                arrival: { msgId: SEND_MSG_ID, recipientPeerId: 'session-02-b', atMs: 41.625, namesOrderingKey: false }
+            });
     });
 
     it('reads a receipt control as a receipt of the send it names, in its phase', () => {

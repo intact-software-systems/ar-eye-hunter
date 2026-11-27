@@ -73,6 +73,13 @@ lifetime and the durability of the envelope, which are the `notification` channe
 (`AL_CHANNEL_SEND_DEFAULTS.notification`); and the payload, which states the send's number among
 its publisher's offers, `{ seq }`, whether or not the envelope names a seq.
 
+A run does not only state its ordering, it shows it. Each recipient's socket reads the whole
+envelope of every copy the server writes to it, and the run records of each frame whether it named
+an ordering key. The report counts the copies that did, `delivery.copiesNamingAnOrderingKey`, from
+those frames and never from the shape: it equals the copies written in a run on the ordering key
+and is 0 in a run of unordered sends. Any other value says the run did not offer what its command
+line named.
+
 ### What the unordered shape stands for
 
 The unordered shape is the envelope of the ordered shape with its `ordering` field left out, and
@@ -186,13 +193,14 @@ included; `--silent` keeps it off the terminal. The cell itself never prints or 
 Each option is one `--name=value` token. `--ordering` and `--database-url` have no default, and an
 invocation that leaves either out is refused. Every other shape option it leaves out takes the
 value of the reference shape, which the defaults above are and which states no ordering. An
-invocation with an issue in its options prints every issue, runs nothing and exits with status 2;
-no issue repeats a text of the command line, an `--ordering` the cell does not know included, and a
-`--database-url` that is no `postgres://` or `postgresql://` URL is refused there, before anything
-could print it. So is one that holds whitespace, a quote (`"` or `'`), a backtick or an angle
-bracket: percent-encode each, in a password too. The URL parser takes such a character as it is, and
-the removal of URL-shaped text from an error's message stops at one, so the rest of a password that
-held one could be printed.
+invocation with an issue in its options prints every issue, runs nothing and exits with status 2:
+one that names no ordering, or one the cell does not know, is still told every issue of its other
+options. No issue repeats a text of the command line, an `--ordering` the cell does not know
+included, and a `--database-url` that is no `postgres://` or `postgresql://` URL is refused there,
+before anything could print it. So is one that holds whitespace, a quote (`"` or `'`), a backtick
+or an angle bracket: percent-encode each, in a password too. The URL parser takes such a character
+as it is, and the removal of URL-shaped text from an error's message stops at one, so the rest of a
+password that held one could be printed.
 
 Status 0 means the run completed, whatever its figures. A run that could not be carried out, such as
 a database it cannot reach, prints the name of the error and its message, cut at 240 characters with
@@ -273,6 +281,12 @@ orderings unless it says otherwise below: two lines are worded by the ordering, 
   application**: a session of the cell has no client runtime, and a real client drops a copy it has
   taken before and, of a send that names an ordering key, holds back one that is ahead of its
   track.
+- **Naming an ordering key.** On the same line, `delivery.copiesNamingAnOrderingKey` in the
+  artifact: the expected copies whose first write was a frame whose envelope named an ordering key.
+  It is read off the frames the recipients' sockets read, never off the run's shape, so it is the
+  artifact's proof of what the run offered. Under `ordering-key` it equals the copies written;
+  under `unordered` it is 0. A copy written again counts once, by its first write, and a frame at a
+  session its send did not expect is a copy of no recipient.
 - **Due time to first write, over the expected copies.** The headline. From a send's due instant,
   so it includes the offer's lateness, to the first write of each copy; nearest-rank percentiles
   over every expected copy, written or not. A copy never written ranks above every written one, so
@@ -405,8 +419,9 @@ It never draws:
 
 So no repair of a gap is part of a run of unordered sends: its resends of cause `repair`, if it has
 any, each answer a request for the one send named. The smoke on PostgreSQL asserts it of a small
-run: no `gap` NACK, no `missing-seq` request, no resend of cause `repair`, and every send ended on
-its terminal receipt.
+run: no copy naming an ordering key, no `gap` NACK, no `missing-seq` request, no resend of cause
+`repair`, and every send ended on its terminal receipt. Of its three small runs on the ordering key
+it asserts that every written copy named one.
 
 A send on the ordering key keeps the same wait, ends and repairs, and may also draw the two gap
 controls, which the stand-in answers with the missing sequences of the track.
@@ -468,11 +483,13 @@ outside a transaction holds no connection while it waits.
 ## Limits
 
 - **One event loop.** One process runs the three instances and the load, where a deployment gives
-  each instance a process. With no latency added the loop is busy most of the time, and two runs of
-  one shape have differed several times over in how long a receipt took; both were of ordered
-  sends. **An absolute delay at +0 ms varies from run to run and measures the harness as much as
-  the product.** Compare runs by the loop's lag over the send window and over the tail before
-  comparing their delays, two runs that differ only in their ordering included.
+  each instance a process. With no latency added the loop is busy most of the time, and of the
+  three reference runs of one shape at +0 ms the slowest took 2.3 times the fastest at the 99th
+  percentile from offer to complete receipt, 1.95 s against 0.83 s, as the
+  [reference figures](#reference-figures) state; all three were of ordered sends. **An absolute
+  delay at +0 ms varies from run to run and measures the harness as much as the product.** Compare
+  runs by the loop's lag over the send window and over the tail before comparing their delays, two
+  runs that differ only in their ordering included.
 - **One ordering to a run.** Every send of a run is on the ordering key or every one is unordered.
   No run mixes the two, and an ordered and an unordered run of one shape are two processes on two
   databases at two times.
@@ -481,8 +498,10 @@ outside a transaction holds no connection while it waits.
   three round trips a send that no run pays. The cell is optimistic by that much.
 - **No other traffic.** No AppInbox reader, heartbeat, presence or connect traffic runs beside the
   sends, and no diagnostics sink is installed, so the pools and the loop serve the sends alone.
-- **No client runtime at a recipient.** A recipient's socket takes every frame the server writes
-  and sends no gap NACK of its own. Every delivery figure is on the wire.
+- **No client runtime at a recipient.** A recipient's socket takes every frame the server writes:
+  a repeated copy, which a client drops, and, of a send that names an ordering key, a copy ahead of
+  its track, which a client holds back. It sends no gap NACK of its own. Every delivery figure is
+  on the wire.
 - **Nothing reorders an unordered copy.** A send that names no ordering key is on no track, so
   neither the server nor a client holds its copy back for an earlier send of its publisher. The
   copies a run of unordered sends counts as written ahead of an earlier send stay out of order,
@@ -531,6 +550,7 @@ in one reference set of 16 runs:
 | Figure                                                                       | Ordering | Commit    | Shape of the run it is from                                                              |
 | ---------------------------------------------------------------------------- | -------- | --------- | ---------------------------------------------------------------------------------------- |
 | 1.95 s, the 99th percentile from offer to complete receipt                   | ordered  | `87b3c8f` | Five publishers at 2 sends a second for 20 s, +0 ms, `client-stand-in`, pool 5; one run. |
+| 0.83 s, 1.12 s and 1.95 s, the same percentile in each run of that shape     | ordered  | `87b3c8f` | The same shape; its three runs. The slowest is 2.3 times the fastest.                    |
 | 7,111 repairs declined in one run                                            | ordered  | `87b3c8f` | One publisher at 10 sends a second for 20 s, +5 ms, `client-stand-in`, pool 5; one run.  |
 | Under a thousand entries in each observation list the artifact keeps in full | ordered  | `87b3c8f` | Each of the 16 runs.                                                                     |
 

@@ -34,10 +34,10 @@ export interface RoomSendShape {
 }
 
 /**
- * What a shape holds beside its ordering: the fields the reference run gives a value, where the ordering is the
- * invocation's to state.
+ * A shape without its ordering: the fields the reference run gives a value, where the ordering is the invocation's
+ * to state.
  */
-export type RoomSendShapeBesideOrdering = Omit<RoomSendShape, 'ordering'>;
+export type RoomSendShapeWithoutOrdering = Omit<RoomSendShape, 'ordering'>;
 
 /**
  * An issue of a number repeats the number; an issue of the ordering or of the sender recovery never repeats the text
@@ -66,25 +66,18 @@ export function validateRoomSendShape(shape: RoomSendShape): readonly RoomSendSh
     const orderingIssues: readonly RoomSendShapeIssue[] = ROOM_SEND_ORDERINGS.includes(shape.ordering)
         ? []
         : [{ code: 'invalid-ordering', message: 'ordering must be ordering-key or unordered' }];
-    return [...orderingIssues, ...validateRoomSendShapeBesideOrdering(shape)];
+    return [...orderingIssues, ...validateRoomSendShapeWithoutOrdering(shape)];
 }
 
 /**
- * Every issue of what a shape holds beside its ordering. Each number is whole, so every publisher offers a whole
- * number of sends, the rate times the duration, and nothing is rounded. All the sessions of the room may publish: a
- * send still has every other session as its audience. An application pool opens at least one connection. A command
- * line that names no ordering has no shape, and is told every issue of these fields all the same.
+ * Every issue of a shape without its ordering. Each number is whole, so every publisher offers a whole number of
+ * sends, the rate times the duration, and nothing is rounded. An application pool opens at least one connection. A
+ * command line that names no ordering has no shape, and is told every issue of these fields all the same.
  */
-export function validateRoomSendShapeBesideOrdering(shape: RoomSendShapeBesideOrdering): readonly RoomSendShapeIssue[] {
-    const { sessionCount } = ROOM_SEND_CELL_CONSTANTS;
-    const issues: RoomSendShapeIssue[] = [];
-    if (!isWholeNumberOfAtLeast(shape.publishers, 1) || shape.publishers > sessionCount) {
-        issues.push({
-            code: 'invalid-publishers',
-            message: `publishers must be a whole number from 1 to ${sessionCount}, the sessions of the room; ` +
-                `received ${shape.publishers}`
-        });
-    }
+export function validateRoomSendShapeWithoutOrdering(
+    shape: RoomSendShapeWithoutOrdering
+): readonly RoomSendShapeIssue[] {
+    const issues: RoomSendShapeIssue[] = [...validateRoomSendPublishers(shape.publishers)];
     if (!isWholeNumberOfAtLeast(shape.sendsPerSecond, 1)) {
         issues.push({
             code: 'invalid-sends-per-second',
@@ -114,6 +107,16 @@ export function validateRoomSendShapeBesideOrdering(shape: RoomSendShapeBesideOr
         });
     }
     return issues;
+}
+
+/** All the sessions of the room may publish: a send still has every other session as its audience. */
+function validateRoomSendPublishers(publishers: number): readonly RoomSendShapeIssue[] {
+    const { sessionCount } = ROOM_SEND_CELL_CONSTANTS;
+    return isWholeNumberOfAtLeast(publishers, 1) && publishers <= sessionCount ? [] : [{
+        code: 'invalid-publishers',
+        message: `publishers must be a whole number from 1 to ${sessionCount}, the sessions of the room; ` +
+            `received ${publishers}`
+    }];
 }
 
 function isWholeNumberOfAtLeast(value: number, minimum: number): boolean {

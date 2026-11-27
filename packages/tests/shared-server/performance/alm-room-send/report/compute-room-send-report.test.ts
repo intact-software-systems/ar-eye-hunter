@@ -108,7 +108,8 @@ function toSendsReadAfter(delaysMs: readonly number[]): RoomSendCellObservations
         arrivals: delaysMs.map((delayMs, index) => ({
             msgId: `send-${index + 1}`,
             recipientPeerId: 'recipient-1',
-            atMs: (index + 1) * 100 + delayMs
+            atMs: (index + 1) * 100 + delayMs,
+            namesOrderingKey: true
         }))
     };
 }
@@ -278,9 +279,9 @@ describe('computeRoomSendReport', () => {
                     { ...SEND, msgId: 'read-by-none', seq: 3 }
                 ],
                 arrivals: [
-                    { msgId: 'read-by-both', recipientPeerId: 'recipient-1', atMs: 10 },
-                    { msgId: 'read-by-both', recipientPeerId: 'recipient-2', atMs: 11 },
-                    { msgId: 'read-by-one', recipientPeerId: 'recipient-1', atMs: 12 }
+                    { msgId: 'read-by-both', recipientPeerId: 'recipient-1', atMs: 10, namesOrderingKey: true },
+                    { msgId: 'read-by-both', recipientPeerId: 'recipient-2', atMs: 11, namesOrderingKey: true },
+                    { msgId: 'read-by-one', recipientPeerId: 'recipient-1', atMs: 12, namesOrderingKey: true }
                 ]
             });
 
@@ -300,8 +301,8 @@ describe('computeRoomSendReport', () => {
                     { ...SEND, msgId: 'expects-nobody', seq: 2, expectedRecipientPeerIds: [] }
                 ],
                 arrivals: [
-                    { msgId: 'read-by-both', recipientPeerId: 'recipient-1', atMs: 10 },
-                    { msgId: 'read-by-both', recipientPeerId: 'recipient-2', atMs: 11 }
+                    { msgId: 'read-by-both', recipientPeerId: 'recipient-1', atMs: 10, namesOrderingKey: true },
+                    { msgId: 'read-by-both', recipientPeerId: 'recipient-2', atMs: 11, namesOrderingKey: true }
                 ]
             });
 
@@ -331,10 +332,10 @@ describe('computeRoomSendReport', () => {
                     { msgId: 'handed-three-times', instanceIndex: 2, atMs: 6 }
                 ],
                 arrivals: [
-                    { msgId: 'handed-once', recipientPeerId: 'recipient-1', atMs: 10 },
-                    { msgId: 'handed-once', recipientPeerId: 'recipient-2', atMs: 11 },
-                    { msgId: 'handed-once', recipientPeerId: 'recipient-1', atMs: 12 },
-                    { msgId: 'handed-three-times', recipientPeerId: 'recipient-1', atMs: 13 }
+                    { msgId: 'handed-once', recipientPeerId: 'recipient-1', atMs: 10, namesOrderingKey: true },
+                    { msgId: 'handed-once', recipientPeerId: 'recipient-2', atMs: 11, namesOrderingKey: true },
+                    { msgId: 'handed-once', recipientPeerId: 'recipient-1', atMs: 12, namesOrderingKey: true },
+                    { msgId: 'handed-three-times', recipientPeerId: 'recipient-1', atMs: 13, namesOrderingKey: true }
                 ]
             });
 
@@ -348,6 +349,43 @@ describe('computeRoomSendReport', () => {
                 copiesReadMoreThanOnce: 1
             });
         });
+
+        it.each(['ordering-key', 'unordered'] as const)(
+            'counts the copies whose first write named an ordering key from the frames read, whatever the run says its ordering is: %s',
+            (ordering) => {
+                const report = computeRoomSendReport({
+                    ...NO_OBSERVATIONS,
+                    ordering,
+                    sends: [
+                        { ...SEND, msgId: 'named-to-one', seq: 1 },
+                        { ...SEND, msgId: 'named-twice-to-one', seq: 2 },
+                        { ...SEND, msgId: 'named-on-the-repeat', seq: 3, expectedRecipientPeerIds: ['recipient-1'] }
+                    ],
+                    arrivals: [
+                        { msgId: 'named-to-one', recipientPeerId: 'recipient-1', atMs: 10, namesOrderingKey: true },
+                        { msgId: 'named-to-one', recipientPeerId: 'recipient-2', atMs: 11, namesOrderingKey: false },
+                        { msgId: 'named-to-one', recipientPeerId: 'publisher-1', atMs: 12, namesOrderingKey: true },
+                        { msgId: 'named-twice-to-one', recipientPeerId: 'recipient-1', atMs: 13, namesOrderingKey: true },
+                        { msgId: 'named-twice-to-one', recipientPeerId: 'recipient-1', atMs: 14, namesOrderingKey: true },
+                        { msgId: 'named-on-the-repeat', recipientPeerId: 'recipient-1', atMs: 15, namesOrderingKey: false },
+                        { msgId: 'named-on-the-repeat', recipientPeerId: 'recipient-1', atMs: 16, namesOrderingKey: true },
+                        { msgId: 'no-send-of-the-run', recipientPeerId: 'recipient-1', atMs: 17, namesOrderingKey: true }
+                    ]
+                });
+
+                // Five copies expected: two of each of the first two sends, one of the third. Four written: the
+                // second send never reached recipient 2. Two named a key on their first write: the first send's
+                // copy at recipient 1, and the second send's there, written twice and counted once. The third
+                // send's copy named none on its first write. A frame at the publisher, which the send did not
+                // expect, and a frame of no send of the run are copies of no expected recipient.
+                expect(report.delivery).toMatchObject({
+                    copiesExpected: 5,
+                    copiesRead: 4,
+                    copiesReadMoreThanOnce: 2,
+                    copiesNamingAnOrderingKey: 2
+                });
+            }
+        );
     });
 
     describe('sends the entry retained', () => {
@@ -389,19 +427,19 @@ describe('computeRoomSendReport', () => {
                     { ...SEND, msgId: 'b1', seq: 1, publisherPeerId: 'publisher-2', expectedRecipientPeerIds: recipients }
                 ],
                 arrivals: [
-                    { msgId: 'a2', recipientPeerId: 'swaps-first-two', atMs: 10 },
-                    { msgId: 'a1', recipientPeerId: 'swaps-first-two', atMs: 11 },
-                    { msgId: 'a3', recipientPeerId: 'swaps-first-two', atMs: 12 },
-                    { msgId: 'b1', recipientPeerId: 'swaps-first-two', atMs: 13 },
-                    { msgId: 'a1', recipientPeerId: 'reads-in-order', atMs: 10 },
-                    { msgId: 'a2', recipientPeerId: 'reads-in-order', atMs: 11 },
-                    { msgId: 'a3', recipientPeerId: 'reads-in-order', atMs: 12 },
-                    { msgId: 'b1', recipientPeerId: 'reads-in-order', atMs: 13 },
-                    { msgId: 'a1', recipientPeerId: 'reads-in-order', atMs: 20 },
-                    { msgId: 'a3', recipientPeerId: 'reads-third-first', atMs: 10 },
-                    { msgId: 'a1', recipientPeerId: 'reads-third-first', atMs: 11 },
-                    { msgId: 'a2', recipientPeerId: 'reads-third-first', atMs: 12 },
-                    { msgId: 'b1', recipientPeerId: 'reads-third-first', atMs: 13 }
+                    { msgId: 'a2', recipientPeerId: 'swaps-first-two', atMs: 10, namesOrderingKey: true },
+                    { msgId: 'a1', recipientPeerId: 'swaps-first-two', atMs: 11, namesOrderingKey: true },
+                    { msgId: 'a3', recipientPeerId: 'swaps-first-two', atMs: 12, namesOrderingKey: true },
+                    { msgId: 'b1', recipientPeerId: 'swaps-first-two', atMs: 13, namesOrderingKey: true },
+                    { msgId: 'a1', recipientPeerId: 'reads-in-order', atMs: 10, namesOrderingKey: true },
+                    { msgId: 'a2', recipientPeerId: 'reads-in-order', atMs: 11, namesOrderingKey: true },
+                    { msgId: 'a3', recipientPeerId: 'reads-in-order', atMs: 12, namesOrderingKey: true },
+                    { msgId: 'b1', recipientPeerId: 'reads-in-order', atMs: 13, namesOrderingKey: true },
+                    { msgId: 'a1', recipientPeerId: 'reads-in-order', atMs: 20, namesOrderingKey: true },
+                    { msgId: 'a3', recipientPeerId: 'reads-third-first', atMs: 10, namesOrderingKey: true },
+                    { msgId: 'a1', recipientPeerId: 'reads-third-first', atMs: 11, namesOrderingKey: true },
+                    { msgId: 'a2', recipientPeerId: 'reads-third-first', atMs: 12, namesOrderingKey: true },
+                    { msgId: 'b1', recipientPeerId: 'reads-third-first', atMs: 13, namesOrderingKey: true }
                 ]
             });
 
@@ -417,10 +455,10 @@ describe('computeRoomSendReport', () => {
                     { ...SEND, msgId: 'a2', seq: 2, expectedRecipientPeerIds: recipients }
                 ],
                 arrivals: [
-                    { msgId: 'a2', recipientPeerId: 'reads-second-first', atMs: 10 },
-                    { msgId: 'a1', recipientPeerId: 'reads-second-first', atMs: 10 },
-                    { msgId: 'a1', recipientPeerId: 'reads-in-order', atMs: 10 },
-                    { msgId: 'a2', recipientPeerId: 'reads-in-order', atMs: 10 }
+                    { msgId: 'a2', recipientPeerId: 'reads-second-first', atMs: 10, namesOrderingKey: true },
+                    { msgId: 'a1', recipientPeerId: 'reads-second-first', atMs: 10, namesOrderingKey: true },
+                    { msgId: 'a1', recipientPeerId: 'reads-in-order', atMs: 10, namesOrderingKey: true },
+                    { msgId: 'a2', recipientPeerId: 'reads-in-order', atMs: 10, namesOrderingKey: true }
                 ]
             });
 
@@ -437,10 +475,10 @@ describe('computeRoomSendReport', () => {
                     { ...SEND, msgId: 'a4', seq: 4, expectedRecipientPeerIds: ['recipient-1'] }
                 ],
                 arrivals: [
-                    { msgId: 'a2', recipientPeerId: 'recipient-1', atMs: 10 },
-                    { msgId: 'a3', recipientPeerId: 'recipient-1', atMs: 11 },
-                    { msgId: 'a4', recipientPeerId: 'recipient-1', atMs: 12 },
-                    { msgId: 'a1', recipientPeerId: 'recipient-1', atMs: 13 }
+                    { msgId: 'a2', recipientPeerId: 'recipient-1', atMs: 10, namesOrderingKey: true },
+                    { msgId: 'a3', recipientPeerId: 'recipient-1', atMs: 11, namesOrderingKey: true },
+                    { msgId: 'a4', recipientPeerId: 'recipient-1', atMs: 12, namesOrderingKey: true },
+                    { msgId: 'a1', recipientPeerId: 'recipient-1', atMs: 13, namesOrderingKey: true }
                 ]
             });
 
@@ -457,10 +495,10 @@ describe('computeRoomSendReport', () => {
                     { ...SEND, msgId: 'a4', seq: 4, expectedRecipientPeerIds: ['recipient-1'] }
                 ],
                 arrivals: [
-                    { msgId: 'a4', recipientPeerId: 'recipient-1', atMs: 10 },
-                    { msgId: 'a1', recipientPeerId: 'recipient-1', atMs: 11 },
-                    { msgId: 'a2', recipientPeerId: 'recipient-1', atMs: 12 },
-                    { msgId: 'a3', recipientPeerId: 'recipient-1', atMs: 13 }
+                    { msgId: 'a4', recipientPeerId: 'recipient-1', atMs: 10, namesOrderingKey: true },
+                    { msgId: 'a1', recipientPeerId: 'recipient-1', atMs: 11, namesOrderingKey: true },
+                    { msgId: 'a2', recipientPeerId: 'recipient-1', atMs: 12, namesOrderingKey: true },
+                    { msgId: 'a3', recipientPeerId: 'recipient-1', atMs: 13, namesOrderingKey: true }
                 ]
             });
 
@@ -479,18 +517,18 @@ describe('computeRoomSendReport', () => {
                     { ...SEND, msgId: 'b1', seq: 1, publisherPeerId: 'publisher-2', expectedRecipientPeerIds: recipients }
                 ],
                 arrivals: [
-                    { msgId: 'a3', recipientPeerId: 'reads-third-first', atMs: 10 },
-                    { msgId: 'a1', recipientPeerId: 'reads-third-first', atMs: 11 },
-                    { msgId: 'a2', recipientPeerId: 'reads-third-first', atMs: 12 },
-                    { msgId: 'b1', recipientPeerId: 'reads-third-first', atMs: 13 },
-                    { msgId: 'a1', recipientPeerId: 'swaps-last-two', atMs: 10 },
-                    { msgId: 'a3', recipientPeerId: 'swaps-last-two', atMs: 11 },
-                    { msgId: 'a2', recipientPeerId: 'swaps-last-two', atMs: 12 },
-                    { msgId: 'b1', recipientPeerId: 'swaps-last-two', atMs: 13 },
-                    { msgId: 'b1', recipientPeerId: 'reads-other-publisher-first', atMs: 10 },
-                    { msgId: 'a1', recipientPeerId: 'reads-other-publisher-first', atMs: 11 },
-                    { msgId: 'a2', recipientPeerId: 'reads-other-publisher-first', atMs: 12 },
-                    { msgId: 'a3', recipientPeerId: 'reads-other-publisher-first', atMs: 13 }
+                    { msgId: 'a3', recipientPeerId: 'reads-third-first', atMs: 10, namesOrderingKey: false },
+                    { msgId: 'a1', recipientPeerId: 'reads-third-first', atMs: 11, namesOrderingKey: false },
+                    { msgId: 'a2', recipientPeerId: 'reads-third-first', atMs: 12, namesOrderingKey: false },
+                    { msgId: 'b1', recipientPeerId: 'reads-third-first', atMs: 13, namesOrderingKey: false },
+                    { msgId: 'a1', recipientPeerId: 'swaps-last-two', atMs: 10, namesOrderingKey: false },
+                    { msgId: 'a3', recipientPeerId: 'swaps-last-two', atMs: 11, namesOrderingKey: false },
+                    { msgId: 'a2', recipientPeerId: 'swaps-last-two', atMs: 12, namesOrderingKey: false },
+                    { msgId: 'b1', recipientPeerId: 'swaps-last-two', atMs: 13, namesOrderingKey: false },
+                    { msgId: 'b1', recipientPeerId: 'reads-other-publisher-first', atMs: 10, namesOrderingKey: false },
+                    { msgId: 'a1', recipientPeerId: 'reads-other-publisher-first', atMs: 11, namesOrderingKey: false },
+                    { msgId: 'a2', recipientPeerId: 'reads-other-publisher-first', atMs: 12, namesOrderingKey: false },
+                    { msgId: 'a3', recipientPeerId: 'reads-other-publisher-first', atMs: 13, namesOrderingKey: false }
                 ]
             });
 
@@ -509,7 +547,7 @@ describe('computeRoomSendReport', () => {
                 sends: twentySends.sends.toReversed(),
                 arrivals: [
                     ...twentySends.arrivals,
-                    { msgId: 'send-1', recipientPeerId: 'recipient-1', atMs: 2_500 }
+                    { msgId: 'send-1', recipientPeerId: 'recipient-1', atMs: 2_500, namesOrderingKey: true }
                 ]
             });
 
@@ -530,9 +568,9 @@ describe('computeRoomSendReport', () => {
                     { ...SEND, msgId: 'late-by-20', dueAtMs: 200, sentAtMs: 220, expectedRecipientPeerIds: ['recipient-1'] }
                 ],
                 arrivals: [
-                    { msgId: 'late-by-4', recipientPeerId: 'recipient-1', atMs: 10 },
-                    { msgId: 'late-by-1', recipientPeerId: 'recipient-1', atMs: 103 },
-                    { msgId: 'late-by-20', recipientPeerId: 'recipient-1', atMs: 225 }
+                    { msgId: 'late-by-4', recipientPeerId: 'recipient-1', atMs: 10, namesOrderingKey: true },
+                    { msgId: 'late-by-1', recipientPeerId: 'recipient-1', atMs: 103, namesOrderingKey: true },
+                    { msgId: 'late-by-20', recipientPeerId: 'recipient-1', atMs: 225, namesOrderingKey: true }
                 ]
             });
 
@@ -555,11 +593,11 @@ describe('computeRoomSendReport', () => {
                     expectedRecipientPeerIds: ['before-the-offer', 'under-1', 'at-5', 'over-5', 'over-every-bound']
                 }],
                 arrivals: [
-                    { msgId: 'send', recipientPeerId: 'before-the-offer', atMs: 99 },
-                    { msgId: 'send', recipientPeerId: 'under-1', atMs: 100.5 },
-                    { msgId: 'send', recipientPeerId: 'at-5', atMs: 105 },
-                    { msgId: 'send', recipientPeerId: 'over-5', atMs: 105.5 },
-                    { msgId: 'send', recipientPeerId: 'over-every-bound', atMs: 70_100 }
+                    { msgId: 'send', recipientPeerId: 'before-the-offer', atMs: 99, namesOrderingKey: true },
+                    { msgId: 'send', recipientPeerId: 'under-1', atMs: 100.5, namesOrderingKey: true },
+                    { msgId: 'send', recipientPeerId: 'at-5', atMs: 105, namesOrderingKey: true },
+                    { msgId: 'send', recipientPeerId: 'over-5', atMs: 105.5, namesOrderingKey: true },
+                    { msgId: 'send', recipientPeerId: 'over-every-bound', atMs: 70_100, namesOrderingKey: true }
                 ]
             });
 
@@ -604,8 +642,8 @@ describe('computeRoomSendReport', () => {
                 ...NO_OBSERVATIONS,
                 sends: [{ ...SEND, msgId: 'offered-early', dueAtMs: 100, sentAtMs: 98 }],
                 arrivals: [
-                    { msgId: 'offered-early', recipientPeerId: 'recipient-1', atMs: 99 },
-                    { msgId: 'offered-early', recipientPeerId: 'recipient-2', atMs: 104 }
+                    { msgId: 'offered-early', recipientPeerId: 'recipient-1', atMs: 99, namesOrderingKey: true },
+                    { msgId: 'offered-early', recipientPeerId: 'recipient-2', atMs: 104, namesOrderingKey: true }
                 ]
             });
 
@@ -702,8 +740,8 @@ describe('computeRoomSendReport', () => {
                     sentAtMs: (index + 1) * 100 + 0.5
                 })),
                 arrivals: delaysMsOfEachSend.flatMap(([firstDelayMs, secondDelayMs], index) => [
-                    { msgId: `send-${index + 1}`, recipientPeerId: 'recipient-1', atMs: (index + 1) * 100 + firstDelayMs },
-                    { msgId: `send-${index + 1}`, recipientPeerId: 'recipient-2', atMs: (index + 1) * 100 + secondDelayMs }
+                    { msgId: `send-${index + 1}`, recipientPeerId: 'recipient-1', atMs: (index + 1) * 100 + firstDelayMs, namesOrderingKey: true },
+                    { msgId: `send-${index + 1}`, recipientPeerId: 'recipient-2', atMs: (index + 1) * 100 + secondDelayMs, namesOrderingKey: true }
                 ])
             });
 
@@ -955,7 +993,7 @@ describe('computeRoomSendReport', () => {
                     { msgId: 'resent', cause: 'first-hop', attempt: 1, sentAtMs: 2_104, acceptance: 'admitted', answeredAtMs: 2_140 }
                 ],
                 handOffs: [{ msgId: 'resent', instanceIndex: 0, atMs: 2_150 }],
-                arrivals: [{ msgId: 'resent', recipientPeerId: 'recipient-1', atMs: 2_160 }],
+                arrivals: [{ msgId: 'resent', recipientPeerId: 'recipient-1', atMs: 2_160, namesOrderingKey: true }],
                 receipts: [
                     { msgId: 'resent', phase: 'admitted', atMs: 2_145 },
                     { msgId: 'resent', phase: 'complete', atMs: 2_304 }
@@ -991,14 +1029,14 @@ describe('computeRoomSendReport', () => {
                     }
                 ],
                 arrivals: [
-                    { msgId: 'known', recipientPeerId: 'recipient-1', atMs: 10 },
-                    { msgId: 'known', recipientPeerId: 'recipient-3', atMs: 11 },
-                    { msgId: 'known', recipientPeerId: 'stranger', atMs: 12 },
-                    { msgId: 'rejected', recipientPeerId: 'recipient-2', atMs: 13 },
-                    { msgId: 'unknown-1', recipientPeerId: 'recipient-1', atMs: 14 },
-                    { msgId: 'unknown-1', recipientPeerId: 'recipient-2', atMs: 15 },
-                    { msgId: 'unknown-2', recipientPeerId: 'recipient-1', atMs: 16 },
-                    { msgId: 'unknown-2', recipientPeerId: 'stranger', atMs: 17 }
+                    { msgId: 'known', recipientPeerId: 'recipient-1', atMs: 10, namesOrderingKey: true },
+                    { msgId: 'known', recipientPeerId: 'recipient-3', atMs: 11, namesOrderingKey: true },
+                    { msgId: 'known', recipientPeerId: 'stranger', atMs: 12, namesOrderingKey: true },
+                    { msgId: 'rejected', recipientPeerId: 'recipient-2', atMs: 13, namesOrderingKey: true },
+                    { msgId: 'unknown-1', recipientPeerId: 'recipient-1', atMs: 14, namesOrderingKey: true },
+                    { msgId: 'unknown-1', recipientPeerId: 'recipient-2', atMs: 15, namesOrderingKey: true },
+                    { msgId: 'unknown-2', recipientPeerId: 'recipient-1', atMs: 16, namesOrderingKey: true },
+                    { msgId: 'unknown-2', recipientPeerId: 'stranger', atMs: 17, namesOrderingKey: true }
                 ],
                 handOffs: [
                     { msgId: 'known', instanceIndex: 0, atMs: 5 },
@@ -1087,7 +1125,8 @@ describe('computeRoomSendReport', () => {
                 copiesExpected: 0,
                 copiesRead: 0,
                 copiesReadMoreThanOnce: 0,
-                copiesReadOutOfOfferOrder: 0
+                copiesReadOutOfOfferOrder: 0,
+                copiesNamingAnOrderingKey: 0
             },
             recipientDelays: {
                 dueToFirstReadMs: NO_SAMPLES,

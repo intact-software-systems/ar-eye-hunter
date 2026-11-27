@@ -34,14 +34,19 @@ export type RoomSendSocketRead =
     | { readonly kind: 'unclassified-control'; readonly unclassifiedControl: RoomSendCellUnclassifiedControl; };
 
 /**
- * A message that is no control is an arrival of it at its reader, whoever that is. A control names the message it is
- * about in its payload, never by its own envelope: a receipt, a NACK and a repair request are each recorded of that
- * message, and any other control, an ACK or one whose payload does not decode, stays unclassified under its type.
+ * A message that is no control is an arrival of it at its reader, whoever that is, with whether its envelope names
+ * an ordering key. A control names the message it is about in its payload, never by its own envelope: a receipt, a
+ * NACK and a repair request are each recorded of that message, and any other control, an ACK or one whose payload
+ * does not decode, stays unclassified under its type.
  */
 export function toRoomSendSocketRead(input: ToRoomSendSocketReadInput): RoomSendSocketRead {
     const { message, readerPeerId, atMs } = input;
     if (!isALControlTypeId(message.payload.typeId)) {
-        return { kind: 'arrival', arrival: { msgId: message.id.msgId, recipientPeerId: readerPeerId, atMs } };
+        const namesOrderingKey = message.ordering?.orderingKey !== undefined;
+        return {
+            kind: 'arrival',
+            arrival: { msgId: message.id.msgId, recipientPeerId: readerPeerId, atMs, namesOrderingKey }
+        };
     }
     const control = decodeALControlMessage(message).right;
     switch (control?.type) {
