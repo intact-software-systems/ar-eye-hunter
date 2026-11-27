@@ -114,7 +114,7 @@ describe('RallarGameDirectorRelayRuntime', () => {
             { reason: 'ended-at-sender', outcome: 'asks for no sync', syncRequests: [] }
         ] as const
     )('$outcome on an event order gap of reason $reason', async ({ reason, syncRequests }) => {
-        const requested: RallarGameEnvelope<object>[] = [];
+        const requested: unknown[] = [];
         const onOutputGap = startGapRuntime(async (envelope) => {
             requested.push(envelope);
             return { status: 'sent' };
@@ -126,7 +126,7 @@ describe('RallarGameDirectorRelayRuntime', () => {
     });
 
     it('returns from an event order gap without waiting for the director to confirm the sync request', async () => {
-        const requested: RallarGameEnvelope<object>[] = [];
+        const requested: unknown[] = [];
         const onOutputGap = startGapRuntime((envelope) => {
             requested.push(envelope);
             return new Promise(() => {});
