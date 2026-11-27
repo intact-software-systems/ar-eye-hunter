@@ -367,8 +367,7 @@ as they were written before the slices ran.
     of 332, which `main` already passes since PR 911; the headless agent 433.602 to 436.714 KiB against 434. The maintainer had both budgets raised in that pull request, to 336 and 437.
 
 - **Slice 4, PR 926 (stacked on PR 924).** Holes, the gap report, reload, tabs, the late joiner and memory, with
-  160 edge-order tests. Its three new lane cells (`edge-order-loss-stream`, `edge-order-reload`,
-  `edge-order-late-join`) are written and not yet run. What it decided and found:
+  160 edge-order tests. Its three new lane cells (`edge-order-loss-stream`, `edge-order-reload`, `edge-order-late-join`) passed once on each of the three carriers on the in-memory API, as did the lane's smoke scope. What it decided and found:
   - A stamp names the holes below it (at most 16 runs): a send that never set out, was refused or cancelled, or is
     past its deadline. A receiver passes such a hole as soon as a later message states it.
   - `onOrderGap` is per topic and type, as `recovery` is, and is called in the stream's turn.
