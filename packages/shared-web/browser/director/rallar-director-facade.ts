@@ -113,7 +113,10 @@ export interface RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot = TOutput
         relay: RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot>
     ) => void | TOutput | readonly TOutput[] | Promise<void | TOutput | readonly TOutput[]>;
     readonly onOutput?: (message: RallarDirectorRelayMessage<TOutput>) => void | Promise<void>;
-    /** Called when this page gave up positions of the appointed director's output stream. */
+    /**
+     * Called when this page gave up positions of the appointed director's output stream. The stream's next output
+     * waits for this callback to settle, so it must not wait on the network.
+     */
     readonly onOutputGap?: (gap: RallarMessageOrderGap) => void | Promise<void>;
     readonly onSnapshot?: (message: RallarDirectorRelayMessage<TSnapshot>) => void | Promise<void>;
     readonly onSyncRequest?: (

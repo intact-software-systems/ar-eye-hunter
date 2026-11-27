@@ -3,7 +3,8 @@ import type {
     RallarDirectorRelayClaim,
     RallarDirectorRelayHandle,
     RallarDirectorRelayMessage,
-    RallarDirectorRelaySendResult
+    RallarDirectorRelaySendResult,
+    RallarMessageOrderGap
 } from '@shared-web/browser/rallar.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { RallarGameEnvelope, RallarGameEnvelopeKind } from '../envelopes.ts';
@@ -217,13 +218,7 @@ export class RallarGameDirectorRelayRuntime<TInput, TIntent, TSnapshot, TEvent, 
                     handler: config.onEvent,
                     requireFreshDirectorSender: true
                 }),
-            onOutputGap: async (gap) => {
-                // An unreceipted event nobody waited for ends at its sender; the next snapshot repairs it unasked.
-                // A sync request that cannot be sent is repaired the same way, so its result is not read.
-                if (gap.reason !== 'ended-at-sender') {
-                    await this.requestSync({ reason: 'event-order-gap' });
-                }
-            },
+            onOutputGap: (gap) => this.startSyncOnGap(gap),
             onSnapshot: async (message) =>
                 await this.input.handleEnvelope({
                     message,
@@ -237,6 +232,23 @@ export class RallarGameDirectorRelayRuntime<TInput, TIntent, TSnapshot, TEvent, 
                     kind: 'sync-request',
                     handler: config.onSyncRequest
                 })
+        });
+    }
+
+    /**
+     * The stream's next event waits for the gap callback, so the sync request is started, not awaited. A gap the
+     * sender said is over, most often a lost unreceipted event, asks for nothing: the next snapshot repairs it, as it
+     * repairs a sync request that fails as a result value.
+     */
+    private startSyncOnGap(gap: RallarMessageOrderGap): void {
+        if (gap.reason === 'ended-at-sender') {
+            return;
+        }
+        this.requestSync({ reason: 'event-order-gap' }).catch((error: unknown) => {
+            console.error(
+                `Failed to request a sync for Rallar Game match ${this.input.config.protocol} after event order gap ${gap.reason}:`,
+                error
+            );
         });
     }
 

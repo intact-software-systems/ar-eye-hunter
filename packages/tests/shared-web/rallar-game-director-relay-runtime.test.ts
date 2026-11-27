@@ -110,31 +110,86 @@ describe('RallarGameDirectorRelayRuntime', () => {
     it.each(
         [
             { reason: 'channel-wait-cap', outcome: 'asks the director for one sync', syncRequests: [{ reason: 'event-order-gap' }] },
+            { reason: 'held-message-expired', outcome: 'asks the director for one sync', syncRequests: [{ reason: 'event-order-gap' }] },
             { reason: 'ended-at-sender', outcome: 'asks for no sync', syncRequests: [] }
         ] as const
     )('$outcome on an event order gap of reason $reason', async ({ reason, syncRequests }) => {
-        const requestSync = vi.fn(async <T>(_envelope?: T) => ({ status: 'sent' as const }));
-        let relayConfig: PayloadRelayConfig | undefined;
-        const runtime = createPublishingRuntime(vi.fn(), {
-            isDirector: false,
-            relay: { requestSync },
-            recordConfig: (config) => {
-                relayConfig = config;
-            }
+        const requested: RallarGameEnvelope<object>[] = [];
+        const onOutputGap = startGapRuntime(async (envelope) => {
+            requested.push(envelope);
+            return { status: 'sent' };
         });
-        runtime.start();
-        const onOutputGap = relayConfig?.onOutputGap;
-        if (!onOutputGap) {
-            throw new Error('The match takes the relay\'s output gaps.');
-        }
 
         await onOutputGap(toOutputGap(reason));
 
-        expect(requestSync.mock.calls).toEqual(
-            syncRequests.map((payload) => [expect.objectContaining({ kind: 'sync-request', payload })])
-        );
+        expect(requested).toEqual(syncRequests.map((payload) => expect.objectContaining({ kind: 'sync-request', payload })));
+    });
+
+    it('returns from an event order gap without waiting for the director to confirm the sync request', async () => {
+        const requested: RallarGameEnvelope<object>[] = [];
+        const onOutputGap = startGapRuntime((envelope) => {
+            requested.push(envelope);
+            return new Promise(() => {});
+        });
+
+        const outcome = await Promise.race([
+            Promise.resolve(onOutputGap(toOutputGap('channel-wait-cap'))).then(() => 'returned'),
+            new Promise((resolve) => setTimeout(() => resolve('waiting'), 0))
+        ]);
+
+        expect(outcome).toBe('returned');
+        expect(requested).toEqual([expect.objectContaining({ kind: 'sync-request' })]);
+    });
+
+    it.each(
+        [
+            {
+                failure: 'throws',
+                requestSync: () => {
+                    throw new Error('No admitted room presence.');
+                }
+            },
+            { failure: 'rejects', requestSync: () => Promise.reject(new Error('No admitted room presence.')) }
+        ] as const
+    )('logs a sync request that $failure on an event order gap once and returns normally', async ({ requestSync }) => {
+        const logged: unknown[][] = [];
+        const consoleError = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+            logged.push(args);
+        });
+        const onOutputGap = startGapRuntime(requestSync);
+
+        try {
+            await expect(Promise.resolve(onOutputGap(toOutputGap('channel-wait-cap')))).resolves.toBeUndefined();
+            await new Promise((resolve) => setTimeout(resolve, 0));
+
+            expect(logged).toEqual([[
+                expect.stringMatching(/test\.game\.v1.*channel-wait-cap/u),
+                expect.objectContaining({ message: 'No admitted room presence.' })
+            ]]);
+        }
+        finally {
+            consoleError.mockRestore();
+        }
     });
 });
+
+/** A started client runtime's gap callback, whose relay answers a sync request with `requestSync`. */
+function startGapRuntime(requestSync: PayloadRelayHandle['requestSync']): NonNullable<PayloadRelayConfig['onOutputGap']> {
+    let relayConfig: PayloadRelayConfig | undefined;
+    const runtime = createPublishingRuntime(vi.fn(), {
+        isDirector: false,
+        relay: { requestSync },
+        recordConfig: (config) => {
+            relayConfig = config;
+        }
+    });
+    runtime.start();
+    const onOutputGap = relayConfig?.onOutputGap;
+    if (!onOutputGap) {
+        throw new Error('The match takes the relay\'s output gaps.');
+    }
+    return onOutputGap;
+}
 
 type PayloadRelayHandle = RallarDirectorRelayHandle<RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>>;
 type PayloadRelayConfig = RallarDirectorRelayConfig<RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>>;

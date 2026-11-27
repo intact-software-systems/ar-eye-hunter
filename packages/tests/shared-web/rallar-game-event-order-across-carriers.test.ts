@@ -4,6 +4,7 @@ import { createRallarFacade } from '@shared-web/browser/rallar.ts';
 import type { RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import { createRallarGameMatch, type RallarGameMatchHandle, type RallarGameRallarFacade } from '@shared-web/game/mod.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { RALLAR_GAME_SNAPSHOT_REQUEST_TYPE_ID } from '@shared/rallar-game/snapshot-request.ts';
 
 import { createDefaultTestSession } from './api-middleware-test-double.ts';
 import { toDirectorAppointment } from './director-group-snapshot-fixture.ts';
@@ -83,6 +84,9 @@ function createMatchFacade(page: DirectorRelayPage, roomState: RallarRoomState):
     };
 }
 
+/** The matches a test started, stopped after it. */
+const matches: GameMatch[] = [];
+
 async function startMatch(page: DirectorRelayPage, roomState: RallarRoomState, seen: number[]): Promise<GameMatch> {
     const match = createRallarGameMatch<never, never, never, GameEvent>({
         rallar: createMatchFacade(page, roomState),
@@ -94,8 +98,32 @@ async function startMatch(page: DirectorRelayPage, roomState: RallarRoomState, s
             seen.push(envelope.payload.n);
         }
     });
+    matches.push(match);
     await match.start();
     return match;
+}
+
+/** A director page and a client page in one room, each running a match; the client's records its events. */
+interface MatchPages {
+    readonly directorPage: DirectorRelayPage;
+    readonly clientPage: DirectorRelayPage;
+    readonly director: GameMatch;
+    readonly seen: number[];
+}
+
+async function startMatchPages(): Promise<MatchPages> {
+    const room = createDirectedRoom();
+    const directorPage = createDirectorRelayPage(DIRECTOR_SESSION_ID, [room.snapshot]);
+    const clientPage = createDirectorRelayPage(CLIENT_SESSION_ID, [room.snapshot]);
+    const seen: number[] = [];
+    const director = await startMatch(directorPage, room.roomState, []);
+    await startMatch(clientPage, room.roomState, seen);
+    return { directorPage, clientPage, director, seen };
+}
+
+/** The director's events as its RTC carrier took them. */
+function readSentEvents(directorPage: DirectorRelayPage) {
+    return directorPage.page.sent.rtc.filter((message) => message.payload.typeId === EVENT_TYPE_ID);
 }
 
 beforeEach(() => {
@@ -104,27 +132,40 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    for (const match of matches.splice(0)) {
+        match.stop();
+    }
     vi.useRealTimers();
 });
 
 describe('a Rallar Game match\'s events across carriers', () => {
-    it('hands a receipted event over before the unreceipted next one that overtook it, which the match dropped as stale before edge order', async () => {
-        const room = createDirectedRoom();
-        const directorPage = createDirectorRelayPage(DIRECTOR_SESSION_ID, [room.snapshot]);
-        const clientPage = createDirectorRelayPage(CLIENT_SESSION_ID, [room.snapshot]);
-        const seen: number[] = [];
-        const director = await startMatch(directorPage, room.roomState, []);
-        const client = await startMatch(clientPage, room.roomState, seen);
+    it('hands a receipted event over before the unreceipted next one that overtook it', async () => {
+        const { directorPage, clientPage, director, seen } = await startMatchPages();
 
         expect((await director.publishEvent({ n: 1 }, { ack: 'all-logical-recipients' })).status).toBe('sent');
         expect((await director.publishEvent({ n: 2 })).status).toBe('sent');
-        const [first, second] = directorPage.page.sent.rtc.filter((message) => message.payload.typeId === EVENT_TYPE_ID);
+        const [first, second] = readSentEvents(directorPage);
         await clientPage.page.deliver('rtc', second);
+        expect(seen).toEqual([]);
         await clientPage.page.deliver('ws', first);
         await settleTurns();
 
         expect(seen).toEqual([1, 2]);
-        director.stop();
-        client.stop();
+    });
+
+    it('hands the event after a gap over when the wait ends, while the sync request the gap started is unconfirmed', async () => {
+        const { directorPage, clientPage, director, seen } = await startMatchPages();
+        await director.publishEvent({ n: 1 }, { ack: 'all-logical-recipients' });
+        await director.publishEvent({ n: 2 }, { ack: 'all-logical-recipients' });
+        await director.publishEvent({ n: 3 });
+        const [first, , third] = readSentEvents(directorPage);
+        await clientPage.page.deliver('ws', first);
+        await clientPage.page.deliver('rtc', third);
+
+        await vi.advanceTimersByTimeAsync(3_000);
+
+        expect(seen).toEqual([1, 3]);
+        expect(clientPage.page.sent.rtc.map((message) => message.payload.typeId)).toEqual([RALLAR_GAME_SNAPSHOT_REQUEST_TYPE_ID]);
+        expect(clientPage.page.messages.readUsage().edgeOrder.gaps).toBe(1);
     });
 });
