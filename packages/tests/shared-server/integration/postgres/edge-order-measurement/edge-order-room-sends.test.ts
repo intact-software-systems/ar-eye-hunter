@@ -9,10 +9,15 @@ import {
     createDefaultPSqlALOutboundRuntimeStores
 } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import { EDGE_ORDER_RECEIVER_DEFAULT_LIMITS } from '@shared-web/browser/messages/edge-order/edge-order-receiver-limits.ts';
+import { EDGE_ORDER_ACKNOWLEDGED_SETTLE_MS, EdgeOrderSender } from '@shared-web/browser/messages/edge-order/edge-order-sender.ts';
+import type { EdgeOrderStamp } from '@shared-web/browser/messages/edge-order/edge-order-stamp.ts';
+import { decodeEdgeOrderWirePayload, toEdgeOrderWireJson } from '@shared-web/browser/messages/edge-order/edge-order-wire-payload.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_RECEIPT_TYPE_ID, isALControlTypeId } from '@shared/al-contracts/al-control-type-ids.ts';
 import { decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { computeUtf8ByteLength } from '@shared/encoding/compute-utf8-byte-length.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 
@@ -34,13 +39,12 @@ import {
     type EdgeOrderSummary
 } from './compute-edge-order-figures.ts';
 import { delayPostgresRoundTrips, type PostgresRoundTripCount } from './delay-postgres-round-trips.ts';
-import { decodeEdgeOrderStamp, EdgeOrderSender, type EdgeOrderStamp } from './edge-order-sender.ts';
-import type { EdgeOrderArrival, EdgeOrderReplaySettings } from './replay-edge-order-arrivals.ts';
+import type { EdgeOrderArrival } from './replay-edge-order-arrivals.ts';
 
-// The edge-order measurement: do UNORDERED receipted room sends, each carrying a stream and a position in its payload
-// and sorted at the receiver, keep up through three WS server instances on PostgreSQL? Evidence, not a gate: it loads
-// the machine for about half an hour, and its figures are only comparable between runs on one quiet machine. See
-// `tests/manual-suites.json` for the command.
+// The edge-order measurement: do UNORDERED receipted room sends, each stamped by the browser's edge-order sender and
+// sorted by the browser's edge-order receiver, keep up through three WS server instances on PostgreSQL? Evidence, not
+// a gate: it loads the machine for about half an hour, and its figures are only comparable between runs on one quiet
+// machine. See `tests/manual-suites.json` for the command.
 
 /** One cell: who publishes, how often each of them sends, and how many messages each sends. */
 interface MeasuredCell {
@@ -55,6 +59,8 @@ interface SentMessage {
     readonly msgId: string;
     readonly publisher: string;
     readonly stamp: EdgeOrderStamp;
+    /** The payload as it was sent: the stamp beside an empty application payload. */
+    readonly resource: string;
     readonly recipients: readonly string[];
     readonly sentAt: number;
     readonly expiresAtEpochMs: number;
@@ -129,8 +135,12 @@ interface CellRunResult {
 interface RawRecords {
     /** `[publisher, position, sent]`. */
     readonly sends: readonly (readonly [string, number, number])[];
-    /** Per recipient, in arrival order: `[publisher, position, arrived, w]`; `w` is 0 when nothing earlier could arrive. */
-    readonly arrivals: Readonly<Record<string, readonly (readonly [string, number, number, number])[]>>;
+    /**
+     * Per recipient, in arrival order: `[publisher, position, arrived, earlier can arrive until, lowest open
+     * position]`; the fourth is 0 when nothing earlier could arrive. A stamp's holes are not kept: only a refused or
+     * timed-out send makes one.
+     */
+    readonly arrivals: Readonly<Record<string, readonly (readonly [string, number, number, number, number])[]>>;
 }
 
 const measureIt = process.env.RALLAR_EDGE_ORDER_MEASUREMENT === '1' ? it : it.skip;
@@ -163,8 +173,6 @@ const SETTLE_AFTER_LAST_DEADLINE_MS = 15_000;
 const LOAD_WAIT_BUDGET_MS = 30 * 60_000;
 const LOAD_WAIT_STEP_MS = 30_000;
 const TEST_TIMEOUT_MS = 45 * 60_000;
-/** The entry window the measurement was first run with, and the caps hop order already uses. */
-const REPLAY_SETTINGS: EdgeOrderReplaySettings = { entryWaitMs: 500, maxHeldPerStream: 256, maxStreams: 256 };
 
 const TABLE_HEADER = [
     '| cell | +ms | run | load | accepted | complete by deadline | handed over by deadline | out of order (per recipient) | overtaken by p95/max ms | read lag p50/p95/max ms | sorted lag p50/p95/max ms | most held | gaps/late | first ten → last ten sorted p50 ms | rule |',
@@ -228,7 +236,7 @@ async function measureCell(cell: MeasuredCell, delayMs: number, attempt: { run: 
         run: attempt.run,
         offeredPerSecond: round1(room.sent.length / (sendWindowMs / 1000)),
         ...toReceiptFigures(room),
-        order: computeEdgeOrderFigures(toRunRecords(room), REPLAY_SETTINGS),
+        order: await computeEdgeOrderFigures(toRunRecords(room), EDGE_ORDER_RECEIVER_DEFAULT_LIMITS),
         instrument: { ...room.instrument, maxSendLateMs: round1(room.instrument.maxSendLateMs), maxAckLateMs: round1(room.instrument.maxAckLateMs) },
         statementsPerMessage: Math.round(roundTrips.statements / room.sent.length),
         load: { atStart: round1(loadAtStart), atEnd: round1(loadavg()[0]!), waitedMs: attempt.waitedMs },
@@ -270,7 +278,10 @@ function createRoomRun(cluster: ReceiptCluster, instances: readonly ClusterInsta
         startedAt: performance.now(),
         startedAtEpochMs: Date.now(),
         // One stream per publisher and run, as a page would mint one per channel.
-        senders: new Map(cell.publishers.map((publisher) => [publisher, new EdgeOrderSender(`${cluster.runId}-${publisher}`)])),
+        senders: new Map(cell.publishers.map((publisher) => [
+            publisher,
+            new EdgeOrderSender(`${cluster.runId}-${publisher}`, EDGE_ORDER_ACKNOWLEDGED_SETTLE_MS)
+        ])),
         sent: [],
         sentByMsgId: new Map(),
         arrivalsByRecipient: new Map(PEERS.map((peer) => [peer, []])),
@@ -314,7 +325,7 @@ function readFrame(room: RoomRun, peer: string, data: string, at: number): void 
     }
 }
 
-/** The publisher's own receipts: `admitted`, then the terminal one, which ends the send for its stream's stamps. */
+/** The publisher's own receipts: `admitted`, then the terminal one, which its stream's later stamps read as the send's end. */
 function readReceipt(room: RoomRun, peer: string, message: ALMessage, at: number): void {
     const receipt = decodeALReceiptPayload(JSON.parse(message.payload.resource));
     const sent = room.sentByMsgId.get(receipt.msgId);
@@ -328,7 +339,6 @@ function readReceipt(room: RoomRun, peer: string, message: ALMessage, at: number
     if (sent.terminalAt === undefined) {
         sent.terminalAt = at;
         sent.terminalPhase = receipt.phase;
-        room.senders.get(sent.publisher)?.end(sent.stamp.n);
     }
 }
 
@@ -343,8 +353,9 @@ function readRoomMessage(room: RoomRun, peer: string, message: ALMessage, at: nu
         return;
     }
     sent.readBy.add(peer);
-    const stamp = decodeEdgeOrderStamp(JSON.parse(message.payload.resource));
-    if (stamp === undefined || stamp.s !== sent.stamp.s || stamp.n !== sent.stamp.n || stamp.w !== sent.stamp.w) {
+    const { resource } = message.payload;
+    const stamp = resource === sent.resource ? decodeEdgeOrderWirePayload(resource)?.stamp : undefined;
+    if (stamp === undefined) {
         room.instrument.stampMismatches += 1;
         return;
     }
@@ -352,7 +363,8 @@ function readRoomMessage(room: RoomRun, peer: string, message: ALMessage, at: nu
         publisher: sent.publisher,
         stamp,
         arrivedAtMs: toEpochMs(room, at),
-        expiresAtMs: sent.expiresAtEpochMs
+        expiresAtMs: sent.expiresAtEpochMs,
+        byteLength: computeUtf8ByteLength(resource)
     });
     const order = sent.recipients.indexOf(peer);
     room.acks.push(offerAck(room, sent, { peer, target: at + (order * ACK_SPREAD_MS) / (sent.recipients.length - 1) }));
@@ -382,15 +394,21 @@ async function sendRoomMessages(room: RoomRun, cell: MeasuredCell): Promise<void
     }
 }
 
-/** The position is taken at the call, before the instance is asked: the order an application's `send` calls have. */
+/**
+ * The position is taken at the call, before the instance is asked: the order an application's `send` calls have.
+ * From then on the stream reads the send's end from its terminal receipt, as a page reads it from the send's handle.
+ */
 async function sendRoomMessage(room: RoomRun, publisher: string): Promise<void> {
     const sentAt = performance.now();
     const nowMs = Date.now();
-    const stamp = room.senders.get(publisher)!.stamp(nowMs + LIFETIME_MS);
+    const sender = room.senders.get(publisher)!;
+    const position = sender.openSend();
+    const stamp = sender.stampSend(position, nowMs);
     const sent: SentMessage = {
-        msgId: `room-${room.cluster.runId}-${publisher}-m${String(stamp.n).padStart(3, '0')}`,
+        msgId: `room-${room.cluster.runId}-${publisher}-m${String(position).padStart(3, '0')}`,
         publisher,
         stamp,
+        resource: toEdgeOrderWireJson(stamp, '{}'),
         recipients: PEERS.filter((peer) => peer !== publisher),
         sentAt,
         expiresAtEpochMs: nowMs + LIFETIME_MS,
@@ -403,10 +421,19 @@ async function sendRoomMessage(room: RoomRun, publisher: string): Promise<void> 
     };
     room.sent.push(sent);
     room.sentByMsgId.set(sent.msgId, sent);
+    sender.observeSend(position, { expiresAtMs: sent.expiresAtEpochMs, retried: true, getEnd: () => toSendEnd(sent) });
     const unstamped = roomMessage({ msgId: sent.msgId, originPeerId: publisher, nowMs, lifetimeMs: LIFETIME_MS });
-    const message: ALMessage = { ...unstamped, payload: { ...unstamped.payload, resource: JSON.stringify(stamp) } };
+    const message: ALMessage = { ...unstamped, payload: { ...unstamped.payload, resource: sent.resource } };
     const accepted = await readInstanceOf(room.instances, publisher).service.acceptIncomingMessage(message, publisher);
     sent.acceptance = accepted.left === undefined ? accepted.right?.kind ?? 'accepted' : 'refused';
+}
+
+/** `complete` says every recipient acknowledged; any other terminal receipt says no copy can be handed over any more. */
+function toSendEnd(sent: SentMessage): EdgeOrderSender.SendEnd {
+    if (sent.terminalPhase === undefined) {
+        return 'open';
+    }
+    return sent.terminalPhase === 'complete' ? 'delivered' : 'undelivered';
 }
 
 /** Until every send has its terminal receipt, or the last deadline is well past. */
@@ -446,7 +473,7 @@ function toRunRecords(room: RoomRun) {
     return {
         sends: room.sent.map((sent) => ({
             publisher: sent.publisher,
-            position: sent.stamp.n,
+            position: sent.stamp.position,
             sentAtMs: toEpochMs(room, sent.sentAt),
             expiresAtMs: sent.expiresAtEpochMs
         })),
@@ -458,10 +485,18 @@ function toRunRecords(room: RoomRun) {
 function toRawRecords(room: RoomRun): RawRecords {
     const fromStart = (epochMs: number) => round1(epochMs - room.startedAtEpochMs);
     return {
-        sends: room.sent.map((sent) => [sent.publisher, sent.stamp.n, round1(sent.sentAt - room.startedAt)] as const),
+        sends: room.sent.map((sent) => [sent.publisher, sent.stamp.position, round1(sent.sentAt - room.startedAt)] as const),
         arrivals: Object.fromEntries([...room.arrivalsByRecipient].map(([peer, arrivals]) => [
             peer,
-            arrivals.map(({ publisher, stamp, arrivedAtMs }) => [publisher, stamp.n, fromStart(arrivedAtMs), stamp.w === 0 ? 0 : fromStart(stamp.w)] as const)
+            arrivals.map(({ publisher, stamp, arrivedAtMs }) =>
+                [
+                    publisher,
+                    stamp.position,
+                    fromStart(arrivedAtMs),
+                    stamp.earlierCanArriveUntilMs === undefined ? 0 : fromStart(stamp.earlierCanArriveUntilMs),
+                    stamp.lowestOpenPosition
+                ] as const
+            )
         ]))
     };
 }

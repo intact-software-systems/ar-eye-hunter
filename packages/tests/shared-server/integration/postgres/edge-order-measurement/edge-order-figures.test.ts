@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
+import { EDGE_ORDER_RECEIVER_DEFAULT_LIMITS } from '@shared-web/browser/messages/edge-order/edge-order-receiver-limits.ts';
+import type { EdgeOrderStamp } from '@shared-web/browser/messages/edge-order/edge-order-stamp.ts';
+
 import { computeEdgeOrderFigures, type EdgeOrderRunRecords, type EdgeOrderSend } from './compute-edge-order-figures.ts';
-import { EdgeOrderSender, type EdgeOrderStamp } from './edge-order-sender.ts';
-import type { EdgeOrderArrival, EdgeOrderReplaySettings } from './replay-edge-order-arrivals.ts';
+import type { EdgeOrderArrival } from './replay-edge-order-arrivals.ts';
 
 // The measurement's instrument, checked on arrivals written by hand: a figure the Postgres cells report is only as
 // good as the replay and the counting behind it. Runs without a database.
 
-const SETTINGS: EdgeOrderReplaySettings = { entryWaitMs: 500, maxHeldPerStream: 256, maxStreams: 256 };
+const LIMITS = EDGE_ORDER_RECEIVER_DEFAULT_LIMITS;
 const LIFETIME_MS = 30_000;
 const SEND_EVERY_MS = 100;
 const FIRST_SEND_AT_MS = 1_000;
@@ -18,12 +20,20 @@ function send(n: number): EdgeOrderSend {
     return { publisher: 'p', position: n, sentAtMs, expiresAtMs: sentAtMs + LIFETIME_MS };
 }
 
-function stamp(n: number, w = n === 1 ? 0 : send(n - 1).expiresAtMs): EdgeOrderStamp {
-    return { s: 'stream', n, w };
+/** A stamp whose sender has seen no earlier send end: an earlier one can arrive until `earlierCanArriveUntilMs`. */
+function stamp(n: number, earlierCanArriveUntilMs = send(Math.max(1, n - 1)).expiresAtMs): EdgeOrderStamp {
+    return n === 1
+        ? stampAfterEveryEnd(n)
+        : { stream: 'stream', position: n, lowestOpenPosition: 1, earlierCanArriveUntilMs, holes: [] };
+}
+
+/** A stamp whose sender has seen every earlier send end. */
+function stampAfterEveryEnd(n: number): EdgeOrderStamp {
+    return { stream: 'stream', position: n, lowestOpenPosition: n, earlierCanArriveUntilMs: undefined, holes: [] };
 }
 
 function arrival(n: number, arrivedAtMs: number, stamped = stamp(n)): EdgeOrderArrival {
-    return { publisher: 'p', stamp: stamped, arrivedAtMs, expiresAtMs: send(n).expiresAtMs };
+    return { publisher: 'p', stamp: stamped, arrivedAtMs, expiresAtMs: send(n).expiresAtMs, byteLength: 100 };
 }
 
 function records(positions: number, arrivals: readonly EdgeOrderArrival[]): EdgeOrderRunRecords {
@@ -35,8 +45,8 @@ function records(positions: number, arrivals: readonly EdgeOrderArrival[]): Edge
 }
 
 describe('edge-order figures', () => {
-    it('reports arrivals in order as handed over at their read, with nothing held', () => {
-        const figures = computeEdgeOrderFigures(records(3, [arrival(1, 1_050), arrival(2, 1_160), arrival(3, 1_270)]), SETTINGS);
+    it('reports arrivals in order as handed over at their read, with nothing held', async () => {
+        const figures = await computeEdgeOrderFigures(records(3, [arrival(1, 1_050), arrival(2, 1_160), arrival(3, 1_270)]), LIMITS);
 
         expect(figures).toMatchObject({
             expectedHandOvers: 3,
@@ -51,8 +61,8 @@ describe('edge-order figures', () => {
         expect(figures.lagMs).toEqual({ raw: { n: 3, p50: 60, p95: 70, max: 70 }, sorted: { n: 3, p50: 60, p95: 70, max: 70 } });
     });
 
-    it('holds an overtaking message until the one before it arrives, and counts the late one as out of order', () => {
-        const figures = computeEdgeOrderFigures(records(3, [arrival(1, 1_050), arrival(3, 1_250), arrival(2, 1_400)]), SETTINGS);
+    it('holds an overtaking message until the one before it arrives, and counts the late one as out of order', async () => {
+        const figures = await computeEdgeOrderFigures(records(3, [arrival(1, 1_050), arrival(3, 1_250), arrival(2, 1_400)]), LIMITS);
 
         expect(figures).toMatchObject({
             handedOver: 3,
@@ -68,8 +78,8 @@ describe('edge-order figures', () => {
         expect(figures.lagMs.sorted).toEqual({ n: 3, p50: 200, p95: 300, max: 300 });
     });
 
-    it('starts a stream first seen past position 1 after the entry window, with no gap', () => {
-        const figures = computeEdgeOrderFigures(records(3, [arrival(2, 1_150), arrival(3, 1_250)]), SETTINGS);
+    it('starts a stream first seen past position 1 after the entry window, with no gap', async () => {
+        const figures = await computeEdgeOrderFigures(records(3, [arrival(2, 1_150), arrival(3, 1_250)]), LIMITS);
 
         expect(figures).toMatchObject({ handedOver: 2, streamsFirstSeenPastOne: 1, gaps: 0, mostHeld: 2 });
         // Both wait for the window that opened at the first read: 1 150 + 500.
@@ -77,24 +87,24 @@ describe('edge-order figures', () => {
         expect(figures.passRule.everyHandOverBeforeDeadline).toBe(false);
     });
 
-    it('waits for a missing message while its sender says it can arrive, then skips it and reports the gap', () => {
+    it('waits for a missing message while its sender says it can arrive, then skips it and reports the gap', async () => {
         const lost = send(2);
-        const figures = computeEdgeOrderFigures(records(3, [arrival(1, 1_050), arrival(3, 1_250, stamp(3, lost.expiresAtMs))]), SETTINGS);
+        const figures = await computeEdgeOrderFigures(records(3, [arrival(1, 1_050), arrival(3, 1_250, stamp(3, lost.expiresAtMs))]), LIMITS);
 
         expect(figures).toMatchObject({ handedOver: 2, gaps: 1, skippedPositions: 1, lateDrops: 0 });
         expect(figures.lagMs.sorted?.max).toBe(lost.expiresAtMs - send(3).sentAtMs);
     });
 
-    it('does not wait for a message whose sender has seen every earlier send end', () => {
-        const figures = computeEdgeOrderFigures(records(3, [arrival(1, 1_050), arrival(3, 1_250, stamp(3, 0)), arrival(2, 1_400)]), SETTINGS);
+    it('does not wait for a message whose sender has seen every earlier send end', async () => {
+        const figures = await computeEdgeOrderFigures(records(3, [arrival(1, 1_050), arrival(3, 1_250, stampAfterEveryEnd(3)), arrival(2, 1_400)]), LIMITS);
 
         expect(figures).toMatchObject({ handedOver: 2, gaps: 1, lateDrops: 1, mostHeld: 0, heldForMs: null });
     });
 
-    it('fails the pass rule when the last ten are slower than one and a half times the first ten', () => {
+    it('fails the pass rule when the last ten are slower than one and a half times the first ten', async () => {
         const arrivals = Array.from({ length: 20 }, (_unused, index) => arrival(index + 1, send(index + 1).sentAtMs + (index < 10 ? 100 : 160)));
 
-        const figures = computeEdgeOrderFigures(records(20, arrivals), SETTINGS);
+        const figures = await computeEdgeOrderFigures(records(20, arrivals), LIMITS);
 
         expect(figures.firstTenLagMs.sorted?.p50).toBe(100);
         expect(figures.lastTenLagMs.sorted?.p50).toBe(160);
@@ -104,19 +114,5 @@ describe('edge-order figures', () => {
             lastTenWithinRatio: false,
             passes: false
         });
-    });
-});
-
-describe('edge-order sender', () => {
-    it('names the latest deadline among the earlier sends it has not seen end', () => {
-        const sender = new EdgeOrderSender('stream');
-
-        expect(sender.stamp(31_000)).toEqual({ s: 'stream', n: 1, w: 0 });
-        expect(sender.stamp(31_100)).toEqual({ s: 'stream', n: 2, w: 31_000 });
-        sender.end(1);
-        expect(sender.stamp(31_200)).toEqual({ s: 'stream', n: 3, w: 31_100 });
-        sender.end(2);
-        sender.end(3);
-        expect(sender.stamp(31_300)).toEqual({ s: 'stream', n: 4, w: 0 });
     });
 });

@@ -1,9 +1,6 @@
-import {
-    replayEdgeOrderArrivals,
-    type EdgeOrderArrival,
-    type EdgeOrderReplay,
-    type EdgeOrderReplaySettings
-} from './replay-edge-order-arrivals.ts';
+import type { EdgeOrderReceiverLimits } from '@shared-web/browser/messages/edge-order/edge-order-receiver-limits.ts';
+
+import { replayEdgeOrderArrivals, type EdgeOrderArrival, type EdgeOrderReplay } from './replay-edge-order-arrivals.ts';
 
 /** One room message as its publisher sent it. Times are epoch milliseconds, with a fraction. */
 export interface EdgeOrderSend {
@@ -110,30 +107,31 @@ export function summarizeEdgeOrderValues(values: readonly number[]): EdgeOrderSu
 
 /** One recipient's arrival order, stream by stream, before any sorting. */
 function computeArrivalOrder(arrivals: readonly EdgeOrderArrival[]): ArrivalOrder {
-    const seenByStream = new Map<string, { n: number; arrivedAtMs: number; }[]>();
+    const seenByStream = new Map<string, { position: number; arrivedAtMs: number; }[]>();
     const overtakenByMs: number[] = [];
     let streamsFirstSeenPastOne = 0;
     for (const arrival of arrivals) {
-        const key = `${arrival.publisher}\n${arrival.stamp.s}`;
+        const { stream, position } = arrival.stamp;
+        const key = `${arrival.publisher}\n${stream}`;
         const seen = seenByStream.get(key) ?? [];
         seenByStream.set(key, seen);
-        if (seen.length === 0 && arrival.stamp.n !== 1) {
+        if (seen.length === 0 && position !== 1) {
             streamsFirstSeenPastOne += 1;
         }
-        const firstLater = seen.find((earlier) => earlier.n > arrival.stamp.n);
+        const firstLater = seen.find((earlier) => earlier.position > position);
         if (firstLater !== undefined) {
             overtakenByMs.push(arrival.arrivedAtMs - firstLater.arrivedAtMs);
         }
-        seen.push({ n: arrival.stamp.n, arrivedAtMs: arrival.arrivedAtMs });
+        seen.push({ position, arrivedAtMs: arrival.arrivedAtMs });
     }
     return { arrivals: arrivals.length, outOfOrder: overtakenByMs.length, overtakenByMs, streamsFirstSeenPastOne };
 }
 
 function toMeasuredHandOvers(replay: EdgeOrderReplay, sends: ReadonlyMap<string, EdgeOrderSend>): MeasuredHandOver[] {
     return replay.handOvers.map(({ arrival, handedOverAtMs }) => {
-        const send = sends.get(toSendKey(arrival.publisher, arrival.stamp.n));
+        const send = sends.get(toSendKey(arrival.publisher, arrival.stamp.position));
         if (send === undefined) {
-            throw new Error(`An arrival names position ${arrival.stamp.n} of ${arrival.publisher}, which was not sent`);
+            throw new Error(`An arrival names position ${arrival.stamp.position} of ${arrival.publisher}, which was not sent`);
         }
         return {
             send,
@@ -175,15 +173,18 @@ function toShareSpread(shares: readonly number[]): EdgeOrderFigures['outOfOrderS
 }
 
 /**
- * The run's figures: each recipient's arrival order as read, then what the edge-order receiver would have handed
- * its application and when, against the pass rule.
+ * The run's figures: each recipient's arrival order as read, then what the browser's edge-order receiver would have
+ * handed its application and when, against the pass rule.
  */
-export function computeEdgeOrderFigures(records: EdgeOrderRunRecords, settings: EdgeOrderReplaySettings): EdgeOrderFigures {
+export async function computeEdgeOrderFigures(
+    records: EdgeOrderRunRecords,
+    limits: EdgeOrderReceiverLimits
+): Promise<EdgeOrderFigures> {
     const sends = new Map(records.sends.map((send) => [toSendKey(send.publisher, send.position), send]));
     // A session that read nothing (a lone publisher) has no arrival order to report.
     const recipients = [...records.arrivalsByRecipient.values()].filter((arrivals) => arrivals.length > 0);
     const orders = recipients.map(computeArrivalOrder);
-    const replays = recipients.map((arrivals) => replayEdgeOrderArrivals(arrivals, settings));
+    const replays = await Promise.all(recipients.map((arrivals) => replayEdgeOrderArrivals(arrivals, limits)));
     const handOvers = replays.flatMap((replay) => toMeasuredHandOvers(replay, sends));
     const arrivals = orders.reduce((sum, order) => sum + order.arrivals, 0);
     const outOfOrderArrivals = orders.reduce((sum, order) => sum + order.outOfOrder, 0);
@@ -208,7 +209,7 @@ export function computeEdgeOrderFigures(records: EdgeOrderRunRecords, settings: 
         heldForMs: summarizeEdgeOrderValues(handOvers.filter((handOver) => handOver.heldForMs > 0).map((handOver) => handOver.heldForMs)),
         mostHeld: Math.max(0, ...replays.map((replay) => replay.mostHeld)),
         gaps: gaps.length,
-        skippedPositions: gaps.reduce((sum, gap) => sum + gap.to - gap.from + 1, 0),
+        skippedPositions: gaps.reduce((sum, gap) => sum + gap.toPosition - gap.fromPosition + 1, 0),
         lateDrops: replays.reduce((sum, replay) => sum + replay.lateDrops, 0),
         ...measured,
         passRule: toPassRule(measured)
