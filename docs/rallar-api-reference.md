@@ -856,6 +856,10 @@ track no receipt unless the send states `ack` (or `qos.ack`); without one,
 `qos: { durability: { algo: 'local-outbox' } }`, or to a checkpointed memory
 send with `qos: { durability: { algo: 'local-checkpoint' } }`.
 
+A room send's `contextId` is its room id, which is also its default: the WS
+server refuses a room send whose `contextId` names anything else
+`unauthorized`, whatever its audience (D82).
+
 Every volatile message a session sends or receives counts against the session's
 volatile bound, on both carriers and for lane and typed channel sends alike
 (D74, D179). The bound has four limits. The count and byte limits, 1 000
