@@ -66,7 +66,7 @@ it:
    differences between WS and RTC follow from what each
    carrier is and should stay. The ones that do not sit on the hand-over of `rtc-with-ws-fallback`,
    the default strategy (section 5.7).
-7. **The product contract is not adopted.** The ten completion criteria carry no "met" mark, dozens
+7. **The product contract is not adopted.** Each of the ten completion criteria carries a mark since #P2, two met and eight partial; dozens
    of rulings are recorded as provisional or made on the maintainer's behalf, there is no
    version or upgrade policy beyond "deploy web and API together", and no game uses a capability
    delivered after Release 8.
@@ -96,7 +96,7 @@ is followed. A statement that rests on this reading names its pull request or sa
 | Document                                              | Role                                                       | State                                                                             |
 | ----------------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | `playground/alm/alm-improvement-plan.md`              | Delivery roadmap, decision record D1 to D789               | Current in its rows; header, release map and matrix read again at `e30b2c9` (#P1) |
-| `playground/alm/alm-complete-product-description.md`  | Product contract and completion criteria                   | Current in its blocks; no criterion marked met                                    |
+| `playground/alm/alm-complete-product-description.md`  | Product contract and completion criteria                   | Current in its blocks; each criterion marked (#P2)                                |
 | `playground/alm/alm-publication-qos-addendum.md`      | Publication QoS and pub/sub, Slices 1 to 9, later outcomes | Complete for its advertised modes; adoption owed                                  |
 | `playground/alm/alm-qos-product-plan.md`              | Durability tiers and storage budgets                       | Delivered (P1, I2a, I2b); four later outcomes open                                |
 | `playground/alm/alm-first-hosted-campaign-targets.md` | Targets of the first hosted campaign (D643)                | Ruled; not started                                                                |
@@ -161,8 +161,7 @@ After Release 16, in the order D642 ruled:
 | Three verdicts: a reply wait, a room send's route, a granted unicast         | #930, #937, #939, D787 to D789                 |
 | Edge order, slices 1 to 5 (another plan's work)                              | #916, #929, #915                               |
 
-The roadmap's requirement-to-evidence matrix marks 27 of its 30 requirement rows resolved, one
-delivered and two partial (F9 and PC10, both the schema-mismatch reclaim), as written at Release 8.
+The roadmap's requirement-to-evidence matrix marks its seventeen F rows and three Q rows as written at Release 8 (nineteen resolved, F9 partial) and its ten PC rows as the product description marks them.
 Since #P1 it also holds one row per addendum slice for Releases 9 to 16, each `Delivered`, and
 says that its requirement rows name slices of Releases 2 to 8 only.
 
@@ -745,21 +744,26 @@ Notes on the rows that need them:
 
 ### 5.6 Product surface, documents and adoption
 
-| Id | Item                                                                    | Source                   | Class   |
-| -- | ----------------------------------------------------------------------- | ------------------------ | ------- |
-| A1 | The contracts are not adopted                                           | addendum §6, §9          | Blocker |
-| A2 | No criterion of the product description is marked met                   | product description      | Blocker |
-| A3 | Rulings recorded as provisional or made for the maintainer              | D513 to D641, D717, D783 | Decide  |
-| A4 | No consumer for anything delivered after Release 8                      | roadmap                  | Blocker |
-| A5 | No developer documentation outside `playground/`                        | none exists              | Blocker |
-| A6 | Stale statements in current documents                                   | below, #P1               | Closed  |
-| A7 | A client cannot learn a topic's fanout or participation before it sends | D482, D517               | Blocker |
-| A8 | Public surface leftovers                                                | backlog                  | Should  |
-| A9 | Replies travel over WS only and do not survive a reload                 | D441 to D446             | Later   |
+| Id | Item                                                                             | Source                   | Class   |
+| -- | -------------------------------------------------------------------------------- | ------------------------ | ------- |
+| A1 | The contracts are not adopted                                                    | addendum §6, §9          | Blocker |
+| A2 | Each criterion of the product description carries a mark: two met, eight partial | product description, #P2 | Closed  |
+| A3 | Rulings recorded as provisional or made for the maintainer                       | D513 to D641, D717, D783 | Decide  |
+| A4 | No consumer for anything delivered after Release 8                               | roadmap                  | Blocker |
+| A5 | No developer documentation outside `playground/`                                 | none exists              | Blocker |
+| A6 | Stale statements in current documents                                            | below, #P1               | Closed  |
+| A7 | A client cannot learn a topic's fanout or participation before it sends          | D482, D517               | Blocker |
+| A8 | Public surface leftovers                                                         | backlog                  | Should  |
+| A9 | Replies travel over WS only and do not survive a reload                          | D441 to D446             | Later   |
 
 - **A1.** The addendum asks for a scope, default and cutover decision, a truthful security and
   revocation contract, the requirement-to-evidence matrix for the advertised modes, and current
   measured capacity. It records none as taken.
+- **A2.** Closed by #P2. Each criterion states what is evidenced and what is not, read at
+  `e8620c0`. Met: 4 and 5. Partial: 1 (8 `unproven` proofs, a full scope that gates nothing), 2
+  (S1), 3 (an unreceipted at-least-once send, and what #939 left), 6 (S3 at the call), 7 (no
+  game sends `world`), 8 (S7), 9 (T1, A9) and 10 (C2). A mark changes in the pull request that
+  closes the item named beside it.
 - **A3.** PL9 to PL25, PL27 and PL28 (Slice 3); every Slice 4 ruling; builder calls in Slices 5 to
   7; D607 to D641, ruled by the controller; D645's window split; D717, D719 and D757; and D783.
   D784 is no longer on this list: its row quotes the maintainer's own rulings of 2026-11-26.
@@ -1009,8 +1013,7 @@ Where each stands at `e30b2c9`. No criterion is changed, and none is met in full
    call is ruled and not on `main` (#943, a draft). S7 is open. S1 and S2 are not ruled
    (decision 3).
 7. _There is an upgrade rule._ Open, unchanged.
-8. _It is adopted._ Open. Of A3's list, D784 is now the maintainer's own ruling. Nothing
-   else changed.
+8. _It is adopted._ Open. Of A3's list, D784 is now the maintainer's own ruling. The completion criteria are marked (#P2): two met, eight partial.
 
 ## 7. The plan
 
