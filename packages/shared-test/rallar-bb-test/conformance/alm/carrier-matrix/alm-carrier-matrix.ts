@@ -330,7 +330,7 @@ export const ALM_CARRIER_MATRIX = {
                         testFile: BROWSER_RTC_PEER_SEND_TEST,
                         testName: 'refuses a send to the server on %s',
                         because:
-                            'The send is admitted on neither carrier: the test reads both carriers\' admissions empty.'
+                            'The send is admitted on neither carrier: the test reads both carriers\' admissions empty, and the refusal\'s message, which tells it from the product\'s other `$.peerId` refusals.'
                     }
                 ]
             },
@@ -344,7 +344,7 @@ export const ALM_CARRIER_MATRIX = {
                         testFile: BROWSER_RTC_PEER_SEND_TEST,
                         testName: 'refuses a send to the server on %s',
                         because:
-                            'The strategy does not route the send to WS: the test reads both carriers\' admissions empty.'
+                            'The strategy does not route the send to WS: the test reads both carriers\' admissions empty, and the refusal\'s message, which tells it from the product\'s other `$.peerId` refusals.'
                     }
                 ]
             }

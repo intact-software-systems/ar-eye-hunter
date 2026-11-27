@@ -76,6 +76,22 @@ describe('the server command refused at its call', () => {
             ...EPILOGUE
         ]);
         expect(send).toMatchObject({ carrier, toPeer: 'server', observe: 'call-refused' });
+        // The product answers an ordering key, a seq, a snapshot floor or a hop limit on a peer send with the same
+        // `$.peerId` / `unsupported`, before it reads the peer: a send that named one would witness that refusal instead.
+        expect(Object.keys(send ?? {}).sort()).toEqual([
+            'carrier',
+            'commandId',
+            'connection',
+            'handleId',
+            'kind',
+            'observe',
+            'payload',
+            'roomRef',
+            'timeoutMs',
+            'toPeer',
+            'topicId',
+            'typeId'
+        ]);
         expect(toCommandNames(receiver)).toEqual([...PROLOGUE, ...EPILOGUE]);
         expect([...sender.commands, ...receiver.commands].filter((command) => !validateRallarBlackBoxTestCommand(command).ok)).toEqual([]);
     });

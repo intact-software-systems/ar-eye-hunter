@@ -64,7 +64,9 @@ Where a send is handed to WS (`at`):
 - `unit-test`: a test file, a part of one test's title, and a sentence on what that test pins. Use it
   for an outcome the lane cannot stage or witness, or beside a lane cell for what only a unit test
   reads, such as both carriers' admission ports. A call the product refuses with a validation issue
-  is witnessed in the lane by a send that observes `call-refused`.
+  can be witnessed in the lane by a send that observes `call-refused`, when a recipe can state the
+  send: `server-peer-unicast` is witnessed so, and `all-broadcast` is not, because no recipe names
+  scope `all`. A reply wait's refusal is its call's resolved value, which no send observes.
 - `documented-limit`: a document and the phrase in it that states the limit. Use it for a property
   no test can show, such as what a relay is able to read.
 - `unproven`: nothing proves this part of the outcome yet. `closedBy` names what will.

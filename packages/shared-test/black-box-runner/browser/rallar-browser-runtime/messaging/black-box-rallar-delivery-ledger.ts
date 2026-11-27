@@ -9,8 +9,7 @@ import {
     type ALDeliveryUnroutableReason
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
-import { isRallarValidationError, type RallarValidationError } from '@shared/api/rallar-validation.ts';
-import { Either } from '@shared/resilience/Either.ts';
+import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
 
 import type { BlackBoxRallarRuntimeDiagnostics } from '../black-box-rallar-diagnostics.ts';
 import type {
@@ -391,34 +390,24 @@ async function readCallRefusal(
     send: BlackBoxRallarMessageSendInput,
     sending: Promise<RallarMessageHandle>
 ): Promise<BlackBoxRallarMessageCallRefusalDiagnostics> {
-    const settled = await readCallSettlement(sending);
-    return settled.fold(
-        (refusal) => ({
-            handleId: send.handleId,
-            carrier: send.carrier,
-            callRefusal: refusal.issues.map(({ path, code }) => ({ path, code }))
-        }),
-        (handle) => {
-            throw new Error(
-                `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.sendNotRefused}: messages.send ${send.handleId} ` +
-                    `observes a call refusal, and the call opened ${handle.msgId}.`
-            );
-        }
-    );
-}
-
-async function readCallSettlement(
-    sending: Promise<RallarMessageHandle>
-): Promise<Either<RallarValidationError, RallarMessageHandle>> {
+    let handle: RallarMessageHandle;
     try {
-        return Either.ofRight(await sending);
+        handle = await sending;
     }
     catch (error) {
-        if (isRallarValidationError(error)) {
-            return Either.ofLeft(error);
+        if (!isRallarValidationError(error)) {
+            throw error;
         }
-        throw error;
+        return {
+            handleId: send.handleId,
+            carrier: send.carrier,
+            callRefusal: error.issues.map(({ path, code }) => ({ path, code }))
+        };
     }
+    throw new Error(
+        `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.sendNotRefused}: messages.send ${send.handleId} ` +
+            `observes a call refusal, and the call opened ${handle.msgId}.`
+    );
 }
 
 function toPeerUnresolvedError(

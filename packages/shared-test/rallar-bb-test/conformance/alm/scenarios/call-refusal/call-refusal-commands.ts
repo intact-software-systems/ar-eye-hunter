@@ -9,7 +9,7 @@ import {
 } from '../../carrier-matrix/to-alm-call-refusal-facts.ts';
 
 /** A capability whose cells state, on some carrier, that the product refuses its send at the call. */
-export type AlmCallRefusalCapabilityId = 'server-peer-unicast';
+type AlmCallRefusalCapabilityId = 'server-peer-unicast';
 
 /**
  * One assertion per fact on the refusal the witnessed first send (`send-1`) returned, read from the cell of

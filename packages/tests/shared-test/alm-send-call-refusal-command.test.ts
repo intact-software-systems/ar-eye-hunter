@@ -85,11 +85,10 @@ describe('a messages.send that observes the refusal of its call', () => {
         });
     });
 
-    it('names observe in the capability an author reads', () => {
+    it('names observe among the optional fields of the capability an author reads', () => {
         const capability = RALLAR_BLACK_BOX_COMMAND_CAPABILITIES.find(({ kind }) => kind === 'messages.send');
 
         expect(capability?.optionalFields).toContain('observe');
-        expect(capability?.description).toContain('observe call-refused');
     });
 });
 

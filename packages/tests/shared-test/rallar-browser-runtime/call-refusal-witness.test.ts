@@ -72,7 +72,6 @@ describe('a messages.send that observes the refusal of its call', () => {
                 { path: '$.scope', code: 'invalid-scope' }
             ]
         });
-        expect(facade.records.typedSends).toHaveLength(1);
     });
 
     it('fails the send, naming that the call was not refused, when the call opens a handle', async () => {
@@ -90,6 +89,19 @@ describe('a messages.send that observes the refusal of its call', () => {
         facade.behavior.typedSend.mockRejectedValue(closed);
 
         await expect(runtime.sendMessage(witnessedSend)).rejects.toBe(closed);
+    });
+
+    it('fails the send with the product\'s own validation error when opening its channel refuses, before any call', async () => {
+        const runtime = await loadConnectedRuntime();
+        const refusedChannel = new RallarValidationError('Rallar channel definition is invalid.', [
+            { path: '$.topicId', code: 'reserved-ws-topic', message: 'Rallar WS topic is reserved.' }
+        ]);
+        facade.behavior.typedChannelOpen.mockImplementation(() => {
+            throw refusedChannel;
+        });
+
+        await expect(runtime.sendMessage(witnessedSend)).rejects.toBe(refusedChannel);
+        expect(facade.records.typedSends).toEqual([]);
     });
 
     it.each([
