@@ -1,9 +1,10 @@
 # Edge order: ordered room sends, sorted at the two ends
 
-Status: a plan to decide on. Nothing is built. The verdict so far is **viable, with one measurement still owed**
-(section 2.5) and the maintainer's rulings in section 4: rulings 1 to 5, 7 and 8 are made, ruling 6 is open. It
-builds on the unordered path, which keeps up under load only on the tree of PR 885, so it follows that pull request
-and does not replace it.
+Status: rulings 1 to 5, 7 and 8 are made, ruling 6 is open. The verdict is **viable**: the measurement the plan
+owed is run (section 2.5, slice 1), and it holds up to 10 messages a second from one sender. Slices 1 to 4 are built
+and wait in pull requests for the maintainer's review (section 3, "What the slices found"). Edge order builds on the
+unordered path, which keeps up under load only on the tree of PR 885, so it follows that pull request and does not
+replace it.
 
 Working name: **edge order**. Today's ordered mode (`orderingKey`) is called **hop order** in this document, because
 every hop enforces it.
@@ -45,16 +46,16 @@ arrive, the receiver skips it and reports the gap; it does not stall the stream 
 
 **Side by side.**
 
-|                                                   | Unordered (today's default)  | Edge order (new)                                                | Hop order (today's `orderingKey`)                           |
-| ------------------------------------------------- | ---------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------- |
-| Who orders                                        | nobody                       | the sender's and each receiver's Rallar Web, in memory          | every hop, in durable storage                               |
-| Order the app sees                                | arrival order                | the sender's send order, per sender page                        | the sender's send order, per sender session                 |
-| Across a sender reload                            | not applicable               | a new stream starts                                             | the track continues                                         |
-| A missing message                                 | not noticed                  | waited for while it can still arrive, then skipped and reported | NACK and repair; then `resync-required`, and the track ends |
-| Late joiner                                       | gets what arrives            | starts at the first message it gets                             | enters at a recorded position                               |
-| Server work per message                           | the unordered path           | the unordered path, unchanged                                   | plus a per-track progress row at each hop                   |
-| Sender storage                                    | memory                       | memory                                                          | IndexedDB, forced                                           |
-| Measured on the WS server, five publishers, +5 ms | keeps up: 450 of 450 in 45 s | not yet measured (section 2.5)                                  | stalls: 93 to 166 of 450 in 45 s                            |
+|                                                   | Unordered (today's default)  | Edge order (new)                                                 | Hop order (today's `orderingKey`)                           |
+| ------------------------------------------------- | ---------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------- |
+| Who orders                                        | nobody                       | the sender's and each receiver's Rallar Web, in memory           | every hop, in durable storage                               |
+| Order the app sees                                | arrival order                | the sender's send order, per sender page                         | the sender's send order, per sender session                 |
+| Across a sender reload                            | not applicable               | a new stream starts                                              | the track continues                                         |
+| A missing message                                 | not noticed                  | waited for while it can still arrive, then skipped and reported  | NACK and repair; then `resync-required`, and the track ends |
+| Late joiner                                       | gets what arrives            | starts at the first message it gets                              | enters at a recorded position                               |
+| Server work per message                           | the unordered path           | the unordered path, unchanged                                    | plus a per-track progress row at each hop                   |
+| Sender storage                                    | memory                       | memory                                                           | IndexedDB, forced                                           |
+| Measured on the WS server, five publishers, +5 ms | keeps up: 450 of 450 in 45 s | keeps up: 450 of 450 in 45 s, sorted, nothing held (section 2.5) | stalls: 93 to 166 of 450 in 45 s                            |
 
 **What it suits.** Chat, game moves and other commands from one player, collaborative events: any stream where "what
 this sender did, in order" matters and the receiver is a browser. With sends that nothing retries it becomes "newest
@@ -257,73 +258,151 @@ Both were thrown away; nothing is committed.
    longer arrive, then skipped and reported, with the late copy dropped; unretried sends never waited for; a held
    message released before its own deadline; a late joiner that starts at once; the entry window; a reload as a new
    stream; duplicates; the held-message cap; the stream cap; the sender's stamp as its sends end.
-2. **A model of what sorting costs.** One sender, 45 s, each message's transit drawn from the range the WS server
-   showed for unordered receipted sends (recipients read 0.36 to 0.74 s after the send), every message independent.
-   This is a model, not a measurement.
+2. **A model of what sorting costs**, now replaced by the measurement in section 2.5. The model drew each message's
+   transit independently from the range the WS server had shown (0.36 to 0.74 s). The measured reordering differs:
 
-   | Rate        | Arrivals out of order | Most held at once | Transit p50 / p95 | Handed over p50 / p95 / max |
-   | ----------- | --------------------- | ----------------- | ----------------- | --------------------------- |
-   | 2 a second  | 0 of 90               | 0                 | 399 / 575 ms      | 399 / 575 / 717 ms          |
-   | 5 a second  | 8 of 225              | 1                 | 400 / 487 ms      | 406 / 496 / 717 ms          |
-   | 10 a second | 35 of 450             | 4                 | 406 / 485 ms      | 414 / 546 / 738 ms          |
-   | 30 a second | 531 of 1 350          | 11                | 406 / 489 ms      | 432 / 608 / 738 ms          |
-   | 60 a second | 1 569 of 2 700        | 21                | 405 / 489 ms      | 452 / 641 / 739 ms          |
+   | One sender  | Model: arrivals out of order | Measured, +0 ms | Measured, +5 ms | Most held, measured | An overtaken message was behind by, at most |
+   | ----------- | ---------------------------- | --------------- | --------------- | ------------------- | ------------------------------------------- |
+   | 5 a second  | 3.6 % (8 of 225)             | 0               | 0               | 0                   | not seen                                    |
+   | 10 a second | 7.8 % (35 of 450)            | 0               | 2.0 to 3.0 %    | 2                   | 152 ms                                      |
+   | 30 a second | 39 % (531 of 1 350)          | 1.8 to 8.2 %    | 69 to 75 %      | 4, and 29 at +5 ms  | 99 ms, and 1.5 s at +5 ms                   |
 
-   Every message is handed over, in order, with no gap. Sorting never makes a message later than the slowest message
-   before it, so the cost is bounded by the unordered path's own worst case.
+   - **Reordering is not independent per message or per recipient.** It happens at the server hop, before the
+     fan-out. Every session on one WS server instance read the same order in every run, and at 10 a second all 14
+     recipients read the same order. So it is a few overtaken messages that every recipient sees (4 to 6 of 200 at
+     10 a second), not noise at each recipient.
+   - **It is rarer than the model while the server keeps up, and far commoner once it does not.** At 30 a second and
+     +5 ms the server falls behind, and most messages arrive behind a later one.
+   - **What the model had right:** sorting never makes a message later than the slowest message before it. Inside
+     the session budget the sorted p95 is within 2 ms of the read p95 in every run.
 3. **Bundle cost**, as stated above: 675 bytes after Brotli for the core.
 
 ### 2.4 What would make the idea not viable
 
-| It would fail if                                                       | Found?                                                                                                                                                                                                                                      |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A server-side consumer needs per-sender order from browser room sends. | No. None in production uses it (section 2.2).                                                                                                                                                                                               |
-| The counter cannot travel end to end unchanged.                        | No. The payload is opaque to the server and to relays, and a proof covers it.                                                                                                                                                               |
-| Unordered sends themselves do not keep up through the WS server.       | Not on the tree of PR 885, at five publishers and 10 messages a second in all. On that PR's base they did not keep up (111 to 124 of 200 at +5 ms), so edge order depends on PR 885 landing. One fast sender is not measured (section 2.5). |
-| Sorting adds a wait as long as the stall it replaces.                  | No, by construction and by the model: the wait is the slowest earlier message, held in memory. A truly lost message costs one retry (2 s) for the messages behind it.                                                                       |
-| A receipt would have to change meaning.                                | No. It already means "admitted at the receiver".                                                                                                                                                                                            |
-| The receiver's memory cannot be bounded.                               | No. Two caps and a skip.                                                                                                                                                                                                                    |
-| The sender cannot tell receivers that a message will never come.       | No. The handle's terminal states are already there.                                                                                                                                                                                         |
+| It would fail if                                                       | Found?                                                                                                                                                                                                                                                                                                                                         |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A server-side consumer needs per-sender order from browser room sends. | No. None in production uses it (section 2.2).                                                                                                                                                                                                                                                                                                  |
+| The counter cannot travel end to end unchanged.                        | No. The payload is opaque to the server and to relays, and a proof covers it.                                                                                                                                                                                                                                                                  |
+| Unordered sends themselves do not keep up through the WS server.       | Not on the tree of PR 885 up to 10 messages a second, from one publisher or from five (section 2.5). At 30 a second from one publisher, above the session budget, they keep up at +0 ms and fall behind at +5 ms. On that PR's base they did not keep up at 10 a second (111 to 124 of 200 at +5 ms), so edge order depends on PR 885 landing. |
+| Sorting adds a wait as long as the stall it replaces.                  | No, by construction and by measurement: inside the session budget at most 2 messages were held at once and the sorted p95 is within 2 ms of the read p95 (section 2.5). A truly lost message costs one retry (2 s) for the messages behind it; no loss was injected in the measurement.                                                        |
+| A receipt would have to change meaning.                                | No. It already means "admitted at the receiver".                                                                                                                                                                                                                                                                                               |
+| The receiver's memory cannot be bounded.                               | No. Two caps and a skip.                                                                                                                                                                                                                                                                                                                       |
+| The sender cannot tell receivers that a message will never come.       | No. The handle's terminal states are already there.                                                                                                                                                                                                                                                                                            |
 
 One limit is real and stays: the session admission budget. With a 30 s lifetime a session sustains about 16.7 volatile
 messages a second (`plans/backlog.md`, "Session volatile admission budget against a room stream"). Edge order does not
 raise it.
 
-### 2.5 The measurement still owed
+### 2.5 The measurement: unordered sends, sorted at the receiver
 
 **The question.** Do unordered sends with edge sorting keep up where hop-ordered ones stall, for one fast sender as
 well as for five slow ones?
 
-**What is already measured**, by the PR 885 session through three WS server instances on PostgreSQL:
+**The answer.** Yes, up to 10 messages a second from one sender, and for five senders at 2 a second each. In every
+run every message reached all 14 recipients before its deadline, the sorted p95 was at most 0.50 s, and the last ten
+messages were no slower than the first ten. Sorting cost almost nothing: at most 2 messages were held at once. At
+30 a second from one sender, which is above the session budget, the path keeps up at +0 ms and falls behind at
++5 ms. The verdict "viable" stands.
 
-| Cell, +5 ms statement latency          | Hop order (PR 885 tree)                                              | Unordered (PR 885 tree)                                                   |
-| -------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| Five publishers, 2 a second each, 45 s | 93 to 166 of 450 delivered; recipients read 5 to 17 s after the send | 450 of 450; last ACK offered 0.46 s after the send at p50, 0.84 s at most |
-| One publisher, 5 a second, 20 s        | 16 to 58 of 100                                                      | not run                                                                   |
-| One publisher, 10 a second, 20 s       | 1 to 5 of 200                                                        | not run                                                                   |
-| One publisher, 30 a second, 20 s       | 0 to 3 of 600                                                        | not run                                                                   |
+**How it was run.** Slice 1, on 2026-11-26, on PR 885's head (`8dece84d9`) with the suite at `091451afc`.
 
-Unordered was measured only at 10 messages a second in all, and never with the order of each recipient's reads
-recorded. So the model in section 2.3 uses an assumed spread.
+- The suite is `packages/tests/shared-server/integration/postgres/edge-order-measurement/`, a manual suite in
+  `tests/manual-suites.json`. Command: `DATABASE_URL=… EDGE_ORDER_OUT=… npm run perf:alm:edge-order-room-sends`, on
+  a database of its own.
+- Three WS server instances on one PostgreSQL, a pool of 10 connections each, 15 sessions (five an instance). Every
+  statement, BEGIN and COMMIT waits +0 or +5 ms.
+- Sends are unordered, at-least-once, receipted room messages with a 30 s lifetime. Each recipient offers its ACK
+  within 100 ms of its read.
+- Each payload carries the stream, the position from 1, and the latest deadline among earlier sends whose terminal
+  receipt the publisher has not read yet (`s`, `n` and `w` of section 2.2). The stamp arrived unchanged in every
+  frame.
+- Every recipient's first reads are kept in arrival order and run through the receive-side rule of rulings 1 and 2,
+  with a 500 ms entry window and the caps of 256.
+- Three runs a cell, 30 runs in 16 minutes, every cell's first run before any cell's second.
 
-**How it would be run.**
+**Delivery and order.** Each cell shows the range over its three runs. "Read lag" is from the send to the
+recipient's read. "Sorted lag" is from the send to the hand-over after sorting. Both are over every message and
+recipient, in milliseconds. "Last ten" is the sorted p50 of the last ten messages against the first ten.
 
-- Tree: PR 885's head, or `main` once it has merged.
-- Harness: the PR 885 session's `spike-delivery.built.test.ts`, copied to
-  `packages/tests/shared-server/integration/postgres/` for the run and run with
-  `RALLAR_POSTGRES_INTEGRATION=1 DATABASE_URL=… bunx vitest run --no-file-parallelism --config
-  packages/tests/shared-server/vitest.postgres-integration.config.mjs`, on a database of its own.
-- Changes to the harness: an unordered `one-fast` cell (one publisher at 5, 10 and 30 a second) beside the existing
-  `five` cell; each payload carries the stream and position; every recipient's first reads are kept in arrival order
-  and run through the sorter.
-- Figures: delivered before the deadline; share of arrivals out of order; hand-over lag after sorting against the raw
-  read lag (p50, p95, max); most held at once; gaps; first ten against last ten.
-- Pass rule: at 5 and 10 a second every message is delivered before its deadline, the sorted p95 is within 1 s, and
-  the last ten are no slower than 1.5 times the first ten. 30 a second is reported as found, since it is above the
-  session budget.
+| Cell                              | Latency | `complete` by deadline | Handed over by deadline | Arrivals out of order | Read lag p50 / p95 / max                       | Sorted lag p50 / p95 / max                       | Most held | Gaps | Last ten     | Pass rule |
+| --------------------------------- | ------- | ---------------------- | ----------------------- | --------------------- | ---------------------------------------------- | ------------------------------------------------ | --------- | ---- | ------------ | --------- |
+| One publisher, 5 a second, 20 s   | +0 ms   | 100 of 100             | 1 400 of 1 400          | 0                     | 108 to 110 / 139 to 144 / 158 to 202           | the same                                         | 0         | 0    | 0.94 to 1.00 | pass      |
+|                                   | +5 ms   | 100 of 100             | 1 400 of 1 400          | 0                     | 345 to 349 / 406 to 422 / 457 to 478           | the same                                         | 0         | 0    | 0.94 to 0.99 | pass      |
+| One publisher, 10 a second, 20 s  | +0 ms   | 200 of 200             | 2 800 of 2 800          | 0                     | 105 to 106 / 126 to 133 / 152 to 243           | the same                                         | 0         | 0    | 1.01 to 1.03 | pass      |
+|                                   | +5 ms   | 200 of 200             | 2 800 of 2 800          | 2.0 to 3.0 %          | 363 to 367 / 445 to 497 / 511 to 619           | 366 to 370 / 445 to 497 / 511 to 619             | 1 to 2    | 0    | 0.89 to 0.99 | pass      |
+| One publisher, 30 a second, 20 s  | +0 ms   | 600 of 600             | 8 400 of 8 400          | 1.8 to 8.2 %          | 98 to 109 / 124 to 241 / 260 to 465            | 98 to 109 / 124 to 250 / 260 to 465              | 2 to 4    | 0    | 0.71 to 1.14 | as found  |
+|                                   | +5 ms   | 600 of 600             | 8 400 of 8 400          | 69 to 75 %            | 907 to 1 240 / 1 209 to 2 666 / 1 494 to 3 354 | 1 009 to 1 372 / 1 267 to 2 889 / 1 494 to 3 354 | 17 to 29  | 0    | 1.23 to 3.94 | as found  |
+| Five publishers, 2 a second, 20 s | +0 ms   | 200 of 200             | 2 800 of 2 800          | 0                     | 106 to 109 / 130 to 178 / 159 to 373           | the same                                         | 0         | 0    | 0.97 to 1.01 | pass      |
+|                                   | +5 ms   | 200 of 200             | 2 800 of 2 800          | 0                     | 357 to 361 / 422 to 466 / 488 to 610           | the same                                         | 0         | 0    | 0.98 to 1.03 | pass      |
+| Five publishers, 2 a second, 45 s | +0 ms   | 450 of 450             | 6 300 of 6 300          | 0                     | 105 to 106 / 128 to 136 / 154 to 310           | the same                                         | 0         | 0    | 0.90 to 0.97 | pass      |
+|                                   | +5 ms   | 450 of 450             | 6 300 of 6 300          | 0                     | 361 to 364 / 439 to 446 / 498 to 620           | the same                                         | 0         | 0    | 0.91 to 1.02 | pass      |
 
-It was not run in this session because it needs PR 885's tree, and that session is measuring on this machine now; a
-second load on the same machine would spoil both sets of figures. It is slice 1.
+The pass rule (every message handed over before its deadline, sorted p95 within 1 s, last ten no slower than 1.5
+times the first ten) holds in all 24 runs at 5 and 10 a second and at five publishers. At 30 a second it holds in
+the three runs at +0 ms and in none at +5 ms. No run had a gap, a late drop, a duplicate read, a refused send or a
+timed-out receipt.
+
+**Against hop order**, at +5 ms. The hop-order figures are the PR 885 session's, on the same tree.
+
+| Cell                                   | Hop order                                                            | Unordered, sorted at the receiver                                                          |
+| -------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Five publishers, 2 a second each, 45 s | 93 to 166 of 450 delivered; recipients read 5 to 17 s after the send | 450 of 450; read 0.36 s after the send at p50, 0.62 s at most; nothing out of order        |
+| One publisher, 5 a second, 20 s        | 16 to 58 of 100                                                      | 100 of 100; sorted p95 0.41 to 0.42 s                                                      |
+| One publisher, 10 a second, 20 s       | 1 to 5 of 200                                                        | 200 of 200; sorted p95 0.45 to 0.50 s; at most 2 held                                      |
+| One publisher, 30 a second, 20 s       | 0 to 3 of 600                                                        | 600 of 600 inside the burst, but falling behind: sorted p50 1.0 to 1.4 s, p95 1.3 to 2.9 s |
+
+**The receipts.** Milliseconds from the send to the publisher's read of `complete`, and statements a message.
+
+| Cell                       | `complete` p50 / max, +0 ms | `complete` p50 / max, +5 ms        | Statements a message, +0 / +5 ms |
+| -------------------------- | --------------------------- | ---------------------------------- | -------------------------------- |
+| One publisher, 5 a second  | 312 to 317 / 405 to 473     | 785 to 804 / 1 078 to 1 220        | 300 to 306 / 257 to 265          |
+| One publisher, 10 a second | 304 to 307 / 383 to 590     | 947 to 976 / 1 317 to 1 372        | 283 to 284 / 219                 |
+| One publisher, 30 a second | 330 to 361 / 649 to 936     | 9 904 to 16 465 / 13 678 to 20 512 | 217 to 225 / 182 to 183          |
+| Five publishers, 45 s      | 311 to 315 / 390 to 520     | 942 to 958 / 1 222 to 1 309        | 297 to 301 / 225 to 226          |
+
+The five-publisher cell repeats the PR 885 session's unordered figure (450 of 450; last ACK offered 0.46 s after the
+send at p50, 0.60 to 0.72 s at most here against 0.84 s there).
+
+**30 a second, as found.** At +0 ms it passes. At +5 ms it does not keep up:
+
+- Every message was still read by every recipient before its deadline, but about 1 s late, and in one run of three
+  the read lag grew through the run (0.83 s in the first quarter, 2.30 s in the last). In the other two it stayed
+  near 0.9 s.
+- The receipts fall behind first. `complete` reached the publisher 10 to 16 s after the send at p50 and up to
+  20.5 s, after a 20 s burst. A longer run at this rate would reach the 30 s lifetime and time out.
+- What limits it, as arithmetic and not separated by measurement: a message costs 182 statements here, so at +5 ms
+  each message adds 0.9 s of statement latency, and 30.4 messages a second add 27.7 s of it every second, against
+  three instances with ten connections each. Each message also brings 14 ACKs, 425 a second. The same rate passes
+  at +0 ms, so the limit is statement count times statement latency, not processor time.
+- The rate is above the session admission budget of about 16.7 a second, which the harness does not apply (below).
+  It was not fixed, as slice 1 builds no product code.
+
+**What the reordering looks like**, for the sorter's defaults:
+
+- It is the server's, not the recipient's: every session on one instance read the same order in every run (section
+  2.3).
+- Inside the session budget an overtaken message arrived at most 152 ms after the later one, and the receiver held
+  at most 2 messages. The held-message cap of 256 is far away; even at 30 a second and +5 ms the most held was 29.
+- No stream's first message arrived second, in any run: the entry window of ruling 2 never opened. 500 ms is more
+  than three times the longest overtaking measured inside the budget, so it stands as the default.
+- No message was lost, so the wait of ruling 1 never ran to its end. The gap rule is proven by its cases, not by
+  this measurement.
+
+**What this measurement does not cover.**
+
+- A "read" is the instance's write to a session's socket, which the harness stands in for. There is no browser, no
+  browser inbound runtime, no network and no RTC. The reordering measured is the WS server's.
+- The harness calls the instance's ingress directly, so the browser's session admission budget is not applied. A
+  browser would refuse part of the 30 a second cell before it reached the server.
+- The sorter is the suite's own copy of the rule, replayed over the recorded reads on a clock that only the reads
+  and its own timers move. It reads no other clock, so the replay equals a live run. Slice 2 builds the product's
+  sorter; slice 6 runs this measurement again with it.
+- Bursts of 20 s (45 s for one cell), no injected loss, no late joiner, no reload.
+
+**The machine.** One laptop, with no other measurement running (the PR 885 session held its own). The 1-minute load
+was 2.8 to 6.4 at the start of each run. Two runs ended at 9.6 and 12.3 with the harness's own timers up to 165 ms
+late; both pass. Three runs waited 30 to 60 s for the load to fall to 8 before they started. The 30 a second cells
+raise the load themselves.
 
 ## 3. Roadmap
 
@@ -331,7 +410,7 @@ Each slice is one pull request and leaves the product working. The riskiest ques
 
 | Slice                               | Builds                                                                                                                                                                                                                                     | Proves                                                                                                                                                                                       | Does not yet do                                                                        | Ruling needed first                    |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | -------------------------------------- |
-| 1. Measure                          | The measurement of section 2.5, kept in the repository as a manual Postgres suite so later slices can run it again. No product code.                                                                                                       | Whether the unordered path with a counter keeps up for one fast sender and for five, and how much reordering a receiver really sees.                                                         | Anything for apps.                                                                     | None. It needs PR 885's tree.          |
+| 1. Measure                          | Done (PR 915). The measurement of section 2.5, kept in the repository as a manual Postgres suite so later slices can run it again. No product code.                                                                                        | Whether the unordered path with a counter keeps up for one fast sender and for five, and how much reordering a receiver really sees.                                                         | Anything for apps.                                                                     | None. It needs PR 885's tree.          |
 | 2. The rule, unwired                | The stamp and the sorter as pure code in `shared-web/browser/messages/edge-order/`, with the spike's cases as unit tests. Nothing imports it.                                                                                              | The gap rule, the entry rule, the caps and the deadline rule, case by case.                                                                                                                  | Any send or receive path. No bundle change.                                            | 1 (gap rule), 2 (entry rule)           |
 | 3. One path end to end              | `order: 'edge'` on a room channel; the counter taken at `send`; the sorter before the listener registries; whole-room, receipted, at-least-once sends over `ws`, `rtc` and `rtc-with-ws-fallback`. Other shapes are refused `unsupported`. | Browser tests with two pages; a conformance-lane cell `edge-order-stream` on the three carriers and one under the lane's seeded jitter; the public API snapshot; the measured bundle figure. | Holes from ended sends, the gap callback, reload, narrowed audiences, unretried sends. | 3 (where the counter rides), 4 (names) |
 | 4. Holes, reload and reports        | The `f` floor for ended sends; the gap report to the app and the usage counters; the caps as growth surfaces; a new stream after a reload; the late joiner.                                                                                | Lane cells under the 25 % seeded loss, across a sender reload and with a late joiner; a long-run memory test.                                                                                | Unretried sends and narrowed audiences.                                                | 5 (what a reload means at receivers)   |
@@ -339,14 +418,12 @@ Each slice is one pull request and leaves the product working. The riskiest ques
 | 6. A real consumer                  | One app stream moved to edge order; the product description, the browser README and the realtime skill updated; the measurement of slice 1 run again with the product code.                                                                | The hosted lane and the app's own tests.                                                                                                                                                     |                                                                                        | Which stream                           |
 | 7. Hop order's future               | Whatever ruling 6 says.                                                                                                                                                                                                                    |                                                                                                                                                                                              |                                                                                        | 6                                      |
 
-**What the slices found.** Each line is the slice's own report in its draft pull request; the sections above are
-as they were written before the slices ran.
+**What the slices found.** Each line is the slice's own report in its pull request. The sections above are as they were written before the slices ran, except sections 2.3 to 2.5, which hold slice 1's measurement.
 
 - **Slice 1, PR 915 (stacked on PR 885).** Unordered sends sorted at the receiver keep up at 5 and 10 messages a
   second from one sender and for five senders at 2 a second each: every message before its deadline, sorted p95 at
   most 0.50 s, at most 2 messages held. At 30 a second, above the session budget, the path keeps up at +0 ms and
-  falls behind at +5 ms. The reordering is the server's: every session on one instance read the same order. That
-  pull request carries the updated sections 2.3 and 2.5.
+  falls behind at +5 ms. The reordering is the server's: every session on one instance read the same order. Sections 2.3 and 2.5 above hold its figures.
 - **Slice 2, PR 916.** The stamp and the sorter as unwired code with 31 tests. The stamp's fields are `stream`,
   `position`, the lowest open position and the latest deadline of earlier open sends.
 - **Slice 3, PR 924 (stacked on PR 916).** `order: 'edge'` works end to end on a room channel, with two-page tests
@@ -434,7 +511,8 @@ a stream is number 57.
 
 What follows from the ruling: position 1, or a message whose sender says nothing earlier can still arrive, starts at
 once; otherwise the receiver waits the window and starts at the lowest message it holds, with no gap report. The
-window's length is a channel option with a default that slice 1's measured reordering sets; a message that arrives
+window's length is a channel option with a default of 500 ms: inside the session budget slice 1 measured an overtaken
+message at most 152 ms behind the later one, and no stream whose first message arrived second; a message that arrives
 after its receiver entered past it is dropped as late and counted.
 
 **3. Where the counter rides (before slice 3). Ruled on 2026-11-26: inside the payload.**
