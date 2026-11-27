@@ -67,6 +67,16 @@ const SESSION_ID = 'a';
 const GRANTED_TOPIC_ID = 'room.granted-feed';
 const PUBLISHER: GroupPublicationTopicPermissions = { publish: true, subscribe: false };
 const SUBSCRIBER: GroupPublicationTopicPermissions = { publish: false, subscribe: true };
+const PUBLISHER_AND_SUBSCRIBER: GroupPublicationTopicPermissions = { publish: true, subscribe: true };
+
+/**
+ * The addressees RTC cannot reach with a receipted granted unicast, and the cached room that says so: `c` with its grant
+ * row dropped, and the sender's own session, which here holds `subscribe` so only the self check can refuse it.
+ */
+const UNREACHABLE_PEERS: readonly [string, string, (crypto: AvailablePublicationCrypto) => GroupSnapshot][] = [
+    ['a session without subscribe', 'c', (crypto) => toWithoutGrantRow(createRoomSnapshot(PUBLISHER, crypto), 'c')],
+    ['its own session', SESSION_ID, (crypto) => createRoomSnapshot(PUBLISHER_AND_SUBSCRIBER, crypto)]
+];
 
 const mocks = getRallarFacadeMocks();
 let admissions: CarrierAdmission[] = [];
@@ -201,6 +211,75 @@ describe('a granted typed channel', () => {
             }]);
         }
     );
+
+    it.each(UNREACHABLE_PEERS)(
+        'a peer-addressed receipted send to %s under rtc settles rejected refused/unauthorized, with no WS leg',
+        async (_name, peerId, toSnapshot) => {
+            const crypto = await createAvailablePublicationCryptoFixture();
+            wireRtcOverlay(crypto, toSnapshot(crypto));
+            const channel = createRallarTestFacade().messages.room<FeedItem>(toGrantedDefinition());
+
+            const handle = await channel.send({ text: 'peer' }, { strategy: 'rtc', peerId, ack: 'receiver' });
+
+            expect((await handle.wait()).lifecycle).toMatchObject({
+                state: 'rejected',
+                evidence: {
+                    failure: { kind: 'refused', reason: 'unauthorized' },
+                    attempts: [],
+                    relayRejection: undefined,
+                    carrierFallback: undefined
+                }
+            });
+            expect(admissions.map(({ carrier, verdict }) => [carrier, verdict])).toEqual([['rtc', 'refused']]);
+        }
+    );
+
+    it.each(UNREACHABLE_PEERS)(
+        'a peer-addressed receipted send to %s under rtc-with-ws-fallback moves the unicast to WS at admission and ends on the server\'s unauthorized',
+        async (_name, peerId, toSnapshot) => {
+            const crypto = await createAvailablePublicationCryptoFixture();
+            wireRtcOverlay(crypto, toSnapshot(crypto));
+            const channel = createRallarTestFacade().messages.room<FeedItem>(toGrantedDefinition());
+            const handle = await channel.send({ text: 'peer' }, { strategy: 'rtc-with-ws-fallback', peerId, ack: 'receiver' });
+            await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
+
+            mocks.deliverySettlements!.ws(toServerRefusal(handle.msgId, 'unauthorized'));
+
+            expect(admissions.map(({ carrier, verdict, message }) => [carrier, verdict, message.targets])).toEqual([
+                ['rtc', 'unroutable', { mode: 'unicast', toPeerId: peerId, groupRef: ROOM_REF }],
+                ['ws', 'admitted', { mode: 'unicast', toPeerId: peerId, groupRef: ROOM_REF }]
+            ]);
+            expect((await handle.wait()).lifecycle).toMatchObject({
+                state: 'rejected',
+                evidence: {
+                    failure: { kind: 'relay-rejected' },
+                    relayRejection: { relay: 'trusted-server', reason: 'unauthorized' },
+                    attempts: [{ carrier: 'rtc', outcome: 'unroutable', unroutableReason: 'no-route' }],
+                    carrierFallback: undefined
+                }
+            });
+        }
+    );
+
+    it('a peer-addressed receipted send under rtc-with-ws-fallback to a session the cached room shows without subscribe ends acknowledged on WS when the server delivers it', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        wireRtcOverlay(crypto, toWithoutGrantRow(createRoomSnapshot(PUBLISHER, crypto), 'c'));
+        const channel = createRallarTestFacade().messages.room<FeedItem>(toGrantedDefinition());
+        const handle = await channel.send({ text: 'stale' }, { strategy: 'rtc-with-ws-fallback', peerId: 'c', ack: 'receiver' });
+        await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
+
+        mocks.deliverySettlements!.ws(toServerReceipt(handle.msgId, 'c'));
+
+        expect(admissions.map(({ carrier, verdict }) => [carrier, verdict])).toEqual([['rtc', 'unroutable'], ['ws', 'admitted']]);
+        expect((await handle.wait()).lifecycle).toMatchObject({
+            state: 'acknowledged',
+            evidence: {
+                failure: undefined,
+                attempts: [{ carrier: 'rtc', outcome: 'unroutable', unroutableReason: 'no-route' }],
+                carrierFallback: undefined
+            }
+        });
+    });
 
     it('a listed send under rtc-with-ws-fallback is admitted on RTC, not WS', async () => {
         const crypto = await createAvailablePublicationCryptoFixture();
@@ -441,7 +520,7 @@ describe('a granted typed channel', () => {
         const handle = await channel.send({ text: 'server' }, { strategy: 'rtc-with-ws-fallback', ack: 'receiver' });
         await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
 
-        mocks.deliverySettlements!.ws(toServerPublishRefusal(handle.msgId));
+        mocks.deliverySettlements!.ws(toServerRefusal(handle.msgId, 'no-publish-grant'));
 
         expect((await handle.wait()).lifecycle).toMatchObject({
             state: 'rejected',
@@ -528,6 +607,11 @@ function createRoomSnapshot(
     };
 }
 
+/** The same room with `principalId`'s grant row on the granted topic dropped: it holds no `subscribe`. */
+function toWithoutGrantRow(snapshot: GroupSnapshot, principalId: string): GroupSnapshot {
+    return { ...snapshot, publicationGrants: snapshot.publicationGrants.filter((grant) => grant.principalId !== principalId) };
+}
+
 function toGrantRow(principalId: string, permissions: GroupPublicationTopicPermissions): GroupPublicationGrant {
     return { ...ROOM_REF, principalId, topics: { [GRANTED_TOPIC_ID]: permissions }, updated: createAuditStampFixture(2, 'creator') };
 }
@@ -570,15 +654,37 @@ function revokeAfterRtcAdmission(revoked: GroupSnapshot): void {
     };
 }
 
-/** The WS server's NACK for a granted send whose sender it reads without publish (D487), as its relay rejection. */
-function toServerPublishRefusal(msgId: string): ALDeliverySettlement {
+/**
+ * The WS server's NACK for a granted send, as its relay rejection: `no-publish-grant` for a sender it reads without
+ * publish (D487), `unauthorized` for a unicast whose addressee is outside its live audience or is the sender itself.
+ */
+function toServerRefusal(msgId: string, reason: 'no-publish-grant' | 'unauthorized'): ALDeliverySettlement {
     return {
         kind: 'relay-rejected',
         msgId,
         carrier: 'ws',
         atMs: Date.now(),
-        relayRejection: { relay: 'trusted-server', reason: 'no-publish-grant' },
-        detail: 'The server relay refused the message: no-publish-grant.',
+        relayRejection: { relay: 'trusted-server', reason },
+        detail: `The server relay refused the message: ${reason}.`,
+        traceId: 'trace-browser-granted-channel'
+    };
+}
+
+/** The WS server's receipt of a unicast it delivered to `peerId`. */
+function toServerReceipt(msgId: string, peerId: string): ALDeliverySettlement {
+    return {
+        kind: 'acknowledgement',
+        msgId,
+        carrier: 'ws',
+        atMs: Date.now(),
+        mode: 'receiver',
+        confirmedHopPeerIds: [],
+        unconfirmedHopPeerIds: [],
+        expectedRecipientPeerIds: [peerId],
+        confirmedRecipientPeerIds: [peerId],
+        unconfirmedRecipientPeerIds: [],
+        outsideAudienceRecipientPeerIds: [],
+        complete: true,
         traceId: 'trace-browser-granted-channel'
     };
 }
