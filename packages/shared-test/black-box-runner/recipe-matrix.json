@@ -3202,6 +3202,41 @@
       "description": "No-browser API-v1 loss of a subscriber's server on the three-server cluster. Alice's socket is on the primary, Bob's on the secondary and Carol's on the tertiary. The secondary is crashed, and Alice sends an at-least-once room broadcast with a receiver receipt. Its admitted receipt expects Bob and Carol: the audience is frozen from the room's presence, which still holds Bob. Carol receives and acknowledges; the receipt ends timed-out with Carol alone confirmed and Bob expected and unconfirmed, and no complete receipt arrives. The secondary is restarted and Dave registers, joins and opens his socket on it. The next broadcast reaches Carol and Dave, who acknowledge; its receipt also ends timed-out, confirming both and still expecting Bob, whose presence stands because nothing ended it."
     },
     {
+      "id": "api-v1-cluster-subscriber-server-stop",
+      "recipe": "tests/api-v1/api-v1-cluster-subscriber-server-stop.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box-cluster"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-cluster-subscriber-server-stop",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API primary",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          },
+          {
+            "name": "Rallar API secondary",
+            "env": "RALLAR_API_BASE_URL_SECONDARY",
+            "default": "http://127.0.0.1:18081"
+          },
+          {
+            "name": "Rallar API tertiary",
+            "env": "RALLAR_API_BASE_URL_TERTIARY",
+            "default": "http://127.0.0.1:18082"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 graceful stop of a subscriber's server on the three-server cluster: the reference for what api-v1-cluster-subscriber-instance-loss reads after a crash. Alice's socket is on the primary, Bob's on the secondary and Carol's on the tertiary, and each declares room presence under its own socket's generation, read from its client snapshot. The primary's roster lists all three. The secondary is stopped gracefully, so its socket closes are stored and Bob leaves the roster the primary reads within 15 s. Alice's at-least-once room broadcast with a receiver receipt is then admitted expecting Carol alone; Carol receives and acknowledges, the receipt completes with Carol confirmed and Bob neither expected nor confirmed, and no timed-out receipt arrives."
+    },
+    {
       "id": "api-v1-cluster-publisher-instance-loss",
       "recipe": "tests/api-v1/api-v1-cluster-publisher-instance-loss.json",
       "category": "api-v1-black-box",
