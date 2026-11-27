@@ -47,6 +47,11 @@ function loseNextCompletionWrites(admissionStore: ALInboundAdmissionStore, count
     }
 }
 
+/** The answer of a delivery on the fixture's track whose progress stands at `position`. */
+function completedThrough(position: number): ALInboundOrderedDelivery.Completed {
+    return { kind: 'completed', position: { trackKey: TRACK_KEY, completedThrough: position } };
+}
+
 async function readSlot(admissionStore: ALInboundAdmissionStore) {
     return await admissionStore.readBufferedRelease({ trackKey: TRACK_KEY, seq: 1, nowMs: Date.now() });
 }
@@ -64,12 +69,12 @@ it('hands the work back when every attempt of its completion conflicts', async (
     expect(await readSlot(admissionStore)).toBeDefined();
 });
 
-// The last of the bounded attempts still reads, decides and writes.
+// The last of the bounded attempts still reads, decides and writes, and answers the position its write committed.
 it('completes on the last attempt after two lost writes', async () => {
     const admissionStore = await createAdmittedStore();
     loseNextCompletionWrites(admissionStore, 2);
 
-    expect(await createInboundTestOrderedDelivery(admissionStore).complete(FIRST)).toBe('completed');
+    expect(await createInboundTestOrderedDelivery(admissionStore).complete(FIRST)).toEqual(completedThrough(1));
 
     expect((await admissionStore.readOrderedDelivery(TRACK_KEY, 2)).completedThrough).toBe(1);
     expect(await readSlot(admissionStore)).toBeUndefined();
@@ -77,7 +82,7 @@ it('completes on the last attempt after two lost writes', async () => {
 
 // A fresh attempt reads the track again: a write that merely went out again would meet the moved position each time and
 // hand the work back, to be dispatched again. The competitor's later expiry marks its row, so a fresh attempt that
-// wrote the position again would show in it.
+// wrote the position again would show in it. The answer states the position the fresh attempt read.
 it('answers a completion whose position another completion moved, without writing', async () => {
     const admissionStore = await createAdmittedStore();
     const commitDeliveryCompletion = admissionStore.commitDeliveryCompletion.bind(admissionStore);
@@ -104,9 +109,35 @@ it('answers a completion whose position another completion moved, without writin
         return stale;
     });
 
-    expect(await createInboundTestOrderedDelivery(admissionStore).complete(FIRST)).toBe('completed');
+    expect(await createInboundTestOrderedDelivery(admissionStore).complete(FIRST)).toEqual(completedThrough(1));
 
     expect(await readProgress()).toEqual(competitorProgress);
+    expect(await readSlot(admissionStore)).toBeUndefined();
+});
+
+// A completion that reads its message already completed answers the position it read, not a bare `completed` that
+// leaves its caller without the track's position. The read is served as the slot stood before the store's own
+// completion of the message and the progress that completion committed.
+it('answers the position it read for a completion that finds its message already completed', async () => {
+    const admissionStore = await createAdmittedStore();
+    const readBufferedRelease = admissionStore.readBufferedRelease.bind(admissionStore);
+    vi.spyOn(admissionStore, 'readBufferedRelease').mockImplementationOnce(async (input) => {
+        const before = (await readBufferedRelease(input))!;
+        expect(
+            await admissionStore.commitDeliveryCompletion({
+                trackKey: TRACK_KEY,
+                seq: 1,
+                observedSlot: before.snapshot,
+                observedProgress: before.observations.deliveryProgress!.value!
+            })
+        ).toBe('committed');
+        const moved = await admissionStore.readOrderingTrack({ trackKey: TRACK_KEY, message: FIRST.id, nowMs: Date.now() });
+        return { ...before, observations: { ...before.observations, deliveryProgress: moved.observations.deliveryProgress } };
+    });
+
+    expect(await createInboundTestOrderedDelivery(admissionStore).complete(FIRST)).toEqual(completedThrough(1));
+
+    expect((await admissionStore.readOrderedDelivery(TRACK_KEY, 2)).completedThrough).toBe(1);
     expect(await readSlot(admissionStore)).toBeUndefined();
 });
 
@@ -212,7 +243,7 @@ async function createReleasableStore(predecessor: 'completed' | 'pending'): Prom
         expect(await admissionStore.commitBundle(await readInboundTestAdmission(admissionStore, msg))).toBe('committed');
     }
     if (predecessor === 'completed') {
-        expect(await createInboundTestOrderedDelivery(admissionStore).complete(first)).toBe('completed');
+        expect(await createInboundTestOrderedDelivery(admissionStore).complete(first)).toEqual(completedThrough(1));
     }
     const effectId = (await readReleaseSlot(admissionStore))!.snapshot.delivery!.effectId;
     return { stores, admissionStore, release: { trackKey: TRACK_KEY, seq: 2, effectId } };
@@ -330,8 +361,35 @@ it('makes no further attempt once its shutdown signal aborted during a lost writ
     expect(await readReleaseFacts(stores)).toEqual(before);
 });
 
+// A release whose readiness reads its message completed answers the position that read found: another delivery
+// completed message 2 between the release's slot read and its readiness read, so it hands nothing to the application,
+// writes nothing, and states where the track stands.
+it('answers the position its readiness read for a release whose message completed after its slot read', async () => {
+    const { stores, admissionStore, release } = await createReleasableStore('completed');
+    const readBufferedRelease = admissionStore.readBufferedRelease.bind(admissionStore);
+    vi.spyOn(admissionStore, 'readBufferedRelease').mockImplementationOnce(async (input) => {
+        const read = (await readBufferedRelease(input))!;
+        expect(
+            await admissionStore.commitDeliveryCompletion({
+                trackKey: TRACK_KEY,
+                seq: 2,
+                observedSlot: read.snapshot,
+                observedProgress: read.observations.deliveryProgress!.value!
+            })
+        ).toBe('committed');
+        return read;
+    });
+
+    expect(await createInboundTestOrderedDelivery(admissionStore).release(release)).toEqual(completedThrough(2));
+
+    expect(await readReleaseSlot(admissionStore)).toBeUndefined();
+    expect((await admissionStore.readOrderedDelivery(TRACK_KEY, 3)).completedThrough).toBe(2);
+    expect(await readStoredAcks(stores, 'message-2')).toEqual([]);
+});
+
 // A fresh attempt reads what the winner left: a slot another release took and completed during this release's lost
-// write reads as completed, so this release hands nothing to the application a second time.
+// write reads as completed at the position the winner moved the track to, so this release hands nothing to the
+// application a second time.
 it('answers completed for a release whose slot another release took and completed during its lost write', async () => {
     const { stores, admissionStore, release } = await createReleasableStore('completed');
     const commitBundle = admissionStore.commitBundle.bind(admissionStore);
@@ -351,7 +409,7 @@ it('answers completed for a release whose slot another release took and complete
         return stale;
     });
 
-    expect(await createInboundTestOrderedDelivery(admissionStore).release(release)).toBe('completed');
+    expect(await createInboundTestOrderedDelivery(admissionStore).release(release)).toEqual(completedThrough(2));
 
     expect(await readReleaseSlot(admissionStore)).toBeUndefined();
     expect((await admissionStore.readOrderedDelivery(TRACK_KEY, 3)).completedThrough).toBe(2);

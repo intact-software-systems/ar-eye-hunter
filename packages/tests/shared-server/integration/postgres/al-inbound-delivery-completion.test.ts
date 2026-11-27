@@ -77,7 +77,10 @@ describe('Postgres inbound delivery completion', () => {
         });
         onTestFinished(() => held.mockRestore());
 
-        expect(await createInboundTestOrderedDelivery(completingStore).complete(first)).toBe('completed');
+        expect(await createInboundTestOrderedDelivery(completingStore).complete(first)).toEqual({
+            kind: 'completed',
+            position: { trackKey, completedThrough: 1 }
+        });
 
         const refreshed = (await readProgress(completingStore, first))!;
         expect(refreshed.expireAtTimestamp).toBeGreaterThan(original.expireAtTimestamp);

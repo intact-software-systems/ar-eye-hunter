@@ -435,7 +435,7 @@ it('dispatches the unordered row its readiness read cleared', async () => {
     const readiness = await dispatch.delivery.readReadiness(effect, Date.now());
 
     expect(readiness.ready).toBe(true);
-    expect(await dispatch.delivery.deliver(effect, readiness.observed)).toBe('completed');
+    expect(await dispatch.delivery.deliver(effect, readiness.observed)).toEqual({ kind: 'completed', position: undefined });
     expect(dispatch.dispatched).toEqual(['ready-then-dispatched']);
 });
 
@@ -460,7 +460,7 @@ it('dispatches a row whose claim carries no observation', async () => {
     );
     await dispatch.delivery.readReadiness(effect, Date.now());
 
-    expect(await dispatch.delivery.deliver(effect, undefined)).toBe('completed');
+    expect(await dispatch.delivery.deliver(effect, undefined)).toEqual({ kind: 'completed', position: undefined });
 
     expect(dispatch.dispatched).toEqual(['dispatched-unobserved']);
 });
@@ -485,12 +485,13 @@ it('reads the ordering track again at the dispatch its readiness read already cl
     const message = createInboundTestMessage({ msgId: 'ordered-dispatch', seq: 1 });
     const effect = await readInboundTestDispatchEffect(stores, message);
     const readiness = await dispatch.delivery.readReadiness(effect, Date.now());
-    expect(await dispatch.delivery.deliver(effect, readiness.observed)).toBe('completed');
+    const completedFirst = { kind: 'completed', position: { trackKey: toALOrderingTrackKey(message), completedThrough: 1 } };
+    expect(await dispatch.delivery.deliver(effect, readiness.observed)).toEqual(completedFirst);
 
     // The first delivery moved the track this observation was read against, which is exactly what a
     // predecessor landing inside a claim window does. A dispatch that trusted the carried readiness
-    // would hand the page a second copy.
-    expect(await dispatch.delivery.deliver(effect, readiness.observed)).toBe('completed');
+    // would hand the page a second copy. The second answers the position its own read of the track found.
+    expect(await dispatch.delivery.deliver(effect, readiness.observed)).toEqual(completedFirst);
 
     expect(dispatch.dispatched).toEqual(['ordered-dispatch']);
 });

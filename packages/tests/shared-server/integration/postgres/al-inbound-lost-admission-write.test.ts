@@ -6,6 +6,7 @@ import {
     it
 } from 'vitest';
 
+import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import type { ALInboundCommitBundle } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 
 import {
@@ -65,7 +66,10 @@ describe('Postgres inbound admission after a lost write', () => {
         const second = createInboundTestMessage({ msgId: 'message-2', seq: 2 });
         await admitPostgresInboundTestMessage(admittingStore, first);
         const stale = await readInboundTestAdmission(admittingStore, second);
-        expect(await createInboundTestOrderedDelivery(completingStore).complete(first)).toBe('completed');
+        expect(await createInboundTestOrderedDelivery(completingStore).complete(first)).toEqual({
+            kind: 'completed',
+            position: { trackKey: toALOrderingTrackKey(first), completedThrough: 1 }
+        });
 
         expect(await admittingStore.commitBundle(stale)).toBe('conflict');
         const fresh = await readInboundTestAdmission(admittingStore, second);

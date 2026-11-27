@@ -219,7 +219,7 @@ export function computeALInboundPredecessorReadiness(
 ): ALInboundOrderedDelivery.Readiness {
     const { orderedDelivery, seq } = read;
     if (seq <= orderedDelivery.completedThrough) {
-        return { kind: 'completed' };
+        return { kind: 'completed', completedThrough: orderedDelivery.completedThrough };
     }
     const predecessor = orderedDelivery.predecessor;
     if (predecessor === undefined) {

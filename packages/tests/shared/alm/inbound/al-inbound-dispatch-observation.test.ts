@@ -9,6 +9,7 @@ import {
 
 import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { planALMessageHandling, type ALMessageHandlingPlan } from '@shared/al-contracts/al-policy.ts';
+import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { createVolatileALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALInboundOrderedDeliveryRead } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { ALInboundAdmittedDelivery, type ALInboundDeliveryObservation } from '@shared/alm/inbound/al-inbound-admitted-delivery.ts';
@@ -64,6 +65,9 @@ interface OrderedDispatchScenario {
     readonly predecessor: ALInboundOrderedDeliveryRead['predecessor'];
     readonly disposition: string;
 }
+
+/** What a delivery that completed a message on no ordering track answers. */
+const COMPLETED_OFF_TRACK = { kind: 'completed', position: undefined };
 
 function createDispatchFixture(input: DispatchFixtureInput): DispatchFixture {
     const events: ALInboundRuntimeDiagnosticsEvent[] = [];
@@ -128,7 +132,7 @@ it.each(
 )('distinguishes completed %s work from an actual dispatch call', async (_name, disposition, planChange) => {
     const fixture = createDispatchFixture({ returned: 'completed', canDispatch: true, sinkThrows: false });
     const { effect, observed } = createObservedDispatch(planChange);
-    expect(await fixture.delivery.deliver(effect, observed)).toBe('completed');
+    expect(await fixture.delivery.deliver(effect, observed)).toEqual(COMPLETED_OFF_TRACK);
     expect(fixture.calls).toEqual([]);
     expect(fixture.events).toEqual([{
         kind: 'dispatch-decision',
@@ -198,7 +202,9 @@ it.each<DispatchResultScenario>(
 )('records $returned with readiness $canDispatch without inferring a selected consumer', async ({ returned, canDispatch, disposition, calls }) => {
     const fixture = createDispatchFixture({ returned, canDispatch, sinkThrows: false });
     const { effect, observed } = createObservedDispatch((plan) => plan);
-    expect(await fixture.delivery.deliver(effect, observed)).toBe(canDispatch ? returned : 'retry');
+    expect(await fixture.delivery.deliver(effect, observed)).toEqual(
+        canDispatch && returned === 'completed' ? COMPLETED_OFF_TRACK : 'retry'
+    );
     expect(fixture.calls).toEqual(calls);
     expect(fixture.events).toMatchObject([{ kind: 'dispatch-decision', disposition, msgId: 'signal' }]);
 });
@@ -222,7 +228,11 @@ it.each<OrderedDispatchScenario>([
         const fixture = createDispatchFixture({ returned: 'completed', canDispatch: true, sinkThrows: false });
         vi.spyOn(fixture.resources.admissionStore, 'readOrderedDelivery').mockResolvedValue({ completedThrough, predecessor });
         const { effect, observed } = createObservedDispatch((plan) => plan, true);
-        expect(await fixture.delivery.deliver(effect, observed)).toBe(outcome);
+        expect(await fixture.delivery.deliver(effect, observed)).toEqual(
+            outcome === 'retry'
+                ? 'retry'
+                : { kind: 'completed', position: { trackKey: toALOrderingTrackKey(observed.msg), completedThrough } }
+        );
         expect(fixture.calls).toEqual([]);
         expect(fixture.events).toMatchObject([{ disposition }]);
     }
@@ -249,7 +259,7 @@ it('keeps shutdown and expiry ahead of dispatch and preserves their original out
 it('leaves ordered completion after the port even when supplemental diagnostics fail', async () => {
     const fixture = createDispatchFixture({ returned: 'completed', canDispatch: true, sinkThrows: true });
     const { effect, observed } = createObservedDispatch((plan) => plan);
-    expect(await fixture.delivery.deliver(effect, observed)).toBe('completed');
+    expect(await fixture.delivery.deliver(effect, observed)).toEqual(COMPLETED_OFF_TRACK);
     expect(fixture.calls).toEqual(['port']);
     expect(fixture.events).toMatchObject([{ disposition: 'port-returned' }]);
 });
@@ -283,7 +293,7 @@ it.each([false, true])('preserves readiness callback disposal when the callback 
     });
     const { effect, observed } = createObservedDispatch((plan) => plan);
 
-    expect(await fixture.delivery.deliver(effect, observed)).toBe(ready ? 'completed' : 'retry');
+    expect(await fixture.delivery.deliver(effect, observed)).toEqual(ready ? COMPLETED_OFF_TRACK : 'retry');
     expect(fixture.canDispatchMessage).toHaveBeenCalledTimes(1);
     expect(fixture.calls).toEqual(ready ? ['port'] : []);
     expect(fixture.events).toMatchObject([{ disposition: ready ? 'port-returned' : 'shutdown' }]);

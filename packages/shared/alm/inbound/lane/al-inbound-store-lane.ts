@@ -552,9 +552,11 @@ export class ALInboundStoreLane {
         if (payload.kind === 'renew-gap') {
             return await this.renewGap(effect, payload);
         }
-        return {
-            status: await this.delivery.deliver(effect, this.workSelector.getDeliveryObservation(effect.effectId))
-        };
+        const delivered = await this.delivery.deliver(
+            effect,
+            this.workSelector.getDeliveryObservation(effect.effectId)
+        );
+        return { status: delivered === 'retry' ? 'retry' : 'completed' };
     }
 
     /**

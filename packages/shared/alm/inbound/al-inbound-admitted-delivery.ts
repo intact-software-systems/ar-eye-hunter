@@ -1,5 +1,6 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ALMessageHandlingPlan, ALStoreDurability } from '../../al-contracts/al-policy.ts';
+import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
 import { toALMessageTraceOrNull } from '../../al-contracts/trace/to-al-message-trace.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
@@ -9,7 +10,12 @@ import type { ALInboundMessageReference } from './al-inbound-canonical-message.t
 import { shouldRetryALInboundDelivery } from './al-inbound-effect-intent.ts';
 import { toALInboundDispatchEntry } from './al-inbound-message-deadline.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
-import { ALInboundOrderedDelivery } from './al-inbound-ordered-delivery.ts';
+import {
+    AL_INBOUND_COMPLETED_OFF_TRACK,
+    ALInboundOrderedDelivery,
+    isALInboundCompletion,
+    toALInboundCompleted
+} from './al-inbound-ordered-delivery.ts';
 import {
     computeALInboundBufferedReleasePlanningObservations,
     computeALInboundStoredPlanningObservations
@@ -221,7 +227,7 @@ export class ALInboundAdmittedDelivery {
     async deliver(
         effect: ALPersistedInboundEffect,
         observed: ALInboundDeliveryObservation | undefined
-    ): Promise<'completed' | 'retry'> {
+    ): Promise<ALInboundOrderedDelivery.Completion> {
         if (this.shutdown.signal.aborted) {
             this.recordDispatchDecision(effect, observed, 'shutdown');
             return 'retry';
@@ -238,7 +244,7 @@ export class ALInboundAdmittedDelivery {
         effect: ALPersistedInboundEffect,
         observed: ALInboundDeliveryObservation | undefined,
         nowMs: number
-    ): Promise<'completed' | 'retry'> {
+    ): Promise<ALInboundOrderedDelivery.Completion> {
         switch (effect.payload.kind) {
             case 'admit-message':
             case 'admit-control':
@@ -274,9 +280,9 @@ export class ALInboundAdmittedDelivery {
     private async releaseBufferedMessage(
         input: ALInboundOrderedDelivery.ReleaseInput,
         effect: ALPersistedInboundEffect
-    ): Promise<'completed' | 'retry'> {
+    ): Promise<ALInboundOrderedDelivery.Completion> {
         const release = await this.orderedDelivery.release(input);
-        if (typeof release === 'string') {
+        if (isALInboundCompletion(release)) {
             return release;
         }
         if (this.shutdown.signal.aborted) {
@@ -291,7 +297,7 @@ export class ALInboundAdmittedDelivery {
     private async dispatchAdmittedMessage(
         observed: ALInboundDeliveryObservation,
         effect: ALPersistedInboundEffect
-    ): Promise<'completed' | 'retry'> {
+    ): Promise<ALInboundOrderedDelivery.Completion> {
         const { msg, plan } = observed;
         if (this.shutdown.signal.aborted) {
             this.recordDispatchDecision(effect, observed, 'shutdown');
@@ -322,14 +328,14 @@ export class ALInboundAdmittedDelivery {
         observed: ALInboundDeliveryObservation,
         effect: ALPersistedInboundEffect,
         entry: ResourceEntry
-    ): Promise<'completed' | 'retry'> {
+    ): Promise<ALInboundOrderedDelivery.Completion> {
         const { msg, plan, source } = observed;
         const ordered = await this.readOrderedDispatchOutcome(msg);
         if (ordered !== 'dispatch') {
             this.recordDispatchDecision(
                 effect,
                 observed,
-                ordered === 'completed' ? 'ordering-completed' : 'ordering-retry'
+                ordered === 'retry' ? 'ordering-retry' : 'ordering-completed'
             );
             return ordered;
         }
@@ -397,13 +403,15 @@ export class ALInboundAdmittedDelivery {
      * The one decision an eligibility read cannot hand forward: a predecessor can land between that
      * read and the claim, so an ordered message asks the track again at the moment it would dispatch.
      */
-    private async readOrderedDispatchOutcome(msg: ALMessage): Promise<'completed' | 'retry' | 'dispatch'> {
+    private async readOrderedDispatchOutcome(
+        msg: ALMessage
+    ): Promise<ALInboundOrderedDelivery.Completion | 'dispatch'> {
         const readiness = await this.orderedDelivery.readiness(msg);
         switch (readiness.kind) {
             case 'waiting':
                 return 'retry';
             case 'completed':
-                return 'completed';
+                return toALInboundCompleted(toALOrderingTrackKey(msg), readiness.completedThrough);
             case 'resync-required':
                 return await this.orderedDelivery.reject(msg, readiness.completedThrough);
             case 'ready':
@@ -411,7 +419,9 @@ export class ALInboundAdmittedDelivery {
         }
     }
 
-    private async forwardAdmittedMessage(forward: ALInboundAdmittedForward): Promise<'completed' | 'retry'> {
+    private async forwardAdmittedMessage(
+        forward: ALInboundAdmittedForward
+    ): Promise<ALInboundOrderedDelivery.Completion> {
         const { msg, plan } = forward.observed;
         if (this.shutdown.signal.aborted || shouldRetryALInboundDelivery(plan)) {
             return 'retry';
@@ -420,7 +430,7 @@ export class ALInboundAdmittedDelivery {
             throw new NonRetryableException('Inbound message expired before forwarding');
         }
         if (plan.dropReason || !plan.forwarding.enabled) {
-            return 'completed';
+            return AL_INBOUND_COMPLETED_OFF_TRACK;
         }
         const forwarded = forward.retryPeerIds === undefined
             ? await this.dependencies.forwardMessage?.({
@@ -435,7 +445,7 @@ export class ALInboundAdmittedDelivery {
                 toPeerIds: forward.retryPeerIds,
                 attemptIdentity: forward.attemptIdentity
             });
-        return forwarded === 'retry' ? 'retry' : 'completed';
+        return forwarded === 'retry' ? 'retry' : AL_INBOUND_COMPLETED_OFF_TRACK;
     }
 }
 
