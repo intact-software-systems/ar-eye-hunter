@@ -134,7 +134,7 @@ function toLiveDelivery(
         payloadIssues: [],
         access: 'members',
         onStorageUnavailable: 'refuse',
-        publication: live.publication
+        publication: { ...live.publication, stampAtOpportunity: undefined }
     };
 }
 

@@ -289,6 +289,16 @@ export function toPublicationWait(
     });
 }
 
+/** A probe's arrival on the page: only a page whose handler is given the granted topic records one. */
+export function toProbeWait(step: AlmConformanceStepInput, probe: string): RallarBlackBoxTestWaitCommand {
+    return toPayloadWait({
+        step,
+        name: `received-${probe}`,
+        payload: toPublicationPayload(step, probe, 'probe'),
+        absent: false
+    });
+}
+
 /**
  * A cue travels on the members topic under the cell's type. A role hears it only through the typed channel its own
  * send there opens, so every role that waits for a cue leads its body with this pair: it is the role's arming run,

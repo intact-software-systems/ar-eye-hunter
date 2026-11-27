@@ -453,17 +453,12 @@ describe('an edge-ordered room channel: declared on one end only', () => {
 describe('an edge-ordered room channel: refused shapes', () => {
     const unsupported = (path: string) => expect.objectContaining({ issues: [expect.objectContaining({ path, code: 'unsupported' })] });
 
-    it.each<[string, Partial<RallarRoomMessageChannelDefinition>, string]>([
-        ['a live channel', {
-            purpose: 'live',
-            publication: { cadenceMs: 500, retainNewest: 1, drain: { messages: 8, bytes: 65_536 } }
-        }, '$.order'],
-        ['a granted channel', { access: 'granted' }, '$.order'],
-        ['a channel that stores its sends', { durability: 'local-outbox' }, '$.order']
-    ])('refuses %s', (_shape, definition, path) => {
+    it('refuses a channel that stores its sends', () => {
         const page = createEdgeOrderPage({ sessionId: 'alice-session' });
 
-        expect(() => page.messages.room<EdgeOrderTestMove>({ ...EDGE_ORDER_TEST_MOVES, ...definition })).toThrow(unsupported(path));
+        expect(() => page.messages.room<EdgeOrderTestMove>({ ...EDGE_ORDER_TEST_MOVES, durability: 'local-outbox' })).toThrow(
+            unsupported('$.order')
+        );
     });
 
     it('refuses a channel that names no room, and an order it does not know', () => {

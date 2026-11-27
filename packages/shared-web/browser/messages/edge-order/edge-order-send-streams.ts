@@ -42,7 +42,10 @@ export namespace EdgeOrderSendStreams {
     }
 }
 
-/** The page's edge-ordered send streams: one per channel and room, minted when the first send needs it. */
+/**
+ * The page's edge-ordered send streams, each minted when its first send needs it: one per channel and room, and on
+ * a live channel one per publication stream, which is the unit its values replace each other in.
+ */
 export class EdgeOrderSendStreams {
     private readonly streams: LatestRepository<string, EdgeOrderSender>;
     private readonly newStreamId: () => string;
@@ -63,11 +66,25 @@ export class EdgeOrderSendStreams {
         if (send.order !== 'edge' || roomRef === undefined) {
             return undefined;
         }
-        const key = JSON.stringify([send.topicId ?? send.typeId, send.typeId, toALGroupTargetKey(roomRef)]);
+        return this.openStreamSend(
+            JSON.stringify([send.topicId ?? send.typeId, send.typeId, toALGroupTargetKey(roomRef)]),
+            send.retried
+        );
+    }
+
+    /**
+     * Takes the next position of a live publication stream, when a value of it leaves the stage for its carrier: a
+     * value another displaced on the stage never takes one. Nothing retries a live value.
+     */
+    openLiveSend(publicationStreamKey: string): EdgeOrderOpenSend {
+        return this.openStreamSend(publicationStreamKey, false);
+    }
+
+    private openStreamSend(key: string, retried: boolean): EdgeOrderOpenSend {
         // Taken out and put back, so the stream last sent on is the newest and the cap pushes out the one idle longest.
         const stream = this.streams.take(key) ?? new EdgeOrderSender(this.newStreamId(), this.acknowledgedSettleMs);
         this.streams.set(key, stream);
-        return new EdgeOrderOpenSend(stream, stream.openSend(send.retried));
+        return new EdgeOrderOpenSend(stream, stream.openSend(retried));
     }
 
     /** Closes, in every stream, the sends that have ended by `nowMs`: an idle page then keeps no open send. */

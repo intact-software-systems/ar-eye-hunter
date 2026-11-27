@@ -66,6 +66,7 @@ import { edgeOrderLateJoin } from './scenarios/edge-order/edge-order-late-join.t
 import { edgeOrderLossStream } from './scenarios/edge-order/edge-order-loss-stream.ts';
 import { edgeOrderReload } from './scenarios/edge-order/edge-order-reload.ts';
 import { edgeOrderJitterStream, edgeOrderStream } from './scenarios/edge-order/edge-order-stream.ts';
+import { edgeOrderUnretriedLossStream } from './scenarios/edge-order/edge-order-unretried-loss-stream.ts';
 import { bufferedTrackDrains } from './scenarios/fairness/buffered-track-drains.ts';
 import { churnBoundedTracks } from './scenarios/fairness/churn-bounded-tracks.ts';
 import { ownShareUnderInbound } from './scenarios/fairness/own-share-under-inbound.ts';
@@ -76,6 +77,7 @@ import { seededJitterStream } from './scenarios/fault-streams/seeded-jitter-stre
 import { seededLossStream } from './scenarios/fault-streams/seeded-loss-stream.ts';
 import { seededLossUnreceiptedStream } from './scenarios/fault-streams/seeded-loss-unreceipted-stream.ts';
 import { grantedRtcDelivered } from './scenarios/granted-rtc/granted-rtc-delivered.ts';
+import { grantedRtcEdgeOrderStream } from './scenarios/granted-rtc/granted-rtc-edge-order-stream.ts';
 import { grantedRtcForgedSender } from './scenarios/granted-rtc/granted-rtc-forged-sender.ts';
 import { grantedRtcListDelivered } from './scenarios/granted-rtc/granted-rtc-list-delivered.ts';
 import { grantedRtcListLaneRoles } from './scenarios/granted-rtc/granted-rtc-list-lane-roles.ts';
@@ -253,6 +255,7 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     edgeOrderLossStream,
     edgeOrderReload,
     edgeOrderLateJoin,
+    edgeOrderUnretriedLossStream,
     ...crossCarrierDuplicate,
     notYetInSync,
     fallbackWithinDeadline,
@@ -321,6 +324,7 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     receiptedRelayPath,
     grantedRtcRelayOnly,
     grantedRtcOrderedRelay,
+    grantedRtcEdgeOrderStream,
     relayedGapRenewal,
     relayedUnreceiptedGapRenewal
 ];
@@ -445,7 +449,11 @@ function toStepInput(
 function toDefinitionMessages(definition: AlmConformanceScenarioDefinition): AlmConformanceMessages {
     return definition.startGrants === undefined
         ? { messageSelector: definition.messageSelector, topic: definition.topic, order: definition.order }
-        : { messageSelector: definition.messageSelector, startGrants: definition.startGrants };
+        : {
+            messageSelector: definition.messageSelector,
+            startGrants: definition.startGrants,
+            order: definition.order
+        };
 }
 
 interface ToScenarioGateInput {

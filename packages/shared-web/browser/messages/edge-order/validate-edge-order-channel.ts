@@ -2,8 +2,6 @@ import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 
 /** What a channel definition says of its order, as a JavaScript caller may pass it: anything, or nothing, in each field. */
 export interface EdgeOrderChannelInput {
-    readonly purpose?: string;
-    readonly access?: string;
     readonly durability?: string;
     readonly order?: string;
     readonly onOrderGap?: unknown;
@@ -21,10 +19,10 @@ interface EdgeOrderChannelOption {
 }
 
 /**
- * Edge order lives in memory at the two ends and waits only for a send that is retried, so its channel is a
- * volatile command or notification channel. A granted topic is refused until its wrapped payload is proven through
- * the publisher proof and the `subscribe` election; a session that elects late is a late joiner like any other. The
- * gap handler and the two waits belong to an edge-ordered channel only.
+ * Edge order lives in memory at the two ends, so its channel is volatile. A granted topic takes it as a members topic
+ * does: the stamp is inside the payload the publisher proof signs, and a session that elects late enters each stream
+ * like any late joiner. A live channel takes it too: nothing retries its values, so the newest wins. The gap handler
+ * and the two waits belong to an edge-ordered channel only.
  */
 export function validateEdgeOrderChannel(definition: EdgeOrderChannelInput): readonly RallarValidationIssue[] {
     const options = toEdgeOrderChannelOptions(definition).filter((option) => option.value !== undefined);
@@ -78,12 +76,6 @@ function isWholeMilliseconds(value: unknown): boolean {
 }
 
 function resolveEdgeOrderChannelRefusal(definition: EdgeOrderChannelInput): string | undefined {
-    if (definition.purpose === 'live') {
-        return 'A live channel is not edge-ordered: nothing retries its sends.';
-    }
-    if (definition.access === 'granted') {
-        return 'A granted channel is not edge-ordered yet: its signed payload is not proven with the order wrapper.';
-    }
     return definition.durability !== undefined && definition.durability !== 'volatile'
         ? 'An edge-ordered channel is volatile: its order lives in memory only.'
         : undefined;

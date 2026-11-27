@@ -66,6 +66,7 @@ import {
     validateBrowserPeerInput,
     validateBrowserPeerServer
 } from './create-browser-unicast-message.ts';
+import type { BrowserStampedPublication } from './publication/browser-publication-stages.ts';
 import { toBrowserPublicationDelivery } from './publication/to-browser-publication-delivery.ts';
 import { toBrowserReplySendInput } from './reply/to-browser-reply-send-input.ts';
 import {
@@ -87,7 +88,10 @@ interface BrowserDeliveryStart
             'access' | 'onStorageUnavailable' | 'publication' | 'admittedCopy'
         > {
     readonly channel: BrowserTypedChannelPolicy | undefined;
-    /** Defined exactly for an edge-ordered channel's send, whose stream reads the send's end from its handle. */
+    /**
+     * Defined exactly for an edge-ordered channel's send that took its position at the call, whose stream reads the
+     * send's end from its handle. A live channel's value takes its position when it leaves the stage instead.
+     */
     readonly edgeOrderSend: EdgeOrderOpenSend | undefined;
 }
 
@@ -460,14 +464,18 @@ export class BrowserRallarMessageSender {
 
     /**
      * The position an edge-ordered channel's send takes in its stream, in the application's own call; absent for a
-     * send of any other channel. Whether anything retries the send is decided here too, from the options the send
-     * states and the channel's defaults, so a later send's stamp never asks a receiver to wait for it.
+     * send of any other channel, and for a live channel's value, which is staged first and can be displaced there.
+     * Whether anything retries the send is decided here too, from the options the send states and the channel's
+     * defaults, so a later send's stamp never asks a receiver to wait for it.
      */
     private openEdgeOrderSend(
         send: Pick<RallarMessageSendBase<never>, 'topicId' | 'typeId' | 'ttlMs' | 'reliability' | 'ack' | 'qos'>,
         channel: BrowserTypedChannelPolicy | undefined,
         roomRef: GroupRef | undefined
     ): EdgeOrderOpenSend | undefined {
+        if (channel?.publication !== undefined) {
+            return undefined;
+        }
         return this.input.edgeOrderStreams.openSend({
             order: channel?.order,
             topicId: send.topicId,
@@ -498,6 +506,27 @@ export class BrowserRallarMessageSender {
         return { serialized, issues: this.input.inputValidator.validateSerializedPayload(serialized) };
     }
 
+    /**
+     * An edge-ordered live value as it leaves the stage: it takes the next position of its publication stream now,
+     * and its envelope's payload is wrapped with it. The payload limit counts the wrapper here.
+     */
+    private stampLivePublication(
+        message: ALMessage,
+        publicationStreamKey: string,
+        context: ApiMiddleware
+    ): BrowserStampedPublication {
+        const resource = toEdgeOrderWireJson(
+            this.input.edgeOrderStreams
+                .openLiveSend(publicationStreamKey)
+                .stamp(readBrowserServerExpiryEpochMs(context.serverTime)),
+            message.payload.resource
+        );
+        return {
+            message: { ...message, payload: { ...message.payload, resource } },
+            payloadIssues: this.input.inputValidator.validateSerializedPayload(resource)
+        };
+    }
+
     private capturePayload<T>(payload: T): CapturedMessagePayload {
         const validation = this.input.inputValidator.readPayloadValidation(payload);
         throwIfMessageIssues(validation.issues.filter((issue) => issue.code !== 'payload-too-large'));
@@ -509,9 +538,16 @@ export class BrowserRallarMessageSender {
 
     private startDelivery(start: BrowserDeliveryStart): RallarMessageHandle {
         const { channel, edgeOrderSend, ...leg } = start;
+        const { message, publication } = toBrowserPublicationDelivery(leg.message, channel);
         const delivery: BrowserRallarMessageDispatch.Delivery = {
             ...leg,
-            ...toBrowserPublicationDelivery(leg.message, channel),
+            message,
+            publication: publication && {
+                ...publication,
+                stampAtOpportunity: channel?.order === 'edge'
+                    ? (staged) => this.stampLivePublication(staged, publication.streamKey, leg.context)
+                    : undefined
+            },
             access: resolveBrowserChannelAccess(channel),
             onStorageUnavailable: resolveBrowserStorageUnavailablePolicy(channel),
             admittedCopy: false

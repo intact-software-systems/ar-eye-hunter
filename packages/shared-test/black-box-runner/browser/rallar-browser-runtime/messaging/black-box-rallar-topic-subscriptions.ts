@@ -134,6 +134,6 @@ function toGrantedTopicRoute(
         purpose: 'notification',
         publication: undefined,
         recovery: undefined,
-        order: undefined
+        order: config.rallar.channelOrder
     };
 }

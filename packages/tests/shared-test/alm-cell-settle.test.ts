@@ -204,7 +204,7 @@ describe('alm-conformance cell parts', () => {
                 }
             }
         }
-        expect(Object.fromEntries(subscribedByCarrier)).toEqual({ ws: 19, rtc: 55, 'rtc-with-ws-fallback': 19 });
+        expect(Object.fromEntries(subscribedByCarrier)).toEqual({ ws: 19, rtc: 58, 'rtc-with-ws-fallback': 19 });
     });
 
     // A continuation carries no barrier and no arming run: it runs on the connection its role's first recipe opened,
@@ -369,7 +369,7 @@ describe('alm-conformance cell parts', () => {
     });
 
     it('a reshaped cell reshapes its room in its settle: the owner\'s path request follows its start grants and leads its formation poll, and every role applies the reshaped room\'s head and reads its own path in force before its first send', () => {
-        for (const scenarioKey of ['receipted-relay-path', 'granted-rtc-relay-only', 'granted-rtc-ordered-relay']) {
+        for (const scenarioKey of ['receipted-relay-path', 'granted-rtc-relay-only', 'granted-rtc-ordered-relay', 'granted-rtc-edge-order-stream']) {
             const scenario = createAlmConformanceRecipes(toBarrieredInput('rtc')).find((candidate) => candidate.scenarioKey === scenarioKey)!;
             const cellPrefix = `alm-rtc-${scenarioKey}`;
             for (const role of scenario.roles) {
