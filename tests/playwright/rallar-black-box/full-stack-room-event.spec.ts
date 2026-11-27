@@ -1,3 +1,4 @@
+import { controlRoomConnection } from './control-room-connection.ts';
 import { expect, test, type Page } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -113,5 +114,47 @@ test('a signed-in player re-enters their claimed court from a second browser', a
         expect(await returning.evaluate(({ event }) => event.getState().view?.offer)).toEqual(assignment);
     } finally {
         await returningPage.close();
+    }
+});
+
+test('organizer follows the other court from their own court and recovers a missed expiry', async ({ page, browser, baseURL }) => {
+    test.skip(!config.enabled, config.skipReason);
+    const lobby = { applicationId: 'club', workspaceId: crypto.randomUUID(), groupId: 'pickup' };
+    const connection = await controlRoomConnection(page, config.apiBaseUrl);
+    const host = await openEvent(page, lobby, 'create');
+    const invitation = await host.evaluate(async ({ event, rallar, createRoomGuestSecret }, { lobby, invitationModule }) => {
+        const { hashRoomInvitationSecret }: typeof import('@shared/api/room-guests/invitation.ts') = await import(invitationModule);
+        const secret = createRoomGuestSecret();
+        await rallar.rooms.update({ roomRef: lobby, guestInvitationVerifier: await hashRoomInvitationSecret(secret) });
+        await event.act({ action: 'create', courts: [{ groupId: 'north', capacity: 1 }, { groupId: 'south', capacity: 2 }],
+            closesAt: Date.now() + 120_000, claimWindowMs: 12_000 });
+        await event.act({ action: 'propose', partyId: 'operator', players: [rallar.session()!.clientId] });
+        await event.enterCourt();
+        return secret;
+    }, { lobby, invitationModule: '/@fs' + fileURLToPath(new URL('../../../packages/shared/api/room-guests/invitation.ts', import.meta.url)) });
+    const playerPage = await browser.newPage({ baseURL });
+    const waitingPage = await browser.newPage({ baseURL });
+    try {
+        const player = await openEvent(playerPage, lobby, { invitationSecret: invitation });
+        const waiting = await openEvent(waitingPage, lobby, { invitationSecret: invitation });
+        await page.getByLabel('Event lobby').fill(lobby.groupId);
+        await page.getByRole('button', { name: 'Watch event' }).click();
+        const roster = page.getByRole('region', { name: 'Organizer roster' });
+        await expect(roster).toContainText('north');
+        await player.evaluate(async ({ event, rallar }) => {
+            await event.act({ action: 'propose', partyId: 'runners', players: [rallar.session()!.clientId] });
+            await event.enterCourt();
+        });
+        await expect(roster).toContainText('runners');
+        await waiting.evaluate(({ event, rallar }) => event.act({ action: 'propose', partyId: 'waiting-player', players: [rallar.session()!.clientId] }));
+        await expect(roster).toContainText('waiting-player');
+        await connection.disconnect();
+        await expect.poll(() => waiting.evaluate(({ event }) => event.getState().view?.offer), { timeout: 25_000 }).toBeNull();
+        await connection.reconnect();
+        await expect(roster).not.toContainText('waiting-player');
+        await expect(roster).toContainText('runners');
+        expect(await host.evaluate(({ rallar }) => rallar.rooms.selected()?.groupId)).toBe('north');
+    } finally {
+        await Promise.all([playerPage.close(), waitingPage.close()]);
     }
 });

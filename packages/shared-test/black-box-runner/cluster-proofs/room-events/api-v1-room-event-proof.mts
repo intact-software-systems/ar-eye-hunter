@@ -44,6 +44,14 @@ async function runEventNight({ plans, controls }: ManagedClusterProof.ScenarioIn
     assert.equal(west.groupId, 'west');
     const claimed = await command(second.baseUrl, b.headers, { body: { action: 'claim', groupId: west.groupId,
         occurrence: west.occurrence, offerRevision: west.offerRevision, partyId: west.partyId, courtSecret: randomBytes(32).toString('hex') } });
+    const organizerView = event + '/organizer';
+    const overview = await requestJson(first.baseUrl, organizerView, { method: 'GET', headers: adminHeaders });
+    assert.ok(Array.isArray(overview.queue) && Array.isArray(overview.courts));
+    assert.deepEqual(overview.queue, [{ id: 'party-2', players: [c.id] }]);
+    const westView = overview.courts.map(row => requireRecord(row, 'organizer court')).find(row => row.groupId === 'west');
+    assert.ok(westView && Array.isArray(westView.seats));
+    assert.deepEqual(westView.seats.map(row => requireRecord(row, 'court seat').deadline), [null]);
+    await requestJson(second.baseUrl, organizerView, { method: 'GET', headers: a.headers, expectedStatus: 403 });
     const grant = requireRecord(claimed.access, 'west court access');
     assert.equal(grant.clientId, b.id);
     assert.ok(typeof grant.accessToken === 'string');
