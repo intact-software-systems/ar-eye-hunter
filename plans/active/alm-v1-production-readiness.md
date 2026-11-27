@@ -799,20 +799,20 @@ Notes on the rows that need them:
   `BrowserPublicationStages.readLane` has no product consumer; `packages/shared/api/auth.ts` keeps
   a module-global session.
 - **A10.** The rule says AppInbox is mandatory for every incoming database mutation, with no
-  exception, in `AGENTS.md`, `CLAUDE.md`, `convergent-service-writing.md` and eight more
-  documents. On the WS server the ALM inbound admission store, the outbound admission store,
-  their work rows and the receipt record are written directly on incoming frames: on a
-  PostgreSQL cluster by every admitted message except a small RTC signal, and by every counted
-  ACK. Only the receipt record was put to the maintainer (D779, point 5, 2026-11-22), and the
-  record keeps the answer and not the question; the maintainer said on 2026-11-27 that they were
-  not aware of it. No AppInbox alternative was measured. The review is
-  `plans/active/app-inbox-direct-writes-review.md`. Open: (1) rule on the older stores, confirm
-  them as a named second path with written requirements or move them; (2) measure an
-  AppInbox-backed count in the receipt record's own cells (28 and 140 ACKs a second, +0 and
-  +5 ms), then rule on the record; (3) rule on each miss the review lists, among them a lost count
-  that is not retried, in-call retry loops, the row lock on claimed queue rows, the intermediate
-  work row before the terminal receipt's outbox row. Closed when the rule documents and the code say the
-  same thing and a guard fails on a new writer outside the registry.
+  exception, in `AGENTS.md`, `CLAUDE.md`, `convergent-service-writing.md` and eight more documents.
+  On the WS server the ALM inbound admission store, the outbound admission store, their work rows
+  and the receipt record are written directly on incoming frames: on a PostgreSQL cluster by every
+  admitted message except a small RTC signal, and by every counted ACK. Of these only the receipt
+  record has a decision row that says it was asked of the maintainer (D779, point 5, 2026-11-22),
+  and that row keeps the answer and not the question; the maintainer said on 2026-11-27 that they
+  were not aware of it. No AppInbox alternative was measured. The review is
+  `plans/active/app-inbox-direct-writes-review.md`. Open: (1) rule on the older stores (the review
+  gives the options and recommends a named second path with written requirements); (2) measure an
+  AppInbox-backed count in the receipt record's own cells (28 and 140 ACKs a second, +0 and +5 ms),
+  then rule on the record; (3) rule on each miss the review lists, among them a lost count that is
+  not retried, in-call retry loops, the row lock on claimed queue rows, the intermediate work row
+  before the terminal receipt's outbox row. Closed when the rule documents and the code say the same
+  thing and a guard fails on a new writer outside the registry.
 
 ### 5.7 Carrier parity between WS and RTC
 
@@ -1013,7 +1013,9 @@ A proposal for the maintainer to amend. ALM is 1.0 when all eight hold.
    code agree: every database write on an incoming path is behind AppInbox or in the registry with
    the maintainer's quoted approval, and the direct-write guard is a governance-gate phase.
 
-Where each stands at `e30b2c9`. No criterion is changed, and none is met in full.
+Where each stands at `e30b2c9`. Criterion 8 gained its sentence on A10 on 2026-11-27, by the
+maintainer's ruling that the revisit happens before ALM is completed; no other criterion is changed,
+and none is met in full.
 
 1. _Scope is named._ Not ruled (decision 4). The matrix states 22 capabilities. 8 proofs in 7
    cells are `unproven`, two of them on granted publications, a preview capability (T4).
@@ -1030,8 +1032,8 @@ Where each stands at `e30b2c9`. No criterion is changed, and none is met in full
    call is ruled and not on `main` (#943, a draft). S7 is open. S1 and S2 are not ruled
    (decision 3).
 7. _There is an upgrade rule._ Open, unchanged.
-8. _It is adopted._ Open. Of A3's list, D784 is now the maintainer's own ruling. Nothing
-   else changed.
+8. _It is adopted._ Open. Of A3's list, D784 is now the maintainer's own ruling. A10 is not ruled,
+   no AppInbox-backed count is measured and the direct-write guard is not built.
 
 ## 7. The plan
 
@@ -1209,12 +1211,17 @@ places:
 
 ### The AppInbox review (A10)
 
-Two entries, because they have different deadlines. The maintainer ruled both on 2026-11-27: the
-guard is built now, and the AppInbox-backed count is measured before the revisit.
+Two entries, because they have different deadlines. The maintainer ruled both on 2026-11-27: all
+the guard's measures are built now, in one pull request that confirms no exception, and the
+AppInbox-backed count is measured before the revisit.
 
-- **The explicitness rule and the direct-write guard (A10, first half).** Documents, registry and
-  guard only; confirms nothing. Before the design of any slice that adds a store, a namespace or
-  a row family is approved. The presence slice (R3) is the next such design.
+- **The explicitness rule and the direct-write guard (A10, first half).** The measures of the
+  review's section 8 in one pull request (the explicitness rule with its template line, the
+  registry with its completeness check, the phrase pins and the behavioural scenario); confirms
+  nothing. Before any slice that adds a store, a namespace or a row family is built. The presence
+  slice (R3) is the next design to hold against it: its seven questions were ruled on 2026-11-27,
+  before the rule existed, and its own plan is to say, in the rule's words, whether it adds such a
+  write.
 - **The AppInbox revisit (A10, second half).** The measurement of an AppInbox-backed count, then
   the maintainer's ruling on the receipt record and on the older stores. Before criterion 8 is
   marked, and before any pull request that builds on the receipt record's storage.
@@ -1316,23 +1323,22 @@ reference set is not rerun on #885's later heads or on `main` as merged (R1).
    still asked: whether that confirms D783, so that its row and A3 can say so. Recommend yes: it
    is a narrow fix with red-first tests; #885's own runs handed nothing to a subscriber twice, and
    neither did the cell's twelve five-publisher runs on its tree.
-2. **The receipt record writes outside AppInbox** (D770). Not answered. D779 records an
-   approval of 2026-11-22, asked alone as its point 5. Asked again on 2026-11-27, the maintainer
-   said they were not aware of it, and ruled three things. First, it is revisited before ALM
-   is completed, so D770 joins A3's list and exit criterion 8 covers it. Second, the revisit
-   starts from a written review: what the design solved, why AppInbox was not chosen, what it
-   would cost, the pros and cons, and every other write on an incoming path that goes outside
-   AppInbox. D770 says the record is written "as the AL runtime's inbound and outbound stores
-   are", so the receipt record is not the only one. Third, no agent proposes a write outside
-   AppInbox without saying so explicitly. `AGENTS.md` and `CLAUDE.md` say AppInbox is mandatory
-   for every incoming database mutation (checked at `e30b2c9`); no sentence that names an
-   exception is added to either before the revisit. The review is written:
-   `plans/active/app-inbox-direct-writes-review.md` (A10). On 2026-11-27 the maintainer also
-   ruled that the direct-write guard is built now and that an AppInbox-backed ACK count is
-   measured before the revisit (section 7). What is asked next are A10's three open points, asked
-   one question at a time in section 11 of that review: rule on the older stores, confirm them as a named
-   second path with written requirements or move them; after the measurement, rule on the receipt
-   record; and rule on each miss the review lists.
+2. **The receipt record writes outside AppInbox** (D770). Not answered. D779 records an approval of
+   2026-11-22, asked alone as its point 5. Asked again on 2026-11-27, the maintainer said they were
+   not aware of it, and ruled three things. First, it is revisited before ALM is completed, so D770
+   joins A3's list and exit criterion 8 covers it. Second, the revisit starts from a written review:
+   what the design solved, why AppInbox was not chosen, what it would cost, the pros and cons, and
+   every other write on an incoming path that goes outside AppInbox. D770 says the record is written
+   "as the AL runtime's inbound and outbound stores are", so the receipt record is not the only one.
+   Third, no agent proposes a write outside AppInbox without saying so explicitly. `AGENTS.md` and
+   `CLAUDE.md` say AppInbox is mandatory for every incoming database mutation (checked at
+   `e30b2c9`); no sentence that names an exception is added to either before the revisit. The review
+   is written: `plans/active/app-inbox-direct-writes-review.md` (A10). On 2026-11-27 the maintainer
+   also ruled that all the direct-write guard's measures are built now and that an AppInbox-backed
+   ACK count is measured before the revisit (section 7). What is asked next are A10's three open
+   points, asked one question at a time in section 11 of that review: rule on the older stores (the
+   review gives the options and recommends a named second path with written requirements); after the
+   measurement, rule on the receipt record; and rule on each miss the review lists.
 3. **Sign every ordinary RTC room send?** Recommend yes for 1.0. Without it the contract must say
    that a room member can speak as another on any unreceipted send, which is the default for
    `live`.
