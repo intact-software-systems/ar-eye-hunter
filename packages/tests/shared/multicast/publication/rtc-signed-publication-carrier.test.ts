@@ -95,7 +95,7 @@ describe('RtcSignedPublicationCarrier', () => {
             throw new Error('A shape refusal admits nothing.');
         });
 
-        expect(admitted.left).toBe(RTC_GRANTED_PUBLICATION_REFUSALS.unfrozenAudience);
+        expect(admitted.left).toEqual({ reason: 'unsupported', detail: RTC_GRANTED_PUBLICATION_REFUSALS.unfrozenAudience });
     });
 
     it('passes an unfrozen leg of an expired room authority through the room-limit judgement unchanged', async () => {
@@ -123,7 +123,10 @@ describe('RtcSignedPublicationCarrier', () => {
 
         const admitted = carrier.admitLeg(GRANTED_LIST, (leg) => ({ ...leg, targets: toOriginFrozenTargets(recipientPeerIds, 3) }));
 
-        expect(admitted.left).toEqual('RTC room multicast audience of 257 recipients exceeds the RTC room limit of 256');
+        expect(admitted.left).toEqual({
+            reason: 'unsupported',
+            detail: 'RTC room multicast audience of 257 recipients exceeds the RTC room limit of 256'
+        });
     });
 
     it('refuses a leg its origin could not sign before it asks for the admitted message, naming the failure first', () => {
@@ -131,7 +134,25 @@ describe('RtcSignedPublicationCarrier', () => {
             throw new Error('A signing refusal admits nothing.');
         });
 
-        expect(admitted.left).toMatch(/^signing-unavailable: /);
+        expect(admitted.left).toEqual({ reason: 'unsupported', detail: expect.stringMatching(/^signing-unavailable: /) });
+    });
+
+    it('refuses a receiver unicast on a page with no room snapshot as unsupported, its signing judged before its addressee', () => {
+        const receipted = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: GRANTED.route,
+            toPeerId: 'b',
+            typeId: GRANTED.payload.typeId,
+            resource: {},
+            options: { ack: 'receiver', groupRef: ORIGIN_ROOM }
+        });
+
+        const admitted = createKeylessCarrier().admitLeg(receipted, () => {
+            throw new Error('A signing refusal admits nothing.');
+        });
+
+        expect(admitted.left).toEqual({ reason: 'unsupported', detail: expect.stringMatching(/^signing-unavailable: /) });
     });
 
     it('passes a frame of a topic that is not granted through its admission signing unchanged', async () => {

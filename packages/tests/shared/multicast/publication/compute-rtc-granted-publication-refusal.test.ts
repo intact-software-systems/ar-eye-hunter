@@ -8,10 +8,13 @@ import {
     type ALAckMode,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
+import type { RtcCarrierGapAdmission } from '@shared/multicast/compute-rtc-outbound-carrier-availability.ts';
 import {
     computeRtcGrantedPublicationRefusal,
+    resolveRtcGrantedAddresseeRefusal,
     resolveRtcGrantedPublicationShapeRefusal,
-    RTC_GRANTED_PUBLICATION_REFUSALS
+    RTC_GRANTED_PUBLICATION_REFUSALS,
+    toRtcGrantedLegVerdict
 } from '@shared/multicast/publication/compute-rtc-granted-publication-refusal.ts';
 
 import { ORIGIN_PRINCIPAL_REF, ORIGIN_ROOM, toOriginFrozenTargets } from '../rtc-origin-overlay-fixture.ts';
@@ -112,6 +115,42 @@ describe('resolveRtcGrantedPublicationShapeRefusal', () => {
     });
 });
 
+describe('resolveRtcGrantedAddresseeRefusal', () => {
+    it.each<[string, ALMessage, readonly string[]]>([
+        ['a session that holds no subscribe', createUnicast('receiver', 'c'), ['b']],
+        ['its own sender, which holds no subscribe', createUnicast('receiver', 'a'), ['b']],
+        ['its own sender, which holds subscribe', createUnicast('receiver', 'a'), ['a', 'b']],
+        ['a non-holder, the receipt asked by its quality of service', { ...createUnicast('none', 'c'), qos: { ack: { algo: 'receiver' } } }, ['b']]
+    ])('refuses a receiver unicast to %s', (_name, msg, holders) => {
+        expect(resolveRtcGrantedAddresseeRefusal({ msg, selfSessionId: 'a', subscribeHolders: new Set(holders) }))
+            .toBe(RTC_GRANTED_PUBLICATION_REFUSALS.addresseeNotSubscribed);
+    });
+
+    it.each<[string, ALMessage]>([
+        ['a receiver unicast to a session that holds subscribe', createUnicast('receiver', 'b')],
+        ['a unicast to a non-holder asking no receipt', createUnicast('none', 'c')],
+        ['a unicast to a non-holder that states no receipt', createReceiptlessUnicast('c')],
+        ['a receiver multicast', createMulticast('receiver')],
+        ['a receiver room list naming a non-holder', { ...createRoomBroadcast(), delivery: { reliability: 'best-effort', ack: 'receiver' } }]
+    ])('passes %s', (_name, msg) => {
+        expect(resolveRtcGrantedAddresseeRefusal({ msg, selfSessionId: 'a', subscribeHolders: new Set(['b']) })).toBeUndefined();
+    });
+});
+
+describe('toRtcGrantedLegVerdict', () => {
+    it.each<[RtcCarrierGapAdmission, ReturnType<typeof toRtcGrantedLegVerdict>]>([
+        ['hold', { kind: 'refused', reason: 'unauthorized', detail: 'addressee' }],
+        ['hand-over', { kind: 'unroutable', reason: 'no-route', detail: 'addressee' }]
+    ])('answers the origin\'s unauthorized judgement of the addressee on a %s leg', (carrierGap, verdict) => {
+        expect(toRtcGrantedLegVerdict({ reason: 'unauthorized', detail: 'addressee' }, carrierGap)).toEqual(verdict);
+    });
+
+    it.each<RtcCarrierGapAdmission>(['hold', 'hand-over'])('answers an unsupported leg refused unsupported on a %s leg', (carrierGap) => {
+        expect(toRtcGrantedLegVerdict({ reason: 'unsupported', detail: 'shape' }, carrierGap))
+            .toEqual({ kind: 'refused', reason: 'unsupported', detail: 'shape' });
+    });
+});
+
 function createMulticast(ack: ALAckMode): ALMessage {
     return newALMulticastMessage({
         createdAtEpochMs: Date.now(),
@@ -128,15 +167,28 @@ function createMulticast(ack: ALAckMode): ALMessage {
     });
 }
 
-function createUnicast(): ALMessage {
+function createUnicast(ack: ALAckMode = 'none', toPeerId = 'b'): ALMessage {
     return newALUnicastMessage({
         createdAtEpochMs: Date.now(),
         senderId: 'a',
         route: ROUTE,
-        toPeerId: 'b',
+        toPeerId,
         typeId: 'room.granted-feed.v1',
         resource: {},
-        options: { ack: 'none', groupRef: ORIGIN_ROOM }
+        options: { ack, groupRef: ORIGIN_ROOM }
+    });
+}
+
+/** A room unicast with no `delivery` and no `qos`: it states no receipt, so only a provider's default could ask one. */
+function createReceiptlessUnicast(toPeerId: string): ALMessage {
+    return newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'a',
+        route: ROUTE,
+        toPeerId,
+        typeId: 'room.granted-feed.v1',
+        resource: {},
+        options: { groupRef: ORIGIN_ROOM }
     });
 }
 

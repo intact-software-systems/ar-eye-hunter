@@ -96,7 +96,10 @@ import {
     WebRtcOverlayMulticaster,
     WebRtcOverlayMulticasterFactory
 } from './overlay-multicast-contracts.ts';
-import { RTC_GRANTED_PUBLICATION_REFUSALS } from './publication/compute-rtc-granted-publication-refusal.ts';
+import {
+    RTC_GRANTED_PUBLICATION_REFUSALS,
+    toRtcGrantedLegVerdict
+} from './publication/compute-rtc-granted-publication-refusal.ts';
 import type { RtcGrantedTopicReader } from './publication/rtc-granted-topic-reader.ts';
 import type { RtcPublicationProofVerifierPort } from './publication/rtc-publication-proof-verifier-port.ts';
 import { RtcSignedPublicationCarrier } from './publication/rtc-signed-publication-carrier.ts';
@@ -388,11 +391,9 @@ export class WebRtcOverlayMulticastManager {
     }
 
     /**
-     * One sender carrier leg. A granted publication is frozen to its subscribers and signed once, in its first
-     * admission, after that admission's read stamped it; or refused as unsupported before admission, the refusal a
-     * fallback carrier takes over. Every fallback verdict its carried leg reaches (a signer that cannot sign in the
-     * admission among them) names the leg its sender gave, as those refusals do. A receipted room send is signed by
-     * its carrier's signer in the first dispatch that holds its frozen audience and its room snapshot.
+     * One sender carrier leg; `hand-over` means a fallback carrier exists. A granted publication is frozen and signed
+     * in its first admission, after its read stamped it, or its leg refusal is the verdict (`toRtcGrantedLegVerdict`).
+     * Each fallback verdict its carried leg reaches, an unsigned one too, names the leg its sender gave.
      */
     async enqueueLegIfAbsent(msg: ALMessage, carrierGap: RtcCarrierGapAdmission): Promise<ALOutboundEnqueueResult> {
         if (this.disposed || !this.#publications.isGrantedPublication(msg)) {
@@ -403,12 +404,8 @@ export class WebRtcOverlayMulticastManager {
             (leg, subscribeHolders) => this.toRtcOriginAdmittedMessage(leg, subscribeHolders).message
         );
         return await admitted.fold(
-            async (detail) =>
-                WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
-                    kind: 'refused',
-                    reason: 'unsupported',
-                    detail
-                }),
+            async (left) =>
+                WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, toRtcGrantedLegVerdict(left, carrierGap)),
             async (carried) => {
                 const result = await this.enqueueCarriedLegIfAbsent(carried, carrierGap);
                 return isALDeliveryAdmissionFallbackVerdict(result.verdict) ? { ...result, message: msg } : result;
