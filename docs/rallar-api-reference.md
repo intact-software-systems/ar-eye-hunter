@@ -733,9 +733,17 @@ lifetime otherwise. Both kinds share one stream, so a receiving page hands the
 director's outputs to `onOutput` in the order the director sent them. A later
 output waits at most 3 s for a missing one. When the page gives up positions
 of the appointed director's output stream, the relay calls `onOutputGap(gap)`
-of its config with that `RallarMessageOrderGap`. Heartbeats and snapshots are
-not edge-ordered: each is sent best effort over one carrier, and over the
-other when the first fails, a heartbeat WS first and a snapshot RTC first.
+of its config with that `RallarMessageOrderGap`. The stream's next output waits
+for that callback to settle, so the callback must not wait on the network.
+Heartbeats and snapshots are not edge-ordered: each is sent best effort over
+one carrier, and over the other when the first fails, a heartbeat WS first and
+a snapshot RTC first.
+
+A page on a bundle from before the relay's output type was edge-ordered and a
+page on a later one, in the same room, do not receive each other's outputs: the
+newer page drops an output that carries no stamp, and the older page ignores a
+wrapped one. Heartbeats, intents, sync requests and snapshots still cross. This
+lasts until the older tab reloads.
 
 While the local session is the director, its relay acts on an intent
 or sync request stamped with its own appointment epoch or an earlier one, since
@@ -785,8 +793,8 @@ carrier it came over. The match does not drop an event by its own sequence
 number. When the page gives an event up, the match asks the director for a
 sync with `{ reason: 'event-order-gap' }`, and a director whose match reads
 snapshots (`readSnapshot`) answers with one. It asks nothing when the gap's
-reason is `ended-at-sender`, as for an event sent without a receipt that a
-later event overtook. The event itself is not delivered again: a later
+reason is `ended-at-sender`, which says the sender called the send over, most
+often for an event sent without a receipt that a later event overtook. The event itself is not delivered again: a later
 snapshot from the director brings the state it led to, when the game sends
 snapshots. It does so through the relay's periodic snapshot, which runs while
 the match sets `readSnapshot` and leaves `autoSnapshotIntervalMs` on (2 s when
@@ -2184,7 +2192,7 @@ forwards without ordering.
 
 |                         | Unordered (the default) | Edge order (`order: 'edge'`)                                    | Hop order (`orderingKey`)                                         |
 | ----------------------- | ----------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------- |
-| Who orders              | nobody                  | the sender's and each receiver's page, in memory                | the sender, the WS server and each receiver                       |
+| Who orders              | nobody                  | the sender's and each receiver's page, in memory                | the sender, the RTC origin or the WS server, and each receiver    |
 | Order the app sees      | arrival order           | the sender's send order, per sender page                        | the sender's send order, per sender session                       |
 | Across a sender reload  | not applicable          | a new stream starts                                             | the track continues                                               |
 | A missing message       | not noticed             | waited for while it can still arrive, then skipped and reported | NACK and repair; then `resync-required`, and the track ends       |
@@ -2205,6 +2213,10 @@ relay: match started, hits, pickups, match ended. The relay declares its output
 type edge-ordered on the relay's topic. Its definition names no room; each
 output send names the director's room. How the relay sends outputs is in
 Director above, and what the match does with them is in Optional Match Support.
+In the code, `TOutput` is the application's output type, `topicId` and
+`outputTypeId` are the relay config's, and `notifyRelays(gap)` passes the gap
+to the `onOutputGap` of each of the page's relays whose director sent the lost
+outputs.
 
 ```ts
 const outputs = rallar.messages.room<RallarDirectorRelayEnvelope<TOutput>>({
@@ -2230,10 +2242,8 @@ What it shows:
 - On any other gap the match asks the director for a sync.
 
 Deployment note: a page on a bundle from before the relay's output type was
-edge-ordered and a page on a newer one, in the same room, do not hear each
-other's director events. The newer page drops the unstamped event; the older
-page ignores the wrapped one. Heartbeats, intents, sync requests and snapshots
-still cross.
+edge-ordered and a page on a later one do not receive each other's director
+events; see Director above.
 
 ### Ordering, Repair And Resynchronization
 

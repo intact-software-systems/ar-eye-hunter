@@ -36,9 +36,10 @@ are grouped by the owner that makes each runtime decision:
    routes accepted presence, input, snapshot, and relay envelopes. Events take
    no sequence check: the relay's output type is edge-ordered, so it hands the
    director's events over once each, in send order, whichever carrier each came
-   over. When it gives one up, the match asks the director for a sync (reason
-   `event-order-gap`), unless the lost event was unreceipted and ended at its
-   sender; the next snapshot repairs that one.
+   over. When it gives one up, the match starts a sync request to the director
+   (reason `event-order-gap`) and does not wait for it, unless the gap is one
+   the sender said is over (`ended-at-sender`), most often a lost unreceipted
+   event; the next snapshot repairs that one.
 2. `match/rallar-game-match-status-runtime.ts` owns lifecycle flags, director
    freshness recovery, egress state, and status observers.
 3. Director-owned input is handled locally or relayed by
