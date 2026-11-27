@@ -381,7 +381,7 @@ Notes on the rows that need them:
 
 | Id  | Item                                                                             | Source           | Class   |
 | --- | -------------------------------------------------------------------------------- | ---------------- | ------- |
-| P1  | The publication workload family is one local point; no owner probes, no campaign | #923, D642, D643 | Blocker |
+| P1  | Publication workload family: two local rtc points; no owner probes, no campaign  | #923, D642, D643 | Blocker |
 | P2  | Make-before-break routing has no hosted read                                     | D645             | Blocker |
 | P3  | The baseline's hosted half; the local median is not a regression figure          | D652, D664, D695 | Should  |
 | P4  | The durable store runs 10 to 20 times slower on some CI runners                  | D761             | Should  |
@@ -404,7 +404,7 @@ Notes on the rows that need them:
   | Delivered sample age from payload timestamps                         | Built (#923), per subscriber                     |
   | Platform fault steps, local                                          | Built                                            |
   | Receipt truth and the held-send path                                 | Built; #885 completes it                         |
-  | Publication workload family and a run-time-principal hosted manifest | First slice built (#923); no hosted manifest     |
+  | Publication workload family and a run-time-principal hosted manifest | Rooms and publishers built; no hosted manifest   |
   | Probes at the owners                                                 | Not built                                        |
   | Byte sizes of the games' frames                                      | Not measured (checked)                           |
   | Hosted fault step over the api role's units                          | Not built (checked)                              |

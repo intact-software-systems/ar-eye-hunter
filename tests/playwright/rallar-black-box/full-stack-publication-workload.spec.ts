@@ -122,18 +122,23 @@ const STATS_COMMAND_IDS: Readonly<Record<PublicationWorkloadRoleKind, string>> =
     subscriber: 'publication-workload-subscriber-stats'
 };
 
+test('is asked for a point it holds', () => {
+    test.skip(!isHeadlessFullStackOptedIn(), 'Opt-in standalone headless full-stack observation required');
+    expect(
+        LOCAL_POINTS.map(({ name }) => name),
+        'RALLAR_BLACK_BOX_PUBLICATION_WORKLOAD_POINT names a point of this proof'
+    ).toContain(process.env.RALLAR_BLACK_BOX_PUBLICATION_WORKLOAD_POINT);
+});
+
 // One point a Playwright run: every launch gives the same users, `controller-01` onward, a new password, so the API
 // must be new to the point. The terminal wait is the manifest's own terminal timeout, and the harness abort, the owned
 // worker's idle exit and the test's limit are derived from it.
 for (const point of LOCAL_POINTS) {
     test(`runs the publication workload ${point.name} point and records its figures`, async ({}, testInfo) => {
-        test.skip(
-            process.env.RALLAR_BLACK_BOX_FULL_STACK !== '1' || process.env.RALLAR_BLACK_BOX_FULL_STACK_HEADLESS !== '1',
-            'Opt-in standalone headless full-stack observation required'
-        );
+        test.skip(!isHeadlessFullStackOptedIn(), 'Opt-in standalone headless full-stack observation required');
         test.skip(
             process.env.RALLAR_BLACK_BOX_PUBLICATION_WORKLOAD_POINT !== point.name,
-            'RALLAR_BLACK_BOX_PUBLICATION_WORKLOAD_POINT names another point, or none'
+            'RALLAR_BLACK_BOX_PUBLICATION_WORKLOAD_POINT names the other point'
         );
         expect(
             process.env.RALLAR_BLACK_BOX_STORAGE_DIR,
@@ -215,6 +220,11 @@ for (const point of LOCAL_POINTS) {
             expect.soft(cleanup, 'The test leaves no worker running').not.toBe('unreaped');
         }
     });
+}
+
+/** Only a caller that sets both opt-ins asks for this proof; `npm run test:rallar` loads the file and sets neither. */
+function isHeadlessFullStackOptedIn(): boolean {
+    return process.env.RALLAR_BLACK_BOX_FULL_STACK === '1' && process.env.RALLAR_BLACK_BOX_FULL_STACK_HEADLESS === '1';
 }
 
 /**

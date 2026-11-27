@@ -113,10 +113,11 @@ RALLAR_BLACK_BOX_PUBLICATION_WORKLOAD_POINT=two-rooms npm run test:rallar:full-s
 ```
 
 `tests/playwright/rallar-black-box/full-stack-publication-workload.spec.ts` holds two points, one
-test each. A run of the script runs the point `RALLAR_BLACK_BOX_PUBLICATION_WORKLOAD_POINT` names,
-`one-room` where the variable is unset, and skips the other test. A point is a distributed run on
-headless agents against the in-memory API. Both points send on `rtc`, 500 ms apart, 256-byte
-payloads with a 5 s lifetime, at a send-success ratio of 0.95.
+test each, and a third test that fails the run when `RALLAR_BLACK_BOX_PUBLICATION_WORKLOAD_POINT`
+names neither. A run of the script runs the point the variable names, `one-room` where it is unset,
+and skips the other point's test. A point is a distributed run on headless agents against the
+in-memory API. Both points send on `rtc`, 500 ms apart, 256-byte payloads with a 5 s lifetime, at a
+send-success ratio of 0.95.
 
 | Point       | Rooms | Agents a room | Publishers a room | Window | Frames a publisher | `minReceiveRatio` |
 | ----------- | ----- | ------------- | ----------------- | ------ | ------------------ | ----------------- |
@@ -132,14 +133,14 @@ room's, so a second room's agents register under the first room's group. The run
 targets, because every agent reports the group the manifest names; an agent's reported group is
 therefore no evidence of the room it ran in. Its recipe id is.
 
-Three runs in a row of each point passed on one 4-CPU machine that other work was using at the time
-(a one-minute load average of 2.6 to 4.3 as each run started). From the command to its exit,
-`one-room` took 58.8, 62.4 and 63.5 s, and `two-rooms` took 52.3, 50.0 and 52.1 s; the tests
-themselves took 52.5 to 57.5 s and 45.0 to 46.4 s. `two-rooms` is the shorter because its window is
-half as long, though it has twice the agents. In all six runs
-every publisher's stage admitted every one of its frames, and every subscriber observed every frame
-of its room, 120 messages a point: two subscribers of 60 frames in `one-room`, and two rooms of one
-subscriber of 2 x 30 frames in `two-rooms`. The point's delivered sample age had its median in the
+Three runs in a row of each point passed on one 4-CPU machine that other work was using at the time.
+From the command to its exit, `one-room` took 58.8, 62.4 and 63.5 s, and `two-rooms` took 52.3, 50.0
+and 52.1 s; the tests themselves took 52.5 to 57.5 s and 45.0 to 46.4 s. `two-rooms` is the shorter
+because its window is half as long, though it has twice the agents. In all six runs every
+publisher's stage admitted every one of its frames, and every subscriber observed every frame of its
+room, 120 messages a point: two subscribers of 60 frames in `one-room`, and two rooms of one
+subscriber of 2 x 30 frames in `two-rooms`, so the merge inside a room ran only in `one-room`, and
+the merge across rooms only in `two-rooms`. The point's delivered sample age had its median in the
 10 to 20 ms bucket in all six runs; its largest age was 63, 72 and 31 ms in `one-room` and 105, 72
 and 78 ms in `two-rooms`. These are observations of those runs on one machine, where the two clocks
 of an age are one clock. No test pins them, and none of them is a level.
