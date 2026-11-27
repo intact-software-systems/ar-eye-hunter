@@ -58,6 +58,14 @@ interface RelayHopInput {
     readonly qosProvider?: ALQosInputProvider;
 }
 
+/** One granted room multicast an origin admits. */
+interface GrantedPublicationInput {
+    readonly resourceId: string;
+    readonly ack: 'none' | 'receiver';
+    /** A `durable` publication waits out a carrier gap in the outbox. */
+    readonly durability: 'volatile' | 'durable';
+}
+
 /** A granted topic outside the `room.` prefix: room admission alone never refuses a frame on it that names no room. */
 const APP_TOPIC_ID = 'app.granted-feed';
 
@@ -141,6 +149,25 @@ describe('a granted RTC publication at its relays and receivers', () => {
         expect(receiver.delivered.map((message) => message.id.msgId)).toEqual([signed.id.msgId]);
     });
 
+    it('forwards at a frozen recipient whose subscribe was revoked after the freeze, delivering nothing there', async () => {
+        // The origin froze `r` into the audience, so only the relay's own grant check keeps the frame from its application.
+        const chain = await createOriginRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
+        const relay = createRelayHop(chain, { selfPeerId: 'r', subscribed: true });
+        const receiver = createRelayHop(chain, { selfPeerId: 'c', subscribed: true });
+        const signed = await publishFromOrigin(chain, 'feed-1');
+
+        relay.acceptSnapshot(toSubscribeRevokedSnapshot(chain, 'r'));
+        await relay.receive(signed, 'a');
+        const forwarded = await relay.readSent('c');
+        await receiver.receive(forwarded[0]!, 'r');
+
+        expect(signed.targets).toMatchObject({ recipientPeerIds: expect.arrayContaining(['r']) });
+        expect(relay.delivered).toEqual([]);
+        expect(forwarded).toHaveLength(1);
+        expect(toALPublicationProofSigningInput(forwarded[0]!)).toBe(toALPublicationProofSigningInput(signed));
+        expect(receiver.delivered.map((message) => message.id.msgId)).toEqual([signed.id.msgId]);
+    });
+
     it('forwards a recorded track at a pure relay 300 sequences past anything it saw, observing nothing of it', async () => {
         const chain = await createOriginRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
         const relay = createRelayHop(chain, { selfPeerId: 'r' });
@@ -186,6 +213,23 @@ describe('a granted RTC publication at its relays and receivers', () => {
         expect(await relay.readSent('c')).toEqual([]);
         expect(relay.delivered).toEqual([]);
         expect(readAdmissionReasons(relay)).toEqual(['not-yet-in-sync: unknown-key']);
+    });
+
+    it('drops a frame forged to another member under that member\'s registered key id as invalid-signature, never forwarding it', async () => {
+        // `c` may publish and the relay subscribes, so the signature alone stands between this frame and both effects.
+        const chain = await createOriginRelayChain({ ...GRANTS_WITH_SUBSCRIBED_RELAY, c: PUBLISH_AND_SUBSCRIBE });
+        const relay = createRelayHop(chain, { selfPeerId: 'r', subscribed: true });
+        const signed = await publishFromOrigin(chain, 'feed-1');
+
+        await relay.receive({
+            ...signed,
+            id: { ...signed.id, senderId: 'c' },
+            proof: { ...signed.proof!, keyId: chain.keys.c!.keyPair.keyId }
+        }, 'a');
+
+        expect(await relay.readSent('c')).toEqual([]);
+        expect(relay.delivered).toEqual([]);
+        expect(readAdmissionReasons(relay)).toEqual(['unauthorized: invalid-signature']);
     });
 
     it.each<[string, (message: ALMessage) => ALMessage['targets']]>([
@@ -346,8 +390,8 @@ describe('a granted RTC publication at its relays and receivers', () => {
     it('leaves a stored signed frame whose origin holds no room snapshot to the room-authority planning, never refusing it', async () => {
         const chain = await createOriginRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
         const origin = createLeafOrigin(chain);
-        const volatile = await admitAt(origin, 'feed-volatile', 'none');
-        const durable = await admitAt(origin, 'feed-durable', 'receiver', 'durable');
+        const volatile = await admitAt(origin, { resourceId: 'feed-volatile', ack: 'none', durability: 'volatile' });
+        const durable = await admitAt(origin, { resourceId: 'feed-durable', ack: 'receiver', durability: 'durable' });
 
         origin.groups.delete('room');
         // The stage planner is the manager's own; element access reaches it without widening its type.
@@ -361,7 +405,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
     it('keeps the receipt of a signed frame whose origin lost its room snapshot, stating no refusal at its retry', async () => {
         const chain = await createOriginRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
         const origin = createLeafOrigin(chain);
-        const admitted = await admitAt(origin, 'feed-1', 'receiver');
+        const admitted = await admitAt(origin, { resourceId: 'feed-1', ack: 'receiver', durability: 'volatile' });
 
         origin.groups.delete('room');
         await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS + 100);
@@ -375,7 +419,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
         const chain = await createOriginRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
         const origin = createLeafOrigin(chain);
         origin.overlays.delete('room');
-        const held = await admitAt(origin, 'feed-1', 'receiver', 'durable');
+        const held = await admitAt(origin, { resourceId: 'feed-1', ack: 'receiver', durability: 'durable' });
 
         origin.groups.accept('room', toGrantsSnapshot(chain.snapshot, 4, PUBLISH_REVOKED));
         origin.overlays.accept('room', createOriginOverlay(['r', 'c'], LEAF_LAYOUT));
@@ -410,7 +454,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
     it('retries an unconfirmed receipt only toward the frozen recipients the origin\'s snapshot still lets subscribe', async () => {
         const chain = await createOriginRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
         const origin = createLeafOrigin(chain);
-        const admitted = await admitAt(origin, 'feed-1', 'receiver');
+        const admitted = await admitAt(origin, { resourceId: 'feed-1', ack: 'receiver', durability: 'volatile' });
 
         origin.groups.accept('room', toSubscribeRevokedSnapshot(chain, 'c'));
         await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS + 100);
@@ -422,7 +466,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
     it('ends a revoked origin\'s signed frame rejected no-publish-grant at its next retry, keeping its receipt row and re-sending nothing', async () => {
         const chain = await createOriginRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
         const origin = createLeafOrigin(chain);
-        const admitted = await admitAt(origin, 'feed-1', 'receiver');
+        const admitted = await admitAt(origin, { resourceId: 'feed-1', ack: 'receiver', durability: 'volatile' });
 
         origin.groups.accept('room', toGrantsSnapshot(chain.snapshot, 4, PUBLISH_REVOKED));
         await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS + 100);
@@ -505,7 +549,7 @@ async function publishFromOrigin(chain: OriginRelayChain, resourceId: string, ac
 
 /** The signing origin's admission of one granted room multicast, its stored signed message included. */
 async function admitAtOrigin(chain: OriginRelayChain, resourceId: string, ack: 'none' | 'receiver'): Promise<ALOutboundEnqueueResult> {
-    return await admitAt(chain.origin, resourceId, ack);
+    return await admitAt(chain.origin, { resourceId, ack, durability: 'volatile' });
 }
 
 /** The chain's origin `a` with both `r` and `c` as its direct next hops, each a leaf of its accepted layout. */
@@ -522,9 +566,7 @@ function createLeafOrigin(chain: OriginRelayChain): RtcOriginOverlayFixture {
 /** The origin's admission of one granted room multicast; a `durable` one waits out a carrier gap in the outbox. */
 async function admitAt(
     origin: RtcOriginOverlayFixture,
-    resourceId: string,
-    ack: 'none' | 'receiver',
-    durability: 'volatile' | 'durable' = 'volatile'
+    { resourceId, ack, durability }: GrantedPublicationInput
 ): Promise<ALOutboundEnqueueResult> {
     const admitted = await origin.manager.enqueueLegIfAbsent(
         newALMulticastMessage(
