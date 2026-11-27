@@ -223,7 +223,7 @@ const ROOM_SEND_NAMING_ANOTHER_ROOM_REFUSED_AT_THE_CALL = {
 const RTC_RECEIVER_CHECKS_NO_ROOM_CONTEXT = {
     kind: 'documented-limit',
     document: 'docs/rallar-api-reference.md',
-    limit: 'only a modified client can deliver such a send over RTC'
+    limit: 'a frame that did not pass this refusal is still delivered over RTC'
 } as const satisfies AlmCarrierProof;
 
 /**

@@ -71,6 +71,7 @@ import {
     validateBrowserRtcPeerSend,
     type BrowserRtcPeerSend
 } from './validate-browser-rtc-peer-send.ts';
+import { validateRoomContext } from './validate-room-context.ts';
 
 interface ResolvedRtcMessageTarget {
     readonly room: string | GroupRef | undefined;
@@ -689,20 +690,6 @@ function throwIfMessageIssues(issues: readonly RallarValidationIssue[]): void {
     if (issues.length > 0) {
         throwRallarValidation(issues);
     }
-}
-
-/** The WS server refuses a room send routed in another room (D82); the browser refuses it first, on every carrier. */
-function validateRoomContext(
-    contextId: string | undefined,
-    roomRef: GroupRef | undefined
-): readonly RallarValidationIssue[] {
-    return roomRef === undefined || contextId === undefined || contextId === roomRef.groupId
-        ? []
-        : [{
-            path: '$.contextId',
-            code: 'context-room-mismatch',
-            message: 'A room send routes in the room it names: contextId must equal the room id.'
-        }];
 }
 
 /**
