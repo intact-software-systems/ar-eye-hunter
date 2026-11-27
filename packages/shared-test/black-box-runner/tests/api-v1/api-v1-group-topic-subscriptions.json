@@ -1,5 +1,5 @@
 {
-  "description": "No-browser API-v1 WS topic subscriptions over REST. A member's session subscribes to a granted topic only with a live client-state session (no-live-session), effective subscribe (no-subscribe-grant) and the session's current connection generation (stale-generation). A subscribe answers subscribed, its replay answers subscribed again, a changed body under its requestId is an idempotency conflict and the same subscribe under a new requestId is renewed; the self-session read lists the one leased row at the grant's group revision, the group revision is unchanged, and another session's read is forbidden. A reconnect under a new generation re-subscribes, and an unsubscribe asserting the old generation is not-subscribed and keeps the row. A revoke of subscribe deletes the row and a re-grant does not revive it; an unsubscribe answers unsubscribed then not-subscribed, and a member who leaves holds no subscription.",
+  "description": "No-browser API-v1 WS topic subscriptions over REST. A member's session subscribes to a granted topic only with a live client-state session (no-live-session), effective subscribe (no-subscribe-grant) and the session's current connection generation (stale-generation). Once the background writes the joins start (the topology promotion and the activation status for the settled layout) have landed, the owner grants subscribe. A subscribe answers subscribed, its replay answers subscribed again, a changed body under its requestId is an idempotency conflict and the same subscribe under a new requestId is renewed; the self-session read lists the one leased row at the grant's group revision, the group revision is unchanged, and another session's read is forbidden. A reconnect under a new generation re-subscribes, and an unsubscribe asserting the old generation is not-subscribed and keeps the row. A revoke of subscribe deletes the row and a re-grant does not revive it; an unsubscribe answers unsubscribed then not-subscribed, and a member who leaves holds no subscription.",
   "variables": {
     "rallarApiBaseUrl": {
       "env": "RALLAR_API_BASE_URL",
@@ -479,6 +479,115 @@
           "status": 403,
           "denial": {
             "code": "no-subscribe-grant"
+          }
+        }
+      }
+    },
+    {
+      "name": "theRosterLayoutIsAccepted",
+      "description": "The joins start background group writes that raise the group revision on their own schedule: a debounced replan whose promotion is a service-actor applyPlannedLayout, then the activation-status observer's first band for that layout. Wait for an accepted layout first, because the formation read reports layoutStale false while no layout is accepted and so cannot yet tell a planned-but-unapplied layout from a settled one.",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 30,
+          "maxDurationMs": 30000,
+          "backoffMs": 100,
+          "backoffMultiplier": 1.3
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "acceptedLayoutIdentity": {
+              "state": "active"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "theRosterLayoutSettles",
+      "description": "No replan is queued and the accepted layout matches the current topology inputs, so no further promotion can land. The coverage basis is then the accepted layout, which the status step below must find published.",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/formation",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 30,
+          "maxDurationMs": 30000,
+          "backoffMs": 100,
+          "backoffMultiplier": 1.3
+        },
+        "outputs": {
+          "settledLayoutGroupRevision": "body.coverageBasisLayoutIdentity.groupRevision",
+          "settledLayoutPresenceRevision": "body.coverageBasisLayoutIdentity.presenceRevision",
+          "settledLayoutVersion": "body.coverageBasisLayoutIdentity.version"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lifecycleState": "active",
+          "pending": null,
+          "layoutStale": false,
+          "coverageBasisLayoutIdentity": {
+            "groupRevision": "integer",
+            "version": "integer",
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "theSettledLayoutActivationStatusIsPublished",
+      "description": "The observer's status write for the settled layout is stored on the group (the formation read derives a condition without it, so only the stored status proves the write landed). After this no background write is due, so the grant's group revision is the baseline the subscription steps must leave unchanged.",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 30,
+          "maxDurationMs": 30000,
+          "backoffMs": 100,
+          "backoffMultiplier": 1.3
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "acceptedLayoutIdentity": {
+              "groupRevision": "{settledLayoutGroupRevision}",
+              "presenceRevision": "{settledLayoutPresenceRevision}",
+              "version": "{settledLayoutVersion}",
+              "state": "active"
+            },
+            "activationStatus": {
+              "coverageBasisLayoutIdentity": {
+                "groupRevision": "{settledLayoutGroupRevision}",
+                "presenceRevision": "{settledLayoutPresenceRevision}",
+                "version": "{settledLayoutVersion}",
+                "state": "active"
+              }
+            }
           }
         }
       }
