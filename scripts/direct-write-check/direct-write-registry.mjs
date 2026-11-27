@@ -21,6 +21,7 @@ export const DIRECT_WRITE_CLASSES = [
     'downstream-work',
     'no-production-caller',
     'public-surface',
+    'composition-root',
     'browser-or-memory',
     'transport-direct'
 ];

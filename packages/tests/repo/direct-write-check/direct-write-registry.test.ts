@@ -1,11 +1,21 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+    toApprovedStoreIds,
     toDirectWriteRegistry,
     validateDirectWriteRegistry
 } from '../../../../scripts/direct-write-check/direct-write-registry.mjs';
 
 const FENCE = 'app-inbox-direct-write-registry-v1';
+const REGISTRY_PATH = 'docs/app-inbox-direct-write-registry.md';
+/**
+ * The stores the maintainer has approved to write outside AppInbox, by id. Moving an entry to approved needs an
+ * edit here, in a diff whose only content is that id. Owner: repository-governance maintainers. Removal condition:
+ * the maintainer's revisit has ruled on every under-review store.
+ */
+const APPROVED_DIRECT_WRITE_IDS: readonly string[] = [];
 
 describe('direct-write registry contract', () => {
     it('accepts a registry whose store is under review and one whose store carries a complete approval', () => {
@@ -131,6 +141,32 @@ describe('direct-write registry contract', () => {
         expect(validateDirectWriteRegistry(unknownState)).toEqual([
             'stores alm-example-store: review.state must be "under-review" or "approved"'
         ]);
+    });
+});
+
+describe('the committed direct-write registry', () => {
+    const document = readFileSync(path.join(process.cwd(), REGISTRY_PATH), 'utf8');
+    const read = toDirectWriteRegistry(document);
+    const registry = read.kind === 'parsed' ? read.registry : {};
+
+    it('is one valid block whose approved stores are exactly the pinned list, which is empty', () => {
+        expect(read.kind).toBe('parsed');
+        expect(validateDirectWriteRegistry(registry)).toEqual([]);
+        expect(toApprovedStoreIds(registry)).toEqual([...APPROVED_DIRECT_WRITE_IDS].toSorted());
+        expect(APPROVED_DIRECT_WRITE_IDS).toEqual([]);
+    });
+
+    it('keeps every transport-direct store under review and says that no entry is approved', () => {
+        const stores = (registry as { readonly stores?: readonly { readonly id: string; readonly review?: { readonly state?: string; }; }[]; }).stores ?? [];
+
+        expect(stores.map((store) => [store.id, store.review?.state])).toEqual([
+            ['alm-inbound-admission', 'under-review'],
+            ['alm-outbound-admission', 'under-review'],
+            ['alm-receipt-record', 'under-review']
+        ]);
+        expect(document.replace(/\s+/gu, ' ')).toContain(
+            'An entry records that a write exists. It is not an approval. No entry in this file is approved.'
+        );
     });
 });
 
