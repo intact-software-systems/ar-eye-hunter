@@ -1,6 +1,5 @@
 import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
 
-import type { AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
 import { toAddresseeReceiptAssertions } from '../alm-conformance-message-commands.ts';
 import { toAddressedSendCommands } from '../alm-conformance-receipt-commands.ts';
 import { toReceivedCommand } from '../alm-conformance-receiver-commands.ts';
@@ -9,9 +8,7 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../alm-conformance-scenario-definition.ts';
-
-/** The server is no RTC peer: an RTC strategy refuses a send addressed to it before admission. */
-const SERVER_COMMAND_CARRIERS: readonly AlmConformanceCarrier[] = ['ws'];
+import { resolveAlmCarrierMatrixCellCarriers } from '../carrier-matrix/resolve-alm-carrier-matrix-cell-carriers.ts';
 
 /**
  * D57 as applied: a `command` addressed to the WS server ends `acknowledged` on the server's own ACK, and the server
@@ -21,7 +18,7 @@ export const serverCommand: AlmConformanceScenarioDefinition = {
     scenarioId: 'server-command',
     scenarioKey: 'server-command',
     tags: FULL_TAGS,
-    carriers: SERVER_COMMAND_CARRIERS,
+    carriers: resolveAlmCarrierMatrixCellCarriers('server-command'),
     roles: ['sender', 'receiver'],
     laneFamily: 'addressed',
     toSenderCommands: toServerCommandSenderCommands,

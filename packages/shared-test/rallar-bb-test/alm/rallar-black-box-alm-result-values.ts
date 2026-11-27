@@ -8,6 +8,7 @@ import type {
     ALDeliveryRefusalReason,
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { BoundedHistogram } from '@shared/measurement/bounded-histogram.ts';
 import type { TransportFaultActedCounts } from '@shared/transport-faults/to-transport-fault-acted-counts.ts';
 
 import type { RallarBlackBoxTestMessagesCarrier } from '../rallar-black-box-test-contracts.ts';
@@ -113,6 +114,11 @@ export interface RallarBlackBoxTestMessagesReceivedResultValue {
     readonly ascending?: boolean;
     /** Present only when the command named `stallMs`: that window, and whether it ended the count before its window. */
     readonly stall?: AlmReceivedStall;
+    /**
+     * Present only when the command named `ageFrom`: absence says no age was asked for, which an empty histogram
+     * would not, so this field stays optional.
+     */
+    readonly sampleAge?: AlmReceivedSampleAge;
     /** Every matched copy in arrival order. */
     readonly received: readonly AlmReceivedMessageIdentity[];
 }
@@ -120,6 +126,19 @@ export interface RallarBlackBoxTestMessagesReceivedResultValue {
 export interface AlmReceivedStall {
     readonly stallMs: number;
     readonly stalled: boolean;
+}
+
+/**
+ * One sample per matched copy: the agent's clock when its event log recorded the copy, less the number the copy's
+ * payload holds at `from`. `ageMs.count + unrecordedSamples` is the number of matched copies.
+ */
+export interface AlmReceivedSampleAge {
+    /** The payload field the command named as `ageFrom`. */
+    readonly from: string;
+    /** On `AL_PUBLICATION_FIGURE_AGE_BOUNDS_MS`, so it compares bucket by bucket with the publication stage's ages. */
+    readonly ageMs: BoundedHistogram;
+    /** Copies with no finite number at `from`, or stamped after they arrived; none is clamped into `ageMs`. */
+    readonly unrecordedSamples: number;
 }
 
 /**

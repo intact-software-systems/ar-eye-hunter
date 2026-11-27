@@ -7,6 +7,7 @@ import type {
 import { isJsonRecordValue } from '../../schema/json-schema-validation.ts';
 import type {
     AlmReceivedMessageIdentity,
+    AlmReceivedSampleAge,
     RallarBlackBoxTestMessagesReceivedResultValue
 } from '../rallar-black-box-alm-result-values.ts';
 
@@ -15,13 +16,15 @@ interface AlmReceivedOutcomeInput {
     readonly received: readonly AlmReceivedMessageIdentity[];
     /** `undefined` when the command claims no order. */
     readonly ascending: boolean | undefined;
+    /** `undefined` when the command reads no age. A reading, not a claim: it never fails the count. */
+    readonly sampleAge: AlmReceivedSampleAge | undefined;
     readonly stalled: boolean;
     /** The runtime status a passed count leaves in place. */
     readonly currentStatus: RallarBlackBoxTestRuntimeStatus;
 }
 
 /** The count's outcome, and the fixed-size summary its diagnostic carries in place of the unbounded copy list. */
-interface AlmReceivedJudgement {
+export interface AlmReceivedJudgement {
     readonly outcome: RallarBlackBoxTestCommandOutcome;
     readonly summary: Omit<RallarBlackBoxTestMessagesReceivedResultValue, 'received'>;
 }
@@ -63,7 +66,8 @@ export function toAlmReceivedOutcome(input: AlmReceivedOutcomeInput): AlmReceive
         observed,
         absent,
         ...(input.ascending === undefined ? {} : { ascending: input.ascending }),
-        ...(command.stallMs === undefined ? {} : { stall: { stallMs: command.stallMs, stalled } })
+        ...(command.stallMs === undefined ? {} : { stall: { stallMs: command.stallMs, stalled } }),
+        ...(input.sampleAge === undefined ? {} : { sampleAge: input.sampleAge })
     };
     const value: RallarBlackBoxTestMessagesReceivedResultValue = { ...summary, received: input.received };
     const outcome: RallarBlackBoxTestCommandOutcome = counted && input.ascending !== false

@@ -672,10 +672,14 @@ and it has no status list.
   TypeScript; D642 folds only the identical TypeScript copies into
   `packages/shared/measurement`. They fold when those scripts become
   TypeScript.
-- Delivered sample age is measured from application payload timestamps in the
-  workload family, not by ALM (D642): a receiver cannot compute it from the
-  envelope, which carries only `expiresAtMs`
-  (`packages/shared/al-contracts/al-contract.ts`).
+- Delivered sample age is read by the harness from an application payload
+  timestamp (`messages.received` with `ageFrom`), not by ALM (D642): a receiver
+  cannot compute it from the envelope, which carries only `expiresAtMs`
+  (`packages/shared/al-contracts/al-contract.ts`). Each sample is the difference
+  of two agents' clocks, so between machines it holds their clock offset, which
+  nothing measures. On one machine that offset is zero; a hosted rung of the
+  publication workload family needs it measured before its ages read as
+  latency.
 - No lane cell asserts the congestion episode figure (D665): the `congestion` scenario cells read the action
   counters only. A cell that holds a carrier backpressured, releases it and reads
   `stats.rallar.alm.congestionEpisodes` needs the delta operator the paced cells also lack, or an invariant such
@@ -705,8 +709,42 @@ and it has no status list.
 - A lane cell cannot assert a difference of two stats reads (no delta
   operator), so the paced cells assert connect-wide invariants; per-cell figure
   counts need one (D652).
-- The bounded histogram has no quantile reader and no merge; the workload
-  family adds them with its first reader (D650).
+- The bounded histogram has no merge (D650): `computeBoundedHistogramQuantile`
+  reads one histogram, so the publication workload family reports each
+  subscriber's delivered sample age on its own. A figure across subscribers or
+  across runs needs the merge; its first reader adds it.
+- Two functions named `decodeLoopResultValue` guard a loop's result value by
+  different fields: the private one in
+  `packages/shared-test/rallar-bb-test/runtime/to-runtime-stats.ts` (a string
+  `commandId` and any `pacing`) and the exported one in
+  `packages/shared-test/rallar-bb-test/distributed-run-observation/decode-composite-result-values.ts`
+  (a `results` array and numeric `iterations` and `childResultCount`). Each
+  then casts the whole value, so a field neither checked is trusted. The
+  publication workload family's figures decode the loop fields they read
+  themselves. One decoder that names each bad field would serve all three; it
+  waits on a change to either reader.
+- `multicastDeliveryPlan` in
+  `packages/shared-test/rallar-bb-test/fixtures/rtc-multicast-recipes.ts` sets
+  a receiver's delivery threshold to
+  `Math.floor(expectedInboundMessages * minReceiveRatio)`. The floor is under
+  the ratio whenever the product is not whole. A float product can also land
+  under the whole number it stands for (100 x 0.57 is 56.99999999999999), and
+  the floor is then one message short where the product is whole. The
+  publication workload family takes the smallest count whose share reaches
+  the ratio (`computePublicationWorkloadPlan`). The multicast manifests are
+  built from this plan; it waits on the next change to those recipes.
+- The scale family still writes a role's command prefix itself in four files
+  under `packages/shared-test/rallar-bb-test/conformance/alm/`, where
+  `toAlmCohortCommandPrefix` (`cohort/to-alm-cohort-command-prefix.ts`) now
+  owns the formula: as the literal `` `alm-scale-${role}` `` in
+  `scale/create-alm-scale-recipes.ts`, `scale/create-alm-scale-acceptance.ts`
+  and `scale/create-alm-scale-workload-commands.ts`, and as its two results
+  written out, `'alm-scale-director'` and `'alm-scale-player'`, in the last
+  two of those and in `scale/create-alm-scale-arrival-commands.ts`. Only
+  `scale/create-alm-scale-setup-commands.ts` calls the owner. Calling it in
+  the others changes no command id, which
+  `apps/rallar-black-box/scripts/write-hetzner-distributed-manifests.ts --check`
+  shows; it waits on the next change to those files.
 - The local baseline's median command time is not a regression figure, even as the median of several runs per
   side (D664): of five comparisons of one commit with itself, three read outside the band (five runs per side: 77
   against 89 ms and 80 against 89 ms; ten per side: 83 against 71 ms), on a machine that ran other work: one of the

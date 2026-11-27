@@ -1,3 +1,4 @@
+import { decodeViewInvalidation } from '@shared/api/views/view-invalidation.ts';
 import { expect, it } from 'vitest';
 import { createRetentionDatabaseFixture, RETENTION_REF } from '../group-state/retention/group-retention-database-fixture.ts';
 import { createRoomEvent } from '@shared/api/room-events/room-event.ts';
@@ -14,13 +15,15 @@ it('commits an event once across competing creators and keeps its courts scoped 
             command: {action: 'create', courts: [{groupId: 'court', capacity: 2}], closesAt: fixture.nowEpochMs + 120_000} });
         const publication = repository.prepare(before, event, [], {
             serviceId: 'rallar', traceId: 'trace', createdAtEpochMs: fixture.nowEpochMs, retentionMs: 60_000,
-            audience: ['owner']
+            audience: ['owner','guest']
         });
         await fixture.storage.sql.begin(tx => writeGuardedViewPublication(tx, publication));
         await expect(fixture.storage.sql.begin(tx => writeGuardedViewPublication(tx, publication))).rejects.toThrow();
         expect((await repository.read(RETENTION_REF))?.value).toEqual(event);
         expect(await repository.read({ ...RETENTION_REF, applicationId: 'other' })).toBeNull();
-        expect(publication.outbox.length).toBeGreaterThan(0);
+        const rows = await fixture.storage.sql<{ ri_resource: string }[]>`select ri_resource from resource_inbox where ri_topic_id = 'view.invalidated'`;
+        const notices = rows.map(row => decodeViewInvalidation(JSON.parse(JSON.parse(row.ri_resource).payload.resource)));
+        expect(notices.filter(n => n.resource === 'room-event-organizer').map(n => n.principalId)).toEqual(['owner']);
     }
     finally { await fixture.storage.close(); }
 });

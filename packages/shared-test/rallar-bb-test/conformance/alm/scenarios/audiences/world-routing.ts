@@ -1,11 +1,9 @@
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
-import { ALM_CONFORMANCE_CARRIERS } from '../../alm-conformance-carriers.ts';
 import {
     toAdmissionCommands,
     toSendCommand,
-    toVerdictCommands,
-    type AlmConformanceVerdictFact
+    toVerdictCommands
 } from '../../alm-conformance-message-commands.ts';
 import { toAudiencePayload, toSelfAbsenceCommand } from '../../alm-conformance-receipt-commands.ts';
 import { toReceivedCommand, toSingleArrivalReceiverCommands } from '../../alm-conformance-receiver-commands.ts';
@@ -15,36 +13,32 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
-import { toRtcRefusalFacts } from '../../to-rtc-refusal-facts.ts';
+import { ALM_CARRIER_MATRIX } from '../../carrier-matrix/alm-carrier-matrix.ts';
+import { resolveAlmCarrierMatrixCellCarriers } from '../../carrier-matrix/resolve-alm-carrier-matrix-cell-carriers.ts';
+import { toAlmCarrierOutcomeFacts } from '../../carrier-matrix/to-alm-carrier-outcome-facts.ts';
 
-/**
- * A strategy that allows WS sends a world send there at once: one WS attempt and no hand-over from an RTC leg. An
- * exclusive send takes the same route.
- */
-export const WS_ROUTE_FACTS: readonly AlmConformanceVerdictFact[] = [
-    ['one-attempt', 'attempts', 'equals', 1],
-    ['ws-attempt', 'attemptCarriers.0', 'equals', 'ws'],
-    ['no-fallback', 'carrierFallback', 'exists', false]
-];
+/** What the world send comes to on each carrier, which decides the sender's verdict and whether anybody receives it. */
+const WORLD_BROADCAST_CELLS = ALM_CARRIER_MATRIX['world-broadcast'].cells;
 
 /**
  * The sender addresses its authenticated scope on an `app.` topic of its own. Over `ws` the server delivers the send to
  * every other live session of the scope, which in the lane are the room's other two sessions; over `rtc` the carrier
  * refuses it `unsupported` and the handle ends rejected, so nobody receives it; over `rtc-with-ws-fallback` the browser
- * routes it to WS at once. On every carrier the sender's own channel never receives it. The lane's scope holds the room's
- * sessions alone, so the proof that a world send is bound to the sender's authenticated scope lives in the server tests.
+ * routes it to WS at once: one WS attempt and no hand-over from an RTC leg. On every carrier the sender's own channel
+ * never receives it. The lane's scope holds the room's sessions alone, so the proof that a world send is bound to the
+ * sender's authenticated scope lives in the server tests.
  */
 export const worldRouting: AlmConformanceScenarioDefinition = {
     scenarioId: 'world-routing',
     scenarioKey: 'world-routing',
     tags: FULL_TAGS,
-    carriers: ALM_CONFORMANCE_CARRIERS,
+    carriers: resolveAlmCarrierMatrixCellCarriers('world-routing'),
     roles: ALM_CONFORMANCE_SAME_PRINCIPAL_ROLES,
     laneFamily: 'same-principal',
     topic: 'world',
     toSenderCommands: toWorldSenderCommands,
     toRecipientCommands: (recipient) =>
-        recipient.input.carrier === 'rtc'
+        WORLD_BROADCAST_CELLS[recipient.input.carrier].outcome.kind === 'refused'
             ? [toReceivedCommand({ ...recipient, index: 1, count: 1, absent: true })]
             : toSingleArrivalReceiverCommands(recipient)
 };
@@ -60,12 +54,13 @@ function toWorldSenderCommands(sender: AlmConformanceStepInput): readonly Rallar
 }
 
 function toWorldVerdictCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
-    switch (sender.input.carrier) {
-        case 'ws':
+    const outcome = WORLD_BROADCAST_CELLS[sender.input.carrier].outcome;
+    switch (outcome.kind) {
+        case 'delivered':
             return toAdmissionCommands({ ...sender, index: 1 });
-        case 'rtc':
-            return toVerdictCommands(sender, 'rejected', toRtcRefusalFacts('unsupported'));
-        case 'rtc-with-ws-fallback':
-            return toVerdictCommands(sender, 'transport-accepted', WS_ROUTE_FACTS);
+        case 'refused':
+            return toVerdictCommands(sender, 'rejected', toAlmCarrierOutcomeFacts(outcome));
+        case 'handed-to-ws':
+            return toVerdictCommands(sender, 'transport-accepted', toAlmCarrierOutcomeFacts(outcome));
     }
 }
