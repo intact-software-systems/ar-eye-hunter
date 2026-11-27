@@ -18,7 +18,7 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { putAuthorisedWsTestTicket } from '../../client-state/authorised-ws-test-ticket.ts';
 import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from '../../client-state/client-state-test-runtime.ts';
-import { TEST_WS_CONNECTION_HOLDER_ID } from '../../client-state/connection-holder/test-support/test-ws-connection-holder.ts';
+import { LIVE_WS_CONNECTION_HOLDER_LEASES, TEST_WS_CONNECTION_HOLDER_ID } from '../../client-state/connection-holder/test-support/test-ws-connection-holder.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../client-state/test-disconnected-session-retention.ts';
 import { TestResourceInbox, TestResourceInboxResults } from './app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase, type AppInboxTestDatabase } from './app-inbox-test-database.ts';
@@ -182,7 +182,7 @@ function installWsCloseReader(
     };
     return {
         client: new AppClientInboxService(
-            { ...shared, clientStateService: dependencies.clientState },
+            { ...shared, clientStateService: dependencies.clientState, holderLeases: LIVE_WS_CONNECTION_HOLDER_LEASES },
             {
                 finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 serviceId: 'server-12345678',

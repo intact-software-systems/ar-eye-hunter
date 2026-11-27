@@ -13,6 +13,7 @@ import {
     type ClientStateServiceDependencies
 } from './client-state-service-contracts.ts';
 import { createTimedClientStateService } from './client-state-service-timing.ts';
+import { createWsConnectionHolderRecordReader } from './connection-holder/ws-connection-holder-record-reader.ts';
 import type { ClientMutationCommand } from './mutation/client-mutation-contracts.ts';
 import {
     readAuthorisedWsConnectMutation,
@@ -44,6 +45,7 @@ export function createClientStateService(
     });
     const service: ClientStateService = {
         sessionGenerationLifecycle: createWsSessionGenerationLifecycleService(runtimeRepository),
+        connectionHolders: createWsConnectionHolderRecordReader({ repository: runtimeRepository, nowMs }),
         listSnapshots: async (scope) => await repositoryFor(runtimeRepository).listSnapshots(scope),
         readSnapshot: async (ref) => await repositoryFor(runtimeRepository).readSnapshot(ref),
         readPresenceSnapshot: async (ref) => await repositoryFor(runtimeRepository).readPresenceSnapshot(ref),

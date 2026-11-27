@@ -47,6 +47,11 @@ import {
     type ClientExpiredSessionPageInput,
     type ClientStateWritten
 } from '../client-state-service-contracts.ts';
+import type { WsConnectionHolderLease } from '../connection-holder/ws-connection-holder-lease.ts';
+import {
+    computeWsConnectionHolderRecorded,
+    type WsConnectionHolderRecordEntry
+} from '../connection-holder/ws-connection-holder-record.ts';
 import type {
     ClientMutationCommand,
     ClientMutationComputed,
@@ -108,6 +113,8 @@ export type AuthorisedWsConnectOperationComputed =
 
 export interface InactiveAuthorisedWsConnectComputed {
     readonly outcome: 'inactive';
+    /** Why the connect writes no presence; the durable result does not carry it. */
+    readonly reason: 'generation-closed' | 'holder-lease-lost';
     readonly ticketConsumption: AuthWsTicketConsumption;
     readonly durableResult: InactiveAuthorisedWsSessionResult;
     readonly completion: AppInboxCompletionComputed<InactiveAuthorisedWsSessionResult>;
@@ -170,6 +177,9 @@ export interface ComputeAuthorisedWsConnectOperationInput {
     readonly read: ClientMutationRead;
     readonly lifecycleFacts: WsSessionGenerationFacts;
     readonly lifecycleRead: WsSessionGenerationLifecycleRead;
+    readonly holderId: string;
+    readonly holderLease: WsConnectionHolderLease;
+    readonly holderRead: WsConnectionHolderRecordEntry | null;
     readonly completionFacts: AppInboxCompletionFacts;
 }
 
@@ -181,6 +191,9 @@ interface AssertAuthorisedWsConnectOperationInput {
     readonly read: ClientMutationRead;
     readonly lifecycleFacts: WsSessionGenerationFacts;
     readonly lifecycleRead: WsSessionGenerationLifecycleRead;
+    readonly holderId: string;
+    readonly holderLease: WsConnectionHolderLease;
+    readonly holderRead: WsConnectionHolderRecordEntry | null;
     readonly completionFacts: AppInboxCompletionFacts;
     readonly computed: AuthorisedWsConnectOperationComputed;
 }
@@ -272,8 +285,19 @@ export function computeAuthorisedWsConnectOperation(
     }
     const ticketConsumption = computeAuthWsTicketConsumption(input.ticketRead);
     if (isWsSessionGenerationClosed(input.lifecycleFacts, input.lifecycleRead)) {
-        return computeInactiveConnect(input, ticketConsumption);
+        return computeInactiveConnect(input, { reason: 'generation-closed', ticketConsumption });
     }
+    if (!isHolderLeaseLive(input)) {
+        return computeInactiveConnect(input, { reason: 'holder-lease-lost', ticketConsumption });
+    }
+    return computeAcceptedConnect(input, ticketConsumption);
+}
+
+/** A connect whose ticket, generation and holder all admit it: its mutation and every row its batch writes. */
+function computeAcceptedConnect(
+    input: ComputeAuthorisedWsConnectOperationInput,
+    ticketConsumption: AuthWsTicketConsumption
+): AuthorisedWsConnectOperationComputed {
     const mutation = computeClientMutation({ command: input.command, read: input.read });
     if (mutation.outcome === 'idempotency-conflict') {
         return { outcome: 'idempotency-conflict', mutation };
@@ -300,6 +324,12 @@ export function computeAuthorisedWsConnectOperation(
         runtimeBatch: computeAuthorisedWsConnectRuntimeBatch({
             ticketConsumption,
             lifecycleComputed,
+            holderRecorded: computeWsConnectionHolderRecorded({
+                holderId: input.holderId,
+                connection: input.connection,
+                expireAtEpochMs: lifecycleGuardFacts.expireAtEpochMs,
+                current: input.holderRead
+            }),
             writes
         })
     };
@@ -324,7 +354,7 @@ function computeTicketRejectedConnect(
 
 function computeInactiveConnect(
     input: ComputeAuthorisedWsConnectOperationInput,
-    ticketConsumption: AuthWsTicketConsumption
+    inactive: Pick<InactiveAuthorisedWsConnectComputed, 'reason' | 'ticketConsumption'>
 ): InactiveAuthorisedWsConnectComputed {
     const durableResult = {
         status: 'inactive',
@@ -333,10 +363,19 @@ function computeInactiveConnect(
     } as const;
     return {
         outcome: 'inactive',
-        ticketConsumption,
+        reason: inactive.reason,
+        ticketConsumption: inactive.ticketConsumption,
         durableResult,
         completion: computeCompletion(input.completionFacts, durableResult)
     };
+}
+
+/** A connect names a holder that must still hold its lease, so that a survivor can end what it holds. */
+function isHolderLeaseLive(input: ComputeAuthorisedWsConnectOperationInput): boolean {
+    if (input.holderLease.holderId !== input.holderId) {
+        throw new TypeError('Authorised WebSocket connect read another holder\'s lease');
+    }
+    return input.holderLease.live;
 }
 
 export function assertAuthorisedWsConnectOperation(

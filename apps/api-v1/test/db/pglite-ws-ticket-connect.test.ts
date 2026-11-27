@@ -12,6 +12,7 @@ import { createClientStateService } from '@shared-server/rallar-system/client-st
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
+import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-delivery-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -24,6 +25,7 @@ import { putAuthorisedWsTestTicket } from '../../../../packages/tests/shared-ser
 import { TEST_WS_CONNECTION_HOLDER_ID } from '../../../../packages/tests/shared-server/rallar-system/client-state/connection-holder/test-support/test-ws-connection-holder.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/client-state/test-disconnected-session-retention.ts';
 import { TestWebSocket } from '../../../../packages/tests/shared/websocket/test-web-socket.ts';
+import { createApiV1WsConnectionHolderLeases } from '../../src/composition/create-api-v1-ws-connection-holder-leases.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { registerWsRoutes } from '../../src/routes/ws-routes.ts';
 import { releaseAuthorisedWsCloseFacts } from '../../src/runtime/rtc-topology/authorised-ws-connection-registry.ts';
@@ -60,10 +62,17 @@ interface QueuedRow {
     readonly status: string;
 }
 
+/** The fixture's process holds its liveness lease for `holderLeaseMs`, through the production stream registration. */
 async function createWsConnectFixture(
     sql: PGliteSql,
-    upgrade: () => void = () => undefined
+    upgrade: () => void = () => undefined,
+    holderLeaseMs = 30_000
 ): Promise<WsConnectFixture> {
+    const registered = await new PSqlRtcTopologyDeliveryRepository(sql).registerStream({
+        streamId: TEST_WS_CONNECTION_HOLDER_ID,
+        leaseDurationMs: holderLeaseMs
+    });
+    assert.equal(registered.status, 'registered');
     const runtime = new PSqlRuntimeStateRepository(sql);
     const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date());
     const results = new ResourceInboxResultsRepository(sql);
@@ -82,7 +91,8 @@ async function createWsConnectFixture(
             runtimeRepository: runtime,
             clientStateEventStore: events,
             serviceId: 'ws-ticket-connect'
-        })
+        }),
+        holderLeases: createApiV1WsConnectionHolderLeases(sql)
     }, {
         finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         serviceId: 'ws-ticket-connect',
@@ -211,6 +221,26 @@ test('a WebSocket connect consumes its ticket in its own transaction: one lane i
         assert.ok(statements < 46, `the connect issued ${statements} statements`);
         console.info(`WebSocket connect statements per player: ${statements}`);
         releaseRegisteredFacts(fixture);
+    });
+});
+
+test('an upgrade whose process no longer holds its liveness lease is answered 409, upgrades nothing and spends its ticket', async () => {
+    await withPGliteSql(async (sql) => {
+        const fixture = await createWsConnectFixture(sql, () => undefined, 1);
+        const ticketDigest = await putAuthorisedWsTestTicket(fixture.sessions, SESSION, 'player-ticket');
+        await new Promise((resolve) => setTimeout(resolve, 20));
+
+        const response = await requestUpgrade(fixture, 'player-ticket');
+
+        assert.equal(response.status, 409);
+        assert.deepEqual(await response.json(), { error: 'WebSocket generation is no longer active' });
+        assert.deepEqual(fixture.upgradedSockets, []);
+        assert.deepEqual(await readQueuedRows(sql), [{ type: 'CLIENT_AUTHORISED_WS_CONNECT', status: 'COMPLETED' }]);
+        assert.deepEqual(await fixture.sessions.readWebSocketTicketByDigestEntry(ticketDigest), {
+            value: undefined,
+            expiredEntry: undefined
+        });
+        assert.deepEqual(await readActiveSessionIds(fixture), []);
     });
 });
 

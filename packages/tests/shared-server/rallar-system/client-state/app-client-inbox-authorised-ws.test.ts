@@ -6,6 +6,9 @@ import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persist
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { ClientMutationWritten, ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
+import type { WsConnectionHolderLeaseReader } from '@shared-server/rallar-system/client-state/connection-holder/ws-connection-holder-lease.ts';
+import { createWsConnectionHolderRecordReader } from '@shared-server/rallar-system/client-state/connection-holder/ws-connection-holder-record-reader.ts';
+import type { ClientAuthorisedWsSessionConnectAppInboxPayload } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import {
     toAuthorisedWsClientConnectEnqueue,
@@ -16,6 +19,8 @@ import {
     decodeAuthorisedWsClientMutationResult,
     type AuthorisedWsClientMutationResult
 } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-result-codec.ts';
+import { CLIENT_STATE_SESSIONS_NAMESPACE } from '@shared-server/rallar-system/client-state/persistence/client-state-runtime-namespaces.ts';
+import { WS_SESSION_CLOSE_HIGH_WATER_NAMESPACE } from '@shared-server/rallar-system/websocket/ws-session-generation-computation.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { AuditStamp, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -32,13 +37,17 @@ import { readCompletedAppInboxResult } from '../app-inbox/test-support/read-comp
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { putAuthorisedWsTestTicket } from './authorised-ws-test-ticket.ts';
 import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from './client-state-test-runtime.ts';
-import { TEST_WS_CONNECTION_HOLDER_ID } from './connection-holder/test-support/test-ws-connection-holder.ts';
+import {
+    LIVE_WS_CONNECTION_HOLDER_LEASES,
+    TEST_WS_CONNECTION_HOLDER_ID
+} from './connection-holder/test-support/test-ws-connection-holder.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 const CONNECT_TRACE_ID = 'trace-app-client-inbox-authorised-ws';
 
 const SERVICE_ID = 'server-12345678';
 const HOLDER_ID = '00000000-0000-4000-8000-0000000000a1';
+const OTHER_HOLDER_ID = '00000000-0000-4000-8000-0000000000b2';
 const AUDIENCE_SCOPE = { applicationId: 'ar-eye-hunter', workspaceId: 'default' } as const;
 
 const groupSnapshotValidationCounts = vi.hoisted(() => new Map<string, number>());
@@ -163,6 +172,115 @@ it('consumes the upgrade ticket in the connect transaction so a replayed ticket 
         serviceId: SERVICE_ID
     }).readSnapshot({ applicationId: DEFAULT_STATE_APPLICATION_ID, workspaceId: DEFAULT_STATE_WORKSPACE_ID, principalId: 'alice' });
     expect(snapshot?.activeSessions).toHaveLength(1);
+});
+
+it('records a completed connect under the holder its command names, and under no other', async () => {
+    const queue = new TestResourceInbox();
+    const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
+    const results = new TestResourceInboxResults();
+    const authSession = issuedSession('alice', 'alice-ws-session');
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    const authSessions = new AuthSessionRepository(runtimeRepository);
+    await authSessions.putSession(authSession);
+    const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
+    const service = createAuthorisedWsService({ database, queue, reader, results, runtimeRepository });
+    const connectInput = { authSession, generationId: 'generation-recorded', input: AUDIENCE_SCOPE } as const;
+
+    const connected = await connectAuthorisedWs({ queue, reader, service }, {
+        ...connectInput,
+        ticketDigest: await putAuthorisedWsTestTicket(authSessions, authSession)
+    });
+
+    expect(connected.right?.status).toBe('ok');
+    expect(await readHeldConnections(runtimeRepository, TEST_WS_CONNECTION_HOLDER_ID)).toEqual([
+        toAuthorisedWsClientConnection(connectInput)
+    ]);
+    expect(await readHeldConnections(runtimeRepository, OTHER_HOLDER_ID)).toEqual([]);
+});
+
+it('records the enqueuing process as holder when another server\'s worker runs the connect', async () => {
+    const queue = new TestResourceInbox();
+    const enqueuingReader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
+    const workerReader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
+    const results = new TestResourceInboxResults();
+    const authSession = issuedSession('alice', 'alice-ws-session');
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    const authSessions = new AuthSessionRepository(runtimeRepository);
+    await authSessions.putSession(authSession);
+    const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
+    const enqueuing = createAuthorisedWsService({ database, queue, reader: enqueuingReader, results, runtimeRepository });
+    createAuthorisedWsService({ database, queue, reader: workerReader, results, runtimeRepository, serviceId: 'server-87654321' });
+
+    const pending = enqueuing.writeAuthorisedWsClientConnect({
+        authSession,
+        generationId: 'generation-elsewhere',
+        ticketDigest: await putAuthorisedWsTestTicket(authSessions, authSession),
+        holderId: TEST_WS_CONNECTION_HOLDER_ID,
+        traceId: CONNECT_TRACE_ID
+    });
+    await queue.waitForEntryCount(1);
+    const [connected] = await drainUntilSettled(workerReader, [pending]);
+
+    expect(connected?.right?.status).toBe('ok');
+    expect((await readHeldConnections(runtimeRepository, TEST_WS_CONNECTION_HOLDER_ID)).map((connection) => connection.generationId))
+        .toEqual(['generation-elsewhere']);
+    expect(await readHeldConnections(runtimeRepository, OTHER_HOLDER_ID)).toEqual([]);
+});
+
+it('answers a connect whose holder holds no live lease inactive, spending its ticket and writing no presence', async () => {
+    const queue = new TestResourceInbox();
+    const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
+    const results = new TestResourceInboxResults();
+    const authSession = issuedSession('alice', 'alice-ws-session');
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    const authSessions = new AuthSessionRepository(runtimeRepository);
+    await authSessions.putSession(authSession);
+    const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
+    const holderLeases: WsConnectionHolderLeaseReader = {
+        readHolderLease: async (holderId) => ({ holderId, live: false })
+    };
+    const service = createAuthorisedWsService({ database, queue, reader, results, runtimeRepository, holderLeases });
+    const ticketDigest = await putAuthorisedWsTestTicket(authSessions, authSession);
+
+    const fenced = await connectAuthorisedWs({ queue, reader, service }, { authSession, generationId: 'generation-fenced', ticketDigest });
+    const again = await connectAuthorisedWs({ queue, reader, service }, { authSession, generationId: 'generation-again', ticketDigest });
+
+    expect(fenced.right?.status).toBe('inactive');
+    expect(again.right?.status).toBe('ticket-rejected');
+    expect(await runtimeRepository.findAllEntries(CLIENT_STATE_SESSIONS_NAMESPACE)).toEqual([]);
+    expect(await runtimeRepository.findAllEntries(WS_SESSION_CLOSE_HIGH_WATER_NAMESPACE)).toEqual([]);
+    expect(await readHeldConnections(runtimeRepository, TEST_WS_CONNECTION_HOLDER_ID)).toEqual([]);
+});
+
+it('records the holder of every completed connect, also one that leaves a later generation in place', async () => {
+    const queue = new TestResourceInbox();
+    const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
+    const results = new TestResourceInboxResults();
+    const authSession = issuedSession('alice', 'alice-ws-session');
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    const authSessions = new AuthSessionRepository(runtimeRepository);
+    await authSessions.putSession(authSession);
+    const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
+    const service = createAuthorisedWsService({ database, queue, reader, results, runtimeRepository });
+    const now = Date.now();
+
+    const later = await connectAuthorisedWs({ queue, reader, service }, {
+        authSession,
+        generationId: 'generation-later',
+        ticketDigest: await putAuthorisedWsTestTicket(authSessions, authSession, 'later-ticket'),
+        input: { ...AUDIENCE_SCOPE, connectedAtEpochMs: now }
+    });
+    const earlier = await connectAuthorisedWs({ queue, reader, service }, {
+        authSession,
+        generationId: 'generation-earlier',
+        ticketDigest: await putAuthorisedWsTestTicket(authSessions, authSession, 'earlier-ticket'),
+        input: { ...AUDIENCE_SCOPE, connectedAtEpochMs: now - 10_000 }
+    });
+
+    expect([later.right?.status, earlier.right?.status]).toEqual(['ok', 'ok']);
+    expect(requireRightSnapshot(earlier).activeSessions.map((session) => session.generationId)).toEqual(['generation-later']);
+    expect((await readHeldConnections(runtimeRepository, TEST_WS_CONNECTION_HOLDER_ID)).map((connection) => connection.generationId))
+        .toEqual(['generation-earlier', 'generation-later']);
 });
 
 it('validates each audience group snapshot once, where the connect read assembles it', async () => {
@@ -483,9 +601,13 @@ interface CreateAuthorisedWsServiceInput {
     readonly reader: InboxQueueReader;
     readonly results: TestResourceInboxResults;
     readonly runtimeRepository: FakeRuntimeStateRepository;
+    /** Omitted when the test is not about the fence: every holder then reads live. */
+    readonly holderLeases?: WsConnectionHolderLeaseReader;
+    readonly serviceId?: string;
 }
 
 function createAuthorisedWsService(input: CreateAuthorisedWsServiceInput): AppClientInboxService {
+    const serviceId = input.serviceId ?? SERVICE_ID;
     return new AppClientInboxService(
         {
             inboxQueueReader: input.reader,
@@ -495,16 +617,26 @@ function createAuthorisedWsService(input: CreateAuthorisedWsServiceInput): AppCl
             clientStateService: createClientStateService({
                 runtimeRepository: input.runtimeRepository,
                 clientStateEventStore: input.database.clientEventStore,
-                serviceId: SERVICE_ID
-            })
+                serviceId
+            }),
+            holderLeases: input.holderLeases ?? LIVE_WS_CONNECTION_HOLDER_LEASES
         },
         {
             finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
-            serviceId: SERVICE_ID,
+            serviceId,
             wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
             disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
         }
     );
+}
+
+async function readHeldConnections(
+    runtimeRepository: FakeRuntimeStateRepository,
+    holderId: string
+): Promise<readonly ClientAuthorisedWsSessionConnectAppInboxPayload[]> {
+    const page = await createWsConnectionHolderRecordReader({ repository: runtimeRepository, nowMs: Date.now })
+        .readHolderPage({ holderId, afterKey: null, limit: 100 });
+    return page.records.map((entry) => entry.record.connection);
 }
 
 function requireRightSnapshot(

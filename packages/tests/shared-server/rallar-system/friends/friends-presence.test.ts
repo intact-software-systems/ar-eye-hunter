@@ -36,6 +36,7 @@ import { expect, it, vi } from 'vitest';
 import { createResourceInboxTestStorage, type ResourceInboxTestStorage } from '../../queuebox/resource-inbox-test-storage.ts';
 import { createAppInboxTestResilience } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from '../client-state/client-state-test-runtime.ts';
+import { LIVE_WS_CONNECTION_HOLDER_LEASES } from '../client-state/connection-holder/test-support/test-ws-connection-holder.ts';
 import {
     createRuntime,
     ref,
@@ -456,7 +457,8 @@ function createExpiryInbox(storage: ResourceInboxTestStorage, test: FriendsPrese
         resourceInboxRepository: entries.entries,
         resourceInboxResultsRepository: new ResourceInboxResultsRepository(storage.sql),
         database: storage.sql,
-        clientStateService: test.clients
+        clientStateService: test.clients,
+        holderLeases: LIVE_WS_CONNECTION_HOLDER_LEASES
     }, {
         serviceId: 'friends-presence-test',
         wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,

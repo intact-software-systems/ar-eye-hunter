@@ -15,6 +15,7 @@ import type { ConnectGroupPresenceSessionRequest, StateScope } from '@shared/api
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 
+import { TEST_WS_CONNECTION_HOLDER_ID } from '../client-state/connection-holder/test-support/test-ws-connection-holder.ts';
 import {
     delayEntry,
     groupPresenceFacts,
@@ -80,6 +81,8 @@ describe('AppInbox websocket close convergence', () => {
             )?.activeSessions ?? []
         ).toEqual([]);
 
+        expect(await readHeldGenerations(harness)).toEqual([]);
+
         await releaseEntry(harness.queue, connectEntry);
         await processNext(harness.reader);
         expect(
@@ -90,6 +93,7 @@ describe('AppInbox websocket close convergence', () => {
                 })
             )?.activeSessions ?? []
         ).toEqual([]);
+        expect(await readHeldGenerations(harness)).toEqual([]);
     });
 
     it('rolls back a group connect when cleanup commits after its lifecycle read', async () => {
@@ -183,6 +187,7 @@ describe('AppInbox websocket close convergence', () => {
         });
         expect(snapshot?.isOnline ?? false).toBe(false);
         expect(snapshot?.activeSessions ?? []).toEqual([]);
+        expect(await readHeldGenerations(harness)).toEqual([]);
         expect(await queuedTypes(harness.queue)).toContain(
             AppInboxType.CLIENT_AUTHORISED_WS_DISCONNECT
         );
@@ -469,4 +474,14 @@ async function activeGroupSessionCount(
     return (await harness.groups.listAllPresenceSessions()).filter(
         (session) => session.groupId === groupId && session.disconnectedAtEpochMs === null
     ).length;
+}
+
+/** The generations the harness's connects recorded under their holder, as a survivor would page them. */
+async function readHeldGenerations(harness: AppInboxWsCloseHarness): Promise<readonly string[]> {
+    const page = await harness.clientState.connectionHolders.readHolderPage({
+        holderId: TEST_WS_CONNECTION_HOLDER_ID,
+        afterKey: null,
+        limit: 100
+    });
+    return page.records.map((entry) => entry.record.connection.generationId);
 }

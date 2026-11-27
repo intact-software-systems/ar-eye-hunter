@@ -26,6 +26,7 @@ import {
 import { decodeExpiredClientSessionsTestResult } from './client-inbox-test-result-decoding.ts';
 import { createClientStatePhaseTestDriver } from './client-state-test-runtime.ts';
 import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from './client-state-test-runtime.ts';
+import { LIVE_WS_CONNECTION_HOLDER_LEASES } from './connection-holder/test-support/test-ws-connection-holder.ts';
 import { createClientStateServiceFixture } from './create-client-state-service-fixture.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
@@ -56,7 +57,8 @@ it(
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: results,
                 database: database,
-                clientStateService: clientStateService
+                clientStateService: clientStateService,
+                holderLeases: LIVE_WS_CONNECTION_HOLDER_LEASES
             },
             {
                 finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
@@ -101,7 +103,8 @@ it('durably enqueues each client expiry reconciliation tick', async () => {
             resourceInboxRepository: queue,
             resourceInboxResultsRepository: results,
             database: createAppInboxTestDatabase(queue, results),
-            clientStateService: { ...createClientStateServiceFixture(), readExpiredSessionPage }
+            clientStateService: { ...createClientStateServiceFixture(), readExpiredSessionPage },
+            holderLeases: LIVE_WS_CONNECTION_HOLDER_LEASES
         },
         {
             finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,

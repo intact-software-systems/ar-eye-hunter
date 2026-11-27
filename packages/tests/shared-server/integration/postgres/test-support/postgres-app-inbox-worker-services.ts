@@ -33,6 +33,7 @@ import type {
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
+import type { WsConnectionHolderLeaseReader } from '@shared-server/rallar-system/client-state/connection-holder/ws-connection-holder-lease.ts';
 import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from '../../../rallar-system/client-state/client-state-test-runtime.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../rallar-system/client-state/test-disconnected-session-retention.ts';
 import type {
@@ -54,6 +55,7 @@ export interface CreatePostgresAppInboxWorkerServicesInput {
     /** Told of every row a standing flight takes; undefined without one. */
     readonly flightEntryListener: InboxQueueReader.FlightEntryListener | undefined;
     readonly beforeTopologyConfigRead?: (primitive: TopologyReadBarrierPrimitive) => Promise<void>;
+    readonly holderLeases: WsConnectionHolderLeaseReader;
     readonly trace: PostgresAppInboxWorkerTrace;
 }
 
@@ -110,7 +112,7 @@ export function createPostgresAppInboxWorkerServices(
         options: inboxOptions
     };
     const client = new AppClientInboxService(
-        { ...inboxDependencies, clientStateService: clientState },
+        { ...inboxDependencies, clientStateService: clientState, holderLeases: input.holderLeases },
         {
             ...handlerOptions,
             wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,

@@ -87,6 +87,7 @@ import {
     createApiMutationInboxFactories,
     type ApiMutationInboxFactories
 } from '../services/create-api-mutation-inbox-factories.ts';
+import { createApiV1WsConnectionHolderLeases } from './create-api-v1-ws-connection-holder-leases.ts';
 
 export interface ApiV1MutationRuntimeResilience {
     readonly inbox: ResourceInboxResilience;
@@ -475,7 +476,8 @@ function createAppClientInboxServiceFactory(
                 resourceInboxRepository: input.resourceInboxRepository.entries,
                 resourceInboxResultsRepository: input.resourceInboxResultsRepository,
                 database: input.database,
-                clientStateService: clientStateService
+                clientStateService: clientStateService,
+                holderLeases: createApiV1WsConnectionHolderLeases(input.database)
             },
             {
                 serviceId: input.serviceId,

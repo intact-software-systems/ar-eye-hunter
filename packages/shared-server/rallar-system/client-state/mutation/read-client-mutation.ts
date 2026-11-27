@@ -37,7 +37,13 @@ import {
 } from '../../websocket/ws-session-generation-computation.ts';
 import { toWsSessionGenerationLifecycleRead } from '../../websocket/ws-session-generation-lifecycle.ts';
 import { timeClientStateReadPhase, type ClientStateMutationTiming } from '../client-state-service-timing.ts';
+import {
+    decodeWsConnectionHolderRecordEntry,
+    toWsConnectionHolderRecordKey,
+    type WsConnectionHolderRecordRef
+} from '../connection-holder/ws-connection-holder-record.ts';
 import { ClientStateRepository } from '../persistence/client-state-repository.ts';
+import { CLIENT_STATE_WS_CONNECTION_HOLDERS_NAMESPACE } from '../persistence/client-state-runtime-namespaces.ts';
 import { ClientMutationRejectedError } from '../validation/client-mutation-rejection.ts';
 import type {
     ClientAuthorisedWsConnectRead,
@@ -108,21 +114,26 @@ export async function readClientMutation(
     return await readClientMutationAudience(input, state, social);
 }
 
-/** The connect's ticket, its session and close high-water join the mutation's own point statement. */
+/** The connect's ticket, its session, close high-water and holder record join the mutation's own point statement. */
 export async function readAuthorisedWsConnectMutation(
     input: ReadAuthorisedWsConnectMutationInput
 ): Promise<ClientAuthorisedWsConnectRead> {
-    const { ticketClaim, lifecycle } = input;
+    const { ticketClaim, lifecycle, holder } = input;
     const { state, authSessions, companions, social } = await timeClientStateReadPhase(
         { timing: input.timing, command: input.command, operation: 'mutation.read-state' },
         () =>
             readClientMutationState(input, {
                 authSessionIds: [ticketClaim.sessionId],
-                selectors: [toWsTicketSelector(ticketClaim), toWsSessionHighWaterSelector(lifecycle)]
+                selectors: [
+                    toWsTicketSelector(ticketClaim),
+                    toWsSessionHighWaterSelector(lifecycle),
+                    toWsConnectionHolderSelector(holder)
+                ]
             })
     );
-    const [ticket, highWater] = companions;
+    const [ticket, highWater, holderRecord] = companions;
     const [storedTicket] = ticket.entries;
+    const [storedHolder] = holderRecord.entries;
     return {
         ticket: {
             ticket: storedTicket ? decodeWebSocketTicketByDigestEntry(ticketClaim.ticketDigest, storedTicket) : null,
@@ -132,6 +143,7 @@ export async function readAuthorisedWsConnectMutation(
             lifecycle,
             highWater.entries[0]?.entry ?? highWater.expiredEntries[0]
         ),
+        holder: storedHolder ? decodeWsConnectionHolderRecordEntry(storedHolder.entry) : null,
         mutation: await readClientMutationAudience(input, state, social)
     };
 }
@@ -302,6 +314,15 @@ function toWsSessionHighWaterSelector(identity: WsSessionHighWaterIdentity): Run
         kind: 'key',
         namespace: WS_SESSION_CLOSE_HIGH_WATER_NAMESPACE,
         key: toWsSessionLifecycleKey(identity)
+    };
+}
+
+function toWsConnectionHolderSelector(ref: WsConnectionHolderRecordRef): RuntimeStateReadBatchSelector {
+    return {
+        selectorId: 'ws-connection-holder',
+        kind: 'key',
+        namespace: CLIENT_STATE_WS_CONNECTION_HOLDERS_NAMESPACE,
+        key: toWsConnectionHolderRecordKey(ref)
     };
 }
 

@@ -38,6 +38,7 @@ import {
 } from '@shared/queuebox/ResourceEntry.ts';
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from './client-state-test-runtime.ts';
+import { TEST_WS_CONNECTION_HOLDER_ID } from './connection-holder/test-support/test-ws-connection-holder.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 export const TEST_SCOPE: StateScope = {
@@ -272,6 +273,9 @@ export function authorisedConnectOperationInput(): ComputeAuthorisedWsConnectOpe
             persistedExpireAtEpochMs: null,
             state: null
         },
+        holderId: TEST_WS_CONNECTION_HOLDER_ID,
+        holderLease: { holderId: TEST_WS_CONNECTION_HOLDER_ID, live: true },
+        holderRead: null,
         completionFacts: { entry: completionEntry(), completedAtEpochMs: 8_000, finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS }
     };
 }

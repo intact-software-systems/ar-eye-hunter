@@ -32,6 +32,7 @@ import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import defaults from '../../resources/configuration/defaults-config.json' with { type: 'json' };
+import { createApiV1WsConnectionHolderLeases } from '../../src/composition/create-api-v1-ws-connection-holder-leases.ts';
 import { toApiV1PostgresClient } from '../../src/db/api-v1-database-lifecycle.ts';
 import {
     createInstrumentedStateWriteSql,
@@ -123,7 +124,8 @@ export function createStateWriteServiceRuntime(input: CreateStateWriteServiceRun
     const client = new AppClientInboxService(
         {
             ...appInboxDependencies,
-            clientStateService: clientState
+            clientStateService: clientState,
+            holderLeases: createApiV1WsConnectionHolderLeases(instrumentedSql)
         },
         {
             serviceId,

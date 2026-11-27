@@ -32,6 +32,7 @@ import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { createAutoAuthorizingClientStateService } from './app-client-inbox-mutation-test-harness.ts';
 import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from './client-state-test-runtime.ts';
+import { LIVE_WS_CONNECTION_HOLDER_LEASES } from './connection-holder/test-support/test-ws-connection-holder.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 const SCOPE: StateScope = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
@@ -87,6 +88,7 @@ export async function createClientMutationTransactionBoundaryFixture(
             computedSnapshots
         }),
         sessionGenerationLifecycle: durable.sessionGenerationLifecycle,
+        holderLeases: LIVE_WS_CONNECTION_HOLDER_LEASES,
         expiryCandidates: durable,
         expiryContinuationWriter: { write: async () => undefined },
         snapshotObserver: {
