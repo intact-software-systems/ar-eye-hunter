@@ -37,7 +37,10 @@ export interface EdgeOrderLags {
     readonly sorted: EdgeOrderSummary | null;
 }
 
-/** The plan's pass rule for a cell (`plans/active/edge-ordered-room-sends.md`, section 2.5). */
+/**
+ * The measurement's pass rule for a cell: every hand-over before its deadline, the sorted p95 within one second, and
+ * the last ten messages no slower than one and a half times the first ten.
+ */
 export interface EdgeOrderPassRule {
     readonly everyHandOverBeforeDeadline: boolean;
     readonly sortedP95WithinLimit: boolean;
@@ -58,7 +61,7 @@ export interface EdgeOrderFigures {
     readonly outOfOrderSharePerRecipient: { readonly min: number; readonly median: number; readonly max: number; };
     /** For each out-of-order arrival: how long after the first later message of its stream it arrived. */
     readonly overtakenByMs: EdgeOrderSummary | null;
-    /** Recipient streams whose first arrival was past position 1: the ones ruling 2's entry window is for. */
+    /** Recipient streams whose first arrival was past position 1: the ones the entry window is for. */
     readonly streamsFirstSeenPastOne: number;
     readonly lagMs: EdgeOrderLags;
     readonly firstTenLagMs: EdgeOrderLags;
@@ -173,7 +176,7 @@ function toShareSpread(shares: readonly number[]): EdgeOrderFigures['outOfOrderS
 
 /**
  * The run's figures: each recipient's arrival order as read, then what the edge-order receiver would have handed
- * its application and when, against the plan's pass rule.
+ * its application and when, against the pass rule.
  */
 export function computeEdgeOrderFigures(records: EdgeOrderRunRecords, settings: EdgeOrderReplaySettings): EdgeOrderFigures {
     const sends = new Map(records.sends.map((send) => [toSendKey(send.publisher, send.position), send]));

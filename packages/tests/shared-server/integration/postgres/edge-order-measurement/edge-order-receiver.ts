@@ -12,7 +12,7 @@ export interface EdgeOrderGap {
 export interface EdgeOrderReceiverInput<Message, Timer> {
     readonly maxHeldPerStream: number;
     readonly maxStreams: number;
-    /** Ruling 2: how long a stream first seen past position 1 waits for earlier messages before it starts. */
+    /** The entry window: how long a stream first seen past position 1 waits for earlier messages before it starts. */
     readonly entryWaitMs: number;
     now(): number;
     setTimer(run: () => void, delayMs: number): Timer;
@@ -39,10 +39,10 @@ interface ReceivedStream<Message, Timer> {
 }
 
 /**
- * The receive side of edge order, as the plan's rulings 1 and 2 state it: one sender's messages are handed over in
- * the sender's order; a missing one is waited for while its sender says it can still arrive, then skipped and
- * reported; a stream first seen past position 1 starts after a short entry window. Measurement code: slice 2 of
- * `plans/active/edge-ordered-room-sends.md` builds the product's own.
+ * The receive side of edge order, as the measurement replays it: one sender's messages are handed over in the
+ * sender's order; a missing one is waited for while its sender says it can still arrive, then skipped and reported;
+ * a stream first seen past position 1 starts after a short entry window. The measurement's own receiver, not the
+ * product's.
  */
 export class EdgeOrderReceiver<Message, Timer> {
     private readonly streams = new Map<string, ReceivedStream<Message, Timer>>();
@@ -118,7 +118,7 @@ export class EdgeOrderReceiver<Message, Timer> {
                 stream.next = lowest.n;
                 continue;
             }
-            // Ruling 1: wait while a missing earlier send can still arrive, never past the held message's own deadline.
+            // The gap rule: wait while a missing earlier send can still arrive, never past the held message's own deadline.
             const waitUntil = Math.min(
                 stream.next === 0 ? stream.enteredAtMs + this.input.entryWaitMs : lowest.w,
                 lowest.expiresAtMs - 1

@@ -29,7 +29,7 @@
     ],
     "owner": "Knut-Helge Vik",
     "command": "DATABASE_URL=postgres://app:app@localhost:5432/<a migrated database of its own> EDGE_ORDER_OUT=<results.jsonl> npm run perf:alm:edge-order-room-sends",
-    "reason": "Delivery evidence for the edge-order plan, not a gate: unordered receipted room sends through three WS server instances on PostgreSQL at +0 and +5 ms statement latency, one fast publisher and five slow ones, each recipient's reads replayed through the plan's receive-side sorter. Thirty runs load the machine for about half an hour, and the figures compare only between runs on one quiet machine with no second load, so a lane would report noise. The folder's figures test checks the instrument without a database and runs with it."
+    "reason": "Delivery evidence for edge order, not a gate: unordered receipted room sends through three WS server instances on PostgreSQL at +0 and +5 ms statement latency, one fast publisher and five slow ones, each recipient's reads replayed through a receive-side sorter. Thirty runs load the machine for about half an hour, and the figures compare only between runs on one quiet machine with no second load, so a lane would report noise. The folder's figures test checks the instrument without a database and runs with it."
   },
   {
     "paths": [

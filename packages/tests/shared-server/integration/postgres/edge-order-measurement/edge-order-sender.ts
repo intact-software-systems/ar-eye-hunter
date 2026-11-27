@@ -1,6 +1,6 @@
 /**
- * What an edge-ordered message carries, as the plan's rulings 1 and 2 need it
- * (`plans/active/edge-ordered-room-sends.md`). Measurement code: slice 2 of that plan builds the product's own.
+ * What a message of an edge-ordered stream carries, so that a receiver can put the stream back in its sender's order
+ * and knows how long a missing message can still arrive. The measurement's own stamp, not the product's.
  */
 export interface EdgeOrderStamp {
     /** The stream: minted in memory once per sender page and channel. */

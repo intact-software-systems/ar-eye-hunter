@@ -37,10 +37,10 @@ import { delayPostgresRoundTrips, type PostgresRoundTripCount } from './delay-po
 import { decodeEdgeOrderStamp, EdgeOrderSender, type EdgeOrderStamp } from './edge-order-sender.ts';
 import type { EdgeOrderArrival, EdgeOrderReplaySettings } from './replay-edge-order-arrivals.ts';
 
-// The measurement of `plans/active/edge-ordered-room-sends.md`, section 2.5: do UNORDERED receipted room sends, each
-// carrying a stream and a position in its payload and sorted at the receiver, keep up through three WS server
-// instances on PostgreSQL? Evidence, not a gate: it loads the machine for about half an hour, and its figures are
-// only comparable between runs on one quiet machine. See `tests/manual-suites.json` for the command.
+// The edge-order measurement: do UNORDERED receipted room sends, each carrying a stream and a position in its payload
+// and sorted at the receiver, keep up through three WS server instances on PostgreSQL? Evidence, not a gate: it loads
+// the machine for about half an hour, and its figures are only comparable between runs on one quiet machine. See
+// `tests/manual-suites.json` for the command.
 
 /** One cell: who publishes, how often each of them sends, and how many messages each sends. */
 interface MeasuredCell {
@@ -163,7 +163,7 @@ const SETTLE_AFTER_LAST_DEADLINE_MS = 15_000;
 const LOAD_WAIT_BUDGET_MS = 30 * 60_000;
 const LOAD_WAIT_STEP_MS = 30_000;
 const TEST_TIMEOUT_MS = 45 * 60_000;
-/** Ruling 2's entry window as the plan's spike has it, and the caps hop order already uses. */
+/** The entry window the measurement was first run with, and the caps hop order already uses. */
 const REPLAY_SETTINGS: EdgeOrderReplaySettings = { entryWaitMs: 500, maxHeldPerStream: 256, maxStreams: 256 };
 
 const TABLE_HEADER = [
