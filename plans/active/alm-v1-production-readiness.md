@@ -283,8 +283,9 @@ Notes on the rows that need them:
     the server's sender version (D780); `admitted` written on the admitting socket (D781); an
     ordered completion guarded on its position and its slot (D783); a lost inbound write tried
     again at once (D784); and the batch that completes an ordered delivery handing on its track's
-    next one (D785). The receipt record's own runs through the WS server place the ordered stall
-    in the inbound ordered delivery, not in the record
+    next one (D785). The receipt record README's own runs, a different harness, separate some of
+    them: they place the five-publisher receipt backlog in the server's sender-version fence
+    (D780) and the ordered stall in the inbound ordered delivery, not in the record
     (`packages/shared/alm/receipt-record/README.md`, "Measured").
 
   So the defect predates #885. The limits: one process and one event loop, with no authorizer

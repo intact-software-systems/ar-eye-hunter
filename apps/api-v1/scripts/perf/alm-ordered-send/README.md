@@ -63,10 +63,10 @@ read late or read again is counted over the same time.
   It stores the receipt as a row of the shared WS outbox only when no socket there took it. The
   terminal receipt is always such a row, written by the record's ended work on whichever instance
   claims that work, at least once under one control id. The instance whose worker takes a row writes
-  it to the origin's socket when that socket is its own; otherwise it announces the row's key through
-  the QueueBox bridge's NOTIFY and leaves the row to be taken again, until an instance that holds the
-  origin's socket takes it or the row expires: the receipt row's republication. A publisher may
-  therefore read one receipt more than once.
+  it to the origin's socket when that socket is its own; otherwise it announces the row's key
+  through the QueueBox bridge's NOTIFY and leaves the row to be taken again, until an instance that
+  holds the origin's socket takes it or the row expires: the receipt row's republication. A
+  publisher may therefore read one receipt more than once.
 - **An ACK.** A recipient's ACK is counted in the record by the instance its socket is on, whichever
   instance admitted the send. Nothing carries an ACK between instances.
 

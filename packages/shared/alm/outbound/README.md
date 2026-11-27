@@ -29,8 +29,9 @@ server as a next hop; a `receiver` or `leader` room send, or a `receiver` sessio
 client-tracked hop: the WS client holds a first-hop wait for it until the server first answers for it
 ([Server receipts on WS](#server-receipts-on-ws)), and from that answer on it is the server's to retry. The WS client also
 names its server as its
-composition's hop, so an ordered at-least-once room send at the browser's defaults, whose effective
-`ack` is `none` and tracks no receipt, still has the server's gap NACK served along that hop; the
+composition's hop, so a room send that states an `orderingKey` or a `seq` (a browser's room send is
+unordered unless it does) and leaves its other options at the browser's defaults, at-least-once with an
+effective `ack` of `none` and no tracked receipt, still has the server's gap NACK served along that hop; the
 RTC compositions and the WS server declare no fixed hop. Control acceptance applies the same
 exemption: without a repair planner, a room-scoped gap NACK, repair control or `not-yet-in-sync` NACK is admitted
 only when its requester is the sender's own hop, so the server's gap NACK to its own WS client commits the

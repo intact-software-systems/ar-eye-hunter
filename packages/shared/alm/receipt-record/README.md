@@ -44,7 +44,7 @@ order and naming each recipient once. A confirmation is read back only under its
 key fails closed as `ALAdmissionCorruptionError`. Every stored identity is one the receipt control accepts
 (`decodeALReceiptIdentifier`), so a stored row can always become a receipt.
 
-On PostgreSQL the keyed rows are `runtime_state_store` rows of that namespace, growth surface 85 (`ttl-within-run`,
+On PostgreSQL the keyed rows are `runtime_state_store` rows of that namespace, growth surface 90 (`ttl-within-run`,
 bound 1 860 000 ms: the window plus two graces; `growth-surfaces.ts`), and the work rows are expiring `resource_inbox`
 rows under surface 1.
 
@@ -238,8 +238,9 @@ ACK's statements is serialized against another ACK.
 
 Real PostgreSQL, three instances, each client delaying every statement, BEGIN and COMMIT by the added latency
 (one attributed hosted run recorded about 5 ms per statement). Lag is p50 from a message's last ACK to its
-`complete`. Test-only code, not kept in the tree. Every cell but the last bullet's sends unordered receipted messages;
-the last bullet's are ordered, which is what a browser's room send is by default.
+`complete`. Test-only code, not kept in the tree. Every cell but the last two bullets' sends unordered receipted
+messages, as a browser's room send is unless it states an `orderingKey` or a `seq`; the sends of those two bullets
+each state one, so they take the ordered inbound path.
 
 - **The record alone keeps up.** 40 messages at 2 a second, 14 recipients each, 28 ACKs a second: at +0 ms a p50 of
   5.6 to 9.0 ms, at +5 ms 60.5 to 62.8 ms, the last ten messages no slower than the first ten; 560 of 560
@@ -285,16 +286,30 @@ the last bullet's are ordered, which is what a browser's room send is by default
 
 ## Stated limits
 
-- **One ordered track.** A browser's room send is ordered by default. One ordered track through the WS server at
-  +5 ms keeps up at 3 messages a second in both runs. At 4 a second every message still completes (80 of 80 in both
-  runs) but the track runs seconds behind, its last message read 5.8 and 6.4 s after its send. From 5 a second the
-  track ends `resync-required`, a NACK to its sender, and only its first messages complete, the rest passing their 30 s
-  lifetime and ending `timed-out`: 31 and 63 of 100 at 5 a second (the code before the hand-on completed 72 and 68),
-  and at 10 a second it keeps up in none. A track whose sender keeps its rate is handed on at most a page of 16 a batch
-  and waits for the work rotation between batches, so its lag climbs while the rate holds (under load the worst of
-  each of three runs was 1.3, 5.1 and 7.7 s); a lane whose batches are already full of other claimable work hands
-  nothing on and behaves as before, a case no run covered. Faster streams are what ordering end to end in Rallar Web
-  is planned for.
+- **One ordered track.** This binds a send that asks for hop order, by stating an `orderingKey` or a `seq`. A
+  browser's room send is unordered unless it states one, and a room channel declared `order: 'edge'` sends unordered
+  messages that the receiving page puts back in its sender's order (`packages/shared-web/browser/README.md`, "Edge
+  order"): neither enters the ordered inbound path. One ordered track through the WS server at +5 ms keeps up at 3
+  messages a second in both runs. At 4 a second every message still completes (80 of 80 in both runs) but the track
+  runs seconds behind, its last message read 5.8 and 6.4 s after its send. Only the first messages of a track that
+  falls further behind complete, the rest passing their 30 s lifetime and ending `timed-out`. At 5 a second the track
+  ends `resync-required`, a NACK to its sender, on the code with the hand-on and on the code before it: the hand-on
+  completed 20 to 69 of 100 over four runs, the code before it 11 to 72 over eight. At 10 a second the sends parked at
+  admission dominate: 4 and 0 of 200 completed, the track not ended. A track whose sender keeps its rate is handed on
+  at most a page of 16 a batch, and its lag climbs while the rate holds (under load the worst of each of three runs
+  was 1.3, 5.1 and 7.7 s); a lane whose batches are already full of other claimable work hands nothing on and behaves
+  as before, a case no run covered. A stream faster than one track carries can use `order: 'edge'` instead, for the
+  sends that option takes (whole-room, receipted, at-least-once, volatile).
+- **A batch past its lease.** A claim's work row stays reserved until its batch ends, so a batch that runs longer than
+  its 10 s lease lets another instance claim the rows it completed early: an ordered one reads `completed` and is not
+  dispatched again, an unordered one is handed to the application a second time. At +10 ms a statement most batches
+  ran at the page (21 of the 33 inbound drains of the two runs held 16 claims; the five longest of each run took 7.3
+  to 8.0 s); none was seen to pass its lease. Nothing bounds the age of a batch that hands on.
+- **What an over-driven ordered track costs unordered publishers.** One track at 5 a second beside five unordered
+  publishers on the same server left the unordered publishers complete (200 of 200 in both runs, receipts at 19.3 to
+  19.4 a second) but read a message at 0.715 and 0.862 s (p50) against 0.454 s without the track, at most 1.63 and
+  2.83 s against 1.06 s: the track's batches ran at the page (16 claims) for 6.0 and 6.1 s, and a message arriving on
+  that lane waits for the batch.
 - **The sender's version still moves.** A message end through the message-end bundle (a spent repair budget, a
   re-plan refused for good, a receipt control's included) and each ACK window fence the sender, so a server
   publication's own receipt windows keep competing for the server's version row.

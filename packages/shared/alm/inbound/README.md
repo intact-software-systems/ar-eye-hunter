@@ -748,44 +748,42 @@ plan or a disabled local delivery reach it, and they hand the application nothin
 and the position has not moved past the message.
 
 **Under load.** Measured through the WS server on PostgreSQL, three instances with every statement, BEGIN and COMMIT
-delayed 5 ms, five publishers of ordered receipted room sends, one track each at 2 a second (D784, D785): on a quiet
-host, in three 20 s runs and one 45 s run every message completed by its deadline (200 of 200, 450 of 450), no send was
+delayed 5 ms, five publishers of receipted room sends that ask for hop order, one track each at 2 a second (D784,
+D785). A browser's room send is unordered unless it states an `orderingKey` or a `seq`, and a room channel declared
+`order: 'edge'` sends unordered messages that the receiving page sorts, so neither takes this path. On a quiet host,
+in three 20 s runs and one 45 s run, every message completed by its deadline (200 of 200, 450 of 450), no send was
 parked, recipients read a message 0.6 to 0.7 s after its send (p50, at most 1.2 s), and receipts were read at 19.3 to
-19.7 a second of the 20.0 to 20.1 offered. Without the fresh attempts the same publishers completed 154 to 174 of 200
-and 131 of 450, with recipients 7.1 to 21.0 s behind. Every admission on a track still rewrites its delivery-progress
-row only to extend its expiry (`computeDeliveryProgressRetention`), so a completion, a buffered release or another
-admission that read the row still loses its compare-and-set; that now costs the loser another attempt rather than a
-parked send. A replay or a release that loses three writes still goes to RETRY, which the work rotation reads only
-after every NEW row (`read-al-inbound-work-selection.ts`), and its track waits with it.
+19.7 a second of the 20.0 to 20.1 offered. Every admission on a track still rewrites its delivery-progress row only to
+extend its expiry (`computeDeliveryProgressRetention`), so a completion, a buffered release or another admission that
+read the row still loses its compare-and-set and makes another attempt. A replay or a release that loses three writes
+goes to RETRY, which the work rotation reads only after every NEW row (`read-al-inbound-work-selection.ts`), and its
+track waits with it.
 
-Why ordered tracks fell behind together: when one message's dispatch and completion take longer than the gap to its
-sender's next send (a loaded host, a database slower than +5 ms a statement, one slow completion, or a sender faster
-than the cycle), the next message's delivery reads its predecessor waiting and is set aside, its row still new. Before
-a completed delivery handed its track's next one on, only the rotation claimed that row again, seconds later, by which
-time the arrival after it had found its own predecessor unfinished too. So the track did not return to the fast path
-while its sender kept its rate, every ordered track that shared the rotation fell behind with it and reached the 30 s
-lifetime at the same send, and the expired message's successor read `resync-required` and ended its track. Now the
-batch that completes a delivery claims the track's next one ("Buffered releases and the snapshot cap.", below).
-Measured with eight CPU burners beside the run (a 1-minute load of 6.6 to 10.2 at a run's start), in three runs a
-column: every message completed in each run, no RETRY row was made, no track ended, nothing was handed to the
-application twice and every track's hand-offs were in order, the largest batch ran 4.1 to 4.9 s with 16 claims, and
-the slowest read of a run was 5.4, 1.7 and 8.0 s; the code before completed 141, 145 and 200 of 200, ended four tracks
-in each of the two runs that failed, and its slowest read was 24.0 to 30.1 s. The quiet cells read the same on both. At
-+10 ms on a quiet host the built code completed 200 and 200 with no track ended, at a read of 8.1 and 7.2 s (p50, at
-most 25.6 s), its longest batches running at the page for 7.8 and 8.0 s of their 10 s lease; the code before completed
-75 and 70 and ended tracks. So five ordered publishers keep up on a host and a database fast enough that a message
-completes before its sender's next one arrives. When one does not, the track no longer stalls, but while its sender
-keeps its rate the batches run at the page and a lagging track's lag climbs (to 1.3, 5.1 and 7.7 s, the worst of each
-loaded run), falling only once the sends end; a prototype of the rule, measured under the same load before it was built,
-caught up between batches and peaked at 0.8 to 5.1 s. One ordered track keeps up at 3 messages a second in both runs. At
-4 a second every message still completes (80 of 80 in both runs) but the track runs seconds behind: its last message was
-read 5.8 and 6.4 s after its send (the prototype read no message later than 1.5 and 3.8 s after its send; the code
-before completed 52 and 47 and ended the track). From 5 a second the track ends `resync-required` and only its first
-messages complete: 31 and 63 of 100 at 5 a second, fewer than the 72 and 68 the code before completed in those runs, and
-at 10 a second neither keeps up. One track at 5 a second beside five unordered publishers on the same server left the
-unordered publishers complete (200 of 200 in both runs) at a read of 0.715 and 0.862 s (p50) against 0.454 s without it,
-since a message arriving on that lane waits for the track's full batch. The levers not built and their known problems
-are in `plans/backlog.md` ("What stays of the limit of one ordered track").
+When one message's dispatch and completion take longer than the gap to its sender's next send (a loaded host, a
+database slower than +5 ms a statement, one slow completion, or a sender faster than the cycle), the next message's
+delivery reads its predecessor waiting and is set aside, and the batch that completes the predecessor claims it
+("Buffered releases and the snapshot cap.", below). With eight CPU burners beside the run (a 1-minute load of 6.6 to
+10.2 at a run's start), in each of three runs every message completed, no RETRY row was made, no track ended, nothing
+was handed to the application twice and every track's hand-offs were in order; the largest batch ran 4.1 to 4.9 s
+with 16 claims, and the slowest read of a run was 5.4, 1.7 and 8.0 s. At +10 ms on a quiet host both runs completed
+200 of 200 with no track ended, at a read of 8.1 and 7.2 s (p50, at most 25.6 s). So five ordered publishers keep up
+on a host and a database fast enough that a message completes before its sender's next one arrives. When one does
+not, the track's messages still complete, but while its sender keeps its rate the batches run at the page and its lag
+climbs (the worst of each loaded run 1.3, 5.1 and 7.7 s), falling once the sends end. A claim's work row stays
+reserved until its batch ends, so a batch that runs longer than its 10 s lease lets another instance claim the rows it
+completed early: an ordered one reads `completed` and is not dispatched again, an unordered one is handed to the
+application a second time. At +10 ms a statement most batches ran at the page (21 of the 33 inbound drains of the two
+runs held 16 claims; the five longest of each run took 7.3 to 8.0 s), and none was seen to pass its lease.
+
+One ordered track keeps up at 3 messages a second in both runs. At 4 a second every message still completes (80 of 80
+in both runs) but the track runs seconds behind, its last message read 5.8 and 6.4 s after its send. At 5 a second the
+track ends `resync-required` and only its first messages complete, with the hand-on as before it: 20 to 69 of 100 over
+four runs with it, 11 to 72 over eight without. At 10 a second the sends parked at admission dominate: 4 and 0 of 200
+completed, the track not ended. One track at 5 a second beside five unordered publishers on the same server left the
+unordered publishers complete (200 of 200 in both runs) at a read of 0.715 and 0.862 s (p50) against 0.454 s without
+it, since a message arriving on that lane waits for the track's full batch. How the code stood before, and the
+changes not built with what is known of each, are in `plans/backlog.md` ("What stays of the limit of one ordered
+track").
 
 `validateALInboundControlAdmission` returns every reason an acknowledgement is
 inadmissible; the caller joins them into one rejection reason. Only an absent pending
