@@ -690,6 +690,42 @@
       }
     },
     {
+      "name": "theRosterListsAllThreeBeforeTheCrash",
+      "type": "http.poll-until",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": 15000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "activeSessions": [
+            {
+              "sessionId": "{aliceSessionId}"
+            },
+            {
+              "sessionId": "{bobSessionId}"
+            },
+            {
+              "sessionId": "{carolSessionId}"
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "theSecondaryCrashes",
       "type": "server.stop",
       "request": {

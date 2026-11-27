@@ -932,7 +932,7 @@
             "msgId": "ack-carol-csss-broadcast-{runId}",
             "ts": 0,
             "senderId": "{carolSessionId}",
-            "traceId": "trace-csss-ack-carol"
+            "traceId": "trace-csss-ack-carol-{runId}"
           },
           "route": {
             "topicId": "al-control",
