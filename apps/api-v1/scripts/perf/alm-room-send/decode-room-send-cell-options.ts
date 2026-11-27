@@ -1,11 +1,13 @@
 import { Either } from '@shared/resilience/Either.ts';
 
 import { ROOM_SEND_API_V1_DEFAULTS } from './room-send-api-v1-defaults.ts';
+import { ROOM_SEND_ORDERINGS, type RoomSendOrdering } from './room-send-ordering.ts';
 import {
     ROOM_SEND_SENDER_RECOVERIES,
-    validateRoomSendShape,
+    validateRoomSendShapeBesideOrdering,
     type RoomSendSenderRecovery,
     type RoomSendShape,
+    type RoomSendShapeBesideOrdering,
     type RoomSendShapeIssue
 } from './validate-room-send-shape.ts';
 
@@ -22,7 +24,8 @@ export interface RoomSendCellOptions {
     readonly artifactDestination: RoomSendArtifactDestination;
     /**
      * Each option the command line gave, under its name and as the text it was given, in the order given, without
-     * `--database-url`: what tells a value the invocation chose from one the reference shape supplied.
+     * `--database-url`: what tells a value the invocation chose from one the reference shape supplied. `--ordering`
+     * is always among them: no reference shape supplies it.
      */
     readonly givenOptions: Readonly<Record<string, string>>;
 }
@@ -42,11 +45,12 @@ export interface RoomSendCellOptionIssue {
 }
 
 /**
- * The shape of the reference run. A shape flag the command line leaves out takes its value from here; the
- * application pool's is the API's own default, so a run that names no pool has the pool an API instance starts with.
+ * The shape of the reference run, beside its ordering. A shape flag the command line leaves out takes its value from
+ * here; the application pool's is the API's own default, so a run that names no pool has the pool an API instance
+ * starts with. The ordering has no reference value: a run's sends are on the ordering key or unordered because its
+ * command line says so, never by omission.
  */
-export const ROOM_SEND_REFERENCE_SHAPE: RoomSendShape = {
-    ordering: 'ordering-key',
+export const ROOM_SEND_REFERENCE_SHAPE: RoomSendShapeBesideOrdering = {
     publishers: 5,
     sendsPerSecond: 2,
     durationS: 20,
@@ -62,7 +66,14 @@ interface OptionValuesRead {
 }
 
 interface ShapeDecoded {
-    readonly shape: RoomSendShape;
+    /** Undefined when the command line names no ordering the cell knows: nothing stands in for one. */
+    readonly shape: RoomSendShape | undefined;
+    readonly issues: readonly RoomSendCellOptionIssue[];
+}
+
+interface OrderingDecoded {
+    /** Undefined when `--ordering` is absent or names no ordering the cell knows. */
+    readonly value: RoomSendOrdering | undefined;
     readonly issues: readonly RoomSendCellOptionIssue[];
 }
 
@@ -77,6 +88,7 @@ interface SenderRecoveryDecoded {
 }
 
 const OPTION_NAMES = [
+    'ordering',
     'publishers',
     'sends-per-second',
     'duration-s',
@@ -86,7 +98,7 @@ const OPTION_NAMES = [
     'database-url',
     'out'
 ];
-const OPTION_LIST = '--publishers, --sends-per-second, --duration-s, --delay-ms, --sender-recovery, ' +
+const OPTION_LIST = '--ordering, --publishers, --sends-per-second, --duration-s, --delay-ms, --sender-recovery, ' +
     '--application-pool, --database-url and --out';
 const ONE_TOKEN_OPTION = /^--([^=]+)=(.*)$/s;
 const DATABASE_URL_PROTOCOLS = ['postgres:', 'postgresql:'];
@@ -99,8 +111,9 @@ const DECIMAL_NUMBER = /^-?\d+(\.\d+)?$/;
 
 /**
  * The options of one invocation, from the arguments after the script's name, or every issue of them at once. Each
- * option is one `--name=value` token. `--database-url` has no default and must be a `postgres:` or `postgresql:` URL
- * with its whitespace, quotes, backticks and angle brackets percent-encoded. `--out` may be left out.
+ * option is one `--name=value` token. `--ordering` and `--database-url` have no default: an invocation that leaves
+ * either out is refused. `--database-url` must be a `postgres:` or `postgresql:` URL with its whitespace, quotes,
+ * backticks and angle brackets percent-encoded. `--out` may be left out.
  */
 export function decodeRoomSendCellOptions(
     argv: readonly string[]
@@ -111,7 +124,7 @@ export function decodeRoomSendCellOptions(
     const out = read.values.get('out');
 
     const issues = [...read.issues, ...decoded.issues, ...validateTextOptions(read.values)];
-    if (issues.length > 0 || databaseUrl === undefined) {
+    if (issues.length > 0 || decoded.shape === undefined || databaseUrl === undefined) {
         return Either.ofLeft(issues);
     }
     return Either.ofRight({
@@ -151,8 +164,13 @@ function toOptionValues(argv: readonly string[]): OptionValuesRead {
     return { values, issues };
 }
 
-/** A flag that does not decode is an issue of its own, and the shape is then checked with the reference value in its place. */
+/**
+ * A flag that does not decode is an issue of its own, and the fields beside the ordering are then checked with the
+ * reference value in its place. An ordering that is absent or unknown leaves no shape, and those fields are checked
+ * all the same.
+ */
 function decodeShape(values: ReadonlyMap<string, string>): ShapeDecoded {
+    const ordering = decodeOrdering(values.get('ordering'));
     const publishers = decodeNumber(values, 'publishers', ROOM_SEND_REFERENCE_SHAPE.publishers);
     const sendsPerSecond = decodeNumber(values, 'sends-per-second', ROOM_SEND_REFERENCE_SHAPE.sendsPerSecond);
     const durationS = decodeNumber(values, 'duration-s', ROOM_SEND_REFERENCE_SHAPE.durationS);
@@ -163,8 +181,7 @@ function decodeShape(values: ReadonlyMap<string, string>): ShapeDecoded {
         'application-pool',
         ROOM_SEND_REFERENCE_SHAPE.applicationPoolMaxConnections
     );
-    const shape = {
-        ordering: ROOM_SEND_REFERENCE_SHAPE.ordering,
+    const shapeBesideOrdering: RoomSendShapeBesideOrdering = {
         publishers: publishers.value,
         sendsPerSecond: sendsPerSecond.value,
         durationS: durationS.value,
@@ -173,16 +190,30 @@ function decodeShape(values: ReadonlyMap<string, string>): ShapeDecoded {
         applicationPoolMaxConnections: applicationPool.value
     };
     return {
-        shape,
+        shape: ordering.value === undefined ? undefined : { ordering: ordering.value, ...shapeBesideOrdering },
         issues: [
+            ...ordering.issues,
             ...publishers.issues,
             ...sendsPerSecond.issues,
             ...durationS.issues,
             ...delayMs.issues,
             ...senderRecovery.issues,
             ...applicationPool.issues,
-            ...validateRoomSendShape(shape)
+            ...validateRoomSendShapeBesideOrdering(shapeBesideOrdering)
         ]
+    };
+}
+
+function decodeOrdering(text: string | undefined): OrderingDecoded {
+    if (text === undefined) {
+        return { value: undefined, issues: [{ code: 'missing-option', message: '--ordering is required' }] };
+    }
+    const value = ROOM_SEND_ORDERINGS.find((ordering) => ordering === text);
+    return {
+        value,
+        issues: value === undefined
+            ? [{ code: 'invalid-ordering', message: '--ordering must be ordering-key or unordered' }]
+            : []
     };
 }
 

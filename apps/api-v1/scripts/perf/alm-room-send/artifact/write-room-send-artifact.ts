@@ -20,8 +20,9 @@ export function resolveRoomSendArtifactPath(
     }
     const { shape } = run;
     const startedAt = run.createdAt.replaceAll(/[:.]/g, '-');
-    return `${ROOM_SEND_ARTIFACT_FOLDER}/${startedAt}-p${shape.publishers}-${shape.sendsPerSecond}hz-` +
-        `d${shape.delayMs}ms-${shape.durationS}s-${shape.senderRecovery}-pool${shape.applicationPoolMaxConnections}.json`;
+    return `${ROOM_SEND_ARTIFACT_FOLDER}/${startedAt}-${shape.ordering}-p${shape.publishers}-` +
+        `${shape.sendsPerSecond}hz-d${shape.delayMs}ms-${shape.durationS}s-${shape.senderRecovery}-` +
+        `pool${shape.applicationPoolMaxConnections}.json`;
 }
 
 export async function writeRoomSendArtifact(artifact: RoomSendArtifact, path: string): Promise<void> {

@@ -21,15 +21,16 @@ const NO_SAMPLE = 'no sample';
 const NO_TRACK = 'not applicable: unordered sends have no track';
 
 /**
- * The lines a run prints once it has ended, in the order to print them. The delay of the first line is nominal: it is
- * what the shape asks for, added to the round trips the artifact lists as delayed and no others, and each wait is a
- * timer that fires late. A copy is "written to the recipient's socket": a frame on the wire, which is no delivery to
- * an application. A control a send drew is counted as drawn,
- * never as a send lost. An offer that threw is printed with the name of its error and the first message under that
- * name, which `toRoomSendThrownError` bounded and cleared of URLs when it was recorded. The copies written out of the
- * order offered are worded by the ordering of the run's sends, and the two figures that need a track, the copies past
- * a predecessor never written and the view before each track's first control, are printed as not applicable for a
- * run of unordered sends. The last three lines are there only when a count of theirs is above zero.
+ * The lines a run prints once it has ended, in the order to print them. The first line names the ordering of the
+ * run's sends as its shape states it. The delay of that line is nominal: it is what the shape asks for, added to the
+ * round trips the artifact lists as delayed and no others, and each wait is a timer that fires late. A copy is
+ * "written to the recipient's socket": a frame on the wire, which is no delivery to an application. A control a send
+ * drew is counted as drawn, never as a send lost. An offer that threw is printed with the name of its error and the
+ * first message under that name, which `toRoomSendThrownError` bounded and cleared of URLs when it was recorded. The
+ * copies written out of the order offered are worded by the ordering of the run's sends, and the two figures that
+ * need a track, the copies past a predecessor never written and the view before each track's first control, are
+ * printed as not applicable for a run of unordered sends. The last three lines are there only when a count of theirs
+ * is above zero.
  */
 export function toRoomSendSummary(source: RoomSendSummarySource): readonly string[] {
     return [
@@ -48,8 +49,9 @@ function toRunLines(source: RoomSendSummarySource): readonly string[] {
     const { shape, applicationPool, observation, loadAverage } = source;
     const commit = source.commit.slice(0, SHORT_COMMIT_LENGTH) + (source.dirty ? ' with uncommitted changes' : '');
     return [
-        `ALM room-send cell: ${shape.publishers} publishers x ${shape.sendsPerSecond} sends/s for ` +
-        `${shape.durationS} s; +${shape.delayMs} ms nominal on the delayed database round trips; ` +
+        `ALM room-send cell: ordering ${shape.ordering}; ${shape.publishers} publishers x ` +
+        `${shape.sendsPerSecond} sends/s for ${shape.durationS} s; ` +
+        `+${shape.delayMs} ms nominal on the delayed database round trips; ` +
         `sender recovery ${shape.senderRecovery}; application pool ${applicationPool.effectiveMaxConnections} ` +
         `(API default ${applicationPool.apiV1DefaultMaxConnections})`,
         `commit ${commit}; observed ${toSeconds(observation.tailMs)} past the last offer; ` +

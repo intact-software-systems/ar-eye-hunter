@@ -32,7 +32,7 @@ const NO_PROCESS_FIGURES = {
 const ARTIFACT = toRoomSendArtifact({
     ...RUN,
     source: { commit: 'abc1234def5678900000000000000000000000ff', branch: 'main', dirty: false },
-    givenOptions: { 'delay-ms': '5' },
+    givenOptions: { ordering: 'ordering-key', 'delay-ms': '5' },
     environment: {
         host: { cpuModel: 'Test CPU', cpuCount: 4, totalMemoryBytes: 16_000_000_000 },
         os: { platform: 'linux', release: '6.18.0', architecture: 'x64' },
@@ -62,10 +62,16 @@ const ARTIFACT = toRoomSendArtifact({
 });
 
 describe('resolveRoomSendArtifactPath', () => {
-    it('names a run\'s file after its start and every field of its shape, under tmp/perf', () => {
+    it('names a run\'s file after its start and every field of its shape, its ordering first, under tmp/perf', () => {
         expect(resolveRoomSendArtifactPath({ kind: 'named-by-run' }, RUN)).toBe(
-            'tmp/perf/alm-room-send/2026-11-26T19-24-04-123Z-p5-2hz-d5ms-20s-client-stand-in-pool10.json'
+            'tmp/perf/alm-room-send/2026-11-26T19-24-04-123Z-ordering-key-p5-2hz-d5ms-20s-client-stand-in-pool10.json'
         );
+        expect(
+            resolveRoomSendArtifactPath({ kind: 'named-by-run' }, {
+                ...RUN,
+                shape: { ...RUN.shape, ordering: 'unordered' }
+            })
+        ).toBe('tmp/perf/alm-room-send/2026-11-26T19-24-04-123Z-unordered-p5-2hz-d5ms-20s-client-stand-in-pool10.json');
     });
 
     it('takes the file the invocation named as it is', () => {

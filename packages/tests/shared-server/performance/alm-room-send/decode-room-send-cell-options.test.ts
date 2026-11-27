@@ -10,6 +10,9 @@ import {
 
 const DATABASE_URL = 'postgres://app:s3cret-pw@db.internal:5432/alm_cell_run?sslmode=require';
 
+/** The two options with no default, as an invocation that asks for nothing else gives them. */
+const REQUIRED_OPTIONS = [`--database-url=${DATABASE_URL}`, '--ordering=ordering-key'];
+
 function readOptions(argv: readonly string[]): RoomSendCellOptions | undefined {
     return decodeRoomSendCellOptions(argv).foldRight((options) => options);
 }
@@ -19,22 +22,23 @@ function readIssues(argv: readonly string[]): readonly RoomSendCellOptionIssue[]
 }
 
 describe('decodeRoomSendCellOptions', () => {
-    it('decodes the reference invocation, and gives a flag left out the value the reference invocation gives it', () => {
+    it('decodes the reference invocation on either ordering, and gives a shape flag left out the value the reference shape gives it', () => {
+        const referenceShape = {
+            publishers: 5,
+            sendsPerSecond: 2,
+            durationS: 20,
+            delayMs: 0,
+            senderRecovery: 'client-stand-in',
+            applicationPoolMaxConnections: 5
+        };
         const reference = {
-            shape: {
-                ordering: 'ordering-key',
-                publishers: 5,
-                sendsPerSecond: 2,
-                durationS: 20,
-                delayMs: 0,
-                senderRecovery: 'client-stand-in',
-                applicationPoolMaxConnections: 5
-            },
+            shape: { ordering: 'ordering-key', ...referenceShape },
             databaseUrl: DATABASE_URL,
             artifactDestination: { kind: 'named-by-run' }
         };
 
         expect(readOptions([
+            '--ordering=ordering-key',
             '--publishers=5',
             '--sends-per-second=2',
             '--duration-s=20',
@@ -43,8 +47,10 @@ describe('decodeRoomSendCellOptions', () => {
             '--application-pool=5',
             `--database-url=${DATABASE_URL}`
         ])).toMatchObject(reference);
-        expect(readOptions([`--database-url=${DATABASE_URL}`])).toMatchObject(reference);
-        expect(ROOM_SEND_REFERENCE_SHAPE).toEqual(reference.shape);
+        expect(readOptions(REQUIRED_OPTIONS)).toMatchObject(reference);
+        expect(readOptions([`--database-url=${DATABASE_URL}`, '--ordering=unordered'])?.shape)
+            .toEqual({ ordering: 'unordered', ...referenceShape });
+        expect(ROOM_SEND_REFERENCE_SHAPE).toEqual(referenceShape);
     });
 
     it('gives an application pool left out the size the API\'s own defaults give it', () => {
@@ -55,7 +61,7 @@ describe('decodeRoomSendCellOptions', () => {
             )
         );
 
-        expect(readOptions([`--database-url=${DATABASE_URL}`])?.shape.applicationPoolMaxConnections)
+        expect(readOptions(REQUIRED_OPTIONS)?.shape.applicationPoolMaxConnections)
             .toBe(apiV1Defaults.database.applicationPool.maxConnections);
     });
 
@@ -68,10 +74,11 @@ describe('decodeRoomSendCellOptions', () => {
             '--sends-per-second=10',
             '--sender-recovery=none',
             '--application-pool=10',
+            '--ordering=unordered',
             '--publishers=1'
         ])).toEqual({
             shape: {
-                ordering: 'ordering-key',
+                ordering: 'unordered',
                 publishers: 1,
                 sendsPerSecond: 10,
                 durationS: 45,
@@ -88,23 +95,67 @@ describe('decodeRoomSendCellOptions', () => {
                 'sends-per-second': '10',
                 'sender-recovery': 'none',
                 'application-pool': '10',
+                ordering: 'unordered',
                 publishers: '1'
             }
         });
     });
 
     it('keeps the options as the command line gave them, in its order, without the database URL and without a default', () => {
-        const options = readOptions([`--database-url=${DATABASE_URL}`, '--delay-ms=05', '--publishers=5']);
+        const options = readOptions([
+            `--database-url=${DATABASE_URL}`,
+            '--delay-ms=05',
+            '--ordering=unordered',
+            '--publishers=5'
+        ]);
 
-        expect(options?.givenOptions).toEqual({ 'delay-ms': '05', publishers: '5' });
-        expect(Object.keys(options?.givenOptions ?? {})).toEqual(['delay-ms', 'publishers']);
-        expect(readOptions([`--database-url=${DATABASE_URL}`])?.givenOptions).toEqual({});
+        expect(options?.givenOptions).toEqual({ 'delay-ms': '05', ordering: 'unordered', publishers: '5' });
+        expect(Object.keys(options?.givenOptions ?? {})).toEqual(['delay-ms', 'ordering', 'publishers']);
+        expect(readOptions(REQUIRED_OPTIONS)?.givenOptions).toEqual({ ordering: 'ordering-key' });
     });
 
     it('refuses an invocation that names no database, with no default to fall back on', () => {
-        expect(readIssues(['--publishers=5', '--sends-per-second=2', '--duration-s=20', '--delay-ms=0'])).toEqual([
+        expect(readIssues([
+            '--ordering=ordering-key',
+            '--publishers=5',
+            '--sends-per-second=2',
+            '--duration-s=20',
+            '--delay-ms=0'
+        ])).toEqual([
             { code: 'missing-option', message: '--database-url is required' }
         ]);
+    });
+
+    it('refuses an invocation that names no ordering, with no default to fall back on', () => {
+        expect(readIssues([
+            `--database-url=${DATABASE_URL}`,
+            '--publishers=5',
+            '--sends-per-second=2',
+            '--duration-s=20',
+            '--delay-ms=0',
+            '--sender-recovery=client-stand-in'
+        ])).toEqual([
+            { code: 'missing-option', message: '--ordering is required' }
+        ]);
+    });
+
+    it('names both options it requires to an invocation that gives none', () => {
+        expect(readIssues([])).toEqual([
+            { code: 'missing-option', message: '--ordering is required' },
+            { code: 'missing-option', message: '--database-url is required' }
+        ]);
+    });
+
+    it('decodes each ordering it knows and refuses any other without repeating it', () => {
+        const databaseUrl = `--database-url=${DATABASE_URL}`;
+
+        expect(readOptions([databaseUrl, '--ordering=ordering-key'])?.shape.ordering).toBe('ordering-key');
+        expect(readOptions([databaseUrl, '--ordering=unordered'])?.shape.ordering).toBe('unordered');
+        for (const otherText of ['ordered', 'Unordered', 'none', '']) {
+            expect(readIssues([databaseUrl, `--ordering=${otherText}`])).toEqual([
+                { code: 'invalid-ordering', message: '--ordering must be ordering-key or unordered' }
+            ]);
+        }
     });
 
     it('returns every issue of an invocation at once', () => {
@@ -117,16 +168,19 @@ describe('decodeRoomSendCellOptions', () => {
             '--duration-s',
             '--sends-per-second=0',
             '--sender-recovery=browser',
+            '--ordering=sorted',
             '--out='
         ])).toEqual([
             { code: 'malformed-argument', message: 'argument 1 is not one --name=value token' },
             {
                 code: 'unknown-option',
-                message: 'argument 3 names no option of this command: it takes --publishers, --sends-per-second, ' +
-                    '--duration-s, --delay-ms, --sender-recovery, --application-pool, --database-url and --out'
+                message: 'argument 3 names no option of this command: it takes --ordering, --publishers, ' +
+                    '--sends-per-second, --duration-s, --delay-ms, --sender-recovery, --application-pool, ' +
+                    '--database-url and --out'
             },
             { code: 'repeated-option', message: '--delay-ms is given more than once' },
             { code: 'malformed-argument', message: 'argument 6 is not one --name=value token' },
+            { code: 'invalid-ordering', message: '--ordering must be ordering-key or unordered' },
             { code: 'invalid-number', message: '--publishers must be a number written in digits' },
             { code: 'invalid-sender-recovery', message: '--sender-recovery must be none or client-stand-in' },
             {
@@ -146,11 +200,11 @@ describe('decodeRoomSendCellOptions', () => {
         ['an exponent', '--sends-per-second=1e1', 'invalid-number'],
         ['no value', '--delay-ms=', 'invalid-number']
     ])('refuses %s', (_name, argument, code) => {
-        expect(readIssues([`--database-url=${DATABASE_URL}`, argument])?.map((issue) => issue.code)).toEqual([code]);
+        expect(readIssues([...REQUIRED_OPTIONS, argument])?.map((issue) => issue.code)).toEqual([code]);
     });
 
     it('refuses an empty database URL', () => {
-        expect(readIssues(['--database-url='])).toEqual([
+        expect(readIssues(['--ordering=unordered', '--database-url='])).toEqual([
             { code: 'empty-option', message: '--database-url must not be empty' }
         ]);
     });
@@ -161,7 +215,7 @@ describe('decodeRoomSendCellOptions', () => {
         ['a URL of another scheme', 'https://user:pw@host/db'],
         ['a path', '/var/run/postgresql/s3cr3t']
     ])('refuses %s for the database URL, and repeats nothing of it', (_name, databaseUrl) => {
-        const issues = readIssues([`--database-url=${databaseUrl}`]);
+        const issues = readIssues(['--ordering=unordered', `--database-url=${databaseUrl}`]);
 
         expect(issues).toEqual([
             { code: 'invalid-database-url', message: '--database-url must be a postgres:// or postgresql:// URL' }
@@ -181,7 +235,7 @@ describe('decodeRoomSendCellOptions', () => {
         ];
 
         for (const databaseUrl of unencoded) {
-            expect(readIssues([`--database-url=${databaseUrl}`])).toEqual([
+            expect(readIssues(['--ordering=unordered', `--database-url=${databaseUrl}`])).toEqual([
                 {
                     code: 'invalid-database-url',
                     message: '--database-url must hold no whitespace, quote, backtick or angle bracket: percent-encode each'
@@ -189,14 +243,14 @@ describe('decodeRoomSendCellOptions', () => {
             ]);
         }
         const encoded = 'postgres://app:s3cr%20%22%27%60%3C%3Eet@db.internal:5432/alm_cell_run';
-        expect(readOptions([`--database-url=${encoded}`])?.databaseUrl).toBe(encoded);
+        expect(readOptions(['--ordering=unordered', `--database-url=${encoded}`])?.databaseUrl).toBe(encoded);
     });
 
     it('takes a database URL of either PostgreSQL scheme as it is', () => {
         const postgresql = 'postgresql://app:s3cret-pw@db.internal:5432/alm_cell_run';
 
-        expect(readOptions([`--database-url=${DATABASE_URL}`])?.databaseUrl).toBe(DATABASE_URL);
-        expect(readOptions([`--database-url=${postgresql}`])?.databaseUrl).toBe(postgresql);
+        expect(readOptions(REQUIRED_OPTIONS)?.databaseUrl).toBe(DATABASE_URL);
+        expect(readOptions(['--ordering=unordered', `--database-url=${postgresql}`])?.databaseUrl).toBe(postgresql);
     });
 
     it('never repeats the database URL, or any other text of the command line, in an issue', () => {
@@ -205,6 +259,7 @@ describe('decodeRoomSendCellOptions', () => {
             `--databse-url=${DATABASE_URL}`,
             `--${DATABASE_URL}`,
             `--publishers=${DATABASE_URL}`,
+            `--ordering=${DATABASE_URL}`,
             `--sender-recovery=${DATABASE_URL}`,
             `--database-url=${DATABASE_URL}`,
             `--database-url=${DATABASE_URL}`,
@@ -216,6 +271,7 @@ describe('decodeRoomSendCellOptions', () => {
             'unknown-option',
             'unknown-option',
             'repeated-option',
+            'invalid-ordering',
             'invalid-number',
             'invalid-sender-recovery',
             'empty-option'

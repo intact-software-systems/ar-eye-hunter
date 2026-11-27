@@ -34,6 +34,12 @@ export interface RoomSendShape {
 }
 
 /**
+ * What a shape holds beside its ordering: the fields the reference run gives a value, where the ordering is the
+ * invocation's to state.
+ */
+export type RoomSendShapeBesideOrdering = Omit<RoomSendShape, 'ordering'>;
+
+/**
  * An issue of a number repeats the number; an issue of the ordering or of the sender recovery never repeats the text
  * it was given.
  */
@@ -66,9 +72,10 @@ export function validateRoomSendShape(shape: RoomSendShape): readonly RoomSendSh
 /**
  * Every issue of what a shape holds beside its ordering. Each number is whole, so every publisher offers a whole
  * number of sends, the rate times the duration, and nothing is rounded. All the sessions of the room may publish: a
- * send still has every other session as its audience. An application pool opens at least one connection.
+ * send still has every other session as its audience. An application pool opens at least one connection. A command
+ * line that names no ordering has no shape, and is told every issue of these fields all the same.
  */
-function validateRoomSendShapeBesideOrdering(shape: Omit<RoomSendShape, 'ordering'>): readonly RoomSendShapeIssue[] {
+export function validateRoomSendShapeBesideOrdering(shape: RoomSendShapeBesideOrdering): readonly RoomSendShapeIssue[] {
     const { sessionCount } = ROOM_SEND_CELL_CONSTANTS;
     const issues: RoomSendShapeIssue[] = [];
     if (!isWholeNumberOfAtLeast(shape.publishers, 1) || shape.publishers > sessionCount) {

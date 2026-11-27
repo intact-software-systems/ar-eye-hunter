@@ -164,7 +164,8 @@ const STALLED_RUN: RoomSendSummarySource = {
 describe('toRoomSendSummary', () => {
     it('prints sends, copies written of expected, the due-to-first-read over expected copies with \'not reached\' for a null, receipts by state and messages handed more than once', () => {
         expect(toRoomSendSummary(STALLED_RUN)).toEqual([
-            'ALM room-send cell: 5 publishers x 2 sends/s for 20 s; +5 ms nominal on the delayed database round trips; ' +
+            'ALM room-send cell: ordering ordering-key; 5 publishers x 2 sends/s for 20 s; ' +
+            '+5 ms nominal on the delayed database round trips; ' +
             'sender recovery client-stand-in; application pool 5 (API default 5)',
             'commit abc1234; observed 75.0 s past the last offer; run wall time 97.3 s; ' +
             'load average 1.20 at start, 2.10 at end',
@@ -242,7 +243,8 @@ describe('toRoomSendSummary', () => {
 
         expect(lines).toHaveLength(18);
         expect(lines[0]).toBe(
-            'ALM room-send cell: 5 publishers x 2 sends/s for 20 s; +0 ms nominal on the delayed database round trips; ' +
+            'ALM room-send cell: ordering ordering-key; 5 publishers x 2 sends/s for 20 s; ' +
+                '+0 ms nominal on the delayed database round trips; ' +
                 'sender recovery none; application pool 10 (API default 5)'
         );
         expect(lines[1]).toBe(
@@ -279,7 +281,7 @@ describe('toRoomSendSummary', () => {
         );
     });
 
-    it('prints not applicable in place of the predecessor count and the before-first-control line of an unordered run', () => {
+    it('names an unordered run as one in its first line, and prints not applicable in place of the predecessor count and the before-first-control line', () => {
         const unordered: RoomSendSummarySource = {
             ...STALLED_RUN,
             shape: { ...STALLED_RUN.shape, ordering: 'unordered' },
@@ -293,6 +295,11 @@ describe('toRoomSendSummary', () => {
         const lines = toRoomSendSummary(unordered);
 
         expect(lines).toHaveLength(19);
+        expect(lines[0]).toBe(
+            'ALM room-send cell: ordering unordered; 5 publishers x 2 sends/s for 20 s; ' +
+                '+5 ms nominal on the delayed database round trips; ' +
+                'sender recovery client-stand-in; application pool 5 (API default 5)'
+        );
         expect(lines[8]).toBe(
             'copies written more than once 56, ahead of an earlier send of their publisher 7; ' +
                 'past a predecessor never written: not applicable: unordered sends have no track'

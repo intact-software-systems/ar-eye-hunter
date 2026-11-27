@@ -15,6 +15,7 @@ describe('runAlmRoomSendCell', () => {
 
         expect(outcome.right).toBeUndefined();
         expect(outcome.left).toEqual([
+            { code: 'missing-option', message: '--ordering is required' },
             { code: 'invalid-number', message: '--publishers must be a number written in digits' },
             {
                 code: 'invalid-application-pool',

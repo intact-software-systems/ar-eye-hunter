@@ -33,7 +33,14 @@ const DATABASE_URL = 'postgres://app:s3cret-pw@db.internal:5432/alm_cell_run?ssl
 const INPUT: ToRoomSendArtifactInput = {
     createdAt: '2026-11-26T19:24:04.123Z',
     source: { commit: 'abc1234def5678900000000000000000000000ff', branch: 'claude/alm-room-send-measurement', dirty: true },
-    givenOptions: { publishers: '1', 'duration-s': '1', 'delay-ms': '5', 'sender-recovery': 'none', 'application-pool': '10' },
+    givenOptions: {
+        ordering: 'ordering-key',
+        publishers: '1',
+        'duration-s': '1',
+        'delay-ms': '5',
+        'sender-recovery': 'none',
+        'application-pool': '10'
+    },
     environment: {
         host: { cpuModel: 'Test CPU', cpuCount: 4, totalMemoryBytes: 16_000_000_000 },
         os: { platform: 'linux', release: '6.18.0', architecture: 'x64' },
@@ -220,6 +227,7 @@ describe('toRoomSendArtifact', () => {
     it('holds nothing URL-shaped anywhere, built from an invocation that named its database and a run whose offer threw a URL', () => {
         const options = decodeRoomSendCellOptions([
             `--database-url=${DATABASE_URL}`,
+            '--ordering=ordering-key',
             '--publishers=1',
             '--duration-s=1',
             '--out=tmp/perf/alm-room-send/one.json'
