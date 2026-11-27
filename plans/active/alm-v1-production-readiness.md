@@ -52,10 +52,10 @@ it:
    under another session's id (D759), and a multicast is authorized when its `route.contextId`
    names another room (D82, checked in code).
 6. **Carrier parity is uneven where it matters most.** The carrier matrix is on `main` (#922): 20
-   capabilities by three carriers, each cell a typed outcome with its proof, and 16 proofs marked
-   `unproven`. Most differences between WS and RTC follow from what each carrier is and should
-   stay. The ones that do not sit on the hand-over of `rtc-with-ws-fallback`, the default strategy
-   (section 5.7).
+   capabilities by three carriers, each cell a typed outcome with its proof, and 8 proofs marked
+   `unproven`, of the 16 it merged with. Most differences between WS and RTC follow from what each
+   carrier is and should stay. The ones that do not sit on the hand-over of `rtc-with-ws-fallback`,
+   the default strategy (section 5.7).
 7. **The product contract is not adopted.** The ten completion criteria carry no "met" mark, dozens
    of rulings are recorded as provisional or made on the maintainer's behalf, there is no
    version or upgrade policy beyond "deploy web and API together", and no game uses a capability
@@ -473,10 +473,11 @@ Notes on the rows that need them:
 - **G7.** The carrier matrix of #922 states each single-carrier proof as a cell (T4 in section
   5.7). Of this item's list: the recovery owner is asserted over `ws` too, where `ordering-resync`
   waits for its absence when the lane records an owner; `all` is pinned by unit tests as a refusal
-  at the call on every carrier; `fenced-rejection` over the RTC carriers and `repair-exhausted`
-  over `ws` and over the fallback strategy are `unproven` proofs of the matrix. No lane cell meets
-  a kept send over `rtc`; the matrix's nearest entry is an `unproven` pin of a kept unicast's
-  handle at its deadline.
+  at the call on every carrier; `repair-exhausted` runs over `ws` in the lane, where the server is
+  the one requester; `fenced-rejection` over the RTC carriers and `repair-exhausted` over the
+  fallback strategy are `unproven` proofs of the matrix. No lane cell meets a kept send over `rtc`;
+  the matrix's nearest entry is a unit test that reads a kept unicast's handle `expired` at its
+  deadline.
 - **G8.** One more of the kind:
   `packages/tests/shared/multicast/room-authority/rtc-room-snapshot-admission.test.ts` pins an
   origin refusal of a left member's send on a snapshot shape that authoritative state excludes
@@ -593,8 +594,8 @@ Three outcomes are the same on every carrier and are not rows of this table (#92
 `all` scope is refused at the call (`$.scope`, `invalid-scope`), `ws` included; a publisher that
 has read the revoke of its own grant is refused at its own origin; and a requester that has spent
 its repair budget ends the message it asks for, over WS too
-(`packages/tests/shared/alm/outbound-repair-lost-frame.test.ts` pins it; no lane cell stages it
-there).
+(`packages/tests/shared/alm/outbound-repair-lost-frame.test.ts` pins it, and the lane cell
+`repair-exhausted` runs over `ws` as it does over `rtc`).
 
 A row counts as by design only once the carrier matrix states it with a proof. The matrix is
 `packages/shared-test/rallar-bb-test/conformance/alm/carrier-matrix/alm-carrier-matrix.ts`,
@@ -611,7 +612,7 @@ These should be closed:
 | T1 | The hand-over of `rtc-with-ws-fallback` does not keep one lifecycle        | D525, D64, D700 | Blocker |
 | T2 | A granted `receiver` unicast to a non-holder reads `acknowledged` over RTC | D553            | Should  |
 | T3 | A reply wait that cannot be answered runs to its timeout                   | D441 to D446    | Should  |
-| T4 | The carrier matrix holds 16 proofs marked `unproven`                       | #922            | Blocker |
+| T4 | The carrier matrix holds 8 proofs marked `unproven`                        | #922            | Blocker |
 | T5 | The fallback strategy refuses a send to the server peer at the call        | #922            | Decide  |
 | T6 | A left member's room send is not stated rejected at its RTC origin         | #922            | Should  |
 
@@ -633,21 +634,39 @@ These should be closed:
 - **T3.** A reply that arrives over RTC is dropped `reply-late`, and a request on a topic WS
   cannot carry cannot be replied to. What `awaitReply` does today on an `rtc`-only send was not
   read for this plan; the slice pins it first, then refuses at the call with a typed value. The
-  matrix states that a reply travels WS whichever carrier the request arrived on, and its `rtc`
-  cell is `unproven` until `reply-correlated` runs there (#922).
+  matrix states that a reply travels WS whichever carrier the request arrived on, and the lane
+  proves it on all three carriers: over `rtc` the request of `reply-correlated` arrives on RTC, its
+  reply comes back over WS, and the wait reads `replied`.
 - **T4.** Delivered by #922: `ALM_CARRIER_MATRIX` states 20 capabilities by three carriers, each
   cell a typed outcome with its proofs or a `not-applicable` with its reason. The conformance
   catalogue reads its carriers and its carrier verdict facts from the matrix, and the lane fails an
-  un-narrowed full run whose plan leaves out a cell the matrix names. What remains is the 16
-  proofs marked `unproven`, in 13 cells (checked in the matrix file). Each names what closes it,
-  and `packages/tests/shared-test/alm-carrier-matrix.test.ts` pins the list.
-  - Three wait on one lifecycle or one ordering track across the hand-over, and close with T1.
-  - Four are on granted publications, a preview capability in section 6.
-  - Five are on a left member's send over the RTC carriers. The lane cell among them cannot be
-    built as a mirror of `fenced-rejection`, because of the hold T6 describes.
-  - The other four are `reply-correlated` over `rtc`, `repair-exhausted` over `ws`, and two unit
-    pins: the `$.scope` path of a WS send that names `all`, and a kept unicast's handle at its
-    deadline.
+  un-narrowed full run whose plan leaves out a cell the matrix names. It merged with 16 proofs
+  marked `unproven`. What remains is 8, in 7 cells (checked in the matrix file). Each names what
+  closes it, and `packages/tests/shared-test/alm-carrier-matrix.test.ts` pins the list.
+  - Three wait on one lifecycle or one ordering track across the hand-over, and close with T1:
+    `ordered-gap-repair`, `repair-budget-exhausted` and `snapshot-floor-catch-up`, each over the
+    fallback strategy.
+  - Three are on a left member's send. The left-sender cell over `rtc` and the one over the
+    fallback strategy wait on T6: neither can be built as a mirror of `fenced-rejection`, because
+    of the hold T6 describes. The third is a receipted send under the fallback strategy, which is
+    handed to WS when a receiver's fence ends its receipt; it waits on T6 and then on T1.
+  - Two are on granted publications, a preview capability in section 6. A receipted publication
+    under the fallback strategy whose sender has not read its revoke is handed to WS when its
+    receipt runs out, and the server refuses it there; that chain closes with T1. A granted
+    publication to more than 256 subscribed sessions over `ws` needs a server test whose harness
+    is in a test file #885 changes, so it waits on that merge.
+
+  The other eight are closed, none by a product change. Lane cells closed two: `reply-correlated`
+  runs over `rtc`, and `repair-exhausted` over `ws`. Unit tests closed six: the `$.scope` path of
+  a WS send that names `all`; a kept unicast's handle, `expired` at its deadline; the origin of a
+  receiptless room send refusing a frozen recipient's fence NACK, which closed one proof on each
+  RTC carrier; a frame forged under another member's registered key id, refused
+  `invalid-signature`; and a relay that holds no `subscribe` forwarding a granted frame, which
+  closed the fallback cell of `relay-payload-confidentiality`.
+
+  That last row records a gap in the lane: `granted-rtc-relay-only` does not force its frame
+  through a relay, so the cell shows that a session holding no `subscribe` delivers nothing, and
+  a hop test, not the lane, shows that such a session forwards the frame.
 
   A call that throws leaves no handle for the lane to witness, so the server-peer and `all` cells
   rest on unit tests. A call-time refusal witness in the harness would move them into the lane; it
@@ -814,12 +833,14 @@ Slices 1 and 2 because they touch other files.
    `api-v1-cluster-subscriber-instance-loss`. With Slice 1 it meets exit criterion 4.
 5. **The lane's four intermittents (G2), then start the count (G1), with the matrix's unproven
    proofs (T4).** Rule the in-sync readiness signal and the stored-cancel diagnostic (decisions 8
-   and 9); attribute the durable-store slowdown with timing on the direct admission path (P4);
-   close the unproven proofs that need no product change: `reply-correlated` over `rtc`,
-   `repair-exhausted` over `ws`, the unit pins, and a call-time refusal witness in the harness.
+   and 9); attribute the durable-store slowdown with timing on the direct admission path (P4).
+   The unproven proofs that need no product change are closed, all but one (T4): the server test
+   of a granted publication to more than 256 subscribed sessions waits on the merge of #885. A
+   call-time refusal witness in the harness is still to build; it closes no `unproven` proof.
 6. **Fallback continuity (T1).** Design first, because R5 needs a protocol change. The acceptance
    is a lane family over `rtc-with-ws-fallback` in which a hand-over mid-stream keeps order,
-   settles every receipt, and survives a reload. It closes three of the matrix's unproven proofs.
+   settles every receipt, and survives a reload. It closes four of the matrix's unproven proofs,
+   and a fifth once T6 has traced the hold.
 7. **The server-peer send and the left member's send (T5, T6).** T5 follows decision 16. T6 traces
    how a `pending-authority` hold ends, then states one end at the origin and adds the left-sender
    cell over the RTC carriers.
