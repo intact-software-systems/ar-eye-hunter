@@ -326,6 +326,11 @@ const EXPECTED_OUTCOMES = {
         'rtc-with-ws-fallback': toRefusedByTheReceiver('receipt', 'missing-proof')
     },
     reply: { ws: DELIVERED, rtc: DELIVERED, 'rtc-with-ws-fallback': DELIVERED },
+    'reply-wait-on-topic-ws-cannot-carry': {
+        ws: NOT_APPLICABLE,
+        rtc: toRefusedAtTheCall('$.topicId', 'invalid-ws-user-topic'),
+        'rtc-with-ws-fallback': NOT_APPLICABLE
+    },
     'left-sender-send': {
         ws: toRefusedBy('trusted-server', 'membership-fenced'),
         rtc: toRefusedBy('peer', 'membership-fenced'),

@@ -1580,8 +1580,8 @@ gets its answer as a separate reply message, correlated by id.
 - **`handle.awaitReply<T>({ timeoutMs, signal? })`.** The timeout is required, and
   the call never throws. It resolves with the request's `lifecycle` and a `status`:
   `replied` (with `reply`, a `RallarMessage<T>` whose payload is unvalidated: the
-  caller validates it), `timeout`, `aborted` or `undelivered`. `T` has no default,
-  so the call names it.
+  caller validates it), `timeout`, `aborted`, `undelivered` or `unanswerable` (with
+  `issues`). `T` has no default, so the call names it.
 - **Three clocks.** The ACK timeout ends one receipt attempt, the message deadline
   (`ttlMs`) ends the request's lifetime, and `timeoutMs` ends only this wait. A
   `timeout` leaves the request alive and claims no failure; the first `timeout`
@@ -1619,6 +1619,17 @@ gets its answer as a separate reply message, correlated by id.
   it is dropped with `reply-late` (cause `unobserved`), even while the request is
   awaited. A reply never reaches an
   `onMessage` subscriber of its type.
+- **`unanswerable`.** A reply is a WS unicast on the request's topic, and WS carries
+  only a topic that starts with `app.` or `room.` and is not reserved. A request on
+  any other topic has no reply, so its `awaitReply` resolves `unanswerable` at the
+  call, whatever the request's lifecycle: no timer is armed and `timeoutMs` is not
+  waited. `issues` holds the `$.topicId` issue the responder's `reply()` rejects
+  with, `invalid-ws-user-topic` or `reserved-ws-topic`. Only a send that stays on
+  RTC can be such a request: `messages.rtc.send`, a channel's `sendRtc`, or a send
+  under `strategy: 'rtc'`, each of which takes its `typeId` as the topic when it
+  names no `topicId`. Any send that may travel WS is itself refused such a topic at
+  the call, with the same issue. A request over RTC on an `app.` or `room.` topic
+  is answered over WS like any other.
 
 ```ts
 const asks = rallar.messages.room<AskPayload>({

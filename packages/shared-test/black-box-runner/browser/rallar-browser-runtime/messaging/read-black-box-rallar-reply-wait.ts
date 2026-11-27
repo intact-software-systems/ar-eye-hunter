@@ -10,7 +10,10 @@ import type {
     BlackBoxRallarReplyWaitInput
 } from '../black-box-rallar-operation-contracts.ts';
 
-/** A timeout, an abort and an undelivered request are the wait's value, as a reply is; a handle never sent is not. */
+/**
+ * A timeout, an abort, an undelivered request and an unanswerable one are the wait's value, as a reply is; a handle
+ * never sent is not.
+ */
 export async function readBlackBoxRallarReplyWait(
     wait: BlackBoxRallarReplyWaitInput,
     handle: RallarMessageHandle | undefined

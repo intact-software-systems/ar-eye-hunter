@@ -79,9 +79,12 @@ export type RallarBlackBoxTestMessagesAwaitReplyResultValue =
             { msgId: string; replyToMsgId: string; corrId: string; senderId: string; typeId: string; traceId: string; }
         >;
     }>
-    | Readonly<
-        { handleId: string; status: 'timeout' | 'aborted' | 'undelivered'; state: ALDeliveryState; corrId: string; }
-    >;
+    | Readonly<{
+        handleId: string;
+        status: 'timeout' | 'aborted' | 'undelivered' | 'unanswerable';
+        state: ALDeliveryState;
+        corrId: string;
+    }>;
 
 /** The reply's own handle and identity; its payload stays in the page. */
 export interface RallarBlackBoxTestMessagesReplyResultValue {
