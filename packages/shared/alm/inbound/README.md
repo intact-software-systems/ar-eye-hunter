@@ -759,31 +759,41 @@ read the row still loses its compare-and-set and makes another attempt. A replay
 goes to RETRY, which the work rotation reads only after every NEW row (`read-al-inbound-work-selection.ts`), and its
 track waits with it.
 
-When one message's dispatch and completion take longer than the gap to its sender's next send (a loaded host, a
-database slower than +5 ms a statement, one slow completion, or a sender faster than the cycle), the next message's
-delivery reads its predecessor waiting and is set aside, and the batch that completes the predecessor claims it
-("Buffered releases and the snapshot cap.", below). With eight CPU burners beside the run (a 1-minute load of 6.6 to
-10.2 at a run's start), in each of three runs every message completed, no RETRY row was made, no track ended, nothing
-was handed to the application twice and every track's hand-offs were in order; the largest batch ran 4.1 to 4.9 s
-with 16 claims, and the slowest read of a run was 5.4, 1.7 and 8.0 s. At +10 ms on a quiet host both runs completed
-200 of 200 with no track ended, at a read of 8.1 and 7.2 s (p50, at most 25.6 s). So five ordered publishers keep up
-on a host and a database fast enough that a message completes before its sender's next one arrives. When one does
-not, the track's messages still complete, but while its sender keeps its rate the batches run at the page and its lag
-climbs (the worst of each loaded run 1.3, 5.1 and 7.7 s), falling once the sends end. A claim's work row stays
-reserved until its batch ends, so a batch that runs longer than its 10 s lease lets another instance claim the rows it
-completed early: an ordered one reads `completed` and is not dispatched again, an unordered one is handed to the
-application a second time. At +10 ms a statement most batches ran at the page (21 of the 33 inbound drains of the two
-runs held 16 claims; the five longest of each run took 7.3 to 8.0 s), and none was seen to pass its lease.
+When one message's dispatch and completion take longer than the gap to its sender's next send (a loaded host, a database
+slower than +5 ms a statement, one slow completion, or a sender faster than the cycle), the next message's delivery
+reads its predecessor waiting and is set aside, and the batch that completes the predecessor claims it ("Buffered
+releases and the snapshot cap.", below). With eight CPU burners beside the run (a 1-minute load of 6.6 to 10.2 at a
+run's start), in each of three runs every message completed, no RETRY row was made, no track ended, nothing was handed
+to the application twice and every track's hand-offs were in order; the largest batch ran 4.1 to 4.9 s with 16 claims,
+and the slowest read of a run was 5.4, 1.7 and 8.0 s. The three loaded runs with the batch-age bound met the same rules,
+their figures not told apart from these. At +10 ms on a quiet host every run, two before the bound and three with it,
+completed 200 of 200 with no track ended. So five ordered publishers keep up on a host and a database fast enough that a
+message completes before its sender's next one arrives. When one does not, in these runs the track's messages still
+completed, but while its sender kept its rate its lag climbed (the worst of each loaded run 1.3, 5.1 and 7.7 s, before
+the batch-age bound; 13.1, 3.1 and 3.4 s with it, three runs each, not told apart), falling once the sends ended.
 
-One ordered track keeps up at 3 messages a second in both runs. At 4 a second every message still completes (80 of 80
-in both runs) but the track runs seconds behind, its last message read 5.8 and 6.4 s after its send. At 5 a second the
-track ends `resync-required` and only its first messages complete, with the hand-on as before it: 20 to 69 of 100 over
-four runs with it, 11 to 72 over eight without. At 10 a second the sends parked at admission dominate: 4 and 0 of 200
-completed, the track not ended. One track at 5 a second beside five unordered publishers on the same server left the
-unordered publishers complete (200 of 200 in both runs) at a read of 0.715 and 0.862 s (p50) against 0.454 s without
-it, since a message arriving on that lane waits for the track's full batch. How the code stood before, and the
-changes not built with what is known of each, are in `plans/backlog.md` ("What stays of the limit of one ordered
-track").
+A claim's work row stays reserved until its batch ends, so a batch that runs longer than its 10 s lease lets another
+instance claim the rows it completed early: an ordered one reads `completed` and is not dispatched again, an unordered
+one is handed to the application a second time. Before the batch-age bound, at +10 ms a statement 21 of the 33 inbound
+drains of two runs held 16 claims and the five longest of each run took 7.3 to 8.0 s. With it, in three runs, no batch
+held 16 claims and the longest took 5.8 to 6.1 s; 44 of the 61 drains that handed on ran past 5 s, the worst 6.07 s with
+13 claims, 1 068 ms past the limit, since the claims it already held still ran. No batch came near the lease in any run.
+A page of a batch's own 16 claims, with no hand-on, still takes about 16 claims' time and would pass the lease at about
+0.6 s a claim; that is older than the hand-on. The bound costs ordered latency where the hand-on carried the load: at
++10 ms every message still completed, but the recipients' read p50 was 8.6 to 10.7 s over three runs against 7.2 and
+8.1 s before it, later in every run. The bound trades later ordered messages, on a saturated database and for a track
+past its rate, for a wider margin under the lease.
+
+One ordered track keeps up at 3 messages a second in both runs. At 4 a second every message still completes (80 of 80 in
+both runs) but the track runs seconds behind: its last message was read 15.7 and 7.5 s after its send with the bound,
+5.8 and 6.4 s before it, further behind in both runs. At 5 a second only the track's first messages complete, on both
+codes: 20 to 69 of 100 over four runs with the hand-on, 11 to 72 over eight without; with the hand-on built the track
+ended `resync-required` in both runs. At 10 a second the sends parked at admission dominate: 4 and 0 of 200 completed,
+the track not ended. One track at 5 a second beside five unordered publishers on the same server left the unordered
+publishers complete (200 of 200 in every run) at a read p50 of 0.83 and 1.44 s with the bound and 0.72 and 0.86 s before
+it, against 0.454 s without the track, since a message arriving on that lane waits for the track's batch; the code
+before the hand-on cost them the same or more (1.38 and 0.70 s). How the code stood before, and the changes not built
+with what is known of each, are in `plans/backlog.md` ("What stays of the limit of one ordered track").
 
 `validateALInboundControlAdmission` returns every reason an acknowledgement is
 inadmissible; the caller joins them into one rejection reason. Only an absent pending
@@ -1004,7 +1014,11 @@ searching a page. It reserves the row only when it is this lane's work type, not
 one whose delay has passed), its delivery reads ready now, by the readiness read the rotation's page makes, and the row
 is still as the read saw it, as a new or retrying row (`claimObserved`). The handed-on claim runs after every claim the
 batch already holds, and the batch asks for a successor only while it holds fewer than `AL_INBOUND_WORK_PAGE_SIZE` (16)
-claims. It claims nothing, and writes nothing, when no slot stands at k + 1 (the next message not admitted yet, behind
+claims and has run less than half its work lease (`AL_INBOUND_HAND_ON_BATCH_AGE_MS`, 5 s of the 10 s
+`AL_INBOUND_WORK_LEASE_MS`), counted from the batch's first clock reading, which precedes every reservation it makes.
+Both checks come before any read; a successor refused for either stays as it is and is found by the head read or the
+rotation. The age bounds when hand-ons stop, not when the batch ends: the claims the batch already holds still run.
+It claims nothing, and writes nothing, when no slot stands at k + 1 (the next message not admitted yet, behind
 a gap, or left out for this receiver), when the slot names no delivery row or one of another carrier's lane, or when
 the row is reserved elsewhere, expired, not due, not ready or moved since the read. A successor whose track has ended
 (its progress row gone, its delivery reading `resync-required`) is reserved, so that its dispatch rejects it, as the

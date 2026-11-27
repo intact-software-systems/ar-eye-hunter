@@ -906,7 +906,7 @@ and it has no status list.
   messages a run was handed twice, no completion took a third attempt, and
   each of the 22 lost writes, every one to an admission's expiry refresh of
   the track's progress row, was won at the next attempt.
-- What stays of the limit of one ordered track (D784, D785). Built: an
+- What stays of the limit of one ordered track (D784, D785, D786). Built: an
   inbound write that is lost is looked at again at once (an arriving ordered
   message's admission, a retained admission's replay, a buffered message's
   release and an ordered delivery's completion, three attempts with no wait,
@@ -917,7 +917,9 @@ and it has no status list.
   completed position and reserved only when it is the lane's own, due, ready
   now and as read, after the batch's own claims and while the batch holds
   fewer than a page of 16
-  (`packages/shared/alm/inbound/lane/claim-al-inbound-ordered-successor.ts`).
+  (`packages/shared/alm/inbound/lane/claim-al-inbound-ordered-successor.ts`);
+  and such a batch hands nothing on once it has run half its work lease
+  ("A batch past its lease", below).
   Five publishers of ordered receipted room sends, one track each at 2 a
   second, through three WS server instances on PostgreSQL with every
   statement, BEGIN and COMMIT delayed 5 ms, fifteen sessions in one room and a
@@ -952,45 +954,67 @@ and it has no status list.
     code kept up in both of its runs. At 4 a second every message still
     completes (80 of 80 in both runs) but the track runs seconds behind: its
     last message was read 5.8 and 6.4 s after its send, with 13 and 6 sends
-    parked at admission (a prototype of the hand-on, measured before it was
-    built, read no message later than 1.5 and 3.8 s after its send; the code
-    before completed 52 and 47 and ended the track; two runs each, not
-    separable). At 5 a second the track ends `resync-required` and only its
-    first messages complete, on both codes: the hand-on completed 20 to 69 of
-    100 over four runs (20 and 69 as a prototype, 31 and 63 built), the code
-    before it 11 to 72 over eight. At 10 a second the sends parked at admission
-    dominate (144 and 146 a run) and the track is not ended: 4 and 0 of 200
-    completed, against 0 and 4 before. The hand-on does not touch the parked
-    sends, and three attempts cost more writes on one overloaded track (at 10 a
-    second the progress row lost 813 to 814 of 981 to 982 writes a run, against
-    433 to 444 of 597 to 613 before the fresh attempts). Why one track at 4 a
-    second parks 6 to 13 sends was not probed.
+    parked at admission, and 15.7 and 7.5 s after it with the batch-age bound
+    below, further behind in both runs (a prototype of the hand-on, measured
+    before it was built, read no message later than 1.5 and 3.8 s after its
+    send; the code before completed 52 and 47 and ended the track; two runs
+    each, not separable). At 5 a second only the track's first messages
+    complete, on both codes: the hand-on completed 20 to 69 of 100 over four
+    runs (20 and 69 as a prototype, 31 and 63 built), the code before it 11 to
+    72 over eight; with the hand-on built the track ended `resync-required` in
+    both runs, the code before it in one of its two in the same campaign (the
+    earlier campaigns recorded completions only). At 10 a second the sends
+    parked at admission dominate (144 and 146 a run) and the track is not ended:
+    4 and 0 of 200 completed, against 0 and 4 before. The hand-on does not touch
+    the parked sends, and three attempts cost more writes on one overloaded
+    track (at 10 a second the progress row lost 813 to 814 of 981 to 982 writes
+    a run, against 433 to 444 of 597 to 613 before the fresh attempts). Why one
+    track at 4 a second parks 6 to 13 sends was not probed.
   - The full batch. A lane whose pages are already full of claimable work
     hands nothing on and behaves as before: the page bound
     (`ALWorkHandler`, `packages/shared/alm/work/al-work-handler.ts`) asks for a
     successor only while the batch holds fewer than 16 claims. No measured cell
     had a lane full of other work.
   - The climbing lag. A backlog is handed on up to a page at a time. Under load
-    the batches ran at the page while the senders kept their rate, and a
-    lagging track's lag climbed by about 0.3 s a send and fell only once the
-    sends ended (the worst of each loaded run 1.3, 5.1 and 7.7 s; the
-    prototype's loaded runs peaked at 0.8 to 5.1 s, three runs each, on
-    different days and loads, not separable). At +10 ms the built code read
-    messages 8.1 and 7.2 s behind at p50, at most 25.6 s, against the 30 s
-    lifetime. What is known: the batch after a full page is already owed a
-    head read while sends continue; a full batch spent about a third of its
-    time outside its claims' runs, on the hand-ons' own reads and reservations
-    (the ten longest loaded drains took 4.1 to 4.9 s with 2.8 to 3.3 s in the
-    runs); at +10 ms the lanes were saturated. Which of these the loaded lag
-    is was not separated: only each run's five longest drains were kept. The
-    next measurement must record every inbound drain's start and duration.
+    the batches ran at the page while the senders kept their rate, and a lagging
+    track's lag climbed by about 0.3 s a send and fell only once the sends ended
+    (the worst of each loaded run 1.3, 5.1 and 7.7 s; the prototype's loaded
+    runs peaked at 0.8 to 5.1 s, three runs each, on different days and loads,
+    not separable). At +10 ms the built code read messages 8.1 and 7.2 s behind
+    at p50, at most 25.6 s, against the 30 s lifetime. What is known: the batch
+    after a full page is already owed a head read while sends continue; a full
+    batch spent about a third of its time outside its claims' runs, most of it,
+    by the code, the hand-ons' own reads and reservations (the ten longest
+    loaded drains took 4.1 to 4.9 s with 2.8 to 3.3 s in the runs); at +10 ms
+    the lanes were saturated. Which of these the loaded lag is was not
+    separated: only each run's five longest drains were kept. The measurement of
+    the batch-age bound below recorded every drain: instances sat idle for 6 to
+    16 s at +10 ms while a track lagged, in the mixed cell and at 4 a second,
+    and for 0.8 to 8.9 s in the loaded cell, a hint that the rows the bound
+    declines wait for the rotation or a wake, not a measured cause.
   - A batch past its lease. A claim's work row stays reserved until its batch
     ends, so a batch that runs longer than its 10 s lease lets another
     instance claim the rows it completed early: an ordered one reads
     `completed` and is not dispatched again, an unordered one is handed to the
-    application a second time. At +10 ms a statement 21 of the 33 inbound
-    drains of the two built runs held 16 claims, and the five longest of each
-    run took 7.3 to 8.0 s; none was seen to pass the lease.
+    application a second time. Built (D786): a batch hands nothing on once it
+    has run half its lease (`AL_INBOUND_HAND_ON_BATCH_AGE_MS`, 5 s), counted
+    from the batch's first clock reading, before every reservation; the check
+    precedes any read, and a successor refused for age stays as it is and is
+    found by the head read or the rotation. Before it, at +10 ms a statement
+    21 of the 33 inbound drains of two runs held 16 claims and the five
+    longest of each run took 7.3 to 8.0 s. With it, in three runs, no drain
+    held 16 claims, the longest took 5.8 to 6.1 s and none came near the
+    lease, but 44 of the 61 drains that handed on ran past 5 s (worst 6.07 s
+    with 13 claims, 1 068 ms past): the bound stops new hand-ons, not the
+    claims the batch already holds, about one more for each track it still
+    holds. Its cost: at +10 ms the recipients' read p50 rose to 8.6 to 10.7 s
+    from 7.2 and 8.1 s (later in every run), and one track at 4 a second ended
+    further behind; loaded, quiet and the unordered guard were not told apart.
+    What stays: the claims a batch already holds when it stops, and a page of
+    its own 16 claims with no hand-on, which still passes the lease at about
+    0.6 s a claim and is older than this work. Releasing a row when its claim
+    ends, instead of at the batch's end, is the change that would close it;
+    not tried.
   - A track that continues after an omission. When the sender left this
     receiver out of a sequence, no slot stands after the completed position and
     the next copy waits for the rotation; finding it needs a read of the
@@ -1024,9 +1048,11 @@ and it has no status list.
     without the track (1.6 and 1.9 times), at most 1.63 and 2.83 s against
     1.06 s, because the track's batches ran at the page (16 claims) for 6.0 and
     6.1 s and a message arriving on that lane waits for the batch; the track
-    itself completed 50 and 70 of 100 and ended once. The code before the
-    hand-on, whose buffered releases also fill pages for such a track, read the
-    unordered publishers at 1.378 and 0.698 s. Not run: more than one
+    itself completed 50 and 70 of 100 and ended once. With the batch-age bound
+    their p50 read 0.829 and 1.436 s (two runs each, not told apart; the
+    second 3.2 times the guard's). The code before the hand-on, whose buffered
+    releases also fill pages for such a track, read the unordered publishers at
+    1.378 and 0.698 s: the same cost or more. Not run: more than one
     over-driven track, or one on a loaded host.
   - What can still hand a delivered message to the application again: every
     completion attempt lost, a shutdown or a crash between dispatch and
@@ -1036,7 +1062,8 @@ and it has no status list.
     a handed-on claim's lease starts at its hand-on, later than its batch's;
     a claim can take up to three attempts; and batches reach a page more
     often, since every lagging track now fills one. The largest batch ran 4.9 s
-    loaded and 8.0 s at +10 ms, against the 10 s lease. An ordered row run
+    loaded and 8.0 s at +10 ms before the batch-age bound, 6.07 s with it,
+    against the 10 s lease (above, "A batch past its lease"). An ordered row run
     again after its lease reads `completed` and is not dispatched again; an
     unordered row of the same batch could be. Nothing was handed twice in any
     run.
@@ -1051,7 +1078,8 @@ and it has no status list.
   fresh attempts):
   - Carrying the readiness read's surface into the handed-on delivery, as a
     page's claim carries its own: the listed change most likely to move a
-    figure, since a hand-on's own work is about a third of a full batch. A
+    figure, since about a third of a full batch went outside its claims' runs,
+    most of it, by the code, the hand-ons' own work. A
     hand-on spends 10 statements on its row on PostgreSQL against the
     rotation's 6; this would save the second read of the message and its owner
     row. Not tried and not measured; its expected problem, reasoned from the
@@ -1061,11 +1089,9 @@ and it has no status list.
     two places, differing by design in one answer (a row that cannot be
     decoded: the page claims it to reject it, the hand-on leaves it); this
     change is where they become one.
-  - A bound on the age of a batch that hands on: no successor once the batch
-    has run a stated share of its lease, so that a batch at the page stays
-    inside it (above, "A batch past its lease"). Not tried and not measured;
-    its expected cost, reasoned from the code, is one more release and
-    selection every few deliveries.
+  - Releasing a claim's row when its claim ends, instead of at the batch's
+    end, so that no row a batch completed early stays reserved past it (above,
+    "A batch past its lease"). Not tried and not measured.
   - A bound on hand-ons per track per batch. Not tried and not measured. It
     would cap what one over-driven track costs the lane's other traffic
     (above, 0.26 to 0.41 s on the unordered p50); its expected problem,
@@ -1139,16 +1165,17 @@ and it has no status list.
     time; whether the inbound may serialize in memory what the store arbitrates
     is a question of the write doctrine.
 
-  Built by other work for streams faster than one track carries: a room
-  channel declared `order: 'edge'` sends unordered messages that the receiving
-  page puts back in its sender's order, for whole-room, receipted,
-  at-least-once, volatile sends; other shapes are refused `unsupported`
-  (`packages/shared-web/browser/README.md`, "Edge order"). Its plan, "Edge
-  order: ordered room sends, sorted at the two ends"
-  (`plans/active/edge-ordered-room-sends.md`), lists among its slices "newest
-  wins" for unretried and `live` sends with the other audiences (slice 5), a
-  real consumer with its measurement run again on the product code (slice 6),
-  and hop order's future (slice 7), whose ruling it gives as open.
+  Built by other work: a room channel declared `order: 'edge'` sends unordered
+  messages that the receiving page puts back in its sending page's order, for
+  whole-room, receipted, at-least-once, volatile sends; other shapes are
+  refused `unsupported` (`packages/shared-web/browser/README.md`, "Edge
+  order"). Whether it carries a stream faster than one ordered track is its
+  plan's open measurement. That plan, "Edge order: ordered room sends, sorted
+  at the two ends" (`plans/active/edge-ordered-room-sends.md`), also lists as
+  open: that measurement, for one fast sender and for five; newest wins for
+  unretried and `live` sends; streams for listed, principal and peer
+  audiences; a real consumer, with the measurement run again on the product
+  code; and whether hop order stays, which it leaves open.
 - Thirteen tests use a gap NACK that names no range as a whole-message resend,
   a shape no producer emits, so the decoder still accepts it (D692):
   `al-indexeddb-runtime-stores.test.ts`, `al-outbound-durable-effects.test.ts`

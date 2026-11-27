@@ -45,7 +45,8 @@ export type ALWorkAttemptResult<TSuccession = never> =
 
 /**
  * How an owner hands a completed claim's place in the batch on: the claim of its successor, and the batch age past
- * which the batch asks for none. The two are one value, so an owner that hands on also bounds how long a batch does.
+ * which the batch asks for none. The two are one value, so an owner that hands on also bounds how long a batch goes on
+ * handing on.
  */
 export interface ALWorkSuccessorClaim<TSuccession> {
     /**

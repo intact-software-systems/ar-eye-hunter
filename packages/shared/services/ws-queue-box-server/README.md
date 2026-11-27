@@ -13,17 +13,18 @@ Socket ingress registration is last; every captured dependency exists first.
 ALM runtimes. A supplied engine retains its other tasks. The record's rows,
 operations, clocks, pinned costs and stated limits are the
 [receipt record README](../../alm/receipt-record/README.md). Its measurement shows five
-publishers keeping up for unordered receipted sends, a browser's default, and for sends
-that ask for hop order (an `orderingKey` or a `seq`). Under the measured load the ordered
-sends still complete, since the inbound batch that completes a delivery hands its track's
-next one on (D785), but they keep up only while a message completes before its sender's
-next one arrives; when it does not, a lagging track's lag climbs while the rate holds (to
-7.7 s in the loaded runs). One ordered track keeps up at 3 messages a second in both runs;
-at 4 a second every message completes but the track runs seconds behind; at 5 a second the
-track ends `resync-required` and only its first messages complete; at 10 a second the sends
-parked at admission dominate (D784, D785, `plans/backlog.md`, "What stays of the limit of
-one ordered track"). A room channel declared `order: 'edge'` sends unordered messages that
-the receiving page sorts, so it does not take that path.
+publishers keeping up for unordered receipted sends (a browser's room send is unordered
+unless it states an `orderingKey` or a `seq`) and for sends that ask for hop order. Under
+the measured load the ordered sends still completed, since the inbound batch that completes
+a delivery hands its track's next one on (D785), but they keep up only while a message
+completes before its sender's next one arrives; when it does not, a lagging track's lag
+climbs while the rate holds. One ordered track keeps up at 3 messages a second in both
+runs; at 4 a second every message completes but the track runs seconds behind; at 5 a
+second only its first messages complete; at 10 a second the sends parked at admission
+dominate. A batch stops handing on at half its work lease (D786; D784, D785,
+`plans/backlog.md`, "What stays of the limit of one ordered track"). A room channel
+declared `order: 'edge'` sends unordered messages that the receiving page sorts, so it does
+not take that path.
 
 | Entry and family                            | Decision owner                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Effect and result owner                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
