@@ -9,6 +9,10 @@ import type {
     ALInboundAdmissionStore,
     ALInboundBufferedReleaseReadDto
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import {
+    decodeALInboundBufferedSnapshot,
+    decodeALInboundOrderingSnapshot
+} from '@shared/alm/inbound/al-inbound-ordering-validation.ts';
 
 import {
     createInboundTestMessage,
@@ -21,6 +25,19 @@ import {
 /** The stores of one backend under a namespace of the case's own; every reader and writer reads `Date.now`. */
 export type ALInboundBufferedSlotExpiryStoresFactory = (namespace: string) => Promise<InboundTestBackendStores>;
 
+/** One backend as the cases see it. */
+export interface ALInboundBufferedSlotExpiryBackend {
+    readonly label: string;
+    readonly createStores: ALInboundBufferedSlotExpiryStoresFactory;
+    /**
+     * What a commit's second read of a slot answers once another writer has deleted the slot and its message row
+     * after the commit read the slot: the store as it is then (`store`); the row the commit recorded at its first read
+     * (`recorded`, PostgreSQL's commit, which answers a key it has read from that observation); or nothing, since no
+     * other writer runs inside a commit (`serialized`, memory, whose writes queue one behind another).
+     */
+    readonly commitSlotReread: 'store' | 'recorded' | 'serialized';
+}
+
 /** How long the short-lived copy lives: its slot and its message row, which no other work names, expire together. */
 const SHORT_LIVED_MS = 2_000;
 
@@ -29,8 +46,8 @@ interface TestClock {
 }
 
 /**
- * One track seeded alike into two stores: message 1 delivered, a short-lived copy at `shortSeq`, and a long-lived copy
- * right after it. The clock stands one millisecond before the short-lived copy expires.
+ * One track seeded alike into two stores: message 1 delivered, any lower long-lived copies, a short-lived copy at
+ * `shortSeq`, and a long-lived copy right after it. The clock stands one millisecond before the short-lived copy expires.
  */
 interface SeededTrackPair {
     readonly clock: TestClock;
@@ -49,13 +66,11 @@ interface SeededTrackPair {
  * failed with `ALAdmissionCorruptionError`, and the operation it served -- an innocent message's admission, its replay,
  * a release or a delivery -- died with it. A slot that outlives its message row is a real fault and still throws.
  */
-export function describeALInboundBufferedSlotExpiryContract(
-    label: string,
-    createStores: ALInboundBufferedSlotExpiryStoresFactory
-): void {
+export function describeALInboundBufferedSlotExpiryContract(backend: ALInboundBufferedSlotExpiryBackend): void {
+    const { label, createStores, commitSlotReread } = backend;
     describe(`${label}: a buffered copy that expires while a read chain resolves it`, () => {
         it('admits against a track read without the copy', async () => {
-            const pair = await seedTrackPair(createStores, 3);
+            const pair = await seedTrackPair(createStores, 3, []);
             const next = createOrderedMessage(5);
             expireBeforeMessageRead(pair);
 
@@ -68,7 +83,7 @@ export function describeALInboundBufferedSlotExpiryContract(
         });
 
         it('reads the track without the copy', async () => {
-            const pair = await seedTrackPair(createStores, 3);
+            const pair = await seedTrackPair(createStores, 3, []);
             expireBeforeMessageRead(pair);
 
             const torn = await readTrack(pair.torn.stores.admissionStore, pair.trackKey);
@@ -80,7 +95,7 @@ export function describeALInboundBufferedSlotExpiryContract(
         });
 
         it('releases nothing for the copy', async () => {
-            const pair = await seedTrackPair(createStores, 3);
+            const pair = await seedTrackPair(createStores, 3, []);
             expireBeforeMessageRead(pair);
 
             const torn = await readRelease(pair.torn.stores.admissionStore, pair.trackKey, 3);
@@ -92,7 +107,7 @@ export function describeALInboundBufferedSlotExpiryContract(
         });
 
         it('reads a delivery whose predecessor copy expires as one waiting on the track', async () => {
-            const pair = await seedTrackPair(createStores, 3);
+            const pair = await seedTrackPair(createStores, 3, []);
             expireBeforeMessageRead(pair);
 
             const torn = await pair.torn.stores.admissionStore.readOrderedDelivery(pair.trackKey, 4);
@@ -104,7 +119,7 @@ export function describeALInboundBufferedSlotExpiryContract(
         });
 
         it('reads a delivery whose next copy expires as one past a missing copy', async () => {
-            const pair = await seedTrackPair(createStores, 2);
+            const pair = await seedTrackPair(createStores, 2, []);
             expireBeforeMessageRead(pair);
 
             const torn = await pair.torn.stores.admissionStore.readOrderedDelivery(pair.trackKey, 3);
@@ -116,7 +131,7 @@ export function describeALInboundBufferedSlotExpiryContract(
         });
 
         it('answers conflict for an admission whose commit re-reads the track across the expiry, and writes nothing', async () => {
-            const pair = await seedTrackPair(createStores, 3);
+            const pair = await seedTrackPair(createStores, 3, []);
             const next = createOrderedMessage(5);
             const tornBundle = await readInboundTestAdmission(pair.torn.stores.admissionStore, next);
             const lateBundle = await readInboundTestAdmission(pair.late.stores.admissionStore, next);
@@ -134,7 +149,7 @@ export function describeALInboundBufferedSlotExpiryContract(
         });
 
         it('answers conflict for a delivery completion whose slot read crosses the expiry, and writes nothing', async () => {
-            const pair = await seedTrackPair(createStores, 2);
+            const pair = await seedTrackPair(createStores, 2, []);
             const tornRead = (await readRelease(pair.torn.stores.admissionStore, pair.trackKey, 2))!;
             const lateRead = (await readRelease(pair.late.stores.admissionStore, pair.trackKey, 2))!;
             expireBeforeMessageRead(pair);
@@ -152,25 +167,66 @@ export function describeALInboundBufferedSlotExpiryContract(
         // The second form of the same tear, with no clock: a writer that met both rows expired deleted them between the
         // chain's read of the slot and its read of the message row.
         it('admits against a track read without a copy whose rows another writer deleted during the read', async () => {
-            const pair = await seedTrackPair(createStores, 3);
+            const pair = await seedTrackPair(createStores, 3, []);
             const next = createOrderedMessage(5);
-            const { backend, stores } = pair.torn;
-            tearBeforeMessageRead(pair.torn, pair.shortSeq, async () => {
-                await backend.write(async (transaction) => {
-                    await transaction.remove(toSlotKey(pair.torn, pair.trackKey, pair.shortSeq));
-                    await transaction.remove(toMessageKey(pair.torn, pair.shortSeq));
-                });
-            });
+            deleteCopyBeforeMessageRead(pair);
 
-            const torn = await readInboundTestDecisionSurface(stores.admissionStore, next);
-            const after = await readInboundTestDecisionSurface(stores.admissionStore, next);
+            const torn = await readInboundTestDecisionSurface(pair.torn.stores.admissionStore, next);
+            const after = await readInboundTestDecisionSurface(pair.torn.stores.admissionStore, next);
 
             expect(torn.observations.ordering?.buffered.map((slot) => slot.seq)).toEqual([4]);
             expect(torn.observations.ordering).toEqual(after.observations.ordering);
         });
 
+        // A bounded hold's end can extend a lower copy's reach past the predecessor. A read made after the
+        // predecessor's copy expired finds it gone and looks for that lower copy; a torn read must look too, not fall
+        // through to the ordering record.
+        it('reads a delivery whose predecessor copy expires as one waiting on a lower copy that reaches past it', async () => {
+            const pair = await seedTrackPair(createStores, 4, [3]);
+            await extendLowerReachPastShortCopy(pair.torn, pair);
+            await extendLowerReachPastShortCopy(pair.late, pair);
+            expireBeforeMessageRead(pair);
+
+            const torn = await pair.torn.stores.admissionStore.readOrderedDelivery(pair.trackKey, 5);
+            pair.clock.nowMs = pair.expiresAtMs;
+            const late = await pair.late.stores.admissionStore.readOrderedDelivery(pair.trackKey, 5);
+
+            expect(torn).toEqual({ completedThrough: 1, predecessor: { kind: 'effect' } });
+            expect(torn).toEqual(late);
+        });
+
+        if (commitSlotReread === 'store') {
+            it('answers conflict for an admission whose commit loses the copy\'s rows to another writer during its re-read', async () => {
+                const pair = await seedTrackPair(createStores, 3, []);
+                const next = createOrderedMessage(5);
+                const bundle = await readInboundTestAdmission(pair.torn.stores.admissionStore, next);
+                deleteCopyBeforeMessageRead(pair);
+
+                expect(await pair.torn.stores.admissionStore.commitBundle(bundle)).toBe('conflict');
+
+                expect(await readRelease(pair.torn.stores.admissionStore, pair.trackKey, 5)).toBeUndefined();
+            });
+        }
+
+        // A known remaining throw, pinned as it stands: a PostgreSQL commit answers a key it has read from the row it
+        // recorded then, so its second read of the slot still finds the slot the expiry sweep has deleted with its
+        // message row, while the instance's own clock is still before the expiry. Closing it is a backend decision.
+        if (commitSlotReread === 'recorded') {
+            it('still throws for an admission whose commit loses the copy\'s rows to another writer during its re-read (known remaining case)', async () => {
+                const pair = await seedTrackPair(createStores, 3, []);
+                const next = createOrderedMessage(5);
+                const bundle = await readInboundTestAdmission(pair.torn.stores.admissionStore, next);
+                deleteCopyBeforeMessageRead(pair);
+
+                await expect(pair.torn.stores.admissionStore.commitBundle(bundle))
+                    .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+
+                expect(await readRelease(pair.torn.stores.admissionStore, pair.trackKey, 5)).toBeUndefined();
+            });
+        }
+
         it('still refuses as corrupt a slot that outlives its message row', async () => {
-            const pair = await seedTrackPair(createStores, 3);
+            const pair = await seedTrackPair(createStores, 3, []);
             await outliveMessageRow(pair.torn, pair);
             await outliveMessageRow(pair.late, pair);
             expireBeforeMessageRead(pair);
@@ -184,7 +240,12 @@ export function describeALInboundBufferedSlotExpiryContract(
     });
 }
 
-async function seedTrackPair(createStores: ALInboundBufferedSlotExpiryStoresFactory, shortSeq: number): Promise<SeededTrackPair> {
+/** `lowerSeqs` are long-lived copies admitted between message 1 and the short-lived copy. */
+async function seedTrackPair(
+    createStores: ALInboundBufferedSlotExpiryStoresFactory,
+    shortSeq: number,
+    lowerSeqs: readonly number[]
+): Promise<SeededTrackPair> {
     const startMs = Date.now();
     const clock: TestClock = { nowMs: startMs };
     const now = vi.spyOn(Date, 'now').mockImplementation(() => clock.nowMs);
@@ -192,6 +253,7 @@ async function seedTrackPair(createStores: ALInboundBufferedSlotExpiryStoresFact
     const expiresAtMs = startMs + SHORT_LIVED_MS;
     const messages = [
         createOrderedMessage(1),
+        ...lowerSeqs.map(createOrderedMessage),
         { ...createOrderedMessage(shortSeq), constraints: { expiresAtMs } },
         createOrderedMessage(shortSeq + 1)
     ];
@@ -261,6 +323,41 @@ function tearBeforeMessageRead(
     );
 }
 
+/** A writer that met the short-lived copy's slot and message row expired deletes both, with no clock move. */
+function deleteCopyBeforeMessageRead(pair: SeededTrackPair): void {
+    const { backend } = pair.torn;
+    tearBeforeMessageRead(pair.torn, pair.shortSeq, async () => {
+        await backend.write(async (transaction) => {
+            await transaction.remove(toSlotKey(pair.torn, pair.trackKey, pair.shortSeq));
+            await transaction.remove(toMessageKey(pair.torn, pair.shortSeq));
+        });
+    });
+}
+
+/**
+ * The copy below the short-lived one reaches past it, and the track's position stands past both, as a bounded hold's
+ * end that entered at that lower copy leaves them; the short-lived copy's successor is still buffered.
+ */
+async function extendLowerReachPastShortCopy(stores: InboundTestBackendStores, pair: SeededTrackPair): Promise<void> {
+    const lowerSlot = {
+        trackKey: pair.trackKey,
+        prefix: toSlotKey(stores, pair.trackKey, ''),
+        key: toSlotKey(stores, pair.trackKey, pair.shortSeq - 1)
+    };
+    const orderingKey = `${stores.stores.admissionStore.namespace}:ordering:${pair.trackKey}`;
+    const retainUntilMs = pair.expiresAtMs + 60_000;
+    await stores.backend.write(async (transaction) => {
+        const lower = await transaction.read(lowerSlot.key, (value) => decodeALInboundBufferedSnapshot(value, lowerSlot));
+        await transaction.set(lowerSlot.key, { ...lower!, completesThrough: pair.shortSeq }, retainUntilMs);
+        const ordering = await transaction.read(orderingKey, decodeALInboundOrderingSnapshot);
+        await transaction.set(
+            orderingKey,
+            { ...ordering!, lastContiguousSeq: pair.shortSeq, bufferedSeqs: [pair.shortSeq + 1] },
+            retainUntilMs
+        );
+    });
+}
+
 /** The slot of the short-lived copy outlives its message row by one millisecond, which no admission ever writes. */
 async function outliveMessageRow(stores: InboundTestBackendStores, pair: SeededTrackPair): Promise<void> {
     const slotKey = toSlotKey(stores, pair.trackKey, pair.shortSeq);
@@ -274,7 +371,7 @@ function toMessageKey(stores: InboundTestBackendStores, seq: number): string {
     return `${stores.stores.admissionStore.namespace}:message:sender:message-${seq}`;
 }
 
-function toSlotKey(stores: InboundTestBackendStores, trackKey: string, seq: number): string {
+function toSlotKey(stores: InboundTestBackendStores, trackKey: string, seq: number | ''): string {
     return `${stores.stores.admissionStore.namespace}:buffered:${trackKey}:${seq}`;
 }
 
