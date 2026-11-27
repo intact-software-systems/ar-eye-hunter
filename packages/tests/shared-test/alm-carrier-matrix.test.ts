@@ -272,6 +272,11 @@ const EXPECTED_OUTCOMES = {
         rtc: toRefusedAtTheCall('$.scope', 'invalid-scope'),
         'rtc-with-ws-fallback': toRefusedAtTheCall('$.scope', 'invalid-scope')
     },
+    'room-send-naming-another-room': {
+        ws: toRefusedAtTheCall('$.contextId', 'context-room-mismatch'),
+        rtc: toRefusedAtTheCall('$.contextId', 'context-room-mismatch'),
+        'rtc-with-ws-fallback': toRefusedAtTheCall('$.contextId', 'context-room-mismatch')
+    },
     'server-peer-unicast': {
         ws: DELIVERED,
         rtc: toRefusedAtTheCall('$.peerId', 'unsupported'),

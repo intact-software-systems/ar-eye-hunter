@@ -71,7 +71,7 @@ const NO_ROUTE: ALDeliveryAdmissionVerdict = {
 const RTC_DEADLINE_AFTER_SEND_MS = 29_000;
 const SERVER_OVER_WS = 'The server is addressed over WS: a peer-addressed send to it takes the ws strategy.';
 const SERVER_NAMES_NO_PEER_ID = 'A peer-addressed send needs a server that names its peer id; this server names none.';
-const CONTEXT_NAMES_ANOTHER_ROOM = 'A peer-addressed send routes in the room it names: contextId must equal the room id.';
+const CONTEXT_NAMES_ANOTHER_ROOM = 'A room send routes in the room it names: contextId must equal the room id.';
 
 describe('a typed send addressed to one peer over RTC (Q11, C7)', () => {
     it.each(['rtc', 'rtc-with-ws-fallback'] as const)(

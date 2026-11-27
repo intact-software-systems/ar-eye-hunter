@@ -209,6 +209,23 @@ const WS_CLIENT_RELAY_REJECTION_TEST = 'packages/tests/shared/services/ws-queue-
 const WS_SEND_CARRIES_NO_PROOF =
     'A WS send carries no proof: the authenticated socket names its sender, and the server verifies only the proof a handed-over copy carries.';
 
+/** The browser's refusal of a room send routed in another room, which every strategy throws before any carrier. */
+const ROOM_SEND_NAMING_ANOTHER_ROOM_REFUSED_AT_THE_CALL = {
+    kind: 'unit-test',
+    testFile: BROWSER_MESSAGE_AUDIENCES_TEST,
+    testName:
+        'refuses a room send whose contextId names another room at the call on %s, before the connect and before either carrier',
+    because:
+        'A room send whose `contextId` is not its room id throws `context-room-mismatch` at `$.contextId`, connects nothing and admits on neither carrier.'
+} as const satisfies AlmCarrierProof;
+
+/** D82: no RTC receiver checks a frame's context against its room, so only the browser's own refusal stands there. */
+const RTC_RECEIVER_CHECKS_NO_ROOM_CONTEXT = {
+    kind: 'documented-limit',
+    document: 'docs/rallar-api-reference.md',
+    limit: 'a frame that did not pass this refusal is still delivered over RTC'
+} as const satisfies AlmCarrierProof;
+
 /**
  * Each capability whose outcome differs by carrier on purpose, or that a single carrier proves, and what proves each
  * cell. A scenario a cell names runs over exactly the carriers that name it: it takes them from here
@@ -309,6 +326,37 @@ export const ALM_CARRIER_MATRIX = {
                     testName: 'a %s send with an invalid scope produces no admission on either carrier',
                     because: 'A fallback-strategy send that names `all` throws and admits on neither carrier.'
                 }]
+            }
+        }
+    },
+    'room-send-naming-another-room': {
+        statement:
+            'A room send whose `contextId` is not its room id is refused at the call on every strategy; a modified client\'s frame is refused `unauthorized` by the WS server and is not checked by an RTC receiver.',
+        cells: {
+            ws: {
+                kind: 'stated',
+                outcome: { kind: 'refused', by: 'call', path: '$.contextId', code: 'context-room-mismatch' },
+                proofs: [
+                    ROOM_SEND_NAMING_ANOTHER_ROOM_REFUSED_AT_THE_CALL,
+                    {
+                        kind: 'unit-test',
+                        testFile:
+                            'packages/tests/shared-server/rallar-system/websocket/router/rallar-server-ws-room-route-context.test.ts',
+                        testName: 'refuses a %s whose route names another room than its groupRef as unauthorized',
+                        because:
+                            'The WS server refuses a client frame whose `route.contextId` names another room than its `groupRef` as `unauthorized`, whatever its audience.'
+                    }
+                ]
+            },
+            rtc: {
+                kind: 'stated',
+                outcome: { kind: 'refused', by: 'call', path: '$.contextId', code: 'context-room-mismatch' },
+                proofs: [ROOM_SEND_NAMING_ANOTHER_ROOM_REFUSED_AT_THE_CALL, RTC_RECEIVER_CHECKS_NO_ROOM_CONTEXT]
+            },
+            'rtc-with-ws-fallback': {
+                kind: 'stated',
+                outcome: { kind: 'refused', by: 'call', path: '$.contextId', code: 'context-room-mismatch' },
+                proofs: [ROOM_SEND_NAMING_ANOTHER_ROOM_REFUSED_AT_THE_CALL, RTC_RECEIVER_CHECKS_NO_ROOM_CONTEXT]
             }
         }
     },
