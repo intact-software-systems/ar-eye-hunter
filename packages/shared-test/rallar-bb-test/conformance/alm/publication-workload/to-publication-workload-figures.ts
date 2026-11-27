@@ -36,7 +36,10 @@ export interface PublicationWorkloadRun {
     readonly rooms: readonly PublicationWorkloadRoomResults[];
 }
 
-/** The agents of one room that left results, by role. The plan states how many of each role the point asked for. */
+/**
+ * The results of one room's agents, by role: one result per publisher and per subscriber of the room, each of another
+ * agent. The point's `publisherCount` and its plan's `subscriberCount` state how many those are.
+ */
 export interface PublicationWorkloadRoomResults {
     readonly publishers: readonly PublicationWorkloadPublisherResults[];
     readonly subscribers: readonly PublicationWorkloadSubscriberResults[];
@@ -78,10 +81,11 @@ export interface PublicationWorkloadMeasuredFigures {
 }
 
 export interface PublicationWorkloadRoomFigures {
+    /** The point's group, by the room's place in the run. No result states the group it was read under. */
     readonly group: RallarBlackBoxDistributedGroupRef;
-    /** One entry per publisher result of the room, in its order. */
+    /** One entry per publisher of the room, in the order of the run's results. */
     readonly publishers: readonly PublicationWorkloadPublisherFigures[];
-    /** One entry per subscriber result of the room, in its order; the plan's `subscriberCount` is how many it asked for. */
+    /** One entry per subscriber of the room, in the order of the run's results. */
     readonly subscribers: readonly PublicationWorkloadSubscriberFigures[];
     /** The room's subscriber results together. */
     readonly delivered: PublicationWorkloadDeliveredFigures;
@@ -120,7 +124,7 @@ export interface PublicationWorkloadSubscriberFigures {
  * histogram. A percentile of it therefore ranks every delivered sample; it is no mean of the subscribers' percentiles.
  */
 export interface PublicationWorkloadDeliveredFigures {
-    /** The subscriber results it covers. With none it reads 0 copies and `no-samples`. */
+    /** The subscriber results it covers. */
     readonly subscriberCount: number;
     readonly observed: number;
     readonly unrecordedSamples: number;
@@ -166,26 +170,38 @@ interface DecodedRoom {
     readonly delivered: PublicationWorkloadDeliveredFigures;
 }
 
+/** How many results of each role a room of the point holds. A point that breaks a bound of the family states none. */
+interface RoomRoleCounts {
+    readonly publishers: number;
+    readonly subscribers: number;
+}
+
 /**
  * The left names every field that cannot be read, each issue starting with the field's path: under `$.parameters` a
- * bound of the family the point breaks, `$.rooms` where the run holds another number of rooms than the point, and
- * under `$.rooms[r].publishers[p].loop`, `$.rooms[r].publishers[p].stats` and `$.rooms[r].subscribers[s].received` a
- * field of that result value.
+ * bound of the family the point breaks, `$.rooms` where the run holds another number of rooms than the point,
+ * `$.rooms[r].publishers` and `$.rooms[r].subscribers` where a room holds another number of results than the point has
+ * agents of that role, `...publishers[p].agentId` and `...subscribers[s].agentId` where a result repeats an agent of
+ * its role, and under `$.rooms[r].publishers[p].loop`, `$.rooms[r].publishers[p].stats` and
+ * `$.rooms[r].subscribers[s].received` a field of that result value.
  */
 export function toPublicationWorkloadFigures(
     run: PublicationWorkloadRun
 ): Either<readonly string[], PublicationWorkloadFigures> {
     const parameterIssues = validatePublicationWorkloadParameters(run.parameters)
         .map((issue) => `$.parameters${issue.path.slice(1)} is not valid: ${issue.message}`);
+    const roleCounts = parameterIssues.length > 0 ? undefined : {
+        publishers: run.parameters.publisherCount,
+        subscribers: computePublicationWorkloadPlan(run.parameters).subscriberCount
+    };
     const groups = [run.parameters.group];
-    const rooms = run.rooms.map((room, index) => decodeRoom(room, `$.rooms[${index}]`));
+    const rooms = run.rooms.map((room, index) => decodeRoom(room, `$.rooms[${index}]`, roleCounts));
     const decodedRooms = EitherCollectors.toListFoldRights(rooms);
     const delivered = computeDeliveredFigures(decodedRooms.flatMap((room) => room.subscribers));
     const issues = [
         ...parameterIssues,
         ...(run.rooms.length === groups.length
             ? []
-            : [`$.rooms must hold one entry per room of the point, which names ${groups.length}`]),
+            : [`$.rooms must hold one entry per room of the point, which has ${groups.length}`]),
         ...EitherCollectors.toListFoldLefts(rooms).flat(),
         ...(delivered.left === undefined ? [] : [`$.rooms give no delivered sample age: ${delivered.left}`])
     ];
@@ -206,7 +222,11 @@ export function toPublicationWorkloadFigures(
     });
 }
 
-function decodeRoom(room: PublicationWorkloadRoomResults, path: string): Either<readonly string[], DecodedRoom> {
+function decodeRoom(
+    room: PublicationWorkloadRoomResults,
+    path: string,
+    roleCounts: RoomRoleCounts | undefined
+): Either<readonly string[], DecodedRoom> {
     const publishers = room.publishers
         .map((publisher, index) => decodePublisherFigures(publisher, `${path}.publishers[${index}]`));
     const subscribers = room.subscribers
@@ -214,7 +234,9 @@ function decodeRoom(room: PublicationWorkloadRoomResults, path: string): Either<
     const decodedSubscribers = EitherCollectors.toListFoldRights(subscribers);
     const delivered = computeDeliveredFigures(decodedSubscribers);
     const issues = [
+        ...validateRoleResults(room.publishers, roleCounts?.publishers, `${path}.publishers`),
         ...EitherCollectors.toListFoldLefts(publishers).flat(),
+        ...validateRoleResults(room.subscribers, roleCounts?.subscribers, `${path}.subscribers`),
         ...EitherCollectors.toListFoldLefts(subscribers).flat(),
         ...(delivered.left === undefined ? [] : [`${path}.subscribers give no delivered sample age: ${delivered.left}`])
     ];
@@ -226,6 +248,28 @@ function decodeRoom(room: PublicationWorkloadRoomResults, path: string): Either<
         subscribers: decodedSubscribers,
         delivered: delivered.right
     });
+}
+
+/**
+ * A room holds one result per agent of a role. A result too few leaves an agent out of the record, and one given twice
+ * counts its messages twice in every figure of the room and of the point.
+ */
+function validateRoleResults(
+    results: readonly Readonly<{ agentId: string; }>[],
+    expectedCount: number | undefined,
+    path: string
+): readonly string[] {
+    return [
+        ...(expectedCount === undefined || results.length === expectedCount
+            ? []
+            : [`${path} must hold ${expectedCount} results, one per agent of the role; it holds ${results.length}`]),
+        ...results.flatMap(({ agentId }, index) => {
+            const first = results.findIndex((result) => result.agentId === agentId);
+            return first === index
+                ? []
+                : [`${path}[${index}].agentId must name another agent than ${path}[${first}].agentId, ${agentId}`];
+        })
+    ];
 }
 
 function decodePublisherFigures(
@@ -353,9 +397,9 @@ function decodeSampleAge(value: unknown, path: string): Either<readonly string[]
 }
 
 /**
- * The merge starts from the histogram with no sample, so no subscriber reads `no-samples` and one reads as itself.
- * Every subscriber's histogram was decoded on the family's bounds, so the merge has nothing to refuse; a refusal
- * would still be the left, not a throw.
+ * The merge starts from the histogram with no sample, so one subscriber reads as itself. Every subscriber's histogram
+ * was decoded on the family's bounds, so the merge has nothing to refuse; a refusal would still be the left, not a
+ * throw.
  */
 function computeDeliveredFigures(
     subscribers: readonly DecodedSubscriber[]

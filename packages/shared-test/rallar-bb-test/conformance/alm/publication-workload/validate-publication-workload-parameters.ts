@@ -19,8 +19,10 @@ import { computePublicationWorkloadMinimumPayloadBytes } from './to-publication-
 /** One point of the publication workload family. The family has no default for any field. */
 export interface PublicationWorkloadParameters {
     readonly group: RallarBlackBoxDistributedGroupRef;
-    /** One publisher; every other agent subscribes. */
+    /** The agents of the room: its publishers and its subscribers. */
     readonly participantCount: number;
+    /** The agents of the room that publish. Every other agent only subscribes, and at least one does. */
+    readonly publisherCount: number;
     readonly carrier: AlmConformanceCarrier;
     readonly publishIntervalMs: number;
     readonly windowMs: number;
@@ -63,6 +65,7 @@ export function validatePublicationWorkloadParameters(
     return [
         ...validateRallarGroupRef(parameters.group, '$.group').issues,
         validateParticipantCount(parameters.participantCount),
+        validatePublisherCount(parameters),
         validateCarrier(parameters.carrier),
         validatePublishIntervalMs(parameters, publicationIssues),
         validateWindowMs(parameters, wholeFrameCount),
@@ -84,8 +87,23 @@ function validateParticipantCount(participantCount: number): RallarValidationIss
         : toIssue(
             'participantCount',
             'invalid-participant-count',
-            `Expected an integer from ${minParticipantCount} to ${maxParticipantCount}: one publisher and its subscribers.`
+            `Expected an integer from ${minParticipantCount} to ${maxParticipantCount}: the publishers and the subscribers.`
         );
+}
+
+/** The last agent of a room subscribes, so the publishers are one fewer than the agents at most. */
+function validatePublisherCount(parameters: PublicationWorkloadParameters): RallarValidationIssue | undefined {
+    const { participantCount, publisherCount } = parameters;
+    if (decodePositiveInteger(publisherCount) === undefined) {
+        return toIssue('publisherCount', 'invalid-publisher-count', 'Expected an integer of at least 1.');
+    }
+    return validateParticipantCount(participantCount) === undefined && publisherCount >= participantCount
+        ? toIssue(
+            'publisherCount',
+            'publisher-count-leaves-no-subscriber',
+            `Expected at most ${participantCount - 1}, so that one of the ${participantCount} agents subscribes.`
+        )
+        : undefined;
 }
 
 function validateCarrier(carrier: AlmConformanceCarrier): RallarValidationIssue | undefined {

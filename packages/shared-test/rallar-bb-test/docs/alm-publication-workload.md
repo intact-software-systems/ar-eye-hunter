@@ -1,10 +1,10 @@
 # ALM publication workload family
 
 The family lives in `conformance/alm/publication-workload/`. One point of it is one room in which one
-publisher sends paced `live` publications and every other agent subscribes. A run of a point gives a
-figures record: what the point asked for, beside what the run observed, with the ages of the
-delivered samples of each subscriber, of the room and of the point. The family builds recipes and
-reads results. It starts no browser and holds no manifest; a caller puts the two recipes into a
+or more publishers each send paced `live` publications and every other agent subscribes. A run of a
+point gives a figures record: what the point asked for, beside what the run observed, with the ages
+of the delivered samples of each subscriber, of the room and of the point. The family builds recipes
+and reads results. It starts no browser and holds no manifest; a caller puts the recipes into a
 distributed run.
 
 ## A point
@@ -17,7 +17,8 @@ validators. A bound stated against another field is checked only when that field
 | Field                 | Bound                                                                                                                     |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | `group`               | A valid group reference: the one room.                                                                                    |
-| `participantCount`    | A whole number from 2 to 50: one publisher, the rest subscribers.                                                         |
+| `participantCount`    | A whole number from 2 to 50: the agents of the room.                                                                      |
+| `publisherCount`      | A whole number of at least 1 and at most `participantCount - 1`: the agents that publish. Every other agent subscribes.   |
 | `carrier`             | `ws`, `rtc` or `rtc-with-ws-fallback`.                                                                                    |
 | `publishIntervalMs`   | A positive whole number of milliseconds, at least `publication.cadenceMs`.                                                |
 | `windowMs`            | A positive multiple of `publishIntervalMs`; the frame count `windowMs / publishIntervalMs` is at most 2,000.              |
@@ -25,12 +26,15 @@ validators. A bound stated against another field is checked only when that field
 | `payloadBytes`        | A whole number of UTF-8 bytes: at least the payload with no filler, at most 65,536 and at most `publication.drain.bytes`. |
 | `ttlMs`               | A positive whole number of milliseconds.                                                                                  |
 | `minReceiveRatio`     | A share above 0 and at most 1.                                                                                            |
-| `minSendSuccessRatio` | A share above 0 and at most 1: the share of the frames the publisher's publication stage must hand to a carrier.          |
+| `minSendSuccessRatio` | A share above 0 and at most 1: the share of its frames each publisher's publication stage must hand to a carrier.         |
 | `readyTimeoutMs`      | A positive whole number of milliseconds: the setup's allowance.                                                           |
 
-The rate is the integer interval, so `configuredRateHz` (`1000 / publishIntervalMs`) is never
-rounded. A threshold is the smallest whole count whose share of the frames reaches its ratio: 57 of
-60 frames at 0.95.
+The interval, the window and the frame count are one publisher's: every publisher of a point sends
+`frameCount` frames. The rate is the integer interval, so `configuredRateHz`
+(`1000 / publishIntervalMs`) is never rounded. A threshold is the smallest whole count whose share
+reaches its ratio: 57 of 60 at 0.95. A publisher's threshold is a share of its own frames. A
+subscriber's is a share of the frames of all the room's publishers together, since it counts them
+together: with two publishers of 60 frames, 114 of 120.
 
 Each frame's payload is `{ seq, sentAtEpochMs, pad }`. `payloadBytes` is its serialised size at the
 last sequence number; an earlier frame is smaller by the digits its sequence number lacks.
@@ -41,18 +45,24 @@ that run, not a contract: no test pins it.
 
 ## What a run does
 
-`createPublicationWorkloadRecipes(parameters)` returns one recipe per role, or every validation issue
-as its left (`RallarValidationIssue[]`). Which agent publishes is not the family's to say, since it
-holds no manifest: the caller's role-map manifest gives the publisher's recipe to one agent. In the
-local point's manifest that is the first agent of the run.
+`createPublicationWorkloadRecipes(parameters)` returns `{ rooms: [{ group, roles }] }` with the
+point's one room, or every validation issue as its left (`RallarValidationIssue[]`). A role is
+`{ kind, recipe, agentCount }`: its `kind` is `publisher` or `subscriber`, and `agentCount` is how
+many agents of the room run its recipe. A room's roles come in this order: the publisher that
+writes the group (one agent), the joining publishers (`publisherCount - 1` agents, absent for one
+publisher), the subscribers. Which agent runs which recipe is not the family's to say, since it
+holds no manifest: the caller's role-map manifest gives each recipe to its agents. In the local
+point's manifest the first agent of the run publishes.
 
-Both roles first run the cohort setup the scale family also uses (`conformance/alm/cohort/`): sign
-in, the publisher's group, the connects, the audience wait, an accepted RTC layout that stays stable,
-and the `setup-complete` barrier. The setup is the same for all three carriers. A `ws` point is
+Every role first runs the cohort setup the scale family also uses (`conformance/alm/cohort/`): sign
+in, the first publisher's group, the connects, the audience wait, an accepted RTC layout that stays
+stable, and the `setup-complete` barrier. A joining publisher joins the group as a subscriber does,
+once a peer exists, under the first publisher's command ids and connection name; only its
+`recipeId` and `name` differ. The setup is the same for all three carriers. A `ws` point is
 therefore WS sends in a room that has also formed its RTC layout; the conformance lane's `ws` cells
 connect on `messages.ws` and open no RTC lane.
 
-The publisher then runs:
+Each publisher then runs:
 
 1. A `loop` of one `messages.send` per frame, `publishIntervalMs` apart, with `purpose: 'live'`, the
    point's publication policy, carrier and `ttlMs`.
@@ -64,15 +74,18 @@ The publisher then runs:
 A subscriber waits at the `complete` barrier and then runs:
 
 1. `messages.received` for the frame type, with `count: minExpectedInboundMessages`,
-   `ageFrom: 'sentAtEpochMs'` and a window of `ttlMs`.
-2. Its gates: no message without an age, as many ages as messages, and no more messages than frames.
+   `ageFrom: 'sentAtEpochMs'` and a window of `ttlMs`. The count is by frame type, so it takes the
+   frames of every publisher together: a subscriber can reach it though one publisher delivered
+   little.
+2. Its gates: no message without an age, as many ages as messages, and no more messages than the
+   room's publishers have frames together.
 3. `stats`.
 
 The subscriber's recipe asks for a `full` event history, because the count reads the page's whole
 inbound log. A distributed manifest that names its own `eventHistory` replaces it, so a manifest of
 the family names none. A barrier id is used once per control run, so each run needs a control run of
 its own. A subscriber whose count fails stops there: its `received` value is recorded, its `stats`
-is not. A publisher that fails before `complete` fails every subscriber at that barrier.
+is not. A publisher that fails before `complete` fails every other agent at that barrier.
 
 ## The local point
 
@@ -100,8 +113,9 @@ test as `publication-workload-figures.json`, beside the operator's native eviden
 
 No CI lane runs the test. The app browser lane's `npm run test:rallar` lists the file, as it lists
 every full-stack spec, and skips the test because it does not set the opt-in environment. Only the
-`rtc` point has a test that runs it. A `ws` and an `rtc-with-ws-fallback` point are checked against
-the recipe schema, the control validation and the distributed preflight only.
+`rtc` point of one publisher has a test that runs it. A `ws` and an `rtc-with-ws-fallback` point,
+and a point of two publishers on each carrier, are checked against the recipe schema, the control
+validation and the distributed preflight only.
 
 ## The figures record
 
@@ -109,30 +123,34 @@ the recipe schema, the control validation and the distributed preflight only.
 values of three commands: each publisher's `publication-workload-publisher-frames` (`loop`) and
 `publication-workload-publisher-stats` (`stats`), and each subscriber's
 `publication-workload-subscriber-received` (`received`), every one beside its `agentId`. `rooms`
-holds one entry per room of the point, which is one; a room holds one entry per agent that left
-results, and the record does not count them against the plan. Its left is `readonly string[]`: every
-field it could not read, each starting with the field's path, which is `$.parameters...`, `$.rooms`
-for another number of rooms than the point's, `$.rooms[r].publishers[p].loop...`,
-`$.rooms[r].publishers[p].stats...` or `$.rooms[r].subscribers[s].received...`. The record keeps
-`configured` and `measured` apart, no field mixes them, and it judges nothing: the recipes' asserts
-are the gates.
+holds one entry per room of the point, which is one. A room holds one result per publisher and one
+per subscriber of the point, `publisherCount` and the plan's `subscriberCount` of them, each of
+another agent: a run that left fewer is no run of the point, and a result given twice would count
+its messages twice. Its left is `readonly string[]`: every field it could not read, each starting
+with the field's path, which is `$.parameters...`, `$.rooms` for another number of rooms than the
+point's, `$.rooms[r].publishers` or `$.rooms[r].subscribers` for another number of results than the
+point has agents of that role, `...publishers[p].agentId` or `...subscribers[s].agentId` for a
+result that repeats an agent of its role, `$.rooms[r].publishers[p].loop...`,
+`$.rooms[r].publishers[p].stats...` or `$.rooms[r].subscribers[s].received...`. A point that breaks
+a bound has no plan, so its results are not counted against it. The record keeps `configured` and
+`measured` apart, and it judges nothing: the recipes' asserts are the gates.
 
-`measured.rooms[]` holds one entry per room, each with its `group`. In the table, `room` is one of
-them.
+`measured.rooms[]` holds one entry per room, each with its `group`, which is the point's group and
+not a value read from a result. In the table, `room` is one of them.
 
-| Field                                     | Meaning                                                                                                                                                                          |
-| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `configured.parameters`                   | The point as given.                                                                                                                                                              |
-| `configured.plan`                         | `frameCount`, `configuredRateHz`, `subscriberCount`, `expectedInboundMessages` and `minExpectedInboundMessages` for one subscriber, `minAcceptedSends`, `logicalFanoutMessages`. |
-| `room.publishers[].submittedSends`        | The loop's `passed`: the send commands the harness submitted. A live send returns once its value is staged or refused, so this is not what reached a carrier.                    |
-| `room.publishers[].publicationStage`      | The publisher page's stage as its `stats` read it. `counters.admitted` is what the stage handed to a carrier, and the publisher's gate.                                          |
-| `...publishers[].achievedIterationRateHz` | The loop's iteration rate, whether a send was admitted or not: the intervals between iterations over the loop's elapsed time. `null` where the loop states none.                 |
-| `...publishers[].completedIterations`     | The iterations the loop ran, with `elapsedMs` their time.                                                                                                                        |
-| `room.subscribers[].observed`             | The distinct messages of the frame type delivered to the application when the count settled.                                                                                     |
-| `...subscribers[].unrecordedSamples`      | The observed messages that gave no age: no finite stamp, or a stamp later than the arrival. Never clamped into a bucket.                                                         |
-| `...subscribers[].sampleAgeMs`            | `no-samples`, or `recorded` with `count`, `min`, `max` and `p50`, `p95`, `p99`.                                                                                                  |
-| `room.delivered`                          | The room's subscriber results as one: `subscriberCount` of them, their `observed` and `unrecordedSamples` added, and one `sampleAgeMs` over every age they recorded.             |
-| `measured.delivered`                      | The same over the subscriber results of every room.                                                                                                                              |
+| Field                                     | Meaning                                                                                                                                                                                                                 |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `configured.parameters`                   | The point as given.                                                                                                                                                                                                     |
+| `configured.plan`                         | One publisher's `frameCount`, `configuredRateHz`, `expectedAdmissions` and `minAcceptedSends`; `subscriberCount`; one subscriber's `expectedInboundMessages` and `minExpectedInboundMessages`; `logicalFanoutMessages`. |
+| `room.publishers[].submittedSends`        | The loop's `passed`: the send commands the harness submitted. A live send returns once its value is staged or refused, so this is not what reached a carrier.                                                           |
+| `room.publishers[].publicationStage`      | That publisher page's stage as its `stats` read it. `counters.admitted` is what the stage handed to a carrier, and the publisher's gate.                                                                                |
+| `...publishers[].achievedIterationRateHz` | The loop's iteration rate, whether a send was admitted or not: the intervals between iterations over the loop's elapsed time. `null` where the loop states none.                                                        |
+| `...publishers[].completedIterations`     | The iterations the loop ran, with `elapsedMs` their time.                                                                                                                                                               |
+| `room.subscribers[].observed`             | The distinct messages of the frame type delivered to the application when the count settled, whichever publisher sent them.                                                                                             |
+| `...subscribers[].unrecordedSamples`      | The observed messages that gave no age: no finite stamp, or a stamp later than the arrival. Never clamped into a bucket.                                                                                                |
+| `...subscribers[].sampleAgeMs`            | `no-samples`, or `recorded` with `count`, `min`, `max` and `p50`, `p95`, `p99`.                                                                                                                                         |
+| `room.delivered`                          | The room's subscriber results as one: `subscriberCount` of them, their `observed` and `unrecordedSamples` added, and one `sampleAgeMs` over every age they recorded.                                                    |
+| `measured.delivered`                      | The same over the subscriber results of every room.                                                                                                                                                                     |
 
 Read each figure with these limits:
 
@@ -150,28 +168,33 @@ Read each figure with these limits:
 - **`observed` is a snapshot.** The count returns as soon as `minExpectedInboundMessages` are on the
   log, and a later arrival is not in it. The publisher's pause before the `complete` barrier makes
   the snapshot near-final. A page's one inbound store delivers a message once whichever carriers
-  brought it, so on a fresh page `observed` is never more than the frame count. The frame type is
-  fixed, so a page that already ran a point counts that point's messages too.
+  brought it, so on a fresh page `observed` is never more than the frames of the room's publishers
+  together. The frame type is fixed, so a page that already ran a point counts that point's messages
+  too.
+- **A delivery level of several publishers is over their frames together.** A subscriber's count
+  and its `observed` do not tell one publisher's frames from another's, so neither does a level read
+  from them.
 - **A percentile is a bucket.** `p50`, `p95` and `p99` are `{ atLeast, atMost }`: the bucket of the
   nearest-rank sample on `AL_PUBLICATION_FIGURE_AGE_BOUNDS_MS`, narrowed by `min` and `max`. They
   compare bucket by bucket with the stage's `selectionAgeMs`, and are not exact values.
 - **A delivered age is one histogram.** `delivered.sampleAgeMs` reads the subscribers' histograms
-  merged by `computeBoundedHistogramMerged`, so its percentiles rank every delivered sample; it is no
-  mean of the subscribers' percentiles. With no subscriber result it is `no-samples` beside counts of
-  0, never a zero age. It weighs a subscriber by the samples it recorded, so one that received little
-  hardly moves it: read it beside each subscriber's own figures.
+  merged by `computeBoundedHistogramMerged`, so its percentiles rank every recorded age; it is no
+  mean of the subscribers' percentiles. Where no subscriber recorded an age it is `no-samples`, never
+  a zero age. It weighs a subscriber by the samples it recorded, so one that received little hardly
+  moves it: read it beside each subscriber's own figures.
 - **There is no delivery ratio.** A ratio needs a denominator, and a run has three: the planned
   frames, the submitted sends, and the stage's `admitted`. The record states all three and divides by
   none.
 - **Every delivered frame is also harness load.** Each inbound event carries the whole payload and is
-  forwarded to the control server: `frameCount x payloadBytes x subscriberCount` bytes. That is
-  trivial at 256 bytes and a load of its own at large payloads.
+  forwarded to the control server: `logicalFanoutMessages x payloadBytes` bytes, since a publisher's
+  page hears the other publishers too. That is trivial at 256 bytes and a load of its own at large
+  payloads.
   `RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS` and `RALLAR_BLACK_BOX_RUNTIME_RETAIN_RESULTS` bound the
   control server's memory, not the page's history.
 
 ## Not built
 
-- More than one room, more than one publisher, and a rate above the publication cadence.
+- More than one room, and a rate above the publication cadence.
 - Subscription churn, and seeded loss or delay.
 - Hosted manifests, and the clock offset a hosted age needs.
 - One histogram across runs: a record covers one run.

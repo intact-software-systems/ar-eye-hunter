@@ -15,10 +15,11 @@ import type { ALOutboundPublicationStageReport } from '@shared/alm/outbound/publ
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import type { BoundedHistogram } from '@shared/measurement/bounded-histogram.ts';
 
-/** Three agents, one send every 500 ms for 30 seconds on rtc: 30,000 / 500 = 60 frames. */
+/** Three agents, one of them sending every 500 ms for 30 seconds on rtc: 30,000 / 500 = 60 frames. */
 const POINT: PublicationWorkloadParameters = {
     group: { applicationId: 'workload-app', workspaceId: 'workload-workspace', groupId: 'workload-room' },
     participantCount: 3,
+    publisherCount: 1,
     carrier: 'rtc',
     publishIntervalMs: 500,
     windowMs: 30_000,
@@ -183,6 +184,9 @@ const ROOM: PublicationWorkloadRoomResults = {
 
 const RUN: PublicationWorkloadRun = { parameters: POINT, rooms: [ROOM] };
 
+/** The same three agents with two of them publishing, which leaves one subscriber. */
+const TWO_PUBLISHER_POINT: PublicationWorkloadParameters = { ...POINT, publisherCount: 2 };
+
 /** A run of the point whose one room left these results. */
 function toRunOfRoom(room: PublicationWorkloadRoomResults): PublicationWorkloadRun {
     return { parameters: POINT, rooms: [room] };
@@ -236,12 +240,15 @@ const UNREADABLE_RUNS: readonly UnreadableRun[] = [
     },
     {
         unreadable: 'a subscriber whose count left no result value',
-        run: toRunOfRoom({ ...ROOM, subscribers: [{ agentId: 'agent-2', received: undefined }] }),
+        run: toRunOfRoom({ ...ROOM, subscribers: [{ agentId: 'agent-2', received: undefined }, ROOM.subscribers[1]] }),
         paths: ['$.rooms[0].subscribers[0].received.observed', '$.rooms[0].subscribers[0].received.sampleAge']
     },
     {
         unreadable: 'a sample age whose unrecorded samples are no count',
-        run: toRunOfRoom({ ...ROOM, subscribers: [{ agentId: 'agent-2', received: toReceivedResult(60, FIRST_AGE_MS, -1) }] }),
+        run: toRunOfRoom({
+            ...ROOM,
+            subscribers: [{ agentId: 'agent-2', received: toReceivedResult(60, FIRST_AGE_MS, -1) }, ROOM.subscribers[1]]
+        }),
         paths: ['$.rooms[0].subscribers[0].received.sampleAge.unrecordedSamples']
     },
     {
@@ -256,17 +263,20 @@ const UNREADABLE_RUNS: readonly UnreadableRun[] = [
         unreadable: 'a sample age on other bounds, read from another payload field',
         run: toRunOfRoom({
             ...ROOM,
-            subscribers: [{
-                agentId: 'agent-2',
-                received: {
-                    observed: 1,
-                    sampleAge: {
-                        from: 'seq',
-                        ageMs: { upperBounds: [10, 100], bucketCounts: [1, 0, 0], count: 1, sum: 4, min: 4, max: 4 },
-                        unrecordedSamples: 0
+            subscribers: [
+                {
+                    agentId: 'agent-2',
+                    received: {
+                        observed: 1,
+                        sampleAge: {
+                            from: 'seq',
+                            ageMs: { upperBounds: [10, 100], bucketCounts: [1, 0, 0], count: 1, sum: 4, min: 4, max: 4 },
+                            unrecordedSamples: 0
+                        }
                     }
-                }
-            }]
+                },
+                ROOM.subscribers[1]
+            ]
         }),
         paths: [
             '$.rooms[0].subscribers[0].received.sampleAge.from',
@@ -275,7 +285,10 @@ const UNREADABLE_RUNS: readonly UnreadableRun[] = [
     },
     {
         unreadable: 'a count that differs from its recorded and unrecorded samples together',
-        run: toRunOfRoom({ ...ROOM, subscribers: [{ agentId: 'agent-2', received: toReceivedResult(62, FIRST_AGE_MS, 1) }] }),
+        run: toRunOfRoom({
+            ...ROOM,
+            subscribers: [{ agentId: 'agent-2', received: toReceivedResult(62, FIRST_AGE_MS, 1) }, ROOM.subscribers[1]]
+        }),
         paths: ['$.rooms[0].subscribers[0].received.observed']
     },
     {
@@ -303,7 +316,13 @@ const UNREADABLE_RUNS: readonly UnreadableRun[] = [
     },
     {
         unreadable: 'a second publisher whose stats read no publication stage',
-        run: toRunOfRoom({ ...ROOM, publishers: [PUBLISHER, { ...PUBLISHER, agentId: 'agent-4', stats: {} }] }),
+        run: {
+            parameters: TWO_PUBLISHER_POINT,
+            rooms: [{
+                publishers: [PUBLISHER, { ...PUBLISHER, agentId: 'agent-4', stats: {} }],
+                subscribers: [ROOM.subscribers[0]]
+            }]
+        },
         paths: ['$.rooms[0].publishers[1].stats.rallar.alm.publication']
     },
     {
@@ -315,6 +334,48 @@ const UNREADABLE_RUNS: readonly UnreadableRun[] = [
         unreadable: 'the results of no room',
         run: { parameters: POINT, rooms: [] },
         paths: ['$.rooms']
+    },
+    {
+        unreadable: 'one subscriber result for a point of two subscribers',
+        run: toRunOfRoom({ ...ROOM, subscribers: [ROOM.subscribers[0]] }),
+        paths: ['$.rooms[0].subscribers']
+    },
+    {
+        unreadable: 'three subscriber results for a point of two subscribers',
+        run: toRunOfRoom({
+            ...ROOM,
+            subscribers: [...ROOM.subscribers, { agentId: 'agent-4', received: toReceivedResult(60, FIRST_AGE_MS, 0) }]
+        }),
+        paths: ['$.rooms[0].subscribers']
+    },
+    {
+        unreadable: 'no publisher result',
+        run: toRunOfRoom({ ...ROOM, publishers: [] }),
+        paths: ['$.rooms[0].publishers']
+    },
+    {
+        unreadable: 'two publisher results for a point of one publisher',
+        run: toRunOfRoom({ ...ROOM, publishers: [PUBLISHER, { ...PUBLISHER, agentId: 'agent-4' }] }),
+        paths: ['$.rooms[0].publishers']
+    },
+    {
+        unreadable: 'one subscriber\'s result given twice, which would count its messages twice',
+        run: toRunOfRoom({ ...ROOM, subscribers: [ROOM.subscribers[0], ROOM.subscribers[0]] }),
+        paths: ['$.rooms[0].subscribers[1].agentId']
+    },
+    {
+        unreadable: 'one publisher\'s result given twice in a point of two publishers',
+        run: {
+            parameters: TWO_PUBLISHER_POINT,
+            rooms: [{ publishers: [PUBLISHER, PUBLISHER], subscribers: [ROOM.subscribers[0]] }]
+        },
+        paths: ['$.rooms[0].publishers[1].agentId']
+    },
+    {
+        // One agent leaves no subscriber, and the agents are the wrong value: a room has at least 2.
+        unreadable: 'a point of one agent, which its two subscriber results are then not counted against',
+        run: { ...RUN, parameters: { ...POINT, participantCount: 1 } },
+        paths: ['$.parameters.participantCount']
     }
 ];
 
@@ -346,6 +407,7 @@ describe('toPublicationWorkloadFigures', () => {
                     frameCount: 60,
                     configuredRateHz: 2,
                     subscriberCount: 2,
+                    expectedAdmissions: 60,
                     expectedInboundMessages: 60,
                     minExpectedInboundMessages: 57,
                     minAcceptedSends: 57,
@@ -431,21 +493,29 @@ describe('toPublicationWorkloadFigures', () => {
         expect(figures.right?.measured.delivered).toEqual(delivered);
     });
 
-    it('reports no sample age for a room with no subscriber result, not a zero', () => {
-        const figures = toPublicationWorkloadFigures(toRunOfRoom({ ...ROOM, subscribers: [] }));
-
-        const delivered = { subscriberCount: 0, observed: 0, unrecordedSamples: 0, sampleAgeMs: { kind: 'no-samples' } };
-        expect(figures.left).toBeUndefined();
-        expect(figures.right?.measured.rooms[0].subscribers).toEqual([]);
-        expect(figures.right?.measured.rooms[0].delivered).toEqual(delivered);
-        expect(figures.right?.measured.delivered).toEqual(delivered);
-    });
-
     it.each(UNREADABLE_RUNS)('names every field it cannot read of $unreadable', ({ run, paths }) => {
         const figures = toPublicationWorkloadFigures(run);
 
         expect(figures.right).toBeUndefined();
         expect(figures.left?.map((issue) => issue.slice(0, issue.indexOf(' ')))).toEqual(paths);
+    });
+
+    it('reads the results of both publishers of a two-publisher point, in the order the run gives them', () => {
+        const figures = toPublicationWorkloadFigures({
+            parameters: TWO_PUBLISHER_POINT,
+            rooms: [{
+                publishers: [PUBLISHER, { ...PUBLISHER, agentId: 'agent-4', loop: { ...LOOP_RESULT, passed: 60, failed: 0 } }],
+                subscribers: [ROOM.subscribers[0]]
+            }]
+        });
+
+        expect(figures.left).toBeUndefined();
+        // 3 - 2 = 1 subscriber, which hears both publishers: 60 x 2 = 120 messages, 114 of them at 0.95.
+        expect(figures.right?.configured.plan)
+            .toMatchObject({ subscriberCount: 1, expectedInboundMessages: 120, minExpectedInboundMessages: 114 });
+        expect(figures.right?.measured.rooms[0].publishers.map(({ agentId, submittedSends }) => ({ agentId, submittedSends })))
+            .toEqual([{ agentId: 'agent-1', submittedSends: 59 }, { agentId: 'agent-4', submittedSends: 60 }]);
+        expect(figures.right?.measured.rooms[0].delivered.subscriberCount).toBe(1);
     });
 
     it('reads a loop of one iteration, which has no interval and so states no rate, as a rate of null', () => {
@@ -475,15 +545,23 @@ describe('toPublicationWorkloadFigures', () => {
         }]);
     });
 
-    it('says that a subscriber recorded no age, and reports no zero in its place', () => {
+    it('says that subscribers recorded no age, each and together, and reports no zero in its place', () => {
         const figures = toPublicationWorkloadFigures(toRunOfRoom({
             ...ROOM,
-            subscribers: [{ agentId: 'agent-2', received: toReceivedResult(3, NO_AGE_MS, 3) }]
+            subscribers: [
+                { agentId: 'agent-2', received: toReceivedResult(3, NO_AGE_MS, 3) },
+                { agentId: 'agent-3', received: toReceivedResult(2, NO_AGE_MS, 2) }
+            ]
         }));
 
+        // 3 + 2 = 5 messages, none of them with an age.
+        const delivered = { subscriberCount: 2, observed: 5, unrecordedSamples: 5, sampleAgeMs: { kind: 'no-samples' } };
         expect(figures.right?.measured.rooms[0].subscribers).toEqual([
-            { agentId: 'agent-2', observed: 3, unrecordedSamples: 3, sampleAgeMs: { kind: 'no-samples' } }
+            { agentId: 'agent-2', observed: 3, unrecordedSamples: 3, sampleAgeMs: { kind: 'no-samples' } },
+            { agentId: 'agent-3', observed: 2, unrecordedSamples: 2, sampleAgeMs: { kind: 'no-samples' } }
         ]);
+        expect(figures.right?.measured.rooms[0].delivered).toEqual(delivered);
+        expect(figures.right?.measured.delivered).toEqual(delivered);
     });
 
     it('reports a subscriber that observed more copies than the publisher had frames as it observed them', () => {
@@ -497,7 +575,7 @@ describe('toPublicationWorkloadFigures', () => {
 
         const figures = toPublicationWorkloadFigures(toRunOfRoom({
             ...ROOM,
-            subscribers: [{ agentId: 'agent-2', received: toReceivedResult(61, ageMs, 0) }]
+            subscribers: [{ agentId: 'agent-2', received: toReceivedResult(61, ageMs, 0) }, ROOM.subscribers[1]]
         }));
 
         expect(figures.right?.configured.plan.expectedInboundMessages).toBe(60);

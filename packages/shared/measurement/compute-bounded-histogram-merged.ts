@@ -2,9 +2,10 @@ import { Either } from '../resilience/Either.ts';
 import type { BoundedHistogram } from './bounded-histogram.ts';
 
 /**
- * Two histograms as the one that recording every sample of both would give. Only histograms on the same bounds have
- * buckets that mean the same, so any other pair is refused as a value. Neither histogram is validated again: each is
- * one this package created, recorded into or decoded.
+ * Two histograms as the one that recording every sample of both would give; its `sum` is exactly `left.sum + right.sum`,
+ * so for samples that are not whole numbers it can differ from that histogram's in its last digits. Only histograms on
+ * the same bounds have buckets that mean the same, so any other pair is refused as a value. Neither histogram is
+ * validated again: each is one this package created, recorded into or decoded.
  */
 export function computeBoundedHistogramMerged(
     left: BoundedHistogram,

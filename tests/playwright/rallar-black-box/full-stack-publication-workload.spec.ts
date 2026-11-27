@@ -48,6 +48,7 @@ const AGENT_COUNT = 3;
 const LOCAL_POINT: PublicationWorkloadParameters = {
     group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
     participantCount: AGENT_COUNT,
+    publisherCount: 1,
     carrier: 'rtc',
     publishIntervalMs: 500,
     windowMs: 30_000,
@@ -90,6 +91,8 @@ test('runs the publication workload local point on three agents and records its 
     const recipes = createPublicationWorkloadRecipes(LOCAL_POINT).fold((issues) => {
         throw new Error(`The local point is no point of the family: ${JSON.stringify(issues)}`);
     }, (valid) => valid);
+    // One room of one publisher has two roles: the publisher, then the subscribers.
+    const [publisher, subscriber] = recipes.rooms[0].roles;
     const artifactDir = testInfo.outputPath('observation');
     const manifestPath = path.join(artifactDir, 'source-manifest.json');
     const manifest = createLocalPointManifest(recipes, manifestPath);
@@ -131,10 +134,10 @@ test('runs the publication workload local point on three agents and records its 
             artifactDir,
             distributed.commandLinks.filter((link) => link.phase === 'start')
         );
-        const publisherRun = agentRuns.find((run) => run.recipeId === recipes.publisher.recipe.recipeId);
+        const publisherRun = agentRuns.find((run) => run.recipeId === publisher.recipe.recipeId);
         expect(
             publisherRun,
-            `One agent ran the publisher's recipe ${recipes.publisher.recipe.recipeId}; the agents ran ${
+            `One agent ran the publisher's recipe ${publisher.recipe.recipeId}; the agents ran ${
                 agentRuns.map((run) => `${run.agentId}: ${run.recipeId}`).join(', ')
             }`
         ).toBeDefined();
@@ -147,7 +150,7 @@ test('runs the publication workload local point on three agents and records its 
                     stats: readResultValue(publisherRun!, RESULT_COMMAND_IDS.publisherStats)
                 }],
                 subscribers: agentRuns
-                    .filter((run) => run.recipeId === recipes.subscriber.recipe.recipeId)
+                    .filter((run) => run.recipeId === subscriber.recipe.recipeId)
                     .map((run) => ({
                         agentId: run.agentId,
                         received: readResultValue(run, RESULT_COMMAND_IDS.subscriberReceived)
@@ -220,7 +223,7 @@ function createLocalPointManifest(
         title: `Publication workload ${AGENT_COUNT}-agent local point`,
         description: 'One publisher and two subscribers: 60 live frames 500 ms apart on rtc.',
         distributedRunId: `${runId}-${AGENT_COUNT}-agent`,
-        recipes: [recipes.publisher.recipe, recipes.subscriber.recipe],
+        recipes: recipes.rooms[0].roles.map((role) => role.recipe),
         agentCount: AGENT_COUNT,
         profiles: ['alm', 'messages.rtc', 'publication-workload', `${AGENT_COUNT}-agent`],
         live: true,

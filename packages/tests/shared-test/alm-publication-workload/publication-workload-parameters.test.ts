@@ -12,10 +12,11 @@ import {
 } from '@shared-test/rallar-bb-test/conformance/alm/publication-workload/validate-publication-workload-parameters.ts';
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 
-/** 15 agents, one send every 500 ms for 5 minutes on rtc: 300,000 / 500 = 600 frames. */
+/** 15 agents, one of them sending every 500 ms for 5 minutes on rtc: 300,000 / 500 = 600 frames. */
 const POINT: PublicationWorkloadParameters = {
     group: { applicationId: 'workload-app', workspaceId: 'workload-workspace', groupId: 'workload-room' },
     participantCount: 15,
+    publisherCount: 1,
     carrier: 'rtc',
     publishIntervalMs: 500,
     windowMs: 300_000,
@@ -64,6 +65,27 @@ const BROKEN_BOUNDS: readonly BrokenBound[] = [
     {
         bound: '51 agents',
         change: { participantCount: 51 },
+        issue: { path: '$.participantCount', code: 'invalid-participant-count' }
+    },
+    {
+        bound: 'no publisher',
+        change: { publisherCount: 0 },
+        issue: { path: '$.publisherCount', code: 'invalid-publisher-count' }
+    },
+    {
+        bound: 'one and a half publishers',
+        change: { publisherCount: 1.5 },
+        issue: { path: '$.publisherCount', code: 'invalid-publisher-count' }
+    },
+    {
+        bound: '15 publishers among 15 agents, which leaves no subscriber',
+        change: { publisherCount: 15 },
+        issue: { path: '$.publisherCount', code: 'publisher-count-leaves-no-subscriber' }
+    },
+    {
+        // The one publisher is as many as the agents, and the agents are the wrong value: a room has at least 2.
+        bound: 'one agent, which the publishers are then not held to',
+        change: { participantCount: 1 },
         issue: { path: '$.participantCount', code: 'invalid-participant-count' }
     },
     {
@@ -183,21 +205,44 @@ describe('publication workload parameters', () => {
         };
 
         expect(validatePublicationWorkloadParameters(atBounds)).toEqual([]);
-        expect(validatePublicationWorkloadParameters({ ...POINT, participantCount: 50, payloadBytes: 65_536 }))
-            .toEqual([]);
+        expect(
+            validatePublicationWorkloadParameters({
+                ...POINT,
+                participantCount: 50,
+                publisherCount: 49,
+                payloadBytes: 65_536
+            })
+        ).toEqual([]);
     });
 
     it('derives 600 frames, 2 Hz, 14 subscribers, at least 570 inbound messages each and 8,400 fan-out messages', () => {
-        // 300,000 / 500 = 600 frames; 1,000 / 500 = 2 Hz; 15 - 1 = 14 subscribers; 570 of 600 is 0.95 and
-        // 594 of 600 is 0.99; 600 x 14 = 8,400 fan-out messages.
+        // 300,000 / 500 = 600 frames, each an expected admission; 1,000 / 500 = 2 Hz; 15 - 1 = 14 subscribers; 570 of
+        // 600 is 0.95 and 594 of 600 is 0.99; 600 x 14 = 8,400 fan-out messages.
         expect(computePublicationWorkloadPlan(POINT)).toEqual({
             frameCount: 600,
             configuredRateHz: 2,
             subscriberCount: 14,
+            expectedAdmissions: 600,
             expectedInboundMessages: 600,
             minExpectedInboundMessages: 570,
             minAcceptedSends: 594,
             logicalFanoutMessages: 8_400
+        });
+    });
+
+    it('derives for 5 publishers among 15 agents: 10 subscribers, 3,000 inbound messages each, at least 2,700 at 0.9, and 42,000 fan-out messages', () => {
+        // 15 - 5 = 10 subscribers. One publisher's 600 frames are its 600 expected admissions, 594 of them at 0.99.
+        // A subscriber hears all five publishers: 600 x 5 = 3,000 messages, 2,700 of them at 0.9. Every publisher's
+        // frames go to the 14 other members of the room: 600 x 5 x 14 = 42,000 fan-out messages.
+        expect(computePublicationWorkloadPlan({ ...POINT, publisherCount: 5, minReceiveRatio: 0.9 })).toEqual({
+            frameCount: 600,
+            configuredRateHz: 2,
+            subscriberCount: 10,
+            expectedAdmissions: 600,
+            expectedInboundMessages: 3_000,
+            minExpectedInboundMessages: 2_700,
+            minAcceptedSends: 594,
+            logicalFanoutMessages: 42_000
         });
     });
 

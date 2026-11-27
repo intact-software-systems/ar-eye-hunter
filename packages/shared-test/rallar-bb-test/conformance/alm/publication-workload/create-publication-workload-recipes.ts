@@ -1,6 +1,7 @@
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
+import type { RallarBlackBoxDistributedGroupRef } from '../../../distributed-run.ts';
 import type {
     RallarBlackBoxTestBarrierCommand,
     RallarBlackBoxTestCommand,
@@ -28,30 +29,59 @@ import {
     type PublicationWorkloadParameters
 } from './validate-publication-workload-parameters.ts';
 
-/** One role's recipe and how many agents of the point's cohort run it. */
+export interface PublicationWorkloadRecipes {
+    /** One entry per room of the point. */
+    readonly rooms: readonly PublicationWorkloadRoomRecipes[];
+}
+
+/**
+ * A room's roles in the order a caller hands its agents out: the publisher that writes the group, the publishers that
+ * join it where the point has more than one, the subscribers.
+ */
+export interface PublicationWorkloadRoomRecipes {
+    readonly group: RallarBlackBoxDistributedGroupRef;
+    readonly roles: readonly PublicationWorkloadRoleRecipe[];
+}
+
+/** One role's recipe and how many agents of the room run it. */
 export interface PublicationWorkloadRoleRecipe {
+    readonly kind: PublicationWorkloadRoleKind;
     readonly recipe: RallarBlackBoxTestRecipe;
     readonly agentCount: number;
 }
 
-/** The first agent of a run publishes; every other agent subscribes. */
-export interface PublicationWorkloadRecipes {
-    readonly publisher: PublicationWorkloadRoleRecipe;
-    readonly subscriber: PublicationWorkloadRoleRecipe;
+/** What a role does in the window. Its commands and its connection are named by it, whichever recipe holds them. */
+export type PublicationWorkloadRoleKind = 'publisher' | 'subscriber';
+
+/** A recipe of a room: one of the two kinds, and for a publisher whether it writes the group or joins it. */
+type PublicationWorkloadRecipeRole = 'publisher' | 'joining-publisher' | 'subscriber';
+
+interface PublicationWorkloadRecipeRoleShape {
+    readonly kind: PublicationWorkloadRoleKind;
+    /** The owner writes the group and connects before any peer exists; a member joins it once a peer does. */
+    readonly cohortRole: AlmCohortRole;
+    readonly title: string;
 }
 
-type PublicationWorkloadRole = keyof PublicationWorkloadRecipes;
+/** What a role runs after the cohort's setup, and how many agents of the room run it. */
+interface PublicationWorkloadRoleRecipeInput {
+    readonly role: PublicationWorkloadRecipeRole;
+    readonly agentCount: number;
+    readonly windowCommands: readonly RallarBlackBoxTestCommand[];
+}
 
 const SCOPE = 'publication-workload';
-/** The publisher writes the group and connects before any peer exists; a subscriber joins it. */
-const COHORT_ROLES: Readonly<Record<PublicationWorkloadRole, AlmCohortRole>> = {
-    publisher: 'owner',
-    subscriber: 'member'
+const RECIPE_ROLES: Readonly<Record<PublicationWorkloadRecipeRole, PublicationWorkloadRecipeRoleShape>> = {
+    publisher: { kind: 'publisher', cohortRole: 'owner', title: 'publisher' },
+    'joining-publisher': { kind: 'publisher', cohortRole: 'member', title: 'joining publisher' },
+    subscriber: { kind: 'subscriber', cohortRole: 'member', title: 'subscriber' }
 };
+/** A subscriber's count reads its page's whole inbound log, so the page keeps all of it. */
+const SUBSCRIBER_EVENT_HISTORY = { mode: 'full' } as const;
 const TOPIC_ID = 'room.publication-workload';
 /** No other command of a run sends this type: a subscriber counts every message of it on its page's inbound log. */
 const FRAME_TYPE_ID = 'room.publication-workload.frame.v1';
-/** A live send names its stream; the one publisher of a point publishes one. */
+/** A live send names its stream. Every publisher names this one: a stream's key holds its sender, so each has its own. */
 const STREAM_RESOURCE_ID = 'publication-workload';
 /**
  * A page's ALM diagnostics put an event per send and per arrival on the page whose load a point measures, so the
@@ -72,82 +102,97 @@ export function createPublicationWorkloadRecipes(
     if (issues.length > 0) {
         return Either.ofLeft(issues);
     }
-    const plan = computePublicationWorkloadPlan(parameters);
-    const window = createPublisherWindowCommands(parameters, plan);
-    // A subscriber waits at the complete barrier through the publisher's whole window.
-    const completeTimeoutMs = computeCommandsTimeoutMs(window, 'the complete barrier');
-    return Either.ofRight({
-        publisher: {
-            agentCount: 1,
-            recipe: {
-                ...toRecipeIdentity('publisher'),
-                commands: [
-                    ...createSetupCommands(parameters, 'publisher'),
-                    ...window,
-                    createBarrier('publisher', 'complete', completeTimeoutMs),
-                    createAcceptedSendsAssert(plan)
-                ]
-            }
-        },
-        subscriber: {
-            agentCount: plan.subscriberCount,
-            recipe: {
-                ...toRecipeIdentity('subscriber'),
-                // The count reads the page's whole inbound log, so the page keeps all of it.
-                eventHistory: { mode: 'full' },
-                commands: [
-                    ...createSetupCommands(parameters, 'subscriber'),
-                    createBarrier('subscriber', 'complete', completeTimeoutMs),
-                    ...createSubscriberCountCommands(parameters, plan)
-                ]
-            }
-        }
-    });
+    return Either.ofRight({ rooms: [{ group: parameters.group, roles: createRoomRoles(parameters) }] });
 }
 
-function toRecipeIdentity(
-    role: PublicationWorkloadRole
-): Pick<RallarBlackBoxTestRecipe, 'schemaVersion' | 'recipeId' | 'name' | 'continueOnFailure'> {
+/**
+ * Every publisher runs the same window, meets the subscribers at the complete barrier and then answers its own gate; a
+ * subscriber waits at that barrier through a publisher's whole window and then counts.
+ */
+function createRoomRoles(parameters: PublicationWorkloadParameters): readonly PublicationWorkloadRoleRecipe[] {
+    const plan = computePublicationWorkloadPlan(parameters);
+    const window = createPublisherWindowCommands(parameters, plan);
+    const completeTimeoutMs = computeCommandsTimeoutMs(window, 'the complete barrier');
+    const publisherCommands = [
+        ...window,
+        createBarrier('publisher', 'complete', completeTimeoutMs),
+        createAcceptedSendsAssert(plan)
+    ];
+    const subscriberCommands = [
+        createBarrier('subscriber', 'complete', completeTimeoutMs),
+        ...createSubscriberCountCommands(parameters, plan)
+    ];
+    const joiningPublisherCount = parameters.publisherCount - 1;
+    return [
+        createRoleRecipe(parameters, { role: 'publisher', agentCount: 1, windowCommands: publisherCommands }),
+        ...(joiningPublisherCount > 0
+            ? [createRoleRecipe(parameters, {
+                role: 'joining-publisher',
+                agentCount: joiningPublisherCount,
+                windowCommands: publisherCommands
+            })]
+            : []),
+        createRoleRecipe(parameters, {
+            role: 'subscriber',
+            agentCount: plan.subscriberCount,
+            windowCommands: subscriberCommands
+        })
+    ];
+}
+
+function createRoleRecipe(
+    parameters: PublicationWorkloadParameters,
+    input: PublicationWorkloadRoleRecipeInput
+): PublicationWorkloadRoleRecipe {
+    const { kind, title } = RECIPE_ROLES[input.role];
     return {
-        schemaVersion: 1,
-        recipeId: toCommandPrefix(role),
-        name: `Publication workload ${role}`,
-        continueOnFailure: false
+        kind,
+        agentCount: input.agentCount,
+        recipe: {
+            schemaVersion: 1,
+            recipeId: `${SCOPE}-${input.role}`,
+            name: `Publication workload ${title}`,
+            continueOnFailure: false,
+            ...(kind === 'subscriber' ? { eventHistory: SUBSCRIBER_EVENT_HISTORY } : {}),
+            commands: [...createSetupCommands(parameters, input.role), ...input.windowCommands]
+        }
     };
 }
 
-/** A role's commands, its connection and its recipe carry the prefix the cohort's setup gives that role. */
-function toCommandPrefix(role: PublicationWorkloadRole): string {
-    return toAlmCohortCommandPrefix(SCOPE, role);
+/** A kind's commands and its connection carry the prefix the cohort's setup gives a role of that name. */
+function toCommandPrefix(kind: PublicationWorkloadRoleKind): string {
+    return toAlmCohortCommandPrefix(SCOPE, kind);
 }
 
 function createBarrier(
-    role: PublicationWorkloadRole,
+    kind: PublicationWorkloadRoleKind,
     phase: string,
     timeoutMs: number
 ): RallarBlackBoxTestBarrierCommand {
-    return createAlmCohortBarrier({ scope: SCOPE, roleName: role, phase, timeoutMs });
+    return createAlmCohortBarrier({ scope: SCOPE, roleName: kind, phase, timeoutMs });
 }
 
 /**
  * The cohort settles on one layout whatever the carrier, and its setup-complete barrier is the one gate before the
- * window: the publisher's first send and a subscriber's wait both follow it directly. Each role's connect opens the
- * one typed channel of the frame, under the connection its send or its count names.
+ * window: a publisher's first send and a subscriber's wait both follow it directly. Each role's connect opens the one
+ * typed channel of the frame, under the connection its send or its count names. The cohort names only a role's own
+ * commands, a member's by its kind: a joining publisher's commands and its connection are a publisher's.
  */
 function createSetupCommands(
     parameters: PublicationWorkloadParameters,
-    role: PublicationWorkloadRole
+    role: PublicationWorkloadRecipeRole
 ): readonly RallarBlackBoxTestCommand[] {
+    const { kind, cohortRole } = RECIPE_ROLES[role];
     const cohort: AlmCohortSetupInput = {
         group: parameters.group,
         participantCount: parameters.participantCount,
         readyTimeoutMs: parameters.readyTimeoutMs,
         almDiagnostics: ALM_DIAGNOSTICS,
         scope: SCOPE,
-        roleNames: { owner: 'publisher', member: 'subscriber' },
+        roleNames: { owner: 'publisher', member: kind },
         channel: { typeId: FRAME_TYPE_ID, topicId: TOPIC_ID }
     };
-    const setup = createAlmCohortSetupCommands(cohort, COHORT_ROLES[role]);
+    const setup = createAlmCohortSetupCommands(cohort, cohortRole);
     return [...setup.entry, ...setup.gathering, ...setup.settling];
 }
 
@@ -169,7 +214,7 @@ function createPublisherWindowCommands(
 }
 
 /**
- * The gate on the publisher: its stage's `admitted`, the values its opportunities handed to a carrier, counted over
+ * The gate on a publisher: its stage's `admitted`, the values its opportunities handed to a carrier, counted over
  * the connect, which sends nothing but the window's frames. The loop's `passed` is no such count: a live send returns
  * as soon as its value is staged or refused, so a frame the stage refused, displaced or let expire still passed. The
  * gate comes after the complete barrier: a publisher that fails it has already met the subscribers there, so they
@@ -223,18 +268,14 @@ function createPublishLoop(
 }
 
 /**
- * The count starts once the publisher has drained and settles at once when enough messages are on the log; short of
- * them it waits one more lifetime, the longest a message still on its way is worth waiting for. Its three guards need
- * no arithmetic: no message without an age, as many ages as messages, and no more messages than the publisher has
- * frames. A page's one inbound store delivers a message once whichever carriers brought it, so a count above the frames
- * holds another sender's messages or another run's.
+ * The count starts once the publishers have drained and settles at once when enough messages are on the log; short of
+ * them it waits one more lifetime, the longest a message still on its way is worth waiting for.
  */
 function createSubscriberCountCommands(
     parameters: PublicationWorkloadParameters,
     plan: PublicationWorkloadPlan
 ): readonly RallarBlackBoxTestCommand[] {
     const prefix = toCommandPrefix('subscriber');
-    const received = `resultCache.${prefix}-received.value`;
     return [
         {
             kind: 'messages.received',
@@ -246,6 +287,20 @@ function createSubscriberCountCommands(
             windowMs: parameters.ttlMs,
             timeoutMs: parameters.ttlMs + RESPONSE_MARGIN_MS
         },
+        ...createSubscriberCountGuards(plan.frameCount * parameters.publisherCount),
+        { kind: 'stats', commandId: `${prefix}-stats`, timeoutMs: STATS_TIMEOUT_MS }
+    ];
+}
+
+/**
+ * The count's three guards need no arithmetic: no message without an age, as many ages as messages, and no more
+ * messages than `publishedFrames`, the frames of the room's publishers together. A page's one inbound store delivers a
+ * message once whichever carriers brought it, so a count above them holds another sender's messages or another run's.
+ */
+function createSubscriberCountGuards(publishedFrames: number): readonly RallarBlackBoxTestCommand[] {
+    const prefix = toCommandPrefix('subscriber');
+    const received = `resultCache.${prefix}-received.value`;
+    return [
         {
             kind: 'assert',
             commandId: `${prefix}-assert-every-copy-aged`,
@@ -265,8 +320,7 @@ function createSubscriberCountCommands(
             commandId: `${prefix}-assert-copies-within-frames`,
             source: `${received}.observed`,
             operator: 'lte',
-            expected: plan.frameCount
-        },
-        { kind: 'stats', commandId: `${prefix}-stats`, timeoutMs: STATS_TIMEOUT_MS }
+            expected: publishedFrames
+        }
     ];
 }
