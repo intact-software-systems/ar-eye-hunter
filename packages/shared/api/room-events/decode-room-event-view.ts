@@ -3,19 +3,8 @@ import type { PlainJsonValue } from '../../repository/compare-plain-json.ts';
 import { decodeExactGroupRef } from '../../encoding/decode-exact-group-ref.ts';
 import { requireEpoch, requireExactKeys, requireRecord } from '../exact-object-decoding.ts';
 import { assertValidRallarRouteId } from '../rallar-validation.ts';
-import { decodeEventParty, decodeEventProposal, decodeEventRecord } from './decode-room-event.ts';
+import { decodeEventOffer, decodeExpiredEventOffer, decodeEventParty, decodeEventProposal, decodeEventRecord } from './decode-room-event.ts';
 import type { RoomEvent } from './room-event.ts';
-
-function decodeOffer(value: PlainJsonValue | undefined): RoomEvent.Offer {
-    const row = requireRecord(value, 'Court offer');
-    requireExactKeys(row, ['groupId', 'partyId', 'occurrence', 'offerRevision', 'deadline'], 'Court offer');
-    requireEpoch(row.occurrence, 'Court occurrence');
-    requireEpoch(row.offerRevision, 'Offer revision');
-    if (!row.offerRevision) throw new TypeError('Invalid offer revision.');
-    if (row.deadline !== null) requireEpoch(row.deadline, 'Claim deadline');
-    return { groupId: assertValidRallarRouteId(row.groupId), partyId: assertValidRallarRouteId(row.partyId),
-        occurrence: row.occurrence, offerRevision: row.offerRevision, deadline: row.deadline };
-}
 
 function decodeCourt(value: PlainJsonValue): RoomEvent.View['courts'][number] {
     const row = requireRecord(value, 'Event court');
@@ -30,7 +19,7 @@ function decodeCourt(value: PlainJsonValue): RoomEvent.View['courts'][number] {
 
 export function decodeRoomEventView(value: unknown): RoomEvent.View {
     const row = decodeEventRecord(value, 'Private event view');
-    requireExactKeys(row, ['principalId', 'lobby', 'revision', 'closesAt', 'closed', 'courts', 'queue', 'proposals', 'offer', 'handover'], 'Private event view');
+    requireExactKeys(row, ['principalId', 'lobby', 'revision', 'closesAt', 'closed', 'courts', 'queue', 'proposals', 'offer', 'handover', 'lastExpiredOffer'], 'Private event view');
     const lobby = decodeExactGroupRef(row.lobby, 'Event lobby');
     const principalId = assertValidRallarRouteId(row.principalId);
     requireEpoch(row.revision, 'Event revision');
@@ -41,8 +30,13 @@ export function decodeRoomEventView(value: unknown): RoomEvent.View {
     const courts = row.courts.map(decodeCourt);
     const proposals = row.proposals.map(decodeEventProposal);
     const queue = row.queue === null ? null : decodeEventParty(row.queue);
-    const offer = row.offer === null ? null : decodeOffer(row.offer);
+    const offer = row.offer === null ? null : decodeEventOffer(row.offer);
+    const lastExpiredOffer = row.lastExpiredOffer === null ? null : decodeExpiredEventOffer(row.lastExpiredOffer);
     const handover = row.handover === null ? null : decodeEventHandover(row.handover);
+    if (lastExpiredOffer && (row.closed || offer || queue || lastExpiredOffer.deadline > row.closesAt ||
+        lastExpiredOffer.offerRevision > row.revision || !courts.some(c => c.groupId === lastExpiredOffer.groupId && c.occurrence >= lastExpiredOffer.occurrence))) {
+        throw new TypeError('Inconsistent expired court offer.');
+    }
     if (handover && (row.closed || handover.expiresAt > row.closesAt || (handover.offeredBy !== principalId && handover.recipientId !== principalId))) {
         throw new TypeError('Handover belongs to a different player or event.');
     }
@@ -53,5 +47,5 @@ export function decodeRoomEventView(value: unknown): RoomEvent.View {
         (row.closed && (offer || queue || proposals.length || courts.some(c => c.availableSeats > 0)))) {
         throw new TypeError('Inconsistent private event view.');
     }
-    return { principalId, handover, lobby, courts, proposals, queue, offer, closed: row.closed, revision: row.revision, closesAt: row.closesAt };
+    return { principalId, handover, lastExpiredOffer, lobby, courts, proposals, queue, offer, closed: row.closed, revision: row.revision, closesAt: row.closesAt };
 }

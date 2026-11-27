@@ -152,3 +152,26 @@ and that browser’s participation. Pass the displayed revision to `change('rese
 or `change('withdraw', revision)`. At arrival, `claim(revision)` returns the scoped guest
 admission used by `auth.activateGuest`. The SDK stores the browser proof separately from the link
 and can retry interrupted writes. A second browser needs its own available seat.
+
+### Court-ready notifications
+
+For optional device alerts, import `readCourtAlertPublicKey`, `enableCourtReadyNotifications`
+and `disableCourtReadyNotifications` from `events/court-ready-notifications.ts`.
+Read the public key while mounting the event. A null value means delivery is disabled.
+From the player's tap handler, call
+`enableCourtReadyNotifications(event, registration.pushManager, publicKey)`.
+The same operations apply to an admitted guest and a signed-in player. Disabling alerts
+withdraws consent for that device and event. Enabling alerts checks the browser subscription’s
+application server key before storing consent. On a key mismatch, an organizer can restore
+the previous VAPID identity or enroll under a separate service-worker registration.
+
+In the service worker, use `courtReadyNotification` to display the generic alert and
+`openCourtAlertClick` to remember the tapped offer before focusing or opening the app.
+On startup, foreground return or the `COURT_ALERT_OPENED` worker message, read
+`readCourtAlertClick` for this exact event and refresh the player's private view.
+Use `courtAlertStatus` to compare the clicked offer against current authority. The player's
+private `view.lastExpiredOffer` also reports an unclaimed deadline after a bare app launch,
+even when the OS supplies no notification data. Rallar clears the missed offer on
+requeue or reassignment. Call `clearCourtAlertClick` after their successful action.
+The installable [pickup example](../../../../examples/pickup-event/README.md) shows the
+full journey.
