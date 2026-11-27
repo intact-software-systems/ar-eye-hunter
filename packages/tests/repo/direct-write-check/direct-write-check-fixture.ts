@@ -78,6 +78,27 @@ export const ADMISSION_PORT_SOURCES = {
     `
 } as const;
 
+/** A command written as AppInbox writes it: `write(transaction, computed)` on the transaction an opener hands it. */
+export const APP_INBOX_SHAPED_SOURCES = {
+    'packages/shared-server/rallar-system/app-inbox/app-inbox-transaction-writer.ts': `
+        import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
+        import { writeHolderMutation } from '../holder/write-holder-mutation.ts';
+        export class AppInboxTransactionWriter {
+            constructor(private readonly sql: PSqlSql) {}
+            async inTransaction(computed: { readonly key: string }): Promise<void> {
+                await this.sql.begin(async (transaction) => writeHolderMutation(transaction, computed));
+            }
+        }
+    `,
+    'packages/shared-server/rallar-system/holder/write-holder-mutation.ts': `
+        import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
+        export async function writeHolderMutation(transaction: PSqlSql, computed: { readonly key: string }): Promise<void> {
+            await transaction\`insert into runtime_state_store (store_key) values (\${computed.key})\`;
+            await transaction\`update runtime_state_store set store_value = 'held' where store_key = \${computed.key}\`;
+        }
+    `
+} as const;
+
 export function createDirectWriteFixture(sources: Readonly<Record<string, string>>): {
     readonly project: Project;
     readonly scope: DirectWriteFixtureScope;
@@ -100,7 +121,7 @@ export function createDirectWriteFixture(sources: Readonly<Record<string, string
                 path: 'packages/shared/alm/al-admission-work-backend.ts',
                 name: 'AL_ADMISSION_WORK_COMPLETED_RETENTION'
             }],
-            schemaTables: ['resource_inbox', 'runtime_state_store']
+            schemaTables: ['app_data_store', 'resource_inbox', 'runtime_state_store']
         }
     };
 }
