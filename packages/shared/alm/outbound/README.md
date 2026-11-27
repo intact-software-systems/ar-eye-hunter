@@ -331,7 +331,7 @@ holds). A `checkpoint` plan
 
 The storage cost is pinned in
 [`al-indexeddb-operation-counts.test.ts`](../../../tests/shared/alm/al-indexeddb-operation-counts.test.ts):
-one durable send spends 10 `al-admission` and 9 `al-work` IndexedDB operations; one
+one durable send spends 11 `al-admission` and 9 `al-work` IndexedDB operations; one
 volatile send beside a durable pair spends 0 `al-admission` and 0 non-probe `al-work` operations, and
 so do `local-checkpoint` sends on the checkpoint lane, whose checkpoint is counted on its own: one
 IndexedDB `write` per interval, whatever the sends changed, and none while the lane is clean. The

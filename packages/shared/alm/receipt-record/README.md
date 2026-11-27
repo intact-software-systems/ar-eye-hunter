@@ -280,9 +280,11 @@ sends of those two bullets each state one, so they take the ordered inbound path
   30.1 s. At +10 ms on a quiet machine all 200 complete in both runs at a read of 7.2 and 8.1 s (p50), against 75 and 70
   before. The stall was in the inbound ordered delivery on the server, not in the record; what remains of it is in
   `plans/backlog.md` ("What stays of the limit of one ordered track", D784, D785).
-- **The room-send cell on the record.** The API's room-send measurement cell was run once, with ordered sends, with
-  its instances counting in the record (one run); its README states that reading
-  (`apps/api-v1/scripts/perf/alm-room-send/README.md`, "One run on the build with the receipt record").
+- **The room-send cell on the record.** This pull request ran the API's room-send measurement cell once, with
+  ordered sends, with its instances counting in the record; the cell's README states that reading
+  (`apps/api-v1/scripts/perf/alm-room-send/README.md`, "One run on the build with the receipt record"). The
+  session that built the cell ran its sixteen shapes on two earlier heads of this work, with ordered and with
+  unordered sends; that README's "Reference figures" says where those figures are.
 
 ## Stated limits
 
