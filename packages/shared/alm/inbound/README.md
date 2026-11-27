@@ -760,17 +760,22 @@ commit's re-read of what an admission observed) leaves the slot out; the single-
 the delivery completion's write and the commit's re-read of a release's observed slot) answers `undefined`; and
 `readOrderedDelivery` takes the branch it takes for an absent next or predecessor slot, the lookup of a lower slot
 whose reach passes the predecessor included. A commit whose re-read meets a copy that expired by its clock therefore
-answers `conflict`. One case still throws: a PostgreSQL commit answers a key it has already read from the row it
-recorded at that first read, so a commit that listed the slot and then lost the slot and its message row to the expiry
-sweep, while its own clock was still before their expiry, finds the slot again and throws `ALAdmissionCorruptionError`
-with no stored record invalid. That needs the database's clock ahead of the instance's and a sweep inside the
-difference; it threw before as well, and closing it is a decision for the PostgreSQL backend. Otherwise a slot still
+answers `conflict`. This narrows the tear to one stated case; it does not close it. A PostgreSQL commit answers a key
+it has already read from the row it recorded at that first read, so any of the three commits that re-read a slot (an
+admission's, which lists the track; a release's and a delivery completion's, which read the slot by its key) that read
+the slot and then lost the slot and its message row to the expiry sweep, while its own clock was still before their
+expiry, finds the slot again and throws `ALAdmissionCorruptionError` with no stored record invalid. That needs the
+database's clock ahead of the instance's and the sweep inside that difference, and nothing in the tree measures or
+bounds the difference. At the socket the throw answers the sender nothing; in a replay it still ends the retained
+admission `non-retryable`, losing an accepted message silently; in a delivery completion it ends the delivery row the
+same way after the application was handed the message. It threw before as well, and it is not decided in this change.
+Otherwise a slot still
 there at the second read has lost its message row, which no write leaves, and still throws
 `ALAdmissionCorruptionError`, as does a message row that names another track or sequence. A message row that is present
 costs no second read. The contract
 [`al-inbound-buffered-slot-expiry-contract.ts`](../../../tests/shared/alm/inbound/al-inbound-buffered-slot-expiry-contract.ts)
-pins each reader and both commits on memory, IndexedDB and PostgreSQL, and the PostgreSQL commit's remaining throw as it
-stands.
+pins each reader and the three commits on memory, IndexedDB and PostgreSQL, and the remaining throw of each of the three
+PostgreSQL commits as it stands.
 
 **Under load.** Measured through the WS server on PostgreSQL, three instances with every statement, BEGIN and COMMIT
 delayed 5 ms, five publishers of receipted room sends that ask for hop order, one track each at 2 a second (D784,

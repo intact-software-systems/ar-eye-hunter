@@ -64,7 +64,9 @@ interface SeededTrackPair {
  * A read chain that read a buffered copy's slot and then finds the copy's message row expired, or deleted by a writer
  * that met it expired, must answer as a read made just after the expiry: the copy is gone. Before, every such chain
  * failed with `ALAdmissionCorruptionError`, and the operation it served -- an innocent message's admission, its replay,
- * a release or a delivery -- died with it. A slot that outlives its message row is a real fault and still throws.
+ * a release or a delivery -- died with it. One stated case still throws and is pinned as it stands: a PostgreSQL
+ * commit whose re-read loses the copy's rows to another writer. A slot that outlives its message row is a real fault and
+ * still throws.
  */
 export function describeALInboundBufferedSlotExpiryContract(backend: ALInboundBufferedSlotExpiryBackend): void {
     const { label, createStores, commitSlotReread } = backend;
@@ -195,34 +197,36 @@ export function describeALInboundBufferedSlotExpiryContract(backend: ALInboundBu
             expect(torn).toEqual(late);
         });
 
-        if (commitSlotReread === 'store') {
-            it('answers conflict for an admission whose commit loses the copy\'s rows to another writer during its re-read', async () => {
-                const pair = await seedTrackPair(createStores, 3, []);
-                const next = createOrderedMessage(5);
-                const bundle = await readInboundTestAdmission(pair.torn.stores.admissionStore, next);
-                deleteCopyBeforeMessageRead(pair);
+        // Three commits re-read a slot: an admission's lists its track, a release's and a delivery completion's read
+        // the slot by its key. A writer that met the copy's slot and message row expired deletes both between the
+        // commit's slot read and its message read.
+        for (const commit of LOSING_COMMITS) {
+            if (commitSlotReread === 'store') {
+                it(`answers conflict for ${commit} whose commit loses the copy's rows to another writer during its re-read`, async () => {
+                    const pair = await seedTrackPair(createStores, toLosingCommitShortSeq(commit), []);
+                    const write = await readLosingCommit(pair, commit);
+                    deleteCopyBeforeMessageRead(pair);
 
-                expect(await pair.torn.stores.admissionStore.commitBundle(bundle)).toBe('conflict');
+                    expect(await write()).toBe('conflict');
 
-                expect(await readRelease(pair.torn.stores.admissionStore, pair.trackKey, 5)).toBeUndefined();
-            });
-        }
+                    await expectNothingWritten(pair);
+                });
+            }
+            // A known remaining throw, pinned as it stands, not as wanted: a PostgreSQL commit answers a key it has read
+            // from the row it recorded then, so its second read of the slot still finds the slot the expiry sweep
+            // deleted with its message row while the instance's own clock was still before their expiry. In a replay
+            // this throw still loses an accepted message silently. It is not decided in this change.
+            if (commitSlotReread === 'recorded') {
+                it(`still throws for ${commit} whose commit loses the copy's rows to another writer during its re-read (known remaining case)`, async () => {
+                    const pair = await seedTrackPair(createStores, toLosingCommitShortSeq(commit), []);
+                    const write = await readLosingCommit(pair, commit);
+                    deleteCopyBeforeMessageRead(pair);
 
-        // A known remaining throw, pinned as it stands: a PostgreSQL commit answers a key it has read from the row it
-        // recorded then, so its second read of the slot still finds the slot the expiry sweep has deleted with its
-        // message row, while the instance's own clock is still before the expiry. Closing it is a backend decision.
-        if (commitSlotReread === 'recorded') {
-            it('still throws for an admission whose commit loses the copy\'s rows to another writer during its re-read (known remaining case)', async () => {
-                const pair = await seedTrackPair(createStores, 3, []);
-                const next = createOrderedMessage(5);
-                const bundle = await readInboundTestAdmission(pair.torn.stores.admissionStore, next);
-                deleteCopyBeforeMessageRead(pair);
+                    await expect(write()).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
 
-                await expect(pair.torn.stores.admissionStore.commitBundle(bundle))
-                    .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
-
-                expect(await readRelease(pair.torn.stores.admissionStore, pair.trackKey, 5)).toBeUndefined();
-            });
+                    await expectNothingWritten(pair);
+                });
+            }
         }
 
         it('still refuses as corrupt a slot that outlives its message row', async () => {
@@ -241,6 +245,50 @@ export function describeALInboundBufferedSlotExpiryContract(backend: ALInboundBu
 }
 
 /** `lowerSeqs` are long-lived copies admitted between message 1 and the short-lived copy. */
+/** The three commits that re-read a buffered slot, as the case names read them. */
+const LOSING_COMMITS = ['an admission', 'a release', 'a delivery completion'] as const;
+
+type LosingCommit = (typeof LOSING_COMMITS)[number];
+
+/** A delivery completion completes the copy after message 1, so its copy is in order; the others buffer behind a gap. */
+function toLosingCommitShortSeq(commit: LosingCommit): number {
+    return commit === 'a delivery completion' ? 2 : 3;
+}
+
+/**
+ * Reads what `commit` decides on, before any tear, and returns its write. A release's commit is the release read's
+ * own observations with the slot's deletion, the shape every buffered release commits on.
+ */
+async function readLosingCommit(
+    pair: SeededTrackPair,
+    commit: LosingCommit
+): Promise<() => Promise<'committed' | 'conflict' | 'expired'>> {
+    const store = pair.torn.stores.admissionStore;
+    if (commit === 'an admission') {
+        const bundle = await readInboundTestAdmission(store, createOrderedMessage(5));
+        return async () => await store.commitBundle(bundle);
+    }
+    const read = (await readRelease(store, pair.trackKey, pair.shortSeq))!;
+    if (commit === 'a delivery completion') {
+        return async () => await store.commitDeliveryCompletion(toCompletion(pair, read));
+    }
+    return async () =>
+        await store.commitBundle({
+            admissionExpiresAtMs: null,
+            senderId: read.snapshot.msg.id.senderId,
+            observations: read.observations,
+            mutations: [{ kind: 'delete-buffered', trackKey: pair.trackKey, seq: pair.shortSeq }],
+            durableEffects: []
+        });
+}
+
+/** The commit wrote no slot for the next message and moved no delivery progress. */
+async function expectNothingWritten(pair: SeededTrackPair): Promise<void> {
+    const store = pair.torn.stores.admissionStore;
+    expect(await readRelease(store, pair.trackKey, 5)).toBeUndefined();
+    expect((await readTrack(store, pair.trackKey)).deliveryProgress?.value?.completedThrough).toBe(1);
+}
+
 async function seedTrackPair(
     createStores: ALInboundBufferedSlotExpiryStoresFactory,
     shortSeq: number,
@@ -335,8 +383,9 @@ function deleteCopyBeforeMessageRead(pair: SeededTrackPair): void {
 }
 
 /**
- * The copy below the short-lived one reaches past it, and the track's position stands past both, as a bounded hold's
- * end that entered at that lower copy leaves them; the short-lived copy's successor is still buffered.
+ * The copy below the short-lived one reaches past it, and the track's position stands past both: the two rows are set
+ * directly to what a bounded hold's end writes, which no hold could reach on this track. The short-lived copy's
+ * successor is still buffered.
  */
 async function extendLowerReachPastShortCopy(stores: InboundTestBackendStores, pair: SeededTrackPair): Promise<void> {
     const lowerSlot = {
