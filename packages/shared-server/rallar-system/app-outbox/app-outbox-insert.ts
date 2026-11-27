@@ -80,11 +80,20 @@ function toWsOutboxProvenanceSidecarRow(
     facts: WsOutboxProvenanceFacts,
     expiresAt: string
 ): AppOutboxSidecarRow {
-    if (facts.expiresAtMs !== entry.audit.expiryTs.epochMilliseconds) {
+    if (!isWsOutboxProofRowExpiry(entry, facts.expiresAtMs)) {
         throw new TypeError('A WS outbox proof expires with its row');
     }
     const record = computeWsOutboxProvenanceRecord({ entry, ...facts });
     return { namespace: record.namespace, key: record.key, value: record.value, expiresAt };
+}
+
+/**
+ * The proof names its expiry in whole milliseconds, while storage keeps the row's expiry to the microsecond, rounded:
+ * a row expiring between milliseconds can be stored a millisecond past its proof, so the row must expire on it exactly.
+ */
+function isWsOutboxProofRowExpiry(entry: ResourceEntry, expiresAtMs: number): boolean {
+    const expiry = entry.audit.expiryTs;
+    return expiry.epochMilliseconds === expiresAtMs && expiry.epochNanoseconds % 1_000_000n === 0n;
 }
 
 function computeAppOutboxRow(entry: ResourceEntry): Omit<AppOutboxInsert, 'trackIndex' | 'provenance'> {
@@ -117,7 +126,7 @@ export function validateWsOutboxInsert(
 ): readonly ComputedDataValidationIssue[] {
     if (
         expected.provenance !== null &&
-        expected.provenance.expiresAtMs !== expected.entry.audit.expiryTs.epochMilliseconds
+        !isWsOutboxProofRowExpiry(expected.entry, expected.provenance.expiresAtMs)
     ) {
         const message = 'wsOutbox.provenance.expiresAtMs differs from the row expiry';
         return [{ path: 'wsOutbox.provenance.expiresAtMs', message, cause: new TypeError(message) }];
