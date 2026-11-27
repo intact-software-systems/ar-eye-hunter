@@ -6,11 +6,13 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALPeerControlMessage } from '@shared/al-contracts/al-control.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { toALInboundLocalDeliveryEffectId, toALInboundReleaseEffectId } from '@shared/alm/inbound/al-inbound-effect-intent.ts';
+import { AL_INBOUND_COMPLETED_OFF_TRACK } from '@shared/alm/inbound/al-inbound-ordered-delivery.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
-import { toALInboundWorkKey } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import { AL_INBOUND_HAND_ON_BATCH_AGE_MS, toALInboundWorkKey } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import { toALInboundSuccessionResult } from '@shared/alm/inbound/lane/claim-al-inbound-ordered-successor.ts';
 import { AL_INBOUND_WORK_PAGE_SIZE } from '@shared/alm/inbound/read-al-inbound-work-selection.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
 
 import {
     createInboundTestMessage,
@@ -18,6 +20,7 @@ import {
     createInboundTestStores,
     INBOUND_TEST_SOURCE,
     readInboundTestAdmission,
+    readInboundTestWorkRows,
     runInboundWorkDueNow,
     type InboundTestRuntime
 } from '../inbound-runtime-test-fixture.ts';
@@ -181,6 +184,118 @@ describe('the batch that completed an ordered delivery', () => {
     });
 });
 
+describe('a batch that hands on', () => {
+    // Pins the batch age bound: a completion once the batch has run half its lease hands nothing on, so the rows the
+    // batch completed early are released before their lease ends; the deliveries it did not hand on stay untouched
+    // until the next batch delivers them, in order.
+    it('hands nothing on once it has run half its lease, and the next batch delivers the rest', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
+        let canDispatch = false;
+        const [first, second, third] = [toMessage(1), toMessage(2), toMessage(3)];
+        const fixture = createRuntime('successor-batch-age', 'memory', {
+            canDispatchMessage: () => canDispatch,
+            // The batch passes half its lease while it delivers message 2, after message 1 handed message 2 on.
+            gateDispatch: async (msg) => {
+                if (msg.ordering?.seq === 2) {
+                    vi.setSystemTime(Date.now() + AL_INBOUND_HAND_ON_BATCH_AGE_MS + 1);
+                }
+            }
+        });
+        for (const msg of [first, second, third]) {
+            await admit(fixture, msg);
+        }
+        const flush = holdReleaseFlushOf(fixture, toDispatchId(first));
+
+        canDispatch = true;
+        const draining = runInboundWorkDueNow(fixture);
+        await flush.entered;
+        // The first batch's releases are being written: message 3 was neither claimed nor tried by it.
+        expect(await readWorkRow(fixture, toDispatchId(third))).toMatchObject({
+            status: EntityStatus.NEW,
+            dequeueAudit: { attempts: 0 }
+        });
+        flush.release();
+        await draining;
+
+        expect(readReceivedSeqs(fixture)).toEqual([1, 2, 3]);
+        const drains = readClaimingDrains(fixture);
+        expect(drains.map((drain) => drain.claimedEffectIds)).toEqual([
+            [toDispatchId(first), toDispatchId(second)],
+            [toDispatchId(third)]
+        ]);
+        expect(drains.map((drain) => [drain.claimedCount, drain.promoted])).toEqual([[2, 1], [1, 0]]);
+    });
+
+    // Pins the page bound on the inbound lane: a selection that already holds a page hands nothing on, and the
+    // successor's row stays as it was until a later batch claims it.
+    it('hands nothing on from a selection that already holds a page', async () => {
+        const hold = createMessageHold('prime');
+        const fixture = createRuntime('successor-full-page', 'memory', { gateDispatch: hold.gate });
+        const [first, second] = [toMessage(1), toMessage(2)];
+        // Their work rows come before the track's in queue order, so the page is these and message 1, and message 2's
+        // row is the first one past it.
+        const unordered = toSequence(1, AL_INBOUND_WORK_PAGE_SIZE - 1)
+            .map((index) => createInboundTestMessage({ msgId: `a-${String(index).padStart(2, '0')}` }));
+        await admit(fixture, createInboundTestMessage({ msgId: 'prime' }));
+        await hold.entered;
+        // Admitted behind the held batch, so the batch its commits owe reads them from the head of NEW together.
+        for (const msg of [first, ...unordered, second]) {
+            await admit(fixture, msg);
+        }
+        const flush = holdReleaseFlushOf(fixture, toDispatchId(first));
+
+        hold.release();
+        const draining = runInboundWorkDueNow(fixture);
+        await flush.entered;
+        // The full page's releases are being written: message 2 was neither claimed nor tried by its batch.
+        expect(await readWorkRow(fixture, toDispatchId(second))).toMatchObject({
+            status: EntityStatus.NEW,
+            dequeueAudit: { attempts: 0 }
+        });
+        flush.release();
+        await draining;
+
+        const drains = readClaimingDrains(fixture);
+        expect(drains.map((drain) => drain.claimedEffectIds)).toEqual([
+            [toDispatchId(createInboundTestMessage({ msgId: 'prime' }))],
+            [...unordered, first].map(toDispatchId),
+            [toDispatchId(second)]
+        ]);
+        expect(drains.map((drain) => drain.promoted)).toEqual([0, 0, 0]);
+        expect(readReceivedSeqs(fixture).filter((seq) => seq !== undefined)).toEqual([1, 2]);
+    });
+
+    // Pins that a control send the batch already holds runs before the delivery its batch hands on: on this durable
+    // lane the control send runs after the page's deliveries, and the hand-on still waits behind it.
+    it('runs a control send its selection holds before a handed-on delivery', async () => {
+        const hold = createMessageHold('prime');
+        const fixture = createRuntime('successor-after-control', 'memory', { gateDispatch: hold.gate });
+        const first = createInboundTestMessage({ msgId: 'm-1', seq: 1, acknowledged: true });
+        const second = toMessage(2);
+        await admit(fixture, createInboundTestMessage({ msgId: 'prime' }));
+        await hold.entered;
+        await admit(fixture, first);
+        await admit(fixture, second);
+
+        hold.release();
+        await runInboundWorkDueNow(fixture);
+
+        const controlSendIds = (await readInboundTestWorkRows(fixture.stores))
+            .flatMap((row) => row.payload.kind === 'send-control' ? [row.effectId] : []);
+        expect(controlSendIds).toHaveLength(1);
+        const drains = readClaimingDrains(fixture);
+        expect(drains.map((drain) => drain.claimedEffectIds)).toEqual([
+            [toDispatchId(createInboundTestMessage({ msgId: 'prime' }))],
+            [toDispatchId(first), controlSendIds[0], toDispatchId(second)]
+        ]);
+        expect(drains.map((drain) => drain.promoted)).toEqual([0, 1]);
+        expect(readReceivedSeqs(fixture).filter((seq) => seq !== undefined)).toEqual([1, 2]);
+    });
+});
+
 describe('ALInboundAdmissionStore.readOrderedSuccessor', () => {
     // Pins the one read the hand-on rests on: the delivery row and carrier the track's slot after a position names.
     it.each(['memory', 'indexeddb'] as const)('names the delivery row of the slot after a position (%s)', async (storage) => {
@@ -214,6 +329,28 @@ describe('ALInboundAdmissionStore.readOrderedSuccessor', () => {
     });
 });
 
+describe('toALInboundSuccessionResult', () => {
+    // Pins the one place a delivery's answer becomes its claim's result: only a completion on a track names a
+    // succession, and it names that completion's own position.
+    it('answers a completion on a track with its position as the succession', () => {
+        const position = { trackKey: TRACK_KEY, completedThrough: 3 };
+        const result = toALInboundSuccessionResult({ kind: 'completed', position });
+
+        expect(result).toEqual({ status: 'completed-with-succession', succession: position });
+        expect(result.status === 'completed-with-succession' ? result.succession : undefined).toBe(position);
+    });
+
+    // Pins that a completion on no ordering track hands nothing on: it answers a plain completion.
+    it('answers a completion off any track as completed', () => {
+        expect(toALInboundSuccessionResult(AL_INBOUND_COMPLETED_OFF_TRACK)).toEqual({ status: 'completed' });
+    });
+
+    // Pins that a delivery handed back is retried and names no succession.
+    it('answers retry as retry', () => {
+        expect(toALInboundSuccessionResult('retry')).toEqual({ status: 'retry' });
+    });
+});
+
 interface DispatchHold {
     readonly gate: (msg: ALMessage) => Promise<void>;
     /** Settles when the held message's dispatch has started. */
@@ -230,6 +367,49 @@ function createDispatchHold(seq: number): DispatchHold {
     return {
         gate: async (msg) => {
             if (!held && msg.ordering?.seq === seq) {
+                held = true;
+                entered.resolve();
+                await released.promise;
+            }
+        },
+        entered: entered.promise,
+        release: () => released.resolve()
+    };
+}
+
+interface ReleaseFlushHold {
+    /** Settles when the batch that claimed the row starts writing its releases. */
+    readonly entered: Promise<void>;
+    readonly release: () => void;
+}
+
+/** Holds the release write that releases the work row of `effectId`: the end of the batch that claimed it. */
+function holdReleaseFlushOf(fixture: InboundTestRuntime, effectId: string): ReleaseFlushHold {
+    const { workQueue, admissionStore } = fixture.stores;
+    const key = toKeyAsString(toALInboundWorkKey(admissionStore.namespace, effectId));
+    const releaseEntries = workQueue.releaseEntries.bind(workQueue);
+    const entered = Promise.withResolvers<void>();
+    const released = Promise.withResolvers<void>();
+    onTestFinished(() => released.resolve());
+    vi.spyOn(workQueue, 'releaseEntries').mockImplementation(async (entries) => {
+        if (entries.some((release) => toKeyAsString(release.entry.key) === key)) {
+            entered.resolve();
+            await released.promise;
+        }
+        return await releaseEntries(entries);
+    });
+    return { entered: entered.promise, release: () => released.resolve() };
+}
+
+/** Holds the first dispatch of the message `msgId`, and so its batch, until released. */
+function createMessageHold(msgId: string): DispatchHold {
+    const entered = Promise.withResolvers<void>();
+    const released = Promise.withResolvers<void>();
+    let held = false;
+    onTestFinished(() => released.resolve());
+    return {
+        gate: async (msg) => {
+            if (!held && msg.id.msgId === msgId) {
                 held = true;
                 entered.resolve();
                 await released.promise;

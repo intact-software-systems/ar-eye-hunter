@@ -131,10 +131,13 @@ it('releases a successor returned after disposal without starting its attempt', 
                 releases.push(...batch);
             }
         },
-        claimSuccessor: async () => {
-            entered.resolve();
-            await resume.promise;
-            return toFakeALWorkClaim('successor');
+        claimSuccessor: {
+            claim: async () => {
+                entered.resolve();
+                await resume.promise;
+                return toFakeALWorkClaim('successor');
+            },
+            untilBatchAgeMs: 60_000
         },
         runClaim: async (claim) => {
             attempted.push(claim.entry.key.contextId);

@@ -23,7 +23,7 @@ import {
 } from './al-work-readiness-memory.ts';
 
 /**
- * A completed claim that also names its succession: the value its owner's `claimSuccessor` reads to find the row that
+ * A completed claim that also names its succession: the value its owner's successor claim reads to find the row that
  * takes this claim's place in the batch.
  */
 export interface ALWorkCompletedWithSuccession<TSuccession> {
@@ -42,6 +42,24 @@ export type ALWorkClaimResult<TSuccession = never> =
 export type ALWorkAttemptResult<TSuccession = never> =
     | ALWorkClaimResult<TSuccession>
     | Readonly<{ status: 'retained'; settled: Promise<ALWorkOutcome>; }>;
+
+/**
+ * How an owner hands a completed claim's place in the batch on: the claim of its successor, and the batch age past
+ * which the batch asks for none. The two are one value, so an owner that hands on also bounds how long a batch does.
+ */
+export interface ALWorkSuccessorClaim<TSuccession> {
+    /**
+     * Reserves the claim a completed one hands its place in the batch to, found by the succession that claim named,
+     * which the batch then runs after the claims it holds.
+     */
+    readonly claim: (port: ALWorkQueuePort, succession: TSuccession) => Promise<ALWorkClaim | undefined>;
+    /**
+     * A batch whose age is this or more asks for no successor. The age runs from the batch's start, the instant its
+     * `durationMs` is counted from, which comes before the batch reserves any row: every claim the batch holds keeps
+     * its row reserved until the batch's end releases it, and a row it completed early is exposed for that long.
+     */
+    readonly untilBatchAgeMs: number;
+}
 
 /** The outcome a claim's release is written with: a claim that named a succession completed. */
 export function toALWorkOutcome<TSuccession>(result: ALWorkClaimResult<TSuccession>): ALWorkOutcome {
@@ -98,13 +116,11 @@ export interface ALWorkHandlerDependencies<TSuccession = never> {
         batchStartedAtMs: number
     ) => Promise<ALWorkReadySelection>;
     /**
-     * Reserves the claim a completed one hands its place in the batch to, found by the succession that claim named,
-     * which the batch then runs after the claims it holds. Asked only for a claim that completed naming one, while
-     * the batch has fewer than `pageSize` claims and is not disposed. Undefined for an owner that hands nothing on,
-     * and only undefined for one with no succession (`never`), whose claims never name one.
+     * Asked only for a claim that completed naming a succession, while the batch has fewer than `pageSize` claims, is
+     * younger than its `untilBatchAgeMs` and is not disposed. Undefined for an owner that hands nothing on, and only
+     * undefined for one with no succession (`never`), whose claims never name one.
      */
-    readonly claimSuccessor: [TSuccession] extends [never] ? undefined :
-        ((port: ALWorkQueuePort, succession: TSuccession) => Promise<ALWorkClaim | undefined>) | undefined;
+    readonly claimSuccessor: [TSuccession] extends [never] ? undefined : ALWorkSuccessorClaim<TSuccession> | undefined;
     /**
      * Runs one claim. The instant the batch's run loop started comes with it -- after the selection
      * and the reservation, before the first claim runs -- so an owner that reports per-claim timing
@@ -626,7 +642,7 @@ export class ALWorkHandler<TSuccession = never> {
                 continue;
             }
             releases.push(ran.release);
-            await this.queueSuccessors(ran, queued, progress);
+            await this.queueSuccessors(ran, queued, input);
         }
         return this.shutdown.signal.aborted ? undefined : run;
     }
@@ -635,12 +651,13 @@ export class ALWorkHandler<TSuccession = never> {
     private async queueSuccessors(
         ran: ALWorkSettledRun<TSuccession>,
         queued: ALWorkClaim[],
-        progress: ALWorkBatchReport.Progress
+        input: ALWorkClaimedRunInput
     ): Promise<void> {
+        const { progress, batchStartedAtMs } = input;
         if (this.shutdown.signal.aborted) {
             return;
         }
-        const successors = await this.claimSuccessors(ran.handOn, progress.claimedCount);
+        const successors = await this.claimSuccessors(ran.handOn, progress.claimedCount, batchStartedAtMs);
         queued.push(...successors);
         progress.claimedCount += successors.length;
     }
@@ -705,19 +722,24 @@ export class ALWorkHandler<TSuccession = never> {
 
     /**
      * The successor a completion that named a succession hands its place to, while the batch holds fewer than a
-     * page. One that cannot be claimed is left to the next selection, and the failure is stated as a batch failure
-     * is: throwing here would strand the claims this batch has not run yet.
+     * page and its age since `batchStartedAtMs` is below `untilBatchAgeMs`; both are decided before anything is read.
+     * One that cannot be claimed is left to the next selection, and the failure is stated as a batch failure is:
+     * throwing here would strand the claims this batch has not run yet.
      */
     private async claimSuccessors(
         handOn: ALWorkCompletedWithSuccession<TSuccession> | undefined,
-        claimedCount: number
+        claimedCount: number,
+        batchStartedAtMs: number
     ): Promise<readonly ALWorkClaim[]> {
-        const { claimSuccessor, pageSize, port } = this.dependencies;
-        if (claimSuccessor === undefined || handOn === undefined || claimedCount >= pageSize) {
+        const { claimSuccessor, clock, pageSize, port } = this.dependencies;
+        if (
+            claimSuccessor === undefined || handOn === undefined || claimedCount >= pageSize ||
+            computeALWorkElapsedMs(batchStartedAtMs, clock.nowMs()) >= claimSuccessor.untilBatchAgeMs
+        ) {
             return [];
         }
         try {
-            const successor = await claimSuccessor(port, handOn.succession);
+            const successor = await claimSuccessor.claim(port, handOn.succession);
             return successor === undefined ? [] : [successor];
         }
         catch (error) {

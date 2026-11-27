@@ -17,7 +17,8 @@ import type {
     ALWorkDiagnostics,
     ALWorkHandlerDependencies,
     ALWorkReadinessProbeDiagnostics,
-    ALWorkReadySelection
+    ALWorkReadySelection,
+    ALWorkSuccessorClaim
 } from '@shared/alm/work/al-work-handler.ts';
 import { AL_WORK_READINESS_MEMORY_MS, ALWorkHandler, toALWorkOutcome } from '@shared/alm/work/al-work-handler.ts';
 import { createALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
@@ -54,6 +55,12 @@ const PHASE_QUEUE_WAIT_MS = 40;
 
 /** The succession the successor cases' claims name when the case reads no particular one. */
 const TEST_SUCCESSION = 'succession';
+
+/** A batch age no successor case that reads no age reaches: its clock stands still. */
+const TEST_UNTIL_BATCH_AGE_MS = 60_000;
+
+/** The batch age limit the age-bound cases' owner states. */
+const SUCCESSION_AGE_LIMIT_MS = 500;
 
 describe('ALWorkHandler', () => {
     it('runs one batch per wake and releases each claim once', async () => {
@@ -1415,10 +1422,10 @@ describe('ALWorkHandler successor claims', () => {
         const successors: Record<string, string> = { 'chain-1': 'chain-2', 'chain-2': 'chain-3' };
         const handler = new ALWorkHandler<string>({
             ...createSuccessionDependencies<string>(['chain-1'], flushes),
-            claimSuccessor: async (_port, contextId) => {
+            claimSuccessor: toTestSuccessorClaim(async (_port, contextId) => {
                 const successor = successors[contextId];
                 return successor === undefined ? undefined : toFakeALWorkClaim(successor);
-            },
+            }),
             runClaim: async (claim) => {
                 runs.push(claim.entry.key.contextId);
                 return { status: 'completed-with-succession', succession: claim.entry.key.contextId };
@@ -1448,10 +1455,10 @@ describe('ALWorkHandler successor claims', () => {
             const runs: string[] = [];
             const handler = new ALWorkHandler<string>({
                 ...createSuccessionDependencies<string>(['ended'], []),
-                claimSuccessor: async (_port, succession) => {
+                claimSuccessor: toTestSuccessorClaim(async (_port, succession) => {
                     asked.push(succession);
                     return toFakeALWorkClaim('never-run');
-                },
+                }),
                 runClaim: async (claim): Promise<ALWorkAttemptResult<string>> => {
                     runs.push(claim.entry.key.contextId);
                     switch (ending) {
@@ -1480,9 +1487,9 @@ describe('ALWorkHandler successor claims', () => {
         const events: ALStorageEvent[] = [];
         const handler = new ALWorkHandler<string>({
             ...createSuccessionDependencies<string>(['first', 'second'], []),
-            claimSuccessor: async () => {
+            claimSuccessor: toTestSuccessorClaim(async () => {
                 throw new DOMException('The successor read failed', 'QuotaExceededError');
-            },
+            }),
             runClaim: async (claim) => {
                 runs.push(claim.entry.key.contextId);
                 return { status: 'completed-with-succession', succession: TEST_SUCCESSION };
@@ -1505,7 +1512,7 @@ describe('ALWorkHandler successor claims', () => {
         const handler = new ALWorkHandler<string>({
             ...createSuccessionDependencies<string>(['page-1', 'page-2'], []),
             pageSize: 4,
-            claimSuccessor,
+            claimSuccessor: toTestSuccessorClaim(claimSuccessor),
             runClaim: async (claim) => {
                 runs.push(claim.entry.key.contextId);
                 return { status: 'completed-with-succession', succession: TEST_SUCCESSION };
@@ -1519,16 +1526,52 @@ describe('ALWorkHandler successor claims', () => {
         expect(promoted).toBe(2);
     });
 
+    // Pins that the age bound leaves a young batch's hand-on as it was: a completion one millisecond before the limit
+    // still runs its successor in the same batch.
+    it('hands on a completion that comes before the batch reaches its age limit', async () => {
+        const scenario = runAgedSuccession(SUCCESSION_AGE_LIMIT_MS - 1);
+
+        expect(await scenario.ran).toEqual(['aged', 'successor']);
+        expect(scenario.asked).toEqual(['aged', 'successor']);
+    });
+
+    // Pins the age bound: a completion once the batch has run its limit asks the owner for no successor, and the
+    // batch ends with exactly the claim it selected, completed.
+    it('asks no successor of a completion once the batch has run its age limit', async () => {
+        const scenario = runAgedSuccession(SUCCESSION_AGE_LIMIT_MS + 1);
+
+        expect(await scenario.ran).toEqual(['aged']);
+        expect(scenario.asked).toEqual([]);
+        expect(scenario.flushes.map((flush) => flush.map((release) => `${release.claim.entry.key.contextId}:${release.outcome.status}`)))
+            .toEqual([['aged:completed']]);
+        expect(scenario.batches).toHaveLength(1);
+        expect(scenario.batches[0]).toMatchObject({
+            claimedCount: 1,
+            completedCount: 1,
+            rescheduledCount: 0,
+            rejectedCount: 0,
+            durationMs: SUCCESSION_AGE_LIMIT_MS + 1
+        });
+    });
+
+    // Pins the bound's edge: a batch exactly as old as its limit hands nothing on (the limit is reached, not passed).
+    it('asks no successor of a completion at exactly the batch age limit', async () => {
+        const scenario = runAgedSuccession(SUCCESSION_AGE_LIMIT_MS);
+
+        expect(await scenario.ran).toEqual(['aged']);
+        expect(scenario.asked).toEqual([]);
+    });
+
     // Pins that a plain completion names nothing to hand on, so its owner is asked for no successor.
     it('asks no successor of a claim that completed naming no succession', async () => {
         const asked: string[] = [];
         const runs: string[] = [];
         const handler = new ALWorkHandler<string>({
             ...createSuccessionDependencies<string>(['plain'], []),
-            claimSuccessor: async (_port, succession) => {
+            claimSuccessor: toTestSuccessorClaim(async (_port, succession) => {
                 asked.push(succession);
                 return toFakeALWorkClaim('never-run');
-            },
+            }),
             runClaim: async (claim) => {
                 runs.push(claim.entry.key.contextId);
                 return { status: 'completed' };
@@ -1548,10 +1591,10 @@ describe('ALWorkHandler successor claims', () => {
         const asked: (typeof succession)[] = [];
         const handler = new ALWorkHandler<typeof succession>({
             ...createSuccessionDependencies<typeof succession>(['named'], []),
-            claimSuccessor: async (_port, named) => {
+            claimSuccessor: toTestSuccessorClaim(async (_port, named) => {
                 asked.push(named);
                 return undefined;
-            },
+            }),
             runClaim: async () => ({ status: 'completed-with-succession', succession })
         });
         onTestFinished(() => handler.dispose());
@@ -1567,7 +1610,7 @@ describe('ALWorkHandler successor claims', () => {
         const flushes: ALWorkRelease[][] = [];
         const handler = new ALWorkHandler<string>({
             ...createSuccessionDependencies<string>(['named'], flushes),
-            claimSuccessor: async () => undefined,
+            claimSuccessor: toTestSuccessorClaim(async () => undefined),
             runClaim: async () => ({ status: 'completed-with-succession', succession: TEST_SUCCESSION })
         });
         onTestFinished(() => handler.dispose());
@@ -1583,10 +1626,10 @@ describe('ALWorkHandler successor claims', () => {
         const runs: string[] = [];
         const handler = new ALWorkHandler<string>({
             ...createSuccessionDependencies<string>(['grouped'], []),
-            claimSuccessor: async (_port, succession) => {
+            claimSuccessor: toTestSuccessorClaim(async (_port, succession) => {
                 asked.push(succession);
                 return succession === 'grouped' ? toFakeALWorkClaim('successor') : undefined;
-            },
+            }),
             runClaimGroup: (claims) =>
                 new Map(claims.map((claim) => [
                     claim,
@@ -1632,7 +1675,7 @@ describe('ALWorkHandler with no succession', () => {
             .toEqualTypeOf<ALWorkOutcome['status'] | 'retained'>();
         expectTypeOf<ALWorkHandlerDependencies['claimSuccessor']>().toEqualTypeOf<undefined>();
         expectTypeOf<ALWorkHandlerDependencies<string>['claimSuccessor']>()
-            .toEqualTypeOf<((port: ALWorkQueuePort, succession: string) => Promise<ALWorkClaim | undefined>) | undefined>();
+            .toEqualTypeOf<ALWorkSuccessorClaim<string> | undefined>();
     });
 });
 
@@ -1658,6 +1701,62 @@ function createSuccessionDependencies<TSuccession>(
         runClaim: async () => ({ status: 'completed' }),
         diagnostics: undefined
     };
+}
+
+interface AgedSuccessionScenario {
+    /** The claims the batch ran, in order, once its batch has ended. */
+    readonly ran: Promise<readonly string[]>;
+    /** The successions the owner was asked for, in order. */
+    readonly asked: readonly string[];
+    readonly flushes: readonly (readonly ALWorkRelease[])[];
+    readonly batches: readonly ALWorkBatchDiagnostics[];
+}
+
+/**
+ * One batch whose selected claim `aged` completes when the batch is `ageMs` old, naming a succession its owner answers
+ * with `successor`, which completes at once. The batch starts on a clock at 1 000 and its owner's limit is
+ * `SUCCESSION_AGE_LIMIT_MS`.
+ */
+function runAgedSuccession(ageMs: number): AgedSuccessionScenario {
+    const batchStartedAtMs = 1_000;
+    let nowMs = batchStartedAtMs;
+    const runs: string[] = [];
+    const asked: string[] = [];
+    const flushes: ALWorkRelease[][] = [];
+    const batches: ALWorkBatchDiagnostics[] = [];
+    const handler = new ALWorkHandler<string>({
+        ...createSuccessionDependencies<string>(['aged'], flushes),
+        clock: { nowMs: () => nowMs },
+        claimSuccessor: {
+            claim: async (_port, succession) => {
+                asked.push(succession);
+                return succession === 'aged' ? toFakeALWorkClaim('successor') : undefined;
+            },
+            untilBatchAgeMs: SUCCESSION_AGE_LIMIT_MS
+        },
+        runClaim: async (claim) => {
+            const contextId = claim.entry.key.contextId;
+            runs.push(contextId);
+            if (contextId === 'aged') {
+                nowMs = batchStartedAtMs + ageMs;
+            }
+            return { status: 'completed-with-succession', succession: contextId };
+        },
+        diagnostics: (event) => {
+            if (event.kind === 'work-batch') {
+                batches.push(event);
+            }
+        }
+    });
+    onTestFinished(() => handler.dispose());
+    return { ran: handler.ready().then(() => runs), asked, flushes, batches };
+}
+
+/** The owner's successor claim, for the cases that read no batch age. */
+function toTestSuccessorClaim<TSuccession>(
+    claim: ALWorkSuccessorClaim<TSuccession>['claim']
+): ALWorkSuccessorClaim<TSuccession> {
+    return { claim, untilBatchAgeMs: TEST_UNTIL_BATCH_AGE_MS };
 }
 
 function createEngine(): InboxOutboxEngine {

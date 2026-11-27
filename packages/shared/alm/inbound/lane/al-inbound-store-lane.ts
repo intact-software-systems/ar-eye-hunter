@@ -46,6 +46,7 @@ import {
 } from '../al-inbound-runtime-diagnostics.ts';
 import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
 import {
+    AL_INBOUND_HAND_ON_BATCH_AGE_MS,
     AL_INBOUND_WORK_LEASE_MS,
     assertALInboundWorkCarrier,
     decodeALInboundWorkEntry,
@@ -661,7 +662,10 @@ export class ALInboundStoreLane {
             // refreshes -- so every engine pass walks the rotation again: no answer stands.
             readinessMemoryMs: AL_WORK_PROBE_EVERY_ROUND,
             selectReady: (port, pageSize) => this.selectInboundWork(port, pageSize),
-            claimSuccessor: (port, position) => this.workSelector.claimOrderedSuccessor(port, position),
+            claimSuccessor: {
+                claim: (port, position) => this.workSelector.claimOrderedSuccessor(port, position),
+                untilBatchAgeMs: AL_INBOUND_HAND_ON_BATCH_AGE_MS
+            },
             batchObservations: dependencies.diagnostics?.acknowledgementCapture?.batchObservations,
             runClaim: (claim, batchStartedAtMs, defer) => this.runInboundClaim(claim, batchStartedAtMs, defer),
             diagnostics: (event) => this.recordWorkDiagnostics(event),

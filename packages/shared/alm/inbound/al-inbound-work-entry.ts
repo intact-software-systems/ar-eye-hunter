@@ -41,6 +41,13 @@ import { decodeALDeadlinedMessage } from './al-inbound-message-deadline.ts';
 
 export const AL_INBOUND_WORK_LEASE_MS = 10_000;
 
+/**
+ * The batch age at which an inbound batch stops handing a completed delivery's place on: half its lease, so a row the
+ * batch completed early, which stays reserved until the batch ends, is released before another instance's lease
+ * timeout can claim it again.
+ */
+export const AL_INBOUND_HAND_ON_BATCH_AGE_MS = AL_INBOUND_WORK_LEASE_MS / 2;
+
 /** The work identity of an inbound effect: its parts, each URI-encoded, joined by `:`. */
 export function toALInboundEffectId(parts: readonly (number | string)[]): string {
     return parts.map((part) => encodeURIComponent(String(part))).join(':');
