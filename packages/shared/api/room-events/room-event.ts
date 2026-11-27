@@ -26,6 +26,16 @@ export namespace RoomEvent {
     export interface Court extends CourtSetup { readonly occurrence: number; readonly seats: readonly Seat[]; }
     export interface Seat { readonly principalId: string; readonly partyId: string; readonly offerRevision: number; readonly deadline: number | null; }
     export interface Offer { readonly groupId: string; readonly occurrence: number; readonly partyId: string; readonly offerRevision: number; readonly deadline: number | null; }
+    export interface OrganizerView {
+        readonly organizerId: string;
+        readonly lobby: GroupRef;
+        readonly revision: number;
+        readonly closesAt: number;
+        readonly closed: boolean;
+        readonly courts: readonly Court[];
+        readonly queue: readonly Party[];
+        readonly players: readonly { readonly principalId: string; readonly displayName: string }[];
+    }
     export interface View {
         readonly principalId: string;
         readonly lobby: GroupRef;

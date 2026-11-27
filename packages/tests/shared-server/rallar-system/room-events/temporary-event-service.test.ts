@@ -3,6 +3,9 @@ import { mutationDescriptor } from '@shared-server/rallar-system/group-state/gro
 import { expect, it, vi } from 'vitest';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
+import { createTestAuthSession } from '../group-state/group-state-test-runtime.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { decodeViewInvalidation } from '@shared/api/views/view-invalidation.ts';
 import { AuthSessionPersistence } from '@shared-server/rallar-system/auth/persistence/auth-session-persistence.ts';
 import { RoomEventRepository } from '@shared-server/rallar-system/room-events/room-event-repository.ts';
 import { EventRoomAccessEffects } from '@shared-server/rallar-system/room-events/event-room-access-effects.ts';
@@ -85,6 +88,12 @@ it('holds the lobby open from an occupied court, then rejects a late reconnect b
         await issue({ action: 'create', courts: [{ groupId: 'court', capacity: 1 }], closesAt: nowEpochMs() + 60_000, emptyReturnWindowMs: 1000 });
         await issue({ action: 'propose', partyId: 'solo', players: ['owner'] });
         await issue({ action: 'claim', groupId: 'court', occurrence: 1, partyId: 'solo', offerRevision: 2 });
+        const organizer = { principalId: 'owner', sessionId: fixture.owner.sessionId };
+        await expect(service.readOrganizer(RETENTION_REF, organizer)).resolves.toMatchObject({
+            organizerId: 'owner', revision: 3, queue: [], players: [{ principalId: 'owner', displayName: 'owner' }],
+            courts: [{ groupId: 'court', seats: [{ principalId: 'owner', partyId: 'solo', deadline: null }] }]
+        });
+        await expect(service.readOrganizer(RETENTION_REF, { ...organizer, principalId: 'other' })).rejects.toThrow(/organizer|membership/i);
         const court = { ...RETENTION_REF, groupId: 'court' };
         const connect = (generation: string) => mutationDescriptor({ scope: court, groupId: court.groupId, operation: 'connectPresence',
             sessionId: fixture.owner.sessionId, request: { actorPrincipalId: 'owner', principalId: 'owner', generationId: generation,
@@ -106,4 +115,39 @@ it('holds the lobby open from an occupied court, then rejects a late reconnect b
         expect((await groups.findGroup(court))?.status).toBe('active');
     }
     finally { queue.inbox.stop(); await fixture.storage.close(); }
+});
+
+it('publishes lobby arrivals to the current organizer while denying the same roster to another eligible organizer', async () => {
+    const f = await createRetentionDatabaseFixture();
+    const nowEpochMs = () => f.nowEpochMs;
+    const queue = createSqlServerAppInbox({ database: f.storage.sql, nowEpochMs });
+    try {
+        await seedRetentionRoom(f);
+        const other = createTestAuthSession('staff');
+        await new AuthSessionRepository(f.runtime).putSession(other);
+        const config = { serviceId: 'events', finishedRetentionMs: 3_600_000, organizerIds: ['owner', 'staff'] };
+        const authSessions = new AuthSessionPersistence(f.runtime);
+        const roomAccess = new EventRoomAccessEffects({ groups: f.repository, sessions: authSessions, ...config });
+        const service = new TemporaryEventService({ appInbox: queue.inbox, runtime: f.runtime, groups: f.repository,
+            authSessions, roomAccess, nowEpochMs }, config);
+        queue.inbox.start();
+        const actor = { principalId: 'owner', sessionId: f.owner.sessionId };
+        const pending = await service.mutate.enqueue({ command: { ...actor, lobby: RETENTION_REF, requestId: 'start',
+            command: { action: 'create', courts: [{ groupId: 'court', capacity: 2 }], closesAt: nowEpochMs() + 60_000 } }, traceId: 'create' });
+        await queue.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
+        expect((await pending.right!.wait()).left).toBeFalsy();
+        const invite = await prepareMutation(f, mutationDescriptor({ scope: RETENTION_REF, groupId: RETENTION_REF.groupId,
+            operation: 'createGroupInvite', targetPrincipalId: 'staff', request: { requestId: 'invite', actorPrincipalId: 'owner' } }));
+        await commitMutation(f, requireMutationWrite(invite.computed));
+        const join = await prepareMutation({ ...f, owner: other }, mutationDescriptor({ scope: RETENTION_REF, groupId: RETENTION_REF.groupId,
+            operation: 'acceptGroupInvite', request: { requestId: 'accept', actorPrincipalId: 'staff' } }));
+        await commitMutation(f, requireMutationWrite(join.computed));
+        const view = await service.readOrganizer(RETENTION_REF, actor);
+        expect(view.players.map(p => p.principalId).sort()).toEqual(['owner', 'staff']);
+        expect(view.revision).toBe(1);
+        await expect(service.readOrganizer(RETENTION_REF, { principalId: 'staff', sessionId: other.sessionId })).rejects.toThrow(/organizer/);
+        const rows = await f.storage.sql<{ ri_resource: string }[]>`select ri_resource from resource_inbox where ri_topic_id = 'view.invalidated'`;
+        const notices = rows.map(row => decodeViewInvalidation(JSON.parse(JSON.parse(row.ri_resource).payload.resource)));
+        expect(notices.filter(n => n.resource === 'room-event-organizer').map(n => n.principalId)).toEqual(['owner', 'owner']);
+    } finally { queue.inbox.stop(); await f.storage.close(); }
 });

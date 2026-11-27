@@ -222,8 +222,8 @@ Goal:
 - Target all online members of group bb-group.
 - Connect RTC for each browser agent.
 - Run a looped realtime send at 20 Hz for 5 seconds.
-- Include frame number, elapsed milliseconds, actor, groupId, and position in
-  every payload.
+- Include frame number, elapsed milliseconds, send time in epoch milliseconds,
+  actor, groupId, and position in every payload.
 
 Constants:
 - applicationId: rallar-server
@@ -240,7 +240,8 @@ Constraints:
 - Use targetPolicy mode all-online-group-members.
 - Use a recipe with rtc.connect, loop, and stats commands.
 - The loop command must contain exactly one rtc.send child command.
-- Use loop placeholders {loop.index}, {loop.iteration}, and {loop.elapsedMs}.
+- Use loop placeholders {loop.index}, {loop.iteration}, {loop.elapsedMs}, and
+  {loop.atEpochMs}. A string that is only one placeholder becomes its number.
 - Put rateHz, intervalMs, frameCount, and durationSeconds in metadata, not as
   unknown top-level loop fields.
 - Optional loop thresholds may use minAchievedRateHz, maxStartDriftMs,

@@ -8,7 +8,10 @@ import type { RallarBlackBoxTestRecord } from '../../rallar-black-box-test-contr
 
 const PATH = 'messages.received';
 
-/** A count's fields; an order claim and a stall window bound a presence claim, so an absence claim takes neither. */
+/**
+ * A count's fields; an order claim, a stall window and an age reading belong to the copies a presence claim asks for,
+ * so an absence claim takes none of them.
+ */
 export function validateAlmMessagesReceivedCommand(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
     return [
         ...validateStringField(command, 'connection', PATH),
@@ -16,25 +19,35 @@ export function validateAlmMessagesReceivedCommand(command: RallarBlackBoxTestRe
         ...validateStringField(command, 'msgId', PATH),
         ...validateIntegerField({ record: command, key: 'count', path: PATH, minimum: 0 }),
         ...validateBooleanField(command, 'absent', PATH),
-        ...validateOrderField(command),
+        ...validatePayloadFieldName(
+            command,
+            'ascendingBy',
+            'claims an order, which an absence claim (absent: true) has none of.'
+        ),
         ...validateStallField(command),
+        ...validatePayloadFieldName(
+            command,
+            'ageFrom',
+            'reads the age of the copies a count asks for, which an absence claim (absent: true) asks for none of.'
+        ),
         ...validateIntegerField({ record: command, key: 'windowMs', path: PATH, minimum: 0 })
     ];
 }
 
-function validateOrderField(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
-    const field = command.ascendingBy;
+/** A field naming a payload field of the copies a presence claim asks for; `absenceRefusal` ends its issue. */
+function validatePayloadFieldName(
+    command: RallarBlackBoxTestRecord,
+    key: 'ascendingBy' | 'ageFrom',
+    absenceRefusal: string
+): readonly ControlCommandIssue[] {
+    const field = command[key];
     if (typeof field !== 'string') {
-        return validateStringField(command, 'ascendingBy', PATH);
+        return validateStringField(command, key, PATH);
     }
     if (field.trim() === '') {
-        return [toControlCommandIssue(`${PATH}.ascendingBy must name a payload field.`)];
+        return [toControlCommandIssue(`${PATH}.${key} must name a payload field.`)];
     }
-    return command.absent === true
-        ? [toControlCommandIssue(
-            `${PATH}.ascendingBy claims an order, which an absence claim (absent: true) has none of.`
-        )]
-        : [];
+    return command.absent === true ? [toControlCommandIssue(`${PATH}.${key} ${absenceRefusal}`)] : [];
 }
 
 function validateStallField(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {

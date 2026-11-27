@@ -193,6 +193,8 @@ Room management belongs to one player at a time. An explicit transfer gives a pr
 
 Operators grant organizer rights per application through `group.eventOrganizerIdsByApplication`. Deployment administrators can also organize events. An authorized organizer can use a private lobby to run several event-owned courts. Players consent to queue as a party, receive an offer for one court, and choose when to enter. A guest keeps their player identity and lobby membership when taking the court grant. The oldest group that fits has priority and individual offers expire after the configured claim window. The organizer or the current court director releases a court by its occurrence. Releasing one court leaves the other matches running. Event removal ends lobby and court access for that player, and optional link rotation stops new arrivals through the old invitation.
 
+An organizer can watch the whole event while playing on one court. The private roster shows event-local player names, parties in queue order, occupied courts and individual claim deadlines. After a dropped connection the organizer recovers the current roster over the same observation. Players continue to see their own event commitments.
+
 ## Sharing rooms
 
 AR Eye Hunter and Relic Hunters let hosts create code-protected or invite-only
@@ -474,11 +476,12 @@ Shared packages are the reusable surface. Apps are consumers.
   distributed runs. See `apps/rallar-black-box/docs/README.md`.
 - `apps/rallar-black-box-control-server` and `apps/rallar-black-box-headless`
   run and host those distributed browser agents.
-- ALM is the message protocol. Its delivery roadmap (Releases 1 to 11,
-  `playground/alm/alm-improvement-plan.md`) is complete; the design that
-  continues is the publication QoS and pub/sub addendum,
+- ALM is the message protocol. Its delivery roadmap (Releases 1 to 16,
+  `playground/alm/alm-improvement-plan.md`) is delivered; from Release 9 it
+  followed the publication QoS and pub/sub addendum,
   `playground/alm/alm-publication-qos-addendum.md`. The product contract is
-  `playground/alm/alm-complete-product-description.md`. The code maps are
+  `playground/alm/alm-complete-product-description.md`. What remains before
+  ALM 1.0 is in `plans/active/alm-v1-production-readiness.md`. The code maps are
   `packages/shared/alm/inbound/README.md` and
   `packages/shared/alm/outbound/README.md`.
 

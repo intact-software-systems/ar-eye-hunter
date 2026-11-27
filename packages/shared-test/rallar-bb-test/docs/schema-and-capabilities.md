@@ -106,8 +106,9 @@ accepted layout at the readiness group revision, and a layout that settled earli
 the buffered events and released at once. The accepted overlay's `updatedAtEpochMs` is no anchor: it is
 the server's planning time, before the promotion. An epoch later than the wait's start counts from the
 start, so the wait never outlasts its own timeout. A recipe whose `timeoutFrom` is not one token, which a
-loop child may key by its `{loop.*}` placeholders, is refused when it is loaded; at run time a token
-naming no finite number fails the wait with `RALLAR_BLACK_BOX_WAIT_INVALID`.
+loop child may key by `{loop.index}`, `{loop.iteration}`, `{loop.elapsedMs}` or `{loop.commandIndex}` and
+by no other placeholder, is refused when it is loaded; at run time a token naming no finite number fails
+the wait with `RALLAR_BLACK_BOX_WAIT_INVALID`.
 
 `formation.readiness` reports `acceptedHeldSinceEpochMs` beside the formation summary and omits it while
 no layout is accepted, so the scale recipes gate the stable-layout loop on its presence and fail within
@@ -829,12 +830,15 @@ RTC receivers add two waits on `rallar.browser.alm.storage` for the one `recover
 `recovery-owner-invoked` matches the event's kind and the cell's ordering key, `recovery-owner-cursor`
 the cursor it handed the owner (`lastContiguousSeq: 1`, `expectedSeq: 2`, `observedSeq: 300`, carrier
 `rtc`); the sender's peer id sits between them in the emitted order, so one `contains` cannot span both.
-Over `ws` the relay refuses the gapped send before the receiver sees it, so no owner is invoked there.
+Over `ws` the relay refuses the gapped send before the receiver sees it, so no owner is invoked there: the
+`ws` receiver ends on `no-recovery-owner-invoked`, an `absent: true` wait for the same kind and ordering
+key. It follows the receiver's absence window and reads the cell's history from its first event, so the
+page stated no invocation in that window or in the wait's own 5 s.
 The hosted combined recipe shares one connect across its cells and names no owner, so manifest 18 carries
 neither the field nor the waits.
 
 The `ordering-gap-repair` conformance scenario runs over the single-hop carriers `ws` and `rtc`
-(`ALM_CONFORMANCE_SINGLE_HOP_CARRIERS`) and repairs an in-window gap by range. The sender sends seq 1 and
+(the `ordered-gap-repair` capability of `ALM_CARRIER_MATRIX` names it there) and repairs an in-window gap by range. The sender sends seq 1 and
 proves it left (`observe-transport-accepted-1`, asserted `transport-accepted` or `acknowledged`; a room of two pages
 gives the sender one next hop, so the carrier's acceptance orders seq 1 first), arms the native hold of its type on each carrier the cell can hold,
 sends seq 2, then holds that one message by the id its send returned (`hold-message-2-<carrier>`, a
@@ -1269,6 +1273,22 @@ window ended the count, and a stalled count's failure message names the window. 
 whose copies keep arriving may then take its whole `windowMs`, so a slow runner lengthens the count without failing it while a stopped sender still fails
 it within `stallMs`. An absence claim holds its whole window: command validation refuses
 `stallMs` beside `absent: true`.
+
+`ageFrom` names a field of each copy's payload, a top-level field like `ascendingBy` and not a path,
+that holds the epoch in milliseconds at which the copy was sent (a paced sender writes it with
+`{loop.atEpochMs}`). The result and the diagnostic then carry
+`sampleAge: { from, ageMs, unrecordedSamples }`, and neither is present when no age was asked for.
+`from` repeats the field. `ageMs` is a bounded histogram on the publication stage's age bounds
+(`AL_PUBLICATION_FIGURE_AGE_BOUNDS_MS`, the bounds of `selectionAgeMs`) with one sample per matched
+copy: the agent's clock when its event log recorded the copy, less the number the payload holds at
+that field. A copy with no finite number there, the unresolved text of a placeholder included, or one
+stamped after it arrived has no age the histogram records: it adds one to `unrecordedSamples` and is
+never clamped into a bucket, so `ageMs.count + unrecordedSamples` equals `observed`. The reading
+claims nothing and fails no count; a recipe that needs every copy aged asserts `unrecordedSamples`
+itself. The age is taken across two clocks, the sender's and this agent's, so between machines every
+sample also carries their offset, and it covers only the copies that arrived. A `recent` event history
+that evicted a copy has dropped its sample with it. An absence claim asks for no copy: command
+validation refuses `ageFrom` beside `absent: true`.
 
 `fault.inject` schedules a scripted `drop` for the next `remaining` matching
 frames on the `ws` or `rtc` carrier; `{ delayMs }` and `not-ready` are `ws` only
@@ -1789,6 +1809,16 @@ but they must stay transport-neutral and bounded by the exported composite
 limits. Runtime execution for `loop` is available for sequential repeated child
 commands. Runtime execution for `parallel` is available for bounded concurrent
 groups with sequential child commands inside each group.
+
+A `loop` writes its placeholders into every string of a child command before
+the child runs: `{loop.index}` (zero-based, counted over every child the loop
+has run), `{loop.iteration}` (from 1), `{loop.commandIndex}` (the child's
+zero-based position in `commands`), `{loop.elapsedMs}` (milliseconds since the
+loop started) and `{loop.atEpochMs}` (the agent's clock in epoch milliseconds).
+A string that is exactly one placeholder becomes that number; a placeholder
+inside a longer string is written as text. `elapsedMs` and `atEpochMs` come
+from one clock read, taken when the child is resolved. A `wait.timeoutFrom`
+reference may be keyed by the first four, not by `{loop.atEpochMs}`.
 
 Schema-authoring views and catalog previews should inspect nested child
 commands recursively. A top-level `loop` or `parallel` can still require live
