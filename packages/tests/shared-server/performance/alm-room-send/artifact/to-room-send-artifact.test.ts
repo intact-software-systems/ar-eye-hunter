@@ -42,6 +42,7 @@ const INPUT: ToRoomSendArtifactInput = {
     },
     loadAverage: { atStart: [0.5, 0.6, 0.7], atEnd: [1.5, 0.9, 0.8] },
     shape: {
+        ordering: 'ordering-key',
         publishers: 1,
         sendsPerSecond: 2,
         durationS: 1,
@@ -137,6 +138,7 @@ describe('toRoomSendArtifact', () => {
         expect(artifact.databaseLatency.notDelayed.join(' ')).toContain('delivery of a NOTIFY');
         expect(artifact.limits.join(' ')).toContain('One event loop');
         expect(artifact.limits.join(' ')).toContain('room authorizer');
+        expect(artifact.limits.join(' ')).toContain('Nothing reorders a copy of an unordered send');
     });
 
     it('holds the keys of its schema and nothing else', () => {

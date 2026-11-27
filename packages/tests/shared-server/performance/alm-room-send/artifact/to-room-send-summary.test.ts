@@ -50,6 +50,7 @@ const STALLED_RUN: RoomSendSummarySource = {
     commit: 'abc1234def5678900000000000000000000000ff',
     dirty: false,
     shape: {
+        ordering: 'ordering-key',
         publishers: 5,
         sendsPerSecond: 2,
         durationS: 20,
@@ -281,6 +282,7 @@ describe('toRoomSendSummary', () => {
     it('prints not applicable in place of the predecessor count and the before-first-control line of an unordered run', () => {
         const unordered: RoomSendSummarySource = {
             ...STALLED_RUN,
+            shape: { ...STALLED_RUN.shape, ordering: 'unordered' },
             report: {
                 ...STALLED_RUN.report,
                 delivery: { ...STALLED_RUN.report.delivery, copiesReadOutOfOfferOrder: 7 },

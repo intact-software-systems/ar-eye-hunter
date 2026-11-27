@@ -22,6 +22,7 @@ describe('decodeRoomSendCellOptions', () => {
     it('decodes the reference invocation, and gives a flag left out the value the reference invocation gives it', () => {
         const reference = {
             shape: {
+                ordering: 'ordering-key',
                 publishers: 5,
                 sendsPerSecond: 2,
                 durationS: 20,
@@ -70,6 +71,7 @@ describe('decodeRoomSendCellOptions', () => {
             '--publishers=1'
         ])).toEqual({
             shape: {
+                ordering: 'ordering-key',
                 publishers: 1,
                 sendsPerSecond: 10,
                 durationS: 45,

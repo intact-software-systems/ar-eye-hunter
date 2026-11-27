@@ -83,7 +83,7 @@ export interface RoomSendCellRunResult {
 /** One run in progress: `ledger` and `log` take what it offers and observes. */
 interface RoomSendRun {
     readonly schedule: RoomSendSchedule;
-    /** Whether every send of the run names the room's ordering key. */
+    /** The shape's: whether every send of the run names the room's ordering key. */
     readonly ordering: RoomSendOrdering;
     readonly roomRef: GroupRef;
     readonly instances: readonly RoomSendInstance[];
@@ -124,8 +124,9 @@ const ROOM_PRESENCE_LIFETIME_MS = 24 * 60 * 60 * 1_000;
 
 /**
  * One run of the cell: three API instances in this process on one PostgreSQL database, fifteen sessions in one room,
- * and the shape's publishers each offering an ordered, receipted room send at its due instant. Returns everything
- * the run observed and what it read of its own process, or every issue of the shape and nothing run.
+ * and the shape's publishers each offering a receipted room send at its due instant, every send of the run on the
+ * room's ordering key or every one unordered, as the shape states. Returns everything the run observed and what it
+ * read of its own process, or every issue of the shape and nothing run.
  *
  * What each thing takes on its way, as the API's own router decides it for a topic it has no definition of:
  * - a copy: the publisher's instance admits the send to the shared inbound store; whichever instance's worker takes
@@ -156,9 +157,9 @@ const ROOM_PRESENCE_LIFETIME_MS = 24 * 60 * 60 * 1_000;
  *   of the whole process beside each;
  * - a frame enters at `acceptIncomingMessage`, below the socket bridge, so its size check and its JSON parse are no
  *   part of a run, and a session is a socket object the server writes to, with no WebSocket;
- * - a recipient has no client runtime: its socket takes every frame the server writes, a repeated copy and a copy
- *   ahead of its predecessor alike, where a client drops the first and holds the second back, and it sends no gap
- *   NACK of its own; it ACKs its first read of a copy and nothing else;
+ * - a recipient has no client runtime: its socket takes every frame the server writes, a repeated copy, which a
+ *   client drops, and of a send on a track a copy ahead of its predecessor, which a client holds back; it sends no
+ *   gap NACK of its own, and it ACKs its first read of a copy and nothing else;
  * - a publisher reads a receipt each time it is written. What it does to recover a send is the shape's sender
  *   recovery: nothing under `none`; under `client-stand-in` what `RoomSendClientStandIn` states, a stand-in for
  *   the product's WS client whose comment also says what of that client it leaves out;
@@ -192,7 +193,7 @@ export async function runRoomSendCell(
         return Either.ofRight(
             await observeRoomSends({
                 schedule,
-                ordering: 'ordering-key',
+                ordering: input.shape.ordering,
                 roomRef,
                 instances,
                 ledger: new RoomSendOfferLedger(),

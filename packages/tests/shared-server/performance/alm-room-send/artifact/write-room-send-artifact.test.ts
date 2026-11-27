@@ -12,6 +12,7 @@ import {
 const RUN = {
     createdAt: '2026-11-26T19:24:04.123Z',
     shape: {
+        ordering: 'ordering-key',
         publishers: 5,
         sendsPerSecond: 2,
         durationS: 20,

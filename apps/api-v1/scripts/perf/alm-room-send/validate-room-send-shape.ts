@@ -1,18 +1,23 @@
 import { ROOM_SEND_CELL_CONSTANTS } from './room-send-cell-constants.ts';
+import { ROOM_SEND_ORDERINGS, type RoomSendOrdering } from './room-send-ordering.ts';
 
 /**
  * What a publisher does beyond offering each send once at its due instant. `none`: nothing, so the run shows the
- * server alone, and a track the server stalls stays stalled. `client-stand-in`: it answers the server's gap NACKs
- * and repair requests and re-offers a send its server has not answered for, as `RoomSendClientStandIn` states.
+ * server alone: a send it has not answered for is never offered again, and a track it stalls stays stalled.
+ * `client-stand-in`: it answers the server's gap NACKs and repair requests and re-offers a send its server has not
+ * answered for, as `RoomSendClientStandIn` states.
  */
 export type RoomSendSenderRecovery = 'none' | 'client-stand-in';
 
 /**
- * What one run of the cell varies: how many sessions publish, how fast, for how long, at what database latency, what
- * a publisher does to recover a send, and how many connections each instance's application pool may open.
+ * What one run of the cell varies: whether its sends name an ordering key, how many sessions publish, how fast, for
+ * how long, at what database latency, what a publisher does to recover a send, and how many connections each
+ * instance's application pool may open.
  */
 export interface RoomSendShape {
-    /** The sessions that publish, each on a track of its own. */
+    /** Whether the sends of the run name the room's ordering key, every one alike. */
+    readonly ordering: RoomSendOrdering;
+    /** The sessions that publish. Under `ordering-key` each offers a track of its own. */
     readonly publishers: number;
     /** The sends each publisher offers every second, open-loop. */
     readonly sendsPerSecond: number;
@@ -28,9 +33,13 @@ export interface RoomSendShape {
     readonly applicationPoolMaxConnections: number;
 }
 
-/** An issue of a number repeats the number; an issue of the sender recovery never repeats the text it was given. */
+/**
+ * An issue of a number repeats the number; an issue of the ordering or of the sender recovery never repeats the text
+ * it was given.
+ */
 export interface RoomSendShapeIssue {
     readonly code:
+        | 'invalid-ordering'
         | 'invalid-publishers'
         | 'invalid-sends-per-second'
         | 'invalid-duration-s'
@@ -43,12 +52,23 @@ export interface RoomSendShapeIssue {
 export const ROOM_SEND_SENDER_RECOVERIES: readonly RoomSendSenderRecovery[] = ['none', 'client-stand-in'];
 
 /**
- * Every issue of a shape; none means the cell can run it. Each number is whole, so every publisher offers a whole
- * number of sends, the rate times the duration, and nothing is rounded. All the sessions of the room may publish: a
- * send still has every other session as its audience. The sender recovery is one of the two the cell knows, which a
- * shape decoded from JSON or from a command line may fail to be. An application pool opens at least one connection.
+ * Every issue of a shape, in the order of its fields; none means the cell can run it. The ordering and the sender
+ * recovery are each one of the two the cell knows, which a shape decoded from JSON or from a command line may fail to
+ * be.
  */
 export function validateRoomSendShape(shape: RoomSendShape): readonly RoomSendShapeIssue[] {
+    const orderingIssues: readonly RoomSendShapeIssue[] = ROOM_SEND_ORDERINGS.includes(shape.ordering)
+        ? []
+        : [{ code: 'invalid-ordering', message: 'ordering must be ordering-key or unordered' }];
+    return [...orderingIssues, ...validateRoomSendShapeBesideOrdering(shape)];
+}
+
+/**
+ * Every issue of what a shape holds beside its ordering. Each number is whole, so every publisher offers a whole
+ * number of sends, the rate times the duration, and nothing is rounded. All the sessions of the room may publish: a
+ * send still has every other session as its audience. An application pool opens at least one connection.
+ */
+function validateRoomSendShapeBesideOrdering(shape: Omit<RoomSendShape, 'ordering'>): readonly RoomSendShapeIssue[] {
     const { sessionCount } = ROOM_SEND_CELL_CONSTANTS;
     const issues: RoomSendShapeIssue[] = [];
     if (!isWholeNumberOfAtLeast(shape.publishers, 1) || shape.publishers > sessionCount) {

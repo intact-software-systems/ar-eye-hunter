@@ -46,6 +46,7 @@ export interface RoomSendCellOptionIssue {
  * application pool's is the API's own default, so a run that names no pool has the pool an API instance starts with.
  */
 export const ROOM_SEND_REFERENCE_SHAPE: RoomSendShape = {
+    ordering: 'ordering-key',
     publishers: 5,
     sendsPerSecond: 2,
     durationS: 20,
@@ -163,6 +164,7 @@ function decodeShape(values: ReadonlyMap<string, string>): ShapeDecoded {
         ROOM_SEND_REFERENCE_SHAPE.applicationPoolMaxConnections
     );
     const shape = {
+        ordering: ROOM_SEND_REFERENCE_SHAPE.ordering,
         publishers: publishers.value,
         sendsPerSecond: sendsPerSecond.value,
         durationS: durationS.value,

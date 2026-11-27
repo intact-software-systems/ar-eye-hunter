@@ -34,9 +34,14 @@ export const ROOM_SEND_CELL_LIMITS: readonly string[] = [
     'round trips a send that no run pays.',
     'No AppInbox reader, heartbeat, presence or connect traffic runs beside the sends, and no diagnostics sink is ' +
     'installed: the pools and the loop have only the sends to serve.',
-    'A recipient has no client runtime. Its socket takes every frame the server writes, a repeated copy and a copy ' +
-    'ahead of its track alike, where a client drops the first and holds the second back; it sends no gap NACK of ' +
-    'its own. A copy counted here was written to the recipient\'s socket, which is no delivery to an application.',
+    'A recipient has no client runtime. Its socket takes every frame the server writes: a repeated copy, which a ' +
+    'client drops, and of a send that names an ordering key a copy ahead of its track, which a client holds back; ' +
+    'it sends no gap NACK of its own. A copy counted here was written to the recipient\'s socket, which is no ' +
+    'delivery to an application.',
+    'Nothing reorders a copy of an unordered send. A send that names no ordering key is on no track, so neither ' +
+    'the server nor a client holds its copy back for an earlier send of its publisher: the copies a run of ' +
+    'unordered sends counts as written ahead of an earlier send stay out of order, where a client puts the same ' +
+    'count of a run on the ordering key right.',
     'The envelope carries no room send fence, which a browser\'s room send carries and the server checks.',
     'A frame enters at the server\'s `acceptIncomingMessage`, below the socket bridge: its size check and its JSON ' +
     'parse are no part of a run, and a session is a socket object with no WebSocket.',
@@ -46,7 +51,7 @@ export const ROOM_SEND_CELL_LIMITS: readonly string[] = [
     'send on any NACK that may end one, where the client ends the message only for a relay\'s refusal or an open ' +
     'receipt removed. Under `none` a publisher offers each send once and answers nothing.',
     'What a browser does after `resync-required` or `receipt-exhausted` is not modelled: under either recovery a ' +
-    'publisher goes on offering the next send of the same track.',
+    'publisher goes on offering its next send, on the same track when its sends name an ordering key.',
     `The receipt aggregates of an instance are bounded at ${WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES}; the ` +
     'shapes run here stay far below it.',
     'The database is local, on the disk and the processor of the machine that runs the cell: its own time and its ' +

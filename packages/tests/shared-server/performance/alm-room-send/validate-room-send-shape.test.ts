@@ -6,6 +6,7 @@ import {
 } from '../../../../../apps/api-v1/scripts/perf/alm-room-send/validate-room-send-shape.ts';
 
 const REFERENCE_SHAPE: RoomSendShape = {
+    ordering: 'ordering-key',
     publishers: 5,
     sendsPerSecond: 2,
     durationS: 20,
@@ -16,13 +17,14 @@ const REFERENCE_SHAPE: RoomSendShape = {
 
 /** A shape as decoded JSON hands it over, wrong in each field; the validator never repeats a text it was given. */
 const SHAPE_WRONG_IN_EACH_FIELD: RoomSendShape = JSON.parse(
-    '{"publishers":16,"sendsPerSecond":0,"durationS":2.5,"delayMs":-1,"senderRecovery":"postgres://app:s3cret-pw@db",' +
-        '"applicationPoolMaxConnections":0}'
+    '{"ordering":"postgres://app:s3cret-pw@db","publishers":16,"sendsPerSecond":0,"durationS":2.5,"delayMs":-1,' +
+        '"senderRecovery":"postgres://app:s3cret-pw@db","applicationPoolMaxConnections":0}'
 );
 
 describe('validateRoomSendShape', () => {
     it('finds no issue in the reference shape, in one publisher, or in all fifteen sessions publishing', () => {
         expect(validateRoomSendShape(REFERENCE_SHAPE)).toEqual([]);
+        expect(validateRoomSendShape({ ...REFERENCE_SHAPE, ordering: 'unordered' })).toEqual([]);
         expect(validateRoomSendShape({ ...REFERENCE_SHAPE, publishers: 1, delayMs: 5 })).toEqual([]);
         expect(validateRoomSendShape({ ...REFERENCE_SHAPE, publishers: 15, sendsPerSecond: 1, durationS: 1 }))
             .toEqual([]);
@@ -32,6 +34,7 @@ describe('validateRoomSendShape', () => {
 
     it('returns every issue of a shape that is wrong in each field', () => {
         expect(validateRoomSendShape(SHAPE_WRONG_IN_EACH_FIELD)).toEqual([
+            { code: 'invalid-ordering', message: 'ordering must be ordering-key or unordered' },
             {
                 code: 'invalid-publishers',
                 message: 'publishers must be a whole number from 1 to 15, the sessions of the room; received 16'
@@ -47,6 +50,14 @@ describe('validateRoomSendShape', () => {
                 code: 'invalid-application-pool',
                 message: 'applicationPoolMaxConnections must be a whole number of at least 1; received 0'
             }
+        ]);
+    });
+
+    it('refuses an ordering it does not know, and repeats nothing of it', () => {
+        const shape: RoomSendShape = JSON.parse(JSON.stringify({ ...REFERENCE_SHAPE, ordering: 'ordered' }));
+
+        expect(validateRoomSendShape(shape)).toEqual([
+            { code: 'invalid-ordering', message: 'ordering must be ordering-key or unordered' }
         ]);
     });
 

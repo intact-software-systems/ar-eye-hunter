@@ -10,7 +10,7 @@ export interface RoomSendScheduledSession {
     readonly peerId: string;
     /** 0 for instance a, 1 for b, 2 for c. The sessions go round the instances in turn. */
     readonly instanceIndex: number;
-    /** Every session reads the sends of the others. A `publisher` also offers a track of its own. */
+    /** Every session reads the sends of the others. A `publisher` also offers sends of its own. */
     readonly role: 'publisher' | 'recipient';
     /**
      * How long after it first read a copy the session offers its ACK of it. The session's place in the room fixes it
@@ -21,12 +21,15 @@ export interface RoomSendScheduledSession {
 
 /** One send, as its publisher is to offer it. */
 export interface RoomSendScheduledSend {
-    /** The publisher's peer id and the send's place on its track: `session-04-a-send-7`. No two sends share one. */
+    /** The publisher's peer id and the send's `seq`: `session-04-a-send-7`. No two sends share one. */
     readonly msgId: string;
     readonly publisherPeerId: string;
     /** The instance the publisher's socket is on: the one the send is offered to. */
     readonly publisherInstanceIndex: number;
-    /** The send's place on its publisher's track, from 1. */
+    /**
+     * The send's number among its publisher's offers, from 1. It is also the send's seq on its publisher's track when
+     * the send names an ordering key, and it is in the payload either way.
+     */
     readonly seq: number;
     /** When the send falls due, in unrounded milliseconds from the start of the send window. */
     readonly dueOffsetMs: number;
@@ -49,7 +52,9 @@ const MS_PER_SECOND = 1_000;
  * The schedule of a shape `validateRoomSendShape` finds no issue in. The publishers are the first sessions of the
  * room, so they go round the instances as the sessions do. Each publisher sends at the shape's rate from the start of
  * the window, and the publishers are staggered evenly inside one period: the window is cut into one slot for each
- * send, and the publishers take the slots in turn, so no two sends ever share a tick.
+ * send, and the publishers take the slots in turn, so no two sends ever share a tick. The schedule reads nothing of
+ * the shape's ordering: a run of unordered sends offers the sends of the same run on the ordering key, at the same
+ * instants.
  */
 export function computeRoomSendSchedule(shape: RoomSendShape): RoomSendSchedule {
     const sessions = Array.from(
@@ -57,23 +62,23 @@ export function computeRoomSendSchedule(shape: RoomSendShape): RoomSendSchedule 
         (_, sessionIndex) => toScheduledSession(sessionIndex, shape.publishers)
     );
     const roomPeerIds = sessions.map(({ peerId }) => peerId);
-    const tracks = sessions.slice(0, shape.publishers).map((publisher) => ({
-        publisherPeerId: publisher.peerId,
-        publisherInstanceIndex: publisher.instanceIndex,
-        expectedRecipientPeerIds: roomPeerIds.filter((peerId) => peerId !== publisher.peerId)
+    const publishers = sessions.slice(0, shape.publishers).map((session) => ({
+        publisherPeerId: session.peerId,
+        publisherInstanceIndex: session.instanceIndex,
+        expectedRecipientPeerIds: roomPeerIds.filter((peerId) => peerId !== session.peerId)
     }));
     const slotsPerSecond = shape.sendsPerSecond * shape.publishers;
     const sends = Array.from({ length: shape.sendsPerSecond * shape.durationS * shape.publishers }, (_, slot) => {
         const seq = Math.floor(slot / shape.publishers) + 1;
-        const track = tracks[slot % shape.publishers];
+        const publisher = publishers[slot % shape.publishers];
         return {
-            msgId: `${track.publisherPeerId}-send-${seq}`,
-            publisherPeerId: track.publisherPeerId,
-            publisherInstanceIndex: track.publisherInstanceIndex,
+            msgId: `${publisher.publisherPeerId}-send-${seq}`,
+            publisherPeerId: publisher.publisherPeerId,
+            publisherInstanceIndex: publisher.publisherInstanceIndex,
             seq,
             // Each slot is placed from the window's start, never from the slot before it, so no error adds up.
             dueOffsetMs: (slot * MS_PER_SECOND) / slotsPerSecond,
-            expectedRecipientPeerIds: track.expectedRecipientPeerIds
+            expectedRecipientPeerIds: publisher.expectedRecipientPeerIds
         };
     });
     return { sessions, sends };

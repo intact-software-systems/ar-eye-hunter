@@ -2,7 +2,10 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { computeRoomSendReport } from '../../../../../apps/api-v1/scripts/perf/alm-room-send/report/compute-room-send-report.ts';
-import type { RoomSendCellObservations } from '../../../../../apps/api-v1/scripts/perf/alm-room-send/room-send-cell-observations.ts';
+import type {
+    RoomSendCellControl,
+    RoomSendCellObservations
+} from '../../../../../apps/api-v1/scripts/perf/alm-room-send/room-send-cell-observations.ts';
 import {
     createDefaultRoomSendCellRunDependencies,
     runRoomSendCell
@@ -31,7 +34,7 @@ const COPIES = 112;
  * receipt a few hundred milliseconds after its offer, and 4 s is about ten times that median. It is no such margin
  * over the slow sends: at the reference load, five publishers and no added latency, the 99th percentile from offer
  * to complete receipt reached about 2 s, so the tail is a small multiple of a slow receipt, and twice the 2 s
- * first-hop wait. Three runs of a 2 s window and this tail keep the file under 20 s.
+ * first-hop wait. Four runs of a 2 s window and this tail keep the file under 30 s.
  */
 const OBSERVATION_TAIL_MS = 4_000;
 
@@ -41,16 +44,20 @@ const RUN_BUDGET_MS = 30_000;
 const RUN_TABLES = ['resource_inbox', 'runtime_state_store'];
 
 /**
- * What every run here must show whatever the machine's timing: nothing asserted depends on how fast an answer came,
- * on whether the server reported a gap, or on whether a publisher offered a send again.
+ * What every run here must show whatever the machine's timing: nothing asserted depends on how fast an answer came
+ * or on whether a publisher offered a send again for a slow receipt. Of sends on a track nothing depends on whether
+ * the server reported a gap either. Of unordered sends the absence of a gap control is itself what the run proves: a
+ * send that names no ordering key is on no track, so the server has no gap to report and the stand-in no repair to
+ * offer.
  */
 describe('ALM room-send cell on PostgreSQL', () => {
     postgresIt(
         'writes every copy of two publishers\' ordered sends in order and completes each receipt across three instances',
         async () => {
-            const run = await runSmallCell({ delayMs: 0, senderRecovery: 'none' });
+            const run = await runSmallCell({ ordering: 'ordering-key', delayMs: 0, senderRecovery: 'none' });
 
             expectEverySendWrittenAndReceipted(run);
+            expectEveryCopyWrittenInTrackOrder(run);
             expect(run.resends).toEqual([]);
             expect(run.sendEnds).toEqual([]);
         },
@@ -61,9 +68,10 @@ describe('ALM room-send cell on PostgreSQL', () => {
     postgresIt(
         'writes and receipts the same sends when every delayed round trip to the database waits 1 ms first',
         async () => {
-            const run = await runSmallCell({ delayMs: 1, senderRecovery: 'none' });
+            const run = await runSmallCell({ ordering: 'ordering-key', delayMs: 1, senderRecovery: 'none' });
 
             expectEverySendWrittenAndReceipted(run);
+            expectEveryCopyWrittenInTrackOrder(run);
         },
         RUN_BUDGET_MS
     );
@@ -75,9 +83,14 @@ describe('ALM room-send cell on PostgreSQL', () => {
     postgresIt(
         'writes and receipts the same sends when its publishers stand in for a client, and ends each on its complete receipt',
         async () => {
-            const run = await runSmallCell({ delayMs: 0, senderRecovery: 'client-stand-in' });
+            const run = await runSmallCell({
+                ordering: 'ordering-key',
+                delayMs: 0,
+                senderRecovery: 'client-stand-in'
+            });
 
             expectEverySendWrittenAndReceipted(run);
+            expectEveryCopyWrittenInTrackOrder(run);
             expect(run.resends.filter((resend) => ['rejected', 'threw', 'not-admitted'].includes(resend.acceptance)))
                 .toEqual([]);
             expect(run.sendEnds.map((end) => end.cause)).toEqual(Array.from({ length: SENDS }, () => 'terminal-receipt'));
@@ -85,10 +98,26 @@ describe('ALM room-send cell on PostgreSQL', () => {
         },
         RUN_BUDGET_MS
     );
+
+    // The order the copies of two unordered sends of one publisher reach a socket in is the machine's, and nothing
+    // puts it back, so it is no part of what the run must show. A first-hop resend for a slow receipt is not either.
+    postgresIt(
+        'writes every copy of two publishers\' unordered sends, completes each receipt, and draws no gap control',
+        async () => {
+            const run = await runSmallCell({ ordering: 'unordered', delayMs: 0, senderRecovery: 'client-stand-in' });
+
+            expectEverySendWrittenAndReceipted(run);
+            expect(computeRoomSendReport(run).tracks).toEqual({ kind: 'not-applicable' });
+            expect(run.controls.filter(isGapControl)).toEqual([]);
+            expect(run.resends.filter((resend) => resend.cause === 'repair')).toEqual([]);
+            expect(run.sendEnds.map((end) => end.cause)).toEqual(Array.from({ length: SENDS }, () => 'terminal-receipt'));
+        },
+        RUN_BUDGET_MS
+    );
 });
 
 async function runSmallCell(
-    shape: Pick<RoomSendShape, 'delayMs' | 'senderRecovery'>
+    shape: Pick<RoomSendShape, 'ordering' | 'delayMs' | 'senderRecovery'>
 ): Promise<RoomSendCellObservations> {
     const runId = crypto.randomUUID();
 
@@ -142,14 +171,8 @@ function expectEverySendWrittenAndReceipted(observations: RoomSendCellObservatio
     // Exactly-once is no part of what a run must show. The server hands a send to its application before the
     // compare-and-set that completes the delivery, hands it off again when that write lost, and its router then
     // publishes the copies again; a client drops the repeat. So neither `handedMoreThanOnce` nor
-    // `copiesReadMoreThanOnce` is asserted: each depends on which write wins. Nor is the absence of a NACK or a
-    // repair request: the server reports a gap whenever a later send of a track is admitted first.
-    expect(report.delivery).toMatchObject({
-        copiesExpected: COPIES,
-        copiesRead: COPIES,
-        copiesReadOutOfOfferOrder: 0
-    });
-    expect(report.tracks).toMatchObject({ kind: 'ordering-key', copiesReadPastAnUnreadPredecessor: 0 });
+    // `copiesReadMoreThanOnce` is asserted: each depends on which write wins.
+    expect(report.delivery).toMatchObject({ copiesExpected: COPIES, copiesRead: COPIES });
     expect(report.recipientDelays.copiesReadBeforeTheirOffer).toBe(0);
     // A receipt may be read again: an instance without the origin's socket publishes a receipt row to the cluster
     // until the row expires, so `moreThanOneTerminal` is no part of what a run must show.
@@ -162,6 +185,22 @@ function expectEverySendWrittenAndReceipted(observations: RoomSendCellObservatio
     });
     // One ACK for each copy, each answered as a control: counted where the send is held, relayed where it is not.
     expect(report.acks).toMatchObject({ offered: COPIES, byAcceptance: { control: COPIES } });
+}
+
+/**
+ * Of sends that name the room's ordering key: no copy reached a socket ahead of an earlier send of its publisher, and
+ * none past a predecessor never written. The absence of a NACK or a repair request is no part of it: the server
+ * reports a gap whenever a later send of a track is admitted first.
+ */
+function expectEveryCopyWrittenInTrackOrder(observations: RoomSendCellObservations): void {
+    const report = computeRoomSendReport(observations);
+    expect(report.delivery.copiesReadOutOfOfferOrder).toBe(0);
+    expect(report.tracks).toMatchObject({ kind: 'ordering-key', copiesReadPastAnUnreadPredecessor: 0 });
+}
+
+/** The two things the server tells a sender of a gap in a track: a `gap` NACK and a `missing-seq` repair request. */
+function isGapControl(control: RoomSendCellControl): boolean {
+    return control.type === 'nack' ? control.reason === 'gap' : control.reason === 'missing-seq';
 }
 
 /**

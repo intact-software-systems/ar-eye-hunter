@@ -38,6 +38,7 @@ function toRoomWithout(peerId: string): string[] {
 describe('computeRoomSendSchedule', () => {
     it('places five publishers on instances a, b, c, a, b and offers 200 sends in 20 s', () => {
         const schedule = computeRoomSendSchedule({
+            ordering: 'ordering-key',
             publishers: 5,
             sendsPerSecond: 2,
             durationS: 20,
@@ -70,28 +71,29 @@ describe('computeRoomSendSchedule', () => {
 
         expect(schedule.sends).toHaveLength(200);
         expect(new Set(schedule.sends.map(({ msgId }) => msgId)).size).toBe(200);
-        const tracks = [
+        const publishers = [
             ['session-01-a', 0, 0, 19_500],
             ['session-02-b', 1, 100, 19_600],
             ['session-03-c', 2, 200, 19_700],
             ['session-04-a', 0, 300, 19_800],
             ['session-05-b', 1, 400, 19_900]
         ] as const;
-        for (const [publisherPeerId, instanceIndex, firstDueOffsetMs, lastDueOffsetMs] of tracks) {
-            const track = toSendsOf(schedule.sends, publisherPeerId);
-            expect(track.map(({ seq }) => seq)).toEqual(Array.from({ length: 40 }, (_, index) => index + 1));
-            expect(new Set(track.map(({ publisherInstanceIndex }) => publisherInstanceIndex)))
+        for (const [publisherPeerId, instanceIndex, firstDueOffsetMs, lastDueOffsetMs] of publishers) {
+            const offers = toSendsOf(schedule.sends, publisherPeerId);
+            expect(offers.map(({ seq }) => seq)).toEqual(Array.from({ length: 40 }, (_, index) => index + 1));
+            expect(new Set(offers.map(({ publisherInstanceIndex }) => publisherInstanceIndex)))
                 .toEqual(new Set([instanceIndex]));
-            expect(track[0].dueOffsetMs).toBe(firstDueOffsetMs);
-            expect(track[39].dueOffsetMs).toBe(lastDueOffsetMs);
-            expect(track.map(({ expectedRecipientPeerIds }) => expectedRecipientPeerIds)).toEqual(
+            expect(offers[0].dueOffsetMs).toBe(firstDueOffsetMs);
+            expect(offers[39].dueOffsetMs).toBe(lastDueOffsetMs);
+            expect(offers.map(({ expectedRecipientPeerIds }) => expectedRecipientPeerIds)).toEqual(
                 Array.from({ length: 40 }, () => toRoomWithout(publisherPeerId))
             );
         }
     });
 
-    it('lists the sends in the order they fall due and names each after its publisher and its place on the track', () => {
+    it('lists the sends in the order they fall due and names each after its publisher and its number among that publisher\'s offers', () => {
         const schedule = computeRoomSendSchedule({
+            ordering: 'ordering-key',
             publishers: 5,
             sendsPerSecond: 2,
             durationS: 20,
@@ -118,8 +120,9 @@ describe('computeRoomSendSchedule', () => {
         });
     });
 
-    it('gives one publisher a track of its own that the fourteen other sessions read', () => {
+    it('gives one publisher sends of its own that the fourteen other sessions read', () => {
         const schedule = computeRoomSendSchedule({
+            ordering: 'ordering-key',
             publishers: 1,
             sendsPerSecond: 5,
             durationS: 2,
@@ -149,6 +152,7 @@ describe('computeRoomSendSchedule', () => {
 
     it('lets all fifteen sessions publish: each send still goes to the fourteen others, never to its publisher', () => {
         const schedule = computeRoomSendSchedule({
+            ordering: 'ordering-key',
             publishers: 15,
             sendsPerSecond: 1,
             durationS: 2,
@@ -170,6 +174,7 @@ describe('computeRoomSendSchedule', () => {
 
     it('places a send at its own multiple of the period, so a period that is no whole millisecond never drifts', () => {
         const schedule = computeRoomSendSchedule({
+            ordering: 'ordering-key',
             publishers: 1,
             sendsPerSecond: 3,
             durationS: 3,
@@ -184,6 +189,7 @@ describe('computeRoomSendSchedule', () => {
 
     it('gives each session one ACK offset inside the spread, the same on every call and under every shape', () => {
         const reference = computeRoomSendSchedule({
+            ordering: 'ordering-key',
             publishers: 5,
             sendsPerSecond: 2,
             durationS: 20,
@@ -192,6 +198,7 @@ describe('computeRoomSendSchedule', () => {
             applicationPoolMaxConnections: 5
         });
         const onePublisher = computeRoomSendSchedule({
+            ordering: 'ordering-key',
             publishers: 1,
             sendsPerSecond: 5,
             durationS: 2,
@@ -208,6 +215,7 @@ describe('computeRoomSendSchedule', () => {
         );
         expect(
             computeRoomSendSchedule({
+                ordering: 'ordering-key',
                 publishers: 5,
                 sendsPerSecond: 2,
                 durationS: 20,
@@ -217,6 +225,20 @@ describe('computeRoomSendSchedule', () => {
             })
         )
             .toEqual(reference);
+    });
+
+    it('offers unordered sends on the schedule of the same shape on the ordering key', () => {
+        const load = {
+            publishers: 5,
+            sendsPerSecond: 2,
+            durationS: 20,
+            delayMs: 0,
+            senderRecovery: 'client-stand-in',
+            applicationPoolMaxConnections: 5
+        } as const;
+
+        expect(computeRoomSendSchedule({ ordering: 'unordered', ...load }))
+            .toEqual(computeRoomSendSchedule({ ordering: 'ordering-key', ...load }));
     });
 });
 

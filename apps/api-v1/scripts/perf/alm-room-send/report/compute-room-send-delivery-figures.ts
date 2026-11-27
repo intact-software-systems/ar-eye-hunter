@@ -9,9 +9,9 @@ import { toRoomSendCopiesInOfferOrder, type RoomSendOfferedCopy } from './to-roo
  * recipient's share of a send, and every count here is over every send, whatever the entry answered it. A copy is
  * "read" when the server wrote it to its recipient's socket: a frame on the wire, before the de-duplication and the
  * ordered hold-back a client applies, which a session of the cell has not. So no figure here says what an
- * application saw: a copy written twice is one a client takes once, and a copy written ahead of its track is one a
- * client holds back. Every figure here holds for a send whether or not it names an ordering key; the figures that
- * need a track are `RoomSendTrackFigures`.
+ * application saw: a copy written twice is one a client takes once, and, of a send that names an ordering key, a
+ * copy written ahead of its track is one a client holds back. Every figure here holds for a send whether or not it
+ * names an ordering key; the figures that need a track are `RoomSendTrackFigures`.
  */
 export interface RoomSendDeliveryFigures {
     /** Sends an instance handed to its application subscriber at least once. */
