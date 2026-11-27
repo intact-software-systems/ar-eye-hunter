@@ -207,8 +207,8 @@ readers: the bounded-histogram decoder refuses a `min` or `max` outside the buck
 
 ### #927, the measurement cell for ordered room sends
 
-A harness under `apps/api-v1/scripts/perf/alm-ordered-send/`, run with
-`npm run perf:alm:ordered-send`, with a pure report and a PostgreSQL smoke. It changes no product
+A harness under `apps/api-v1/scripts/perf/alm-room-send/`, run with
+`npm run perf:alm:room-send`, with a pure report and a PostgreSQL smoke. It changes no product
 behaviour. Merged as `bc84d58`; its `Branch Release Gate result` was green at `5ddf641` (checked),
 and the head that merged adds the merge of `main` after #923 and one README sentence. Section 5.1
 holds what its reference set shows (R1) and what building it found on `main` (R8, R15 to R19; G9
@@ -255,7 +255,7 @@ Notes on the rows that need them:
 
 - **R1.** Measured on `main` by the cell of #927: three API WS server instances in one
   process on one PostgreSQL, the real router, a fixed-audience authorizer and an open-loop load
-  (`apps/api-v1/scripts/perf/alm-ordered-send/` and its README). The
+  (`apps/api-v1/scripts/perf/alm-room-send/` and its README). The
   reference set is 16 runs: five publishers at two sends a second for 20 s unless stated, observed
   for 75 s after the last offer, at the API's default application pool of 5.
   - At +0 ms all six runs keep up: every expected copy is written in order and every receipt is
