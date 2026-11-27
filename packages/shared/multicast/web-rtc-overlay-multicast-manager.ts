@@ -96,14 +96,12 @@ import {
     WebRtcOverlayMulticaster,
     WebRtcOverlayMulticasterFactory
 } from './overlay-multicast-contracts.ts';
-import {
-    RTC_GRANTED_PUBLICATION_REFUSALS,
-    toRtcGrantedLegVerdict
-} from './publication/compute-rtc-granted-publication-refusal.ts';
+import { RTC_GRANTED_PUBLICATION_REFUSALS } from './publication/compute-rtc-granted-publication-refusal.ts';
 import type { RtcGrantedTopicReader } from './publication/rtc-granted-topic-reader.ts';
 import type { RtcPublicationProofVerifierPort } from './publication/rtc-publication-proof-verifier-port.ts';
 import { RtcSignedPublicationCarrier } from './publication/rtc-signed-publication-carrier.ts';
 import type { RtcTopicSubscriptionReader } from './publication/rtc-topic-subscription-reader.ts';
+import { toRtcGrantedLegVerdict } from './publication/to-rtc-granted-leg-verdict.ts';
 import {
     readRtcGroupSnapshotByRef,
     readRtcOutboundObservation,
@@ -391,9 +389,10 @@ export class WebRtcOverlayMulticastManager {
     }
 
     /**
-     * One sender carrier leg; `hand-over` means a fallback carrier exists. A granted publication is frozen and signed
-     * in its first admission, after its read stamped it, or its leg refusal is the verdict (`toRtcGrantedLegVerdict`).
-     * Each fallback verdict its carried leg reaches, an unsigned one too, names the leg its sender gave.
+     * One sender carrier leg; `hand-over` means a fallback carrier exists. A granted publication is frozen to its
+     * subscribers and signed in its first admission, after that admission's read stamped it; a leg refused before
+     * admission answers the verdict `toRtcGrantedLegVerdict` gives. Every fallback verdict its carried leg reaches (a
+     * signer that cannot sign in the admission among them) names the leg its sender gave.
      */
     async enqueueLegIfAbsent(msg: ALMessage, carrierGap: RtcCarrierGapAdmission): Promise<ALOutboundEnqueueResult> {
         if (this.disposed || !this.#publications.isGrantedPublication(msg)) {

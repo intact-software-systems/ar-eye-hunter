@@ -281,6 +281,25 @@ describe('a granted typed channel', () => {
         });
     });
 
+    it('a peer-addressed send asking no receipt under rtc to a session the cached room shows without subscribe ends failed unroutable/no-route, with no WS leg', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        wireRtcOverlay(crypto, toWithoutGrantRow(createRoomSnapshot(PUBLISHER, crypto), 'c'));
+        const channel = createRallarTestFacade().messages.room<FeedItem>(toGrantedDefinition());
+
+        const handle = await channel.send({ text: 'none' }, { strategy: 'rtc', peerId: 'c', ack: 'none' });
+
+        expect((await handle.wait()).lifecycle).toMatchObject({
+            state: 'failed',
+            evidence: {
+                failure: { kind: 'unroutable', reason: 'no-route' },
+                attempts: [{ carrier: 'rtc', outcome: 'unroutable', unroutableReason: 'no-route' }],
+                relayRejection: undefined,
+                carrierFallback: undefined
+            }
+        });
+        expect(admissions.map(({ carrier, verdict }) => [carrier, verdict])).toEqual([['rtc', 'unroutable']]);
+    });
+
     it('a listed send under rtc-with-ws-fallback is admitted on RTC, not WS', async () => {
         const crypto = await createAvailablePublicationCryptoFixture();
         wireRtcOverlay(crypto, createRoomSnapshot(PUBLISHER, crypto));

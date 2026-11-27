@@ -1,13 +1,10 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { resolveALRequestedAckAlgo } from '../../al-contracts/normalize-al-qos-policy.ts';
-import type { ALDeliveryAdmissionVerdict } from '../../alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundDispatchPlan } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundTransportMessage } from '../../alm/outbound/al-outbound-transport-message.ts';
 import { resolveRallarGroupLeaderSessionId } from '../../api/group-director.ts';
 import type { GroupSnapshot } from '../../api/group-types.ts';
 import { Either } from '../../resilience/Either.ts';
-import type { RtcCarrierGapAdmission } from '../compute-rtc-outbound-carrier-availability.ts';
-import type { RtcSignedPublicationCarrier } from './rtc-signed-publication-carrier.ts';
 
 export const RTC_GRANTED_PUBLICATION_REFUSALS = {
     unfrozenAudience:
@@ -50,8 +47,8 @@ export function resolveRtcGrantedLeaderRefusal(input: ResolveRtcGrantedLeaderRef
 /**
  * A granted room unicast that asks a `receiver` receipt of its own sender, or of a session that holds no `subscribe` on
  * its topic, has no recipient its receipt could expect: the origin judges it unauthorized from its cached snapshot, as
- * the WS server does from its live audience. The receipt is the one the message states; a provider's default the
- * effective policy merges in is not read.
+ * the WS server does from its live audience. The receipt is the one the message states (`all-logical-recipients` asks
+ * the same receipt); a provider's default the effective policy merges in is not read.
  */
 export function resolveRtcGrantedAddresseeRefusal(input: ResolveRtcGrantedAddresseeRefusalInput): string | undefined {
     const { targets } = input.msg;
@@ -61,21 +58,6 @@ export function resolveRtcGrantedAddresseeRefusal(input: ResolveRtcGrantedAddres
     return targets.toPeerId !== input.selfSessionId && input.subscribeHolders.has(targets.toPeerId)
         ? undefined
         : RTC_GRANTED_PUBLICATION_REFUSALS.addresseeNotSubscribed;
-}
-
-/**
- * A granted leg's verdict. The origin's `unauthorized` judgement of the addressee is terminal on a leg with no fallback
- * carrier; on a leg with one (`hand-over`) it answers `no-route`, so the fallback carrier takes the send and its server
- * decides from its live audience, which a stale cached snapshot may not match. An `unsupported` leg is refused as it is.
- */
-export function toRtcGrantedLegVerdict(
-    refusal: RtcSignedPublicationCarrier.LegRefusal,
-    carrierGap: RtcCarrierGapAdmission
-): Extract<ALDeliveryAdmissionVerdict, { kind: 'refused' | 'unroutable'; }> {
-    const { reason, detail } = refusal;
-    return reason === 'unauthorized' && carrierGap === 'hand-over'
-        ? { kind: 'unroutable', reason: 'no-route', detail }
-        : { kind: 'refused', reason, detail };
 }
 
 /**
