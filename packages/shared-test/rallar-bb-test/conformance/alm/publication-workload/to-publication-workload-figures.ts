@@ -71,6 +71,8 @@ export interface PublicationWorkloadConfiguredFigures {
 export interface PublicationWorkloadMeasuredFigures {
     /** One entry per group of the point, in the point's order. */
     readonly rooms: readonly PublicationWorkloadRoomFigures[];
+    /** Every publisher result of every room together. */
+    readonly published: PublicationWorkloadPublishedFigures;
     /** Every subscriber result of every room together. */
     readonly delivered: PublicationWorkloadDeliveredFigures;
 }
@@ -82,8 +84,23 @@ export interface PublicationWorkloadRoomFigures {
     readonly publishers: readonly PublicationWorkloadPublisherFigures[];
     /** One entry per subscriber of the room, in the order of the run's results. */
     readonly subscribers: readonly PublicationWorkloadSubscriberFigures[];
+    /** The room's publisher results together. */
+    readonly published: PublicationWorkloadPublishedFigures;
     /** The room's subscriber results together. */
     readonly delivered: PublicationWorkloadDeliveredFigures;
+}
+
+/**
+ * Several publisher results as one, to read beside a delivered figure: what the stages handed to a carrier and what
+ * their faults dropped, added. It divides by nothing, so it states no delivery ratio.
+ */
+export interface PublicationWorkloadPublishedFigures {
+    /** The publisher results it covers. */
+    readonly publisherCount: number;
+    /** Their stages' `admitted` counters added. */
+    readonly admittedFrames: number;
+    /** Their `droppedSends` added; `null` for a point with no loss, as each of theirs is. */
+    readonly droppedSends: number | null;
 }
 
 export interface PublicationWorkloadSubscriberFigures {
@@ -142,14 +159,15 @@ interface DecodedRoom {
     readonly group: RallarBlackBoxDistributedGroupRef;
     readonly publishers: readonly PublicationWorkloadPublisherFigures[];
     readonly subscribers: readonly DecodedSubscriber[];
+    readonly published: PublicationWorkloadPublishedFigures;
     readonly delivered: PublicationWorkloadDeliveredFigures;
 }
 
 /**
  * The left names every field that cannot be read, each issue starting with the field's path: under `$.parameters` a
  * bound of the family the point breaks, at `$.rooms` and under `$.rooms[r]` what `validateRunRooms` and then
- * `validateRunAgents` hold the run to, and under `$.rooms[r].publishers[p].loop`, `$.rooms[r].publishers[p].stats` and
- * `$.rooms[r].subscribers[s].received` a field of that result value.
+ * `validateRunAgents` hold the run to, and under `$.rooms[r].publishers[p].loop`, `$.rooms[r].publishers[p].stats`,
+ * `$.rooms[r].publishers[p].lossRelease` and `$.rooms[r].subscribers[s].received` a field of that result value.
  */
 export function toPublicationWorkloadFigures(
     run: PublicationWorkloadRun
@@ -157,7 +175,7 @@ export function toPublicationWorkloadFigures(
     const parameterIssues = validatePublicationWorkloadParameters(run.parameters)
         .map((issue) => `$.parameters${issue.path.slice(1)} is not valid: ${issue.message}`);
     const plan = parameterIssues.length > 0 ? undefined : computePublicationWorkloadPlan(run.parameters);
-    const rooms = run.rooms.map((room, index) => decodeRoom(room, `$.rooms[${index}]`));
+    const rooms = run.rooms.map((room, index) => decodeRoom(room, `$.rooms[${index}]`, run.parameters));
     const decodedRooms = EitherCollectors.toListFoldRights(rooms);
     const delivered = computeDeliveredFigures(decodedRooms.flatMap((room) => room.subscribers));
     const issues = [
@@ -177,8 +195,10 @@ export function toPublicationWorkloadFigures(
                 group: room.group,
                 publishers: room.publishers,
                 subscribers: room.subscribers.map((subscriber) => subscriber.figures),
+                published: room.published,
                 delivered: room.delivered
             })),
+            published: computePublishedFigures(decodedRooms.flatMap((room) => room.publishers)),
             delivered: delivered.right
         }
     });
@@ -238,10 +258,14 @@ function validateRunAgents(rooms: readonly PublicationWorkloadRoomResults[]): re
     });
 }
 
-function decodeRoom(room: PublicationWorkloadRoomResults, path: string): Either<readonly string[], DecodedRoom> {
+function decodeRoom(
+    room: PublicationWorkloadRoomResults,
+    path: string,
+    parameters: PublicationWorkloadParameters
+): Either<readonly string[], DecodedRoom> {
     const publishers = room.publishers
         .map((publisher, index) =>
-            decodePublicationWorkloadPublisherFigures(publisher, `${path}.publishers[${index}]`)
+            decodePublicationWorkloadPublisherFigures(publisher, `${path}.publishers[${index}]`, parameters.loss)
         );
     const subscribers = room.subscribers
         .map((subscriber, index) => decodeSubscriber(subscriber, `${path}.subscribers[${index}].received`));
@@ -255,10 +279,12 @@ function decodeRoom(room: PublicationWorkloadRoomResults, path: string): Either<
     if (issues.length > 0 || delivered.right === undefined) {
         return Either.ofLeft(issues);
     }
+    const decodedPublishers = EitherCollectors.toListFoldRights(publishers);
     return Either.ofRight({
         group: room.group,
-        publishers: EitherCollectors.toListFoldRights(publishers),
+        publishers: decodedPublishers,
         subscribers: decodedSubscribers,
+        published: computePublishedFigures(decodedPublishers),
         delivered: delivered.right
     });
 }
@@ -332,6 +358,26 @@ function computeDeliveredFigures(
             unrecordedSamples: subscribers.reduce((total, { figures }) => total + figures.unrecordedSamples, 0),
             sampleAgeMs: toSampleAge(ageMs)
         }));
+}
+
+/**
+ * Every publisher of a point holds a count of dropped sends or none, as its point's loss says; a point's publishers
+ * share one loss, so the counts add up or the figure is `null` too.
+ */
+function computePublishedFigures(
+    publishers: readonly PublicationWorkloadPublisherFigures[]
+): PublicationWorkloadPublishedFigures {
+    return {
+        publisherCount: publishers.length,
+        admittedFrames: publishers.reduce(
+            (total, { publicationStage }) => total + publicationStage.counters.admitted,
+            0
+        ),
+        droppedSends: publishers.reduce<number | null>(
+            (total, { droppedSends }) => total === null || droppedSends === null ? null : total + droppedSends,
+            0
+        )
+    };
 }
 
 function toSampleAge(ageMs: BoundedHistogram): PublicationWorkloadSampleAge {

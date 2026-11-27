@@ -115,6 +115,7 @@ const LOCAL_POINTS: readonly LocalPoint[] = [
 const RESULT_COMMAND_IDS = {
     publisherFrames: 'publication-workload-publisher-frames',
     publisherStats: 'publication-workload-publisher-stats',
+    publisherLossRelease: 'publication-workload-publisher-loss-release',
     subscriberReceived: 'publication-workload-subscriber-received'
 } as const;
 
@@ -311,7 +312,8 @@ function toRoomResults(
         publishers: runsOfKind('publisher').map((run) => ({
             agentId: run.agentId,
             loop: readResultValue(run, RESULT_COMMAND_IDS.publisherFrames),
-            stats: readResultValue(run, RESULT_COMMAND_IDS.publisherStats)
+            stats: readResultValue(run, RESULT_COMMAND_IDS.publisherStats),
+            lossRelease: readResultValue(run, RESULT_COMMAND_IDS.publisherLossRelease)
         })),
         subscribers: runsOfKind('subscriber').map((run) => ({
             agentId: run.agentId,

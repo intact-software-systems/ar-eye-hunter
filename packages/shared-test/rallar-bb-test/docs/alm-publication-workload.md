@@ -183,9 +183,11 @@ against the recipe schema, the control validation and the distributed preflight 
 ## The figures record
 
 `toPublicationWorkloadFigures({ parameters, rooms: [{ group, publishers, subscribers }] })` reads
-the result values of three commands: each publisher's `publication-workload-publisher-frames`
-(`loop`) and `publication-workload-publisher-stats` (`stats`), and each subscriber's
-`publication-workload-subscriber-received` (`received`), every one beside its `agentId`. `rooms`
+the result values of four commands: each publisher's `publication-workload-publisher-frames`
+(`loop`), `publication-workload-publisher-stats` (`stats`) and
+`publication-workload-publisher-loss-release` (`lossRelease`, `undefined` for a point with no loss),
+and each subscriber's `publication-workload-subscriber-received` (`received`), every one beside its
+`agentId`. `rooms`
 holds one entry per group of the point, in the groups' order, and each names the `group` its results
 were read under. A room holds one result per publisher and one per subscriber of the point,
 `publisherCount` and the plan's `subscriberCount` of them: a run that left fewer is no run of the
@@ -197,7 +199,9 @@ than the point's, `$.rooms[r].group` for a room that names another group than th
 place, `$.rooms[r].publishers` or `$.rooms[r].subscribers` for another number of results than the
 point has agents of that role, `...publishers[p].agentId` or `...subscribers[s].agentId` for each
 result that names an agent an earlier result of the run names, `$.rooms[r].publishers[p].loop...`,
-`$.rooms[r].publishers[p].stats...` or `$.rooms[r].subscribers[s].received...`. The issues come in
+`$.rooms[r].publishers[p].stats...`, `$.rooms[r].publishers[p].lossRelease...` (a seeded point's
+release with no readable `acted` counts, or a release for a point with no loss) or
+`$.rooms[r].subscribers[s].received...`. The issues come in
 that order: the point's, the rooms', the repeated agents', then the fields of each result. A run
 that breaks several has all of them in its left. A point that breaks a bound has no plan, so its
 results are not counted against it. The record keeps `configured` and `measured` apart, and it
@@ -207,19 +211,22 @@ judges nothing: the recipes' asserts are the gates.
 the room's results, which the record has checked against the point's group at that place. In the
 table, `room` is one of them.
 
-| Field                                     | Meaning                                                                                                                                                              |
-| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `configured.parameters`                   | The point as given.                                                                                                                                                  |
-| `configured.plan`                         | Every number derived from the point; the list follows the table.                                                                                                     |
-| `room.publishers[].submittedSends`        | The loop's `passed`: the send commands the harness submitted. A live send returns once its value is staged or refused, so this is not what reached a carrier.        |
-| `room.publishers[].publicationStage`      | That publisher page's stage as its `stats` read it. `counters.admitted` is what the stage handed to a carrier, and the publisher's gate.                             |
-| `...publishers[].achievedIterationRateHz` | The loop's iteration rate, whether a send was admitted or not: the intervals between iterations over the loop's elapsed time. `null` where the loop states none.     |
-| `...publishers[].completedIterations`     | The iterations the loop ran, with `elapsedMs` their time.                                                                                                            |
-| `room.subscribers[].observed`             | The distinct messages of the frame type delivered to the application when the count settled, whichever publisher sent them.                                          |
-| `...subscribers[].unrecordedSamples`      | The observed messages that gave no age: no finite stamp, or a stamp later than the arrival. Never clamped into a bucket.                                             |
-| `...subscribers[].sampleAgeMs`            | `no-samples`, or `recorded` with `count`, `min`, `max` and `p50`, `p95`, `p99`.                                                                                      |
-| `room.delivered`                          | The room's subscriber results as one: `subscriberCount` of them, their `observed` and `unrecordedSamples` added, and one `sampleAgeMs` over every age they recorded. |
-| `measured.delivered`                      | The same over the subscriber results of every room.                                                                                                                  |
+| Field                                     | Kind       | Meaning                                                                                                                                                                                                                                                                                                 |
+| ----------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `configured.parameters`                   | configured | The point as given, its `loss` included: the kind, and for a seeded loss its ratio and seed.                                                                                                                                                                                                            |
+| `configured.plan`                         | configured | Every number derived from the point; the list follows the table. `expectedLostFrames` is derived from the seed and never read from a run.                                                                                                                                                               |
+| `room.publishers[].submittedSends`        | measured   | The loop's `passed`: the send commands the harness submitted. A live send returns once its value is staged or refused, so this is not what reached a carrier.                                                                                                                                           |
+| `room.publishers[].publicationStage`      | measured   | That publisher page's stage as its `stats` read it. `counters.admitted` is what the stage handed to a carrier, and the publisher's gate.                                                                                                                                                                |
+| `...publishers[].achievedIterationRateHz` | measured   | The loop's iteration rate, whether a send was admitted or not: the intervals between iterations over the loop's elapsed time. `null` where the loop states none.                                                                                                                                        |
+| `...publishers[].completedIterations`     | measured   | The iterations the loop ran, with `elapsedMs` their time.                                                                                                                                                                                                                                               |
+| `...publishers[].droppedSends`            | measured   | The loss release's `acted.drop` on that publisher's page. Over `ws` each is a socket write it dropped, a frame no recipient got; over `rtc` each is a send to one next hop its channel refused, tried again 50 ms later. `null` for a point with no loss, whose recipes arm none; never 0 in its place. |
+| `room.subscribers[].observed`             | measured   | The distinct messages of the frame type delivered to the application when the count settled, whichever publisher sent them.                                                                                                                                                                             |
+| `...subscribers[].unrecordedSamples`      | measured   | The observed messages that gave no age: no finite stamp, or a stamp later than the arrival. Never clamped into a bucket.                                                                                                                                                                                |
+| `...subscribers[].sampleAgeMs`            | measured   | `no-samples`, or `recorded` with `count`, `min`, `max` and `p50`, `p95`, `p99`.                                                                                                                                                                                                                         |
+| `room.published`                          | measured   | The room's publisher results as one: `publisherCount` of them, `admittedFrames` (their stages' `admitted` added) and `droppedSends` (added; `null` with no loss).                                                                                                                                       |
+| `room.delivered`                          | measured   | The room's subscriber results as one: `subscriberCount` of them, their `observed` and `unrecordedSamples` added, and one `sampleAgeMs` over every age they recorded.                                                                                                                                    |
+| `measured.published`                      | measured   | The same as `room.published` over the publisher results of every room.                                                                                                                                                                                                                                  |
+| `measured.delivered`                      | measured   | The same as `room.delivered` over the subscriber results of every room.                                                                                                                                                                                                                                 |
 
 `configured.plan` holds `roomCount` and `agentCount`; one room's `subscriberCount`; one publisher's
 `frameCount`, `configuredRateHz`, `expectedAdmissions`, `expectedLostFrames` and `minAcceptedSends`;
