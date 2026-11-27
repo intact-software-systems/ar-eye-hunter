@@ -357,72 +357,6 @@
       }
     },
     {
-      "name": "alicePresenceOnThePrimary",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/requests/csil-presence-alice-{runId}",
-        "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        },
-        "body": {
-          "generationId": "csil-generation-{runId}",
-          "publicationKey": null,
-          "connectionGenerationId": "csil-connection-generation-{runId}",
-          "principalId": "{aliceClientId}"
-        }
-      },
-      "expect": {
-        "status": 200
-      }
-    },
-    {
-      "name": "bobPresenceOnTheSecondary",
-      "type": "http",
-      "connection": "secondary",
-      "request": {
-        "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/requests/csil-presence-bob-{runId}",
-        "headers": {
-          "Authorization": "{bobAuthHeader}",
-          "x-client-id": "{bobClientId}"
-        },
-        "body": {
-          "generationId": "csil-generation-{runId}",
-          "publicationKey": null,
-          "connectionGenerationId": "csil-connection-generation-{runId}",
-          "principalId": "{bobClientId}"
-        }
-      },
-      "expect": {
-        "status": 200
-      }
-    },
-    {
-      "name": "carolPresenceOnTheTertiary",
-      "type": "http",
-      "connection": "tertiary",
-      "request": {
-        "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{carolSessionId}/requests/csil-presence-carol-{runId}",
-        "headers": {
-          "Authorization": "{carolAuthHeader}",
-          "x-client-id": "{carolClientId}"
-        },
-        "body": {
-          "generationId": "csil-generation-{runId}",
-          "publicationKey": null,
-          "connectionGenerationId": "csil-connection-generation-{runId}",
-          "principalId": "{carolClientId}"
-        }
-      },
-      "expect": {
-        "status": 200
-      }
-    },
-    {
       "name": "createAliceWsTicket",
       "type": "http",
       "connection": "primary",
@@ -476,6 +410,61 @@
       "request": {
         "url": "{aliceWsUrl}",
         "timeoutMs": 20000
+      }
+    },
+    {
+      "name": "captureAliceSocketGeneration",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": 15000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.2
+        },
+        "outputs": {
+          "aliceSocketGenerationId": "body.activeSessions.0.generationId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "activeSessions": [
+            {
+              "sessionId": "{aliceSessionId}",
+              "transport": "ws"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "alicePresenceOnThePrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/requests/csil-presence-alice-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "generationId": "csil-generation-{runId}",
+          "publicationKey": null,
+          "connectionGenerationId": "{aliceSocketGenerationId}",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
       }
     },
     {
@@ -535,6 +524,61 @@
       }
     },
     {
+      "name": "captureBobSocketGeneration",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{bobClientId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": 15000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.2
+        },
+        "outputs": {
+          "bobSocketGenerationId": "body.activeSessions.0.generationId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "activeSessions": [
+            {
+              "sessionId": "{bobSessionId}",
+              "transport": "ws"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "bobPresenceOnTheSecondary",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/requests/csil-presence-bob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "generationId": "csil-generation-{runId}",
+          "publicationKey": null,
+          "connectionGenerationId": "{bobSocketGenerationId}",
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
       "name": "createCarolWsTicket",
       "type": "http",
       "connection": "tertiary",
@@ -591,11 +635,102 @@
       }
     },
     {
+      "name": "captureCarolSocketGeneration",
+      "type": "http",
+      "connection": "tertiary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{carolClientId}",
+        "headers": {
+          "Authorization": "{carolAuthHeader}",
+          "x-client-id": "{carolClientId}"
+        },
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": 15000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.2
+        },
+        "outputs": {
+          "carolSocketGenerationId": "body.activeSessions.0.generationId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "activeSessions": [
+            {
+              "sessionId": "{carolSessionId}",
+              "transport": "ws"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "carolPresenceOnTheTertiary",
+      "type": "http",
+      "connection": "tertiary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{carolSessionId}/requests/csil-presence-carol-{runId}",
+        "headers": {
+          "Authorization": "{carolAuthHeader}",
+          "x-client-id": "{carolClientId}"
+        },
+        "body": {
+          "generationId": "csil-generation-{runId}",
+          "publicationKey": null,
+          "connectionGenerationId": "{carolSocketGenerationId}",
+          "principalId": "{carolClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
       "name": "theSecondaryCrashes",
       "type": "server.stop",
       "request": {
         "target": "secondary",
         "mode": "crash"
+      }
+    },
+    {
+      "name": "theRosterStillListsBobAfterTheCrash",
+      "type": "http.poll-until",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": 15000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "activeSessions": [
+            {
+              "sessionId": "{aliceSessionId}"
+            },
+            {
+              "sessionId": "{bobSessionId}"
+            },
+            {
+              "sessionId": "{carolSessionId}"
+            }
+          ]
+        }
       }
     },
     {
@@ -1051,28 +1186,6 @@
       }
     },
     {
-      "name": "davePresenceOnTheSecondary",
-      "type": "http",
-      "connection": "secondary",
-      "request": {
-        "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{daveSessionId}/requests/csil-presence-dave-{runId}",
-        "headers": {
-          "Authorization": "{daveAuthHeader}",
-          "x-client-id": "{daveClientId}"
-        },
-        "body": {
-          "generationId": "csil-generation-{runId}",
-          "publicationKey": null,
-          "connectionGenerationId": "csil-connection-generation-{runId}",
-          "principalId": "{daveClientId}"
-        }
-      },
-      "expect": {
-        "status": 200
-      }
-    },
-    {
       "name": "createDaveWsTicket",
       "type": "http",
       "connection": "secondary",
@@ -1126,6 +1239,100 @@
       "request": {
         "url": "{daveWsUrl}",
         "timeoutMs": 20000
+      }
+    },
+    {
+      "name": "captureDaveSocketGeneration",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{daveClientId}",
+        "headers": {
+          "Authorization": "{daveAuthHeader}",
+          "x-client-id": "{daveClientId}"
+        },
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": 15000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.2
+        },
+        "outputs": {
+          "daveSocketGenerationId": "body.activeSessions.0.generationId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "activeSessions": [
+            {
+              "sessionId": "{daveSessionId}",
+              "transport": "ws"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "davePresenceOnTheSecondary",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{daveSessionId}/requests/csil-presence-dave-{runId}",
+        "headers": {
+          "Authorization": "{daveAuthHeader}",
+          "x-client-id": "{daveClientId}"
+        },
+        "body": {
+          "generationId": "csil-generation-{runId}",
+          "publicationKey": null,
+          "connectionGenerationId": "{daveSocketGenerationId}",
+          "principalId": "{daveClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "theRosterListsDaveAndStillBobAfterTheRestart",
+      "type": "http.poll-until",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": 15000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "activeSessions": [
+            {
+              "sessionId": "{aliceSessionId}"
+            },
+            {
+              "sessionId": "{bobSessionId}"
+            },
+            {
+              "sessionId": "{carolSessionId}"
+            },
+            {
+              "sessionId": "{daveSessionId}"
+            }
+          ]
+        }
       }
     },
     {
