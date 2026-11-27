@@ -10,6 +10,7 @@ import { toIdleALOutboundPublicationFigures } from '@shared/alm/outbound/publica
 import { AL_VOLATILE_SESSION_LIMITS, ALVolatileSessionBudget } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
+import { IDLE_RALLAR_EDGE_ORDER_USAGE } from './idle-rallar-edge-order-usage.ts';
 
 interface CapacitySetupFixture {
     readonly runtime: RallarBlackBoxTestRuntime;
@@ -51,7 +52,8 @@ function createCapacitySetup(continuous: boolean): CapacitySetupFixture {
                     figures: toIdleALOutboundPublicationFigures()
                 },
                 ordering: createALInboundOrderingCounters(),
-                congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures()
+                congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures(),
+                edgeOrder: IDLE_RALLAR_EDGE_ORDER_USAGE
             };
         }
     });

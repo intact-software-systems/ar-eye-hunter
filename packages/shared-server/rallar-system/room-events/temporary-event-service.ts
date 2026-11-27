@@ -1,3 +1,5 @@
+import { EventAlertWorker } from './event-alert-worker.ts';
+import { validateEventAlertConsent, type EventWebPush } from './event-web-push.ts';
 import { requireExactKeys, requirePositiveInteger, requireRecord } from '@shared/api/exact-object-decoding.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { projectRoomEventOrganizerView } from '@shared/api/room-events/room-event-organizer-view.ts';
@@ -30,6 +32,7 @@ import { RoomEventRepository } from './room-event-repository.ts';
 export namespace TemporaryEventService {
     export interface Dependencies extends RoomEventAuthority.Dependencies {
         readonly appInbox: RallarServerAppInbox;
+        readonly webPush?: EventWebPush;
         readonly runtime: Pick<RuntimeStateRepositoryLike, 'findEntry'>;
         readonly roomAccess: Pick<EventRoomAccessEffects, 'prepare' | 'write'>;
         readonly nowEpochMs: () => number;
@@ -58,6 +61,8 @@ interface EventTransition {
 
 /** One event guard serializes party consent and court allocation. Room membership changes and wakes share its commit. */
 export class TemporaryEventService {
+    readonly pushPublicKey: string | null;
+    private readonly alertWorker: EventAlertWorker | undefined;
     readonly mutate: RallarServerAppInbox.Operation<RoomEventMutation, TemporaryEventService.Result>;
     private readonly expire: RallarServerAppInbox.Operation<RoomEventDeadline, RoomEventDeadline>;
     private readonly dependencies: TemporaryEventService.Dependencies;
@@ -69,6 +74,9 @@ export class TemporaryEventService {
         this.dependencies = dependencies;
         this.config = config;
         this.repository = new RoomEventRepository(dependencies.runtime);
+        this.pushPublicKey = dependencies.webPush?.publicKey ?? null;
+        if (dependencies.webPush) this.alertWorker = new EventAlertWorker({ ...dependencies, ...config,
+            repository: this.repository, provider: dependencies.webPush });
         this.authority = new RoomEventAuthority(dependencies, config.organizerIds, config.organizerIdsByApplication);
         this.mutate = dependencies.appInbox.register({
             type: 'app:rallar-events:mutate',
@@ -99,6 +107,7 @@ export class TemporaryEventService {
     }
 
     listen(input: Pick<DurableDeadlineDelivery<RoomEventDeadline>, 'database' | 'outboxQueueReader'>): void {
+        this.alertWorker?.listen(input);
         installDurableDeadline({ ...input, typeId: AppOutboxType.ROOM_EVENT_DEADLINE, topicId: ROOM_EVENT_DEADLINE_TOPIC,
             retentionMs: this.config.finishedRetentionMs, nowEpochMs: this.dependencies.nowEpochMs,
             route: roomEventDeadlineRoute, decode: decodeRoomEventDeadline, enqueue: async (command, traceId) => {
@@ -131,6 +140,7 @@ export class TemporaryEventService {
         const before = await this.repository.read(input.lobby);
         const nowEpochMs = this.dependencies.nowEpochMs();
         const authority = await this.authority.read(input, before?.value ?? null, nowEpochMs);
+        validateEventAlertConsent(input.command, this.dependencies.webPush);
         if (input.command.action === 'claim' && !!authority.guestLease !== !!input.courtTransport) {
             throw new TypeError('A guest claiming a court must bind its own court session.');
         }

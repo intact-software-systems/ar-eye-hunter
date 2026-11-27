@@ -1241,6 +1241,27 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
+  /api/room-event-alerts/public-key:
+    get:
+      tags: [Group State]
+      summary: Discover court-ready Web Push support
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+      responses:
+        '200':
+          description: Public VAPID key, or null when the server has disabled delivery.
+          headers:
+            x-request-id: { $ref: '#/components/headers/XRequestId' }
+            Cache-Control: { $ref: '#/components/headers/NoStore' }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [publicKey]
+                properties:
+                  publicKey: { type: [string, 'null'] }
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/event:
     get:
       tags: [Group State]
@@ -10147,9 +10168,18 @@ components:
                         deadline:
                           type: [integer, 'null']
                           description: Claim deadline in Unix epoch milliseconds, or null for a claimed seat.
+    EventCourtOffer:
+      type: object
+      required: [groupId, occurrence, offerRevision, partyId, deadline]
+      properties:
+        groupId: { type: string }
+        occurrence: { type: integer, minimum: 1 }
+        offerRevision: { type: integer, minimum: 1 }
+        partyId: { type: string }
+        deadline: { type: [integer, 'null'] }
     RoomEventView:
       type: object
-      required: [lobby, principalId, revision, closesAt, closed, courts, queue, proposals, offer, handover]
+      required: [lobby, principalId, revision, closesAt, closed, courts, queue, proposals, offer, handover, lastExpiredOffer]
       properties:
         lobby: { $ref: '#/components/schemas/GroupRef' }
         principalId: { type: string }
@@ -10179,14 +10209,18 @@ components:
                   proposalRevision: { type: integer, minimum: 1 }
                   accepted: { type: array, items: { type: string }, uniqueItems: true }
         offer:
-          type: [object, 'null']
-          required: [groupId, occurrence, offerRevision, partyId, deadline]
-          properties:
-            groupId: { type: string }
-            occurrence: { type: integer, minimum: 1 }
-            offerRevision: { type: integer, minimum: 1 }
-            partyId: { type: string }
-            deadline: { type: [integer, 'null'] }
+          oneOf:
+            - { $ref: '#/components/schemas/EventCourtOffer' }
+            - { type: 'null' }
+        lastExpiredOffer:
+          description: This player's most recent expired court offer, cleared when the player rejoins the queue.
+          oneOf:
+            - allOf:
+                - { $ref: '#/components/schemas/EventCourtOffer' }
+                - type: object
+                  properties:
+                    deadline: { type: integer }
+            - { type: 'null' }
         handover:
           description: Current organizer handover visible to its sender and recipient until the server deadline.
           type: [object, 'null']
@@ -10199,6 +10233,25 @@ components:
             expiresAt: { type: integer, minimum: 0, description: Unix epoch milliseconds. }
     RoomEventCommand:
       oneOf:
+        - type: object
+          additionalProperties: false
+          required: [action, subscription]
+          properties:
+            action: { const: enable-court-alerts }
+            subscription:
+              type: object
+              additionalProperties: false
+              required: [endpoint, p256dh, auth]
+              properties:
+                endpoint: { type: string, format: uri, maxLength: 2048, writeOnly: true }
+                p256dh: { type: string, minLength: 87, maxLength: 87, writeOnly: true }
+                auth: { type: string, minLength: 22, maxLength: 22, writeOnly: true }
+        - type: object
+          additionalProperties: false
+          required: [action, endpoint]
+          properties:
+            action: { const: disable-court-alerts }
+            endpoint: { type: string, format: uri, maxLength: 2048, writeOnly: true }
         - type: object
           additionalProperties: false
           required: [action, recipientId]
