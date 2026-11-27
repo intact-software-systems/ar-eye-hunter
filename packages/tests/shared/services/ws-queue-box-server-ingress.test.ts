@@ -824,6 +824,52 @@ describe('WS server bounded and authorized admission', () => {
         expect(received).toEqual(['message-1', 'message-2', 'message-3', 'message-4', 'message-5']);
     });
 
+    // Each send waited for its predecessor and was found only when the rotation came round: its own batch set it aside
+    // behind the held delivery, and the batch that completed its predecessor did not run it. The engine's rounds are
+    // stopped before the hold is let go, so only that batch can deliver what follows.
+    it('hands each ordered send admitted behind a held delivery to the application as its predecessor completes', async () => {
+        const fixture = await createServerIngressFixture();
+        const trackKey = toALOrderingTrackKey(createOrderedRoomMessage(1))!;
+        const received: string[] = [];
+        const firstHandOver = Promise.withResolvers<void>();
+        onTestFinished(() => firstHandOver.resolve());
+        fixture.service.onAnyInboxMessageDo('application', {
+            onMessage: async (message) => {
+                received.push(message.id.msgId);
+                if (message.id.msgId === 'message-1') {
+                    await firstHandOver.promise;
+                }
+            }
+        });
+        fixture.service.authorizeInboundMessagesWith({
+            sendNacks: false,
+            authorize: async () => ({ authorized: true, roomAudience: { recipientPeerIds: ['session-1'], snapshotVersion: 1 } })
+        });
+        const answers = [(await fixture.service.acceptIncomingMessage(createOrderedRoomMessage(1), 'session-1')).right?.kind];
+        await expect.poll(() => received).toEqual(['message-1']);
+        for (const seq of [2, 3, 4, 5]) {
+            answers.push((await fixture.service.acceptIncomingMessage(createOrderedRoomMessage(seq), 'session-1')).right?.kind);
+        }
+        await fixture.engine.stop();
+
+        firstHandOver.resolve();
+
+        expect(answers).toEqual(['admitted', 'admitted', 'admitted', 'admitted', 'admitted']);
+        await expect.poll(async () => (await fixture.admissionStore.readOrderedDelivery(trackKey, 6)).completedThrough).toBe(5);
+        expect(received).toEqual(['message-1', 'message-2', 'message-3', 'message-4', 'message-5']);
+        const readRows = async () =>
+            await Promise.all(
+                (await fixture.admission.workQueue.getAllKeys()).map(async (key) => (await fixture.admission.workQueue.getItem(key))!)
+            );
+        // The batch releases its rows after their completions commit, so the rows are read once its release shows.
+        await expect.poll(async () =>
+            (await readRows())
+                .filter((row) => decodeALInboundWorkEntry(row, fixture.admissionStore.namespace).payload.kind === 'dispatch-local')
+                .map((row) => [row.status, row.dequeueAudit.attempts])
+        ).toEqual(Array(5).fill(['COMPLETED', 1]));
+        expect((await readRows()).map((row) => row.status)).not.toContain('RETRY');
+    });
+
     it('leaves a durable message in QueueBox when an application subscriber fails', async () => {
         const fixture = await createServerIngressFixture();
         const message: ALMessage = { ...createIncomingMessage(), qos: { durability: { algo: 'local-inbox' } } };
