@@ -395,10 +395,15 @@ describe('Rallar Game envelopes', () => {
 
     it('still refuses a snapshot of a lower sequence after the events it follows', () => {
         const tracker = createRallarGameSequenceTracker();
+        const event = createRallarGameEnvelope({ ...validEnvelope, kind: 'event', seq: 6 });
         const snapshot = (seq: number) => createRallarGameEnvelope({ ...validEnvelope, kind: 'snapshot', seq });
 
-        expect(tracker.accept(snapshot(5))).toMatchObject({ accepted: true });
-        expect(tracker.accept(snapshot(4))).toMatchObject({ accepted: false, reason: 'stale-sequence' });
+        expect([tracker.accept(event, eventConstraints), tracker.accept(snapshot(5)), tracker.accept(snapshot(4))])
+            .toMatchObject([
+                { accepted: true },
+                { accepted: true },
+                { accepted: false, reason: 'stale-sequence' }
+            ]);
     });
 
     it('forgets the oldest intent sequence past its window and refuses it as stale, never as new (C10)', () => {
