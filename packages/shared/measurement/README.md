@@ -29,8 +29,8 @@ A sample lands in the first bucket whose bound it does not exceed; a sample abov
 overflow bucket. `createBoundedHistogram` and `computeBoundedHistogramAfter` return an `Either`: a sample that is not a
 finite number of at least 0 is refused as a value, never clamped and never thrown, and the caller counts the refusal.
 `computeBoundedHistogramRecorded(histogram, values)` is that count for a list: it records each value in order and
-returns the histogram beside `unrecordedSamples`, the number of values it refused. The publication figures and the
-harness's `messages.received` sample age both record through it.
+returns the histogram beside `unrecordedSamples`, the number of values it refused. The publication figures, the
+harness's `messages.received` sample age and the ordered-send cell's delay summary record through it.
 `decodeBoundedHistogram` reads a histogram from `unknown` and names every field that is wrong, including a bucket total
 that differs from `count`, a negative `min` or `max`, a `min` outside the first bucket that counts a sample and a `max`
 outside the last: a bucket holds the samples above the bound before it, from 0 for the first, up to its own bound, and
