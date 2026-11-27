@@ -12,9 +12,11 @@ import {
 } from '@shared-test/rallar-bb-test/conformance/alm/publication-workload/validate-publication-workload-parameters.ts';
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 
-/** 15 agents, one of them sending every 500 ms for 5 minutes on rtc: 300,000 / 500 = 600 frames. */
+const GROUP = { applicationId: 'workload-app', workspaceId: 'workload-workspace', groupId: 'workload-room' };
+
+/** One room of 15 agents, one of them sending every 500 ms for 5 minutes on rtc: 300,000 / 500 = 600 frames. */
 const POINT: PublicationWorkloadParameters = {
-    group: { applicationId: 'workload-app', workspaceId: 'workload-workspace', groupId: 'workload-room' },
+    groups: [GROUP],
     participantCount: 15,
     publisherCount: 1,
     carrier: 'rtc',
@@ -29,6 +31,10 @@ const POINT: PublicationWorkloadParameters = {
 };
 
 const UNKNOWN_CARRIER: string = 'sctp';
+
+function toRooms(roomCount: number): readonly (typeof GROUP)[] {
+    return Array.from({ length: roomCount }, (_, index) => ({ ...GROUP, groupId: `workload-room-${index + 1}` }));
+}
 
 interface BrokenBound {
     readonly bound: string;
@@ -134,8 +140,45 @@ const BROKEN_BOUNDS: readonly BrokenBound[] = [
     },
     {
         bound: 'a group with an empty group id',
-        change: { group: { ...POINT.group, groupId: '' } },
-        issue: { path: '$.group.groupId', code: 'required' }
+        change: { groups: [{ ...GROUP, groupId: '' }] },
+        issue: { path: '$.groups[0].groupId', code: 'required' }
+    },
+    {
+        bound: 'no group',
+        change: { groups: [] },
+        issue: { path: '$.groups', code: 'invalid-groups' }
+    },
+    {
+        bound: 'two equal groups',
+        change: { groups: [GROUP, { ...GROUP }] },
+        issue: { path: '$.groups[1]', code: 'duplicate-group' }
+    },
+    {
+        bound: 'a second group in another workspace than the first',
+        change: { groups: [GROUP, { ...GROUP, workspaceId: 'other-workspace' }] },
+        issue: { path: '$.groups[1]', code: 'group-outside-first-scope' }
+    },
+    {
+        bound: 'a third group in another application than the first',
+        change: { groups: [...toRooms(2), { ...GROUP, applicationId: 'other-app' }] },
+        issue: { path: '$.groups[2]', code: 'group-outside-first-scope' }
+    },
+    {
+        // The second group is in another application than the first, and the first is the wrong value: it names none.
+        bound: 'a first group with no application id, which the second is then not held to',
+        change: { groups: [{ ...GROUP, applicationId: '' }, { ...GROUP, groupId: 'workload-room-2' }] },
+        issue: { path: '$.groups[0].applicationId', code: 'required' }
+    },
+    {
+        bound: 'six rooms of ten, which are 60 agents',
+        change: { groups: toRooms(6), participantCount: 10 },
+        issue: { path: '$.groups', code: 'agent-count-above-limit' }
+    },
+    {
+        // Two rooms of 51 are 102 agents, and the agents of a room are the wrong value: a room has at most 50.
+        bound: 'two rooms of 51 agents, which the rooms are then not held to',
+        change: { groups: toRooms(2), participantCount: 51 },
+        issue: { path: '$.participantCount', code: 'invalid-participant-count' }
     },
     {
         // The 500 ms interval is under this cadence, and the cadence is the wrong value: the policy allows 60,000.
@@ -190,6 +233,22 @@ describe('publication workload parameters', () => {
         expect(toPathsAndCodes({ ...POINT, ...change })).toEqual([issue]);
     });
 
+    it('returns every issue of every group, each under the group\'s place, and holds a group with one to no rule among the groups', () => {
+        const groups = [
+            { ...GROUP, groupId: '' },
+            // Another application than the first group's, and no valid one.
+            { applicationId: '', workspaceId: '', groupId: 'workload-room-2' },
+            { ...GROUP, groupId: '' }
+        ];
+
+        expect(toPathsAndCodes({ ...POINT, groups })).toEqual([
+            { path: '$.groups[0].groupId', code: 'required' },
+            { path: '$.groups[1].applicationId', code: 'required' },
+            { path: '$.groups[1].workspaceId', code: 'required' },
+            { path: '$.groups[2].groupId', code: 'required' }
+        ]);
+    });
+
     it('returns no issue at the last valid value of each bound', () => {
         const atBounds: PublicationWorkloadParameters = {
             ...POINT,
@@ -213,6 +272,9 @@ describe('publication workload parameters', () => {
                 payloadBytes: 65_536
             })
         ).toEqual([]);
+        // Five rooms of ten are the 50 agents a point may have.
+        expect(validatePublicationWorkloadParameters({ ...POINT, groups: toRooms(5), participantCount: 10 }))
+            .toEqual([]);
     });
 
     it('derives 600 frames, 2 Hz, 14 subscribers, at least 570 inbound messages each and 8,400 fan-out messages', () => {
@@ -221,6 +283,8 @@ describe('publication workload parameters', () => {
         expect(computePublicationWorkloadPlan(POINT)).toEqual({
             frameCount: 600,
             configuredRateHz: 2,
+            roomCount: 1,
+            agentCount: 15,
             subscriberCount: 14,
             expectedAdmissions: 600,
             expectedInboundMessages: 600,
@@ -237,12 +301,34 @@ describe('publication workload parameters', () => {
         expect(computePublicationWorkloadPlan({ ...POINT, publisherCount: 5, minReceiveRatio: 0.9 })).toEqual({
             frameCount: 600,
             configuredRateHz: 2,
+            roomCount: 1,
+            agentCount: 15,
             subscriberCount: 10,
             expectedAdmissions: 600,
             expectedInboundMessages: 3_000,
             minExpectedInboundMessages: 2_700,
             minAcceptedSends: 594,
             logicalFanoutMessages: 42_000
+        });
+    });
+
+    it('derives the stretch rung: five rooms of ten with one publisher each are 50 agents and 27,000 fan-out messages over 600 frames', () => {
+        const groups = toRooms(5);
+
+        // 5 x 10 = 50 agents; 10 - 1 = 9 subscribers in a room, each hearing its one publisher's 600 frames; in each
+        // of the 5 rooms the publisher's frames go to the 9 other members: 600 x 9 x 5 = 27,000, which over the 300 s
+        // window is 90 a second.
+        expect(computePublicationWorkloadPlan({ ...POINT, groups, participantCount: 10 })).toEqual({
+            frameCount: 600,
+            configuredRateHz: 2,
+            roomCount: 5,
+            agentCount: 50,
+            subscriberCount: 9,
+            expectedAdmissions: 600,
+            expectedInboundMessages: 600,
+            minExpectedInboundMessages: 570,
+            minAcceptedSends: 594,
+            logicalFanoutMessages: 27_000
         });
     });
 

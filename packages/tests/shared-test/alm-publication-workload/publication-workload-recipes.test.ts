@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
     createPublicationWorkloadRecipes,
-    type PublicationWorkloadRoleRecipe
+    type PublicationWorkloadRoleRecipe,
+    type PublicationWorkloadRoomRecipes
 } from '@shared-test/rallar-bb-test/conformance/alm/publication-workload/create-publication-workload-recipes.ts';
 import type { PublicationWorkloadParameters } from '@shared-test/rallar-bb-test/conformance/alm/publication-workload/validate-publication-workload-parameters.ts';
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
@@ -28,13 +29,14 @@ import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volat
 import { toNestedCommands } from '../to-nested-commands.ts';
 
 const GROUP = { applicationId: 'workload-app', workspaceId: 'workload-workspace', groupId: 'workload-room' };
+const SECOND_GROUP = { ...GROUP, groupId: 'workload-room-2' };
 
 /**
- * Three agents, one of them sending every 500 ms for 30 seconds on rtc: 30,000 / 500 = 60 frames, and 95 % of 60 is 57
- * for both ratios.
+ * One room of three agents, one of them sending every 500 ms for 30 seconds on rtc: 30,000 / 500 = 60 frames, and 95 %
+ * of 60 is 57 for both ratios.
  */
 const POINT: PublicationWorkloadParameters = {
-    group: GROUP,
+    groups: [GROUP],
     participantCount: 3,
     publisherCount: 1,
     carrier: 'rtc',
@@ -55,13 +57,17 @@ const FRAME_TYPE_ID = 'room.publication-workload.frame.v1';
 
 const WINDOW_STARTED_AT_EPOCH_MS = 1_800_000_000_000;
 
-/** The roles of the point's first room, in the order the family gives them. */
-function createRoles(parameters: PublicationWorkloadParameters): readonly PublicationWorkloadRoleRecipe[] {
+function createRooms(parameters: PublicationWorkloadParameters): readonly PublicationWorkloadRoomRecipes[] {
     const created = createPublicationWorkloadRecipes(parameters);
     if (created.right === undefined) {
         throw new Error(`The point is not valid: ${JSON.stringify(created.left)}`);
     }
-    return created.right.rooms[0].roles;
+    return created.right.rooms;
+}
+
+/** The roles of the point's first room, in the order the family gives them. */
+function createRoles(parameters: PublicationWorkloadParameters): readonly PublicationWorkloadRoleRecipe[] {
+    return createRooms(parameters)[0].roles;
 }
 
 /** The first room's publisher that writes the group, and its subscriber. */
@@ -106,6 +112,19 @@ function toCommandsAfterBarrier(
 
 function toBarrierIds(recipe: RallarBlackBoxTestRecipe): readonly string[] {
     return recipe.commands.flatMap((command) => command.kind === 'barrier' ? [command.barrierId] : []);
+}
+
+/** The requests of a recipe that write: only the agent that creates the room's group has any. */
+function toWriteRequests(recipe: RallarBlackBoxTestRecipe): readonly RallarBlackBoxTestCommand[] {
+    return recipe.commands.filter((command) => command.kind === 'http.request' && command.request.method !== 'GET');
+}
+
+/** What an agent's recipe passes before it runs: the recipe schema, the control validation and the preflight. */
+function expectRecipeAdmitted(recipe: RallarBlackBoxTestRecipe): void {
+    expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipe)).toEqual({ ok: true, errors: [] });
+    expect(toNestedCommands(recipe.commands).map((command) => validateRallarBlackBoxTestCommand(command)))
+        .toEqual(toNestedCommands(recipe.commands).map(() => ({ ok: true })));
+    expect(distributedRecipePreflight(recipe).errors).toEqual([]);
 }
 
 describe('the recipes of one point of the publication workload family', () => {
@@ -180,12 +199,8 @@ describe('the recipes of one point of the publication workload family', () => {
         (carrier) => {
             const { publisher, subscriber } = createRecipes({ ...POINT, carrier });
 
-            for (const recipe of [publisher.recipe, subscriber.recipe]) {
-                expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipe)).toEqual({ ok: true, errors: [] });
-                expect(toNestedCommands(recipe.commands).map((command) => validateRallarBlackBoxTestCommand(command)))
-                    .toEqual(toNestedCommands(recipe.commands).map(() => ({ ok: true })));
-                expect(distributedRecipePreflight(recipe).errors).toEqual([]);
-            }
+            expectRecipeAdmitted(publisher.recipe);
+            expectRecipeAdmitted(subscriber.recipe);
             expect(
                 toNestedCommands(publisher.recipe.commands).flatMap((command) =>
                     command.kind === 'messages.send' && 'carrier' in command ? [command.carrier] : []
@@ -200,12 +215,7 @@ describe('the recipes of one point of the publication workload family', () => {
             const roles = createRoles({ ...POINT, publisherCount: 2, carrier });
 
             expect(roles).toHaveLength(3);
-            for (const { recipe } of roles) {
-                expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipe)).toEqual({ ok: true, errors: [] });
-                expect(toNestedCommands(recipe.commands).map((command) => validateRallarBlackBoxTestCommand(command)))
-                    .toEqual(toNestedCommands(recipe.commands).map(() => ({ ok: true })));
-                expect(distributedRecipePreflight(recipe).errors).toEqual([]);
-            }
+            roles.forEach(({ recipe }) => expectRecipeAdmitted(recipe));
         }
     );
 
@@ -237,12 +247,9 @@ describe('the recipes of one point of the publication workload family', () => {
             const [publisher, ...joining] = createRoles({ ...POINT, ...point });
 
             expect([publisher, ...joining].map((role) => [role.kind, role.agentCount])).toEqual(roleAgents);
-            expect(publisher.recipe.commands.find((command) => command.kind === 'http.request' && command.request.method !== 'GET'))
+            expect(toWriteRequests(publisher.recipe)[0])
                 .toMatchObject({ request: { body: { groupId: 'workload-room', maxMembers: participantCount } } });
-            for (const { recipe } of joining) {
-                expect(recipe.commands.filter((command) => command.kind === 'http.request' && command.request.method !== 'GET'))
-                    .toEqual([]);
-            }
+            expect(joining.flatMap(({ recipe }) => toWriteRequests(recipe))).toEqual([]);
             for (const { recipe } of [publisher, ...joining]) {
                 expect(recipe.commands.find((command) => command.kind === 'wait' && command.absent !== true))
                     .toMatchObject({ match: { payloadFields: { 'data.activeSessionCount': participantCount } } });
@@ -254,13 +261,12 @@ describe('the recipes of one point of the publication workload family', () => {
         const [publisher, joiningPublisher, subscriber] = createRoles({ ...POINT, publisherCount: 2 });
 
         expect([publisher, joiningPublisher, subscriber].map((role) => role.recipe.recipeId)).toEqual([
-            'publication-workload-publisher',
-            'publication-workload-joining-publisher',
-            'publication-workload-subscriber'
+            'publication-workload-room-1-publisher',
+            'publication-workload-room-1-joining-publisher',
+            'publication-workload-room-1-subscriber'
         ]);
         const joining = joiningPublisher.recipe;
-        expect(joining.commands.filter((command) => command.kind === 'http.request' && command.request.method !== 'GET'))
-            .toEqual([]);
+        expect(toWriteRequests(joining)).toEqual([]);
         const connects = joining.commands.filter((command) => command.kind === 'rtc.connect');
         expect(connects).toHaveLength(1);
         expect(connects[0]).toMatchObject({
@@ -288,6 +294,57 @@ describe('the recipes of one point of the publication workload family', () => {
         expect(window[4]).toMatchObject({ operator: 'gte', expected: 57 });
         expect(window).toEqual(toCommandsAfterBarrier(publisher.recipe, 'publication-workload-setup-complete'));
         expect(joining.eventHistory).toBeUndefined();
+    });
+
+    it('runs in a second room the commands of the same point in that room alone, under recipe ids of its own', () => {
+        const [first, second] = createRooms({ ...POINT, groups: [GROUP, SECOND_GROUP] });
+        const [alone] = createRooms({ ...POINT, groups: [SECOND_GROUP] });
+        const toRecipes = (room: PublicationWorkloadRoomRecipes): readonly RallarBlackBoxTestRecipe[] => room.roles.map((role) => role.recipe);
+
+        expect([first.group, second.group]).toEqual([GROUP, SECOND_GROUP]);
+        expect([first, second].flatMap(toRecipes).map(({ recipeId, name }) => ({ recipeId, name }))).toEqual([
+            { recipeId: 'publication-workload-room-1-publisher', name: 'Publication workload room 1 publisher' },
+            { recipeId: 'publication-workload-room-1-subscriber', name: 'Publication workload room 1 subscriber' },
+            { recipeId: 'publication-workload-room-2-publisher', name: 'Publication workload room 2 publisher' },
+            { recipeId: 'publication-workload-room-2-subscriber', name: 'Publication workload room 2 subscriber' }
+        ]);
+        expect(second.roles.map(({ kind, agentCount, recipe }) => ({ kind, agentCount, commands: recipe.commands })))
+            .toEqual(alone.roles.map(({ kind, agentCount, recipe }) => ({ kind, agentCount, commands: recipe.commands })));
+        expect(toSoleSendLoop(toRecipes(second)[0]).commands[0]).toMatchObject({ roomRef: SECOND_GROUP });
+        // Each room's commands name its own group id and never the other's.
+        expect(JSON.stringify(toRecipes(second).map((recipe) => recipe.commands))).not.toContain('"workload-room"');
+        expect(JSON.stringify(toRecipes(first).map((recipe) => recipe.commands))).not.toContain('"workload-room-2"');
+    });
+
+    it('meets every role of both rooms at the same four barriers with the same timeouts', () => {
+        const recipes = createRooms({ ...POINT, publisherCount: 2, groups: [GROUP, SECOND_GROUP] })
+            .flatMap((room) => room.roles.map((role) => role.recipe));
+
+        expect(recipes).toHaveLength(6);
+        for (const recipe of recipes) {
+            expect(
+                recipe.commands.flatMap((command) => command.kind === 'barrier' ? [{ barrierId: command.barrierId, timeoutMs: command.timeoutMs }] : []),
+                recipe.recipeId
+            ).toEqual([
+                { barrierId: 'publication-workload-group-created', timeoutMs: 45_000 },
+                // A joining agent's connect: the SDK connect and the room join at 45,000 ms each with a 5,000 ms
+                // margin, then its readiness of 45,000 ms and 650 ms for each of the room's 3 agents.
+                { barrierId: 'publication-workload-connected', timeoutMs: 141_950 },
+                // The 45,000 ms to settle and one held reshape of 60,000 ms.
+                { barrierId: 'publication-workload-setup-complete', timeoutMs: 105_000 },
+                // Twice the 30,000 ms window for the loop, the 5,100 ms drain and the 3,000 ms stats read.
+                { barrierId: 'publication-workload-complete', timeoutMs: 68_100 }
+            ]);
+        }
+    });
+
+    it('gives the stretch rung of five rooms of ten ten recipes for its 50 agents, each one the schema, the control validation and the preflight admit', () => {
+        const groups = ['a', 'b', 'c', 'd', 'e'].map((room) => ({ ...GROUP, groupId: `workload-room-${room}` }));
+        const roles = createRooms({ ...POINT, groups, participantCount: 10 }).flatMap((room) => room.roles);
+
+        expect(roles.map((role) => role.agentCount)).toEqual([1, 9, 1, 9, 1, 9, 1, 9, 1, 9]);
+        expect(new Set(roles.map((role) => role.recipe.recipeId)).size).toBe(10);
+        roles.forEach(({ recipe }) => expectRecipeAdmitted(recipe));
     });
 
     it('meets both roles at the same four barriers, in order, under command ids of their own', () => {

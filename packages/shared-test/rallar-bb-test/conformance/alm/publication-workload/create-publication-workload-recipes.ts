@@ -30,7 +30,7 @@ import {
 } from './validate-publication-workload-parameters.ts';
 
 export interface PublicationWorkloadRecipes {
-    /** One entry per room of the point. */
+    /** One entry per group of the point, in the point's order. */
     readonly rooms: readonly PublicationWorkloadRoomRecipes[];
 }
 
@@ -61,6 +61,15 @@ interface PublicationWorkloadRecipeRoleShape {
     /** The owner writes the group and connects before any peer exists; a member joins it once a peer does. */
     readonly cohortRole: AlmCohortRole;
     readonly title: string;
+}
+
+/** One room of a point: the point and its plan, beside what tells the room from the point's others. */
+interface PublicationWorkloadRoom {
+    readonly parameters: PublicationWorkloadParameters;
+    readonly plan: PublicationWorkloadPlan;
+    readonly group: RallarBlackBoxDistributedGroupRef;
+    /** The room's place among the point's groups, counted from 1. */
+    readonly roomNumber: number;
 }
 
 /** What a role runs after the cohort's setup, and how many agents of the room run it. */
@@ -102,16 +111,22 @@ export function createPublicationWorkloadRecipes(
     if (issues.length > 0) {
         return Either.ofLeft(issues);
     }
-    return Either.ofRight({ rooms: [{ group: parameters.group, roles: createRoomRoles(parameters) }] });
+    const plan = computePublicationWorkloadPlan(parameters);
+    return Either.ofRight({
+        rooms: parameters.groups.map((group, index) => ({
+            group,
+            roles: createRoomRoles({ parameters, plan, group, roomNumber: index + 1 })
+        }))
+    });
 }
 
 /**
  * Every publisher runs the same window, meets the subscribers at the complete barrier and then answers its own gate; a
  * subscriber waits at that barrier through a publisher's whole window and then counts.
  */
-function createRoomRoles(parameters: PublicationWorkloadParameters): readonly PublicationWorkloadRoleRecipe[] {
-    const plan = computePublicationWorkloadPlan(parameters);
-    const window = createPublisherWindowCommands(parameters, plan);
+function createRoomRoles(room: PublicationWorkloadRoom): readonly PublicationWorkloadRoleRecipe[] {
+    const { parameters, plan } = room;
+    const window = createPublisherWindowCommands(room);
     const completeTimeoutMs = computeCommandsTimeoutMs(window, 'the complete barrier');
     const publisherCommands = [
         ...window,
@@ -124,15 +139,15 @@ function createRoomRoles(parameters: PublicationWorkloadParameters): readonly Pu
     ];
     const joiningPublisherCount = parameters.publisherCount - 1;
     return [
-        createRoleRecipe(parameters, { role: 'publisher', agentCount: 1, windowCommands: publisherCommands }),
+        createRoleRecipe(room, { role: 'publisher', agentCount: 1, windowCommands: publisherCommands }),
         ...(joiningPublisherCount > 0
-            ? [createRoleRecipe(parameters, {
+            ? [createRoleRecipe(room, {
                 role: 'joining-publisher',
                 agentCount: joiningPublisherCount,
                 windowCommands: publisherCommands
             })]
             : []),
-        createRoleRecipe(parameters, {
+        createRoleRecipe(room, {
             role: 'subscriber',
             agentCount: plan.subscriberCount,
             windowCommands: subscriberCommands
@@ -140,8 +155,12 @@ function createRoomRoles(parameters: PublicationWorkloadParameters): readonly Pu
     ];
 }
 
+/**
+ * Only a recipe's id and its name carry the room's number. Every room's commands, connections and barriers are named
+ * alike, so all rooms meet at the same barriers and a caller reads each room's results by the same command ids.
+ */
 function createRoleRecipe(
-    parameters: PublicationWorkloadParameters,
+    room: PublicationWorkloadRoom,
     input: PublicationWorkloadRoleRecipeInput
 ): PublicationWorkloadRoleRecipe {
     const { kind, title } = RECIPE_ROLES[input.role];
@@ -150,11 +169,11 @@ function createRoleRecipe(
         agentCount: input.agentCount,
         recipe: {
             schemaVersion: 1,
-            recipeId: `${SCOPE}-${input.role}`,
-            name: `Publication workload ${title}`,
+            recipeId: `${SCOPE}-room-${room.roomNumber}-${input.role}`,
+            name: `Publication workload room ${room.roomNumber} ${title}`,
             continueOnFailure: false,
             ...(kind === 'subscriber' ? { eventHistory: SUBSCRIBER_EVENT_HISTORY } : {}),
-            commands: [...createSetupCommands(parameters, input.role), ...input.windowCommands]
+            commands: [...createSetupCommands(room, input.role), ...input.windowCommands]
         }
     };
 }
@@ -179,14 +198,14 @@ function createBarrier(
  * commands, a member's by its kind: a joining publisher's commands and its connection are a publisher's.
  */
 function createSetupCommands(
-    parameters: PublicationWorkloadParameters,
+    room: PublicationWorkloadRoom,
     role: PublicationWorkloadRecipeRole
 ): readonly RallarBlackBoxTestCommand[] {
     const { kind, cohortRole } = RECIPE_ROLES[role];
     const cohort: AlmCohortSetupInput = {
-        group: parameters.group,
-        participantCount: parameters.participantCount,
-        readyTimeoutMs: parameters.readyTimeoutMs,
+        group: room.group,
+        participantCount: room.parameters.participantCount,
+        readyTimeoutMs: room.parameters.readyTimeoutMs,
         almDiagnostics: ALM_DIAGNOSTICS,
         scope: SCOPE,
         roleNames: { owner: 'publisher', member: kind },
@@ -201,13 +220,11 @@ function createSetupCommands(
  * opportunity, admitted or, past its lifetime, expired, and the next opportunity is at most one cadence away: one
  * lifetime and one cadence after the last send, the stage's counters are final.
  */
-function createPublisherWindowCommands(
-    parameters: PublicationWorkloadParameters,
-    plan: PublicationWorkloadPlan
-): readonly RallarBlackBoxTestCommand[] {
+function createPublisherWindowCommands(room: PublicationWorkloadRoom): readonly RallarBlackBoxTestCommand[] {
+    const { parameters } = room;
     const prefix = toCommandPrefix('publisher');
     return [
-        createPublishLoop(parameters, plan),
+        createPublishLoop(room),
         toPauseWait(`${prefix}-drain`, parameters.publication.cadenceMs + parameters.ttlMs),
         { kind: 'stats', commandId: `${prefix}-stats`, timeoutMs: STATS_TIMEOUT_MS }
     ];
@@ -237,10 +254,8 @@ function createAcceptedSendsAssert(plan: PublicationWorkloadPlan): RallarBlackBo
  * send of the conformance lane has: the command returns once its value is staged, and a budget of the frame's lifetime
  * would have the harness abort, under a short lifetime, sends the product still publishes.
  */
-function createPublishLoop(
-    parameters: PublicationWorkloadParameters,
-    plan: PublicationWorkloadPlan
-): RallarBlackBoxTestLoopCommand {
+function createPublishLoop(room: PublicationWorkloadRoom): RallarBlackBoxTestLoopCommand {
+    const { parameters, plan, group } = room;
     const prefix = toCommandPrefix('publisher');
     return {
         kind: 'loop',
@@ -254,7 +269,7 @@ function createPublishLoop(
             commandId: `${prefix}-send`,
             connection: prefix,
             carrier: parameters.carrier,
-            roomRef: { ...parameters.group },
+            roomRef: { ...group },
             topicId: TOPIC_ID,
             typeId: FRAME_TYPE_ID,
             purpose: 'live',

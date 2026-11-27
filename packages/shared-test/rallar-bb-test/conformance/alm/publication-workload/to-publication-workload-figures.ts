@@ -1,6 +1,7 @@
 import { AL_PUBLICATION_FIGURE_AGE_BOUNDS_MS } from '@shared/alm/outbound/publication/al-outbound-publication-figures.ts';
 import type { ALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import { isApiJsonObject, type ApiJsonValue } from '@shared/api/api-json-value.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { assertBoundedHistogram } from '@shared/measurement/assert-bounded-histogram.ts';
 import { decodeBoundedHistogramOnBounds, type BoundedHistogram } from '@shared/measurement/bounded-histogram.ts';
 import { computeBoundedHistogramMerged } from '@shared/measurement/compute-bounded-histogram-merged.ts';
@@ -32,7 +33,7 @@ import {
  */
 export interface PublicationWorkloadRun {
     readonly parameters: PublicationWorkloadParameters;
-    /** One entry per room of the point, in the point's order. */
+    /** One entry per group of the point, in the point's order. */
     readonly rooms: readonly PublicationWorkloadRoomResults[];
 }
 
@@ -41,6 +42,8 @@ export interface PublicationWorkloadRun {
  * agent. The point's `publisherCount` and its plan's `subscriberCount` state how many those are.
  */
 export interface PublicationWorkloadRoomResults {
+    /** The group whose agents left the results, as the caller that gathered them states it. */
+    readonly group: RallarBlackBoxDistributedGroupRef;
     readonly publishers: readonly PublicationWorkloadPublisherResults[];
     readonly subscribers: readonly PublicationWorkloadSubscriberResults[];
 }
@@ -74,14 +77,14 @@ export interface PublicationWorkloadConfiguredFigures {
 }
 
 export interface PublicationWorkloadMeasuredFigures {
-    /** One entry per room of the point, in the point's order. */
+    /** One entry per group of the point, in the point's order. */
     readonly rooms: readonly PublicationWorkloadRoomFigures[];
     /** Every subscriber result of every room together. */
     readonly delivered: PublicationWorkloadDeliveredFigures;
 }
 
 export interface PublicationWorkloadRoomFigures {
-    /** The point's group, by the room's place in the run. No result states the group it was read under. */
+    /** The group the run states for the room's results, which is the point's group at the room's place. */
     readonly group: RallarBlackBoxDistributedGroupRef;
     /** One entry per publisher of the room, in the order of the run's results. */
     readonly publishers: readonly PublicationWorkloadPublisherFigures[];
@@ -165,54 +168,41 @@ interface DecodedSubscriber {
 }
 
 interface DecodedRoom {
+    readonly group: RallarBlackBoxDistributedGroupRef;
     readonly publishers: readonly PublicationWorkloadPublisherFigures[];
     readonly subscribers: readonly DecodedSubscriber[];
     readonly delivered: PublicationWorkloadDeliveredFigures;
 }
 
-/** How many results of each role a room of the point holds. A point that breaks a bound of the family states none. */
-interface RoomRoleCounts {
-    readonly publishers: number;
-    readonly subscribers: number;
-}
-
 /**
  * The left names every field that cannot be read, each issue starting with the field's path: under `$.parameters` a
- * bound of the family the point breaks, `$.rooms` where the run holds another number of rooms than the point,
- * `$.rooms[r].publishers` and `$.rooms[r].subscribers` where a room holds another number of results than the point has
- * agents of that role, `...publishers[p].agentId` and `...subscribers[s].agentId` where a result repeats an agent of
- * its role, and under `$.rooms[r].publishers[p].loop`, `$.rooms[r].publishers[p].stats` and
- * `$.rooms[r].subscribers[s].received` a field of that result value.
+ * bound of the family the point breaks, at `$.rooms` and under `$.rooms[r]` what `validateRunRooms` holds the run to,
+ * and under `$.rooms[r].publishers[p].loop`, `$.rooms[r].publishers[p].stats` and `$.rooms[r].subscribers[s].received`
+ * a field of that result value.
  */
 export function toPublicationWorkloadFigures(
     run: PublicationWorkloadRun
 ): Either<readonly string[], PublicationWorkloadFigures> {
     const parameterIssues = validatePublicationWorkloadParameters(run.parameters)
         .map((issue) => `$.parameters${issue.path.slice(1)} is not valid: ${issue.message}`);
-    const roleCounts = parameterIssues.length > 0 ? undefined : {
-        publishers: run.parameters.publisherCount,
-        subscribers: computePublicationWorkloadPlan(run.parameters).subscriberCount
-    };
-    const groups = [run.parameters.group];
-    const rooms = run.rooms.map((room, index) => decodeRoom(room, `$.rooms[${index}]`, roleCounts));
+    const plan = parameterIssues.length > 0 ? undefined : computePublicationWorkloadPlan(run.parameters);
+    const rooms = run.rooms.map((room, index) => decodeRoom(room, `$.rooms[${index}]`));
     const decodedRooms = EitherCollectors.toListFoldRights(rooms);
     const delivered = computeDeliveredFigures(decodedRooms.flatMap((room) => room.subscribers));
     const issues = [
         ...parameterIssues,
-        ...(run.rooms.length === groups.length
-            ? []
-            : [`$.rooms must hold one entry per room of the point, which has ${groups.length}`]),
+        ...validateRunRooms(run, plan),
         ...EitherCollectors.toListFoldLefts(rooms).flat(),
         ...(delivered.left === undefined ? [] : [`$.rooms give no delivered sample age: ${delivered.left}`])
     ];
-    if (issues.length > 0 || delivered.right === undefined) {
+    if (issues.length > 0 || plan === undefined || delivered.right === undefined) {
         return Either.ofLeft(issues);
     }
     return Either.ofRight({
-        configured: { parameters: run.parameters, plan: computePublicationWorkloadPlan(run.parameters) },
+        configured: { parameters: run.parameters, plan },
         measured: {
-            rooms: decodedRooms.map((room, index) => ({
-                group: groups[index],
+            rooms: decodedRooms.map((room) => ({
+                group: room.group,
                 publishers: room.publishers,
                 subscribers: room.subscribers.map((subscriber) => subscriber.figures),
                 delivered: room.delivered
@@ -222,32 +212,33 @@ export function toPublicationWorkloadFigures(
     });
 }
 
-function decodeRoom(
-    room: PublicationWorkloadRoomResults,
-    path: string,
-    roleCounts: RoomRoleCounts | undefined
-): Either<readonly string[], DecodedRoom> {
-    const publishers = room.publishers
-        .map((publisher, index) => decodePublisherFigures(publisher, `${path}.publishers[${index}]`));
-    const subscribers = room.subscribers
-        .map((subscriber, index) => decodeSubscriber(subscriber, `${path}.subscribers[${index}].received`));
-    const decodedSubscribers = EitherCollectors.toListFoldRights(subscribers);
-    const delivered = computeDeliveredFigures(decodedSubscribers);
-    const issues = [
-        ...validateRoleResults(room.publishers, roleCounts?.publishers, `${path}.publishers`),
-        ...EitherCollectors.toListFoldLefts(publishers).flat(),
-        ...validateRoleResults(room.subscribers, roleCounts?.subscribers, `${path}.subscribers`),
-        ...EitherCollectors.toListFoldLefts(subscribers).flat(),
-        ...(delivered.left === undefined ? [] : [`${path}.subscribers give no delivered sample age: ${delivered.left}`])
+/**
+ * What a run of the point holds: at `$.rooms` one room per group of the point; at `$.rooms[r].group` the point's group
+ * at that place, so that no room's figures stand under another room's group; at `$.rooms[r].publishers` and
+ * `$.rooms[r].subscribers` one result per agent of that role, which only a point with a plan states; and at
+ * `...publishers[p].agentId` and `...subscribers[s].agentId` an agent no earlier result of its role names.
+ */
+function validateRunRooms(run: PublicationWorkloadRun, plan: PublicationWorkloadPlan | undefined): readonly string[] {
+    const { groups, publisherCount } = run.parameters;
+    return [
+        ...(run.rooms.length === groups.length
+            ? []
+            : [`$.rooms must hold one entry per room of the point, which has ${groups.length}`]),
+        ...run.rooms.flatMap((room, index) => {
+            const path = `$.rooms[${index}]`;
+            return [
+                ...(index >= groups.length || isSameGroupRef(groups[index], room.group)
+                    ? []
+                    : [`${path}.group must be the point's group at that place, ${JSON.stringify(groups[index])}`]),
+                ...validateRoleResults(
+                    room.publishers,
+                    plan === undefined ? undefined : publisherCount,
+                    `${path}.publishers`
+                ),
+                ...validateRoleResults(room.subscribers, plan?.subscriberCount, `${path}.subscribers`)
+            ];
+        })
     ];
-    if (issues.length > 0 || delivered.right === undefined) {
-        return Either.ofLeft(issues);
-    }
-    return Either.ofRight({
-        publishers: EitherCollectors.toListFoldRights(publishers),
-        subscribers: decodedSubscribers,
-        delivered: delivered.right
-    });
 }
 
 /**
@@ -270,6 +261,29 @@ function validateRoleResults(
                 : [`${path}[${index}].agentId must name another agent than ${path}[${first}].agentId, ${agentId}`];
         })
     ];
+}
+
+function decodeRoom(room: PublicationWorkloadRoomResults, path: string): Either<readonly string[], DecodedRoom> {
+    const publishers = room.publishers
+        .map((publisher, index) => decodePublisherFigures(publisher, `${path}.publishers[${index}]`));
+    const subscribers = room.subscribers
+        .map((subscriber, index) => decodeSubscriber(subscriber, `${path}.subscribers[${index}].received`));
+    const decodedSubscribers = EitherCollectors.toListFoldRights(subscribers);
+    const delivered = computeDeliveredFigures(decodedSubscribers);
+    const issues = [
+        ...EitherCollectors.toListFoldLefts(publishers).flat(),
+        ...EitherCollectors.toListFoldLefts(subscribers).flat(),
+        ...(delivered.left === undefined ? [] : [`${path}.subscribers give no delivered sample age: ${delivered.left}`])
+    ];
+    if (issues.length > 0 || delivered.right === undefined) {
+        return Either.ofLeft(issues);
+    }
+    return Either.ofRight({
+        group: room.group,
+        publishers: EitherCollectors.toListFoldRights(publishers),
+        subscribers: decodedSubscribers,
+        delivered: delivered.right
+    });
 }
 
 function decodePublisherFigures(

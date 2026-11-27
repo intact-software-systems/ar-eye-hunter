@@ -6,7 +6,10 @@ export interface PublicationWorkloadPlan {
     readonly frameCount: number;
     /** One publisher's rate. Derived from the integer interval, so it is not rounded. */
     readonly configuredRateHz: number;
-    /** The agents of the room that only subscribe. */
+    readonly roomCount: number;
+    /** The agents of every room together. */
+    readonly agentCount: number;
+    /** The agents of one room that only subscribe. */
     readonly subscriberCount: number;
     /** The frames one publisher's publication stage is expected to hand to a carrier. */
     readonly expectedAdmissions: number;
@@ -23,7 +26,7 @@ export interface PublicationWorkloadPlan {
      * submitted is not yet one.
      */
     readonly minAcceptedSends: number;
-    /** Every publisher's expected admissions to every other member of the room, publishers included. */
+    /** Every publisher's expected admissions to every other member of its room, publishers included, over all rooms. */
     readonly logicalFanoutMessages: number;
 }
 
@@ -37,18 +40,21 @@ export function computePublicationWorkloadFrameCount(
 /** Defined for a point `validatePublicationWorkloadParameters` passes. */
 export function computePublicationWorkloadPlan(parameters: PublicationWorkloadParameters): PublicationWorkloadPlan {
     const { participantCount, publisherCount } = parameters;
+    const roomCount = parameters.groups.length;
     const frameCount = computePublicationWorkloadFrameCount(parameters);
     const expectedAdmissions = frameCount;
     const expectedInboundMessages = expectedAdmissions * publisherCount;
     return {
         frameCount,
         configuredRateHz: 1_000 / parameters.publishIntervalMs,
+        roomCount,
+        agentCount: roomCount * participantCount,
         subscriberCount: participantCount - publisherCount,
         expectedAdmissions,
         expectedInboundMessages,
         minExpectedInboundMessages: computeMinimumCount(expectedInboundMessages, parameters.minReceiveRatio),
         minAcceptedSends: computeMinimumCount(expectedAdmissions, parameters.minSendSuccessRatio),
-        logicalFanoutMessages: expectedInboundMessages * (participantCount - 1)
+        logicalFanoutMessages: expectedInboundMessages * (participantCount - 1) * roomCount
     };
 }
 

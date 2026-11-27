@@ -2,6 +2,7 @@ import {
     validateALPublicationPolicy,
     type ALPublicationPolicy
 } from '@shared/al-contracts/publication/al-publication-policy.ts';
+import { isSameGroupRef, isSameGroupScope } from '@shared/api/api-type-utils.ts';
 import {
     RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES,
     validateRallarGroupRef,
@@ -18,10 +19,14 @@ import { computePublicationWorkloadMinimumPayloadBytes } from './to-publication-
 
 /** One point of the publication workload family. The family has no default for any field. */
 export interface PublicationWorkloadParameters {
-    readonly group: RallarBlackBoxDistributedGroupRef;
-    /** The agents of the room: its publishers and its subscribers. */
+    /**
+     * The rooms of the point: each group holds the same point, and all of them run at once. They share the first
+     * group's application and workspace, because a run signs every one of its agents into one.
+     */
+    readonly groups: readonly RallarBlackBoxDistributedGroupRef[];
+    /** The agents of each room: its publishers and its subscribers. */
     readonly participantCount: number;
-    /** The agents of the room that publish. Every other agent only subscribes, and at least one does. */
+    /** The agents of each room that publish. Every other agent only subscribes, and at least one does. */
     readonly publisherCount: number;
     readonly carrier: AlmConformanceCarrier;
     readonly publishIntervalMs: number;
@@ -42,6 +47,8 @@ export interface PublicationWorkloadParameters {
 const PUBLICATION_WORKLOAD_LIMITS = {
     minParticipantCount: 2,
     maxParticipantCount: 50,
+    /** Every room's agents together: a point of several rooms is no larger than a point of one may be. */
+    maxAgentCount: 50,
     /** The publisher's loop holds one send per frame, and a loop expands at most this many commands. */
     maxFrameCount: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxExpandedCommands,
     maxPayloadBytes: RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES
@@ -54,7 +61,7 @@ const PUBLICATION_WORKLOAD_LIMITS = {
 const SMALLEST_FRAME_COUNT = 1;
 
 /**
- * A field contributes the first bound it breaks; `group` and `publication` contribute every issue of their own
+ * A field contributes the first bound it breaks; each group and `publication` contribute every issue of their own
  * validators. A bound stated against another field is checked only when that other field holds its own bound.
  */
 export function validatePublicationWorkloadParameters(
@@ -63,7 +70,7 @@ export function validatePublicationWorkloadParameters(
     const publicationIssues = validateALPublicationPolicy(parameters.publication);
     const wholeFrameCount = resolveWholeFrameCount(parameters);
     return [
-        ...validateRallarGroupRef(parameters.group, '$.group').issues,
+        ...validateGroups(parameters),
         validateParticipantCount(parameters.participantCount),
         validatePublisherCount(parameters),
         validateCarrier(parameters.carrier),
@@ -78,6 +85,54 @@ export function validatePublicationWorkloadParameters(
     ].filter((issue) => issue !== undefined);
 }
 
+function validateGroups(parameters: PublicationWorkloadParameters): readonly RallarValidationIssue[] {
+    const { groups, participantCount } = parameters;
+    const { maxAgentCount } = PUBLICATION_WORKLOAD_LIMITS;
+    if (groups.length === 0) {
+        return [toIssue('groups', 'invalid-groups', 'Expected at least one group: a point has one room or more.')];
+    }
+    const agentCount = groups.length * participantCount;
+    return [
+        ...groups.flatMap((_group, index) => validateGroup(groups, index)),
+        ...(validateParticipantCount(participantCount) === undefined && agentCount > maxAgentCount
+            ? [toIssue(
+                'groups',
+                'agent-count-above-limit',
+                `Expected at most ${maxAgentCount} agents; ${groups.length} rooms of ${participantCount} are ${agentCount}.`
+            )]
+            : [])
+    ];
+}
+
+/**
+ * Every issue of the group's own reference, or else the first rule among the point's groups it breaks: it repeats no
+ * earlier group, and it is in the first group's application and workspace, where the first group names valid ones.
+ */
+function validateGroup(
+    groups: readonly RallarBlackBoxDistributedGroupRef[],
+    index: number
+): readonly RallarValidationIssue[] {
+    const path = `$.groups[${index}]`;
+    const group = groups[index];
+    const ownIssues = validateRallarGroupRef(group, path).issues;
+    if (ownIssues.length > 0) {
+        return ownIssues;
+    }
+    if (groups.slice(0, index).some((earlier) => isSameGroupRef(earlier, group))) {
+        return [{
+            path,
+            code: 'duplicate-group',
+            message: 'Expected a group that no earlier room of the point names.'
+        }];
+    }
+    return !validateRallarGroupRef(groups[0]).ok || isSameGroupScope(groups[0], group) ? [] : [{
+        path,
+        code: 'group-outside-first-scope',
+        message: `Expected the first group's application ${groups[0].applicationId} and workspace ` +
+            `${groups[0].workspaceId}: a run signs every agent into one.`
+    }];
+}
+
 function validateParticipantCount(participantCount: number): RallarValidationIssue | undefined {
     const { minParticipantCount, maxParticipantCount } = PUBLICATION_WORKLOAD_LIMITS;
     return Number.isInteger(participantCount) &&
@@ -87,7 +142,7 @@ function validateParticipantCount(participantCount: number): RallarValidationIss
         : toIssue(
             'participantCount',
             'invalid-participant-count',
-            `Expected an integer from ${minParticipantCount} to ${maxParticipantCount}: the publishers and the subscribers.`
+            `Expected an integer from ${minParticipantCount} to ${maxParticipantCount}: a room's publishers and subscribers.`
         );
 }
 

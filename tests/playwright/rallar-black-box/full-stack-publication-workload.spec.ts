@@ -46,7 +46,7 @@ const AGENT_COUNT = 3;
  * no default, so every value is this proof's own choice.
  */
 const LOCAL_POINT: PublicationWorkloadParameters = {
-    group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
+    groups: [HETZNER_DISTRIBUTED_MANIFEST_GROUP],
     participantCount: AGENT_COUNT,
     publisherCount: 1,
     carrier: 'rtc',
@@ -91,8 +91,8 @@ test('runs the publication workload local point on three agents and records its 
     const recipes = createPublicationWorkloadRecipes(LOCAL_POINT).fold((issues) => {
         throw new Error(`The local point is no point of the family: ${JSON.stringify(issues)}`);
     }, (valid) => valid);
-    // One room of one publisher has two roles: the publisher, then the subscribers.
-    const [publisher, subscriber] = recipes.rooms[0].roles;
+    // The one room of one publisher has two roles: the publisher, then the subscribers.
+    const [{ group, roles: [publisher, subscriber] }] = recipes.rooms;
     const artifactDir = testInfo.outputPath('observation');
     const manifestPath = path.join(artifactDir, 'source-manifest.json');
     const manifest = createLocalPointManifest(recipes, manifestPath);
@@ -144,6 +144,7 @@ test('runs the publication workload local point on three agents and records its 
         const figures = toPublicationWorkloadFigures({
             parameters: LOCAL_POINT,
             rooms: [{
+                group,
                 publishers: [{
                     agentId: publisherRun!.agentId,
                     loop: readResultValue(publisherRun!, RESULT_COMMAND_IDS.publisherFrames),

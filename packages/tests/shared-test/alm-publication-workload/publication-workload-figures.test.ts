@@ -15,9 +15,12 @@ import type { ALOutboundPublicationStageReport } from '@shared/alm/outbound/publ
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import type { BoundedHistogram } from '@shared/measurement/bounded-histogram.ts';
 
-/** Three agents, one of them sending every 500 ms for 30 seconds on rtc: 30,000 / 500 = 60 frames. */
+const GROUP = { applicationId: 'workload-app', workspaceId: 'workload-workspace', groupId: 'workload-room' };
+const SECOND_GROUP = { ...GROUP, groupId: 'workload-room-2' };
+
+/** One room of three agents, one of them sending every 500 ms for 30 seconds on rtc: 30,000 / 500 = 60 frames. */
 const POINT: PublicationWorkloadParameters = {
-    group: { applicationId: 'workload-app', workspaceId: 'workload-workspace', groupId: 'workload-room' },
+    groups: [GROUP],
     participantCount: 3,
     publisherCount: 1,
     carrier: 'rtc',
@@ -175,6 +178,7 @@ const PUBLISHER: PublicationWorkloadPublisherResults = {
 };
 
 const ROOM: PublicationWorkloadRoomResults = {
+    group: GROUP,
     publishers: [PUBLISHER],
     subscribers: [
         { agentId: 'agent-2', received: toReceivedResult(60, FIRST_AGE_MS, 0) },
@@ -186,6 +190,18 @@ const RUN: PublicationWorkloadRun = { parameters: POINT, rooms: [ROOM] };
 
 /** The same three agents with two of them publishing, which leaves one subscriber. */
 const TWO_PUBLISHER_POINT: PublicationWorkloadParameters = { ...POINT, publisherCount: 2 };
+
+/** The same point in two rooms at once. */
+const TWO_ROOM_POINT: PublicationWorkloadParameters = { ...POINT, groups: [GROUP, SECOND_GROUP] };
+
+const SECOND_ROOM: PublicationWorkloadRoomResults = {
+    group: SECOND_GROUP,
+    publishers: [{ ...PUBLISHER, agentId: 'agent-4' }],
+    subscribers: [
+        { agentId: 'agent-5', received: toReceivedResult(13, AGES_UP_TO_10_MS, 1) },
+        { agentId: 'agent-6', received: toReceivedResult(8, AGES_ABOVE_50_MS, 0) }
+    ]
+};
 
 /** A run of the point whose one room left these results. */
 function toRunOfRoom(room: PublicationWorkloadRoomResults): PublicationWorkloadRun {
@@ -319,6 +335,7 @@ const UNREADABLE_RUNS: readonly UnreadableRun[] = [
         run: {
             parameters: TWO_PUBLISHER_POINT,
             rooms: [{
+                ...ROOM,
                 publishers: [PUBLISHER, { ...PUBLISHER, agentId: 'agent-4', stats: {} }],
                 subscribers: [ROOM.subscribers[0]]
             }]
@@ -367,9 +384,29 @@ const UNREADABLE_RUNS: readonly UnreadableRun[] = [
         unreadable: 'one publisher\'s result given twice in a point of two publishers',
         run: {
             parameters: TWO_PUBLISHER_POINT,
-            rooms: [{ publishers: [PUBLISHER, PUBLISHER], subscribers: [ROOM.subscribers[0]] }]
+            rooms: [{ ...ROOM, publishers: [PUBLISHER, PUBLISHER], subscribers: [ROOM.subscribers[0]] }]
         },
         paths: ['$.rooms[0].publishers[1].agentId']
+    },
+    {
+        unreadable: 'the results of one room for a point of two rooms',
+        run: { parameters: TWO_ROOM_POINT, rooms: [ROOM] },
+        paths: ['$.rooms']
+    },
+    {
+        unreadable: 'a room whose results name a group the point does not have',
+        run: toRunOfRoom({ ...ROOM, group: SECOND_GROUP }),
+        paths: ['$.rooms[0].group']
+    },
+    {
+        unreadable: 'the rooms of a two-room point in the other order than its groups',
+        run: { parameters: TWO_ROOM_POINT, rooms: [SECOND_ROOM, ROOM] },
+        paths: ['$.rooms[0].group', '$.rooms[1].group']
+    },
+    {
+        unreadable: 'the second room of a two-room point under the first room\'s group',
+        run: { parameters: TWO_ROOM_POINT, rooms: [ROOM, { ...SECOND_ROOM, group: GROUP }] },
+        paths: ['$.rooms[1].group']
     },
     {
         // One agent leaves no subscriber, and the agents are the wrong value: a room has at least 2.
@@ -402,10 +439,13 @@ describe('toPublicationWorkloadFigures', () => {
         expect(toPublicationWorkloadFigures(RUN).right).toEqual({
             configured: {
                 parameters: POINT,
-                // 1,000 / 500 = 2 Hz; 3 - 1 = 2 subscribers; 57 of 60 is 0.95; 60 x 2 = 120 fan-out messages.
+                // 1,000 / 500 = 2 Hz; one room of 3 agents; 3 - 1 = 2 subscribers; 57 of 60 is 0.95; 60 x 2 = 120 fan-out
+                // messages.
                 plan: {
                     frameCount: 60,
                     configuredRateHz: 2,
+                    roomCount: 1,
+                    agentCount: 3,
                     subscriberCount: 2,
                     expectedAdmissions: 60,
                     expectedInboundMessages: 60,
@@ -504,6 +544,7 @@ describe('toPublicationWorkloadFigures', () => {
         const figures = toPublicationWorkloadFigures({
             parameters: TWO_PUBLISHER_POINT,
             rooms: [{
+                ...ROOM,
                 publishers: [PUBLISHER, { ...PUBLISHER, agentId: 'agent-4', loop: { ...LOOP_RESULT, passed: 60, failed: 0 } }],
                 subscribers: [ROOM.subscribers[0]]
             }]
@@ -543,6 +584,41 @@ describe('toPublicationWorkloadFigures', () => {
             achievedIterationRateHz: null,
             publicationStage: PUBLICATION_STAGE
         }]);
+    });
+
+    it('reports each room of a two-room point under the group its results name, and one delivered sample age over the subscribers of both rooms', () => {
+        const figures = toPublicationWorkloadFigures({ parameters: TWO_ROOM_POINT, rooms: [ROOM, SECOND_ROOM] });
+
+        expect(figures.left).toBeUndefined();
+        expect(figures.right?.configured.plan).toMatchObject({ roomCount: 2, agentCount: 6, logicalFanoutMessages: 240 });
+        expect(
+            figures.right?.measured.rooms.map(({ group, publishers, delivered }) => ({
+                group,
+                publisherAgentIds: publishers.map((publisher) => publisher.agentId),
+                delivered: { subscriberCount: delivered.subscriberCount, observed: delivered.observed }
+            }))
+        ).toEqual([
+            { group: GROUP, publisherAgentIds: ['agent-1'], delivered: { subscriberCount: 2, observed: 118 } },
+            { group: SECOND_GROUP, publisherAgentIds: ['agent-4'], delivered: { subscriberCount: 2, observed: 21 } }
+        ]);
+        // The 117 ages of the first room and the 20 of the second, counted up bucket by bucket: 4 up to 5 ms, 46 up to
+        // 10, 104 up to 20, 121 up to 50, 134 up to 100, 135 up to 200 and 137 up to 500. Rank 69 lies in (10, 20], rank
+        // 131 in (50, 100] and rank 136 in (200, 500], which the largest sample ends at 420. 118 + 21 = 139 messages,
+        // two of them without an age.
+        expect(figures.right?.measured.delivered).toEqual({
+            subscriberCount: 4,
+            observed: 139,
+            unrecordedSamples: 2,
+            sampleAgeMs: {
+                kind: 'recorded',
+                count: 137,
+                min: 3,
+                max: 420,
+                p50: { atLeast: 10, atMost: 20 },
+                p95: { atLeast: 50, atMost: 100 },
+                p99: { atLeast: 200, atMost: 420 }
+            }
+        });
     });
 
     it('says that subscribers recorded no age, each and together, and reports no zero in its place', () => {
