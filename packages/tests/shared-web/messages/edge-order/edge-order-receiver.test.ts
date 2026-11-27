@@ -132,7 +132,7 @@ describe('EdgeOrderReceiver: order', () => {
     it('treats a new stream from the same sender, as a reload makes one, as its own order beside the old one', () => {
         const fixture = createReceiverFixture();
         const beforeReload = new EdgeOrderSender('A', NO_SETTLE_MS);
-        const afterReload = new EdgeOrderSender('B');
+        const afterReload = new EdgeOrderSender('B', NO_SETTLE_MS);
 
         accept(fixture, stampNextSend(beforeReload, true), { message: 'a1' });
         // Send 2 of the old stream is still on its way when the new page's first message arrives.
