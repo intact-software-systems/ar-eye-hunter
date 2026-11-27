@@ -952,7 +952,6 @@ function orderedMessage(seq: number, input: OrderedMessageInput = {}): ALMessage
     return { ...frozen, ordering: { orderingKey: 'chat', seq } };
 }
 
-/** The same copy as its authority recorded it: this receiver, its frozen audience, was sent every sequence below. */
 interface PassedCopiesBehindHeldThird {
     readonly fixture: InboundTestRuntime;
     /** The gap controls sent before message 5 arrived. */
@@ -986,6 +985,7 @@ async function admitPastPassedCopiesBehindHeldThird(): Promise<PassedCopiesBehin
     };
 }
 
+/** The same copy as its authority recorded it: this receiver, its frozen audience, was sent every sequence below. */
 function recordedMessage(seq: number, input: OrderedMessageInput = {}): ALMessage {
     const message = orderedMessage(seq, input);
     return { ...message, ordering: { ...message.ordering!, priorSeqByRecipient: {} } };

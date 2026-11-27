@@ -471,8 +471,8 @@ records what the runner was doing while the cell ran:
     time; a `reservationWaitMedianMs` over retried rows is an upper bound.
   - `promotedDeliveries` — the sum of `promoted` over every `effect-drain` of that direction, on both
     lanes (a volatile track is delivered on the memory lane): every delivery its batches ran by
-    hand-on, a buffered release or an in-order delivery, because the same track's previous delivery
-    completed earlier in that batch (D190, D785). An `effect-drain` that states no `promoted` (one
+    hand-on, a buffered release or an in-order delivery, because a delivery of the same track
+    completed earlier in that batch and the track's next slot named it (D190, D785). An `effect-drain` that states no `promoted` (one
     recorded before D190) is skipped, as a drain missing any other field is. **Caveat:** under the control server's default
     bound of 2 000 retained events a long fast run drops its early drains, so
     `promotedDeliveries` can read `0` and `pageRegime` `unmeasured` although the fairness cells' own

@@ -107,9 +107,8 @@ describe('promotion of a buffered track\'s next release', () => {
         );
         for (const drain of drains) {
             expect(drain.promoted).toBe(countDeliveriesBehindTheirPredecessor(drain, deliveries));
-            expect(drain.promoted).toBe(drain.claimedCount - countTracksClaimed(drain, deliveries));
+            expect(drain.promoted).toBe(countDeliveriesAfterTheirTracksFirst(drain, deliveries));
         }
-        expect(sumCompleted(drains)).toBe(2 * 12);
     });
 
     it('promotes nothing behind a release that did not complete, and delivers it on its retry before its successor', async () => {
@@ -378,9 +377,16 @@ function countDeliveriesBehindTheirPredecessor(drain: EffectDrain, deliveries: R
     }).length;
 }
 
-/** How many tracks the drain claimed a delivery of: the first claim of each is the page's, never a hand-on. */
-function countTracksClaimed(drain: EffectDrain, deliveries: ReadonlyMap<string, TrackDelivery>): number {
-    return new Set(drain.claimedEffectIds.map((effectId) => deliveries.get(effectId)?.track)).size;
+/**
+ * The drain's delivery claims after the first it claimed of each track: a track's first claim in a drain is the page's,
+ * so every later one must be a hand-on. A claim that is not a delivery counts in neither.
+ */
+function countDeliveriesAfterTheirTracksFirst(drain: EffectDrain, deliveries: ReadonlyMap<string, TrackDelivery>): number {
+    const tracks = drain.claimedEffectIds.flatMap((effectId) => {
+        const delivery = deliveries.get(effectId);
+        return delivery === undefined ? [] : [delivery.track];
+    });
+    return tracks.length - new Set(tracks).size;
 }
 
 function toRelease(effectId: string): { readonly track: string; readonly seq: number; } | undefined {

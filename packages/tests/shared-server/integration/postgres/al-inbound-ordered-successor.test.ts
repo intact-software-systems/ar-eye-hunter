@@ -287,10 +287,11 @@ describe('Postgres statements of an ordered completion', () => {
         ]);
     });
 
-    // Pins that a refused hand-on costs its reads and writes nothing: with the successor's delivery not ready, the
-    // completing batch reads the slot, the row and the readiness; with its row reserved by another instance, whose lease
-    // has not run out, the slot and the row only. Neither claims it, and no statement of the batch writes the row by its
-    // key or its id.
+    // Pins what a refused hand-on costs, by the batch's whole statement list: with the successor's delivery not ready,
+    // the slot read, the row read and the readiness reads; with its row reserved by another instance, whose lease has not
+    // run out, the slot read and the row read and nothing more. A second fact: no statement of the batch writes the row
+    // by its key or its id. Where the row is reserved elsewhere that holds even past a loosened due check, since the
+    // locked read takes only new or retried rows, so there the list is what can go red.
     postgresIt.each([
         {
             refusal: 'not-ready' as const,
@@ -302,7 +303,7 @@ describe('Postgres statements of an ordered completion', () => {
             reads: toSuccessorLookup,
             stored: { status: EntityStatus.RESERVED, attempts: 1 }
         }
-    ])('reads the successor and writes nothing for it when the hand-on refuses it: $refusal', async ({ refusal, reads, stored }) => {
+    ])('costs a refused hand-on its reads of the successor and nothing more: $refusal', async ({ refusal, reads, stored }) => {
         const namespace = `${RUN_ID}-refused-${refusal}`;
         const log = createStatementLog();
         const hold = createDispatchHold(1);
@@ -537,10 +538,16 @@ function readWritesOfRow(
     );
 }
 
-/** Settles once a drain of `fixture` names `msg`; it never rejects, so a race may leave it behind. */
+/**
+ * Settles once a drain of `fixture` names `msg`; after 3 s it fails naming what was not reached. A race that settled on
+ * the hold first has already taken its answer, so this wait's later outcome is the race's to ignore.
+ */
 async function waitForDrainNaming(fixture: InboundTestRuntime, msg: ALMessage): Promise<void> {
-    await vi.waitFor(() => expect(readDrainsNaming(fixture, msg)).toHaveLength(1), { timeout: 5_000 })
-        .catch(async () => await new Promise<void>(() => {}));
+    await vi.waitFor(() =>
+        expect(
+            readDrainsNaming(fixture, msg),
+            `neither the hand-on's reservation nor a drain naming ${msg.id.msgId} was reached`
+        ).toHaveLength(1), { timeout: 3_000 });
 }
 
 interface NamedStatementShape extends RecordedPostgresStatementShape {

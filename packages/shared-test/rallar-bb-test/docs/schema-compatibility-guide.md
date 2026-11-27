@@ -1323,8 +1323,8 @@ batches ran right after their predecessor (D190).
 
 New shape:
 Each measured inbound direction names promotedDeliveries, the same sum, which now counts every delivery its batches
-ran by hand-on, a buffered release or an in-order delivery, because the same track's previous delivery completed
-earlier in that batch (D190, D785). effect-drain.promoted keeps its name and type.
+ran by hand-on, a buffered release or an in-order delivery, because a delivery of the same track completed earlier
+in that batch and the track's next slot named it (D190, D785). effect-drain.promoted keeps its name and type.
 
 Migration:
 None for recipes. A reader of an observation artifact written before this change finds the old name,
