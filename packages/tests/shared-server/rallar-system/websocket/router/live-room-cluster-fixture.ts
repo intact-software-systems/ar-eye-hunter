@@ -13,10 +13,13 @@ import { isALControlTypeId } from '@shared/al-contracts/al-control-type-ids.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend, type ALAdmissionMemoryState } from '@shared/alm/al-admission-backend.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores, createVolatileALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import type { ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALVolatileInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
@@ -37,12 +40,16 @@ import {
 
 export type LiveRoomInstanceName = 'a' | 'b';
 
-/** One WS server of the cluster: the real service with the real router installed on it, and its own stores. */
-export interface LiveRoomInstance extends ClusterInstance {
-    readonly name: LiveRoomInstanceName;
-    readonly stores: ReceiptInstanceStores;
+/** One instance's own store objects over the state the cluster shares, memory or PostgreSQL. */
+export interface LiveRoomInstanceStores extends ReceiptInstanceStores {
+    readonly outboundStores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
     /** The instance's own memory pair; undefined in a cluster, where every room message takes the shared store. */
     readonly volatileStores: ALVolatileInboundRuntimeStores | undefined;
+}
+
+/** One WS server of the cluster: the real service with the real router installed on it, and its own stores. */
+export interface LiveRoomInstance extends ClusterInstance {
+    readonly stores: LiveRoomInstanceStores;
     /** The msgIds the room topic's handler was handed on this instance, in the order it was handed them. */
     readonly handledMsgIds: readonly string[];
 }
@@ -65,6 +72,13 @@ export interface LiveRoomClusterFixture {
     readonly instances: Readonly<Record<LiveRoomInstanceName, LiveRoomInstance>>;
 }
 
+/** What the repair of a missed copy will read of a send: its envelope, and the audience it was admitted to by both reads. */
+export interface LiveRoomStoredCopy {
+    readonly envelope: ALMessage | undefined;
+    readonly sourceAudience: readonly string[] | undefined;
+    readonly ingressAudience: readonly string[] | undefined;
+}
+
 export interface CreateLiveRoomClusterFixtureInput {
     /** The room's sessions: the authorizer admits a room message to exactly these, whether a socket is open or not. */
     readonly roomSessionIds: readonly string[];
@@ -83,14 +97,22 @@ const NOTICE_CHANNEL = 'live-room-cluster';
 const BRIDGE_CHANNEL = 'live-room-cluster-outbox';
 const ENGINE_ROUNDS = 6;
 
-interface CreateLiveRoomInstanceInput {
-    readonly name: LiveRoomInstanceName;
-    readonly clock: ReceiptClock;
-    readonly state: ReceiptClusterState;
-    readonly outbound: ALAdmissionMemoryState;
+export interface CreateLiveRoomInstanceInput {
+    /** The instance's publisher id on the notice bus and the outbox bridge. */
+    readonly publisherId: string;
+    readonly nowMs: () => number;
+    readonly stores: LiveRoomInstanceStores;
     readonly noticeTransport: LiveWsNoticeTransport;
     readonly bridge: QueueBoxPubSubBridge;
-    readonly cluster: CreateLiveRoomClusterFixtureInput;
+    /** The room's sessions: the authorizer admits a room message to exactly these. */
+    readonly roomSessionIds: readonly string[];
+}
+
+interface MemoryInstanceStoresInput {
+    readonly state: ReceiptClusterState;
+    readonly outbound: ALAdmissionMemoryState;
+    readonly nowMs: () => number;
+    readonly volatileInbound: boolean;
 }
 
 interface LiveNoticeBusState {
@@ -103,11 +125,22 @@ export async function createLiveRoomClusterFixture(input: CreateLiveRoomClusterF
     const clock = installClock();
     const state = createReceiptClusterState(() => clock.nowMs);
     const outbound = createInMemoryALAdmissionState(new InMemoryQueueBox(new Map(), () => Temporal.Instant.fromEpochMilliseconds(clock.nowMs)));
+    const nowMs = () => clock.nowMs;
     const notices = createLiveNoticeBus();
-    const bridge = createBridgeBus();
-    const shared = { clock, state, outbound, bridge, cluster: input };
-    const a = await createLiveRoomInstance({ ...shared, name: 'a', noticeTransport: notices.toTransport('a') });
-    const b = await createLiveRoomInstance({ ...shared, name: 'b', noticeTransport: notices.toTransport('b') });
+    const shared = { nowMs, bridge: createBridgeBus(), roomSessionIds: input.roomSessionIds };
+    const storesInput = { state, outbound, nowMs, volatileInbound: input.volatileInbound };
+    const a = await createLiveRoomInstance({
+        ...shared,
+        publisherId: 'a',
+        stores: toMemoryInstanceStores(storesInput),
+        noticeTransport: notices.toTransport('a')
+    });
+    const b = await createLiveRoomInstance({
+        ...shared,
+        publisherId: 'b',
+        stores: toMemoryInstanceStores(storesInput),
+        noticeTransport: notices.toTransport('b')
+    });
     return { clock, state, bus: notices.bus, instances: { a, b } };
 }
 
@@ -156,13 +189,28 @@ export async function readDeliveryWorkStatuses(fixture: LiveRoomClusterFixture):
     return entries.map((entry) => `${entry?.status}`);
 }
 
-async function createLiveRoomInstance(input: CreateLiveRoomInstanceInput): Promise<LiveRoomInstance> {
-    const nowMs = () => input.clock.nowMs;
+/** Each send as `store` reads it at `readAtMs`, through the two reads the repair will use. */
+export async function readLiveRoomStoredCopies(
+    store: Pick<ALInboundAdmissionStore, 'readDeliverySurface' | 'readIngressAudience'>,
+    sends: readonly ALMessage[],
+    readAtMs: number
+): Promise<readonly LiveRoomStoredCopy[]> {
+    return await Promise.all(sends.map(async ({ id }): Promise<LiveRoomStoredCopy> => {
+        const surface = await store.readDeliverySurface({ senderId: id.senderId, msgId: id.msgId }, readAtMs);
+        return {
+            envelope: surface?.msg,
+            sourceAudience: surface?.source.kind === 'ws-client' ? surface.source.groupRecipientPeerIds : undefined,
+            ingressAudience: await store.readIngressAudience(id.msgId, id.senderId)
+        };
+    }));
+}
+
+/** One instance; its engine is not started. The test's end disposes its service and stops its engine. */
+export async function createLiveRoomInstance(input: CreateLiveRoomInstanceInput): Promise<LiveRoomInstance> {
+    const { nowMs, stores } = input;
     const server = new JsonWebSocketServer();
     const engine = new InboxOutboxEngine();
-    const stores = createReceiptInstanceStores(input.state, nowMs);
-    const volatileStores = input.cluster.volatileInbound ? createVolatileALInboundRuntimeStores({ nowMs }, undefined) : undefined;
-    const service = createLiveRoomService({ input, server, engine, stores, volatileStores });
+    const service = createLiveRoomService({ input, server, engine });
     onTestFinished(async () => {
         await Promise.allSettled([service.dispose(), engine.stop()]);
     });
@@ -170,8 +218,8 @@ async function createLiveRoomInstance(input: CreateLiveRoomInstanceInput): Promi
     const router = new RallarServerWsRouter(service, {
         grantedTopics: new WsGrantedTopicSet(),
         nowEpochMs: nowMs,
-        livePublication: { transport: input.noticeTransport, channel: NOTICE_CHANNEL, publisherId: input.name },
-        authorizeRoomMessage: toFixedRoomAuthorizer(input.cluster.roomSessionIds)
+        livePublication: { transport: input.noticeTransport, channel: NOTICE_CHANNEL, publisherId: input.publisherId },
+        authorizeRoomMessage: toFixedRoomAuthorizer(input.roomSessionIds)
     }).install();
     router.on({ topicId: ROOM_TOPIC_ID }, (message) => {
         handledMsgIds.push(message.raw.id.msgId);
@@ -179,36 +227,42 @@ async function createLiveRoomInstance(input: CreateLiveRoomInstanceInput): Promi
     await installLiveWsNoticeSubscriber({
         transport: input.noticeTransport,
         channel: NOTICE_CHANNEL,
-        publisherId: input.name,
+        publisherId: input.publisherId,
         nowMs,
         inboundStores: [stores.inboundStores.admissionStore],
         resolveBroadRecipientSessionIds: () => readOpenSessionIds(server),
         filterEligibleRecipientSessionIds: (sessionIds) => sessionIds.filter((sessionId) => server.connections.get(sessionId)?.isOpen === true),
         sendToTargetsWithResult: (delivery) => sendReceivedLiveWsNotice(service, delivery)
     });
-    await installQueueBoxPubSubBridge({ wsQBoxServerService: service, bridge: input.bridge, channel: BRIDGE_CHANNEL, publisherId: input.name });
-    return { name: input.name, service, engine, server, stores, volatileStores, handledMsgIds };
+    await installQueueBoxPubSubBridge({ wsQBoxServerService: service, bridge: input.bridge, channel: BRIDGE_CHANNEL, publisherId: input.publisherId });
+    return { service, engine, server, stores, handledMsgIds };
+}
+
+function toMemoryInstanceStores({ state, outbound, nowMs, volatileInbound }: MemoryInstanceStoresInput): LiveRoomInstanceStores {
+    return {
+        ...createReceiptInstanceStores(state, nowMs),
+        outboundStores: createDefaultInMemoryALOutboundRuntimeStores({
+            nowMs,
+            decodePrepared: decodeWsQueueBoxServerPreparedMessage,
+            outboundBackend: new InMemoryAdmissionBackend(outbound, nowMs)
+        }),
+        volatileStores: volatileInbound ? createVolatileALInboundRuntimeStores({ nowMs }, undefined) : undefined
+    };
 }
 
 interface CreateLiveRoomServiceInput {
     readonly input: CreateLiveRoomInstanceInput;
     readonly server: JsonWebSocketServer;
     readonly engine: InboxOutboxEngine;
-    readonly stores: ReceiptInstanceStores;
-    readonly volatileStores: ALVolatileInboundRuntimeStores | undefined;
 }
 
 /** Every instance of one deployment shares the server's name, as api-v1's instances share `wsRuntimeName`. */
-function createLiveRoomService({ input, server, engine, stores, volatileStores }: CreateLiveRoomServiceInput): WsQueueBoxServerService {
-    const nowMs = () => input.clock.nowMs;
-    const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({
-        nowMs,
-        decodePrepared: decodeWsQueueBoxServerPreparedMessage,
-        outboundBackend: new InMemoryAdmissionBackend(input.outbound, nowMs)
-    });
+function createLiveRoomService({ input, server, engine }: CreateLiveRoomServiceInput): WsQueueBoxServerService {
+    const { inboundStores, receiptRecordStores, outboundStores, volatileStores } = input.stores;
     const openRecipients = () => readOpenSessionIds(server).map((sessionId) => ({ peerId: sessionId, connectionId: sessionId }));
     return createDefaultWsQueueBoxServerService({
-        ...stores,
+        inboundStores,
+        receiptRecordStores,
         inboundVolatileStores: volatileStores,
         outbox: outboundStores.workQueue,
         outboundStores,
@@ -224,7 +278,7 @@ function createLiveRoomService({ input, server, engine, stores, volatileStores }
             requiresFrozenAudience: () => false,
             resolvePeerIdForConnection: (connectionId) => connectionId,
             resolvePeerRecipients: (peerId) => openRecipients().filter((recipient) => recipient.peerId === peerId),
-            resolveBroadcastRecipients: () => openRecipients().filter((recipient) => input.cluster.roomSessionIds.includes(recipient.peerId))
+            resolveBroadcastRecipients: () => openRecipients().filter((recipient) => input.roomSessionIds.includes(recipient.peerId))
         }
     });
 }
