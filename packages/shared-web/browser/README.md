@@ -527,7 +527,8 @@ Message ownership is concentrated under [`messages/`](./messages/):
     `orderEntryWindowMs` on a channel that declares no order. `order` on `channel(...)`, whatever it names
     (`validateRoomlessChannelOrder` in
     [`browser-typed-message-channels.ts`](./messages/browser-typed-message-channels.ts)): only `room(...)` is
-    edge-ordered, and a `room(...)` definition that names no room is taken, since each of its sends names its room.
+    edge-ordered, and a `room(...)` definition that names no room is taken: each of its sends goes to the room it
+    names, or else to the page's default or current room.
     At the send, before it takes a position
     ([`validate-edge-order-send.ts`](./messages/edge-order/validate-edge-order-send.ts)): `ack: 'group-leader'`
     and a `qos.ack` other than `receiver` or `none`, because a hop's or a leader's receipt does not say the

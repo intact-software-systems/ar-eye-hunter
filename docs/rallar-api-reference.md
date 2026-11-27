@@ -786,11 +786,13 @@ number. When the page gives an event up, the match asks the director for a
 sync with `{ reason: 'event-order-gap' }`, and a director whose match reads
 snapshots (`readSnapshot`) answers with one. It asks nothing when the gap's
 reason is `ended-at-sender`, as for an event sent without a receipt that a
-later event overtook. A later snapshot from the director repairs such an event
-when the game sends snapshots: the relay's periodic snapshot, which runs while
+later event overtook. The event itself is not delivered again: a later
+snapshot from the director brings the state it led to, when the game sends
+snapshots. It does so through the relay's periodic snapshot, which runs while
 the match sets `readSnapshot` and leaves `autoSnapshotIntervalMs` on (2 s when
-absent), or the game's own `match.publishSnapshot(...)` calls. A game that
-sends no snapshots does not get the event back.
+absent), or through Rallar Game's `publishSnapshot(...)`
+(`match.game.publishSnapshot(...)` here). A game that sends no snapshots gets
+neither the event nor its state.
 
 `finalizeResult(summary)` resolves the match `GroupRef`, reads the live
 `rallar.director.status(...)`, and returns a `room-trusted` envelope only when
@@ -2123,7 +2125,7 @@ with one stream per `resourceId`. A latest-wins send with a `supersedenceKey`
 tells receivers not to wait for the earlier sends of its key that it replaces.
 
 **An acknowledged message can still be skipped.** This is a narrow case. Once
-every recipient has acknowledged a send, from its next send on the sender says
+every recipient has acknowledged a send, from its next send on, the sender says
 for 500 ms more that it can still arrive, then calls it over. A copy whose
 delivery is held up past that, after every recipient acknowledged it, is
 skipped and dropped as late when it comes.
@@ -2141,8 +2143,9 @@ no open send.
 **Refused `unsupported`.** At the definition, which throws the issue:
 
 - `order` on `rallar.messages.channel(...)`: only a room channel is
-  edge-ordered. A `room(...)` definition that names no room is taken, since
-  each of its sends names its room.
+  edge-ordered. A `room(...)` definition that names no room is taken: each of
+  its sends goes to the room it names, or else to the page's default or current
+  room.
 - A `durability` other than `volatile`: the order lives in memory only.
 - `onOrderGap`, `orderGapWaitMs` or `orderEntryWindowMs` on a channel that
   declares no order.
@@ -2155,8 +2158,8 @@ rejects with the issue:
 - `ack: 'group-leader'`, or a `qos.ack` other than `receiver` or `none`: a
   hop's or a leader's receipt does not say the recipients have the message.
 - `scope: 'world'`, which names no room.
-- `orderingKey` or `seq`, which ask for hop order, the server-backed order of
-  the next section.
+- `orderingKey` or `seq`, which ask for hop order, the per-track order of the
+  next section.
 - A `qos.supersedence` that is not latest-wins with a `supersedenceKey` and no
   `replacesMsgId`.
 - A `qos.durability` other than `volatile`.
