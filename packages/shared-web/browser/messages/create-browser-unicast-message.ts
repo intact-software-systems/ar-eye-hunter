@@ -14,6 +14,7 @@ import {
     type ALMessage,
     type newALUnicastMessage
 } from '@shared/al-contracts/al-contract.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     validateRallarRouteId,
     type RallarValidationIssue
@@ -102,6 +103,20 @@ export function validateBrowserPeerServer(
         code: 'unsupported',
         message: 'A peer-addressed send needs a server that names its peer id; this server names none.'
     }];
+}
+
+/** The WS server refuses a room send routed in another room (D82); the browser refuses it first, on every carrier. */
+export function validateRoomContext(
+    contextId: string | undefined,
+    roomRef: GroupRef | undefined
+): readonly RallarValidationIssue[] {
+    return roomRef === undefined || contextId === undefined || contextId === roomRef.groupId
+        ? []
+        : [{
+            path: '$.contextId',
+            code: 'context-room-mismatch',
+            message: 'A room send routes in the room it names: contextId must equal the room id.'
+        }];
 }
 
 function validatePeerId(peerId: string): readonly RallarValidationIssue[] {

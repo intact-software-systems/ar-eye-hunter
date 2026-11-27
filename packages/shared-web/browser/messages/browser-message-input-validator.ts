@@ -53,20 +53,6 @@ export function isExclusiveSendInput(send: Pick<RallarMessageSendBase<never>, 'o
     return (send.qos?.ownership?.algo ?? send.ownership) === 'exclusive';
 }
 
-/** The WS server refuses a room send routed in another room (D82); the browser refuses it first, on every carrier. */
-export function validateRoomContext(
-    contextId: string | undefined,
-    roomRef: GroupRef | undefined
-): readonly RallarValidationIssue[] {
-    return roomRef === undefined || contextId === undefined || contextId === roomRef.groupId
-        ? []
-        : [{
-            path: '$.contextId',
-            code: 'context-room-mismatch',
-            message: 'A room send routes in the room it names: contextId must equal the room id.'
-        }];
-}
-
 export namespace BrowserMessageInputValidator {
     export interface Input {
         readonly readMaxPayloadBytes: () => number;

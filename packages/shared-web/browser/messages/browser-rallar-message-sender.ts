@@ -2,10 +2,9 @@ import {
     toBrowserRtcCaptureIntent,
     type BrowserRtcCaptureIntent
 } from '@shared-web/browser/connection/browser-rtc-capture-intent.ts';
-import {
-    validateRoomContext,
-    type BrowserMessageInputValidator,
-    type ResolvedWsMessageInput
+import type {
+    BrowserMessageInputValidator,
+    ResolvedWsMessageInput
 } from '@shared-web/browser/messages/browser-message-input-validator.ts';
 import {
     endEdgeOrderSendOnFailure,
@@ -64,7 +63,8 @@ import type { BrowserSessionDeliveries } from './browser-session-deliveries.ts';
 import {
     createBrowserUnicastMessage,
     validateBrowserPeerInput,
-    validateBrowserPeerServer
+    validateBrowserPeerServer,
+    validateRoomContext
 } from './create-browser-unicast-message.ts';
 import { toBrowserPublicationDelivery } from './publication/to-browser-publication-delivery.ts';
 import { toBrowserReplySendInput } from './reply/to-browser-reply-send-input.ts';
