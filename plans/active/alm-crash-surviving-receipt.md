@@ -5,7 +5,7 @@ restarts. The count of who confirmed a receipted room send moves out of one inst
 durable record every instance reads and writes.
 
 Status: approved by the maintainer on 2026-11-22; slices 1 to 7 built. Section 13, a completed delivery hands its
-track's next message on, is a design that waits for the maintainer's approval (ruling 16); nothing of it is built.
+track's next message on, is approved (ruling 17) and is to be built; nothing of it is built yet.
 
 ## Why
 
@@ -34,7 +34,7 @@ receipt settles within 45 s. On `main` that run cannot pass.
 
 Rulings 1 to 7, 9 and 10 were each asked alone. Ruling 8 the maintainer wrote unasked, in the same message as
 ruling 7. Rulings 11 to 13 were each asked alone and relayed word for word by another session of the maintainer's;
-rulings 14 to 16 the maintainer gave in the session that builds this work.
+rulings 14 to 17 the maintainer gave in the session that builds this work.
 
 1. What the receipt must read after the admitting server dies: **"Exact receipt"**, over a truthful
    terminal receipt that forgets the ACKs counted before the crash.
@@ -82,6 +82,9 @@ rulings 14 to 16 the maintainer gave in the session that builds this work.
 16. Whether the repair of section 13 is built in #885 (2026-11-27; asked with the measured figures of "Why ordered
     tracks fall behind together"; the other options put were to build it at once, or to hand the pull request over
     without it): **"Show me the design first"**.
+17. Whether the design of section 13 is built in #885 (2026-11-27; asked "Do you approve building it?"; the other
+    options were to hand the pull request over without it, or to change the design): **"Approve, build it
+    (Recommended)"**.
 
 ## What the measurement found
 
@@ -777,7 +780,7 @@ into their phases, with no change of behaviour, before they change.
 - _Claiming a track's next in-order dispatch in the batch that completed its predecessor_, as the batch already
   promotes the next buffered release (D190). Not prototyped when this section was written. It has been since, after
   a probe showed what it answers ("Why ordered tracks fall behind together"), and section 13 is its design, which
-  waits for approval.
+  is approved (ruling 17).
 
 **The limit that stays.** Measured on the built code ("Ordered room messages, with the fresh attempts built"), one
 ordered track keeps up at 2 messages a second through the WS server at +5 ms (40 of 40 in every run, the last
@@ -854,9 +857,9 @@ over memory for its volatile pair, and for an RTC receiver.
 
 ### 13. A completed delivery hands its track's next message on
 
-**A design that waits for the maintainer's approval (ruling 16). Nothing of it is built.** It rests on a prototype
-that was applied as a patch outside the tree and measured ("Why ordered tracks fall behind together"). The prototype
-is not the design: where they differ is said below.
+**Approved by the maintainer on 2026-11-27 (rulings 16 and 17), to be built. Nothing of it is built yet.** It rests
+on a prototype that was applied as a patch outside the tree and measured ("Why ordered tracks fall behind
+together"). The prototype is not the design: where they differ is said below.
 
 Section 12 keeps an ordered track on its fast path as long as one message's dispatch and completion fit inside the gap
 to the next send. When they do not, the next message's delivery is found waiting for its predecessor and is set
@@ -1250,9 +1253,9 @@ was run in a browser.
    ruling 12).
 7. Built. An ordered arrival that loses its write looks again at once, and so do a replay and a release (section 12,
    rulings 11, 14 and 15): the rule, the tests it moved, the measurement on the built code and decision row D784.
-8. A completed delivery hands its track's next message on (section 13, ruling 16). Designed; not built unless the
-   maintainer approves section 13. Then: the rule, the tests it moves, the measurement on the built code, the
-   documents and its decision row, the gates on the final head, and this file's deletion.
+8. A completed delivery hands its track's next message on (section 13, rulings 16 and 17). Approved, to be built:
+   the rule, the tests it moves, the measurement on the built code, the documents and its decision row, the gates on
+   the final head, and this file's deletion.
 
 ## Calls made here, each the maintainer's to overrule
 
@@ -1314,7 +1317,7 @@ was run in a browser.
   path.
 - `attempt` and `release` are split into their phases before they change, with no change of behaviour, because both
   exceed the function length the standard allows.
-- Section 13's, a design that is not built: a buffered release and an in-order delivery are handed on by one rule
+- Section 13's, approved and not yet built: a buffered release and an in-order delivery are handed on by one rule
   and one lookup, and the release's own lookup by its computed key is deleted, at the cost of one more read per
   promoted release.
 - Section 13's: the position a completion leaves travels as a return value, through one type parameter of the shared
@@ -1869,7 +1872,7 @@ brings the successor's row forward through `expedite()` instead.
   twice on one track at 10 a second (with the fresh attempts and without them) and when reading due retried rows with
   the new ones, nor why that lever delivered 2 of 100 on one track. What separates the arrival's attempts alone from
   all of them over 45 s rests on one run each. No cell ran in a browser, on IndexedDB or over RTC.
-- Of section 13, which is a design and not built: its figures are a prototype's, three loaded runs a column, and the
+- Of section 13, which is approved and not yet built: its figures are a prototype's, three loaded runs a column, and the
   built code beside the hand-on completed 200, 193 and 200 where it completed 109 to 155 in six other loaded runs.
   Not run: an over-driven track beside other traffic, a lane whose pages are full, more than five publishers, a
   database slower than +5 ms on a quiet host, the PostgreSQL integration lane, the black-box recipes and the ALM lane
