@@ -149,10 +149,10 @@ describe('director output', () => {
 
         expect(await transport.sendOutputEnvelope({ ...envelopeInput, channel: room.channel, ack: undefined }))
             .toEqual({ status: 'sent', receipt: output.handle });
-        expect(room.send).toHaveBeenCalledWith(
+        expect(room.sends).toEqual([[
             expect.objectContaining({ protocol: 'rallar.director.relay.v1', typeId: 'output', payload: { revision: 1 } }),
             { roomRef: current.roomRef, strategy: 'rtc-with-ws-fallback', reliability: 'best-effort', ack: 'none', ttlMs: 5_000 }
-        );
+        ]]);
     });
 
     it('sends a receipted output as one at-least-once room message that asks every recipient its receipt', async () => {
@@ -162,7 +162,7 @@ describe('director output', () => {
 
         expect(await transport.sendOutputEnvelope({ ...envelopeInput, channel: room.channel, ack: 'all-logical-recipients' }))
             .toEqual({ status: 'sent', receipt: receipt.handle });
-        expect(room.send).toHaveBeenCalledWith(
+        expect(room.sends).toEqual([[
             expect.objectContaining({ protocol: 'rallar.director.relay.v1', typeId: 'output', payload: { revision: 1 } }),
             {
                 roomRef: current.roomRef,
@@ -171,7 +171,7 @@ describe('director output', () => {
                 ack: 'all-logical-recipients',
                 ttlMs: 30_000
             }
-        );
+        ]]);
     });
 
     it.each([undefined, 'all-logical-recipients'] as const)('reports an output refused at admission as failed with its reason (ack %s)', async (ack) => {
@@ -181,7 +181,7 @@ describe('director output', () => {
 
         expect(await transport.sendOutputEnvelope({ ...envelopeInput, channel: room.channel, ack }))
             .toEqual({ status: 'failed', receipt: refused.handle, reason: 'Room denied' });
-        expect(room.send).toHaveBeenCalledTimes(1);
+        expect(room.sends).toEqual([[expect.objectContaining({ typeId: 'output' }), expect.objectContaining({ roomRef: current.roomRef })]]);
     });
 
     it('refuses an output from a session that is not the director without sending it', async () => {
@@ -190,7 +190,7 @@ describe('director output', () => {
 
         expect(await transport.sendOutputEnvelope({ ...envelopeInput, current: clientStatus, channel: room.channel, ack: undefined }))
             .toMatchObject({ status: 'not-director' });
-        expect(room.send).not.toHaveBeenCalled();
+        expect(room.sends).toEqual([]);
     });
 });
 
@@ -579,14 +579,22 @@ interface OutputPayload {
     readonly revision: number;
 }
 
+type RoomChannelSend = Parameters<RallarTypedMessageChannel<RallarDirectorRelayEnvelope<OutputPayload>>['send']>;
+
 interface RoomChannelDouble {
     readonly open: Mock<(definition: RallarRoomMessageChannelDefinition) => RallarTypedMessageChannel<RallarDirectorRelayEnvelope<OutputPayload>>>;
     readonly send: Mock<RallarTypedMessageChannel<RallarDirectorRelayEnvelope<OutputPayload>>['send']>;
     readonly channel: RallarTypedMessageChannel<RallarDirectorRelayEnvelope<OutputPayload>>;
+    /** Every send's envelope and options, in order. */
+    readonly sends: RoomChannelSend[];
 }
 
 function createRoomChannel(send: RallarTypedMessageChannel<RallarDirectorRelayEnvelope<OutputPayload>>['send']): RoomChannelDouble {
-    const sendDouble = vi.fn<RallarTypedMessageChannel<RallarDirectorRelayEnvelope<OutputPayload>>['send']>(send);
+    const sends: RoomChannelSend[] = [];
+    const sendDouble = vi.fn<RallarTypedMessageChannel<RallarDirectorRelayEnvelope<OutputPayload>>['send']>((...args) => {
+        sends.push(args);
+        return send(...args);
+    });
     const channel: RallarTypedMessageChannel<RallarDirectorRelayEnvelope<OutputPayload>> = {
         send: sendDouble,
         sendRtc: rejectCarrierSend,
@@ -598,7 +606,7 @@ function createRoomChannel(send: RallarTypedMessageChannel<RallarDirectorRelayEn
         }
     };
     const open = vi.fn((_definition: RallarRoomMessageChannelDefinition) => channel);
-    return { open, send: sendDouble, channel };
+    return { open, send: sendDouble, channel, sends };
 }
 
 function toRoomOperation(room: RoomChannelDouble): RallarMessagesOperations['room'] {

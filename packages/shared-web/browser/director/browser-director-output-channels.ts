@@ -65,13 +65,18 @@ export class BrowserDirectorOutputChannels {
         });
     }
 
+    /** A fan-out captures its audience first, so a relay another relay's callback stopped is checked here too. */
     public onGap(listener: BrowserDirectorOutputChannels.GapListener): RallarUnsubscribe {
+        let subscribed = true;
         const subscription = this.gaps.subscribe(async (gap) => {
-            if (isRelayGap(listener, gap)) {
+            if (subscribed && isRelayGap(listener, gap)) {
                 await listener.onOutputGap?.(gap);
             }
         });
-        return () => subscription.unsubscribe();
+        return () => {
+            subscribed = false;
+            subscription.unsubscribe();
+        };
     }
 }
 

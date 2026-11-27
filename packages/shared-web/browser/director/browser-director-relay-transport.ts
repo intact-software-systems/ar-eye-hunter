@@ -43,31 +43,27 @@ export namespace BrowserDirectorRelayTransport {
         isWebSocketDown(): boolean;
     }
 
-    export interface SendCommandInput<T> {
+    /** What every director send stamps its envelope from: a command, an output, a heartbeat or a snapshot. */
+    export interface EnvelopeInput<T> {
         readonly current: RallarDirectorStatus;
         readonly topicId: string;
         readonly typeId: string;
         readonly payload: T;
+    }
+
+    export interface SendCommandInput<T> extends EnvelopeInput<T> {
         /** The resource an intent claims; undefined for a shared intent and every sync request. */
         readonly claim: RallarDirectorRelayClaim | undefined;
     }
 
     /** A heartbeat or a snapshot: best effort over one carrier, then the other. */
-    export interface SendBestEffortRoomEnvelopeInput<T> {
-        readonly current: RallarDirectorStatus;
-        readonly topicId: string;
-        readonly typeId: string;
-        readonly payload: T;
+    export interface SendBestEffortRoomEnvelopeInput<T> extends EnvelopeInput<T> {
         readonly bestEffortFirst?: DirectorCarrier;
     }
 
-    export interface SendOutputEnvelopeInput<T> {
+    export interface SendOutputEnvelopeInput<T> extends EnvelopeInput<T> {
         /** The relay's edge-ordered output channel. */
         readonly channel: RallarTypedMessageChannel<RallarDirectorRelayEnvelope<T>>;
-        readonly current: RallarDirectorStatus;
-        readonly topicId: string;
-        readonly typeId: string;
-        readonly payload: T;
         /** Undefined sends best effort; a stated ack asks the frozen room audience for a logical receipt. */
         readonly ack: RallarDirectorOutputOptions['ack'] | undefined;
     }
@@ -269,15 +265,7 @@ function toDirectorCommandFailureStatus(
     }
 }
 
-/** What every director send stamps its envelope from: a command, an output, a heartbeat or a snapshot. */
-interface DirectorEnvelopeInput<T> {
-    readonly current: RallarDirectorStatus;
-    readonly topicId: string;
-    readonly typeId: string;
-    readonly payload: T;
-}
-
-function createEnvelope<T>(input: DirectorEnvelopeInput<T>): RallarDirectorRelayEnvelope<T> {
+function createEnvelope<T>(input: BrowserDirectorRelayTransport.EnvelopeInput<T>): RallarDirectorRelayEnvelope<T> {
     if (!input.current.appointment || !input.current.roomId) {
         throw new Error('Cannot create director envelope without appointment.');
     }

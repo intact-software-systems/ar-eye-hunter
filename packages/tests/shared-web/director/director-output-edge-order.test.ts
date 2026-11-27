@@ -41,7 +41,10 @@ interface RelayPage extends RelayRecord {
     readonly page: EdgeOrderPage;
 }
 
-function openRelay(runtime: BrowserDirectorRelayRuntime, snapshot: GroupSnapshot): RelayRecord {
+/** What a relay's application does on a gap once it recorded it: nothing, by default. */
+type GapReaction = (gap: RallarMessageOrderGap) => void;
+
+function openRelay(runtime: BrowserDirectorRelayRuntime, snapshot: GroupSnapshot, onGap: GapReaction = () => {}): RelayRecord {
     const seen: number[] = [];
     const gaps: RallarMessageOrderGap[] = [];
     const relay = runtime.create<never, Output>({
@@ -55,6 +58,7 @@ function openRelay(runtime: BrowserDirectorRelayRuntime, snapshot: GroupSnapshot
         },
         onOutputGap: (gap) => {
             gaps.push(gap);
+            onGap(gap);
         }
     });
     return { relay, seen, gaps };
@@ -125,6 +129,16 @@ async function sendOutputs(director: RelayPage, outputs: ReadonlyArray<{ n: numb
         expect(result.status).toBe('sent');
     }
     return director.page.sent.rtc.filter((message) => message.payload.typeId === OUTPUT_TYPE_ID);
+}
+
+/** Two receipted outputs, then an unreceipted one: a gap at 2 holds 3 until the wait ends. */
+const GAP_OUTPUTS = [{ n: 1, receipted: true }, { n: 2, receipted: true }, { n: 3, receipted: false }];
+
+/** The director's outputs 1 and 3 reach the client page; 2 never does. */
+async function deliverAroundAGap(director: RelayPage, client: EdgeOrderPage): Promise<void> {
+    const [first, , third] = await sendOutputs(director, GAP_OUTPUTS);
+    await client.deliver('ws', first);
+    await client.deliver('rtc', third);
 }
 
 function toGapSummaries(gaps: readonly RallarMessageOrderGap[]) {
@@ -204,13 +218,9 @@ describe('the director relay\'s outputs on an edge-ordered channel', () => {
 });
 
 describe('the director relay\'s output gaps', () => {
-    const outputs = [{ n: 1, receipted: true }, { n: 2, receipted: true }, { n: 3, receipted: false }];
-
     it('hands a later output over after 3 s without the missing one and reports the gap once', async () => {
         const room = createDirectorRoom();
-        const [first, , third] = await sendOutputs(room.director, outputs);
-        await room.client.page.deliver('ws', first);
-        await room.client.page.deliver('rtc', third);
+        await deliverAroundAGap(room.director, room.client.page);
 
         await vi.advanceTimersByTimeAsync(2_999);
         expect(room.client.seen).toEqual([1]);
@@ -243,9 +253,7 @@ describe('the director relay\'s output gaps', () => {
 
     it('passes no gap on once the relay is stopped', async () => {
         const room = createDirectorRoom();
-        const [first, , third] = await sendOutputs(room.director, outputs);
-        await room.client.page.deliver('ws', first);
-        await room.client.page.deliver('rtc', third);
+        await deliverAroundAGap(room.director, room.client.page);
 
         room.client.relay.stop();
         await vi.advanceTimersByTimeAsync(3_000);
@@ -256,15 +264,6 @@ describe('the director relay\'s output gaps', () => {
 });
 
 describe('the director relay\'s output gaps with two relays of one topic on a page', () => {
-    const outputs = [{ n: 1, receipted: true }, { n: 2, receipted: true }, { n: 3, receipted: false }];
-
-    /** The director's outputs 1 and 3 reach the client page; 2 never does. */
-    async function deliverAroundAGap(director: RelayPage, client: EdgeOrderPage): Promise<void> {
-        const [first, , third] = await sendOutputs(director, outputs);
-        await client.deliver('ws', first);
-        await client.deliver('rtc', third);
-    }
-
     it('passes each director\'s gap to the relay of that director\'s room only', async () => {
         const pages = createTwoRoomPage();
         await deliverAroundAGap(pages.firstDirector, pages.client);
@@ -282,6 +281,62 @@ describe('the director relay\'s output gaps with two relays of one topic on a pa
         const pages = createTwoRoomPage();
         pages.second.relay.stop();
         await deliverAroundAGap(pages.firstDirector, pages.client);
+
+        await vi.advanceTimersByTimeAsync(3_000);
+
+        expect(toGapSummaries(pages.first.gaps)).toEqual([[2, 2, 'channel-wait-cap']]);
+        expect(pages.second.gaps).toEqual([]);
+    });
+});
+
+describe('the director relay\'s output gaps with two relays of one room on a page', () => {
+    /** The client page's two relays of the director's room, the first created first. */
+    function openTwoClientRelays(onFirstGap: GapReaction) {
+        const snapshot = createRoomSnapshot('room-1', DIRECTOR_SESSION_ID);
+        const director = createRelayPage(DIRECTOR_SESSION_ID, snapshot);
+        const client = createDirectorRelayPage('client-session', [snapshot]);
+        const first = openRelay(client.runtime, snapshot, onFirstGap);
+        const second = openRelay(client.runtime, snapshot);
+        return { director, client: client.page, first, second };
+    }
+
+    it('passes the gap to each relay exactly once', async () => {
+        const pages = openTwoClientRelays(() => {});
+        await deliverAroundAGap(pages.director, pages.client);
+
+        await vi.advanceTimersByTimeAsync(3_000);
+
+        expect(toGapSummaries(pages.first.gaps)).toEqual([[2, 2, 'channel-wait-cap']]);
+        expect(toGapSummaries(pages.second.gaps)).toEqual([[2, 2, 'channel-wait-cap']]);
+    });
+
+    it('still passes the gap to one relay when the other relay\'s callback throws', async () => {
+        const logged: unknown[][] = [];
+        const consoleError = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+            logged.push(args);
+        });
+        const pages = openTwoClientRelays(() => {
+            throw new Error('The application failed on the gap.');
+        });
+        await deliverAroundAGap(pages.director, pages.client);
+
+        try {
+            await vi.advanceTimersByTimeAsync(3_000);
+
+            expect(toGapSummaries(pages.second.gaps)).toEqual([[2, 2, 'channel-wait-cap']]);
+            expect(pages.second.seen).toEqual([1, 3]);
+            expect(logged).toEqual([[expect.any(String), expect.objectContaining({ message: 'The application failed on the gap.' })]]);
+        }
+        finally {
+            consoleError.mockRestore();
+        }
+    });
+
+    it('passes the gap to no relay that another relay\'s callback stopped during the same gap', async () => {
+        let stopSecond = () => {};
+        const pages = openTwoClientRelays(() => stopSecond());
+        stopSecond = () => pages.second.relay.stop();
+        await deliverAroundAGap(pages.director, pages.client);
 
         await vi.advanceTimersByTimeAsync(3_000);
 
