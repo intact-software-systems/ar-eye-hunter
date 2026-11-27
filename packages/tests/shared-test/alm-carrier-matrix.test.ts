@@ -351,11 +351,6 @@ const UNPROVEN_CELLS = [
     ],
     [
         'repair-budget-exhausted',
-        'ws',
-        '`repair-exhausted` over this carrier, where the server is the one requester and renews its own gap'
-    ],
-    [
-        'repair-budget-exhausted',
         'rtc-with-ws-fallback',
         'one lifecycle across the hand-over to WS, then a held-gap cell over this carrier'
     ],
@@ -455,7 +450,7 @@ const EXPECTED_CELL_CARRIERS: readonly (readonly [AlmCarrierMatrixScenarioKey, r
     ['unicast-fallback', ['rtc-with-ws-fallback']],
     ['ordering-gap-repair', ['ws', 'rtc']],
     ['seeded-loss-unreceipted-stream', ['ws']],
-    ['repair-exhausted', ['rtc']],
+    ['repair-exhausted', ['ws', 'rtc']],
     ['granted-rtc-relay-only', ['rtc']],
     ['granted-rtc-revoked-publisher', ['rtc', 'rtc-with-ws-fallback']],
     ['granted-rtc-missing-proof', ['rtc']],

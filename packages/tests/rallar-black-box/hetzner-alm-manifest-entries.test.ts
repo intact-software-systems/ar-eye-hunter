@@ -251,6 +251,7 @@ describe('ALM conformance hosted lane families', () => {
             // A hosted run proves the paced send shape on three agents first (D481).
             ...ALM_CONFORMANCE_CARRIERS.map((carrier) => `alm-${carrier}-paced-isolation-lists`),
             // The exhausted repair's lane evidence is local and the hosted full read's; manifest 22 stays as recorded.
+            'alm-ws-repair-exhausted',
             'alm-rtc-repair-exhausted',
             'alm-rtc-unsigned-ack-refused',
             'alm-rtc-with-ws-fallback-unsigned-ack-refused',

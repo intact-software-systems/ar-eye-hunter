@@ -483,11 +483,7 @@ export const ALM_CARRIER_MATRIX = {
                         because:
                             'A WS sender settles `skipped`/`repair-exhausted` and ends the message at the server\'s request past its budget.'
                     },
-                    {
-                        kind: 'unproven',
-                        closedBy:
-                            '`repair-exhausted` over this carrier, where the server is the one requester and renews its own gap'
-                    }
+                    { kind: 'lane-cell', scenarioKey: 'repair-exhausted' }
                 ]
             },
             rtc: {

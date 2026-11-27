@@ -863,25 +863,29 @@ own to show). The cell has no `rtc-with-ws-fallback` variant: a hand-over moves
 one message of an ordering track to WS, whose relay never saw the track's other messages and gates the one it
 receives as its own gap, so the hand-over of an ordered message is a carried limit, not a cell.
 
-The `repair-exhausted` conformance scenario runs over `rtc` alone, on
-three agents: two receivers, each ordering the track itself. It is the gap repair whose message hold is never
+The `repair-exhausted` conformance scenario runs over `ws` and `rtc`, on
+three agents: a sender and two receivers. Over `rtc` each receiver orders the track itself and is a requester of its
+own; over `ws` the server orders the track and is the one requester. It is the gap repair whose message hold is never
 released. The sender opens the gap only once both receivers cued that they delivered seq 1 (D630): that cue is its
 ordering point, and it waits for no carrier acceptance of seq 1. Every send states `maxRepairs: 1`, a budget of one
-retransmit per receiver. Each receiver reports the gap once seq 3 arrives, and each first report spends that
-receiver's own one retransmit, still held. The sender sends seq 4 too, whose arrival reports the gap again at both
-receivers; that report repeats its requester's first request number and charges nothing (D573). The range stays
-missing, so each receiver renews it 1 to 1.5 s after it went missing; the first renewal, a request numbered 2, finds
-its receiver's budget spent, and the sender settles seq 2. The sender observes seq 2's handle `failed` within its
-10 s observation budget and asserts `failure.kind: 'skipped'` with `failure.reason: 'repair-exhausted'`. The
+retransmit per requester. Each requester reports the gap once seq 3 arrives, and each first report spends that
+requester's own one retransmit, still held. The sender sends seq 4 too, whose arrival reports the gap again at each
+requester; that report repeats its requester's first request number and charges nothing (D573). The range stays
+missing, so each requester renews it 1 to 1.5 s after it went missing; the first renewal, a request numbered 2, finds
+its requester's budget spent, and the sender settles seq 2. The sender observes seq 2's handle `failed` within its
+10 s observation budget and asserts `failure.kind: 'skipped'` with `failure.reason: 'repair-exhausted'`, read from the
+carrier matrix's cell of the carrier the cell runs over. The
 settlement ends the message: its last command, `no-repair-commit-after-failed-2`, an absent wait on
 `rallar.browser.alm.outbound_diagnostics`, reads no `commit-phases` event of seq 2 with `origin: 'repair'` and
 `commitOutcome: 'committed'` in the 5 s from the wait's own start, a few events after the handle read `failed`. The
 exhausting renewal's own commit, which ends the message, precedes the settlement, so the wait starts its history at
 its own first event (`sinceCommandIdPrefix` is its own command id). The lane sees a dispatch's commit, not its frame:
 whether a frame left the page is not in the snapshot. Both receivers receive the first send once and prove the
-absence of a second, since seq 3 and seq 4 wait for a seq 2 that never arrives. The hold stays until the page ends: a release would let the second frame reach a receiver inside its
-absence window. The cell is not run over `ws`, where the server orders the track and requests its gaps; it is
-untested there since the repair budget became per requester. Both cells are withheld from the hosted
+absence of a second, since seq 3 and seq 4 wait for a seq 2 that never arrives: in each receiver's own buffer over
+`rtc`, and in the server's over `ws`, which delivers no frame of a track past a sequence it
+still waits for. The hold stays
+until the page ends: a release would let the second frame reach a receiver inside its
+absence window. Both cells are withheld from the hosted
 manifests, as the checkpoint cells are; they run in the local lane and in the observation's full read.
 
 Five fault stream cells run in the full scope of the two-agent family (D669), withheld from the hosted manifests too.

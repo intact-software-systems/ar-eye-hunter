@@ -60,6 +60,7 @@ const CARRIER_SCENARIO_IDS = {
         'checkpoint-lag',
         'ordering-resync',
         'ordering-gap-repair',
+        'repair-exhausted',
         'seeded-loss-stream',
         'seeded-loss-unreceipted-stream',
         'lost-stream-start',
