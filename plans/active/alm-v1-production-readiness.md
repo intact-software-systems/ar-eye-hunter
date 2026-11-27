@@ -632,11 +632,12 @@ These should be closed:
 - **T2.** WS answers the same send `unauthorized`. A receipt that reads `acknowledged` with zero
   recipients is a truth defect, not a carrier property. RTC refuses at the origin.
 - **T3.** A reply that arrives over RTC is dropped `reply-late`, and a request on a topic WS
-  cannot carry cannot be replied to. What `awaitReply` does today on an `rtc`-only send was not
-  read for this plan; the slice pins it first, then refuses at the call with a typed value. The
-  matrix states that a reply travels WS whichever carrier the request arrived on, and the lane
-  proves it on all three carriers: over `rtc` the request of `reply-correlated` arrives on RTC, its
-  reply comes back over WS, and the wait reads `replied`.
+  cannot carry cannot be replied to. On an `rtc`-only send whose reply WS carries, `awaitReply`
+  reads `replied` (the lane cell `reply-correlated` over `rtc`); what it does when the request's
+  topic is one WS cannot carry is not read by this branch; the slice pins that first, then refuses
+  at the call with a typed value. The matrix states that a reply travels WS whichever carrier the
+  request arrived on, and the lane proves it on all three carriers: over `rtc` the request of
+  `reply-correlated` arrives on RTC, its reply comes back over WS, and the wait reads `replied`.
 - **T4.** Delivered by #922: `ALM_CARRIER_MATRIX` states 20 capabilities by three carriers, each
   cell a typed outcome with its proofs or a `not-applicable` with its reason. The conformance
   catalogue reads its carriers and its carrier verdict facts from the matrix, and the lane fails an

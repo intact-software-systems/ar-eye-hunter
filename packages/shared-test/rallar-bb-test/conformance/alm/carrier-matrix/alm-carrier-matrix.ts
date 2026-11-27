@@ -109,6 +109,18 @@ const RELAY_WITHOUT_SUBSCRIBE_FORWARDS = {
         'A hop that holds no `subscribe` forwards a granted frame to its next hop, where the copy verifies and is delivered, and delivers nothing to its own application; its admission is given the frame and its channel peer, not the strategy that sent it.'
 } as const satisfies AlmCarrierProof;
 
+/**
+ * A frozen recipient whose `subscribe` was revoked after the freeze: the frozen audience lets it deliver, so its own
+ * grant check is the only gate.
+ */
+const RELAY_REVOKED_AFTER_FREEZE_FORWARDS = {
+    kind: 'unit-test',
+    testFile: RTC_RELAY_PUBLICATION_PROOF_TEST,
+    testName: 'forwards at a frozen recipient whose subscribe was revoked after the freeze, delivering nothing there',
+    because:
+        'The grant check alone keeps a session whose `subscribe` was revoked after the origin froze it into the audience from delivering: it forwards the granted frame to its next hop, where the copy verifies and is delivered, and delivers nothing to its own application.'
+} as const satisfies AlmCarrierProof;
+
 /** The RTC cell of a publication whose sender has not read its revoke: what either RTC strategy shows of it. */
 const REVOKED_PUBLICATION_DROPPED_BY_A_HOP = {
     kind: 'stated',
@@ -617,7 +629,8 @@ export const ALM_CARRIER_MATRIX = {
                         because:
                             'The subscriber receives the publication over RTC, and the session that holds `publish` alone delivers nothing to its application. The run does not force the frame through that session, so it does not show it forwarding.'
                     },
-                    RELAY_WITHOUT_SUBSCRIBE_FORWARDS
+                    RELAY_WITHOUT_SUBSCRIBE_FORWARDS,
+                    RELAY_REVOKED_AFTER_FREEZE_FORWARDS
                 ]
             },
             'rtc-with-ws-fallback': {
@@ -632,7 +645,8 @@ export const ALM_CARRIER_MATRIX = {
                         because:
                             'Under the fallback strategy an `ack: none` granted room publication is admitted on RTC and carries its origin\'s proof, as under the `rtc` strategy.'
                     },
-                    RELAY_WITHOUT_SUBSCRIBE_FORWARDS
+                    RELAY_WITHOUT_SUBSCRIBE_FORWARDS,
+                    RELAY_REVOKED_AFTER_FREEZE_FORWARDS
                 ]
             }
         }

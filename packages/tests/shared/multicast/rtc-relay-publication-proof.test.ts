@@ -149,6 +149,25 @@ describe('a granted RTC publication at its relays and receivers', () => {
         expect(receiver.delivered.map((message) => message.id.msgId)).toEqual([signed.id.msgId]);
     });
 
+    it('forwards at a frozen recipient whose subscribe was revoked after the freeze, delivering nothing there', async () => {
+        // The origin froze `r` into the audience, so only the relay's own grant check keeps the frame from its application.
+        const chain = await createOriginRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
+        const relay = createRelayHop(chain, { selfPeerId: 'r', subscribed: true });
+        const receiver = createRelayHop(chain, { selfPeerId: 'c', subscribed: true });
+        const signed = await publishFromOrigin(chain, 'feed-1');
+
+        relay.acceptSnapshot(toSubscribeRevokedSnapshot(chain, 'r'));
+        await relay.receive(signed, 'a');
+        const forwarded = await relay.readSent('c');
+        await receiver.receive(forwarded[0]!, 'r');
+
+        expect(signed.targets).toMatchObject({ recipientPeerIds: expect.arrayContaining(['r']) });
+        expect(relay.delivered).toEqual([]);
+        expect(forwarded).toHaveLength(1);
+        expect(toALPublicationProofSigningInput(forwarded[0]!)).toBe(toALPublicationProofSigningInput(signed));
+        expect(receiver.delivered.map((message) => message.id.msgId)).toEqual([signed.id.msgId]);
+    });
+
     it('forwards a recorded track at a pure relay 300 sequences past anything it saw, observing nothing of it', async () => {
         const chain = await createOriginRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
         const relay = createRelayHop(chain, { selfPeerId: 'r' });
