@@ -40,7 +40,8 @@ function toCopyFrame(seq: number): string {
             expectedRecipientPeerIds: ['session-02-b', 'session-03-c']
         },
         roomRef: ROOM,
-        createdAtEpochMs: 1_800_000_000_000
+        createdAtEpochMs: 1_800_000_000_000,
+        ordering: 'ordering-key'
     }));
 }
 

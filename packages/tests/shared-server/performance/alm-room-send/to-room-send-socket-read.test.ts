@@ -56,7 +56,8 @@ describe('toRoomSendSocketRead', () => {
                 expectedRecipientPeerIds: ['session-02-b']
             },
             roomRef: { applicationId: 'room-send-cell', workspaceId: 'default', groupId: 'room-run-1' },
-            createdAtEpochMs: 1_800_000_000_000
+            createdAtEpochMs: 1_800_000_000_000,
+            ordering: 'ordering-key'
         });
 
         expect(toRoomSendSocketRead({ message: copy, readerPeerId: 'session-02-b', atMs: 41.625 })).toEqual({

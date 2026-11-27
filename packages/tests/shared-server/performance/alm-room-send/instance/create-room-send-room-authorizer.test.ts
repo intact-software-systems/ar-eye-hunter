@@ -29,7 +29,8 @@ function toAuthorizationInput(publisherPeerId: string, roomRef: GroupRef): Ralla
             expectedRecipientPeerIds: []
         },
         roomRef,
-        createdAtEpochMs: 1_800_000_000_500
+        createdAtEpochMs: 1_800_000_000_500,
+        ordering: 'ordering-key'
     });
     return {
         message,

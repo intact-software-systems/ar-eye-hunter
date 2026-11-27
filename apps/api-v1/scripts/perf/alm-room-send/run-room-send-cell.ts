@@ -390,7 +390,12 @@ function toSessionSocket(session: RoomSendScheduledSession, run: RoomSendRun): C
 /** The first offer of one send on its publisher's instance. What comes of it is recorded when it comes and waited for by nobody. */
 function offerRoomSend(due: DueRoomSend, run: RoomSendRun): void {
     const { send } = due;
-    const message = toRoomSendMessage({ send, roomRef: run.roomRef, createdAtEpochMs: run.clock.nowEpochMs() });
+    const message = toRoomSendMessage({
+        send,
+        roomRef: run.roomRef,
+        createdAtEpochMs: run.clock.nowEpochMs(),
+        ordering: 'ordering-key'
+    });
     const frame = JSON.stringify(message);
     const sentAtMs = run.clock.nowMs();
     const answered = readRoomSendCellAnswer(

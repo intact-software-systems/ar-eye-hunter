@@ -5,6 +5,7 @@ import type { ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
 
 import { RoomSendClientStandIn } from '../../../../../../apps/api-v1/scripts/perf/alm-room-send/client-stand-in/room-send-client-stand-in.ts';
 import type { RoomSendScheduledSend } from '../../../../../../apps/api-v1/scripts/perf/alm-room-send/compute-room-send-schedule.ts';
+import type { RoomSendOrdering } from '../../../../../../apps/api-v1/scripts/perf/alm-room-send/room-send-ordering.ts';
 import { toRoomSendMessage } from '../../../../../../apps/api-v1/scripts/perf/alm-room-send/to-room-send-message.ts';
 import type { RoomSendSocketRead } from '../../../../../../apps/api-v1/scripts/perf/alm-room-send/to-room-send-socket-read.ts';
 
@@ -29,13 +30,27 @@ function toFrame(seq: number): string {
     return `{"frame-of-send":${seq}}`;
 }
 
-function offerSend(standIn: RoomSendClientStandIn, seq: number, offeredAtMs: number): void {
-    standIn.recordFirstOffer({
+function toFirstOffer(seq: number, offeredAtMs: number, ordering: RoomSendOrdering): RoomSendClientStandIn.FirstOffer {
+    return {
         send: toSend(seq),
-        message: toRoomSendMessage({ send: toSend(seq), roomRef: ROOM, createdAtEpochMs: 1_800_000_000_000 }),
+        message: toRoomSendMessage({ send: toSend(seq), roomRef: ROOM, createdAtEpochMs: 1_800_000_000_000, ordering }),
         frame: toFrame(seq),
         offeredAtMs
-    });
+    };
+}
+
+/** The offer of a send on its publisher's track of the room. */
+function offerSend(standIn: RoomSendClientStandIn, seq: number, offeredAtMs: number): void {
+    standIn.recordFirstOffer(toFirstOffer(seq, offeredAtMs, 'ordering-key'));
+}
+
+/** A stand-in whose publisher has offered the sends 1 to `count` at 1,000 ms, none of them naming an ordering key. */
+function createStandInAfterUnorderedOffers(count: number): RoomSendClientStandIn {
+    const standIn = new RoomSendClientStandIn(SERVER);
+    for (let seq = 1; seq <= count; seq += 1) {
+        standIn.recordFirstOffer(toFirstOffer(seq, 1_000, 'unordered'));
+    }
+    return standIn;
 }
 
 /**
@@ -118,6 +133,25 @@ function toRepairRequestRead(seq: number, missingRanges: readonly ALSeqRange[]):
                 expectedSeq: missingRanges[0].from,
                 missingRanges,
                 gapRequestNumber: 1
+            }
+        }
+    };
+}
+
+/** The server's request for the one send it names again, which states no track and no range. */
+function toRetransmitRequestRead(seq: number): RoomSendSocketRead {
+    const msgId = `${PUBLISHER}-send-${seq}`;
+    return {
+        kind: 'control',
+        control: { type: 'repair', msgId, reason: 'retransmit', atMs: 1_200 },
+        request: {
+            type: 'repair',
+            payload: {
+                msgId,
+                fromPeerId: SERVER,
+                toPeerId: PUBLISHER,
+                reason: 'retransmit',
+                observedAtEpochMs: 1_800_000_000_200
             }
         }
     };
@@ -396,6 +430,44 @@ describe('RoomSendClientStandIn', () => {
             { msgId: 'session-01-a-send-1', reason: 'send-expired', atMs: 31_000 },
             { msgId: 'session-01-a-send-2', reason: 'send-expired', atMs: 31_000.5 }
         ]);
+    });
+
+    it('resends an unordered send its server has not answered for, three times 2 s apart, and ends it on its complete receipt', () => {
+        const standIn = createStandInAfterUnorderedOffers(1);
+        const resend = (attempt: number) => ({ send: toSend(1), frame: toFrame(1), cause: 'first-hop', attempt });
+
+        expect(standIn.takeFirstHopResendsDue(2_999)).toEqual([]);
+        expect(standIn.takeFirstHopResendsDue(3_000)).toEqual([resend(1)]);
+        expect(standIn.takeFirstHopResendsDue(4_999)).toEqual([]);
+        expect(standIn.takeFirstHopResendsDue(5_000)).toEqual([resend(2)]);
+        expect(standIn.takeFirstHopResendsDue(7_000)).toEqual([resend(3)]);
+        expect(standIn.getSendEnds()).toEqual([]);
+
+        standIn.acceptSocketRead(PUBLISHER, readAt(toReceiptRead(1, 'complete'), 7_500));
+
+        expect(standIn.takeFirstHopResendsDue(9_000)).toEqual([]);
+        expect(standIn.getSendEnds()).toEqual([
+            { msgId: 'session-01-a-send-1', cause: 'terminal-receipt', atMs: 7_500 }
+        ]);
+    });
+
+    it('offers an unordered send again once for a retransmit request that names it, and raises nothing for a control that states a track', () => {
+        const standIn = createStandInAfterUnorderedOffers(2);
+
+        const retransmitAnswer = standIn.acceptSocketRead(PUBLISHER, toRetransmitRequestRead(1));
+        const repeatedRequestAnswer = standIn.acceptSocketRead(PUBLISHER, toRetransmitRequestRead(1));
+        const gapNackAnswer = standIn.acceptSocketRead(PUBLISHER, toGapNackRead(2, [{ from: 1, to: 1 }], 1));
+        const missingSeqRequestAnswer = standIn.acceptSocketRead(PUBLISHER, toRepairRequestRead(2, [{ from: 1, to: 1 }]));
+
+        expect(retransmitAnswer).toEqual({
+            reoffers: [{ send: toSend(1), frame: toFrame(1), cause: 'repair', attempt: 1 }],
+            followUp: undefined
+        });
+        expect(repeatedRequestAnswer).toEqual({ reoffers: [], followUp: undefined });
+        expect(gapNackAnswer).toEqual({ reoffers: [], followUp: undefined });
+        expect(missingSeqRequestAnswer).toEqual({ reoffers: [], followUp: undefined });
+        expect(standIn.getSendEnds()).toEqual([]);
+        expect(standIn.getDeclinedRepairs()).toEqual([]);
     });
 
     it('offers no repair of a send its publisher never offered, and records nothing of it', () => {

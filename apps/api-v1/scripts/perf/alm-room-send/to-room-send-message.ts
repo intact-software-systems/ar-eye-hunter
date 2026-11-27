@@ -18,11 +18,13 @@ import { toProofPreservingALOutboundMessage } from '@shared/alm/outbound/to-al-o
 import type { GroupRef } from '@shared/api/group-types.ts';
 
 import type { RoomSendScheduledSend } from './compute-room-send-schedule.ts';
+import type { RoomSendOrdering } from './room-send-ordering.ts';
 
 export interface ToRoomSendMessageInput {
     readonly send: RoomSendScheduledSend;
     readonly roomRef: GroupRef;
     readonly createdAtEpochMs: number;
+    readonly ordering: RoomSendOrdering;
 }
 
 /**
@@ -42,12 +44,15 @@ export const ROOM_SEND_WS_CLIENT_QOS_PROVIDER: ALQosInputProvider = toALCarrierQ
 const ROOM_SEND_TOPIC_ID = 'room.cell-send';
 
 /**
- * The message a browser's WS client writes to its socket for an ordered room send of its `notification` channel: a
- * room broadcast of its publisher with the channel's reliability, receipt, lifetime and durability, on the room's
- * ordering key at the seq the schedule gave it, as the client's own planning leaves it. The client normalizes the
- * envelope's QoS as an open socket's sender (`toWsQueueBoxClientDispatchPlan`) and writes the expiry it selected
- * into the frame (`toProofPreservingALOutboundMessage`); both steps here are the product's own. A publisher is its
- * track's only sender, so each publisher has a track of its own.
+ * The message a browser's WS client writes to its socket for a room send of its `notification` channel: a room
+ * broadcast of its publisher with the channel's reliability, receipt, lifetime and durability, as the client's own
+ * planning leaves it. The client normalizes the envelope's QoS as an open socket's sender
+ * (`toWsQueueBoxClientDispatchPlan`) and writes the expiry it selected into the frame
+ * (`toProofPreservingALOutboundMessage`); both steps here are the product's own.
+ *
+ * Under `ordering-key` the send is on the room's ordering key at the seq the schedule gave it; a publisher is its
+ * track's only sender, so each publisher has a track of its own. Under `unordered` the envelope is the same with no
+ * ordering key and no seq. The payload states the send's number among its publisher's offers under both.
  *
  * It carries no room send fence. A browser's room send carries the fence its room view resolves
  * (`resolveRoomSendFence` of `BrowserRallarMessageSender`), which the server checks the send against; this envelope
@@ -69,8 +74,11 @@ export function toRoomSendMessage(input: ToRoomSendMessageInput): ALMessage {
 
 /** The send as a browser's `notification` channel hands it to its WS client. */
 function toRoomSendEnvelope(input: ToRoomSendMessageInput): ALMessage {
-    const { send, roomRef, createdAtEpochMs } = input;
+    const { send, roomRef, createdAtEpochMs, ordering } = input;
     const { reliability, ack, ttlMs, durability } = AL_CHANNEL_SEND_DEFAULTS.notification;
+    const trackPlace = ordering === 'ordering-key'
+        ? { ordering: { orderingKey: toALGroupTargetKey(roomRef), seq: send.seq } }
+        : {};
     const message = newALBroadcastMessage({
         senderId: send.publisherPeerId,
         createdAtEpochMs,
@@ -85,7 +93,7 @@ function toRoomSendEnvelope(input: ToRoomSendMessageInput): ALMessage {
             ack,
             ownership: 'shared',
             qos: { durability: { algo: durability } },
-            ordering: { orderingKey: toALGroupTargetKey(roomRef), seq: send.seq }
+            ...trackPlace
         }
     });
     return { ...message, id: { ...message.id, msgId: send.msgId } };

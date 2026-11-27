@@ -19,7 +19,8 @@ describe('toRoomSendAck', () => {
                 expectedRecipientPeerIds: ['session-02-b']
             },
             roomRef: ROOM,
-            createdAtEpochMs: 1_800_000_000_000
+            createdAtEpochMs: 1_800_000_000_000,
+            ordering: 'ordering-key'
         });
 
         const ack = toRoomSendAck({ copy, recipientPeerId: 'session-02-b', observedAtEpochMs: 1_800_000_000_040 });
