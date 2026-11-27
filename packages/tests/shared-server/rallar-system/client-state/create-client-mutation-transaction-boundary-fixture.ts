@@ -88,6 +88,7 @@ export async function createClientMutationTransactionBoundaryFixture(
             computedSnapshots
         }),
         sessionGenerationLifecycle: durable.sessionGenerationLifecycle,
+        connectionHolders: durable.connectionHolders,
         holderLeases: LIVE_WS_CONNECTION_HOLDER_LEASES,
         expiryCandidates: durable,
         expiryContinuationWriter: { write: async () => undefined },

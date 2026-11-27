@@ -5,7 +5,10 @@ import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import type { RuntimeStateGuardedBatchWrite } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import type {
+    RuntimeStateGuardedBatchDelete,
+    RuntimeStateGuardedBatchWrite
+} from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type { AppInboxExecutionMetadata } from '../../app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxCommand } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import {
@@ -50,6 +53,7 @@ import {
 import type { WsConnectionHolderLease } from '../connection-holder/ws-connection-holder-lease.ts';
 import {
     computeWsConnectionHolderRecorded,
+    computeWsConnectionHolderReleased,
     type WsConnectionHolderRecordEntry
 } from '../connection-holder/ws-connection-holder-record.ts';
 import type {
@@ -71,17 +75,12 @@ import type {
 } from './client-state-inbox-result-codec.ts';
 import { computeAuthorisedWsConnectRuntimeBatch } from './compute-authorised-ws-connect-runtime-batch.ts';
 
-type ClientMutationLifecycleInput =
-    | Readonly<{
-        kind: 'connect';
-        facts: WsSessionGenerationGuardFacts;
-        read: WsSessionGenerationLifecycleRead;
-    }>
-    | Readonly<{
-        kind: 'disconnect';
-        facts: WsSessionGenerationCloseFacts;
-        read: WsSessionGenerationLifecycleRead;
-    }>;
+/** An authorised WebSocket disconnect's close high-water and the holder record it releases. */
+interface ClientMutationDisconnectLifecycleInput {
+    readonly facts: WsSessionGenerationCloseFacts;
+    readonly read: WsSessionGenerationLifecycleRead;
+    readonly holderRead: WsConnectionHolderRecordEntry | null;
+}
 
 export type ClientMutationOperationComputed =
     | Readonly<{
@@ -92,6 +91,8 @@ export type ClientMutationOperationComputed =
         outcome: 'completed';
         mutation: Exclude<ClientMutationComputed, { outcome: 'idempotency-conflict'; }>;
         lifecycleComputed: WsSessionGenerationLifecycleComputed | undefined;
+        /** The disconnect's delete of its generation's holder record, written after the lifecycle row. */
+        holderRelease: RuntimeStateGuardedBatchDelete | null;
         durableResult: ClientStateWritten;
         completion: AppInboxCompletionComputed<ClientStateWritten>;
         writes: readonly ClientMutationComputedWrite[];
@@ -101,7 +102,7 @@ export type ClientMutationOperationComputed =
 export type AuthorisedWsConnectOperationComputed =
     | Extract<ClientMutationOperationComputed, { outcome: 'idempotency-conflict'; }>
     | Readonly<
-        & Extract<ClientMutationOperationComputed, { outcome: 'completed'; }>
+        & Omit<Extract<ClientMutationOperationComputed, { outcome: 'completed'; }>, 'holderRelease'>
         & {
             ticketConsumption: AuthWsTicketConsumption;
             /** The ticket, lifecycle and client rows, all written by this one statement. */
@@ -129,6 +130,7 @@ export interface TicketRejectedAuthorisedWsConnectComputed {
 
 export interface MissingSessionDisconnectComputed {
     readonly lifecycleComputed: WsSessionGenerationLifecycleComputed;
+    readonly holderRelease: RuntimeStateGuardedBatchDelete | null;
     readonly durableResult: InactiveAuthorisedWsSessionResult;
     readonly completion: AppInboxCompletionComputed<InactiveAuthorisedWsSessionResult>;
 }
@@ -158,14 +160,14 @@ export interface ComputeClientMutationOperationInput {
     readonly command: ClientMutationCommand;
     readonly read: ClientMutationRead;
     readonly completionFacts: AppInboxCompletionFacts;
-    readonly lifecycle: ClientMutationLifecycleInput | undefined;
+    readonly lifecycle: ClientMutationDisconnectLifecycleInput | undefined;
 }
 
 interface AssertClientMutationOperationInput {
     readonly command: ClientMutationCommand;
     readonly read: ClientMutationRead;
     readonly completionFacts: AppInboxCompletionFacts;
-    readonly lifecycle: ClientMutationLifecycleInput | undefined;
+    readonly lifecycle: ClientMutationDisconnectLifecycleInput | undefined;
     readonly computed: ClientMutationOperationComputed;
 }
 
@@ -202,6 +204,7 @@ export interface ComputeMissingSessionDisconnectInput {
     readonly commandInput: ClientAuthorisedWsSessionDisconnectAppInboxPayload;
     readonly lifecycleFacts: WsSessionGenerationCloseFacts;
     readonly lifecycleRead: WsSessionGenerationLifecycleRead;
+    readonly holderRead: WsConnectionHolderRecordEntry | null;
     readonly completionFacts: AppInboxCompletionFacts;
 }
 
@@ -209,6 +212,7 @@ interface AssertMissingSessionDisconnectInput {
     readonly commandInput: ClientAuthorisedWsSessionDisconnectAppInboxPayload;
     readonly lifecycleFacts: WsSessionGenerationCloseFacts;
     readonly lifecycleRead: WsSessionGenerationLifecycleRead;
+    readonly holderRead: WsConnectionHolderRecordEntry | null;
     readonly completionFacts: AppInboxCompletionFacts;
     readonly computed: MissingSessionDisconnectComputed;
 }
@@ -237,22 +241,15 @@ export function computeClientMutationOperation(
     if (mutation.outcome === 'idempotency-conflict') {
         return { outcome: 'idempotency-conflict', mutation };
     }
-    const lifecycleComputed = input.lifecycle?.kind === 'connect'
-        ? computeWsSessionConnectGuard(
-            input.lifecycle.facts,
-            input.lifecycle.read
-        )
-        : input.lifecycle?.kind === 'disconnect'
-        ? computeWsSessionGenerationClosed(
-            input.lifecycle.facts,
-            input.lifecycle.read
-        )
-        : undefined;
+    const lifecycleComputed = input.lifecycle === undefined
+        ? undefined
+        : computeWsSessionGenerationClosed(input.lifecycle.facts, input.lifecycle.read);
     const durableResult = toClientStateWritten(mutation);
     return {
         outcome: 'completed',
         mutation,
         lifecycleComputed,
+        holderRelease: computeWsConnectionHolderReleased(input.lifecycle?.holderRead ?? null),
         durableResult,
         completion: computeCompletion(input.completionFacts, durableResult),
         writes: requiresClientWrite(mutation) ? [mutation] : [],
@@ -414,6 +411,7 @@ export function computeMissingSessionDisconnect(
     } as const;
     return {
         lifecycleComputed,
+        holderRelease: computeWsConnectionHolderReleased(input.holderRead),
         durableResult,
         completion: computeCompletion(input.completionFacts, durableResult)
     };

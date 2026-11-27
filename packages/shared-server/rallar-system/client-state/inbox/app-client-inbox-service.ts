@@ -134,6 +134,7 @@ export class AppClientInboxService {
         this.handler = new ClientStateInboxHandler({
             mutationService: dependencies.clientStateService,
             sessionGenerationLifecycle: dependencies.clientStateService.sessionGenerationLifecycle,
+            connectionHolders: dependencies.clientStateService.connectionHolders,
             holderLeases: dependencies.holderLeases,
             expiryCandidates: dependencies.clientStateService,
             expiryContinuationWriter: {

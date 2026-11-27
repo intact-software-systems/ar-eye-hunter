@@ -151,6 +151,7 @@ describe('AppInbox websocket close convergence', () => {
             input: facts.input
         });
         await processNext(harness.reader);
+        const heldWhileOpen = await readHeldGenerations(harness);
         await enqueueClientClose(harness.client, facts);
         await processNext(harness.reader);
 
@@ -160,6 +161,14 @@ describe('AppInbox websocket close convergence', () => {
         });
         expect(snapshot?.isOnline).toBe(false);
         expect(snapshot?.activeSessions).toEqual([]);
+        expect(heldWhileOpen).toEqual([facts.generationId]);
+        expect(await readHeldGenerations(harness)).toEqual([]);
+        expect(
+            await harness.clientState.connectionHolders.readGenerationRecord({
+                sessionId: harness.authSession.sessionId,
+                generationId: facts.generationId
+            })
+        ).toBeNull();
     });
 
     it('processes disconnect before delayed connect without an orphan active client', async () => {
@@ -332,6 +341,25 @@ describe('AppInbox websocket close convergence', () => {
             expect(snapshot?.activeSessions ?? []).toEqual([]);
         }
     );
+
+    it('lets an older socket\'s close release only its own generation\'s holder record', async () => {
+        const harness = await createHarness();
+        const older = closeFacts(harness.authSession, 'client-holder-a', 90);
+        const newer = closeFacts(harness.authSession, 'client-holder-b', 100);
+
+        for (const facts of [older, newer]) {
+            await harness.startAuthorisedWsConnect({
+                authSession: facts.authSession,
+                generationId: facts.generationId,
+                input: facts.input
+            });
+            await processNext(harness.reader);
+        }
+        await enqueueClientClose(harness.client, older);
+        await processNext(harness.reader);
+
+        expect(await readHeldGenerations(harness)).toEqual([newer.generationId]);
+    });
 
     it('does not let an older close disconnect a newer active client generation', async () => {
         const harness = await createHarness();

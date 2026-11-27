@@ -142,7 +142,6 @@ describe('ClientStateInboxHandler phases', () => {
             data: {}
         });
         const lifecycle = {
-            kind: 'disconnect',
             facts: {
                 scope: {
                     kind: 'client',
@@ -165,7 +164,8 @@ describe('ClientStateInboxHandler phases', () => {
                     clientInstanceId: 'browser'
                 },
                 sessionId: 'session-1'
-            }, false)
+            }, false),
+            holderRead: null
         } as const;
         const completionFacts = { entry: context.entry, completedAtEpochMs: 4_000, finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS };
         const computed = computeClientMutationOperation({
@@ -355,6 +355,7 @@ describe('ClientStateInboxHandler phases', () => {
                 ? [
                     'completion.read',
                     'lifecycle.read',
+                    'holder.read',
                     'domain.read',
                     'mutation.compute',
                     'mutation.validate',
@@ -368,6 +369,7 @@ describe('ClientStateInboxHandler phases', () => {
                 : [
                     'completion.read',
                     'lifecycle.read',
+                    'holder.read',
                     'domain.read',
                     'mutation.compute',
                     'mutation.validate',
@@ -644,6 +646,12 @@ function createHandlerFixture(options: HandlerFixtureOptions): ClientHandlerFixt
     const handler = new ClientStateInboxHandler({
         finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         mutationService: createHandlerMutationService(options, { actions, writesByTransaction, runtimeRepository }),
+        connectionHolders: {
+            readGenerationRecord: async () => {
+                actions.push('holder.read');
+                return null;
+            }
+        },
         holderLeases: {
             readHolderLease: async (holderId) => {
                 actions.push('holder-lease.read');

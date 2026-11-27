@@ -4,7 +4,11 @@ import { AppInboxType, toAppInboxCompletionAwaitability } from '@shared-server/r
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
-import type { ClientMutationWritten, ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+import type {
+    ClientMutationWritten,
+    ClientStateService,
+    ClientStateWritten
+} from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import type { WsConnectionHolderLeaseReader } from '@shared-server/rallar-system/client-state/connection-holder/ws-connection-holder-lease.ts';
 import { createWsConnectionHolderRecordReader } from '@shared-server/rallar-system/client-state/connection-holder/ws-connection-holder-record-reader.ts';
@@ -19,7 +23,10 @@ import {
     decodeAuthorisedWsClientMutationResult,
     type AuthorisedWsClientMutationResult
 } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-result-codec.ts';
-import { CLIENT_STATE_SESSIONS_NAMESPACE } from '@shared-server/rallar-system/client-state/persistence/client-state-runtime-namespaces.ts';
+import {
+    CLIENT_STATE_SESSIONS_NAMESPACE,
+    CLIENT_STATE_WS_CONNECTION_HOLDERS_NAMESPACE
+} from '@shared-server/rallar-system/client-state/persistence/client-state-runtime-namespaces.ts';
 import { WS_SESSION_CLOSE_HIGH_WATER_NAMESPACE } from '@shared-server/rallar-system/websocket/ws-session-generation-computation.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
@@ -281,6 +288,77 @@ it('records the holder of every completed connect, also one that leaves a later 
     expect(requireRightSnapshot(earlier).activeSessions.map((session) => session.generationId)).toEqual(['generation-later']);
     expect((await readHeldConnections(runtimeRepository, TEST_WS_CONNECTION_HOLDER_ID)).map((connection) => connection.generationId))
         .toEqual(['generation-earlier', 'generation-later']);
+});
+
+it('releases the holder record of a generation whose session row is already gone', async () => {
+    const fixture = await createReleaseFixture();
+    const connection = await fixture.connect('generation-without-session');
+    for (const entry of await fixture.runtimeRepository.findAllEntries(CLIENT_STATE_SESSIONS_NAMESPACE)) {
+        await fixture.runtimeRepository.deleteByKey(CLIENT_STATE_SESSIONS_NAMESPACE, entry.key);
+    }
+
+    const disconnected = await fixture.disconnect(connection);
+
+    expect(disconnected.right?.status).toBe('inactive');
+    expect(await readHeldConnections(fixture.runtimeRepository, TEST_WS_CONNECTION_HOLDER_ID)).toEqual([]);
+});
+
+it('disconnects a socket that has no holder record, as one a previous build accepted, with today\'s result', async () => {
+    const fixture = await createReleaseFixture();
+    const connection = await fixture.connect('generation-unrecorded');
+    for (const entry of await fixture.runtimeRepository.findAllEntries(CLIENT_STATE_WS_CONNECTION_HOLDERS_NAMESPACE)) {
+        await fixture.runtimeRepository.deleteByKey(CLIENT_STATE_WS_CONNECTION_HOLDERS_NAMESPACE, entry.key);
+    }
+
+    const disconnected = await fixture.disconnect(connection);
+
+    expect(requireRightSnapshot(disconnected).activeSessions).toEqual([]);
+    expect(requireRightWritten(disconnected).event?.eventType).toBe('session-disconnected');
+});
+
+it('rolls a disconnect back when its holder record goes between its read and its delete, and the retry completes once', async () => {
+    const fixture = await createReleaseFixture();
+    const connection = await fixture.connect('generation-release-race');
+    fixture.interfereAfterHolderRead(async () => {
+        for (const entry of await fixture.runtimeRepository.findAllEntries(CLIENT_STATE_WS_CONNECTION_HOLDERS_NAMESPACE)) {
+            await fixture.runtimeRepository.deleteByKey(CLIENT_STATE_WS_CONNECTION_HOLDERS_NAMESPACE, entry.key);
+        }
+    });
+
+    const disconnected = await fixture.disconnect(connection);
+
+    expect(fixture.rollbacks()).toBe(1);
+    expect(requireRightSnapshot(disconnected).activeSessions).toEqual([]);
+    expect(await fixture.readDisconnectEventCount()).toBe(1);
+});
+
+it('keeps the holder record when the disconnect\'s client write conflicts, and the retry removes it', async () => {
+    const fixture = await createReleaseFixture();
+    const connection = await fixture.connect('generation-client-race');
+    fixture.interfereAfterMutationRead(async () => {
+        for (const entry of await fixture.runtimeRepository.findAllEntries(CLIENT_STATE_SESSIONS_NAMESPACE)) {
+            await fixture.runtimeRepository.upsert({
+                namespace: CLIENT_STATE_SESSIONS_NAMESPACE,
+                key: entry.key,
+                value: entry.value,
+                expireAtTimestamp: entry.expireAtTimestamp
+            });
+        }
+    });
+
+    const entry = await fixture.service.enqueueAuthorisedWsClientDisconnect({
+        connection,
+        disconnectedAtEpochMs: Date.now(),
+        reason: 'socket-closed'
+    });
+    await fixture.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience());
+    const heldAfterConflict = await readHeldConnections(fixture.runtimeRepository, TEST_WS_CONNECTION_HOLDER_ID);
+    const [disconnected] = await drainUntilSettled(fixture.reader, [fixture.readResult(entry)]);
+
+    expect(fixture.rollbacks()).toBe(1);
+    expect(heldAfterConflict.map((held) => held.generationId)).toEqual(['generation-client-race']);
+    expect(requireRightSnapshot(disconnected!).activeSessions).toEqual([]);
+    expect(await readHeldConnections(fixture.runtimeRepository, TEST_WS_CONNECTION_HOLDER_ID)).toEqual([]);
 });
 
 it('validates each audience group snapshot once, where the connect read assembles it', async () => {
@@ -604,6 +682,8 @@ interface CreateAuthorisedWsServiceInput {
     /** Omitted when the test is not about the fence: every holder then reads live. */
     readonly holderLeases?: WsConnectionHolderLeaseReader;
     readonly serviceId?: string;
+    /** Omitted for the durable service over the test's repository. */
+    readonly clientStateService?: ClientStateService;
 }
 
 function createAuthorisedWsService(input: CreateAuthorisedWsServiceInput): AppClientInboxService {
@@ -614,7 +694,7 @@ function createAuthorisedWsService(input: CreateAuthorisedWsServiceInput): AppCl
             resourceInboxRepository: input.queue,
             resourceInboxResultsRepository: input.results,
             database: input.database,
-            clientStateService: createClientStateService({
+            clientStateService: input.clientStateService ?? createClientStateService({
                 runtimeRepository: input.runtimeRepository,
                 clientStateEventStore: input.database.clientEventStore,
                 serviceId
@@ -628,6 +708,110 @@ function createAuthorisedWsService(input: CreateAuthorisedWsServiceInput): AppCl
             disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
         }
     );
+}
+
+interface ReleaseFixture {
+    readonly runtimeRepository: FakeRuntimeStateRepository;
+    readonly reader: InboxQueueReader;
+    readonly service: AppClientInboxService;
+    connect(generationId: string): Promise<ClientAuthorisedWsSessionConnectAppInboxPayload>;
+    disconnect(
+        connection: ClientAuthorisedWsSessionConnectAppInboxPayload
+    ): Promise<Either<AppInboxFailure, AuthorisedWsClientMutationResult>>;
+    readResult(entry: ResourceEntry): Promise<Either<AppInboxFailure, AuthorisedWsClientMutationResult>>;
+    /** Runs once, after the next disconnect has read its holder record and before it writes. */
+    interfereAfterHolderRead(interference: () => Promise<void>): void;
+    /** Runs once, after the next disconnect has read its client rows and before it writes. */
+    interfereAfterMutationRead(interference: () => Promise<void>): void;
+    rollbacks(): number;
+    readDisconnectEventCount(): Promise<number>;
+}
+
+/** One connected session whose disconnect can be interleaved with a write, as a concurrent writer would. */
+async function createReleaseFixture(): Promise<ReleaseFixture> {
+    const queue = new TestResourceInbox();
+    const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
+    const results = new TestResourceInboxResults();
+    const authSession = issuedSession('alice', 'alice-ws-session');
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    const authSessions = new AuthSessionRepository(runtimeRepository);
+    await authSessions.putSession(authSession);
+    let rollbacks = 0;
+    const database = createAppInboxTestDatabase(queue, results, {
+        runtimeRepository,
+        onTransactionRollback: () => {
+            rollbacks += 1;
+        }
+    });
+    const durable = createClientStateService({
+        runtimeRepository,
+        clientStateEventStore: database.clientEventStore,
+        serviceId: SERVICE_ID
+    });
+    let afterHolderRead: (() => Promise<void>) | undefined;
+    let afterMutationRead: (() => Promise<void>) | undefined;
+    const clientStateService: ClientStateService = {
+        ...durable,
+        connectionHolders: {
+            ...durable.connectionHolders,
+            readGenerationRecord: async (ref) => {
+                const read = await durable.connectionHolders.readGenerationRecord(ref);
+                const interference = afterHolderRead;
+                afterHolderRead = undefined;
+                await interference?.();
+                return read;
+            }
+        },
+        read: async (command) => {
+            const read = await durable.read(command);
+            const interference = afterMutationRead;
+            afterMutationRead = undefined;
+            await interference?.();
+            return read;
+        }
+    };
+    const service = createAuthorisedWsService({ database, queue, reader, results, runtimeRepository, clientStateService });
+    const readResult = async (entry: ResourceEntry) =>
+        await readCompletedAppInboxResult({
+            statusRepository: queue,
+            resultRepository: results,
+            entry,
+            decodeResult: decodeAuthorisedWsClientMutationResult
+        });
+    return {
+        runtimeRepository,
+        reader,
+        service,
+        connect: async (generationId) => {
+            const input = { authSession, generationId, input: AUDIENCE_SCOPE } as const;
+            const connected = await connectAuthorisedWs({ queue, reader, service }, {
+                ...input,
+                ticketDigest: await putAuthorisedWsTestTicket(authSessions, authSession, `${generationId}-ticket`)
+            });
+            expect(connected.right?.status).toBe('ok');
+            return toAuthorisedWsClientConnection(input);
+        },
+        disconnect: async (connection) => {
+            const entry = await service.enqueueAuthorisedWsClientDisconnect({
+                connection,
+                disconnectedAtEpochMs: Date.now(),
+                reason: 'socket-closed'
+            });
+            const [result] = await drainUntilSettled(reader, [readResult(entry)]);
+            return result!;
+        },
+        readResult,
+        interfereAfterHolderRead: (interference) => {
+            afterHolderRead = interference;
+        },
+        interfereAfterMutationRead: (interference) => {
+            afterMutationRead = interference;
+        },
+        rollbacks: () => rollbacks,
+        readDisconnectEventCount: async () =>
+            (await durable.listEvents({ ...AUDIENCE_SCOPE, principalId: authSession.clientId }))
+                .filter((event) => event.eventType === 'session-disconnected').length
+    };
 }
 
 async function readHeldConnections(

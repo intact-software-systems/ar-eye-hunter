@@ -157,10 +157,10 @@ describe('the WebSocket connection holder record computations', () => {
     it('releases a record by deleting it at the revision that was read, and nothing when none was read', () => {
         expect(computeWsConnectionHolderReleased(null)).toBeNull();
         expect(computeWsConnectionHolderReleased(decodeWsConnectionHolderRecordEntry(storedEntry()))).toEqual({
-            guard: { operation: 'delete', namespace: NAMESPACE, key: STORED_KEY, expectedRevision: 3 },
-            effects: [],
-            guardSqlDescriptor: { operation: 'delete', namespace: NAMESPACE, key: STORED_KEY, expectedRevision: 3 },
-            effectSqlDescriptors: []
+            operation: 'delete',
+            namespace: NAMESPACE,
+            key: STORED_KEY,
+            expectedRevision: 3
         });
     });
 });

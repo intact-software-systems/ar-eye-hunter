@@ -1,8 +1,7 @@
 import { requireEpoch, requireExactKeys, requireRecord, requireString } from '@shared/api/exact-object-decoding.ts';
-import { computeRuntimeStateGuardedBatchWrite } from '../../../runtime-state/guarded-batch/compute-runtime-state-guarded-batch-write.ts';
 import type {
-    RuntimeStateGuardedBatchInsert,
-    RuntimeStateGuardedBatchWrite
+    RuntimeStateGuardedBatchDelete,
+    RuntimeStateGuardedBatchInsert
 } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
 import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
@@ -125,19 +124,16 @@ export function computeWsConnectionHolderRecorded(
 /** A disconnect deletes the record it read at that revision, so a concurrent writer conflicts instead of losing. */
 export function computeWsConnectionHolderReleased(
     current: WsConnectionHolderRecordEntry | null
-): RuntimeStateGuardedBatchWrite | null {
+): RuntimeStateGuardedBatchDelete | null {
     if (current === null) {
         return null;
     }
-    return computeRuntimeStateGuardedBatchWrite({
-        guard: {
-            operation: 'delete',
-            namespace: CLIENT_STATE_WS_CONNECTION_HOLDERS_NAMESPACE,
-            key: current.key,
-            expectedRevision: current.revision
-        },
-        effects: []
-    });
+    return {
+        operation: 'delete',
+        namespace: CLIENT_STATE_WS_CONNECTION_HOLDERS_NAMESPACE,
+        key: current.key,
+        expectedRevision: current.revision
+    };
 }
 
 function toHolderKeyPart(holderId: string): string {

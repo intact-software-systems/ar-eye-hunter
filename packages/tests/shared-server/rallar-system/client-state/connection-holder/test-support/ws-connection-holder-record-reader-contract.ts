@@ -1,6 +1,7 @@
 import { expect, type it } from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { writeWsConnectionHolderReleased } from '@shared-server/rallar-system/client-state/connection-holder/write-ws-connection-holder-released.ts';
 import {
     createWsConnectionHolderRecordReader,
     type WsConnectionHolderRecordReader
@@ -12,6 +13,7 @@ import {
 } from '@shared-server/rallar-system/client-state/connection-holder/ws-connection-holder-record.ts';
 import type { ClientAuthorisedWsSessionConnectAppInboxPayload } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
 import { computeRuntimeStateGuardedBatchWrite } from '@shared-server/runtime-state/guarded-batch/compute-runtime-state-guarded-batch-write.ts';
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { writeRuntimeStateGuardedBatch } from '@shared-server/runtime-state/postgres/write-runtime-state-guarded-batch.ts';
 
@@ -90,8 +92,10 @@ export function describeWsConnectionHolderRecordReaderContract(
                 throw new Error('Expected a release of the stored record');
             }
 
-            expect((await writeRuntimeStateGuardedBatch(fixture.sql, release)).guard.status).toBe('applied');
-            expect((await writeRuntimeStateGuardedBatch(fixture.sql, release)).guard.status).toBe('conflict');
+            await writeWsConnectionHolderReleased(fixture.sql, release);
+            await expect(writeWsConnectionHolderReleased(fixture.sql, release)).rejects.toThrow(
+                RuntimeStateWriteConflictError
+            );
             expect(await reader.readGenerationRecord(toGeneration(released))).toBeNull();
             expect(
                 (await reader.readHolderPage({ holderId: fixture.holderA, afterKey: null, limit: 10 })).records
