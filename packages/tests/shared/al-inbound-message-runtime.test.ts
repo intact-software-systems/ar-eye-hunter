@@ -9,6 +9,7 @@ import {
 } from 'vitest';
 
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import {
     createInMemoryALAdmissionState,
     InMemoryAdmissionBackend,
@@ -36,6 +37,7 @@ import {
 } from '@shared/mod.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
+import { loseInboundWritesFromNowOn } from './alm/inbound-runtime-test-fixture.ts';
 import { readInboundTestAcknowledgements } from './alm/read-inbound-test-acknowledgements.ts';
 import { waitForSettledALInboundWork } from './wait-for-al-inbound-work.ts';
 
@@ -157,7 +159,9 @@ describe('ALInboundMessageRuntime', () => {
         });
     });
 
-    it('retains a stale optimistic write for fresh admission after runtime restart', async () => {
+    // Pins an arrival that keeps writing past its bounded attempts, or drops the message once they are spent: the first
+    // write loses to a real competing commit and the next two are lost too, so the third loss retains it.
+    it('retains a write lost on each of its three attempts for fresh admission after runtime restart', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const admission = stores.admissionStore;
@@ -172,6 +176,8 @@ describe('ALInboundMessageRuntime', () => {
             ).toBe('committed');
             return await commitBundle(bundle);
         });
+        // Were the owner to write a fourth time, that write would be lost too; the count below pins that it does not.
+        const restoreWrites = loseInboundWritesFromNowOn(admission);
         const first = createInboundHarness(stores);
         const enqueue = stores.workQueue.enqueueIfAbsent.bind(stores.workQueue);
         let disposal: Promise<void> | undefined;
@@ -189,7 +195,7 @@ describe('ALInboundMessageRuntime', () => {
         await disposal;
 
         expect(queued.right).toEqual({ kind: 'pending-admission' });
-        expect(conflict).toHaveBeenCalledTimes(1);
+        expect(conflict).toHaveBeenCalledTimes(3);
         expect(first.dispatchedTexts).toEqual([]);
         expect(first.forwardedIds).toEqual([]);
         expect(first.controlMessages).toEqual([]);
@@ -199,7 +205,7 @@ describe('ALInboundMessageRuntime', () => {
         expect(pending.entry.status).toBe(EntityStatus.NEW);
         expect(pending.payload).toEqual({ kind: 'admit-message', msg: decodePersistedALMessage(JSON.stringify(seq2)), source });
         expect(pending.expireAtTimestamp).toBe(seq2.constraints?.expiresAtMs);
-        conflict.mockRestore();
+        restoreWrites();
         retention.mockRestore();
 
         const restarted = createInboundHarness(stores);
@@ -296,6 +302,64 @@ describe('ALInboundMessageRuntime', () => {
         await expect.poll(() => deliveredSenderIds).toEqual(['peer-1', 'peer-2']);
     });
 
+    // The next admission on the track extends the progress row's expiry; a completion fenced on that whole row
+    // conflicted, and its work handed the delivered message to the application again.
+    it('hands an ordered message to the application once when the next message of its track is admitted during its completion', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const first = createOrderedMessage(1, 'one');
+        const trackKey = toALOrderingTrackKey(first)!;
+        const completionRead = Promise.withResolvers<void>();
+        const releaseCompletion = Promise.withResolvers<void>();
+        const readBufferedRelease = stores.admissionStore.readBufferedRelease.bind(stores.admissionStore);
+        vi.spyOn(stores.admissionStore, 'readBufferedRelease').mockImplementationOnce(async (input) => {
+            const read = await readBufferedRelease(input);
+            completionRead.resolve();
+            await releaseCompletion.promise;
+            return read;
+        });
+        onTestFinished(() => releaseCompletion.resolve());
+        const { runtime, dispatchedTexts } = createInboundHarness(stores);
+        const source: ALInboundMessageRuntime.Source = {
+            kind: 'ws-client',
+            peerId: 'peer-1',
+            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        };
+
+        await runtime.admitIncomingMessage(first, source);
+        await completionRead.promise;
+        expect(dispatchedTexts).toEqual(['one']);
+        vi.setSystemTime(Date.now() + 1_000);
+        await runtime.admitIncomingMessage(createOrderedMessage(2, 'two'), source);
+        releaseCompletion.resolve();
+
+        await expect.poll(() => dispatchedTexts).toEqual(['one', 'two']);
+        await waitForSettledALInboundWork(stores.workQueue);
+        expect(dispatchedTexts).toEqual(['one', 'two']);
+        expect((await stores.admissionStore.readOrderedDelivery(trackKey, 3)).completedThrough).toBe(2);
+    });
+
+    // A completion whose write lost its row versions answered `retry`, and its work handed the delivered message to
+    // the application again; it now reads and decides again first.
+    it('hands an ordered message to the application once when its completion\'s write loses to a concurrent write', async () => {
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const first = createOrderedMessage(1, 'one');
+        const trackKey = toALOrderingTrackKey(first)!;
+        vi.spyOn(stores.admissionStore, 'commitDeliveryCompletion').mockResolvedValueOnce('conflict');
+        const { runtime, dispatchedTexts } = createInboundHarness(stores);
+
+        await runtime.admitIncomingMessage(first, {
+            kind: 'ws-client',
+            peerId: 'peer-1',
+            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
+
+        await expect.poll(async () => (await stores.admissionStore.readOrderedDelivery(trackKey, 2)).completedThrough)
+            .toBe(1);
+        await waitForSettledALInboundWork(stores.workQueue);
+        expect(dispatchedTexts).toEqual(['one']);
+    });
+
     it('retains a conflicted control admission as work the inbound worker completes', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         const { backend, stores } = createInboundBackedStores(
@@ -313,7 +377,8 @@ describe('ALInboundMessageRuntime', () => {
             nowMs: Date.now(),
             prePlan: planALMessageHandling(pendingMessage, { selfPeerId: 'self', nowMs: Date.now() })
         });
-        await stores.admissionStore.commitMutations({
+        await stores.admissionStore.commitBundle({
+            admissionExpiresAtMs: null,
             senderId: 'peer-1',
             observations: read.observations,
             mutations: [{
@@ -349,7 +414,8 @@ describe('ALInboundMessageRuntime', () => {
                 msgId: 'missing-msg',
                 value: { ambiguous: false, values: [{ peerId: 'peer-2', senderId: 'peer-1' }] },
                 expireAtTimestamp
-            }]
+            }],
+            durableEffects: []
         });
         const commitBundle = stores.admissionStore.commitBundle.bind(stores.admissionStore);
         let attempts = 0;

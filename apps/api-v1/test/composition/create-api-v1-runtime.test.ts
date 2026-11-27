@@ -1,3 +1,4 @@
+import { createServerWsQBoxALReceiptRecordStores } from '@shared-server/al-runtime/postgres/create-p-sql-al-receipt-record-stores.ts';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { computeAppOutboxInsert, writeAppOutboxInserts } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import type { PersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/persisted-auth-session.ts';
@@ -8,6 +9,8 @@ import { computeRuntimeStateGuardedBatchWrite } from '@shared-server/runtime-sta
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { writeRuntimeStateConditionalBatch } from '@shared-server/runtime-state/postgres/write-runtime-state-conditional-batch.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
+import { ALReceiptRecord } from '@shared/alm/receipt-record/al-receipt-record.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { decodeViewInvalidationMessage } from '@shared/api/views/view-invalidation.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -125,6 +128,49 @@ test('real runtime resubscribing either PostgreSQL listener resyncs unchanged au
     }
     finally {
         await fixture.stop();
+        await fixture.stop();
+    }
+});
+
+// A runtime whose WS server counted in a record of its own would refuse this ACK, since its own record holds no head.
+test('real runtime counts a receipt in the record on the shared runtime-state repository', async () => {
+    const fixture = await createFixture();
+    try {
+        const alice = await connectAccount(fixture.runtime, 'alice', fixture.releases);
+        const bob = await connectAccount(fixture.runtime, 'bob', fixture.releases);
+        const stores = createServerWsQBoxALReceiptRecordStores(fixture.input.wsRuntimeName, new PSqlRuntimeStateRepository(fixture.sql));
+        const record = new ALReceiptRecord({ ...stores, nowMs: Date.now });
+        const ref = { originPeerId: alice.session.sessionId, msgId: 'composition-receipt' };
+        const opened = await record.open({
+            ...ref,
+            traceId: 'composition-receipt',
+            expectedRecipientPeerIds: [bob.session.sessionId],
+            neverSentRecipientPeerIds: [],
+            snapshotVersion: 1,
+            deadlineAtMs: Date.now() + 30_000
+        });
+        assert.ok(opened.right);
+        const ack = newALAckControlMessage(
+            { v: 4, msgId: 'composition-receipt-ack', senderId: bob.session.sessionId, ts: Date.now(), traceId: 'composition-receipt' },
+            {
+                ackedMsgId: ref.msgId,
+                fromPeerId: bob.session.sessionId,
+                toPeerId: ref.originPeerId,
+                originPeerId: ref.originPeerId,
+                logicalRecipientPeerId: bob.session.sessionId,
+                carrier: 'ws',
+                status: 'delivered',
+                observedAtEpochMs: Date.now(),
+                proof: null
+            }
+        );
+
+        const accepted = await fixture.runtime.wsQBoxServerService.acceptIncomingMessage(ack, bob.connection.id);
+
+        assert.equal(accepted.left, undefined);
+        assert.equal((await record.read(ref)).right?.head.phase, 'complete');
+    }
+    finally {
         await fixture.stop();
     }
 });

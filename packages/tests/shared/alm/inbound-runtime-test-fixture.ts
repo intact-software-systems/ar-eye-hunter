@@ -30,6 +30,7 @@ import {
     type ALInboundRuntimeStores,
     type ALVolatileInboundRuntimeStores
 } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import { ALInboundOrderedDelivery } from '@shared/alm/inbound/al-inbound-ordered-delivery.ts';
 import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
 import type { ALInboundResyncRequired } from '@shared/alm/inbound/al-inbound-resync-required.ts';
 import type { ALInboundRuntimeDiagnosticsEvent, ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
@@ -418,6 +419,33 @@ export function createInboundTestAdmission(stores: ALInboundRuntimeStores): ALIn
     return admission;
 }
 
+export interface CreateInboundTestOrderedDeliveryInput {
+    /** Absent plans with the fixture's own planner. */
+    readonly planIncomingMessage?: ALInboundPlanner;
+    /** Absent never aborts, as a runtime that is not disposed. */
+    readonly signal?: AbortSignal;
+}
+
+/**
+ * The ordered delivery the runtime composes, over the caller's own store, so a pin can release or complete a delivery
+ * directly.
+ */
+export function createInboundTestOrderedDelivery(
+    admissionStore: ALInboundAdmissionStore,
+    input: CreateInboundTestOrderedDeliveryInput = {}
+): ALInboundOrderedDelivery {
+    return new ALInboundOrderedDelivery({
+        admissionStore,
+        planIncomingMessage: input.planIncomingMessage ?? planInboundTestMessage,
+        clock: { nowMs: Date.now },
+        effectPreparation: INBOUND_TEST_EFFECT_PREPARATION,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+        receiptProofs: CARRIER_AUTHENTICATED_RECEIPT_PROOFS,
+        diagnostics: undefined,
+        signal: input.signal ?? new AbortController().signal
+    });
+}
+
 /**
  * Lands the message's own provenance row between the next admission's read and its conditional
  * write, so the conflict that follows is the store's own fence rejecting a stale decision. Only the
@@ -436,6 +464,101 @@ export function setNextInboundCommitConflicted(admissionStore: ALInboundAdmissio
             throw new Error(`The competing writer left the surface unmoved: ${competing}`);
         }
         return await commitBundle(bundle);
+    });
+}
+
+/**
+ * From now on every write of `admissionStore` is lost: `commitBundle` answers `conflict` and writes nothing, after
+ * any once-answers a seam queued before this call. However many attempts an owner makes, each loses, so an
+ * admission ends parked and a replay or a release ends retried. Answers the function that restores the store's
+ * own commit; call it before the step that must commit.
+ */
+export function loseInboundWritesFromNowOn(admissionStore: ALInboundAdmissionStore): () => void {
+    const commitBundle = vi.spyOn(admissionStore, 'commitBundle').mockImplementation(async () => 'conflict');
+    return () => commitBundle.mockRestore();
+}
+
+/**
+ * Whether `bundle` is a data admission's write of the message `id` names, whether it stores the message or drops it:
+ * not another message's write, nor the control or finalization bookkeeping written about it later.
+ */
+export function isInboundAdmissionWriteOf(bundle: ALInboundCommitBundle, id: Pick<ALMessage['id'], 'msgId' | 'senderId'>): boolean {
+    return bundle.observations.msgId === id.msgId && bundle.observations.senderId === id.senderId &&
+        bundle.admissionExpiresAtMs !== null;
+}
+
+/**
+ * From now on every admission write of `msg` is lost: `commitBundle` answers `conflict` and writes nothing, while every
+ * other write goes to `commit`, the store's own commit bound before any seam was armed on it. Answers the restore
+ * function.
+ */
+export function loseInboundAdmissionWritesOf(
+    admissionStore: ALInboundAdmissionStore,
+    msg: ALMessage,
+    commit: ALInboundAdmissionStore['commitBundle']
+): () => void {
+    const commitBundle = vi.spyOn(admissionStore, 'commitBundle').mockImplementation(async (bundle) =>
+        isInboundAdmissionWriteOf(bundle, msg.id) ? 'conflict' : await commit(bundle)
+    );
+    return () => commitBundle.mockRestore();
+}
+
+export interface InboundAdmissionWriteLoss {
+    readonly msg: ALMessage;
+    /** How many of its admission writes lose; every later one is the store's own. */
+    readonly count: number;
+    /** Absent does nothing; runs as each write is lost, before its `conflict` is answered. */
+    readonly onLoss?: () => void;
+}
+
+/**
+ * The next `loss.count` admission writes of `loss.msg` lose: `commitBundle` answers `conflict` and writes nothing, after
+ * `loss.onLoss` ran. Every other write, and every later one, goes to the store's commit as it stands when this is armed.
+ */
+export function loseNextInboundAdmissionWritesOf(admissionStore: ALInboundAdmissionStore, loss: InboundAdmissionWriteLoss): void {
+    const commit = admissionStore.commitBundle.bind(admissionStore);
+    let lost = 0;
+    vi.spyOn(admissionStore, 'commitBundle').mockImplementation(async (bundle) => {
+        if (lost === loss.count || !isInboundAdmissionWriteOf(bundle, loss.msg.id)) {
+            return await commit(bundle);
+        }
+        lost += 1;
+        loss.onLoss?.();
+        return 'conflict';
+    });
+}
+
+/** The `admission-outcome` events stated about one message, in the order they were stated. */
+export function toInboundTestAdmissionOutcomes(diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[], message: ALMessage) {
+    return diagnostics.flatMap((event) =>
+        event.kind === 'admission-outcome' && event.msgId === message.id.msgId
+            ? [{ workerId: event.workerId, outcome: event.outcome, reason: event.reason, traceId: event.traceId, corrId: event.corrId }]
+            : []
+    );
+}
+
+/**
+ * The next admission is parked: its first write loses to a real competing commit of its own provenance row
+ * (`setNextInboundCommitConflicted`), and every later one is answered `conflict` without a write. Answers the restore
+ * function. The competing commit is the store's commit as it stands, so a seam still armed on it must be restored first.
+ */
+export function setNextInboundAdmissionParked(admissionStore: ALInboundAdmissionStore): () => void {
+    setNextInboundCommitConflicted(admissionStore);
+    return loseInboundWritesFromNowOn(admissionStore);
+}
+
+/**
+ * Runs `restoreWrites` as the next retained row is written to `stores.workQueue`: after the parked arrival's last
+ * attempt and before the batch its retention schedules can claim the row, so that replay commits as the store's own.
+ * Arm it before any other seam on `stores.workQueue.enqueueIfAbsent`: it binds the method as it stands, so on a method
+ * already spied its write would run that spy, and a once queued there would be taken by this write.
+ */
+export function restoreInboundWritesOnRetention(stores: ALInboundRuntimeStores, restoreWrites: () => void): void {
+    const enqueueIfAbsent = stores.workQueue.enqueueIfAbsent.bind(stores.workQueue);
+    vi.spyOn(stores.workQueue, 'enqueueIfAbsent').mockImplementationOnce(async (entry) => {
+        const retained = await enqueueIfAbsent(entry);
+        restoreWrites();
+        return retained;
     });
 }
 

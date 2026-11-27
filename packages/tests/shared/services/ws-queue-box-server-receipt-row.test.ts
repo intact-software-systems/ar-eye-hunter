@@ -32,6 +32,8 @@ import {
     connect,
     createBridgeBus,
     createClusterInstance,
+    createReceiptClusterState,
+    createReceiptInstanceStores,
     installClock,
     receiverAck,
     roomMessage,
@@ -84,11 +86,26 @@ describe('WS server receipt row across a cluster', () => {
         });
         const bus = createBridgeBus();
         const roomPeerIds = ['a', 'b', 'c'];
-        const local = await createClusterInstance({ name: 'server', outboundStores, bus, publisherId: 'local', engine: new InboxOutboxEngine(), roomPeerIds });
+        const local = await createClusterInstance({
+            name: 'server',
+            outboundStores,
+            ...createReceiptInstanceStores(createReceiptClusterState(() => clock.nowMs), () => clock.nowMs),
+            inboundVolatileStores: undefined,
+            receiptObserver: undefined,
+            roomView: { inSync: true },
+            bus,
+            publisherId: 'local',
+            engine: new InboxOutboxEngine(),
+            roomPeerIds
+        });
         local.engine.start();
         const remote = await createClusterInstance({
             name: 'remote-server',
             outboundStores,
+            ...createReceiptInstanceStores(createReceiptClusterState(() => clock.nowMs), () => clock.nowMs),
+            inboundVolatileStores: undefined,
+            receiptObserver: undefined,
+            roomView: { inSync: true },
             bus,
             publisherId: 'remote',
             engine: new InboxOutboxEngine(),
@@ -97,7 +114,7 @@ describe('WS server receipt row across a cluster', () => {
         remote.engine.start();
         const sockets = { a: await connect(local, 'a'), b: await connect(local, 'b'), c: await connect(local, 'c') };
         const origin = await createOriginClient();
-        const message = roomMessage(clock.nowMs);
+        const message = roomMessage({ msgId: 'room-message-1', originPeerId: 'a', nowMs: clock.nowMs, lifetimeMs: ROOM_MESSAGE_LIFETIME_MS });
         expect((await origin.service.enqueueOutboxIfAbsent(message)).verdict.kind).toBe('admitted');
 
         expect((await local.service.acceptIncomingMessage(message, 'a')).right?.kind).toBe('admitted');
@@ -106,8 +123,8 @@ describe('WS server receipt row across a cluster', () => {
         await expect.poll(() => readRoomMessageCopies(sockets.c)).toBe(1);
 
         await sockets.a.receiveClose(1001, 'origin went away');
-        await local.service.acceptIncomingMessage(receiverAck('b', clock.nowMs), 'b');
-        await local.service.acceptIncomingMessage(receiverAck('c', clock.nowMs), 'c');
+        await local.service.acceptIncomingMessage(receiverAck({ msgId: 'room-message-1', originPeerId: 'a', recipient: 'b', nowMs: clock.nowMs }), 'b');
+        await local.service.acceptIncomingMessage(receiverAck({ msgId: 'room-message-1', originPeerId: 'a', recipient: 'c', nowMs: clock.nowMs }), 'c');
         await advanceClusterClock({ clock, instance: local, untilMs: sentAtMs + reconnectAfterMs, until: () => false });
         const reconnected = await connect(remote, 'a');
         await advanceClusterClock({

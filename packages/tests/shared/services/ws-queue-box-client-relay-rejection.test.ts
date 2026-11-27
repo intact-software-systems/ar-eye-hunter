@@ -140,14 +140,15 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
             expect((await origin.service.enqueueOutboxIfAbsent(message)).verdict.kind).toBe('admitted');
         }
 
-        // The conflicted gapped send is kept `pending-admission`, which starts no receipt; its replay NACKs it.
+        // The conflicted gapped send is kept `pending-admission`, which starts no receipt; its replay NACKs it. The
+        // admitted send's receipt is written to the origin's socket at its admission, before that replay runs.
         await Promise.all([
             fixture.server.acceptIncomingMessage(first, 'a'),
             fixture.server.acceptIncomingMessage(gapped, 'a')
         ]);
         const expectedControls = [
-            { typeId: AL_CONTROL_NACK_TYPE_ID, msgId: 'ordered-gapped', verdict: 'resync-required' },
-            { typeId: AL_CONTROL_RECEIPT_TYPE_ID, msgId: 'ordered-1', verdict: 'admitted' }
+            { typeId: AL_CONTROL_RECEIPT_TYPE_ID, msgId: 'ordered-1', verdict: 'admitted' },
+            { typeId: AL_CONTROL_NACK_TYPE_ID, msgId: 'ordered-gapped', verdict: 'resync-required' }
         ];
         await expect.poll(async () => {
             await fixture.engine.executeOnce();

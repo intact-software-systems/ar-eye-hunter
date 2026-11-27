@@ -10,6 +10,7 @@ import {
 
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
@@ -134,7 +135,8 @@ describe('outbound admission observation order', () => {
             supersedenceTrackTtlMs: 300_000,
             retention: normalizeALRuntimeStoreRetention()
         });
-        const message = createOutboundMessage('repair-read-race');
+        // A message on a track: its admission gives the sender the version 1 the competing commit below fences on.
+        const message: ALMessage = { ...createOutboundMessage('repair-read-race'), ordering: { orderingKey: 'conversation', epoch: 1, seq: 1 } };
         const admission = new ALOutboundDispatchAdmission<OutboundTestPayload>({
             lane: 'durable',
             admissionStore: store,
@@ -207,7 +209,8 @@ describe('outbound admission observation order', () => {
             supersedenceTrackTtlMs: 300_000,
             retention: normalizeALRuntimeStoreRetention()
         });
-        const message = createOutboundMessage('repair-read-race-psql');
+        // A message on a track: its admission gives the sender the version 1 the competing commit below fences on.
+        const message: ALMessage = { ...createOutboundMessage('repair-read-race-psql'), ordering: { orderingKey: 'conversation', epoch: 1, seq: 1 } };
         const admission = new ALOutboundDispatchAdmission<OutboundTestPayload>({
             lane: 'durable',
             admissionStore: store,

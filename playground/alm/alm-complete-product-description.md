@@ -387,7 +387,7 @@ but only the addressed recipient delivers locally.
 
 **CURRENT** for basic RTC and WS routing. **CURRENT — S3c-i, addressed WS sends:** a unicast may name its room; the
 room's authority admits it and the room's router delivers it, and a `receiver` unicast's receipt is its addressee's
-own ACK, aggregated by the server over one member (D53, D71). A client addresses the server itself with a unicast to
+own ACK, counted by the server over one member (D53, D71). A client addresses the server itself with a unicast to
 the server peer id `/api/config` names; the server's own ACK is that receipt, meaning the server admitted the
 message, not that the application applied it (D76). **CURRENT — S3c-ii, addressed sends on every carrier:** a typed
 send names one peer with `{ peerId }`; on RTC the unicast travels directly to its addressee and is never relayed
@@ -750,15 +750,19 @@ recipients beside the hop lists. A WS live-only room topic keeps no copy to
 retry: the server sends the message live once, at any QoS, to its own sockets and
 through one best-effort Postgres NOTIFY notice to the other server processes, so
 its receipt ends timed out naming the recipients it did not confirm (D99). A
-recipient's ACK that reaches a server process without the message's
-receipt aggregate is relayed once, over a second notice kind, to the process that
-holds it, so receipts complete across API processes; a lost relay leaves that
-recipient unconfirmed and the receipt ends timed out (D106). The relay first checks
-the shared inbound admission store's ingress audience and fails closed, and it
-relays at most 60 ACKs per session per 60 s. The server's own
-acknowledgement of a message addressed to it reaches the sender on any process:
-a process that claims it without the sender's socket hands it to the cluster
-outbound route (D107).
+WS receipt is counted in a durable receipt record every API process shares, so it
+is exact whichever process admitted the send, and it survives that process: any
+process counts a recipient's ACK where it arrives, ends the receipt at its last
+confirmation or its deadline, and answers a re-sent copy from the record, the
+terminal receipt included once the receipt has ended. An ACK that finds no record
+yet is proven against the shared inbound admission store's audience and fails
+closed. The cluster recipe `api-v1-cluster-publisher-instance-loss` kills the
+process that admitted a broadcast, and the publisher, reconnected to a survivor,
+reads `complete`
+([the receipt record](../../packages/shared/alm/receipt-record/README.md)). The
+server's own acknowledgement of a message addressed to it reaches the sender on
+any process: a process that claims it without the sender's socket hands it to
+the cluster outbound route (D107).
 Durable replay rechecks snapshot readiness, preserves predecessor order, and
 ACKs the admitted upstream relay. Current coverage includes
 [durable replay](../../packages/tests/shared/multicast/rtc-snapshot-durable-replay.test.ts),
@@ -903,7 +907,9 @@ own transaction and record positions at their first dequeue; a tracked row
 waits at dequeue for every lower sequence of its track still to record, and a
 row that ends without recording deletes its index row, releasing the rows after
 it; and the server records a recipient it skipped or dropped on one of its own
-rows outside its own receipt (S5-i, D538–D550).
+rows outside its own receipt once that receipt's pending row exists, while a
+drop at the row's first dequeue, which precedes it, records nothing (S5-i,
+D538–D550).
 **Limit:** the dequeue judges every captured session from durable presence
 (S7-i, D568–D572), so in a cluster positions and the outside class cover
 sessions on every instance; a principal row keeps its co-members' sessions
@@ -1024,8 +1030,9 @@ updated evicted; a browser session holds two such stores, its IndexedDB store
 and the memory store of its volatile messages, so up to 512 snapshots, and the
 harness's `orderingTracks` is their sum. The WS server's inbound stores are
 not capped, since one of them holds every relayed client's tracks. The
-browser's resync record holds at most 256 tracks; the WS server holds at most
-4 096 receipt aggregates, ending the oldest at the cap as its deadline would.
+browser's resync record holds at most 256 tracks; the WS server's receipt record
+is bounded by time, not count: every row expires within the 30 min receipt window
+plus two 30 s graces.
 Three two-agent lane cells prove the share, the promotion and the snapshot cap
 (D192). **Limit:** a receiver holding more than 256 live ordered tracks in one
 store thrashes: each new track evicts a live one, whose next unrecorded arrival

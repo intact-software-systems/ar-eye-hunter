@@ -13,7 +13,6 @@ export interface SafeApiWsReceiptObservationDto extends ApiJsonObject {
         | 'socket-decision'
         | 'ack-rejection'
         | 'ack-count'
-        | 'ack-relay'
         | 'receipt-outbox'
         | 'receipt-work'
         | 'receipt-transport'
@@ -45,13 +44,16 @@ const ACK_REJECTION_FIELDS: readonly ReceiptReturnField[] = [
 const AGGREGATE_ACK_GUARDS = [
     'aggregate-absent',
     'origin-addressee-mismatch',
-    'sender-recipient-mismatch',
     'outside-frozen-audience',
-    'already-confirmed',
-    'already-outside',
     'deadline-expired',
     'never-sent'
 ];
+
+/** A refusal that read a head states at most its three guards; one that read none states one guard. */
+const MAX_ACK_REJECTION_GUARDS = 3;
+
+/** A refusal that read no head states no deadline: an absent or ended receipt, or an ACK addressed elsewhere. */
+const HEADLESS_ACK_GUARDS = ['aggregate-absent', 'origin-addressee-mismatch'];
 
 const BUSINESS_SOCKET_FIELDS: readonly ReceiptReturnField[] = [
     { name: 'msgId', kind: 'identity' },
@@ -172,8 +174,6 @@ export function toSafeApiWsReceiptObservation(value: unknown): SafeApiWsReceiptO
             return decodeSafeApiAckRejection(value);
         case 'ack-count':
             return toSafeAckCount(value);
-        case 'ack-relay':
-            return toSafeAckRelay(value);
         case 'receipt-work':
         case 'receipt-transport':
         case 'receipt-publication':
@@ -289,25 +289,18 @@ function decodeSafeApiAckRejectionOwner(record: unknown): ApiJsonObject | undefi
     if (record.validationAtEpochMs !== undefined || record.deadlineAtMs !== undefined) {
         return undefined;
     }
-    if (record.owner === 'inbound-authority') {
-        return !isAllowedApiTimingString(record.stage, ['post-authorizer-currentness', 'admission-currentness']) ||
-                !isSafeApiTimingIdentity(record.connectionId) ||
-                !isSafeAckRejectionGuards(record.failedGuards, ['connection-replaced', 'connection-closed']) ||
-                record.failedGuards.length !== 1
-            ? undefined
-            : {
-                owner: record.owner,
-                stage: record.stage,
-                connectionId: record.connectionId,
-                failedGuards: [...record.failedGuards]
-            };
-    }
-    return record.owner !== 'ack-relay' ||
-            !isAllowedApiTimingString(record.stage, ['ingress-protocol', 'runtime-protocol']) ||
-            !isSafeAckRejectionGuards(record.failedGuards, ['origin-addressee-mismatch']) ||
+    return record.owner !== 'inbound-authority' ||
+            !isAllowedApiTimingString(record.stage, ['post-authorizer-currentness', 'admission-currentness']) ||
+            !isSafeApiTimingIdentity(record.connectionId) ||
+            !isSafeAckRejectionGuards(record.failedGuards, ['connection-replaced', 'connection-closed']) ||
             record.failedGuards.length !== 1
         ? undefined
-        : { owner: record.owner, stage: record.stage, failedGuards: [...record.failedGuards] };
+        : {
+            owner: record.owner,
+            stage: record.stage,
+            connectionId: record.connectionId,
+            failedGuards: [...record.failedGuards]
+        };
 }
 
 function decodeSafeApiAggregateAckRejection(record: unknown): ApiJsonObject | undefined {
@@ -321,11 +314,10 @@ function decodeSafeApiAggregateAckRejection(record: unknown): ApiJsonObject | un
     ) {
         return undefined;
     }
-    const absent = record.failedGuards.includes('aggregate-absent');
+    const headless = record.failedGuards.length === 1 && HEADLESS_ACK_GUARDS.includes(record.failedGuards[0]!);
     if (
-        absent
-            ? record.failedGuards.length !== 1 || record.deadlineAtMs !== undefined
-            : !isNonNegativeApiTimingNumber(record.deadlineAtMs)
+        record.failedGuards.includes('aggregate-absent') && !headless ||
+        (headless ? record.deadlineAtMs !== undefined : !isNonNegativeApiTimingNumber(record.deadlineAtMs))
     ) {
         return undefined;
     }
@@ -334,12 +326,12 @@ function decodeSafeApiAggregateAckRejection(record: unknown): ApiJsonObject | un
         stage: record.stage,
         failedGuards: [...record.failedGuards],
         validationAtEpochMs: record.validationAtEpochMs,
-        ...(absent ? {} : { deadlineAtMs: record.deadlineAtMs as number })
+        ...(headless ? {} : { deadlineAtMs: record.deadlineAtMs as number })
     };
 }
 
 function isSafeAckRejectionGuards(value: unknown, allowed: readonly string[]): value is readonly string[] {
-    return Array.isArray(value) && value.length > 0 && value.length <= 7 &&
+    return Array.isArray(value) && value.length > 0 && value.length <= MAX_ACK_REJECTION_GUARDS &&
         new Set(value).size === value.length && value.every((guard) => isAllowedApiTimingString(guard, allowed));
 }
 
@@ -386,48 +378,26 @@ function toSafeSocketDecision(record: Readonly<Record<string, unknown>>): SafeAp
 
 function toSafeAckCount(record: Readonly<Record<string, unknown>>): SafeApiWsReceiptObservationDto | undefined {
     const identity = toSafeAckIdentity(record, 'ack-count');
-    const before = record.before === undefined ? undefined : toSafeAggregate(record.before);
     const after = record.after === undefined ? undefined : toSafeAggregate(record.after);
     if (
-        !identity || !isAllowedApiTimingString(record.source, ['local', 'relayed']) ||
-        !isAllowedApiTimingString(record.outcome, ['rejected', 'partial', 'complete']) ||
+        !identity ||
+        !isAllowedApiTimingString(record.outcome, ['rejected', 'conflict', 'partial', 'complete']) ||
         !isNonNegativeApiTimingNumber(record.countAtEpochMs) ||
-        (record.before !== undefined && before === undefined) || (record.after !== undefined && after === undefined)
+        (record.after !== undefined && after === undefined)
     ) {
         return undefined;
     }
     const fields: Record<string, ApiJsonValue> = {};
-    if (before !== undefined) {
-        fields.before = before;
-    }
     if (after !== undefined) {
         fields.after = after;
     }
-    retainSafeIdentity(fields, record, 'relayPublisherId');
     retainSafeRejection(fields, record);
     return {
         ...identity,
         ...fields,
-        source: record.source,
         outcome: record.outcome,
         countAtEpochMs: record.countAtEpochMs
     };
-}
-
-function toSafeAckRelay(record: Readonly<Record<string, unknown>>): SafeApiWsReceiptObservationDto | undefined {
-    const identity = toSafeAckIdentity(record, 'ack-relay');
-    if (
-        !identity ||
-        !isAllowedApiTimingString(record.outcome, [
-            'provenance-refused',
-            'budget-refused',
-            'published',
-            'publication-failed'
-        ])
-    ) {
-        return undefined;
-    }
-    return { ...identity, outcome: record.outcome };
 }
 
 function toSafeReceiptOutbox(record: Readonly<Record<string, unknown>>): SafeApiWsReceiptObservationDto | undefined {

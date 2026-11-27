@@ -625,7 +625,7 @@ describe('computeALMObservationRegime', () => {
                     drainCount: 2
                 },
                 claimWaits: NO_CLAIM_WAITS,
-                promotedReleases: 0
+                promotedDeliveries: 0
             },
             {
                 role: 'receiver',
@@ -641,7 +641,7 @@ describe('computeALMObservationRegime', () => {
                     drainCount: 2
                 },
                 claimWaits: NO_CLAIM_WAITS,
-                promotedReleases: 0
+                promotedDeliveries: 0
             },
             { role: 'unattributed', outcome: 'no-events' }
         ]);
@@ -705,7 +705,7 @@ describe('computeALMObservationRegime', () => {
                     drainCount: 0
                 },
                 claimWaits: NO_CLAIM_WAITS,
-                promotedReleases: 0
+                promotedDeliveries: 0
             },
             { role: 'receiver', outcome: 'no-events' },
             { role: 'unattributed', outcome: 'no-events' }
@@ -740,7 +740,7 @@ describe('computeALMObservationRegime', () => {
                     drainCount: 1
                 },
                 claimWaits: NO_CLAIM_WAITS,
-                promotedReleases: 0
+                promotedDeliveries: 0
             },
             { role: 'receiver', outcome: 'no-events' },
             { role: 'unattributed', outcome: 'no-events' }
@@ -800,11 +800,11 @@ describe('computeALMObservationRegime', () => {
                 sendControlClaimMedianMs: 0,
                 sendControlClaimCount: 0
             },
-            promotedReleases: 0
+            promotedDeliveries: 0
         });
     });
 
-    it('sums the releases a role ran by promotion over both lanes, and skips a drain that states no count', () => {
+    it('sums the deliveries a role ran by hand-on over both lanes, and skips a drain that states no count', () => {
         const drain = (atEpochMs: number, agentId: string, promoted: number) =>
             toInboundDrainEvent(atEpochMs, agentId, {
                 durationMs: 4,
@@ -847,9 +847,9 @@ describe('computeALMObservationRegime', () => {
             const direction = regime.inbound.find((candidate) => candidate.role === role);
             return direction?.outcome === 'measured' ? direction : undefined;
         };
-        expect(directionOf('receiver')?.promotedReleases).toBe(18);
+        expect(directionOf('receiver')?.promotedDeliveries).toBe(18);
         expect(directionOf('receiver')?.phases.drainCount).toBe(1);
-        expect(directionOf('sender')?.promotedReleases).toBe(2);
+        expect(directionOf('sender')?.promotedDeliveries).toBe(2);
     });
 
     it('summarizes a cell in one line for the job log', () => {

@@ -59,8 +59,8 @@ export function decodeALReceiptPayload(value: unknown): ALReceiptPayload {
         'observedAtEpochMs'
     ]);
     return {
-        msgId: decodeControlIdentifier(record.msgId, 'receipt message ID', AL_MESSAGE_RESOURCE_LIMITS.payloadBytes),
-        originPeerId: decodeControlIdentifier(record.originPeerId, 'receipt origin identity'),
+        msgId: decodeALReceiptIdentifier(record.msgId, 'receipt message ID', 'message-id'),
+        originPeerId: decodeALReceiptIdentifier(record.originPeerId, 'receipt origin identity', 'peer-id'),
         expectedRecipientPeerIds: decodeControlIdentifierArray(
             record.expectedRecipientPeerIds,
             'receipt expected recipient identity'
@@ -78,6 +78,19 @@ export function decodeALReceiptPayload(value: unknown): ALReceiptPayload {
         observedAtEpochMs: decodeControlNumber(record.observedAtEpochMs, 'receipt observation time')
     };
 }
+
+/**
+ * An identity a receipt names, as the receipt control accepts it, else a `TypeError`: its message id, or a peer (its
+ * origin or a recipient).
+ */
+export function decodeALReceiptIdentifier(value: unknown, label: string, identity: 'message-id' | 'peer-id'): string {
+    return decodeControlIdentifier(value, label, AL_RECEIPT_IDENTIFIER_MAXIMUM_CHARACTERS[identity]);
+}
+
+const AL_RECEIPT_IDENTIFIER_MAXIMUM_CHARACTERS = {
+    'message-id': AL_MESSAGE_RESOURCE_LIMITS.payloadBytes,
+    'peer-id': AL_MESSAGE_RESOURCE_LIMITS.routeIdCharacters
+} as const;
 
 export function decodeALNackPayload(value: unknown): ALNackPayload {
     const record = decodeControlRecord(

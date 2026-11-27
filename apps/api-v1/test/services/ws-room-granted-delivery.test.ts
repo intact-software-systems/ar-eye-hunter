@@ -18,6 +18,8 @@ import { newALAckControlMessage, type ALReceiptPayload } from '@shared/al-contra
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { createInMemoryALReceiptRecordStores } from '@shared/alm/receipt-record/al-receipt-record-stores.ts';
+import { ALReceiptRecord } from '@shared/alm/receipt-record/al-receipt-record.ts';
 import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { GroupTopicSubscription } from '@shared/api/group-publication/group-topic-subscriptions.ts';
 import type { GroupMember, GroupPresenceSession, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -76,6 +78,8 @@ interface GrantedDeliveryHarness {
     readonly router: RallarServerWsRouter;
     readonly server: JsonWebSocketServer;
     readonly stores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
+    /** The test's own reader of the receipt record the server counts its own publications in. */
+    readonly record: ALReceiptRecord;
     /** Each authority read takes the next answer; the last one repeats. */
     readonly reads: RoomRead[];
     /** When set, the D498 re-check reads this instead of taking its turn in `reads`. */
@@ -290,7 +294,7 @@ test('a server-producer outbox row skips a subscriber revoked before dequeue, ne
         assert.deepEqual(pending?.outsideAudiencePeerIds, []);
 
         await harness.service.acceptIncomingMessage(receiverAck(message, 'bob'), 'bob');
-        await settle();
+        await waitFor(async () => await harness.stores.admissionStore.readPendingAck(receipt) === undefined);
 
         assert.equal(await harness.stores.admissionStore.readPendingAck(receipt), undefined);
     });
@@ -309,13 +313,25 @@ test('a server-producer outbox row skips a subscriber revoked before its retry, 
         const receipt = { originPeerId: SERVER_PEER_ID, msgId: 'produced-retry-revoke' };
 
         await harness.router.publish({ message, fanout: 'outbox', producerId: PRODUCER });
-        await waitFor(async () => (await harness.stores.admissionStore.readReceiptState(receipt))?.outsideAudiencePeerIds.includes('carol') === true);
+        // The record holds the retry's drop; the server's row learns it from the terminal receipt.
+        await waitFor(async () => (await harness.record.read(receipt)).right?.tally.outsideAudienceRecipientPeerIds.includes('carol') === true);
         await harness.service.acceptIncomingMessage(receiverAck(message, 'bob'), 'bob');
+        await waitFor(async () => await harness.stores.admissionStore.readPendingAck(receipt) === undefined);
         await settle();
 
         assert.equal(readDelivered(frames.carol, message), 1);
-        assert.deepEqual((await harness.stores.admissionStore.readReceiptState(receipt))?.expectedPeerIds, ['bob', 'carol']);
+        const row = await harness.stores.admissionStore.readReceiptState(receipt);
+        assert.deepEqual(row?.expectedPeerIds, ['bob', 'carol']);
+        assert.deepEqual(row?.outsideAudiencePeerIds, ['carol']);
         assert.equal(await harness.stores.admissionStore.readPendingAck(receipt), undefined);
+        // A head that timed out also settles the row: only its phase shows bob's ACK completed the receipt.
+        const head = (await harness.record.read(receipt)).right?.head;
+        assert.equal(head?.phase, 'complete');
+        if (head?.phase !== 'complete') {
+            throw new Error('the receipt head is not complete');
+        }
+        assert.deepEqual(head.confirmedRecipientPeerIds, ['bob']);
+        assert.deepEqual(head.outsideAudienceRecipientPeerIds, ['carol']);
     });
 });
 
@@ -766,6 +782,7 @@ async function withHarness(
 async function createHarness(input: GrantedDeliveryHarnessInput): Promise<GrantedDeliveryHarness> {
     const server = new JsonWebSocketServer();
     const stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
+    const receiptRecordStores = createInMemoryALReceiptRecordStores('room-granted-delivery', Date.now);
     const grantedTopics = new WsGrantedTopicSet();
     const reads: RoomRead[] = [];
     let readCount = 0;
@@ -803,6 +820,7 @@ async function createHarness(input: GrantedDeliveryHarnessInput): Promise<Grante
         inboundVolatileStores: undefined,
         outbox: stores.workQueue,
         outboundStores: stores,
+        receiptRecordStores,
         socket: server,
         name: SERVER_PEER_ID,
         forwardsRoomScopedMessages: false,
@@ -833,6 +851,7 @@ async function createHarness(input: GrantedDeliveryHarnessInput): Promise<Grante
         router,
         server,
         stores,
+        record: new ALReceiptRecord({ ...receiptRecordStores, nowMs: Date.now }),
         reads,
         recheckRead: undefined,
         readCount: () => readCount

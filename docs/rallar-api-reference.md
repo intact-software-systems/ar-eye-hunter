@@ -1244,10 +1244,11 @@ retry. Any receipt from the server ends that wait, and so does its
 server answers that send again when it admits it, with its `admitted` receipt,
 or when it refuses it, with the refusal's NACK when the refusal sends one.
 The server answers a
-duplicate of a message it admitted with its `admitted` receipt again, to that
-sender alone, while it holds the receipt; where it no longer does (another
-server instance, a restart) a send whose `admitted` receipt was lost can read
-`failed` although it was delivered.
+duplicate of a message it admitted from the receipt record every server
+instance shares, to that sender alone: with its `admitted` receipt while the
+receipt is open, and with its terminal receipt once it has ended, on any
+instance, whichever one admitted the send. A memory-only server
+keeps no record across a restart.
 
 Over RTC the sender sees grants but not subscriptions, so a receipted granted
 send (`ack: 'receiver'`, `'all-logical-recipients'` or `'group-leader'`) expects
@@ -1713,7 +1714,7 @@ that is not in the room is dropped silently. Both are room sends: they carry the
 room's `minSnapshotVersion` and `rosterVersion` and are fenced as any room send
 (see Membership Fencing below), the RTC origin freezes the narrowed audience at
 its `snapshotVersion`, and the WS server admits the narrowed audience as the
-room audience its receipt aggregate expects and its repair serves (D159).
+room audience its receipt expects and its repair serves (D159).
 Receivers enforce the audience on both carriers: an RTC peer delivers a narrowed
 multicast only when the frozen audience names it, and the shared planner
 delivers a room broadcast that carries `recipientPeerIds` only at a listed

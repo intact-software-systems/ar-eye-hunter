@@ -871,9 +871,12 @@ successor waits on it; a deferred, pending or `no-route` outcome keeps it while
 the row retries. On the
 server's own rows, its publications and every producer row it sends under its
 peer id, a recipient skipped below its position or a session the dequeue
-re-check dropped is recorded in `outsideAudiencePeerIds` of the server's own
+re-check dropped was recorded in `outsideAudiencePeerIds` of the server's own
 pending receipt through one fenced commit under the server's sender version,
-tried up to three times on a lost fence; a retry then targets only the
+tried up to three times on a lost fence. That commit is deleted: such a
+recipient is now one `outside` confirmation in the receipt record once the
+server's pending receipt row exists, with no fenced commit and no diagnostic,
+and a first dequeue's drop, which precedes that row, writes nothing (D778). A retry then targets only the
 unconfirmed recipients, and the receipt completes once every expected recipient
 is confirmed or outside and one is confirmed. A mid-round Relic joiner's first
 transition is `round-resolved` at `seq 2` with prior 0, read as `entered` with no
@@ -888,14 +891,15 @@ the dequeuing instance only; the fallback windows and the lost entry frame are
 unchanged; a row whose dequeue keeps answering deferred or pending keeps its
 index, so if it never returns its successors wait for its deadline; a failed
 index-end write is logged only and leaves successors to that deadline; each
-own-row outside commit moves the server's single sender version, and after
-three lost fences the recipient stays unconfirmed until the next retry records
-it; the producer provenance sidecar's inserts are not folded into the shared
-writer; and no browser lane asserts Relic entry, since the gated Relic lanes run
-the built preview without the development runtime hook. During a rolling deploy
-an older instance dequeues an indexed producer row without recording it, and a
-newer instance holds on such a predecessor until its deadline. Decisions
-D538–D550 are in the roadmap, and Slice 5 is complete.
+own-row outside commit moved the server's single sender version, and after
+three lost fences the recipient stayed unconfirmed until the next retry
+recorded it, a limit gone with that commit (D778); the producer provenance
+sidecar's inserts are not folded into the shared writer; and no browser lane
+asserts Relic entry, since the gated Relic lanes run the built preview without
+the development runtime hook. During a rolling deploy an older instance dequeues
+an indexed producer row without recording it, and a newer instance holds on such
+a predecessor until its deadline. Decisions D538–D550 are in the roadmap, and
+Slice 5 is complete.
 
 ### Slice 6: granted unicast, list and principal broadcast over RTC
 
@@ -1055,12 +1059,15 @@ confirmed. The bridge's `sendToCapturedLocalTargets` reports
 one with no re-check wired, reports only its skips. A dequeue whose captured
 audience was judged and resolves to no socket on this instance plans a send to
 nobody here (`audienceJudgedAtSend`), not `no-route`; the awaited-connection
-hold or the retry decides. Three lost fences on an own-row outside commit are
+hold or the retry decides. Three lost fences on an own-row outside commit were
 one `outside-audience-commit` outbound diagnostic,
 `{ msgId, recipientPeerIds, attempts, outcome: 'conflict' }` plus the message
 trace, through the runtime diagnostics and with no console line; an `absent`
-answer is the commit's normal one and a thrown commit propagates so the retry
-re-judges, so neither is written. The 6b probe
+answer was the commit's normal one and a thrown commit propagated so the retry
+re-judged, so neither was written. The commit and its diagnostic are deleted:
+an own-row drop is now one `outside` confirmation in the receipt record once
+the server's pending receipt row exists, which takes no fence, and a first
+dequeue's drop, which precedes that row, writes nothing (D778). The 6b probe
 (`ws-tracked-dequeue-statements.test.ts`, on Postgres) counted the tracked
 dequeue before and after: the front is unchanged (past `seq 1` the prefix list
 returns N rows at depth N, the row's own index row included, and
@@ -1087,7 +1094,8 @@ completing on the other recipient, and one live at the dequeue and gone at the
 retry outside after it. This supersedes the Slice 4 and Slice 5 cluster limit
 and the Slice 5 three-fence limit: positions and the outside class no longer
 cover the dequeuing instance's sessions only, and after three lost fences the
-recipient is named in a diagnostic before it waits for the retry. Limits: the
+recipient was named in a diagnostic before it waited for the retry (since
+D778 an own-row drop takes no fence and writes no diagnostic). Limits: the
 cluster proof proves the record and entry half on client-state principal events
 and a granted room topic, and the outside judgement on the receipt-retry path,
 because the only way to hold the dequeuer holds every AppInbox mutation too; the
@@ -1111,7 +1119,8 @@ the product's snapshot publication covers its state. The window, a socket closed
 whose AppInbox close has not committed and a lease lapsed before the 60 s
 presence sweep, is judged at the retry; a send-time drop
 of a session live nowhere waits for the retry; after three lost fences the
-recipient waits for the retry; and the presence sweep is 60 s and not
+recipient waited for the retry, a limit gone with the own-row commit (D778);
+and the presence sweep is 60 s and not
 configurable.
 
 As applied (S7-ii): a repair hint's paged sequences are charged once per gap.
@@ -1582,9 +1591,9 @@ is green in three of three; in both all twenty arrive in order and none twice.
 In the first nine runs a lost repair frame was renewed end to end in two, both
 over `ws`, and the first-hop resend is proven by unit tests alone (D683). The
 recovery has stated limits: a lost only or last frame under `ack: 'none'` is
-not recovered, renewal held on direct links and not through an `rtc` relay
-until the relay statement rules (D725 to D730), and a send can end `failed` although delivered when the server no longer holds
-its receipt (D678, D680, D683, D693 and the backlog); and the lost stream
+not recovered, and renewal held on direct links and not through an `rtc` relay
+until the relay statement rules (D680, D683, D693, D725 to D730 and the
+backlog); and the lost stream
 start over `rtc` is its own slice (D669). The held-send path is built (D696 to
 D700): a send the server keeps starts its receipt when the server admits it, at
 ingress or at its replay, so a send kept behind its room view and then admitted
@@ -1593,10 +1602,16 @@ later refuses is answered with the refusal's NACK (D698); and a `timed-out`
 receipt always ends its receipt at the WS client (D699). Its stated limits: a
 kept send that expires is not reported, since the handle's own deadline says so
 (the maintainer's ruling); a kept send that names no deadline keeps the kept
-row's; without a relay publisher an ACK on another instance than the one that
-admitted the send is lost; a send the server loses in a restart reads `expired`
-at its deadline (D694); and a receipt does not survive its server's crash, which
-`api-v1-cluster-publisher-instance-loss` pins (D700). A send kept after a lost
+row's; and a send the server retains and then loses in a restart, before it
+admits it, reads `expired` at its deadline (D694). The receipt itself is counted
+in a durable receipt record every server instance shares
+(`packages/shared/alm/receipt-record/README.md`): an ACK counts on whichever
+instance it reaches, a duplicate is answered from the record on any instance, its
+terminal receipt included once the receipt has ended, so a delivered send does
+not end `failed` because the instance it reached holds no receipt (D678), and the
+receipt survives the crash of the server that admitted the send:
+`api-v1-cluster-publisher-instance-loss` kills that server's process, and the
+publisher, reconnected to a survivor, reads `complete`. A send kept after a lost
 commit race whose recipients all left by its replay expects the recipients
 captured at ingress, so its handle reads `expired` at its deadline (D701). The
 local baseline's alternating runs are pull request 851 (D672). The relay
@@ -1731,8 +1746,11 @@ outcomes:** the dequeue authority's fixture drops a captured session no durable
 filter finds live, whatever this instance's sockets hold, and keeps a non-frozen
 row's audience with no filter wired; the track-order fixture records a durable
 drop outside with no socket open here, needs the open socket for an open-here
-drop, and turns three conflicts into one `outside-audience-commit` diagnostic
-with no console line; the bridge suite reports the captured sessions its
+drop, and turned three conflicts into one `outside-audience-commit` diagnostic
+with no console line, until that commit and its diagnostic were deleted and an
+own-row drop became one `outside` confirmation in the receipt record once the
+pending receipt row exists, a first dequeue's drop writing nothing (D778);
+the bridge suite reports the captured sessions its
 send-time re-check dropped beside the skips, open-here; the api-v1 units read a
 session live nowhere outside at the dequeue, the receipt completing on the other
 recipient, and one gone by the retry outside after it; and the ordering cluster

@@ -114,6 +114,51 @@ test('guest reliability controls can acknowledge only messages delivered on this
     }
 });
 
+// Pins a guest's socket refusing the server's admitted receipt of the guest's own submission, which would leave that
+// receipt off the guest's socket and on its row only, or passing an admitted receipt of a message the guest never sent.
+test('a guest reads its own admitted', async () => {
+    const { newALReceiptControlMessage } = await import('@shared/al-contracts/al-control.ts');
+    const { RoomGuestSocket } = await import('../src/runtime/room-guest-socket.ts');
+    const room = createGroupStateRouteSnapshotWithMember('market', 'guest', 'active');
+    const snapshot = { ...room, members: room.members.map((member) => ({ ...member, guestLease: { admittedAtEpochMs: 1, expiresAtEpochMs: 10000 } })) };
+    const socket = new RoomGuestSocket({ guest: MARKET_GUEST, readSnapshot: async () => snapshot, now: () => 100, serverPeerId: 'server' });
+    const submission = newALMulticastMessage({
+        createdAtEpochMs: 100,
+        senderId: MARKET_GUEST.sessionId,
+        groupRef: MARKET_GUEST.roomRef,
+        route: { topicId: 'events', resourceId: 'input', contextId: 'market' },
+        typeId: 'input',
+        resource: {},
+        options: { reliability: 'at-least-once', ack: 'receiver' }
+    });
+    const admitted = (msgId: string) =>
+        JSON.stringify(newALReceiptControlMessage(
+            { ...submission.id, senderId: 'server', msgId: `receipt-${msgId}` },
+            {
+                msgId,
+                originPeerId: MARKET_GUEST.sessionId,
+                expectedRecipientPeerIds: ['sender'],
+                confirmedRecipientPeerIds: [],
+                outsideAudienceRecipientPeerIds: [],
+                snapshotVersion: 1,
+                phase: 'admitted',
+                observedAtEpochMs: 100
+            }
+        ));
+    assert.equal(await socket.authorizeUpgrade(), true);
+    const { configureGroupStateSnapshotRepository } = await import('@shared/repository/group-state-snapshots-repository.ts');
+    configureGroupStateSnapshotRepository({ ttlMs: 10000 });
+    const transport = socket.wrap({ readyState: 1, send: () => 1, close: () => {} });
+    try {
+        assert.equal(await socket.allowsInbound(JSON.stringify(submission)), true);
+        assert.equal(transport.acceptsOutbound?.(admitted(submission.id.msgId)), true);
+        assert.equal(transport.acceptsOutbound?.(admitted('never-submitted')), false);
+    }
+    finally {
+        socket.close();
+    }
+});
+
 interface ScriptedGuestRoomReads {
     readonly reads: PromiseWithResolvers<GroupSnapshot | undefined>[];
     readonly readSnapshot: () => Promise<GroupSnapshot | undefined>;

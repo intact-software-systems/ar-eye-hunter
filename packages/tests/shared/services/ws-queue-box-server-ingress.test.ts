@@ -15,9 +15,11 @@ import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-reso
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import type { ALAdmissionMemoryState } from '@shared/alm/al-admission-backend.ts';
 import { readALInboundMessageOwner } from '@shared/alm/inbound/al-inbound-source-validation.ts';
+import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { ConnectionContext } from '@shared/websocket/json-web-socket-server.ts';
 
+import { loseInboundWritesFromNowOn } from '../alm/inbound-runtime-test-fixture.ts';
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 import { createIncomingMessage, createRoomMessage, createServerIngressFixture } from './ws-queue-box-server-ingress-fixture.ts';
 import { settleQueueEngine } from './ws-queue-box-server-receipt-fixture.ts';
@@ -250,10 +252,14 @@ describe('WS server bounded and authorized admission', () => {
                 expect(status).toBe('conflict');
                 return status;
             });
+            // Every later attempt's write is lost too, so the send is retained however often its owner looks again;
+            // the store commits again once the row is retained, before the replay that rechecks authority.
+            const restoreWrites = loseInboundWritesFromNowOn(fixture.admissionStore);
             const enqueue = fixture.admission.workQueue.enqueueIfAbsent.bind(fixture.admission.workQueue);
             let observedMetadata: ALAdmissionMemoryState['data'] | undefined;
             vi.spyOn(fixture.admission.workQueue, 'enqueueIfAbsent').mockImplementationOnce(async (entry) => {
                 const retained = await enqueue(entry);
+                restoreWrites();
                 observedMetadata = new Map(fixture.admission.data);
                 pending = true;
                 return retained;
@@ -707,6 +713,162 @@ describe('WS server bounded and authorized admission', () => {
         await expect.poll(() => fixture.delivered.map((message) => message.id.msgId)).toEqual(delivered);
         expect(readReceiptPhases(peer, resentMsgId)).toEqual([]);
         expect(peer.sent.filter((frame) => decodePersistedALMessage(frame).id.msgId === resentMsgId)).toHaveLength(1);
+    });
+
+    // Each send's admission extends the track's progress expiry; a completion fenced on that whole row conflicted, and
+    // its work handed the delivered message to the application a second or third time.
+    it('hands each ordered message to the application once when sends arrive back to back', async () => {
+        const fixture = await createServerIngressFixture();
+        const peer = new SimulatedWebSocket('ws://peer');
+        await peer.open();
+        attachTestWebSocket(fixture.server, new ConnectionContext({ id: 'session-2', socket: peer }));
+        const received: string[] = [];
+        fixture.service.onAnyInboxMessageDo('application', {
+            onMessage: async (message) => {
+                received.push(message.id.msgId);
+            }
+        });
+        fixture.service.authorizeInboundMessagesWith({
+            sendNacks: false,
+            authorize: async () => ({ authorized: true, roomAudience: { recipientPeerIds: ['session-1', 'session-2'], snapshotVersion: 1 } })
+        });
+        for (const seq of [1, 2, 3]) {
+            expect((await fixture.service.acceptIncomingMessage(createOrderedRoomMessage(seq), 'session-1')).left).toBeUndefined();
+        }
+
+        await expect.poll(() => received).toEqual(['message-1', 'message-2', 'message-3']);
+        await settleQueueEngine(fixture.engine);
+        expect(received).toEqual(['message-1', 'message-2', 'message-3']);
+        const trackKey = toALOrderingTrackKey(createOrderedRoomMessage(1))!;
+        expect((await fixture.admissionStore.readOrderedDelivery(trackKey, 4)).completedThrough).toBe(3);
+    });
+
+    // Of two sends written side by side, the second lost its write to the first's admission and was parked until a
+    // replay ran.
+    it('admits two ordered sends of one track written side by side, and hands each to the application once in order', async () => {
+        const fixture = await createServerIngressFixture();
+        const received: string[] = [];
+        fixture.service.onAnyInboxMessageDo('application', {
+            onMessage: async (message) => {
+                received.push(message.id.msgId);
+            }
+        });
+        fixture.service.authorizeInboundMessagesWith({
+            sendNacks: false,
+            authorize: async () => ({ authorized: true, roomAudience: { recipientPeerIds: ['session-1'], snapshotVersion: 1 } })
+        });
+
+        const answers = await Promise.all(
+            [1, 2].map(async (seq) => (await fixture.service.acceptIncomingMessage(createOrderedRoomMessage(seq), 'session-1')).right?.kind)
+        );
+
+        expect(answers).toEqual(['admitted', 'admitted']);
+        const trackKey = toALOrderingTrackKey(createOrderedRoomMessage(1))!;
+        await expect.poll(async () => (await fixture.admissionStore.readOrderedDelivery(trackKey, 3)).completedThrough).toBe(2);
+        await settleQueueEngine(fixture.engine);
+        expect(received).toEqual(['message-1', 'message-2']);
+        const rows = await Promise.all(
+            (await fixture.admission.workQueue.getAllKeys()).map(async (key) =>
+                decodeALInboundWorkEntry((await fixture.admission.workQueue.getItem(key))!, fixture.admissionStore.namespace)
+            )
+        );
+        expect(rows.filter((row) => row.payload.kind === 'admit-message')).toEqual([]);
+    });
+
+    // Each send lost its admission write to its predecessor's completion and was parked, its track's later sends
+    // buffered behind it until a replay ran seconds later.
+    it('delivers five ordered sends of one track in order when each arrives during its predecessor\'s completion', async () => {
+        const fixture = await createServerIngressFixture();
+        const trackKey = toALOrderingTrackKey(createOrderedRoomMessage(1))!;
+        const readCompletedThrough = async () => (await fixture.admissionStore.readOrderedDelivery(trackKey, 6)).completedThrough;
+        const received: string[] = [];
+        // Each send's hand-over to the application waits for its successor's store read, so its completion commits
+        // inside that read's window.
+        const handOvers = new Map<string, PromiseWithResolvers<void>>();
+        const readHandOver = (msgId: string) => handOvers.get(msgId) ?? handOvers.set(msgId, Promise.withResolvers()).get(msgId)!;
+        onTestFinished(() => handOvers.forEach((handOver) => handOver.resolve()));
+        fixture.service.onAnyInboxMessageDo('application', {
+            onMessage: async (message) => {
+                received.push(message.id.msgId);
+                await readHandOver(message.id.msgId).promise;
+            }
+        });
+        fixture.service.authorizeInboundMessagesWith({
+            sendNacks: false,
+            authorize: async () => ({ authorized: true, roomAudience: { recipientPeerIds: ['session-1'], snapshotVersion: 1 } })
+        });
+        const read = fixture.admissionStore.readIncomingMessage.bind(fixture.admissionStore);
+        const held = new Set<string>();
+        vi.spyOn(fixture.admissionStore, 'readIncomingMessage').mockImplementation(async (request) => {
+            const observed = await read(request);
+            const seq = request.msg.ordering?.seq;
+            if (seq !== undefined && seq > 1 && !held.has(request.msg.id.msgId)) {
+                held.add(request.msg.id.msgId);
+                await expect.poll(() => received).toContain(`message-${seq - 1}`);
+                readHandOver(`message-${seq - 1}`).resolve();
+                await settleQueueEngine(fixture.engine);
+                await expect.poll(readCompletedThrough).toBe(seq - 1);
+            }
+            return observed;
+        });
+
+        const answers: (string | undefined)[] = [];
+        for (const seq of [1, 2, 3, 4, 5]) {
+            answers.push((await fixture.service.acceptIncomingMessage(createOrderedRoomMessage(seq), 'session-1')).right?.kind);
+        }
+        readHandOver('message-5').resolve();
+
+        expect(answers).toEqual(['admitted', 'admitted', 'admitted', 'admitted', 'admitted']);
+        await expect.poll(readCompletedThrough).toBe(5);
+        await settleQueueEngine(fixture.engine);
+        expect(received).toEqual(['message-1', 'message-2', 'message-3', 'message-4', 'message-5']);
+    });
+
+    // Pins the hand-on on the WS server: each send admitted behind the held delivery is run by the batch that completed
+    // its predecessor. Without it, a batch that followed delivered message 2, and each later send that a batch had
+    // already set aside waited for the rotation. The engine's rounds are stopped before the hold is let go, so only the
+    // batches already owed can deliver what follows.
+    it('hands each ordered send admitted behind a held delivery to the application as its predecessor completes', async () => {
+        const fixture = await createServerIngressFixture();
+        const trackKey = toALOrderingTrackKey(createOrderedRoomMessage(1))!;
+        const received: string[] = [];
+        const firstHandOver = Promise.withResolvers<void>();
+        onTestFinished(() => firstHandOver.resolve());
+        fixture.service.onAnyInboxMessageDo('application', {
+            onMessage: async (message) => {
+                received.push(message.id.msgId);
+                if (message.id.msgId === 'message-1') {
+                    await firstHandOver.promise;
+                }
+            }
+        });
+        fixture.service.authorizeInboundMessagesWith({
+            sendNacks: false,
+            authorize: async () => ({ authorized: true, roomAudience: { recipientPeerIds: ['session-1'], snapshotVersion: 1 } })
+        });
+        const answers = [(await fixture.service.acceptIncomingMessage(createOrderedRoomMessage(1), 'session-1')).right?.kind];
+        await expect.poll(() => received).toEqual(['message-1']);
+        for (const seq of [2, 3, 4, 5]) {
+            answers.push((await fixture.service.acceptIncomingMessage(createOrderedRoomMessage(seq), 'session-1')).right?.kind);
+        }
+        await fixture.engine.stop();
+
+        firstHandOver.resolve();
+
+        expect(answers).toEqual(['admitted', 'admitted', 'admitted', 'admitted', 'admitted']);
+        await expect.poll(async () => (await fixture.admissionStore.readOrderedDelivery(trackKey, 6)).completedThrough).toBe(5);
+        expect(received).toEqual(['message-1', 'message-2', 'message-3', 'message-4', 'message-5']);
+        const readRows = async () =>
+            await Promise.all(
+                (await fixture.admission.workQueue.getAllKeys()).map(async (key) => (await fixture.admission.workQueue.getItem(key))!)
+            );
+        // The batch releases its rows after their completions commit, so the rows are read once its release shows.
+        await expect.poll(async () =>
+            (await readRows())
+                .filter((row) => decodeALInboundWorkEntry(row, fixture.admissionStore.namespace).payload.kind === 'dispatch-local')
+                .map((row) => [row.status, row.dequeueAudit.attempts])
+        ).toEqual(Array(5).fill(['COMPLETED', 1]));
+        expect((await readRows()).map((row) => row.status)).not.toContain('RETRY');
     });
 
     it('leaves a durable message in QueueBox when an application subscriber fails', async () => {

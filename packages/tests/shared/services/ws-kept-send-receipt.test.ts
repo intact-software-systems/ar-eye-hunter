@@ -7,6 +7,7 @@ import {
     type ALDeliverySettlement
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { computeALDeliveryDeadline, computeALDeliveryLifecycle } from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
 import {
     createWsReceiptedSendLink,
@@ -19,7 +20,8 @@ import {
     type WsReceiptedSendServerControl
 } from './ws-receipted-send-link-fixture.ts';
 
-const NO_RECEIPT = 'names no receipt this server aggregates';
+/** An ACK for a send no admission committed yet: the record holds no head, and no admission row proves its sender. */
+const NOT_ADMITTED = 'names no message its origin admitted to this sender';
 
 describe('a WS sender\'s reading of a room send its server kept', () => {
     beforeEach(() => {
@@ -35,7 +37,8 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
         const link = await createWsReceiptedSendLink('behind');
         const sent = await link.send(toRoomNotice());
         await link.advance(1_000);
-        expect((await link.acknowledge(sent)).left?.message).toContain(NO_RECEIPT);
+        // The room view behind refuses the ACK as a control: only a data message is kept for its view.
+        expect((await link.acknowledge(sent)).left?.message).toBe('Room snapshot is catching up');
 
         link.setRoomView('in-sync');
         await link.advance(200);
@@ -124,7 +127,7 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
     it('kept after a lost race, then admitted: no receipt exists before the replay, then admitted and complete', async () => {
         const link = await createWsReceiptedSendLink('in-sync');
         const [, second] = await sendTwoOrderedSideBySide(link);
-        expect((await link.acknowledge(second)).left?.message).toContain(NO_RECEIPT);
+        expect((await link.acknowledge(second)).left?.message).toContain(NOT_ADMITTED);
 
         await link.advance(0);
         await link.advance(200);
@@ -146,7 +149,8 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
 
         expect(link.readReceiptsToOrigin(second)).toEqual([]);
         expect(link.deliveredToPeer(second)).toBe(0);
-        expect((await link.acknowledge(second)).left?.message).toContain(NO_RECEIPT);
+        // The fenced room refuses its sender's peer before the receipt record is read.
+        expect((await link.acknowledge(second)).left?.message).toBe('Sender left the room');
         expect(toControlsOf(link, second)).toEqual([{ control: 'nack:membership-fenced', admission: 'committed' }]);
         expect(link.settlements.filter((fact) => fact.msgId === second.id.msgId).at(-1)?.kind).toBe('relay-rejected');
         expect((await link.readSenderRows(second)).ended).toBe(true);
@@ -315,12 +319,13 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
 
     it('characterization: a copy of a send kept after a lost race, written before its replay ran: one admitted for it', async () => {
         const link = await createWsReceiptedSendLink('in-sync');
+        const releaseClaims = link.holdServerWorkClaims();
         const [first, second] = await sendTwoOrderedSideBySide(link);
+        // The kept row's replay is not claimed until the copy is written, so the copy is admitted on its own.
         expect(await link.writeCopy(second)).toBe('admitted');
+        releaseClaims();
         expect(await link.writeCopy(first)).toBe('duplicate');
         await link.advance(0);
-        // A receipt written while another write holds the server sender's version is retried after a 1 ms backoff,
-        // which no pass at one clock reading can pass.
         await link.advance(200);
         await link.advance(200);
         await advanceInSecondsTo(link, LINK_MESSAGE_TTL_MS + 31_000);
@@ -336,6 +341,152 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
         ]);
         expect(link.deliveredToPeer(first)).toBe(1);
         expect(link.deliveredToPeer(second)).toBe(1);
+    });
+
+    it('characterization: a copy of a send kept after a lost race, whose replay commits between its reads and its write: it loses its write, reads the replay\'s admission and is a duplicate answered from its head, one admitted for it', async () => {
+        const link = await createWsReceiptedSendLink('in-sync');
+        const releaseClaims = link.holdServerWorkClaims();
+        const [first, second] = await sendTwoOrderedSideBySide(link);
+        const copyWrite = link.holdServerNextAdmissionWrite(second, 'before-write');
+        const keptRowRelease = link.holdServerKeptRowRelease(second);
+        const copy = link.writeCopy(second);
+        await copyWrite.arrived;
+        releaseClaims();
+        await keptRowRelease.arrived;
+        // The replay admitted the kept row while the copy's write waited after its reads; the row is still claimed.
+        expect(link.readReceiptsToOrigin(second).map((receipt) => receipt.phase)).toEqual(['admitted']);
+        copyWrite.release();
+        // Its lost write is read again at once: the replay's admission makes it a duplicate rather than a second kept row.
+        expect(await copy).toBe('duplicate');
+        keptRowRelease.release();
+        expect(await link.writeCopy(first)).toBe('duplicate');
+        await link.advance(0);
+        await link.advance(200);
+        await link.advance(200);
+        await advanceInSecondsTo(link, LINK_MESSAGE_TTL_MS + 31_000);
+
+        // The copy finds the head the replay opened and is answered from it again; the origin refuses the repeat.
+        expect(toControlsOf(link, second)).toEqual([
+            { control: 'receipt:admitted', admission: 'committed' },
+            { control: 'receipt:admitted', admission: 'rejected' },
+            { control: 'receipt:timed-out', admission: 'committed' }
+        ]);
+        expect(toControlsOf(link, first)).toEqual([
+            { control: 'receipt:admitted', admission: 'committed' },
+            { control: 'receipt:admitted', admission: 'rejected' },
+            { control: 'receipt:timed-out', admission: 'committed' }
+        ]);
+        expect(link.deliveredToPeer(first)).toBe(1);
+        expect(link.deliveredToPeer(second)).toBe(1);
+    });
+
+    it('characterization: a copy of a send kept after a lost race, whose replay commits before it writes and answers after it: it loses its write, reads the replay\'s admission and is a duplicate answered nothing, one admitted for it', async () => {
+        const link = await createWsReceiptedSendLink('in-sync');
+        const releaseClaims = link.holdServerWorkClaims();
+        const [first, second] = await sendTwoOrderedSideBySide(link);
+        const copyWrite = link.holdServerNextAdmissionWrite(second, 'before-write');
+        const replayCommit = link.holdServerNextAdmissionWrite(second, 'after-commit');
+        const copy = link.writeCopy(second);
+        await copyWrite.arrived;
+        releaseClaims();
+        await replayCommit.arrived;
+        // The replay committed while the copy's write waited after its reads; it has opened no head and answered nothing.
+        expect(link.readReceiptsToOrigin(second)).toEqual([]);
+        copyWrite.release();
+        // Its lost write is read again at once: the replay's commit makes it a duplicate, and only the replay answers.
+        expect(await copy).toBe('duplicate');
+        replayCommit.release();
+        expect(await link.writeCopy(first)).toBe('duplicate');
+        await link.advance(0);
+        await link.advance(200);
+        await link.advance(200);
+        await advanceInSecondsTo(link, LINK_MESSAGE_TTL_MS + 31_000);
+
+        expect(toControlsOf(link, second)).toEqual([
+            { control: 'receipt:admitted', admission: 'committed' },
+            { control: 'receipt:timed-out', admission: 'committed' }
+        ]);
+        expect(toControlsOf(link, first)).toEqual([
+            { control: 'receipt:admitted', admission: 'committed' },
+            { control: 'receipt:admitted', admission: 'rejected' },
+            { control: 'receipt:timed-out', admission: 'committed' }
+        ]);
+        expect(link.deliveredToPeer(first)).toBe(1);
+        expect(link.deliveredToPeer(second)).toBe(1);
+    });
+
+    // Pins a lost admitted frame leaving its sender resending into silence.
+    it('an admitted the origin never reads is answered again at the first-hop window, from the record', async () => {
+        const link = await createWsReceiptedSendLink('in-sync');
+        link.loseFramesToOrigin(1);
+        const sent = await link.send(toRoomNotice());
+        await link.advance(0);
+        // The server wrote the admitted at the send's admission; the wire lost it.
+        expect(link.readReceiptsToOrigin(sent).map((receipt) => receipt.phase)).toEqual(['admitted']);
+        expect(toControlsOf(link, sent)).toEqual([]);
+        expect((await link.readSenderRows(sent)).waits).toBe(true);
+        await link.advance(2_000);
+        expect(link.written).toEqual([sent.id.msgId, sent.id.msgId]);
+        expect(toControlsOf(link, sent)).toEqual([{ control: 'receipt:admitted', admission: 'committed' }]);
+        expect(link.deliveredToPeer(sent)).toBe(1);
+        expect((await link.readSenderRows(sent)).waits).toBe(false);
+        expect((await link.acknowledge(sent)).left).toBeUndefined();
+        await link.advance(200);
+        expect(toControlsOf(link, sent).at(-1)).toEqual({ control: 'receipt:complete', admission: 'committed' });
+        expect(link.settlements.filter((fact) => fact.kind === 'acknowledgement').at(-1)).toMatchObject({
+            complete: true,
+            confirmedRecipientPeerIds: ['peer-b']
+        });
+    });
+
+    // Pins a send with no first-hop wait that a lost admitted leaves without its terminal receipt, or resending.
+    it('a send with retry none whose admitted is lost reads its complete receipt and nothing else', async () => {
+        const link = await createWsReceiptedSendLink('in-sync');
+        link.loseFramesToOrigin(1);
+        const notice = toRoomNotice();
+        const sent = await link.send({ ...notice, qos: { ...notice.qos, retry: { algo: 'none' } } });
+        await link.advance(0);
+        // The server wrote the admitted at the send's admission and the wire lost it; the send stays open.
+        expect(link.readReceiptsToOrigin(sent).map((receipt) => receipt.phase)).toEqual(['admitted']);
+        expect(link.deliveredToPeer(sent)).toBe(1);
+        expect((await link.readSenderRows(sent)).ended).toBe(false);
+        // A send with retry none holds no first-hop wait and no first-hop timeout work row: nothing resends it.
+        expect((await link.readSenderRows(sent)).waits).toBe(false);
+        expect(await link.readFirstHopTimeoutStatus(sent)).toBeUndefined();
+
+        expect((await link.acknowledge(sent)).left).toBeUndefined();
+        await link.advance(200);
+
+        expect(toControlsOf(link, sent)).toEqual([{ control: 'receipt:complete', admission: 'committed' }]);
+        expect(link.written).toHaveLength(1);
+        expect(link.settlements.filter((fact) => fact.msgId === sent.id.msgId).at(-1)?.kind).toBe('acknowledgement');
+    });
+
+    // Pins a kept send whose wait its NACK ended being sent again for an admitted that never arrived.
+    it('a kept send\'s admitted, lost after its not-yet-in-sync answer, is not sent again', async () => {
+        const link = await createWsReceiptedSendLink('behind');
+        const sent = await link.send(toRoomNotice());
+        await link.advance(0);
+        expect(toControlsOf(link, sent)).toEqual([{ control: 'nack:not-yet-in-sync', admission: 'committed' }]);
+        link.loseFramesToOrigin(1);
+
+        link.setRoomView('in-sync');
+        await link.advance(200);
+        expect(link.deliveredToPeer(sent)).toBe(1);
+        // The server wrote the replay's admitted, which the wire lost. The NACK ended the first-hop wait, and that end
+        // completed its timeout work row: this run reads COMPLETED, not an absent row.
+        expect(link.readReceiptsToOrigin(sent).map((receipt) => receipt.phase)).toEqual(['admitted']);
+        expect((await link.readSenderRows(sent)).waits).toBe(false);
+        expect(await link.readFirstHopTimeoutStatus(sent)).toBe(EntityStatus.COMPLETED);
+
+        expect((await link.acknowledge(sent)).left).toBeUndefined();
+        await link.advance(200);
+
+        expect(toControlsOf(link, sent)).toEqual([
+            { control: 'nack:not-yet-in-sync', admission: 'committed' },
+            { control: 'receipt:complete', admission: 'committed' }
+        ]);
+        expect(link.written).toHaveLength(1);
     });
 
     it('a kept send that names no deadline: the client stamps one, and the receipt times out at it', async () => {
@@ -362,11 +513,16 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
     });
 });
 
-/** Holds the frames of two ordered notices and hands them to ingress side by side: the second loses the race. */
+/**
+ * Holds the frames of two ordered notices and hands them to ingress side by side: the second loses the race to the
+ * store's own fence, and every later attempt's write of it is lost too, so the server keeps it however often it looks
+ * again.
+ */
 async function sendTwoOrderedSideBySide(link: WsReceiptedSendLink): Promise<readonly [ALMessage, ALMessage]> {
     link.holdFrames();
     const first = await link.send(toOrderedRoomNotice());
     const second = await link.send(toOrderedRoomNotice());
+    link.loseServerAdmissionWritesAfterTheFirstLoss();
     expect(await link.writeHeldFramesSideBySide()).toEqual(['admitted', 'pending-admission']);
     return [first, second];
 }

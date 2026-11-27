@@ -7,6 +7,7 @@ import {
 import { requireGroupMutationReceipt } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
+import { createWorkerHold, type WorkerHold } from '../../../shared/alm/create-worker-hold.ts';
 import { readDirectResourceOutboxEntries } from '../../rallar-system/app-outbox/direct-resource-outbox-lifecycle.ts';
 import { assertMembershipWorkerOutbox, assertWorkerOutboxLifecycle } from '../../rallar-system/app-outbox/postgres/worker-outbox-lifecycle-assertions.ts';
 import {
@@ -38,7 +39,6 @@ import {
     type GroupFormationCommandResult,
     type GroupFormationFixture
 } from './test-support/postgres-group-formation-fixture.ts';
-import { createWorkerHold, type WorkerHold } from './test-support/postgres-worker-hold.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 const requestIdFor = createPostgresTestRequestIdFactory();
@@ -127,13 +127,15 @@ describe('Postgres group join convergence across AppInbox servers', () => {
             const joins = [[firstReceipt, 'dave'], [secondReceipt, 'erin']] as const;
             for (const [receipt, principalId] of joins) {
                 await assertMembershipWorkerOutbox(setupSql, fixture.groupRef, principalId, {
-                    outboxIds: receipt.outboxIds, domainStatus: receipt.outcome
+                    outboxIds: receipt.outboxIds,
+                    domainStatus: receipt.outcome
                 });
             }
             assertWorkerOutboxLifecycle({
                 entries: await readDirectResourceOutboxEntries(setupSql, connectReceipt.outboxIds),
                 outputs: [{ outboxIds: connectReceipt.outboxIds, domainStatus: connectReceipt.outcome }],
-                kind: 'group', effects: ['group-presence-summary']
+                kind: 'group',
+                effects: ['group-presence-summary']
             });
 
             const eventCount = (await fixture.repository.listEvents(fixture.groupRef)).length;

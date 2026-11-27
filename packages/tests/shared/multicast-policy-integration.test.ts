@@ -33,11 +33,9 @@ import { createPassThroughTransportFaultPort } from '@shared/transport-faults/tr
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 import {
     captureOutboundWorkRunnable,
-    createOutboundMessage,
     createOutboundRuntimeWithWorkTask,
     loseOutboundCommitAttempts,
     peekOutboundWorkReadyAt,
-    readOutboundTestAdmission,
     runOutboundWorkTask
 } from './alm/outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload } from './alm/outbound-test-payload.ts';
@@ -72,16 +70,9 @@ describe('multicast QoS integration', () => {
             onTestFinished(() => engine.stop());
             const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage, queueEngine: engine });
             const store = resources.admissionStore;
-            const competitorMessage = createOutboundMessage('forward-competitor');
-            const competitor = await readOutboundTestAdmission({
-                store: store,
-                message: { ...competitorMessage, id: { ...competitorMessage.id, senderId: 'origin' } },
-                creationNow: () => Temporal.Now.instant(),
-                clock: { nowMs: () => Date.now() }
-            });
-            loseOutboundCommitAttempts(store, async (commit) => {
-                expect(await commit(competitor)).toBe('committed');
-            });
+            // Another commit of the forwarded message lands before each of its attempts, so every attempt loses its
+            // message's fence and the forwarding admission is retained.
+            loseOutboundCommitAttempts(store);
             const holdClaims = vi.spyOn(resources.workQueue, 'reserveEntries').mockResolvedValue(new Map());
             const dependencies: shared.WebRtcOverlayMulticastManager.Dependencies = {
                 quotaNow: Date.now,

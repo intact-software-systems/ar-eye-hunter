@@ -36,7 +36,7 @@ import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-ser
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
 import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
-import { loseOutboundCommitAttempts, readOutboundTestAdmission } from '../alm/outbound-runtime-test-fixture.ts';
+import { commitCompetingOutboundMessageCommit, loseOutboundCommitAttempts } from '../alm/outbound-runtime-test-fixture.ts';
 import { installNativeRtcRuntime, type NativeRtcRuntime } from '../native-rtc-connection-fixture.ts';
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
 import { DeterministicRtcOfferIds } from '../webrtc/deterministic-rtc-offer-ids.ts';
@@ -505,17 +505,9 @@ describe('RTC durable accepted-overlay readiness', () => {
 
     it('keeps a zero-copy optimistic admission conflict waiting through a halted carrier gap and admits it on resume', async () => {
         const fixture = await createFixture();
-        const competitor = await readOutboundTestAdmission({
-            store: fixture.resources.admissionStore,
-            message: {
-                ...createMessage('broadcast'),
-                route: { topicId: 'chat', resourceId: 'competitor', contextId: 'room' }
-            },
-            creationNow: () => Temporal.Now.instant(),
-            clock: { nowMs: () => Date.now() }
-        });
-        loseOutboundCommitAttempts(fixture.resources.admissionStore, async (commit) => {
-            expect(await commit(competitor)).toBe('committed');
+        // Another commit of the message lands before each attempt, and the carrier halts after the first of them.
+        loseOutboundCommitAttempts(fixture.resources.admissionStore, async (commit, losing) => {
+            await commitCompetingOutboundMessageCommit(commit, losing);
             fixture.groups.accept('room', { ...createSnapshot(), group: { ...createSnapshot().group, transportState: 'halted' } });
         });
         const message = createMessage('multicast');

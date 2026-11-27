@@ -541,8 +541,9 @@ every session the page opens. The event's `data` is the event itself:
   `commitDurationMs` and `commitOutcome` for the write transaction —
   `committed`, `conflict`, `expired`, or `not-attempted` when the admission
   settled before opening one. No queue or lock orders a sender's commits, so a
-  write can lose the sender-version fence to another commit of the sender; the
-  commit then reads, decides and writes again, and `commitAttemptCount` counts
+  write can lose a fence it took to another commit: its message's version, or
+  its sender's, which a dispatch takes only when its decision read rows its
+  sender's messages share; the commit then reads, decides and writes again, and `commitAttemptCount` counts
   the write transactions it opened: one per attempt, at most three, and one more
   when a send lost every attempt and retained its request (`commitOutcome` is
   then the retention's). The read fields and `commitDurationMs` sum over every
@@ -882,7 +883,8 @@ publication succeed. The event's `data` is the event itself:
   per replay that reaches a verdict, under the same `msgId`, trace, carrier
   and runtime `workerId` (never `…/volatile`):
   - the acceptance its commit reached, mapped as an ingress's is;
-  - `pending` / `pending-admission` again when it conflicts again;
+  - `pending` / `pending-admission` again when every attempt's commit
+    conflicts again, or when it still waits for its first delivery;
   - `rejected` / `expired` past its deadline;
   - `unauthorized` / `unauthorized` when its current authority refuses the
     message, or when that authority's source no longer covers the scope a
@@ -1010,8 +1012,9 @@ publication succeed. The event's `data` is the event itself:
   due rows the batch's page saw and did not run, as `{ effectId, dueAtMs }`, oldest first — held back by their eligibility
   read, or cleared by it and left unreserved by the port. A row a live lease
   holds is not due, so a batch's own rows never read as deferred. `promoted`
-  counts the buffered releases the batch ran because the same track's previous
-  release completed earlier in that batch (D190): each is also counted in
+  counts the deliveries the batch ran because a delivery of the same track
+  completed earlier in that batch and the track's next slot named them, a
+  buffered release or an in-order delivery (D190, D785): each is also counted in
   `claimedCount` and named in `claimedEffectIds`, and none is listed in
   `deferred`
 - `claim-settled` carries `msgId`, `typeId`, `payloadKind`, `durationMs`,
@@ -1329,8 +1332,34 @@ are the sync points of a paired `agent.reload`.
 The gated API timing stream carries `wsReceipt` separately from browser diagnostics.
 The [WS server owner map](../../../shared/services/ws-queue-box-server/README.md#private-receipt-evidence)
 names the producers and the [safe capture projection](../../../../apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts)
-owns the retained closed fields. Existing socket-decision, ack-count, ack-relay and
-receipt-outbox records remain intact. Three additional variants join a generated
+owns the retained closed fields. Every instance counts the ACKs it receives in the
+receipt record the instances share, so no record names a relay of an ACK to another
+instance: the projection refuses a record of the deleted relay's kind or refusal
+owner. The ACK records are these:
+
+- `socket-decision`: the socket's admission decision for the ACK control.
+- `ack-rejection`: an ACK refused by its owner, `inbound-authority` (currentness) or
+  `receipt-aggregation` (the receipt hook's guards: `aggregate-absent`,
+  `origin-addressee-mismatch`, `outside-frozen-audience`, `deadline-expired`,
+  `never-sent`); a refusal that read a head states at most its three guards, and
+  one that read no head states one guard and no deadline.
+- `ack-count`: what one count read. `outcome` is `rejected`, `conflict` (the record
+  refused the write, and the origin's retry recovers it), `partial` or `complete`
+  (an open view whose tally is complete); `after` is the view a counted ACK returned,
+  absent for a refused or conflicting count and for one counted ahead of its record.
+  It states no `before` and no `source`. A repeated ACK writes nothing and is
+  observed with its view's outcome, not refused.
+- `receipt-outbox`: the enqueue of an issued receipt. A server publication's terminal
+  receipt is enqueued nowhere and records none. An `admitted` receipt that expects
+  somebody has a head behind it, which a re-sent copy is answered from, and is first
+  written to the origin's sockets on the instance that answers it; one a socket there
+  took is enqueued nowhere and records none, and only one no socket there took is
+  enqueued and recorded here. A sender that resends nothing reads only its terminal
+  receipt when that live copy is lost on the wire.
+
+An admission whose largest terminal receipt no receipt control could carry opens no
+receipt and records nothing here: it writes one `receipt-not-encodable` warning.
+Three additional variants join a generated
 receipt's control id, subject/origin, phase and exact audience snapshot:
 
 - `receipt-work`: worker id, compact effect/work locators, actual effect kind,
@@ -1340,7 +1369,12 @@ receipt's control id, subject/origin, phase and exact audience snapshot:
 - `receipt-transport`: recipient or cluster-receipt selection, actual native call
   state, publisher call state and wrapper result. Native `returned` proves only
   submission. A native call may have happened before an enclosing throw; a generic
-  failure settlement's `submissionAttempted: false` cannot prove otherwise.
+  failure settlement's `submissionAttempted: false` cannot prove otherwise. An
+  `admitted` written live on the instance that answers it records one per
+  connection it called: `transport: 'recipient'`, `publisherCall: 'absent'`,
+  `originIsHere: true`, `outcome` `sent` for a returned write and `failed` for one
+  that threw. A connection whose socket's outbound filter refuses the frame is not
+  called and records nothing.
 - `receipt-publication`: actual publish/direct call states, returned direct status
   (`sent-live`, `no-recipients`, `expired`, `partial-failure`, `failed`) and counts,
   plus publisher return/throw. A returned publication can coexist with wrapper
@@ -1356,13 +1390,12 @@ trace is refused whole:
   subject's
 - `business-socket-decision` carries the subject message's own trace
   (`WsQueueBoxServerReceiptBusinessFacts.traceId`)
-- `socket-decision`, `ack-relay` and `ack-rejection` carry the ACK control's
+- `socket-decision` and `ack-rejection` carry the ACK control's
   own trace (`WsQueueBoxServerReceiptAckFacts.traceId`), which equals its
   subject's in production because the ACK is built with it; a refusal without
   a decoded control identity records nothing
-- `ack-count` carries the live aggregate's trace, else the counted control's;
-  its `source` is `local` or `relayed`, since the test-only `direct` count is
-  gone
+- `ack-count` carries the trace of the receipt its view read, else the counted
+  control's
 
 Facts are frozen before mutable consumers and sink calls wait for the real work
 batch's mandatory release/end logic. Callback evidence never asserts release

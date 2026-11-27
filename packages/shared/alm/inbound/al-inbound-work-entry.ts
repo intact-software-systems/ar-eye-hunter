@@ -1,4 +1,3 @@
-import { Temporal } from '@js-temporal/polyfill';
 import { isALControlTypeId } from '../../al-contracts/al-control-type-ids.ts';
 import { AL_DELIVERY_CARRIERS, type ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
 import { isALGapRenewalRequestNumber } from '../../al-contracts/al-message-resource-limits.ts';
@@ -17,7 +16,6 @@ import {
     type PersistedALValue
 } from '../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
 import { fnv1a64, toAppQueueKey } from '../../queuebox/AppQueueIdentity.ts';
-import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import {
     EntityStatus,
     isKeysEqual,
@@ -36,10 +34,20 @@ import {
     decodeALAdmissionSeqRanges,
     decodeALAdmissionString
 } from '../al-admission-value-validation.ts';
+import { computeALWorkEntry } from '../work/compute-al-work-entry.ts';
+import { resolveALWorkEntryDueAtMs, resolveALWorkEntryReadyAt } from '../work/read-al-work-ready-at.ts';
 import type { ALInboundDurableEffect, ALInboundGapRenewalEffect } from './al-inbound-admission-store.ts';
 import { decodeALDeadlinedMessage } from './al-inbound-message-deadline.ts';
 
 export const AL_INBOUND_WORK_LEASE_MS = 10_000;
+
+/**
+ * The batch age at which an inbound batch stops handing a completed delivery's place on: half its lease, so that the
+ * claims a batch already holds when it stops have the other half to run in, since a row the batch completed early stays
+ * reserved until the batch ends. It bounds when hand-ons stop, not when the batch ends: the claims already held still
+ * run, and a batch of its own full page can still outlast the lease.
+ */
+export const AL_INBOUND_HAND_ON_BATCH_AGE_MS = AL_INBOUND_WORK_LEASE_MS / 2;
 
 /** The work identity of an inbound effect: its parts, each URI-encoded, joined by `:`. */
 export function toALInboundEffectId(parts: readonly (number | string)[]): string {
@@ -97,14 +105,13 @@ export function toALInboundWorkKey(namespace: string, effectId: string): Key {
 
 /** Completes the encoded QueueBox value before admission enters its conditional write. */
 export function computeALInboundWorkEntry(input: ALInboundWorkEntryInput): ALInboundDurableEffectWrite {
-    const createdTs = Temporal.Instant.fromEpochMilliseconds(input.observedAtMs).toZonedDateTimeISO('UTC');
     return {
         effectId: input.effectId,
         payload: input.payload,
         expireAtTimestamp: input.expireAtTimestamp,
         carrier: input.carrier,
         signsForRecipient: input.signsForRecipient,
-        entry: {
+        entry: computeALWorkEntry({
             key: toALInboundWorkKey(input.namespace, input.effectId),
             typeId: toALInboundWorkType(input.namespace, input.carrier),
             resource: JSON.stringify({
@@ -112,16 +119,10 @@ export function computeALInboundWorkEntry(input: ALInboundWorkEntryInput): ALInb
                 effectId: input.effectId,
                 payload: input.payload
             }),
-            audit: {
-                createdBy: 'ALM',
-                createdTs: createdTs.toPlainDateTime(),
-                date: createdTs.toPlainTime(),
-                expiryTs: Temporal.Instant.fromEpochMilliseconds(input.expireAtTimestamp)
-            },
-            status: EntityStatus.NEW,
-            dequeueAudit: { attempts: 0, nextTs: Temporal.Instant.fromEpochMilliseconds(input.observedAtMs) },
-            db: undefined
-        }
+            observedAtMs: input.observedAtMs,
+            readyAtMs: input.observedAtMs,
+            expireAtTimestamp: input.expireAtTimestamp
+        })
     };
 }
 
@@ -135,7 +136,7 @@ export function toALInboundWorkEntryWithPayload(
         namespace,
         effectId: write.effectId,
         payload,
-        observedAtMs: resolveALInboundWorkDueAtMs(write.entry),
+        observedAtMs: resolveALWorkEntryDueAtMs(write.entry),
         expireAtTimestamp: write.expireAtTimestamp,
         carrier: write.carrier,
         signsForRecipient: false
@@ -175,9 +176,11 @@ export function decodeALInboundWorkEntry(entry: ResourceEntry, namespace: string
             payload,
             entry,
             attempts: entry.dequeueAudit.attempts,
-            retryAtMs: resolveALInboundWorkDueAtMs(entry),
+            retryAtMs: resolveALWorkEntryDueAtMs(entry),
             expireAtTimestamp: Number(entry.audit.expiryTs.epochMilliseconds),
-            leaseUntilMs: entry.status === EntityStatus.RESERVED ? resolveALInboundWorkReadyAt(entry) : undefined,
+            leaseUntilMs: entry.status === EntityStatus.RESERVED
+                ? resolveALWorkEntryReadyAt(entry, AL_INBOUND_WORK_LEASE_MS)
+                : undefined,
             carrier
         };
     }
@@ -202,30 +205,6 @@ function decodeALInboundWorkCarrier(entry: ResourceEntry, namespace: string): AL
         throw new TypeError('Inbound work type names no carrier of its admission scope');
     }
     return carrier;
-}
-
-/** When the row is next claimable: the lease end while it is reserved, and its own due time otherwise. */
-export function resolveALInboundWorkReadyAt(entry: ResourceEntry): number {
-    if (entry.status === EntityStatus.RESERVED) {
-        if (entry.dequeueAudit.startTs === undefined) {
-            throw new NonRetryableException('Inbound work reservation start is missing');
-        }
-        return Number(
-            entry.dequeueAudit.startTs.round({ smallestUnit: 'millisecond', roundingMode: 'ceil' }).epochMilliseconds
-        ) + AL_INBOUND_WORK_LEASE_MS;
-    }
-    return resolveALInboundWorkDueAtMs(entry);
-}
-
-/**
- * When the row became due, whatever status it now carries -- the wait half of the pair above, never
- * a lease. A reservation clears the retry stamp, so a claimed row that had been retried answers from
- * when it was written; the wait a batch reports precisely is the one read before the reservation.
- */
-export function resolveALInboundWorkDueAtMs(entry: ResourceEntry): number {
-    return Number(
-        entry.dequeueAudit.nextTs?.epochMilliseconds ?? entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds
-    );
 }
 
 function decodeInboundDurableEffect(value: PersistedALValue): ALInboundDurableEffect {

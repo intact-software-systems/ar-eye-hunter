@@ -12,7 +12,12 @@ import type { RallarTimingEvent } from '@shared-server/rallar-system/observabili
 import { newALReceiptControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
-import { toALOutboundSentMessageKey } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
+import { decodeALAdmissionClientRecord, decodeALOutboundMessageVersion } from '@shared/alm/al-admission-value-validation.ts';
+import {
+    toALOutboundOriginMessageKey,
+    toALOutboundSentMessageKey,
+    toALOutboundVersionKey
+} from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
 import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type { ALOutboundCapturedPolicy } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import { ALOutboundMessageRuntime, type ALOutboundDropReasonCode } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -36,16 +41,19 @@ import {
     type ResourceEntry
 } from '@shared/mod.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
+import { toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import { waitForSettledOutboundWork } from '../../wait-for-al-outbound-work.ts';
 import {
+    commitCompetingOutboundMessageCommit,
     createDefaultOutboundTestRuntime,
     createDefaultOutboundTestStores,
     drainEngine,
     peekOutboundWorkReadyAt,
+    readOutboundTestAdmission,
     runOutboundWorkTask,
     type OutboundTestStores
 } from '../outbound-runtime-test-fixture.ts';
@@ -882,6 +890,190 @@ describe('AL outbound dequeue work', () => {
         }
     });
 
+    it('commits a dequeued batch that holds receipt controls and a sequenced row of one sender in two writes', async () => {
+        // Pins a mixed batch refused as one group and committing its members alone, one after another.
+        const batch = await createMixedFenceBatch();
+        onTestFinished(async () => await batch.runtime.dispose());
+
+        await runDequeuedFenceBatch(batch);
+
+        for (const message of batch.messages) {
+            expect(await batch.stores.admissionStore.readStoredMessage(message.id.msgId), message.id.msgId).toBeDefined();
+            expect(await readMixedBatchMessageVersion(batch.stores, message), message.id.msgId).toBe(1);
+        }
+        expect(await readDequeuedFenceBatchSenderVersion(batch.stores)).toBe(1);
+        expectEachRowDispatchedAndSentOnce(batch);
+        expect(toDequeuedFenceBatchGroupOutcomes(batch)).toEqual(expect.arrayContaining([
+            { memberCount: 1, outcome: 'committed' },
+            { memberCount: 3, outcome: 'committed' }
+        ]));
+        expect(batch.groups).toHaveLength(2);
+        for (const entry of batch.entries) {
+            expect((await batch.outbox.getItem(entry.key))?.status).toBe(EntityStatus.COMPLETED);
+        }
+    });
+
+    it('when the sequenced row of a mixed batch loses its fence, the receipts\' write stands and is not committed again', async () => {
+        // Pins a mixed batch whose lost sender fence fails the receipts' write too, so each receipt commits a second
+        // time and its message version moves twice. A second commit names the same send effects, so the transport sends
+        // one copy of each either way: the sends below show the batch ran, not this defect.
+        const batch = await createMixedFenceBatch();
+        onTestFinished(async () => await batch.runtime.dispose());
+        const commitBundles = batch.stores.admissionStore.commitBundles.bind(batch.stores.admissionStore);
+        let interleaved = false;
+        vi.spyOn(batch.stores.admissionStore, 'commitBundles').mockImplementation(async (bundles) => {
+            if (!interleaved && bundles.some((bundle) => bundle.fencesSender)) {
+                interleaved = true;
+                // Another frame of the sender, on a track of its own, commits after the group read the sender version.
+                const frame = await readOutboundTestAdmission({
+                    store: batch.stores.admissionStore,
+                    message: { ...createDequeuedMessage('interleaved'), ordering: { orderingKey: 'interleaved-feed', epoch: 1, seq: 1 } },
+                    creationNow: () => Temporal.Now.instant(),
+                    clock: { nowMs: () => Date.now() }
+                });
+                expect(await commitBundles([frame])).toBe('committed');
+            }
+            return await commitBundles(bundles);
+        });
+
+        await runDequeuedFenceBatch(batch);
+
+        expect(toDequeuedFenceBatchGroupOutcomes(batch)).toEqual(expect.arrayContaining([
+            { memberCount: 1, outcome: 'conflict' },
+            { memberCount: 3, outcome: 'committed' }
+        ]));
+        expect(batch.groups).toHaveLength(2);
+        // Each row's message version moved once: the receipts' write committed them, and nothing committed them again.
+        for (const message of batch.messages) {
+            expect(await readMixedBatchMessageVersion(batch.stores, message), message.id.msgId).toBe(1);
+        }
+        expectEachRowDispatchedAndSentOnce(batch);
+        // The interleaved frame's commit and the sequenced row's own single commit after it.
+        expect(await readDequeuedFenceBatchSenderVersion(batch.stores)).toBe(2);
+    });
+
+    it('when a receipt of a mixed batch loses its own fence, the sequenced row\'s write stands and only the receipts commit alone', async () => {
+        // Pins a lost message fence of the receipts' write sending the committed sequenced row to commit again, or
+        // handing a row the commit of another.
+        const batch = await createMixedFenceBatch();
+        onTestFinished(async () => await batch.runtime.dispose());
+        const commitBundles = batch.stores.admissionStore.commitBundles.bind(batch.stores.admissionStore);
+        let interleaved = false;
+        vi.spyOn(batch.stores.admissionStore, 'commitBundles').mockImplementation(async (bundles) => {
+            const [losing] = bundles;
+            if (!interleaved && losing !== undefined && !losing.fencesSender && bundles.length > 1) {
+                interleaved = true;
+                // Another commit of the first receipt's own message lands after the group read its version.
+                await commitCompetingOutboundMessageCommit<OutboundTestPayload>(async (bundle) => await commitBundles([bundle]), losing);
+            }
+            return await commitBundles(bundles);
+        });
+
+        await runDequeuedFenceBatch(batch);
+
+        expect(toDequeuedFenceBatchGroupOutcomes(batch)).toEqual(expect.arrayContaining([
+            { memberCount: 1, outcome: 'committed' },
+            { memberCount: 3, outcome: 'conflict' }
+        ]));
+        expect(batch.groups).toHaveLength(2);
+        // The competitor and the receipt's own commit alone; every other row moved its version once.
+        const versions = await Promise.all(batch.messages.map((message) => readMixedBatchMessageVersion(batch.stores, message)));
+        expect(versions).toEqual([2, 1, 1, 1]);
+        expect(await readDequeuedFenceBatchSenderVersion(batch.stores)).toBe(1);
+        expectEachRowDispatchedAndSentOnce(batch);
+    });
+
+    it('when the receipts\' write of a mixed batch throws, the sequenced row\'s write stands and only the receipts commit alone', async () => {
+        // Pins a throw of one part's write sending every member of the group, the committed part's too, to commit alone.
+        const batch = await createMixedFenceBatch();
+        onTestFinished(async () => await batch.runtime.dispose());
+        const commitBundles = batch.stores.admissionStore.commitBundles.bind(batch.stores.admissionStore);
+        let thrown = false;
+        vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        vi.spyOn(batch.stores.admissionStore, 'commitBundles').mockImplementation((bundles) => {
+            if (!thrown && bundles.length > 1 && bundles.every((bundle) => !bundle.fencesSender)) {
+                thrown = true;
+                throw new Error('receipts write failed');
+            }
+            return commitBundles(bundles);
+        });
+
+        await runDequeuedFenceBatch(batch);
+
+        for (const message of batch.messages) {
+            expect(await readMixedBatchMessageVersion(batch.stores, message), message.id.msgId).toBe(1);
+        }
+        expect(toDequeuedFenceBatchGroupOutcomes(batch)).toEqual(expect.arrayContaining([
+            { memberCount: 1, outcome: 'committed' },
+            { memberCount: 3, outcome: 'error' }
+        ]));
+        expect(batch.groups).toHaveLength(2);
+        expect(await readDequeuedFenceBatchSenderVersion(batch.stores)).toBe(1);
+        expectEachRowDispatchedAndSentOnce(batch);
+    });
+
+    it('when the sequenced rows of a mixed batch read different sender versions, the receipts still commit as one write', async () => {
+        // Pins a disagreement among the sender-fenced reads sending the receipts, which fence no sender, to commit alone
+        // too.
+        const receipts = ['1', '2'].map((index) => createDequeuedReceipt(`receipt-${index}`, `subject-${index}`));
+        const [first, second] = ['a', 'b'].map((track): ALMessage => ({
+            ...createDequeuedMessage(`sequenced-${track}`),
+            ordering: { orderingKey: `feed-${track}`, epoch: 1, seq: 1 }
+        }));
+        const batch = await createDequeuedFenceBatch([receipts[0]!, first!, receipts[1]!, second!]);
+        onTestFinished(async () => await batch.runtime.dispose());
+        const store = batch.stores.admissionStore;
+        const readOutgoingMessage = store.readOutgoingMessage.bind(store);
+        const interleaved = Promise.withResolvers<void>();
+        vi.spyOn(store, 'readOutgoingMessage').mockImplementation(async (input) => {
+            if (input.msg.id.msgId === second!.id.msgId) {
+                await interleaved.promise;
+            }
+            const read = await readOutgoingMessage(input);
+            if (input.msg.id.msgId === first!.id.msgId) {
+                // Another frame of the sender, on a track of its own, commits between the two sequenced rows' reads.
+                const frame = await readOutboundTestAdmission({
+                    store,
+                    message: { ...createDequeuedMessage('interleaved'), ordering: { orderingKey: 'interleaved-feed', epoch: 1, seq: 1 } },
+                    creationNow: () => Temporal.Now.instant(),
+                    clock: { nowMs: () => Date.now() }
+                });
+                expect(await store.commitBundles([frame])).toBe('committed');
+                interleaved.resolve();
+            }
+            return read;
+        });
+
+        await runDequeuedFenceBatch(batch);
+
+        expect(toDequeuedFenceBatchGroupOutcomes(batch)).toEqual([{ memberCount: 2, outcome: 'committed' }]);
+        for (const message of batch.messages) {
+            expect(await readMixedBatchMessageVersion(batch.stores, message), message.id.msgId).toBe(1);
+        }
+        // The interleaved frame's commit, then each sequenced row's own commit alone.
+        expect(await readDequeuedFenceBatchSenderVersion(batch.stores)).toBe(3);
+        expectEachRowDispatchedAndSentOnce(batch);
+    });
+
+    it('fences the sender for a follower dequeued in one batch with its predecessor', async () => {
+        // Pins a follower's decision leaving the sender fence: a follower holds a place on its predecessor's track, so
+        // it joins its predecessor's fence group, and their one write moves the sender version once. A follower that
+        // fenced no sender either writes its tracked row outside the sender fence, which the store refuses and the group
+        // reads `error`, or commits in a group of its own.
+        const batch = await createDequeuedFenceBatch([1, 2].map((seq) => ({
+            ...createDequeuedMessage(`track-${seq}`),
+            ordering: { orderingKey: 'feed', epoch: 1, seq }
+        })));
+        onTestFinished(async () => await batch.runtime.dispose());
+
+        await runDequeuedFenceBatch(batch);
+
+        expect(batch.groups).toHaveLength(1);
+        expect(toDequeuedFenceBatchGroupOutcomes(batch)).toEqual([{ memberCount: 2, outcome: 'committed' }]);
+        expect(await readDequeuedFenceBatchSenderVersion(batch.stores)).toBe(1);
+        expectEachRowDispatchedAndSentOnce(batch);
+    });
+
     it('opens no supersedence session for a group whose every row the gate decided', async () => {
         const outbox = createOutboxQueue();
         const stores = createDefaultOutboundTestStores(outbox);
@@ -1335,12 +1527,111 @@ async function writeCorruptSentMessage(stores: OutboundTestStores, msgId: string
     });
 }
 
-function createDequeuedReceipt(): ALMessage {
+/** One page of the server's outbox, dequeued as one batch. */
+interface DequeuedFenceBatch {
+    readonly outbox: InMemoryQueueBox;
+    readonly stores: OutboundTestStores;
+    readonly runtime: ALOutboundMessageRuntime<OutboundTestPayload>;
+    readonly messages: readonly ALMessage[];
+    readonly entries: readonly ResourceEntry[];
+    /** The `admission-group` observations the batch's dequeue records. */
+    readonly groups: readonly Extract<ALOutboundDequeuedAdmission.TimingObservation, { kind: 'admission-group'; }>[];
+    /** Each copy the transport sent, by the message it carries, in send order. */
+    readonly sent: readonly string[];
+    /** Each claimed row's ordered dispatch: the row's key, beside the key of the row its commit answered with. */
+    readonly dispatched: readonly Readonly<{ claimedKey: string; publicationKey: string; }>[];
+}
+
+/**
+ * Three receipt controls and, among them, one frame on a track. Each receipt names its own subject: an outbox row is
+ * keyed by the route, which a receipt addresses by its subject, so receipts of one subject would share one row and the
+ * page would hold one of them.
+ */
+async function createMixedFenceBatch(): Promise<DequeuedFenceBatch> {
+    const receipts = ['1', '2', '3'].map((index) => createDequeuedReceipt(`receipt-${index}`, `subject-${index}`));
+    const sequenced: ALMessage = { ...createDequeuedMessage('sequenced'), ordering: { orderingKey: 'feed', epoch: 1, seq: 1 } };
+    return await createDequeuedFenceBatch([receipts[0]!, sequenced, receipts[1]!, receipts[2]!]);
+}
+
+/** The messages enqueued on a ready runtime whose every plan sends one copy, their rows not yet claimed. */
+async function createDequeuedFenceBatch(messages: readonly ALMessage[]): Promise<DequeuedFenceBatch> {
+    const outbox = createOutboxQueue();
+    const stores = createDefaultOutboundTestStores(outbox);
+    const groups: Extract<ALOutboundDequeuedAdmission.TimingObservation, { kind: 'admission-group'; }>[] = [];
+    const sent: string[] = [];
+    const dispatched: { claimedKey: string; publicationKey: string; }[] = [];
+    const runtime = createDefaultOutboundTestRuntime({
+        outbox,
+        stores,
+        dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
+        dequeueTiming: (observation) => {
+            if (observation.kind === 'admission-group') {
+                groups.push(observation);
+            }
+            if (observation.kind === 'admission-stage' && observation.publicationKey !== undefined) {
+                dispatched.push({
+                    claimedKey: toKeyAsString(observation.member.effect.entry.key),
+                    publicationKey: toKeyAsString(observation.publicationKey)
+                });
+            }
+        },
+        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ peer: 'origin' }] }),
+        sendPreparedMessage: async (_prepared, _phase, lifecycle) => {
+            sent.push(lifecycle.canonicalMessage.id.msgId);
+            return { status: 'sent', submissionAttempted: true };
+        }
+    });
+    await runtime.ready();
+    const entries = messages.map((message) => QueueBoxUtilities.toResourceEntryFromMsg(message, DEQUEUE_TYPE, Temporal.Now.instant()));
+    for (const entry of entries) {
+        await outbox.enqueueIfAbsent(entry);
+    }
+    return { outbox, stores, runtime, messages, entries, groups, sent, dispatched };
+}
+
+/** Runs the batch's dequeue, then the batch of sends its commits queued. */
+async function runDequeuedFenceBatch(batch: DequeuedFenceBatch): Promise<void> {
+    await runOutboundWorkTask(batch.runtime);
+    await runOutboundWorkTask(batch.runtime);
+}
+
+/** The batch's `admission-group` observations as member count and outcome. */
+function toDequeuedFenceBatchGroupOutcomes(batch: DequeuedFenceBatch): readonly Readonly<{ memberCount: number; outcome: string; }>[] {
+    return batch.groups.map(({ memberCount, outcome }) => ({ memberCount, outcome }));
+}
+
+/** Every claimed row of the batch dispatched on its own commit's answer, and every message sent exactly once. */
+function expectEachRowDispatchedAndSentOnce(batch: DequeuedFenceBatch): void {
+    const claimedKeys = batch.entries.map((entry) => toKeyAsString(entry.key)).sort();
+    expect(batch.dispatched.map(({ claimedKey }) => claimedKey).sort()).toEqual(claimedKeys);
+    for (const { claimedKey, publicationKey } of batch.dispatched) {
+        expect(publicationKey).toBe(claimedKey);
+    }
+    expect([...batch.sent].sort()).toEqual(batch.messages.map((message) => message.id.msgId).sort());
+}
+
+async function readDequeuedFenceBatchSenderVersion(stores: OutboundTestStores): Promise<number | undefined> {
+    return await stores.backend.read(
+        toALOutboundVersionKey(stores.admissionStore.namespace, 'server'),
+        (value) => decodeALAdmissionClientRecord(value, 'server').version
+    );
+}
+
+async function readMixedBatchMessageVersion(stores: OutboundTestStores, message: ALMessage): Promise<number | undefined> {
+    const { senderId, msgId } = message.id;
+    return await stores.backend.read(
+        toALOutboundOriginMessageKey({ row: 'msg-version', namespace: stores.admissionStore.namespace, originPeerId: senderId, msgId }),
+        (value) => decodeALOutboundMessageVersion(value, msgId).version
+    );
+}
+
+/** The server's terminal receipt `msgId` of the message `subjectMsgId`. */
+function createDequeuedReceipt(msgId = 'dequeued-receipt', subjectMsgId = 'subject'): ALMessage {
     return {
         ...newALReceiptControlMessage(
-            { v: 4, msgId: 'dequeued-receipt', senderId: 'server', ts: Date.now(), traceId: 'trace-al-outbound-dequeue-work' },
+            { v: 4, msgId, senderId: 'server', ts: Date.now(), traceId: 'trace-al-outbound-dequeue-work' },
             {
-                msgId: 'subject',
+                msgId: subjectMsgId,
                 originPeerId: 'origin',
                 phase: 'complete',
                 expectedRecipientPeerIds: ['recipient'],

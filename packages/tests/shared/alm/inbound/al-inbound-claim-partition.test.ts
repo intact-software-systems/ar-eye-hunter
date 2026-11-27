@@ -16,7 +16,7 @@ import {
     createInboundTestRuntime,
     createInboundTestStores,
     planInboundTestMessage,
-    setNextInboundCommitConflicted,
+    setNextInboundAdmissionParked,
     type InboundTestRuntime,
     type InboundTestStorage
 } from '../inbound-runtime-test-fixture.ts';
@@ -202,8 +202,9 @@ describe.each(['memory', 'indexeddb'] as const)('inbound claims partitioned by c
         const stores = createStores(storage);
         const admission = createInboundTestAdmission(stores);
         const message = createSenderMessage('m-pending', 'p1');
-        setNextInboundCommitConflicted(stores.admissionStore);
+        const restoreFirstWrites = setNextInboundAdmissionParked(stores.admissionStore);
         const conflicted = await admission.attempt(message, toRtcPeer('p1'), planInboundTestMessage);
+        restoreFirstWrites();
         if (conflicted.right?.kind !== 'conflict' || conflicted.right.pending === undefined) {
             throw new Error('Expected the first arrival to conflict into a pending admission');
         }
@@ -211,10 +212,12 @@ describe.each(['memory', 'indexeddb'] as const)('inbound claims partitioned by c
         const ws = createCarrierRuntime(stores, 'ws');
         await ws.runtime.ready();
 
-        setNextInboundCommitConflicted(stores.admissionStore);
+        // Every attempt's write of the second arrival is lost, so it meets the retained row however often it looks again.
+        const restoreWrites = setNextInboundAdmissionParked(stores.admissionStore);
         const second = await ws.runtime.admitIncomingMessage(message, TRUSTED_SERVER);
 
         expect(second.right).toEqual({ kind: 'pending-admission' });
+        restoreWrites();
         expect(ws.diagnostics.filter((event) => event.kind === 'admission-outcome' && event.msgId === 'm-pending'))
             .toHaveLength(1);
         expect((await readWorkRows(stores, 'admit-message')).map((row) => row.payload)).toMatchObject([{

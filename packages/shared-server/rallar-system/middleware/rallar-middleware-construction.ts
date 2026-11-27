@@ -1,3 +1,4 @@
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type {
     ALInboundRuntimeStores,
@@ -7,6 +8,7 @@ import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inb
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundDequeuedAdmission } from '@shared/alm/outbound/lane/al-outbound-dequeued-admission.ts';
+import type { ALReceiptRecordStores } from '@shared/alm/receipt-record/al-receipt-record-stores.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -35,7 +37,6 @@ import type { RallarTimingSink } from '../observability/timing.ts';
 import type { AppInboxCompletionNoticeChannel } from '../queue-pubsub/app-inbox-completion-notice.ts';
 import type { InstallLiveWsNoticeSubscriberInput } from '../queue-pubsub/live-ws-notice-subscriber.ts';
 import type { InstallQueueBoxPubSubBridgeOptions } from '../queue-pubsub/queue-box-pub-sub-bridge.ts';
-import type { RelayedAckNoticeChannel } from '../queue-pubsub/relayed-ack-notice.ts';
 import type { RtcRttInboxService } from '../rtc-rtt/inbox/rtc-rtt-inbox-service.ts';
 import type { TopologyInboxService } from '../topology/inbox/topology-inbox-service.ts';
 import type { RtcTopologyExecutionRepository } from '../topology/persistence/rtc-topology-execution-repository.ts';
@@ -114,8 +115,7 @@ export interface CreateRallarMiddlewareOptions {
     readonly inboundStores?: ALInboundRuntimeStores;
     /**
      * The instance-local memory pair a volatile message is admitted and delivered from; `undefined` keeps every
-     * message in `inboundStores`. An instance relaying acknowledgements to other instances keeps only relay-only
-     * RTC signals here: the other instances' readers resolve every other message's canonical copy from the shared store.
+     * message in `inboundStores`. `keepsVolatileMessageInMemory` chooses which volatile messages stay here.
      */
     readonly inboundVolatileStores: ALVolatileInboundRuntimeStores | undefined;
     readonly outboundStores?: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
@@ -156,8 +156,17 @@ export interface CreateRallarMiddlewareOptions {
         InstallLiveWsNoticeSubscriberInput,
         'inboundStores' | 'resolveBroadRecipientSessionIds' | 'sendToTargetsWithResult'
     >;
-    /** The notice channel that carries receiver ACKs between instances; absent on a single instance. */
-    readonly relayedAckNotices?: RelayedAckNoticeChannel;
+    /**
+     * Which volatile messages a WS server admits and delivers from its memory pair. Absent on a single instance: every
+     * volatile message. On a cluster only an instance-local one may, since another instance proves an ACK and reads an
+     * oversized live notice's message from the shared store.
+     */
+    readonly keepsVolatileMessageInMemory?: (message: ALMessage) => boolean;
+    /**
+     * The receipt record the WS server counts receipts in, which every instance of one deployment shares. Required, so
+     * no composition that shares its other stores falls back to a record of its own.
+     */
+    readonly receiptRecordStores: ALReceiptRecordStores;
     /** The notice channel that wakes a waiter whose entry another instance completed; absent on a single instance. */
     readonly appInboxCompletionNotices?: AppInboxCompletionNoticeChannel;
     readonly readiness?: Promise<void>;

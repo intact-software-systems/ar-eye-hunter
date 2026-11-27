@@ -13,14 +13,21 @@ import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '../../
 import { normalizeALRuntimeStoreRetention } from '../../shared/alm/ALStoreRetention.ts';
 import { createDefaultALInboundRuntimeResources } from '../../shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { createALOutboundAdmissionStore, type ALOutboundAdmissionStore } from '../../shared/alm/outbound/admission/al-outbound-admission-store.ts';
-import { toALOutboundCanonicalKey } from '../../shared/alm/outbound/al-outbound-canonical-message.ts';
-import { computeALOutboundDispatch } from '../../shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import { AL_OUTBOUND_COMMIT_ATTEMPTS } from '../../shared/alm/outbound/control/al-outbound-control-admission.ts';
 import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
 } from '../../shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import { toALOutboundEffectId } from '../../shared/alm/outbound/to-al-outbound-effect-id.ts';
+import { createInMemoryALReceiptRecordStores } from '../../shared/alm/receipt-record/al-receipt-record-stores.ts';
+import { decodeALReceiptRecordWorkEntry } from '../../shared/alm/receipt-record/al-receipt-record-work-entry.ts';
 import { EnqueuedType } from '../../shared/api/api-config.ts';
+import type {
+    ResourceInboxReservationObservationRequest,
+    ResourceInboxReservationObservationResult,
+    ResourceInboxReservationRequest
+} from '../../shared/queuebox/queue-box-types.ts';
+import type { Key, ResourceEntry } from '../../shared/queuebox/ResourceEntry.ts';
 import { Either } from '../../shared/resilience/Either.ts';
 import { createDefaultBackgroundTimers } from '../../shared/resilience/timers.ts';
 import { toError } from '../../shared/resilience/to-error.ts';
@@ -39,6 +46,7 @@ import { SimulatedWebSocket } from '../shared/native-websocket-fixture.ts';
 import { reserveNoResourceEntries } from '../shared/reserve-no-resource-entries.ts';
 
 import { toTestALAckPayload } from '../al-control-test-payloads.ts';
+import { toCompetingOutboundMessageCommit } from '../shared/alm/outbound-competing-message-commit.ts';
 import { attachTestWebSocket } from '../shared/websocket/attach-test-web-socket.ts';
 
 export type ReceiptOwnerScenario = 'native-return' | 'later-throw' | 'closed' | 'native-throw' | 'publish-return' | 'publish-throw' | 'direct-failure';
@@ -51,6 +59,10 @@ interface ReceiptOwnerSocket {
 }
 
 const scope = { applicationId: 'app', workspaceId: 'workspace' };
+/** Each wait is inside the child's 15 s spawn limit, and so are the two drains' waits together. */
+const AWAITED_FACT_TIMEOUT_MS = 5_000;
+/** A pass that claims nothing returns at once, so a dequeue no pass hands out within this many fails the run. */
+const MAX_DEQUEUE_PASSES = 1_000;
 
 export async function writePendingReceiptOwnerEvidence(
     evidencePath: string,
@@ -101,6 +113,8 @@ namespace ReceiptOwnerFixture {
         publications: number;
         receiptKey: string;
         clockReads: number;
+        /** The engine passes the run made after the restore, the last of them the one that claimed the dequeue. */
+        enginePasses: number;
         releases: number;
         lastReceiptReleaseAtMs: number;
         readonly receiptReleaseStatuses: string[];
@@ -127,6 +141,7 @@ class ReceiptOwnerFixture {
         publications: 0,
         receiptKey: '',
         clockReads: 0,
+        enginePasses: 0,
         releases: 0,
         lastReceiptReleaseAtMs: 0,
         receiptReleaseStatuses: [],
@@ -134,12 +149,25 @@ class ReceiptOwnerFixture {
     };
     readonly observations: WsQueueBoxServerReceiptObservation[] = [];
     readonly engine = new InboxOutboxEngine();
+    readonly receiptRecordStores = createInMemoryALReceiptRecordStores('server', () => this.clock.nowMs);
+    /** Resolved by the record's first ended-work release; its own batch, which no engine pass awaits, makes it. */
+    readonly endedWorkReleased = Promise.withResolvers<void>();
+    /** Resolved by the complete receipt's transport: its transport observation, or for a sink that observes nothing, its native send. */
+    readonly receiptTransported = Promise.withResolvers<void>();
+    /** Resolved by the release of the complete receipt's own send work, which follows its transport in every scenario. */
+    readonly receiptSendReleased = Promise.withResolvers<void>();
+    /** Resolved by the first release of the complete receipt's work after the restore: its retained admission's. */
+    readonly receiptAdmissionReleased = Promise.withResolvers<void>();
     readonly service: WsQueueBoxServerService;
     readonly socket: JsonWebSocketServer;
     readonly origin: SimulatedWebSocket;
     readonly clock: ReceiptOwnerFixture.Clock;
     readonly sink: ReceiptOwnerSink;
-    readonly reserve = this.backend.workQueue.reserveEntries.bind(this.backend.workQueue);
+    readonly reserve = toObservedReserveEntries(this.backend, (entries) => this.observeReservation(entries));
+    /** Set by the first release of the complete receipt's work after the restore, as `receiptAdmissionReleased` resolves. */
+    receiptAdmissionWasReleased = false;
+    /** Set when a claim hands out the complete receipt's work after its retained admission was released: its dequeue. */
+    receiptDequeueClaimed = false;
     readonly recover = this.backend.workQueue.reserveTimeoutEntries.bind(this.backend.workQueue);
     readonly observer: WsQueueBoxServerReceiptObserver | undefined;
     readonly observe: ((event: WsQueueBoxServerReceiptObservation) => void) | undefined;
@@ -157,6 +185,7 @@ class ReceiptOwnerFixture {
         });
         this.observe = sink === 'disabled' ? undefined : (event) => this.recordObservation(event);
         this.holdClaims();
+        this.observeEndedWorkRelease();
         installReceiptConflict(this.store, this.effects);
         this.service = this.createServer();
         this.service.authorizeInboundMessagesWith({
@@ -188,6 +217,7 @@ class ReceiptOwnerFixture {
                     return this.clock.nowMs;
                 }
             }),
+            receiptRecordStores: this.receiptRecordStores,
             dequeueResilience: createDefaultALOutboundDequeueResilience(),
             receiptObserver: this.observe,
             readAuthenticatedConnectionScope: () => ({ scope, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }),
@@ -205,29 +235,47 @@ class ReceiptOwnerFixture {
             outboundDeliveryOutcome: undefined,
             deliveryDiagnostics: undefined,
             authorizeInboundMessage: Either.ofRight,
-            publishRelayedAck: undefined,
             forwardsRoomScopedMessages: true
         });
     }
 
     async run(evidencePath: string, scenario: ReceiptOwnerScenario): Promise<void> {
         await generateCompleteReceipt(this.service);
+        // The record's ended work delivers the complete receipt, whose first commit conflicts and is retained as work.
+        // The conflict is set inside that commit. The ended work runs in the batch its end's commit started
+        // (`#worker.committed`), which no engine pass awaits: the fixture awaits that work's own release, after which
+        // the work has observed what it issued, and runs no engine pass meanwhile, so every sink's run reads the clock
+        // alike.
+        await awaitFact(this.endedWorkReleased.promise, 'The receipt record\'s ended work was never released');
         const pending = this.observations.find((event) => event.kind === 'receipt-outbox' && event.receipt.phase === 'complete');
         if (this.sink !== 'disabled') {
             assert.equal(pending?.kind === 'receipt-outbox' && pending.verdict.kind, 'pending');
         }
         assert.equal(this.effects.conflicted, true);
         assert.equal(await this.store.readSentMessage(this.effects.receiptControlMsgId), undefined);
-        assert.equal(this.origin.sent.length, 0);
+        // The origin is connected here, so its admitted receipt was written to its socket at admission; the complete
+        // receipt's send has not run.
+        assert.deepEqual(this.origin.sent.map(toReceiptPhase), ['admitted']);
         this.configureNative(scenario);
         if (scenario.startsWith('publish') || scenario === 'direct-failure') {
             await this.installPublication(scenario);
         }
         this.backend.workQueue.reserveEntries = this.reserve;
         this.backend.workQueue.reserveTimeoutEntries = this.recover;
-        await drainReceipt(this.engine, () =>
-            this.origin.sent.some((text) => text.includes(this.effects.receiptControlMsgId)) ||
-            this.observations.some((event) => event.kind === 'receipt-transport' && event.receiptControlMsgId === this.effects.receiptControlMsgId));
+        // The clock stands still, so the retained receipt is ready and the first engine pass after the restore claims its
+        // admission work, alone: the admitted receipt went to the origin's socket and left no row. The dequeue that
+        // admission makes claimable waits for a pass, and the engine runs none of its own here, so the fixture awaits
+        // the admission's release and then runs passes until one hands out the dequeue (a pass while the admission's
+        // batch still runs answers no work). The send follows in a batch the dequeue starts, which the pass does not
+        // await. The fixture awaits the send's transport and release and runs no further pass; it states the number of
+        // passes, which every sink's run must match, as it does the clock reads they make.
+        await this.engine.executeOnce();
+        await awaitFact(this.receiptAdmissionReleased.promise, 'The complete receipt\'s retained admission was never released');
+        this.effects.enginePasses = 1 + await this.runPassesUntilDequeueClaimed();
+        await Promise.all([
+            awaitFact(this.receiptTransported.promise, 'The actual generated complete receipt did not reach its transport owner'),
+            awaitFact(this.receiptSendReleased.promise, 'The complete receipt\'s send work was never released')
+        ]);
         this.assertTransportEffects(scenario);
         this.clock.nowMs = 1700000000000;
         assert.ok(await this.store.readSentMessage(this.effects.receiptControlMsgId));
@@ -248,7 +296,8 @@ class ReceiptOwnerFixture {
         this.backend.workQueue.reserveTimeoutEntries = async () => new Map();
         const release = this.backend.workQueue.releaseEntries.bind(this.backend.workQueue);
         this.backend.workQueue.releaseEntries = async (releases) => {
-            if (releases.some((value) => value.entry.resource.includes(this.effects.receiptControlMsgId))) {
+            const releasesReceipt = releases.some((value) => value.entry.resource.includes(this.effects.receiptControlMsgId));
+            if (releasesReceipt) {
                 this.effects.lastReceiptReleaseAtMs = Date.now();
             }
             const result = await release(releases);
@@ -258,13 +307,53 @@ class ReceiptOwnerFixture {
                     this.effects.receiptReleaseStatuses.push(entry.status);
                 }
             }
+            if (releases.some((value) => isSendWorkOf(value.entry, this.effects.receiptControlMsgId))) {
+                this.receiptSendReleased.resolve();
+            }
+            if (releasesReceipt && this.backend.workQueue.reserveEntries === this.reserve) {
+                this.receiptAdmissionWasReleased = true;
+                this.receiptAdmissionReleased.resolve();
+            }
+            return result;
+        };
+    }
+
+    /** The passes run until one hands out the complete receipt's dequeue; a bound that passes fails the run loudly. */
+    private async runPassesUntilDequeueClaimed(): Promise<number> {
+        for (let passes = 1; passes <= MAX_DEQUEUE_PASSES; passes += 1) {
+            await this.engine.executeOnce();
+            if (this.receiptDequeueClaimed) {
+                return passes;
+            }
+        }
+        throw new Error(`No engine pass of ${MAX_DEQUEUE_PASSES} claimed the complete receipt's dequeue`);
+    }
+
+    private observeReservation(entries: readonly ResourceEntry[]): void {
+        if (this.receiptAdmissionWasReleased && entries.some((entry) => entry.resource.includes(this.effects.receiptControlMsgId))) {
+            this.receiptDequeueClaimed = true;
+        }
+    }
+
+    private observeEndedWorkRelease(): void {
+        const { backend: { workQueue }, namespace } = this.receiptRecordStores;
+        const release = workQueue.releaseEntries.bind(workQueue);
+        workQueue.releaseEntries = async (releases) => {
+            const result = await release(releases);
+            if (releases.some((value) => decodeALReceiptRecordWorkEntry(value.entry, namespace).kind === 'ended')) {
+                this.endedWorkReleased.resolve();
+            }
             return result;
         };
     }
 
     private recordObservation(event: WsQueueBoxServerReceiptObservation): void {
         this.observations.push(event);
+        if (event.kind === 'receipt-transport' && event.receiptControlMsgId === this.effects.receiptControlMsgId) {
+            this.receiptTransported.resolve();
+        }
         this.observer?.(this.toCapturedObservation(event));
+        // Every observation that carries a receipt, the live admitted's transport first.
         if ('receipt' in event && this.sink === 'mutating') {
             this.effects.mutationResults.push(Reflect.set(event.receipt.confirmedRecipientPeerIds, '0', 'forged'));
             this.effects.mutationResults.push(Reflect.set(event, 'receiptControlMsgId', 'forged'));
@@ -281,6 +370,7 @@ class ReceiptOwnerFixture {
         if (this.sink === 'unsafe' && event.kind === 'receipt-work') {
             return { ...event, workLocator: 'unsafe identity sentinel' };
         }
+        // Every control's transport, so the live admitted's first and the complete control's after it.
         if (this.sink === 'unsafe-transport' && event.kind === 'receipt-transport') {
             return { ...event, connectionId: 'unsafe identity sentinel' };
         }
@@ -294,6 +384,11 @@ class ReceiptOwnerFixture {
         const nativeSend = this.origin.send.bind(this.origin);
         this.origin.send = (data) => {
             this.effects.nativeCalls += 1;
+            // An observing sink's run waits for the transport observation instead, which its batch publishes after
+            // the release: returning at the send would leave that observation to land after the run reset the clock.
+            if (this.observe === undefined && typeof data === 'string' && data.includes(this.effects.receiptControlMsgId)) {
+                this.receiptTransported.resolve();
+            }
             if (scenario === 'native-throw' || scenario === 'direct-failure') {
                 throw new Error('native fixture failure');
             }
@@ -368,7 +463,8 @@ function installReceiptConflict(
 ): void {
     const commit = store.commitBundle.bind(store);
     let lostAttempts = 0;
-    // A competing receipt commits before each of the complete receipt's attempts, so it loses every one and is retained.
+    // Another commit of the complete receipt's own control lands before each of its attempts, so it loses every one on
+    // that control's version and is retained.
     const commitWithConflict: ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>['commitBundle'] = async (bundle) => {
         const message = bundle.canonicalEntry === undefined ? undefined : decodePersistedALMessage(bundle.canonicalEntry.resource);
         const control = message && decodeALControlMessage(message).right;
@@ -380,7 +476,7 @@ function installReceiptConflict(
             effects.conflicted = true;
             effects.receiptControlMsgId = message.id.msgId;
             effects.receiptKey = JSON.stringify(bundle.canonicalEntry?.key);
-            assert.equal(await commit(await readCompetingReceiptBundle(store, message, lostAttempts)), 'committed');
+            assert.equal(await commit(toCompetingOutboundMessageCommit(bundle)), 'committed');
             const result = await commit(bundle);
             assert.equal(result, 'conflict');
             return result;
@@ -408,44 +504,60 @@ async function generateCompleteReceipt(service: WsQueueBoxServerService): Promis
     assert.equal((await service.acceptIncomingMessage(ack, 'recipient')).right?.kind, 'control');
 }
 
-async function drainReceipt(engine: InboxOutboxEngine, finished: () => boolean): Promise<void> {
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-        engine.wake();
-        await engine.executeOnce();
-        if (finished()) {
-            return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-    assert.fail('The actual generated complete receipt did not reach its transport owner');
+/** The phase of a receipt frame written to a socket. */
+function toReceiptPhase(frame: string): string | undefined {
+    const control = decodeALControlMessage(decodePersistedALMessage(frame)).right;
+    return control?.type === 'receipt' ? control.payload.phase : undefined;
 }
 
-async function readCompetingReceiptBundle(
-    store: ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>,
-    message: ALMessage,
-    attempt: number
-) {
-    const competitor = { ...message, id: { ...message.id, msgId: `competing-version-${attempt}` } };
-    const read = await store.readOutgoingMessage({
-        msg: competitor,
-        planner: (msg) => ({ msg, lane: 'durable', dropReasonCode: undefined, preparedMessages: [] }),
-        observedCanonicalEntry: undefined,
-        intent: 'enqueue',
-        stampsAppliedSupersedence: false
+/** The backend's own claim, which hands every entry it reserves to `onReserved` before it answers. */
+function toObservedReserveEntries(
+    backend: InMemoryAdmissionBackend,
+    onReserved: (entries: readonly ResourceEntry[]) => void
+): InMemoryAdmissionBackend['workQueue']['reserveEntries'] {
+    const reserve = backend.workQueue.reserveEntries.bind(backend.workQueue);
+    function observed(request: ResourceInboxReservationObservationRequest): Promise<ResourceInboxReservationObservationResult>;
+    function observed(request: ResourceInboxReservationRequest): Promise<Map<Key, ResourceEntry>>;
+    async function observed(
+        request: ResourceInboxReservationRequest | ResourceInboxReservationObservationRequest
+    ): Promise<Map<Key, ResourceEntry> | ResourceInboxReservationObservationResult> {
+        if ('reservationObservation' in request) {
+            const result = await reserve(request);
+            onReserved([...result.entries.values()]);
+            return result;
+        }
+        const reserved = await reserve(request);
+        onReserved([...reserved.values()]);
+        return reserved;
+    }
+    return observed;
+}
+
+/** A work row names its effect, a send's beginning with the message it sends; a canonical message row names none. */
+function isSendWorkOf(entry: ResourceEntry, msgId: string): boolean {
+    return decodeWorkEffectId(JSON.parse(entry.resource))?.startsWith(`${toALOutboundEffectId(['send', msgId])}:`) === true;
+}
+
+function decodeWorkEffectId(stored: unknown): string | undefined {
+    if (typeof stored !== 'object' || stored === null) {
+        return undefined;
+    }
+    const effectId = Reflect.get(stored, 'effectId');
+    return typeof effectId === 'string' ? effectId : undefined;
+}
+
+/** A bounded wait: a fact that never happens fails the run loudly, naming it, instead of hanging it. */
+async function awaitFact(fact: Promise<void>, missing: string): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(missing)), AWAITED_FACT_TIMEOUT_MS);
     });
-    const computed = computeALOutboundDispatch({
-        read,
-        outboxEntry: {
-            ...QueueBoxUtilities.toResourceEntryFromMsg(competitor, EnqueuedType.WS_OUTBOX, Temporal.Now.instant()),
-            key: toALOutboundCanonicalKey(store.canonicalScope, competitor)
-        },
-        dispatchAtMs: Date.now(),
-        intent: 'enqueue',
-        phase: 'immediate',
-        options: {}
-    });
-    assert.ok(computed.bundle);
-    return computed.bundle;
+    try {
+        await Promise.race([fact, timedOut]);
+    }
+    finally {
+        clearTimeout(timer);
+    }
 }
 
 function createReceiptSubject(): ALMessage {

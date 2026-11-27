@@ -22,7 +22,7 @@ export interface ALInboundReceiver {
     readonly readRelayedAckRejection: (
         ack: ALAckPayload,
         controlIdentity?: ALMessage['id']
-    ) => ALMessageRejection | undefined;
+    ) => Promise<ALMessageRejection | undefined>;
     /**
      * Why a session's NACK or repair addressed to another session, the origin of a track this receiver relays, may
      * not be admitted here for that origin's row; undefined admits it. The WS server answers for the rows it relays.
@@ -45,7 +45,7 @@ export function toALInboundReceiver(
 ): ALInboundReceiver {
     return {
         selfPeerId,
-        readRelayedAckRejection: readRelayedAckRejection ?? (() => NOT_THIS_RECEIVER),
+        readRelayedAckRejection: readRelayedAckRejection ?? (() => Promise.resolve(NOT_THIS_RECEIVER)),
         readRelayedRepairRequestRejection: readRelayedRepairRequestRejection ??
             (() => Promise.resolve(NOT_THIS_RECEIVER))
     };
@@ -119,6 +119,6 @@ async function readALInboundControlRejection(
         return NOT_THIS_RECEIVER;
     }
     return control.type === 'ack'
-        ? receiver.readRelayedAckRejection(control.payload, msg.id)
+        ? await receiver.readRelayedAckRejection(control.payload, msg.id)
         : await receiver.readRelayedRepairRequestRejection(control.payload, msg.id.senderId);
 }

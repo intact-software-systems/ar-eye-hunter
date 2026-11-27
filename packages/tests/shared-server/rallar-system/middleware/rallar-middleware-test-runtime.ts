@@ -13,6 +13,7 @@ import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/t
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import { createTestClientStateRepository, createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
+import { createInMemoryALReceiptRecordStores } from '@shared/alm/receipt-record/al-receipt-record-stores.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
@@ -103,6 +104,7 @@ export function createRallarMiddlewareTestRuntime(
         outbox,
         appInboxDequeueOptions: { newLaneConcurrency: 1 },
         inboundVolatileStores: undefined,
+        receiptRecordStores: createInMemoryALReceiptRecordStores('middleware-test', Date.now),
         wsRuntimeName: input.wsRuntimeName,
         resilience: input.resilience,
         clientsRepository,

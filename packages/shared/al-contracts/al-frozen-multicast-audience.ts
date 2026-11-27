@@ -97,7 +97,7 @@ function toALFreezeSignedComparable(original: ALMessage, candidate: ALMessage): 
 /**
  * The sessions an admission stamps as a room message's delivery audience: every authorized session, narrowed to a
  * multicast's frozen recipients when it carries them. A frozen audience can narrow, never widen, whom the message is
- * delivered to. The WS server's receipt aggregate is the one reader that may expect more: it keeps a frozen audience
+ * delivered to. The WS server's receipt record is the one reader that may expect more: it keeps a frozen audience
  * verbatim, so a frozen recipient the authority no longer admits reads unconfirmed (S3c-i C11). The origin stays in
  * it when the authority admits it, as it does in an unfrozen audience; every consumer already excludes the origin. A
  * granted topic's authorized audience holds only its subscribed sessions, so it may omit the origin and be empty: that

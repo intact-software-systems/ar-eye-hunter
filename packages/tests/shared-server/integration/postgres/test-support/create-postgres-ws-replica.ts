@@ -2,38 +2,33 @@ import { onTestFinished } from 'vitest';
 
 import { createDefaultPSqlALInboundRuntimeStores } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import type { RelayedAckNotice } from '@shared-server/rallar-system/queue-pubsub/relayed-ack-notice.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { toALInboundWorkKey } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 
 import { createDefaultApiV1DatabaseLifecycle } from '../../../../../../apps/api-v1/src/db/api-v1-database-lifecycle.ts';
-import { createApiV1RelayedAckNotices } from '../../../../../../apps/api-v1/src/db/create-postgres-relayed-ack-notice-transport.ts';
 import {
-    createRelayedAckMiddlewareInstance,
-    type RelayedAckMiddlewareInstance,
-    type RelayedAckMiddlewareInstanceInput
-} from '../../../rallar-system/middleware/relayed-ack-middleware-fixture.ts';
+    createRoomAudienceMiddlewareInstance,
+    type RoomAudienceMiddlewareInstance,
+    type RoomAudienceMiddlewareInstanceInput
+} from '../../../rallar-system/middleware/room-audience-middleware-fixture.ts';
 import { requirePostgresDatabaseUrl } from '../../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 
 export interface PostgresWsReplicaInput {
     /** The inbound admission namespace every replica of one run shares; its rows are deleted when the test ends. */
     readonly inboundNamespace: string;
-    readonly publisherId: string;
     readonly sessionIds: readonly string[];
-    readonly roomView: RelayedAckMiddlewareInstanceInput['roomView'];
+    readonly roomView: RoomAudienceMiddlewareInstanceInput['roomView'];
     readonly roomAudiencePeerIds: readonly string[];
-    /** Every ACK notice any replica of the run publishes, recorded before it reaches PostgreSQL. */
-    readonly relayedAcks: RelayedAckNotice[];
 }
 
-/** One API replica: its own application and listener pools, the shared inbound namespace, the NOTIFY relay. */
-export async function createPostgresWsReplica(input: PostgresWsReplicaInput): Promise<RelayedAckMiddlewareInstance> {
+/** One API replica: its own application and listener pools and the shared inbound namespace. */
+export async function createPostgresWsReplica(input: PostgresWsReplicaInput): Promise<RoomAudienceMiddlewareInstance> {
     const lifecycle = await createDefaultApiV1DatabaseLifecycle({
         database: {
             mode: 'postgres',
             url: requirePostgresDatabaseUrl(),
             schemaInitialization: 'disabled',
-            pubSub: 'postgres',
+            pubSub: 'disabled',
             applicationPool: { maxConnections: 4, idleTimeoutSeconds: 1 },
             listenerPool: { maxConnections: 1, idleTimeoutSeconds: 0 }
         },
@@ -48,26 +43,7 @@ export async function createPostgresWsReplica(input: PostgresWsReplicaInput): Pr
             await lifecycle.close();
         }
     });
-    const relayedAckNotices = createApiV1RelayedAckNotices({
-        mode: 'postgres',
-        notification: lifecycle.notification,
-        publisherId: input.publisherId
-    });
-    if (relayedAckNotices === undefined) {
-        throw new Error('PostgreSQL pub/sub must relay acknowledgement notices');
-    }
-    const { transport } = relayedAckNotices;
-    return await createRelayedAckMiddlewareInstance({
-        relayedAckNotices: {
-            ...relayedAckNotices,
-            transport: {
-                publish: async (notice) => {
-                    input.relayedAcks.push(notice);
-                    await transport.publish(notice);
-                },
-                subscribe: (channel, onNotice) => transport.subscribe(channel, onNotice)
-            }
-        },
+    return await createRoomAudienceMiddlewareInstance({
         inboundStores: createDefaultPSqlALInboundRuntimeStores({
             namespace: input.inboundNamespace,
             repository: new PSqlRuntimeStateRepository(lifecycle.database)
