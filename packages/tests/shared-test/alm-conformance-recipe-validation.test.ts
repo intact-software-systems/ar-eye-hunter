@@ -26,7 +26,8 @@ import { toNestedCommands } from './to-nested-commands.ts';
  * `not-yet-in-sync` is withheld from `ws`: its first hop must be RTC.
  * `cross-carrier-duplicate` needs both transports, in rtc-then-ws only (D760).
  * The fallback family (D56) needs the fallback cell.
- * The addressed family runs on two agents: server-command over ws only, unicast-fallback on the fallback cell.
+ * The addressed family runs on two agents: server-command over ws only, unicast-fallback on the fallback cell, and
+ * the server command refused at its call over the two carriers that lead with RTC.
  * The server's group-state deltas and client-state events reach a page over ws only, so server-originated and
  * server-ordered-entry run there.
  * The membership fence runs where one hop judges the roster, its rejection only where the WS server does.
@@ -133,6 +134,7 @@ const CARRIER_SCENARIO_IDS = {
         'edge-order-unretried-loss-stream',
         'not-yet-in-sync',
         'ws-unicast-receipt',
+        'server-command-refused-at-call',
         'capacity',
         'capacity-age',
         'reply-correlated',
@@ -204,6 +206,7 @@ const CARRIER_SCENARIO_IDS = {
         'no-fallback-after-deadline',
         'ws-unicast-receipt',
         'unicast-fallback',
+        'server-command-refused-at-call',
         'capacity',
         'capacity-age',
         'capacity-tracks',

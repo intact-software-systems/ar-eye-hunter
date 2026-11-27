@@ -323,23 +323,30 @@ export const ALM_CARRIER_MATRIX = {
             rtc: {
                 kind: 'stated',
                 outcome: { kind: 'refused', by: 'call', path: '$.peerId', code: 'unsupported' },
-                proofs: [{
-                    kind: 'unit-test',
-                    testFile: BROWSER_RTC_PEER_SEND_TEST,
-                    testName: 'refuses a send to the server on %s',
-                    because: 'The lane cannot witness a thrown call: the send throws before either carrier admits it.'
-                }]
+                proofs: [
+                    { kind: 'lane-cell', scenarioKey: 'server-command-refused-at-call' },
+                    {
+                        kind: 'unit-test',
+                        testFile: BROWSER_RTC_PEER_SEND_TEST,
+                        testName: 'refuses a send to the server on %s',
+                        because:
+                            'The send is admitted on neither carrier: the test reads both carriers\' admissions empty.'
+                    }
+                ]
             },
             'rtc-with-ws-fallback': {
                 kind: 'stated',
                 outcome: { kind: 'refused', by: 'call', path: '$.peerId', code: 'unsupported' },
-                proofs: [{
-                    kind: 'unit-test',
-                    testFile: BROWSER_RTC_PEER_SEND_TEST,
-                    testName: 'refuses a send to the server on %s',
-                    because:
-                        'The lane cannot witness a thrown call: the strategy does not route the send to WS, it throws.'
-                }]
+                proofs: [
+                    { kind: 'lane-cell', scenarioKey: 'server-command-refused-at-call' },
+                    {
+                        kind: 'unit-test',
+                        testFile: BROWSER_RTC_PEER_SEND_TEST,
+                        testName: 'refuses a send to the server on %s',
+                        because:
+                            'The strategy does not route the send to WS: the test reads both carriers\' admissions empty.'
+                    }
+                ]
             }
         }
     },

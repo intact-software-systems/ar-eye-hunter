@@ -62,7 +62,9 @@ Where a send is handed to WS (`at`):
   part of the outcome, its `because` names that part and what the run leaves open, and another proof
   of the cell covers the rest.
 - `unit-test`: a test file, a part of one test's title, and a sentence on what that test pins. Use it
-  for an outcome the lane cannot stage or witness, such as a call that throws.
+  for an outcome the lane cannot stage or witness, or beside a lane cell for what only a unit test
+  reads, such as both carriers' admission ports. A call the product refuses with a validation issue
+  is witnessed in the lane by a send that observes `call-refused`.
 - `documented-limit`: a document and the phrase in it that states the limit. Use it for a property
   no test can show, such as what a relay is able to read.
 - `unproven`: nothing proves this part of the outcome yet. `closedBy` names what will.
@@ -80,7 +82,9 @@ A cell may list several proofs. An `unproven` proof beside others says which par
   sender's handle must hold. It takes the three outcomes whose evidence is on that handle: refused by
   the `origin`, and handed to WS at `routing` or `after-admission`. For any other outcome the scenario
   asserts its own evidence, and reads its cell where the carriers differ, as `ordering-resync` reads
-  who refuses its gapped send.
+  who refuses its gapped send. `toAlmCallRefusalFacts(refusal)` turns a refusal by the `call` into
+  the facts the refusal a witnessed send returns must hold: one issue, at the cell's path, with its
+  code.
 
 ## What keeps the matrix honest
 

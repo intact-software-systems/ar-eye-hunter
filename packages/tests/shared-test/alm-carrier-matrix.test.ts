@@ -22,6 +22,7 @@ import {
     type AlmCarrierMatrixScenarioKey
 } from '@shared-test/rallar-bb-test/conformance/alm/carrier-matrix/resolve-alm-carrier-matrix-cell-carriers.ts';
 import { resolveAlmWorldSendCarriers } from '@shared-test/rallar-bb-test/conformance/alm/carrier-matrix/resolve-alm-world-send-carriers.ts';
+import { toAlmCallRefusalFacts } from '@shared-test/rallar-bb-test/conformance/alm/carrier-matrix/to-alm-call-refusal-facts.ts';
 import {
     toAlmCarrierMatrixCellProofs,
     toAlmCarrierMatrixLaneProofs
@@ -475,6 +476,7 @@ const EXPECTED_CELL_CARRIERS: readonly (readonly [AlmCarrierMatrixScenarioKey, r
     ['claim-refused-on-rtc', ['rtc']],
     ['world-routing', ['ws', 'rtc', 'rtc-with-ws-fallback']],
     ['server-command', ['ws']],
+    ['server-command-refused-at-call', ['rtc', 'rtc-with-ws-fallback']],
     ['ws-unicast-receipt', ['ws', 'rtc', 'rtc-with-ws-fallback']],
     ['unicast-fallback', ['rtc-with-ws-fallback']],
     ['ordering-gap-repair', ['ws', 'rtc']],
@@ -512,6 +514,16 @@ describe('resolveAlmCarrierMatrixCellCarriers', () => {
 describe('resolveAlmWorldSendCarriers', () => {
     it('selects the carriers on which a world broadcast leaves its sender\'s page: every one that does not refuse it', () => {
         expect(resolveAlmWorldSendCarriers()).toEqual(['ws', 'rtc-with-ws-fallback']);
+    });
+});
+
+describe('toAlmCallRefusalFacts', () => {
+    it('states the one issue a call refusal returns, by its path and its code', () => {
+        expect(toAlmCallRefusalFacts({ kind: 'refused', by: 'call', path: '$.peerId', code: 'unsupported' })).toEqual([
+            ['one-issue', 'callRefusal', 'length', 1],
+            ['issue-path', 'callRefusal.0.path', 'equals', '$.peerId'],
+            ['issue-code', 'callRefusal.0.code', 'equals', 'unsupported']
+        ]);
     });
 });
 

@@ -55,6 +55,8 @@ interface AlmConformanceSendDelivery {
     readonly ownership?: RallarBlackBoxTestMessagesSendCommand['ownership'];
     /** Absent, the product mints a fresh resource for the send. */
     readonly resourceId?: string;
+    /** Absent, the send's value is its handle's; `call-refused`, only the product's refusal of the call is. */
+    readonly observe?: RallarBlackBoxTestMessagesSendCommand['observe'];
 }
 
 interface AlmConformanceSendInput extends AlmConformanceMessageStepInput {

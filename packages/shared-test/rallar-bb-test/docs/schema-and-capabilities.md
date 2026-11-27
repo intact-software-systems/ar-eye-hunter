@@ -1137,7 +1137,11 @@ third `not-ready` attempt hands it to WS; the sender reads `attemptCarriers` con
 `carrierFallback` `{ from: 'rtc', to: 'ws', reason: 'not-ready' }`, and the receiver receives the copy and reads its
 `admission-outcome` `committed`/`admitted` on carrier `ws`. `server-command` (`ws` only) sends a `command` to `toPeer:
 'server'` and observes `acknowledged` on the server's own ACK, while the receiver proves for the whole window that
-nothing reaches it. `capacity` runs over every carrier: the sender closes, reconnects with `rallar.almVolatileLimits` `{
+nothing reaches it. `server-command-refused-at-call` (`rtc`, `rtc-with-ws-fallback`, the carriers the matrix names; full
+scope only, and withheld from the hosted manifests) sends the same `command` to `toPeer: 'server'` with `observe:
+'call-refused'`: the product's typed send refuses it at the call (C9), and the sender asserts the returned refusal holds
+one issue, at the cell's `path` with its `code` (`$.peerId`, `unsupported`). Its receiver runs no body: a send to the
+server reaches no room member however it ends, so no window there could fail. `capacity` runs over every carrier: the sender closes, reconnects with `rallar.almVolatileLimits` `{
 maxAdmissions: 1000, maxBytes: 36000 }`, waits 31 s for reconnect publications to begin, then polls the session
 ledger every 500 ms for at most 30 s until its occupied bytes are at most 8 KB. It then sends two ≈13.4 KB messages (a 12 000-byte filler) that are
 admitted and acknowledged, and a third that ends `rejected` with `failure: { kind: 'refused', reason: 'capacity' }` and
