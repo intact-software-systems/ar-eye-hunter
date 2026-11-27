@@ -1,14 +1,68 @@
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import {
+    mkdirSync,
+    mkdtempSync,
+    readdirSync,
+    rmSync,
+    symlinkSync,
+    utimesSync,
+    writeFileSync,
+    type PathLike
+} from 'node:fs';
 import { open } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { wrapFileHandle } from '../../../baseline/command/run-rtc-baseline-cli.ts';
 import { RTC_BASELINE_WRITER_LOCK_STALE_AFTER_MS } from '../../../baseline/evidence/rtc-baseline-writer-lock.ts';
 
 const staleAfterMs = RTC_BASELINE_WRITER_LOCK_STALE_AFTER_MS;
+
+// Every read of the lock directory's age passes through here after it has resolved, so a test
+// can hold one acquirer on what it saw while another acquirer runs to completion.
+const lockAgeReads = vi.hoisted(() => {
+    const pass = async (_path: string): Promise<void> => {};
+    return { pass, afterRead: pass };
+});
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('node:fs/promises')>();
+    return {
+        ...actual,
+        stat: async (statPath: PathLike) => {
+            const stats = await actual.stat(statPath);
+            await lockAgeReads.afterRead(String(statPath));
+            return stats;
+        }
+    };
+});
+
+function holdLockAgeRead(lockPath: string, readOrdinal: number) {
+    const reached = Promise.withResolvers<void>();
+    const released = Promise.withResolvers<void>();
+    let reads = 0;
+    lockAgeReads.afterRead = async (readPath) => {
+        if (readPath !== lockPath) {
+            return;
+        }
+        reads += 1;
+        if (reads === readOrdinal) {
+            reached.resolve();
+            await released.promise;
+        }
+    };
+    return {
+        reached: reached.promise,
+        passLaterReads() {
+            lockAgeReads.afterRead = lockAgeReads.pass;
+        },
+        release() {
+            lockAgeReads.afterRead = lockAgeReads.pass;
+            released.resolve();
+        }
+    };
+}
 
 function createLockDirectory(lockPath: string, ageMs: number) {
     mkdirSync(lockPath);
@@ -76,6 +130,40 @@ describe('RTC baseline Bun writer lock', () => {
             rmSync(scenario.directory, { recursive: true, force: true });
         }
     });
+
+    // The stale check and the removal are separate filesystem calls. Holding one acquirer on
+    // the stale age it read, while the other reclaims and takes the lock, is the interleaving
+    // in which a reclaimer could remove a lock that is no longer the one it examined.
+    it.each([1, 2])(
+        'grants a stale lock to exactly one acquirer when the other acts late on stale-age read %i',
+        async (readOrdinal) => {
+            const scenario = createLockScenario();
+            createLockDirectory(scenario.lockPath, staleAfterMs + 60_000);
+            const late = await openWrappedFile(scenario.dataPath);
+            const prompt = await openWrappedFile(scenario.dataPath);
+            const hold = holdLockAgeRead(scenario.lockPath, readOrdinal);
+            const lateHeld = late.tryLock();
+            try {
+                await Promise.race([hold.reached, lateHeld]);
+                hold.passLaterReads();
+                const promptHeld = await prompt.tryLock();
+                hold.release();
+                expect([await lateHeld, promptHeld].filter(Boolean)).toHaveLength(1);
+                // The winner's lock is still in place and no reclaim artifact is left beside it.
+                expect(readdirSync(scenario.directory).sort()).toEqual(['evidence.json', 'evidence.json.lock']);
+                expect(readdirSync(scenario.lockPath)).toEqual([]);
+            }
+            finally {
+                hold.release();
+                await lateHeld;
+                await late.unlock();
+                await prompt.unlock();
+                await late.close();
+                await prompt.close();
+                rmSync(scenario.directory, { recursive: true, force: true });
+            }
+        }
+    );
 
     it('retries instead of throwing when a held lock vanishes during the stale check', async () => {
         const scenario = createLockScenario();

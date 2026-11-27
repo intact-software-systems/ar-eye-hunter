@@ -1853,7 +1853,7 @@ A browser agent's `stats` result also carries its page's session ledger under
 `stats.rallar.alm`: `{ usage: { admissions, bytes, oldestAgeMs, tracks },
 own: { admissions, bytes }, inbound: { admissions, bytes },
 limits: { maxAdmissions, maxBytes, maxAgeMs, maxTracks }, overloaded,
-repliesHeld, replyWaitsOpen, publication, ordering, orderingTracks, deliveredMarkers }`. All but the last two are read at the
+repliesHeld, replyWaitsOpen, publication, ordering, congestionEpisodes, edgeOrder, orderingTracks, deliveredMarkers }`. All but the last two are read at the
 command from `rallar.messages.readUsage()` (D180): `usage` holds the totals of the ledger's
 two pools, `own` and `inbound` each pool (D189), and `overloaded` says the
 smallest next own send would be refused at the count or byte limit.
@@ -1883,6 +1883,13 @@ connect and counted per event, not per distinct copy.
 settlement of the attempt that was not deferred again; `openEpisodes`, the deferred messages no settlement has ended;
 and `unrecordedSamples`, the episodes the connect could not measure. It is cumulative over the connect and across both
 carriers. A page answer whose histogram has other bounds, or whose counts are not counts, fails the stats command.
+`edgeOrder` is `readUsage().edgeOrder`, required: what the page's edge-ordered channels keep at the read — `streams`
+(the sender streams it follows, at most 256), `heldMessages` (messages held for their turn, at most 256 a stream),
+`evictedStreams` (records of the streams the stream cap pushed out, at most 256), `sendStreams` (the streams it minted
+as a sender, at most 256) and `openSends` (its open sends and stated holes, each gone by its send's deadline) — and
+three counts cumulative since the page loaded, across its connects: `lateDrops`, `gaps` and `heldDropped`. An `assert`
+reads one as `latestStats.rallar.alm.edgeOrder.heldMessages`. A page answer whose block is absent or holds a value that
+is not a count fails the stats command.
 `orderingTracks` is the page's own, not the facade's: the sum of the latest
 `ordering-tracks` count each inbound store stated on the `storage` diagnostics
 port since the page's last `close` (D191; 0 before a store opened a track) — the same block reaches

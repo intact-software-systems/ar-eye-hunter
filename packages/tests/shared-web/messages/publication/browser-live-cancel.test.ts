@@ -15,7 +15,8 @@ const LIVE_CHANNEL: BrowserTypedChannelPolicy = {
     access: 'members',
     durability: undefined,
     onStorageUnavailable: 'refuse',
-    publication: { cadenceMs: 60_000, retainNewest: 1, drain: { messages: 8, bytes: 65_536 } } satisfies ALPublicationPolicy
+    publication: { cadenceMs: 60_000, retainNewest: 1, drain: { messages: 8, bytes: 65_536 } } satisfies ALPublicationPolicy,
+    order: undefined
 };
 
 interface LiveCancelFixture extends ReturnType<typeof createBrowserMessageSenderFixture> {

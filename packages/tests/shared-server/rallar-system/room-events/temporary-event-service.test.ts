@@ -117,6 +117,50 @@ it('holds the lobby open from an occupied court, then rejects a late reconnect b
     finally { queue.inbox.stop(); await fixture.storage.close(); }
 });
 
+it('dispatches a committed court offer after worker restart and retires only the dead device', async () => {
+    const { generateVAPIDKeys } = await import('web-push');
+    const { EventWebPush } = await import('@shared-server/rallar-system/room-events/event-web-push.ts');
+    const fixture = await createRetentionDatabaseFixture();
+    const nowEpochMs = () => Date.now();
+    const groups = fixture.repository;
+    const authSessions = new AuthSessionPersistence(fixture.runtime);
+    const config = { serviceId: 'events', handoverWindowMs: 1000, finishedRetentionMs: 3_600_000, organizerIds: ['owner'] };
+    const roomAccess = new EventRoomAccessEffects({ groups, sessions: authSessions, ...config });
+    let calls = 0;
+    const webPush = new EventWebPush({ ...generateVAPIDKeys(), subject: 'mailto:alerts@example.com' },
+        async () => { calls++; return new Response(null, { status: 410 }); }, nowEpochMs);
+    const start = () => {
+        const queue = createSqlServerAppInbox({ database: fixture.storage.sql, nowEpochMs });
+        const service = new TemporaryEventService({ appInbox: queue.inbox, runtime: fixture.runtime, groups, authSessions, roomAccess, nowEpochMs, webPush }, config);
+        service.listen({ database: fixture.storage.sql, outboxQueueReader: queue.outbox });
+        queue.inbox.start();
+        return { service, queue };
+    };
+    let worker = start();
+    try {
+        await seedRetentionRoom(fixture);
+        const commands: RoomEvent.Command[] = [
+            { action: 'create', courts: [{ groupId: 'court', capacity: 1 }], closesAt: Date.now() + 600_000 },
+            { action: 'enable-court-alerts', subscription: { endpoint: 'https://web.push.apple.com/device', p256dh: generateVAPIDKeys().publicKey,
+                auth: 'A'.repeat(22) } },
+            { action: 'propose', partyId: 'solo', players: ['owner'] }
+        ];
+        for (const command of commands) {
+            const queued = await worker.service.mutate.enqueue({ command: { lobby: RETENTION_REF, principalId: 'owner',
+                sessionId: fixture.owner.sessionId, command, requestId: command.action }, traceId: 'offer' });
+            await worker.queue.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
+            expect((await queued.right!.wait()).left).toBeFalsy();
+        }
+        expect(calls).toBe(0);
+        worker.queue.inbox.stop();
+        worker = start();
+        await worker.queue.outbox.dequeueOutbox(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
+        expect(calls).toBe(1);
+        await worker.queue.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
+        expect((await new RoomEventRepository(fixture.runtime).read(RETENTION_REF))?.value.alerts).toBeUndefined();
+    } finally { worker.queue.inbox.stop(); await fixture.storage.close(); }
+});
+
 it('grants the roster and all room ownership only after the eligible recipient accepts from their present session', async () => {
     const f = await createRetentionDatabaseFixture();
     const nowEpochMs = () => f.nowEpochMs;

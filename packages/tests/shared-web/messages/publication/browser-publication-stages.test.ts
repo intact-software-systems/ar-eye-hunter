@@ -1,4 +1,3 @@
-import { createDefaultBrowserServerClockFixture } from '../../connection/browser-server-clock-fixture.ts';
 import { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
 import { BrowserPublicationStages } from '@shared-web/browser/messages/publication/browser-publication-stages.ts';
 import { toBrowserPublicationDelivery } from '@shared-web/browser/messages/publication/to-browser-publication-delivery.ts';
@@ -13,6 +12,7 @@ import {
 import { computeALDeliveryLifecycle } from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { describe, expect, it } from 'vitest';
+import { createDefaultBrowserServerClockFixture } from '../../connection/browser-server-clock-fixture.ts';
 
 import { createDefaultApiMiddlewareTestDouble } from '../../api-middleware-test-double.ts';
 
@@ -87,7 +87,10 @@ function createConnect(
         fixture.settlements.push(settlement);
     };
     return {
-        context: createDefaultApiMiddlewareTestDouble({ serverTime: createDefaultBrowserServerClockFixture(() => fixture.clock.atMs), middleware: { qboxEngine: engine, publicationStageLimits } }),
+        context: createDefaultApiMiddlewareTestDouble({
+            serverTime: createDefaultBrowserServerClockFixture(() => fixture.clock.atMs),
+            middleware: { qboxEngine: engine, publicationStageLimits }
+        }),
         engine,
         epoch: fixture.feed.open({ ws: record, rtc: record, holds: () => true }, { relaySettlement: () => {} })
     };
@@ -114,7 +117,8 @@ function toLiveDelivery(
         access: 'members',
         durability: undefined,
         onStorageUnavailable: 'refuse',
-        publication
+        publication,
+        order: undefined
     });
     if (live.publication === undefined) {
         throw new Error('A live channel\'s delivery carries its publication.');

@@ -70,6 +70,8 @@ import {
     type ScriptedTransportFaultPort
 } from '@shared/transport-faults/transport-fault-port.ts';
 
+import { IDLE_RALLAR_EDGE_ORDER_USAGE } from '../idle-rallar-edge-order-usage.ts';
+
 export interface BrowserRuntimeFacadeRecords {
     readonly configurationWrites: Array<Parameters<BlackBoxBrowserRallarRuntimeDependency['configure']>[0]>;
     readonly defaultWrites: Array<Parameters<BlackBoxBrowserRallarRuntimeDependency['setDefaults']>[0]>;
@@ -171,7 +173,8 @@ const IDLE_SESSION_REPORT: RallarMessagesUsage = {
     replyWaitsOpen: 0,
     publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS),
     ordering: createALInboundOrderingCounters(),
-    congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures()
+    congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures(),
+    edgeOrder: IDLE_RALLAR_EDGE_ORDER_USAGE
 };
 
 export const facadeSession: AuthSession = {
