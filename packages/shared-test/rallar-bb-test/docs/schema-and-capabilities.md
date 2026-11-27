@@ -563,7 +563,7 @@ room id. The sender reads the identity of a reply from the value its `messages.a
 adapter's `rallar.bb.messages.reply_awaited` diagnostic for that command, whose `contains` names the request's
 `{resultCache…}` msgId, since an `assert` compares with no token.
 
-- `reply-correlated` (`ws`, `rtc-with-ws-fallback`, the addressed family): the sender's `command` to `toPeer:
+- `reply-correlated` (`ws`, `rtc`, `rtc-with-ws-fallback`, the addressed family): the sender's `command` to `toPeer:
   'receiver'` reads `replied`; the reply's `replyToMsgId` and `corrId` and the request's `corrId` are the request's
   msgId, the reply takes the request's type, and its `senderId` is the session the request's receipt confirmed. The
   receiver replies to its one arrival and reads its reply `acknowledged`.

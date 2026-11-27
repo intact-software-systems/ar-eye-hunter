@@ -796,7 +796,7 @@ export const ALM_CARRIER_MATRIX = {
                         testName: 'subscribes the WS inbox once as message-replies at order 15',
                         because: 'The reply inbox subscribes the WS inbox alone, so only a reply over WS is matched.'
                     },
-                    { kind: 'unproven', closedBy: '`reply-correlated` over this carrier' }
+                    { kind: 'lane-cell', scenarioKey: 'reply-correlated' }
                 ]
             },
             'rtc-with-ws-fallback': {

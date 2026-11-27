@@ -87,10 +87,10 @@ const CLAIM_KEYS_BY_CARRIER = {
     'rtc-with-ws-fallback': ['claim-first-wins']
 } as const;
 
-/** The reply cells (D445): the addressed ones over WS, the correlated one on the fallback cell too, first-wins on three agents. */
+/** The reply cells (D445): the addressed ones over WS, the correlated one on every carrier, first-wins on three agents. */
 const REPLY_ADDRESSED_KEYS_BY_CARRIER = {
     ws: ['reply-correlated', 'reply-timeout-late', 'reply-undelivered'],
-    rtc: [],
+    rtc: ['reply-correlated'],
     'rtc-with-ws-fallback': ['reply-correlated']
 } as const;
 
@@ -338,6 +338,7 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'ws-unicast-receipt',
         'capacity',
         'capacity-age',
+        ...REPLY_ADDRESSED_KEYS_BY_CARRIER.rtc,
         'paced-latest',
         'paced-newest-n',
         'paced-expiry',
@@ -476,7 +477,7 @@ describe('alm-conformance recipe family', () => {
                 carrier === 'ws'
                     ? ['ws-unicast-receipt', 'server-command', ...VOLATILE_BOUND_KEYS, ...REPLY_ADDRESSED_KEYS_BY_CARRIER.ws]
                     : carrier === 'rtc'
-                    ? ['ws-unicast-receipt', 'capacity', 'capacity-age']
+                    ? ['ws-unicast-receipt', 'capacity', 'capacity-age', ...REPLY_ADDRESSED_KEYS_BY_CARRIER.rtc]
                     : [
                         'ws-unicast-receipt',
                         'unicast-fallback',
@@ -918,7 +919,8 @@ describe('alm-conformance recipe family', () => {
             ['full'],
             ['full'],
             ['full'],
-            // The paced cells, after the volatile bound cells.
+            ...REPLY_ADDRESSED_KEYS_BY_CARRIER.rtc.map(() => ['full']),
+            // The paced cells, after the volatile bound cells and the correlated reply.
             ['smoke', 'full'],
             ['smoke', 'full'],
             ['smoke', 'full'],

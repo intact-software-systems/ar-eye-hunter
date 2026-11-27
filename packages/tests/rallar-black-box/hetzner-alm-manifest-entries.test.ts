@@ -208,8 +208,7 @@ describe('ALM conformance hosted lane families', () => {
             ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.map((carrier) => `alm-${carrier}-own-share-under-inbound`),
             ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.map((carrier) => `alm-${carrier}-buffered-track-drains`),
             'alm-rtc-churn-bounded-tracks',
-            'alm-ws-reply-correlated',
-            'alm-rtc-with-ws-fallback-reply-correlated',
+            ...ALM_CONFORMANCE_CARRIERS.map((carrier) => `alm-${carrier}-reply-correlated`),
             'alm-ws-reply-timeout-late',
             'alm-ws-reply-undelivered',
             // The combined connect's one selector is the scenario topic's, so no hosted page hears a group-state delta.

@@ -370,7 +370,6 @@ const UNPROVEN_CELLS = [
         'rtc-with-ws-fallback',
         'a receipted publication over this carrier: no hop answers the frame it drops, so the receipt runs out and the send is handed to WS, where the server refuses it `no-publish-grant`; nothing pins that chain'
     ],
-    ['reply', 'rtc', '`reply-correlated` over this carrier'],
     ['left-sender-send', 'rtc', LEFT_SENDER_CELL],
     ['left-sender-send', 'rtc-with-ws-fallback', LEFT_SENDER_CELL],
     [
@@ -463,7 +462,7 @@ const EXPECTED_CELL_CARRIERS: readonly (readonly [AlmCarrierMatrixScenarioKey, r
     ['granted-rtc-forged-sender', ['rtc']],
     ['unsigned-ack-refused', ['rtc', 'rtc-with-ws-fallback']],
     ['forged-recipient-ack', ['rtc']],
-    ['reply-correlated', ['ws', 'rtc-with-ws-fallback']],
+    ['reply-correlated', ['ws', 'rtc', 'rtc-with-ws-fallback']],
     ['reply-timeout-late', ['ws']],
     ['reply-first-wins', ['ws']],
     ['fenced-rejection', ['ws']],
