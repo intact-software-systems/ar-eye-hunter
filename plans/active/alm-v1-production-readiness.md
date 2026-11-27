@@ -213,8 +213,8 @@ behaviour. Merged as `bc84d58`; its `Branch Release Gate result` was green at `5
 and the head that merged adds the merge of `main` after #923 and one README sentence. Section 5.1
 holds what its reference set shows (R1) and what building it found on `main` (R8, R15 to R19; G9
 in section 5.4). As merged the cell offered ordered sends only. It has since gained a required
-`--ordering` and can offer either ordered or unordered sends (its README); its reference set is of
-ordered sends, and no unordered reference set has been run. Not built: a run on #885's tree,
+`--ordering` and can offer either ordered or unordered sends, and its README holds one reference
+set of each ordering, measured apart. Not built: a run on #885's tree,
 a hosted or multi-process run, a window longer than 20 s, and a topic declared `fanout: 'outbox'`.
 
 ## 5. What remains
@@ -789,8 +789,9 @@ planned here. The two meet in three places:
 - Both need a measurement through the WS server on PostgreSQL. That plan's slice 1 measures the
   unordered path with a counter in the payload. The cell of #927 offered ordered sends only; it
   can now offer either ordering on the same instances, latency wrappers and report, with the
-  send's number in the payload under both (`--ordering`, its README). No unordered reference set
-  has been run. Which harness that slice uses is that plan's choice.
+  send's number in the payload under both (`--ordering`, its README). Its unordered reference set
+  on `main` wrote every copy in all sixteen runs; at +5 ms a receipt completed about 30 s after its
+  offer at the median (its README). Which harness that slice uses is that plan's choice.
 - One of ruling 6's choices refuses a browser send with `orderingKey`. That plan says the choice
   removes the stall it started from, which is R1. Decision 18 asks how Slice 2's levers and that
   ruling are ordered.

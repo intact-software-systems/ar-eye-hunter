@@ -530,13 +530,19 @@ outside a transaction holds no connection while it waits.
   work on the machine shows in the load average the artifact records.
 - **One clock, for the cell.** The cell reads and waits through one injected clock; the product's
   own services, stores and workers read the wall clock themselves.
-- **No unordered reference set.** Every measured figure this README states is of ordered sends, as
-  the next section says.
+- **Two reference sets, not one comparison.** The ordered and the unordered
+  [reference set](#reference-figures) were measured on different days at different commits, and
+  their runs were not interleaved. A difference between a figure of one and a figure of the other is
+  not a same-regime comparison (`packages/shared/measurement/compute-same-regime-comparison.ts`).
 
 ## Reference figures
 
-Every figure this README states from a run was measured before the cell had an unordered shape,
-in one reference set of 16 runs:
+Every figure this README states from a run is from one of two reference sets of 16 runs each, on
+one machine, one run at a time.
+
+### The ordered set
+
+Measured before the cell had an unordered shape.
 
 - **Ordering.** Ordered sends: the cell of that commit named the room's ordering key on every send
   and had no `--ordering`. In today's options each run is `--ordering=ordering-key`.
@@ -563,9 +569,46 @@ in one reference set of 16 runs:
 The 2,800 copies of a five-publisher reference run are no measurement: five publishers at 2 sends
 a second for 20 s offer 200 sends, each to fourteen recipients.
 
-**No unordered reference set exists yet.** No figure of a run with `--ordering=unordered` has been
-measured on a quiet machine, and this README states none. The smoke on PostgreSQL runs a small
-unordered cell and proves behaviour, never timing.
+### The unordered set
+
+- **Ordering.** `--ordering=unordered` on every run.
+- **Commit.** `5e8f819`, on the branch of pull request #932, whose product code was `main`'s at
+  `430e94f`. The artifacts carry the schema `rallar.alm.room-send-cell.v1`.
+- **Shapes.** The sixteen of the ordered set, run for run.
+- **Machine.** The same, on 2026-11-27. Each run had a fresh database, and the 1-minute load was
+  0.17 to 0.69 at each start.
+
+| Shape                      | Sender recovery   | Runs | Copies written      | Due time to first write, median | Offer to complete receipt, median |
+| -------------------------- | ----------------- | ---- | ------------------- | ------------------------------- | --------------------------------- |
+| 5 publishers at 2/s, +0 ms | `client-stand-in` | 3    | 2,800 of 2,800 each | 17 to 26 ms                     | 158 to 186 ms                     |
+| 5 at 2/s, +0 ms            | `none`            | 1    | 2,800 of 2,800      | 26 ms                           | 177 ms                            |
+| 5 at 2/s, +5 ms            | `client-stand-in` | 3    | 2,800 of 2,800 each | 199 to 210 ms                   | 31.1 to 31.5 s                    |
+| 5 at 2/s, +5 ms            | `none`            | 3    | 2,800 of 2,800 each | 201 to 210 ms                   | 29.8 to 33.6 s                    |
+| 5 at 2/s, +5 ms, pool 10   | `none`            | 1    | 2,800 of 2,800      | 211 ms                          | 34.2 s                            |
+| 5 at 2/s, +5 ms, pool 10   | `client-stand-in` | 1    | 2,800 of 2,800      | 216 ms                          | 31.4 s                            |
+| 1 publisher at 5/s, +0 ms  | `client-stand-in` | 1    | 1,400 of 1,400      | 18 ms                           | 141 ms                            |
+| 1 at 5/s, +5 ms            | `client-stand-in` | 1    | 1,400 of 1,400      | 189 ms                          | 5.3 s                             |
+| 1 at 10/s, +0 ms           | `client-stand-in` | 1    | 2,800 of 2,800      | 22 ms                           | 175 ms                            |
+| 1 at 10/s, +5 ms           | `client-stand-in` | 1    | 2,800 of 2,800      | 224 ms                          | 30.5 s                            |
+
+What the set supports:
+
+- **Every copy is written.** In all sixteen runs every expected copy was written, none more than
+  once and none ahead of an earlier send of its publisher; every receipt completed inside the 75 s
+  observed, and no offer threw.
+- **At +5 ms the receipt is late and the copy is not.** A copy is written about 200 ms after its
+  due time at the median. Its send's receipt completes about 30 s after the offer at the median in
+  the five-publisher runs and at 10 sends a second from one publisher, and 5.3 s after it at 5
+  sends a second. The admitted receipt is as late as the complete one: 29.9 to 32.2 s at the
+  median in those runs, 6.2 s at 5 sends a second.
+- **The stand-in gives up before that receipt.** Under `client-stand-in` at +5 ms it ended 175 to
+  186 of 200 sends `first-hop-exhausted` (18 of 100 at 5 sends a second), after 575 to 586
+  first-hop resends (173), each answered `duplicate`.
+
+What it does not support: why the receipt is late (no cause was looked for); a spread, with three
+runs of two shapes and one of each other; and a comparison with the ordered set, as the
+[limits](#limits) say. The smoke on PostgreSQL runs a small unordered cell and proves behaviour,
+never timing.
 
 ## Navigation
 
