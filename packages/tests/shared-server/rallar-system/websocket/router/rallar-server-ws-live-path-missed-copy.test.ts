@@ -36,6 +36,8 @@ const LIFETIME_MS = 10_000;
 const ACK_TIMEOUT_MS = 2_000;
 /** The line `publishRallarServerLiveWsNotice` prints for an admitted message whose notice failed to publish. */
 const PUBLICATION_FAILED_LINE = 'Rallar server WS admitted publication failed for room.notification (m-1): NOTIFY failed';
+/** Over the 8,000 bytes a notice carries inline, so the notice carries the message's key in the inbound store. */
+const KEY_NOTICE_TEXT = 'x'.repeat(9_000);
 
 describe('a room send on an undeclared topic, live-only across two instances', () => {
     // Pins the fixture: two instances, each a recipient's, one receipt counted in the record both share.
@@ -195,6 +197,27 @@ describe('a room send on an undeclared topic, live-only across two instances', (
 
         expect(answer.left).toEqual({ code: 'unauthorized', message: 'AL repair request names no relayed message admitted to its sender' });
         expect(getMessageCopies(r2)).toEqual(['m-1', 'm-3']);
+    });
+
+    // P7. Pins what a resend sent as a key notice would meet: such a notice names no recipients, so the receiving
+    // instance writes the copy to every session of the stored admitted audience it holds, the origin's own socket
+    // there included. An inline notice names its recipients and leaves the origin out. Slice 2 builds on it; no ruling
+    // turns it.
+    it('writes a key notice\'s copy to every admitted session on the receiving instance, the origin\'s own socket included', async () => {
+        const fixture = await createLiveRoomClusterFixture({ roomSessionIds: LIVE_ROOM_SESSION_IDS, volatileInbound: false });
+        const { a, b } = fixture.instances;
+        const originOnA = await connectLiveRoomSession(a, LIVE_ROOM_ORIGIN, undefined);
+        const originOnB = await connectLiveRoomSession(b, LIVE_ROOM_ORIGIN, undefined);
+        await connectLiveRoomSession(a, 'r1', undefined);
+        const r2 = await connectLiveRoomSession(b, 'r2', undefined);
+        const inline = receipted(fixture, 'm-1');
+        const keyed: ALMessage = { ...receipted(fixture, 'm-2'), payload: { ...inline.payload, resource: JSON.stringify({ text: KEY_NOTICE_TEXT }) } };
+
+        await offerAndConfirm(fixture, { sends: [inline, keyed], confirmations: [] });
+
+        expect(fixture.bus.notices.map((notice) => notice.delivery)).toEqual(['inline', 'inbound-key']);
+        expect(getMessageCopies(r2)).toEqual(['m-1', 'm-2']);
+        expect([getMessageCopies(originOnA), getMessageCopies(originOnB)]).toEqual([[], ['m-2']]);
     });
 });
 
