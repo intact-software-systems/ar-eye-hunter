@@ -74,6 +74,14 @@ export class BrowserMessageInputValidator {
         return validation;
     }
 
+    /** The size issue of a payload that is already JSON text: what Rallar Web wraps around a payload counts too. */
+    public validateSerializedPayload(serialized: string): readonly RallarValidationIssue[] {
+        const maxBytes = this.input.readMaxPayloadBytes();
+        return computeUtf8ByteLength(serialized) > maxBytes
+            ? [{ path: '$.payload', code: 'payload-too-large', message: `Payload exceeds ${maxBytes} bytes.` }]
+            : [];
+    }
+
     public validateRtc<T>(
         input: RallarRtcSendInput<T>,
         roomId: string | undefined

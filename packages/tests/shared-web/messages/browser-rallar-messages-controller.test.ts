@@ -27,6 +27,16 @@ const NO_CONGESTION_EPISODES = {
     openEpisodes: 0,
     unrecordedSamples: 0
 };
+const NO_EDGE_ORDER_USAGE = {
+    streams: 0,
+    heldMessages: 0,
+    evictedStreams: 0,
+    lateDrops: 0,
+    gaps: 0,
+    heldDropped: 0,
+    sendStreams: 0,
+    openSends: 0
+};
 const NOT_CONNECTED = 'Rallar is not connected. Call rallar.connect() first.';
 
 const mocks = getRallarFacadeMocks();
@@ -90,7 +100,8 @@ describe('rallar.messages.readUsage', () => {
             replyWaitsOpen: 0,
             publication: expect.any(Object),
             ordering: NO_ORDERING_COUNTERS,
-            congestionEpisodes: NO_CONGESTION_EPISODES
+            congestionEpisodes: NO_CONGESTION_EPISODES,
+            edgeOrder: NO_EDGE_ORDER_USAGE
         });
         expect(report.usage.oldestAgeMs).toBeGreaterThanOrEqual(1_000);
         expect(report.usage.oldestAgeMs).toBeLessThan(31_000);
@@ -143,7 +154,8 @@ describe('rallar.messages.readUsage', () => {
             replyWaitsOpen: 0,
             publication: expect.any(Object),
             ordering: NO_ORDERING_COUNTERS,
-            congestionEpisodes: NO_CONGESTION_EPISODES
+            congestionEpisodes: NO_CONGESTION_EPISODES,
+            edgeOrder: NO_EDGE_ORDER_USAGE
         });
     });
 

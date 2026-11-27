@@ -151,6 +151,11 @@ export interface BlackBoxRallarConfig extends Pick<RallarOperationOptions, 'rtcC
      * records each invocation as a diagnostic. Absent, the channel declares none, as a product channel by default.
      */
     readonly recoveryOwner?: 'record';
+    /**
+     * Harness-only: `edge` declares every typed channel this connect opens edge-ordered, the one it subscribes and
+     * the ones its sends open. Absent, they declare no order, as a product channel by default.
+     */
+    readonly channelOrder?: 'edge';
 }
 
 export interface BlackBoxRallarConnectionConfig {

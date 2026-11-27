@@ -187,6 +187,45 @@ export type ALInboundRuntimeDiagnosticsEvent =
         }>
         & ALMessageTrace
     )
+    | (
+        & Readonly<{
+            /**
+             * An admitted arrival on a channel its receiver declared edge-ordered that was not handed over at once.
+             * `held`, an earlier position of its stream is still missing, so it waits its turn. The others are
+             * dropped: `unwrapped`, it carried no valid stamp, so its sender's channel was not declared edge-ordered;
+             * `late`, its stream had already passed its position; `duplicate`, its position was already held;
+             * `expired`, it arrived past its own deadline. The stream and position are null for `unwrapped`.
+             */
+            kind: 'edge-order-arrival';
+            msgId: string;
+            typeId: string;
+            senderId: string;
+            carrier: ALDeliveryCarrier;
+            outcome: 'held' | 'unwrapped' | 'late' | 'duplicate' | 'expired';
+            stream: string | null;
+            position: number | null;
+        }>
+        & ALMessageTrace
+    )
+    | Readonly<{
+        /**
+         * Positions of one sender's edge-ordered stream, both ends included, that its receiver did not hand over.
+         * The reason is the receiver's: the sender ended the send, it can no longer arrive, or a bound was reached.
+         */
+        kind: 'edge-order-gap';
+        topicId: string;
+        typeId: string;
+        senderId: string;
+        stream: string;
+        fromPosition: number;
+        toPosition: number;
+        reason: string;
+    }>
+    | Readonly<{
+        /** Held edge-ordered messages given up because their connect went away: the order lives in memory only. */
+        kind: 'edge-order-held-dropped';
+        count: number;
+    }>
     | Readonly<{
         kind: 'effect-drain';
         /** The store pair of the lane that states it; only the IndexedDB lane's timings describe the runner. */
