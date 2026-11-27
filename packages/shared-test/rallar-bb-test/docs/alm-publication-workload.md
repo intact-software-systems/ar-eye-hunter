@@ -82,12 +82,20 @@ RTC layout; the conformance lane's `ws` cells connect on `messages.ws` and open 
 
 Each publisher then runs:
 
-1. A `loop` of one `messages.send` per frame, `publishIntervalMs` apart, with `purpose: 'live'`, the
+1. Under a seeded loss, `publication-workload-publisher-loss-arm`: a `fault.inject` of fault id
+   `publication-workload-loss` on `ws` for a `ws` point and on `rtc` otherwise, matching the frame
+   type, with `action: { loss: { ratio, seed } }` and `remaining: 'until-cleared'`.
+2. A `loop` of one `messages.send` per frame, `publishIntervalMs` apart, with `purpose: 'live'`, the
    point's publication policy, carrier and `ttlMs`.
-2. A pause of `publication.cadenceMs + ttlMs`. After it the stage holds no frame of the window, so
-   its counters are final. A long lifetime lengthens every run by that much.
-3. `stats`, then the `complete` barrier.
-4. Its gate: the stage's `admitted` counter is at least `minAcceptedSends`.
+3. A pause of `publication.cadenceMs + ttlMs`. After it the stage holds no frame of the window, so
+   its counters are final, and no frame of the window is still resubmitted. A long lifetime
+   lengthens every run by that much.
+4. Under a seeded loss, `publication-workload-publisher-loss-release`: the same fault with
+   `remaining: 0`, whose result's `acted` counts are the fault's totals.
+5. `stats`, then the `complete` barrier, whose timeout holds every command of the window, the two
+   fault steps included.
+6. Its gate: the stage's `admitted` counter is at least `minAcceptedSends`; under a seeded loss,
+   then `publication-workload-publisher-assert-loss-acted`: the release's `acted.drop` is at least 1.
 
 A subscriber waits at the `complete` barrier and then runs:
 
@@ -96,7 +104,8 @@ A subscriber waits at the `complete` barrier and then runs:
    frames of every publisher together: a subscriber can reach it though one publisher delivered
    little.
 2. Its gates: no message without an age, as many ages as messages, and no more messages than the
-   room's publishers have frames together.
+   plan's `expectedInboundMessages`: the room's publishers' frames together, less those a `ws` loss
+   drops. A subscriber arms no fault.
 3. `stats`.
 
 The subscriber's recipe asks for a `full` event history, because the count reads the page's whole

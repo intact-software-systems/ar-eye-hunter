@@ -57,6 +57,12 @@ const FILLER = 'x'.repeat(207);
 
 const FRAME_TYPE_ID = 'room.publication-workload.frame.v1';
 
+/** The conformance lane's seeded loss: a quarter of the frames, from seed 7. */
+const QUARTER_LOSS = { kind: 'seeded', ratio: 0.25, seed: 7 } as const;
+
+/** The point on ws under that loss: seed 7 drops 18 of the 60 frames, so a subscriber expects 42 and counts 40. */
+const WS_LOSS_POINT: PublicationWorkloadParameters = { ...POINT, carrier: 'ws', loss: QUARTER_LOSS };
+
 const WINDOW_STARTED_AT_EPOCH_MS = 1_800_000_000_000;
 
 function createRooms(parameters: PublicationWorkloadParameters): readonly PublicationWorkloadRoomRecipes[] {
@@ -110,6 +116,10 @@ function toCommandsAfterBarrier(
         throw new Error(`The recipe ${recipe.recipeId} holds no barrier ${afterBarrierId}.`);
     }
     return recipe.commands.slice(start + 1);
+}
+
+function toFaultInjects(recipe: RallarBlackBoxTestRecipe): readonly RallarBlackBoxTestCommand[] {
+    return toNestedCommands(recipe.commands).filter((command) => command.kind === 'fault.inject');
 }
 
 function toBarrierIds(recipe: RallarBlackBoxTestRecipe): readonly string[] {
@@ -197,29 +207,96 @@ describe('the recipes of one point of the publication workload family', () => {
     });
 
     it.each(['ws', 'rtc', 'rtc-with-ws-fallback'] as const)(
-        'sends on %s, on recipes the schema, the control validation and the preflight all admit',
+        'sends on %s, with no loss and under a seeded loss, on recipes the schema, the control validation and the preflight all admit',
         (carrier) => {
-            const { publisher, subscriber } = createRecipes({ ...POINT, carrier });
+            for (const loss of [{ kind: 'none' } as const, QUARTER_LOSS]) {
+                const { publisher, subscriber } = createRecipes({ ...POINT, carrier, loss });
 
-            expectRecipeAdmitted(publisher.recipe);
-            expectRecipeAdmitted(subscriber.recipe);
-            expect(
-                toNestedCommands(publisher.recipe.commands).flatMap((command) =>
-                    command.kind === 'messages.send' && 'carrier' in command ? [command.carrier] : []
-                )
-            ).toEqual([carrier]);
+                expectRecipeAdmitted(publisher.recipe);
+                expectRecipeAdmitted(subscriber.recipe);
+                expect(
+                    toNestedCommands(publisher.recipe.commands).flatMap((command) =>
+                        command.kind === 'messages.send' && 'carrier' in command ? [command.carrier] : []
+                    )
+                ).toEqual([carrier]);
+            }
         }
     );
 
     it.each(['ws', 'rtc', 'rtc-with-ws-fallback'] as const)(
-        'gives a point of two publishers on %s three recipes the schema, the control validation and the preflight all admit',
+        'gives a point of two publishers on %s, with no loss and under a seeded loss, three recipes the schema, the control validation and the preflight all admit',
         (carrier) => {
-            const roles = createRoles({ ...POINT, publisherCount: 2, carrier });
+            for (const loss of [{ kind: 'none' } as const, QUARTER_LOSS]) {
+                const roles = createRoles({ ...POINT, publisherCount: 2, carrier, loss });
 
-            expect(roles).toHaveLength(3);
-            roles.forEach(({ recipe }) => expectRecipeAdmitted(recipe));
+                expect(roles).toHaveLength(3);
+                roles.forEach(({ recipe }) => expectRecipeAdmitted(recipe));
+            }
         }
     );
+
+    it('holds a quarter loss from seed 7 on a ws publisher\'s frames from before its first send until its stage holds none, and releases it under the same fault id', () => {
+        const { publisher } = createRecipes(WS_LOSS_POINT);
+
+        const window = toCommandsAfterBarrier(publisher.recipe, 'publication-workload-setup-complete');
+        expect(window.map((command) => command.commandId)).toEqual([
+            'publication-workload-publisher-loss-arm',
+            'publication-workload-publisher-frames',
+            'publication-workload-publisher-drain',
+            'publication-workload-publisher-loss-release',
+            'publication-workload-publisher-stats',
+            'publication-workload-publisher-complete',
+            'publication-workload-publisher-assert-accepted-sends',
+            'publication-workload-publisher-assert-loss-acted'
+        ]);
+        const fault = {
+            kind: 'fault.inject',
+            faultId: 'publication-workload-loss',
+            carrier: 'ws',
+            match: { typeId: FRAME_TYPE_ID },
+            action: { loss: { ratio: 0.25, seed: 7 } },
+            timeoutMs: 3_000
+        };
+        expect(window[0]).toEqual({ ...fault, commandId: 'publication-workload-publisher-loss-arm', remaining: 'until-cleared' });
+        expect(window[3]).toEqual({ ...fault, commandId: 'publication-workload-publisher-loss-release', remaining: 0 });
+        // The release's own count of the sends its fault dropped, read once the stage holds nothing of the window.
+        expect(window[7]).toEqual({
+            kind: 'assert',
+            commandId: 'publication-workload-publisher-assert-loss-acted',
+            source: 'resultCache.publication-workload-publisher-loss-release.value.acted.drop',
+            operator: 'gte',
+            expected: 1
+        });
+        expect(toFaultInjects(publisher.recipe)).toEqual([window[0], window[3]]);
+    });
+
+    it.each(['rtc', 'rtc-with-ws-fallback'] as const)('arms the loss on rtc for an %s point', (carrier) => {
+        const { publisher } = createRecipes({ ...WS_LOSS_POINT, carrier });
+
+        expect(toFaultInjects(publisher.recipe).map((command) => 'carrier' in command ? command.carrier : undefined))
+            .toEqual(['rtc', 'rtc']);
+    });
+
+    it('arms nothing on a subscriber, and nothing on a publisher of a point with no loss', () => {
+        const { publisher, subscriber } = createRecipes(POINT);
+
+        expect(toFaultInjects(createRecipes(WS_LOSS_POINT).subscriber.recipe)).toEqual([]);
+        expect(toFaultInjects(publisher.recipe)).toEqual([]);
+        expect(toFaultInjects(subscriber.recipe)).toEqual([]);
+    });
+
+    it('meets every role of a loss point at the same complete barrier, whose timeout now holds the two fault steps', () => {
+        const recipes = createRoles({ ...WS_LOSS_POINT, publisherCount: 2 }).map((role) => role.recipe);
+
+        // Twice the 30,000 ms window for the loop, the 5,100 ms drain, the 3,000 ms stats read, and 3,000 ms for each of
+        // the arm and the release.
+        for (const recipe of recipes) {
+            expect(
+                recipe.commands.find((command) => command.kind === 'barrier' && command.barrierId === 'publication-workload-complete'),
+                recipe.recipeId
+            ).toMatchObject({ timeoutMs: 74_100 });
+        }
+    });
 
     it.each([
         {
@@ -436,7 +513,11 @@ describe('the publisher\'s commands after the setup-complete barrier, run by the
      * values the stage handed to a carrier. The executor releases a barrier as soon as the publisher arrives at it, as
      * a control server whose subscribers already wait.
      */
-    async function runPublisherWindow(admittedByStage: number): Promise<PublisherWindowRun> {
+    async function runPublisherWindow(
+        point: PublicationWorkloadParameters,
+        admittedByStage: number,
+        droppedSends: number
+    ): Promise<PublisherWindowRun> {
         let now = WINDOW_STARTED_AT_EPOCH_MS;
         const sends: RallarBlackBoxTestMessagesSendCommand[] = [];
         const runtime = createDefaultRallarBlackBoxTestRuntime({
@@ -450,6 +531,19 @@ describe('the publisher\'s commands after the setup-complete barrier, run by the
                     return {
                         status: 'ok',
                         value: { barrierId: command.barrierId, outcome: 'released', arrivedAgentIds: [] },
+                        nextStatus: context.state().status
+                    };
+                }
+                if (command.kind === 'fault.inject') {
+                    // The fault's acted counts so far: none at the arm, every drop of the window at the release.
+                    const drop = 'remaining' in command && command.remaining === 0 ? droppedSends : 0;
+                    return {
+                        status: 'ok',
+                        value: {
+                            faultId: command.faultId,
+                            injected: true,
+                            acted: { drop, delay: 0, rewrite: 0, 'not-ready': 0, backpressure: 0 }
+                        },
                         nextStatus: context.state().status
                     };
                 }
@@ -467,7 +561,7 @@ describe('the publisher\'s commands after the setup-complete barrier, run by the
                 schemaVersion: 1,
                 recipeId: 'publisher-window',
                 continueOnFailure: false,
-                commands: toCommandsAfterBarrier(createRecipes(POINT).publisher.recipe, 'publication-workload-setup-complete')
+                commands: toCommandsAfterBarrier(createRecipes(point).publisher.recipe, 'publication-workload-setup-complete')
             }
         });
         const ran = isJsonRecordValue(result.value) && Array.isArray(result.value.results) ? result.value.results : [];
@@ -485,7 +579,7 @@ describe('the publisher\'s commands after the setup-complete barrier, run by the
     }
 
     it('sends frame n as the number n stamped with the clock of its send, the last one in exactly the declared 256 bytes', async () => {
-        const run = await runPublisherWindow(60);
+        const run = await runPublisherWindow(POINT, 60, 0);
 
         expect(run.ok).toBe(true);
         expect(run.sends.map((send) => isJsonRecordValue(send.payload) ? send.payload.seq : undefined))
@@ -499,14 +593,14 @@ describe('the publisher\'s commands after the setup-complete barrier, run by the
     });
 
     it('reads the publisher\'s stats one cadence and one lifetime after the last send: 100 ms and 5,000 ms', async () => {
-        const run = await runPublisherWindow(60);
+        const run = await runPublisherWindow(POINT, 60, 0);
 
         expect(run.statsReadAtEpochMs).toBe(1_800_000_029_500 + 5_100);
     });
 
     it('passes when its stage handed 57 of the 60 frames to a carrier; with 56, though all 60 sends returned, it fails its own assert, and only after it read its stats and met the subscribers at the complete barrier', async () => {
-        const atThreshold = await runPublisherWindow(57);
-        const belowThreshold = await runPublisherWindow(56);
+        const atThreshold = await runPublisherWindow(POINT, 57, 0);
+        const belowThreshold = await runPublisherWindow(POINT, 56, 0);
 
         expect({ ok: atThreshold.ok, failedCommandIds: atThreshold.failedCommandIds })
             .toEqual({ ok: true, failedCommandIds: [] });
@@ -521,6 +615,26 @@ describe('the publisher\'s commands after the setup-complete barrier, run by the
             { commandId: 'publication-workload-publisher-stats', ok: true },
             { commandId: 'publication-workload-publisher-complete', ok: true },
             { commandId: 'publication-workload-publisher-assert-accepted-sends', ok: false }
+        ]);
+    });
+
+    it('passes when the release read 18 dropped sends; with 0 it fails its loss-acted assert alone, after it read its stats and met the subscribers at the complete barrier', async () => {
+        const acted = await runPublisherWindow(WS_LOSS_POINT, 60, 18);
+        const unacted = await runPublisherWindow(WS_LOSS_POINT, 60, 0);
+
+        expect({ ok: acted.ok, failedCommandIds: acted.failedCommandIds }).toEqual({ ok: true, failedCommandIds: [] });
+        expect(unacted.sends).toHaveLength(60);
+        expect(unacted.ok).toBe(false);
+        expect(unacted.failedCommandIds).toEqual(['publication-workload-publisher-assert-loss-acted', 'publisher-window']);
+        expect(unacted.ranCommands).toEqual([
+            { commandId: 'publication-workload-publisher-loss-arm', ok: true },
+            { commandId: 'publication-workload-publisher-frames', ok: true },
+            { commandId: 'publication-workload-publisher-drain', ok: true },
+            { commandId: 'publication-workload-publisher-loss-release', ok: true },
+            { commandId: 'publication-workload-publisher-stats', ok: true },
+            { commandId: 'publication-workload-publisher-complete', ok: true },
+            { commandId: 'publication-workload-publisher-assert-accepted-sends', ok: true },
+            { commandId: 'publication-workload-publisher-assert-loss-acted', ok: false }
         ]);
     });
 });
@@ -639,6 +753,26 @@ describe('a subscriber\'s count and its three guards, run by the browser runtime
             .toEqual({ observed: 120, passed: ['publication-workload-subscriber-received', ...guards], failed: [] });
         expect(await runSubscriberCount(twoPublishers, toStamps(121))).toMatchObject({
             observed: 121,
+            failed: ['publication-workload-subscriber-assert-copies-within-frames']
+        });
+    });
+
+    it('counts 40 of the 42 frames a ws loss leaves and refuses a 43rd', async () => {
+        // Seed 7 at 0.25 drops 18 of the 60 frames on ws: 42 reach a subscriber, and 40 of 42 is 0.95.
+        const guards = [
+            'publication-workload-subscriber-assert-every-copy-aged',
+            'publication-workload-subscriber-assert-ages-cover-copies',
+            'publication-workload-subscriber-assert-copies-within-frames'
+        ];
+
+        expect(await runSubscriberCount(WS_LOSS_POINT, toStamps(39)))
+            .toMatchObject({ observed: 39, failed: ['publication-workload-subscriber-received'] });
+        expect(await runSubscriberCount(WS_LOSS_POINT, toStamps(40)))
+            .toEqual({ observed: 40, passed: ['publication-workload-subscriber-received', ...guards], failed: [] });
+        expect(await runSubscriberCount(WS_LOSS_POINT, toStamps(42)))
+            .toEqual({ observed: 42, passed: ['publication-workload-subscriber-received', ...guards], failed: [] });
+        expect(await runSubscriberCount(WS_LOSS_POINT, toStamps(43))).toMatchObject({
+            observed: 43,
             failed: ['publication-workload-subscriber-assert-copies-within-frames']
         });
     });
