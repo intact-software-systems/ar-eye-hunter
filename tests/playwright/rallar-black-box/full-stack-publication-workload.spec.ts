@@ -145,7 +145,8 @@ const LOCAL_POINTS: readonly LocalPoint[] = [
             payloadBytes: 256,
             ttlMs: 5_000,
             // The family's band for a loaded machine, not a loss allowance: a product that stopped resubmitting a
-            // refused frame would deliver about three quarters.
+            // refused frame would, by the seed's own draws, lose at least 18 of its 120 sends and fail it; no run has
+            // shown this.
             minReceiveRatio: 0.95,
             minSendSuccessRatio: 0.95,
             readyTimeoutMs: 45_000,
@@ -184,7 +185,7 @@ for (const point of LOCAL_POINTS) {
         test.skip(!isHeadlessFullStackOptedIn(), 'Opt-in standalone headless full-stack observation required');
         test.skip(
             process.env.RALLAR_BLACK_BOX_PUBLICATION_WORKLOAD_POINT !== point.name,
-            'RALLAR_BLACK_BOX_PUBLICATION_WORKLOAD_POINT names the other point'
+            'RALLAR_BLACK_BOX_PUBLICATION_WORKLOAD_POINT names another point'
         );
         expect(
             process.env.RALLAR_BLACK_BOX_STORAGE_DIR,
@@ -252,6 +253,7 @@ for (const point of LOCAL_POINTS) {
                 }`
             ).toBeDefined();
             expectPointFigures(figures.right!);
+            expectLossFigures(figures.right!);
             expectAgentPages(recipes, agentRuns);
         }
         finally {
@@ -276,9 +278,7 @@ function isHeadlessFullStackOptedIn(): boolean {
 /**
  * Every room holds the figures of each of its agents; every publisher's stage handed enough frames to a carrier; every
  * subscriber received enough of its room's frames and no more than them, with an age for each; and each delivered
- * figure covers exactly its subscribers. Under a seeded loss each publisher's fault dropped a send, and over `ws` each
- * subscriber observed exactly what its room's publishers admitted less what their faults dropped: two measured counts,
- * so the proof holds whatever frames the stage handed on. No latency level, no percentile and no rate is asserted.
+ * figure covers exactly its subscribers. No latency level, no percentile and no rate is asserted.
  */
 function expectPointFigures(figures: PublicationWorkloadFigures): void {
     const { configured: { parameters, plan }, measured } = figures;
@@ -286,22 +286,9 @@ function expectPointFigures(figures: PublicationWorkloadFigures): void {
         const roomName = `room ${index + 1}`;
         expect(room.publishers, `Every publisher of ${roomName} has figures`).toHaveLength(parameters.publisherCount);
         expect(room.subscribers, `Every subscriber of ${roomName} has figures`).toHaveLength(plan.subscriberCount);
-        for (const { agentId, publicationStage, droppedSends } of room.publishers) {
+        for (const { agentId, publicationStage } of room.publishers) {
             expect(publicationStage.counters.admitted, `The stage of ${agentId} handed enough frames to a carrier`)
                 .toBeGreaterThanOrEqual(plan.minAcceptedSends);
-            if (parameters.loss.kind === 'seeded') {
-                expect(droppedSends, `The fault of ${agentId} dropped at least one send`).toBeGreaterThanOrEqual(1);
-            }
-        }
-        if (parameters.loss.kind === 'seeded' && parameters.carrier === 'ws') {
-            const { admittedFrames, droppedSends } = room.published;
-            const passedFrames = droppedSends === null ? undefined : admittedFrames - droppedSends;
-            for (const { agentId, observed } of room.subscribers) {
-                expect(
-                    observed,
-                    `${agentId} observed what the publishers of ${roomName} admitted less what their faults dropped`
-                ).toBe(passedFrames);
-            }
         }
         for (const { agentId, observed, unrecordedSamples, sampleAgeMs } of room.subscribers) {
             expect(observed, `${agentId} received enough of the frames of ${roomName}`).toBeGreaterThanOrEqual(
@@ -331,6 +318,35 @@ function expectPointFigures(figures: PublicationWorkloadFigures): void {
             )
         )
     );
+}
+
+/**
+ * Under a seeded loss each publisher's fault dropped a send, and over `ws` each subscriber observed exactly what its
+ * room's publishers admitted less what their faults dropped: two measured counts, so the proof holds whatever frames
+ * the stage handed on. A point with no loss is held to nothing here.
+ */
+function expectLossFigures(figures: PublicationWorkloadFigures): void {
+    const { configured: { parameters }, measured } = figures;
+    if (parameters.loss.kind !== 'seeded') {
+        return;
+    }
+    for (const [index, room] of measured.rooms.entries()) {
+        for (const { agentId, droppedSends } of room.publishers) {
+            expect(droppedSends, `The fault of ${agentId} dropped at least one send`).toBeGreaterThanOrEqual(1);
+        }
+        if (parameters.carrier === 'ws') {
+            const { admittedFrames, droppedSends } = room.published;
+            const passedFrames = droppedSends === null ? undefined : admittedFrames - droppedSends;
+            for (const { agentId, observed } of room.subscribers) {
+                expect(
+                    observed,
+                    `${agentId} observed what the publishers of room ${
+                        index + 1
+                    } admitted less what their faults dropped`
+                ).toBe(passedFrames);
+            }
+        }
+    }
 }
 
 /**

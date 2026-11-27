@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import type { RallarBlackBoxBrowserRallarEvent } from '@shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 import {
     createPublicationWorkloadRecipes,
     type PublicationWorkloadRoleRecipe,
@@ -18,13 +19,17 @@ import {
     type RallarBlackBoxTestMessagesSendCommand,
     type RallarBlackBoxTestRecipe
 } from '@shared-test/rallar-bb-test/mod.ts';
-import type { RallarBlackBoxTestAlmUsage } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestAlmUsage,
+    RallarBlackBoxTestResult
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
 import { isJsonRecordValue, validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import { toIdleALOutboundCongestionEpisodeFigures } from '@shared/alm/outbound/congestion/al-outbound-congestion-episodes.ts';
 import { toIdleALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 
 import { IDLE_RALLAR_EDGE_ORDER_USAGE } from '../idle-rallar-edge-order-usage.ts';
 import { toNestedCommands } from '../to-nested-commands.ts';
@@ -285,7 +290,7 @@ describe('the recipes of one point of the publication workload family', () => {
         expect(toFaultInjects(subscriber.recipe)).toEqual([]);
     });
 
-    it('meets every role of a loss point at the same complete barrier, whose timeout now holds the two fault steps', () => {
+    it('meets every role of a loss point at the same complete barrier, whose timeout holds the two fault steps', () => {
         const recipes = createRoles({ ...WS_LOSS_POINT, publisherCount: 2 }).map((role) => role.recipe);
 
         // Twice the 30,000 ms window for the loop, the 5,100 ms drain, the 3,000 ms stats read, and 3,000 ms for each of
@@ -497,6 +502,70 @@ function toPublisherAlmUsage(admitted: number): RallarBlackBoxTestAlmUsage {
     };
 }
 
+/**
+ * What a control server and a page answer a publisher's barrier and fault commands: the barrier is released at once,
+ * as by a control server whose subscribers already wait, and the fault's acted counts so far are none at the arm and
+ * `droppedSends` at the release. Any other command gets no answer here.
+ */
+function toPublisherWindowAnswer(command: RallarBlackBoxTestCommand, droppedSends: number): ApiJsonObject | undefined {
+    if (command.kind === 'barrier') {
+        return { barrierId: command.barrierId, outcome: 'released', arrivedAgentIds: [] };
+    }
+    if (command.kind !== 'fault.inject') {
+        return undefined;
+    }
+    const drop = 'remaining' in command && command.remaining === 0 ? droppedSends : 0;
+    return {
+        faultId: command.faultId,
+        injected: true,
+        acted: { drop, delay: 0, rewrite: 0, 'not-ready': 0, backpressure: 0 }
+    };
+}
+
+/** The publisher's commands after the setup-complete barrier, run as one recipe of their own. */
+function toPublisherWindowRecipeRun(point: PublicationWorkloadParameters): RallarBlackBoxTestCommand {
+    return {
+        kind: 'recipe.run',
+        commandId: 'publisher-window',
+        recipe: {
+            schemaVersion: 1,
+            recipeId: 'publisher-window',
+            continueOnFailure: false,
+            commands: toCommandsAfterBarrier(createRecipes(point).publisher.recipe, 'publication-workload-setup-complete')
+        }
+    };
+}
+
+/** Every command of a recipe's result that names its id and whether it passed, in the order it ran. */
+function toRanCommands(recipeResult: RallarBlackBoxTestResult): readonly Readonly<{ commandId: string; ok: boolean; }>[] {
+    const { value } = recipeResult;
+    const ran = isJsonRecordValue(value) && Array.isArray(value.results) ? value.results : [];
+    return ran.flatMap((entry) =>
+        isJsonRecordValue(entry) && typeof entry.commandId === 'string' && typeof entry.ok === 'boolean'
+            ? [{ commandId: entry.commandId, ok: entry.ok }]
+            : []
+    );
+}
+
+/** One copy of frame `index + 1` on the subscriber's inbound log, carrying `sentAtEpochMs` as its stamp. */
+function toFrameCopyEvent(sentAtEpochMs: number | string, index: number): RallarBlackBoxBrowserRallarEvent {
+    return {
+        kind: 'message',
+        topic: 'rallar.browser.messages.rtc.message',
+        connection: 'publication-workload-subscriber',
+        transport: 'messages.rtc',
+        typeId: FRAME_TYPE_ID,
+        data: {
+            msgId: `msg-${index}`,
+            typeId: FRAME_TYPE_ID,
+            transport: 'rtc',
+            payload: { seq: index + 1, sentAtEpochMs, pad: FILLER },
+            traceId: `trace-${index}`,
+            corrId: `msg-${index}`
+        }
+    };
+}
+
 describe('the publisher\'s commands after the setup-complete barrier, run by the runtime', () => {
     interface PublisherWindowRun {
         readonly ok: boolean;
@@ -510,8 +579,7 @@ describe('the publisher\'s commands after the setup-complete barrier, run by the
     /**
      * Sends take no time and every sleep advances the clock, so the clock reads the schedule alone. Every send returns
      * as a live send does, whatever its stage does with the value afterwards, and the page's ALM usage says how many
-     * values the stage handed to a carrier. The executor releases a barrier as soon as the publisher arrives at it, as
-     * a control server whose subscribers already wait.
+     * values the stage handed to a carrier. Barriers and faults are answered by `toPublisherWindowAnswer`.
      */
     async function runPublisherWindow(
         point: PublicationWorkloadParameters,
@@ -527,25 +595,9 @@ describe('the publisher\'s commands after the setup-complete barrier, run by the
             },
             readAlmUsage: async () => toPublisherAlmUsage(admittedByStage),
             commandExecutor: (command, context) => {
-                if (command.kind === 'barrier') {
-                    return {
-                        status: 'ok',
-                        value: { barrierId: command.barrierId, outcome: 'released', arrivedAgentIds: [] },
-                        nextStatus: context.state().status
-                    };
-                }
-                if (command.kind === 'fault.inject') {
-                    // The fault's acted counts so far: none at the arm, every drop of the window at the release.
-                    const drop = 'remaining' in command && command.remaining === 0 ? droppedSends : 0;
-                    return {
-                        status: 'ok',
-                        value: {
-                            faultId: command.faultId,
-                            injected: true,
-                            acted: { drop, delay: 0, rewrite: 0, 'not-ready': 0, backpressure: 0 }
-                        },
-                        nextStatus: context.state().status
-                    };
+                const answer = toPublisherWindowAnswer(command, droppedSends);
+                if (answer !== undefined) {
+                    return { status: 'ok', value: answer, nextStatus: context.state().status };
                 }
                 if (command.kind !== 'messages.send' || !('carrier' in command)) {
                     return undefined;
@@ -554,24 +606,10 @@ describe('the publisher\'s commands after the setup-complete barrier, run by the
                 return { status: 'ok', value: {}, nextStatus: context.state().status };
             }
         });
-        const result = await runtime.execute({
-            kind: 'recipe.run',
-            commandId: 'publisher-window',
-            recipe: {
-                schemaVersion: 1,
-                recipeId: 'publisher-window',
-                continueOnFailure: false,
-                commands: toCommandsAfterBarrier(createRecipes(point).publisher.recipe, 'publication-workload-setup-complete')
-            }
-        });
-        const ran = isJsonRecordValue(result.value) && Array.isArray(result.value.results) ? result.value.results : [];
+        const result = await runtime.execute(toPublisherWindowRecipeRun(point));
         return {
             ok: result.ok,
-            ranCommands: ran.flatMap((entry) =>
-                isJsonRecordValue(entry) && typeof entry.commandId === 'string' && typeof entry.ok === 'boolean'
-                    ? [{ commandId: entry.commandId, ok: entry.ok }]
-                    : []
-            ),
+            ranCommands: toRanCommands(result),
             failedCommandIds: runtime.state().failures.map((failure) => failure.commandId),
             sends,
             statsReadAtEpochMs: runtime.state().resultCache['publication-workload-publisher-stats']?.startedAtEpochMs
@@ -661,21 +699,7 @@ describe('a subscriber\'s count and its three guards, run by the browser runtime
         });
         stamps.forEach((sentAtEpochMs, index) => {
             now = WINDOW_STARTED_AT_EPOCH_MS + index * 500 + 20;
-            runtime.receiveRallarBrowserEvent({
-                kind: 'message',
-                topic: 'rallar.browser.messages.rtc.message',
-                connection: 'publication-workload-subscriber',
-                transport: 'messages.rtc',
-                typeId: FRAME_TYPE_ID,
-                data: {
-                    msgId: `msg-${index}`,
-                    typeId: FRAME_TYPE_ID,
-                    transport: 'rtc',
-                    payload: { seq: index + 1, sentAtEpochMs, pad: FILLER },
-                    traceId: `trace-${index}`,
-                    corrId: `msg-${index}`
-                }
-            });
+            runtime.receiveRallarBrowserEvent(toFrameCopyEvent(sentAtEpochMs, index));
         });
         const commands = toCommandsAfterBarrier(createRecipes(point).subscriber.recipe, 'publication-workload-complete')
             .filter((command) => command.kind !== 'stats');

@@ -3,12 +3,13 @@ import { SeededTransportFaultDraws } from '@shared/transport-faults/seeded-trans
 
 import type { PublicationWorkloadParameters } from './validate-publication-workload-parameters.ts';
 
-const DRAWS_FAULT_ID = 'publication-workload-loss';
+/** Names this count's own sequence only: a sequence depends on its seed alone, never on its fault id. */
+const DRAWS_FAULT_ID = 'publication-workload-seeded-drop-count';
 
 /**
  * One publisher's frames, of its first `frameCount`, that no subscriber is to get. Only over `ws` is a dropped frame
- * lost: the socket never writes it, and nothing sends it again. Over the RTC carriers a dropped send is a refusal the
- * first hop resubmits, so every frame is expected, later.
+ * lost: the socket never writes it, and nothing sends it again. Over the RTC carriers a dropped send is a refusal, and the
+ * publisher's page submits the frame to that next hop again, so every frame is expected, later.
  */
 export function computePublicationWorkloadLostFrameCount(
     parameters: Pick<PublicationWorkloadParameters, 'carrier' | 'loss'>,
@@ -25,7 +26,7 @@ export function computePublicationWorkloadLostFrameCount(
  * draws once for each frame its socket writes, in order, so these are the frames it drops.
  */
 export function computePublicationWorkloadSeededDropCount(loss: TransportFaultLoss, drawCount: number): number {
-    const action = { loss: { ratio: loss.ratio, seed: loss.seed } };
+    const action = { loss };
     const draws = new SeededTransportFaultDraws();
     draws.rearm(DRAWS_FAULT_ID, action);
     return Array.from({ length: drawCount }, () => draws.decideFrame(DRAWS_FAULT_ID, action))

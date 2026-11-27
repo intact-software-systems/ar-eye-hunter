@@ -20,8 +20,11 @@ export interface PublicationWorkloadNoLoss {
 }
 
 /**
- * Each publisher's page drops this share of its own frames of the family's type on the point's carrier, drawn from the
- * seed: every page draws from the same seed, so over `ws` every publisher loses the same frame positions.
+ * Each publisher's page drops this share of every frame of the family's type it sends on the point's carrier, drawn
+ * from the seed: the fault matches the type and not the sender. In a room of three that is the page's own frames, since
+ * no page forwards; a publisher's page that forwarded another publisher's frames would draw for them, which has been
+ * neither read nor run. Every page draws from the same seed, so over `ws` every publisher loses the same frame
+ * positions.
  */
 export interface PublicationWorkloadSeededLoss extends TransportFaultLoss {
     readonly kind: 'seeded';
@@ -47,13 +50,7 @@ export function validatePublicationWorkloadLoss(
 ): readonly RallarValidationIssue[] {
     const { loss } = parameters;
     if (!PUBLICATION_WORKLOAD_LOSS_KINDS.includes(loss.kind)) {
-        return [
-            toIssue(
-                '$.loss',
-                'invalid-loss',
-                `Expected a loss of kind ${PUBLICATION_WORKLOAD_LOSS_KINDS.join(' or ')}.`
-            )
-        ];
+        return [toInvalidLossIssue()];
     }
     if (loss.kind === 'none') {
         return [];
@@ -118,6 +115,14 @@ function validateLossLeavesFrame(
             `Expected a loss that leaves a subscriber a frame; the seed drops all ${frameCount}.`
         )]
         : [];
+}
+
+function toInvalidLossIssue(): RallarValidationIssue {
+    return toIssue(
+        '$.loss',
+        'invalid-loss',
+        `Expected a loss of kind ${PUBLICATION_WORKLOAD_LOSS_KINDS.join(' or ')}.`
+    );
 }
 
 function toIssue(path: string, code: string, message: string): RallarValidationIssue {

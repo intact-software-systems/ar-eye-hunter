@@ -130,18 +130,18 @@ export function createPublicationWorkloadRecipes(
  */
 function createRoomRoles(room: PublicationWorkloadRoom): readonly PublicationWorkloadRoleRecipe[] {
     const { parameters, plan } = room;
-    const loss = createPublicationWorkloadLossCommands({
+    const lossCommands = createPublicationWorkloadLossCommands({
         parameters,
         commandPrefix: toCommandPrefix('publisher'),
         typeId: FRAME_TYPE_ID
     });
-    const window = createPublisherWindowCommands(room, loss);
+    const window = createPublisherWindowCommands(room, lossCommands);
     const completeTimeoutMs = computeCommandsTimeoutMs(window, 'the complete barrier');
     const publisherCommands = [
         ...window,
         createBarrier('publisher', 'complete', completeTimeoutMs),
         createAcceptedSendsAssert(plan),
-        ...loss.asserts
+        ...lossCommands.asserts
     ];
     const subscriberCommands = [
         createBarrier('subscriber', 'complete', completeTimeoutMs),
@@ -233,15 +233,15 @@ function createSetupCommands(
  */
 function createPublisherWindowCommands(
     room: PublicationWorkloadRoom,
-    loss: PublicationWorkloadLossCommands
+    lossCommands: PublicationWorkloadLossCommands
 ): readonly RallarBlackBoxTestCommand[] {
     const { parameters } = room;
     const prefix = toCommandPrefix('publisher');
     return [
-        ...loss.arm,
+        ...lossCommands.arm,
         createPublishLoop(room),
         toPauseWait(`${prefix}-drain`, parameters.publication.cadenceMs + parameters.ttlMs),
-        ...loss.release,
+        ...lossCommands.release,
         { kind: 'stats', commandId: `${prefix}-stats`, timeoutMs: STATS_TIMEOUT_MS }
     ];
 }
