@@ -1797,6 +1797,19 @@ describe('ALM browser adapter execution', () => {
         expect(topicsOf(runtime.state())).toContain('rallar.bb.messages.reply_awaited');
     });
 
+    it('reports a reply wait the page refused as unanswerable as the wait\'s value', async () => {
+        const unanswerable = { handleId: 'handle-1', status: 'unanswerable', state: 'acknowledged', corrId: 'msg-1' };
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
+            rallarRuntime: { ...createAlmBrowserRuntimeFake(createAlmRuntimeCaptures()), awaitReply: async () => unanswerable }
+        });
+
+        const result = await runtime.execute({ kind: 'messages.awaitReply', commandId: 'alm-await-unanswerable', handleId: 'handle-1', timeoutMs: 2_000 });
+
+        expect(result.ok, result.error?.message).toBe(true);
+        expect(result.value).toEqual(unanswerable);
+    });
+
     it.each([
         { field: 'status', value: { ...REPLY_OUTCOME, status: 'lost' } },
         { field: 'state', value: { ...REPLY_OUTCOME, state: 'delivered' } },

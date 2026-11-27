@@ -70,10 +70,19 @@ describe('a Relic planning request to the server (D444)', () => {
         expect(roomDefinitions).toEqual([]);
     });
 
-    it.each(['timeout', 'aborted', 'undelivered'] as const)('falls back when the reply wait ends %s', async (status) => {
-        const { facade } = createFacadeDouble('default-qbox-server', { status, lifecycle: LIFECYCLE });
+    it.each<RallarMessageReplyOutcome<object>>([
+        { status: 'timeout', lifecycle: LIFECYCLE },
+        { status: 'aborted', lifecycle: LIFECYCLE },
+        { status: 'undelivered', lifecycle: LIFECYCLE },
+        {
+            status: 'unanswerable',
+            issues: [{ path: '$.topicId', code: 'invalid-ws-user-topic', message: 'The topic is no WS user topic.' }],
+            lifecycle: LIFECYCLE
+        }
+    ])('falls back when the reply wait ends $status', async (outcome) => {
+        const { facade } = createFacadeDouble('default-qbox-server', outcome);
 
-        expect((await sendRelicPlanningRequest(facade, input())).left).toBe(status);
+        expect((await sendRelicPlanningRequest(facade, input())).left).toBe(outcome.status);
     });
 
     it.each([
