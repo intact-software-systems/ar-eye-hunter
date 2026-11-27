@@ -417,6 +417,15 @@ Message ownership is concentrated under [`messages/`](./messages/):
     refused `unsupported` once the connect names the server's peer id
     ([`validateEdgeOrderPeer`](./messages/edge-order/validate-edge-order-send.ts)): the server is not behind
     Rallar Web's sorter. The position it took is closed, so it leaves no hole anyone waits for.
+  - **Supersedence.** A send may ask `qos.supersedence` latest-wins. A send its carrier settles `superseded` never
+    arrives, so it ends as a hole like a refused one, and the next message says so. That alone would leave the
+    newest value waiting: the stamp of the send that replaces another is made before the carrier settles
+    anything, and a copy that arrives after its replacement is dropped on receipt without a receipt, so the
+    replaced send can stay open at the sender until its deadline. So a latest-wins send that names a
+    `supersedenceKey` makes every earlier open send of that key in its stream a hole when it takes its position
+    ([EdgeOrderSender.openSend](./messages/edge-order/edge-order-sender.ts)): a receiver hands the newest value
+    over at once, hands a replaced one over only if it arrived first, and drops it as late otherwise. Sends of
+    another key, or of none, are waited for as before.
   - **A live channel.** Nothing retries a live value, so a live channel is newest-wins as above. Two things differ,
     because a live channel paces its values on a stage before admission and replaces a staged value with a newer
     one of its stream. First, one edge stream is one publication stream: the channel, room, audience and
@@ -498,14 +507,16 @@ Message ownership is concentrated under [`messages/`](./messages/):
     what is kept at the read (`streams`, `heldMessages`, `evictedStreams`, `sendStreams`, `openSends`) and what was
     given up since the page loaded (`lateDrops`, `gaps`, `heldDropped`). An idle page holds no message and has no
     open send; its stream and record counts stay where the caps left them.
-  - **Refused as `unsupported`**, at the definition: a channel with a durability other than
-    `volatile`, `channel(...)` without a room, and `onOrderGap`, `orderGapWaitMs` or
-    `orderEntryWindowMs` on a channel that declares no order
-    ([`validate-edge-order-channel.ts`](./messages/edge-order/validate-edge-order-channel.ts)). At the send, before it takes a position: `ack: 'group-leader'` and a `qos.ack` other than `receiver` or `none` (a
-    hop's or a leader's receipt does not say the recipients have the message, so the sender could call a send
-    over that a recipient still waits for), `exceptPeerIds`, `recipientPeerIds`, `principalId`, `peerId` (the server included), a `scope` other than
-    `room`, `orderingKey`, `seq`, `qos.supersedence`, a `qos.durability` other than `volatile`, and the
-    `ws-then-rtc` strategy.
+  - **Refused as `unsupported`**, at the definition
+    ([`validate-edge-order-channel.ts`](./messages/edge-order/validate-edge-order-channel.ts)): a channel with a
+    durability other than `volatile`, because the order lives in memory only; `channel(...)` without a room,
+    because a stream belongs to one room; and `onOrderGap`, `orderGapWaitMs` or `orderEntryWindowMs` on a channel
+    that declares no order. At the send, before it takes a position
+    ([`validate-edge-order-send.ts`](./messages/edge-order/validate-edge-order-send.ts)): `ack: 'group-leader'`
+    and a `qos.ack` other than `receiver` or `none`, because a hop's or a leader's receipt does not say the
+    recipients have the message, so the sender could call a send over that a recipient still waits for;
+    `scope: 'world'`, which names no room; `orderingKey` and `seq`, which ask for hop order; a `qos.durability`
+    other than `volatile`; and the `ws-then-rtc` strategy. After the connect: a `peerId` that is the server's.
   - **Limits.** Both ends must declare the channel: a receiver that did not is given the wrapped payload in
     arrival order, and a receiver that did drops a message without a stamp. The declaration, and with it
     `onOrderGap`, is per topic and type on a page, for every room; a gap report names its stream, and a stream

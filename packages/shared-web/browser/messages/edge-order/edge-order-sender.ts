@@ -52,15 +52,28 @@ export class EdgeOrderSender {
      * below it have ended.
      */
     private readonly slots = new Map<number, EdgeOrderSendSlot>();
+    /**
+     * By position: the supersedence key of each send still open that named one. A later send of the same key
+     * replaces it, so no receiver waits for it from then on.
+     */
+    private readonly supersedenceKeys = new Map<number, string>();
 
     constructor(stream: string, acknowledgedSettleMs: number) {
         this.stream = stream;
         this.acknowledgedSettleMs = acknowledgedSettleMs;
     }
 
-    /** `retried`: the send is at-least-once and asks a receipt, so a lost copy of it comes back. */
-    openSend(retried: boolean): number {
+    /**
+     * `retried`: the send is at-least-once and asks a receipt, so a lost copy of it comes back. `supersedenceKey`:
+     * the key of a latest-wins send, absent for any other. Such a send replaces every earlier open send of its
+     * key: one that has not arrived before it is dropped on receipt, so each becomes a hole here and now.
+     */
+    openSend(retried: boolean, supersedenceKey: string | undefined): number {
         this.lastPosition += 1;
+        if (supersedenceKey !== undefined) {
+            this.replaceOpenSends(supersedenceKey);
+            this.supersedenceKeys.set(this.lastPosition, supersedenceKey);
+        }
         this.slots.set(this.lastPosition, retried ? 'unobserved' : 'hole');
         return this.lastPosition;
     }
@@ -121,9 +134,22 @@ export class EdgeOrderSender {
         }
         for (const [position, slot] of this.slots) {
             if (slot !== 'hole') {
-                return;
+                break;
             }
             this.slots.delete(position);
+        }
+        for (const position of this.supersedenceKeys.keys()) {
+            if (this.slots.get(position) === undefined || this.slots.get(position) === 'hole') {
+                this.supersedenceKeys.delete(position);
+            }
+        }
+    }
+
+    private replaceOpenSends(supersedenceKey: string): void {
+        for (const [position, key] of this.supersedenceKeys) {
+            if (key === supersedenceKey && this.slots.has(position)) {
+                this.slots.set(position, 'hole');
+            }
         }
     }
 

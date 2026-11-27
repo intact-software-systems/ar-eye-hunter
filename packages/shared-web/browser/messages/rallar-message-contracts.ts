@@ -269,8 +269,12 @@ export interface RallarTypedMessageChannelDefinition {
      * `send`, whichever carrier each came over. Rallar Web numbers each send, wraps the payload with the number and
      * sorts at the receiver in memory, so both ends declare it; a message that can no longer arrive is skipped. A
      * send nothing retries (best-effort, or one that asks no receipt) is never waited for: the newest message wins,
-     * and one that arrives after a later one is dropped. Its sends are whole-room and volatile, and a receipt, when
-     * a send asks one, is every recipient's: every other shape is refused `unsupported`.
+     * and one that arrives after a later one is dropped. So is a send a later latest-wins send of the same
+     * `supersedenceKey` replaced. One stream is one channel, room and audience, so a narrowed send (a list, a
+     * principal, a peer, skipped sessions) is ordered among the sends to the same audience; on a `live` channel one
+     * stream is one `resourceId`, numbered as its values leave the publication stage. Refused `unsupported`: a
+     * stored channel or send, a hop's or a leader's receipt, `orderingKey` and `seq`, a world send, a send addressed
+     * to the server, and the `ws-then-rtc` strategy.
      */
     readonly order?: 'edge';
     /**

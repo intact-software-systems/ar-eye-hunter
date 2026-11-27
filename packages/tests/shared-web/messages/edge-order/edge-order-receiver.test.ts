@@ -84,7 +84,7 @@ function stamp(position: number, statement: Partial<Omit<EdgeOrderStamp, 'positi
 
 /** The stamp a sender page gives its next send, which stays open until `expiresAtMs`. */
 function stampNextSend(sender: EdgeOrderSender, retried: boolean, expiresAtMs = FAR_DEADLINE_MS): EdgeOrderStamp {
-    const position = sender.openSend(retried);
+    const position = sender.openSend(retried, undefined);
     const edgeOrderStamp = sender.stampSend(position, START_MS);
     sender.observeSend(position, { expiresAtMs, getEnd: () => 'open' });
     return edgeOrderStamp;
@@ -298,7 +298,7 @@ describe('EdgeOrderReceiver: the gap rule', () => {
         const sender = new EdgeOrderSender('A', NO_SETTLE_MS);
         let earlierSendsEnded = false;
         const stampOpenSend = (): EdgeOrderStamp => {
-            const position = sender.openSend(true);
+            const position = sender.openSend(true, undefined);
             const edgeOrderStamp = sender.stampSend(position, START_MS);
             sender.observeSend(position, {
                 expiresAtMs: FAR_DEADLINE_MS,

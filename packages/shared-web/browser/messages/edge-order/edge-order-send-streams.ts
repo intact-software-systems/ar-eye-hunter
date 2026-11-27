@@ -51,6 +51,8 @@ export namespace EdgeOrderSendStreams {
         readonly audience: Audience;
         /** Whether a lost copy of the send comes back: it is at-least-once and asks a receipt. */
         readonly retried: boolean;
+        /** The key of a latest-wins send, which replaces the earlier open sends of that key; absent for any other. */
+        readonly supersedenceKey: string | undefined;
     }
 }
 
@@ -90,7 +92,7 @@ export class EdgeOrderSendStreams {
                 toSessionSetKey(recipientPeerIds),
                 toSessionSetKey(exceptPeerIds)
             ]),
-            send.retried
+            send
         );
     }
 
@@ -99,14 +101,17 @@ export class EdgeOrderSendStreams {
      * value another displaced on the stage never takes one. Nothing retries a live value.
      */
     openLiveSend(publicationStreamKey: string): EdgeOrderOpenSend {
-        return this.openStreamSend(publicationStreamKey, false);
+        return this.openStreamSend(publicationStreamKey, { retried: false, supersedenceKey: undefined });
     }
 
-    private openStreamSend(key: string, retried: boolean): EdgeOrderOpenSend {
+    private openStreamSend(
+        key: string,
+        send: Pick<EdgeOrderSendStreams.ChannelSend, 'retried' | 'supersedenceKey'>
+    ): EdgeOrderOpenSend {
         // Taken out and put back, so the stream last sent on is the newest and the cap pushes out the one idle longest.
         const stream = this.streams.take(key) ?? new EdgeOrderSender(this.newStreamId(), this.acknowledgedSettleMs);
         this.streams.set(key, stream);
-        return new EdgeOrderOpenSend(stream, stream.openSend(retried));
+        return new EdgeOrderOpenSend(stream, stream.openSend(send.retried, send.supersedenceKey));
     }
 
     /** Closes, in every stream, the sends that have ended by `nowMs`: an idle page then keeps no open send. */

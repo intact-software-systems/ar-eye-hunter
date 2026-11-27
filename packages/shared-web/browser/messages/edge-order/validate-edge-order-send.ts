@@ -84,11 +84,6 @@ function toEdgeOrderSendRefusals(send: EdgeOrderSendOptions): readonly EdgeOrder
         { path: '$.orderingKey', refused: send.orderingKey !== undefined, message: NO_HOP_ORDER },
         { path: '$.seq', refused: send.seq !== undefined, message: NO_HOP_ORDER },
         {
-            path: '$.qos.supersedence',
-            refused: qos?.supersedence !== undefined,
-            message: 'An edge-ordered send is never superseded: a superseded send is a hole in its stream.'
-        },
-        {
             path: '$.qos.durability',
             refused: qos?.durability !== undefined && qos.durability.algo !== 'volatile',
             message: 'An edge-ordered send is volatile: its order lives in memory only.'

@@ -477,11 +477,6 @@ describe('an edge-ordered room channel: refused shapes', () => {
         ['a world send', '$.scope', (channel) => channel.sendWs({ n: 1 }, { scope: 'world' })],
         ['a send with an ordering key', '$.orderingKey', (channel) => channel.send({ n: 1 }, { orderingKey: 'moves' })],
         ['a send with a sequence', '$.seq', (channel) => channel.sendRtc({ n: 1 }, { seq: 1 })],
-        [
-            'a superseding send',
-            '$.qos.supersedence',
-            (channel) => channel.send({ n: 1 }, { qos: { supersedence: { algo: 'latest-wins', opts: { supersedenceKey: 'k' } } } })
-        ],
         ['a stored send', '$.qos.durability', (channel) => channel.send({ n: 1 }, { qos: { durability: { algo: 'local-outbox' } } })],
         ['the ws-then-rtc strategy', '$.strategy', (channel) => channel.send({ n: 1 }, { strategy: 'ws-then-rtc' })]
     ])('refuses %s as unsupported, and the refused send takes no position', async (_shape, path, sendRefused) => {

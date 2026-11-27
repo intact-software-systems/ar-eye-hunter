@@ -518,7 +518,10 @@ export class BrowserRallarMessageSender {
                 channel,
                 hasLogicalAudience: true,
                 laneTtlMs: BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS
-            }))
+            })),
+            supersedenceKey: send.qos?.supersedence?.algo === 'latest-wins'
+                ? send.qos.supersedence.opts?.supersedenceKey
+                : undefined
         });
     }
 
