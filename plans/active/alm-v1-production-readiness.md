@@ -204,9 +204,9 @@ Each line says what the pull request delivered. Section 5 says what each left.
   441 KiB (P9).
 - **#915** (`e30b2c9`). Edge order slice 1: a manual PostgreSQL suite that measures unordered
   receipted sends sorted at the receiver, now with the product's own edge-order code. At
-  `e30b2c9` it still calls the edge-order sender as it was before #929, which merged a minute
-  earlier, so `npm run typecheck:tests` fails on `main` in two of its files (#943). That repair
-  comes before any draft's type check is green.
+  `e30b2c9` it still called the edge-order sender as it was before #929, which merged a minute
+  earlier, so `npm run typecheck:tests` failed on `main` in two of its files; #944 (`e8620c0`)
+  repaired both the same day.
 
 Edge order slices 2 to 4 merged the same day as #916 (`4f453e2`), which that plan records.
 
