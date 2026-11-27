@@ -239,7 +239,8 @@ describe('a typed channel\'s recovery owner', () => {
                     throw new Error('No channel in this test subscribes.');
                 }
             },
-            grantedTopics: new BrowserGrantedTopics({ findGroupSnapshot: () => undefined })
+            grantedTopics: new BrowserGrantedTopics({ findGroupSnapshot: () => undefined }),
+            edgeOrder: { declareEdgeOrder: () => {} }
         });
 
         channels.channel({ ...CHAT_ROUTE, purpose: 'command', access: 'members', recovery });
