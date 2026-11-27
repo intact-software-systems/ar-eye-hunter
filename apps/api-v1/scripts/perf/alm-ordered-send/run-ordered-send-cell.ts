@@ -130,14 +130,16 @@ const ROOM_PRESENCE_LIFETIME_MS = 24 * 60 * 60 * 1_000;
  *   the sessions on that instance once the publish returned, and the other instances send theirs as the NOTIFY
  *   reaches them. No copy is a row of the WS outbox: one an instance missed is written again only when the send is
  *   handed to a router again. Once the server has admitted a send, its publisher offering it again brings no copy:
- *   the entry answers `duplicate` and hands nothing off. It is not without effect: while the send's receipt is still
- *   open on that instance, the instance writes the `admitted` receipt again, one more row of the WS outbox for each
- *   such offer (`WsQueueBoxServerReceiptAggregation.writeAdmittedReceipt`);
- * - a receipt: a row the instance that admitted the send writes to the shared WS outbox. The instance whose worker
- *   takes the row writes it to the origin's socket when that socket is its own, and otherwise announces the row's
- *   key to the others by a NOTIFY, again and again until the row expires;
- * - an ACK: counted on the instance its session is on when that instance admitted the send, else relayed to the
- *   others by a NOTIFY.
+ *   the entry answers `duplicate` and hands nothing off. It is not without effect: the instance answers the offer
+ *   from the receipt record, with the `admitted` receipt and the confirmations so far while the receipt is open and
+ *   with its terminal receipt as a row of the WS outbox once it has ended
+ *   (`WsQueueBoxServerReceiptAggregation.writeAdmittedReceipt`);
+ * - a receipt: the instance that admits the send opens its receipt in the record the three instances share on
+ *   PostgreSQL and writes the `admitted` receipt to the origin's socket, a row of the shared WS outbox only when no
+ *   socket there took it. The instance that ends the receipt in the record writes the terminal receipt as such a row.
+ *   The instance whose worker takes a row writes it to the origin's socket when that socket is its own, and
+ *   otherwise announces the row's key to the others by a NOTIFY, again and again until the row expires;
+ * - an ACK: counted in the record by the instance its session is on, whichever instance admitted the send.
  *
  * The database latency of the shape is added to: every statement of the three instances; BEGIN and COMMIT or
  * ROLLBACK of every transaction; every NOTIFY publish. It is not added to: the delivery of a NOTIFY to its

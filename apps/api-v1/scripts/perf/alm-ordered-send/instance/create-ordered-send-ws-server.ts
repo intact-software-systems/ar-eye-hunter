@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 
+import { createPSqlALReceiptRecordStores } from '@shared-server/al-runtime/postgres/create-p-sql-al-receipt-record-stores.ts';
 import {
     createDefaultPSqlALInboundRuntimeStores,
     createDefaultPSqlALOutboundRuntimeStores,
@@ -14,11 +15,6 @@ import {
     sendReceivedLiveWsNotice
 } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice-subscriber.ts';
 import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
-import { installRelayedAckNoticeSubscriber } from '@shared-server/rallar-system/queue-pubsub/relayed-ack-notice-subscriber.ts';
-import {
-    createRelayedAckPublisher,
-    type RelayedAckNoticeChannel
-} from '@shared-server/rallar-system/queue-pubsub/relayed-ack-notice.ts';
 import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import type { RallarServerWsRoomAuthorizer } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
@@ -29,6 +25,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { createVolatileALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALReceiptRecordStores } from '@shared/alm/receipt-record/al-receipt-record-stores.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
@@ -52,10 +49,6 @@ import {
     type ManagedLiveWsNoticeTransport
 } from '../../../../src/db/create-postgres-live-ws-notice-transport.ts';
 import { createPostgresQueuePubSubBridge } from '../../../../src/db/create-postgres-queue-pub-sub-bridge.ts';
-import {
-    API_V1_RELAYED_ACK_CHANNEL,
-    createPostgresRelayedAckNoticeTransport
-} from '../../../../src/db/create-postgres-relayed-ack-notice-transport.ts';
 import { createApiV1QueueResilience } from '../../../../src/middleware-resilience.ts';
 import { readAuthorisedWsConnectionEligibility } from '../../../../src/runtime/rtc-topology/authorised-ws-connection-registry.ts';
 import { filterEligibleLiveWsSessionIds } from '../../../../src/services/filter-eligible-live-ws-session-ids.ts';
@@ -83,7 +76,7 @@ export interface OrderedSendWsServer {
     readonly service: WsQueueBoxServerService;
     readonly socketServer: JsonWebSocketServer;
     readonly queueEngine: InboxOutboxEngine;
-    /** Settles once the server holds its three LISTEN subscriptions: outbox keys, live notices and relayed ACKs. */
+    /** Settles once the server holds its two LISTEN subscriptions: outbox keys and live notices. */
     readonly subscriptionsReady: Promise<void>;
     /** Stops the live notice subscription's own timers. */
     stopLiveNotices(): Promise<void>;
@@ -92,6 +85,8 @@ export interface OrderedSendWsServer {
 interface OrderedSendStores {
     readonly inbound: ALInboundRuntimeStores;
     readonly outbound: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
+    /** The receipt record every instance of the run counts each receipt in, as every API instance shares one. */
+    readonly receiptRecord: ALReceiptRecordStores;
     readonly queueBox: PSqlQueueBox;
     readonly volatileNamespace: string;
 }
@@ -99,7 +94,6 @@ interface OrderedSendStores {
 interface OrderedSendNoticeChannels {
     readonly queueBoxKeys: string;
     readonly liveNotices: string;
-    readonly relayedAcks: RelayedAckNoticeChannel;
 }
 
 interface OrderedSendWsServiceInput {
@@ -107,7 +101,6 @@ interface OrderedSendWsServiceInput {
     readonly socketServer: JsonWebSocketServer;
     readonly queueEngine: InboxOutboxEngine;
     readonly targetResolver: WsServerTargetResolver;
-    readonly relayedAcks: RelayedAckNoticeChannel;
     readonly queueResilience: ApiV1CircuitBreakerConfiguration;
 }
 
@@ -146,8 +139,8 @@ export function toOrderedSendStoreNamespace(runId: string): string {
 /**
  * One instance's WS server, wired as `createRallarMiddlewareInfrastructure` and `RallarServerApplication` wire the
  * API's: the service with the middleware's options, the topic router as its application with the API's router
- * options, and the three subscriptions that join the instances through PostgreSQL. What it leaves out, and the one
- * port it replaces, the run's entry states.
+ * options, the receipt record the instances share on PostgreSQL, and the two subscriptions that join them there.
+ * What it leaves out, and the one port it replaces, the run's entry states.
  */
 export function createOrderedSendWsServer(input: OrderedSendWsServerInput): OrderedSendWsServer {
     const socketServer = new JsonWebSocketServer();
@@ -155,13 +148,12 @@ export function createOrderedSendWsServer(input: OrderedSendWsServerInput): Orde
     const grantedTopics = new WsGrantedTopicSet();
     const targetResolver = createWsServerTargetResolver(socketServer, { grantedTopics });
     const stores = createOrderedSendStores(input.sql, input.runId);
-    const channels = toOrderedSendNoticeChannels(input);
+    const channels = toOrderedSendNoticeChannels(input.runId);
     const service = createOrderedSendWsService({
         stores,
         socketServer,
         queueEngine,
         targetResolver,
-        relayedAcks: channels.relayedAcks,
         queueResilience: input.queueResilience
     });
 
@@ -195,21 +187,17 @@ function createOrderedSendStores(sql: PSqlSql, runId: string): OrderedSendStores
             repository,
             decodePrepared: decodeWsQueueBoxServerPreparedMessage
         }),
+        receiptRecord: createPSqlALReceiptRecordStores({ namespace, repository, nowMs: Date.now }),
         queueBox: new PSqlQueueBox(createPSqlResourceInboxRepository(sql, () => new Date()), Temporal.Now.instant),
         volatileNamespace: `${namespace}:volatile`
     };
 }
 
-/** The API's three channel names, each with the run's id after it. */
-function toOrderedSendNoticeChannels(input: OrderedSendWsServerInput): OrderedSendNoticeChannels {
+/** The API's two channel names, each with the run's id after it. */
+function toOrderedSendNoticeChannels(runId: string): OrderedSendNoticeChannels {
     return {
-        queueBoxKeys: `${API_V1_QUEUE_BOX_KEY_CHANNEL}-${input.runId}`,
-        liveNotices: `${API_V1_LIVE_WS_NOTICE_CHANNEL}-${input.runId}`,
-        relayedAcks: {
-            transport: createPostgresRelayedAckNoticeTransport(input.notification),
-            channel: `${API_V1_RELAYED_ACK_CHANNEL}-${input.runId}`,
-            publisherId: input.publisherId
-        }
+        queueBoxKeys: `${API_V1_QUEUE_BOX_KEY_CHANNEL}-${runId}`,
+        liveNotices: `${API_V1_LIVE_WS_NOTICE_CHANNEL}-${runId}`
     };
 }
 
@@ -227,12 +215,12 @@ function createOrderedSendWsService(input: OrderedSendWsServiceInput): WsQueueBo
         inboundVolatileStores: createVolatileALInboundRuntimeStores({ namespace: stores.volatileNamespace }, undefined),
         keepsVolatileMessageInMemory: isInstanceLocalRtcSignal,
         outboundStores: stores.outbound,
+        receiptRecordStores: stores.receiptRecord,
         dequeueResilience: createApiV1QueueResilience(
             input.queueResilience,
             ResourceInboxResilience.DEFAULT_RESERVATION_LEASE_MS,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY
         ),
-        publishRelayedAck: createRelayedAckPublisher(input.relayedAcks),
         forwardsRoomScopedMessages: false
     });
 }
@@ -285,9 +273,5 @@ function installOrderedSendSubscribers(input: OrderedSendSubscribersInput): Prom
             targetResolution.resolveOutboundRecipients(message).map((recipient) => recipient.connectionId),
         sendToTargetsWithResult: (delivery) => sendReceivedLiveWsNotice(service, delivery)
     });
-    const relayedAcksReady = installRelayedAckNoticeSubscriber({
-        ...channels.relayedAcks,
-        acceptRelayedAck: (message, publisherId) => service.acceptRelayedAck(message, publisherId)
-    });
-    return Promise.all([queueBoxBridgeReady, liveNoticesReady, relayedAcksReady]).then(() => undefined);
+    return Promise.all([queueBoxBridgeReady, liveNoticesReady]).then(() => undefined);
 }

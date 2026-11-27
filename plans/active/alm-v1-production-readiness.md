@@ -212,8 +212,10 @@ A harness under `apps/api-v1/scripts/perf/alm-ordered-send/`, run with
 behaviour. Merged as `bc84d58`; its `Branch Release Gate result` was green at `5ddf641` (checked),
 and the head that merged adds the merge of `main` after #923 and one README sentence. Section 5.1
 holds what its reference set shows (R1) and what building it found on `main` (R8, R15 to R19; G9
-in section 5.4). The cell offers ordered sends only (its README). Not built: a run on #885's tree,
-a hosted or multi-process run, a window longer than 20 s, and a topic declared `fanout: 'outbox'`.
+in section 5.4). The cell offers ordered sends only (its README). On #885's tree its instances are
+built on the receipt record, as the API's are there, and one run there is in R1. Not built: the
+reference set on #885's tree, a hosted or multi-process run, a window longer than 20 s, and a
+topic declared `fanout: 'outbox'`.
 
 ## 5. What remains
 
@@ -253,7 +255,8 @@ the evidence level that pull request gives it, in brackets, and each class is a 
 
 Notes on the rows that need them:
 
-- **R1.** Measured on `main` by the cell of #927: three API WS server instances in one
+- **R1.** Measured on `main`, the build before the durable receipt record, by the cell of #927:
+  three API WS server instances in one
   process on one PostgreSQL, the real router, a fixed-audience authorizer and an open-loop load
   (`apps/api-v1/scripts/perf/alm-ordered-send/` and its README). The
   reference set is 16 runs: five publishers at two sends a second for 20 s unless stated, observed
@@ -269,6 +272,13 @@ Notes on the rows that need them:
   - The single event loop does not explain delays of tens of seconds: in the five-publisher runs
     its lag stays at or under 9.2 ms at the 99th percentile while offering and 3.8 ms over the
     tail.
+
+  - On #885's tree, where the cell's instances count in the receipt record, one run at +5 ms
+    nominal (five publishers, two a second for 20 s, the client stand-in, a pool of 5; 2026-11-27,
+    a 1-minute load of 2.2 to 3.9) keeps up: 2,800 of 2,800 copies written in order, the first
+    write at p50 0.22 s and p99 0.74 s after the due time, 200 of 200 receipts complete (p50 0.70
+    s and p99 1.31 s after the offer), no send handed twice, no NACK or repair request, no resend.
+    n is 1.
 
   So the defect predates #885. The limits: one process and one event loop, with no authorizer
   reads and no other traffic; "+5 ms" is nominal and a lower bound, on the delayed round trips
@@ -335,7 +345,9 @@ Notes on the rows that need them:
   it or the row expires
   (`packages/shared/services/ws-queue-box-server/ws-queue-box-server-cluster-publication.ts`). In
   the four five-publisher runs at +0 ms a publisher reads 1.3 to 2.1 `admitted` frames a send.
-  The path is not read on #885's tree.
+  On #885's tree the admitting instance writes `admitted` to the origin's socket and stores it as
+  a row only when no socket there took it; the terminal receipt still travels as a row. In its one
+  run at +5 ms a publisher read 1.0 `admitted` and 2.6 `complete` frames a send.
 - **R18.** [Probe, one run; cause not verified.] Under +5 ms, admissions on one sender track
   conflict, and retained admissions stop being replayed well short of their 20 allowed attempts (4
   of 22 retained admissions in that run). It sits beside D784's second cause, so Slice 2 reads it.
@@ -751,7 +763,7 @@ backlog lines gone.
 **Slice 2: ordered room sends keep up under load (R1, D784).** Its own pull request, test-first,
 on a tree that holds #885 and #927. The measurement is the cell of #927; the slice builds none.
 
-- Run the reference set of #927 on that tree. It has not run there. D780 and D781 change what a
+- Run the reference set of #927 on that tree. One run of it has run there (R1); the set has not. D780 and D781 change what a
   sender hears on admission, and the titles of #885's commits after `8dece84` say a lost inbound
   write is tried again at once (section 4). The run says how much of R1, R18 and R19 that tree
   still shows.

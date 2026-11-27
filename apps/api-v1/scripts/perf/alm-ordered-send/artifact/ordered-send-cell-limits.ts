@@ -1,4 +1,5 @@
-import { WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts';
+import { AL_RECEIPT_DEADLINE_GRACE_MS } from '@shared/al-contracts/al-control.ts';
+import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 
 /** The round trips to the database a run adds its shape's latency to. */
 export const ORDERED_SEND_DELAYED_ROUND_TRIPS: readonly string[] = [
@@ -6,8 +7,8 @@ export const ORDERED_SEND_DELAYED_ROUND_TRIPS: readonly string[] = [
     'A transaction waits the delay after BEGIN, before each of its statements and before COMMIT or ROLLBACK, and ' +
     'holds its connection and its locks through all of it.',
     'A savepoint waits the delay before it opens, and again after it when it is rolled back.',
-    'Every NOTIFY publish waits the delay before it is sent: a copy\'s live notice, the announcement of a receipt ' +
-    'row and a relayed ACK.'
+    'Every NOTIFY publish waits the delay before it is sent: a copy\'s live notice and the announcement of a receipt ' +
+    'row.'
 ];
 
 /** What reaches or leaves the database in a run with no latency added to it. */
@@ -47,8 +48,10 @@ export const ORDERED_SEND_CELL_LIMITS: readonly string[] = [
     'receipt removed. Under `none` a publisher offers each send once and answers nothing.',
     'What a browser does after `resync-required` or `receipt-exhausted` is not modelled: under either recovery a ' +
     'publisher goes on offering the next send of the same track.',
-    `The receipt aggregates of an instance are bounded at ${WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES}; the ` +
-    'shapes run here stay far below it.',
+    'The three instances count each receipt in one receipt record on PostgreSQL, and no count of open receipts ' +
+    `bounds it: a receipt's rows live until ${AL_RECEIPT_DEADLINE_GRACE_MS / 1_000} s past its send's deadline, a ` +
+    'confirmation that long again, so the rows a run holds grow with its send rate. A send to more than ' +
+    `${AL_MESSAGE_RESOURCE_LIMITS.collectionEntries} recipients opens no receipt; the room's fourteen stay far below it.`,
     'The database is local, on the disk and the processor of the machine that runs the cell: its own time and its ' +
     'fsync are that machine\'s, and other work on the machine shows in the load average the artifact records.',
     'The artifact holds the report and the count of every observation list. It holds in full the later offers, the ' +
