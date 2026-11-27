@@ -1,6 +1,5 @@
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
-import { ALM_CONFORMANCE_SINGLE_HOP_CARRIERS } from '../../alm-conformance-carriers.ts';
 import { ALM_INBOUND_DIAGNOSTICS_TOPIC, toDiagnosticWait } from '../../alm-conformance-diagnostic-waits.ts';
 import { toHeldMessageFaultCommands } from '../../alm-conformance-fault-commands.ts';
 import { toHeldSecondSendCommands, toOrderingKey } from '../../alm-conformance-ordering-commands.ts';
@@ -11,6 +10,7 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
+import { resolveAlmCarrierMatrixCellCarriers } from '../../carrier-matrix/resolve-alm-carrier-matrix-cell-carriers.ts';
 
 /**
  * An in-window gap is repaired by range: the sender's second frame is held, the third reveals the gap, the hop NACKs
@@ -24,7 +24,7 @@ export const orderingGapRepair: AlmConformanceScenarioDefinition = {
     scenarioId: 'ordering-gap-repair',
     scenarioKey: 'ordering-gap-repair',
     tags: FULL_TAGS,
-    carriers: ALM_CONFORMANCE_SINGLE_HOP_CARRIERS,
+    carriers: resolveAlmCarrierMatrixCellCarriers('ordering-gap-repair'),
     roles: ['sender', 'receiver'],
     laneFamily: 'two-agent',
     toSenderCommands: toOrderingGapRepairSenderCommands,

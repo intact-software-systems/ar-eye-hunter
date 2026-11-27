@@ -1,6 +1,5 @@
 import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
 
-import { ALM_CONFORMANCE_CARRIERS } from '../alm-conformance-carriers.ts';
 import { toAddresseeReceiptAssertions, toReceiptsCommand } from '../alm-conformance-message-commands.ts';
 import { toAddressedSendCommands, type AlmConformanceReceiptRoles } from '../alm-conformance-receipt-commands.ts';
 import { toReceivedCommand } from '../alm-conformance-receiver-commands.ts';
@@ -9,6 +8,7 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../alm-conformance-scenario-definition.ts';
+import { resolveAlmCarrierMatrixCellCarriers } from '../carrier-matrix/resolve-alm-carrier-matrix-cell-carriers.ts';
 
 const RECEIVER_CONFIRMED: AlmConformanceReceiptRoles = {
     confirmed: ['receiver'],
@@ -25,7 +25,7 @@ export const wsUnicastReceipt: AlmConformanceScenarioDefinition = {
     scenarioId: 'ws-unicast-receipt',
     scenarioKey: 'ws-unicast-receipt',
     tags: FULL_TAGS,
-    carriers: ALM_CONFORMANCE_CARRIERS,
+    carriers: resolveAlmCarrierMatrixCellCarriers('ws-unicast-receipt'),
     roles: ['sender', 'receiver'],
     laneFamily: 'addressed',
     toReceiptRoles: () => RECEIVER_CONFIRMED,

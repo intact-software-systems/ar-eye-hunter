@@ -1,7 +1,6 @@
 import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
 
 import { MESSAGE_CONTROL_TIMEOUT_MS, toBudgetMs } from '../alm-conformance-budgets.ts';
-import { ALM_CONFORMANCE_FALLBACK_CARRIERS } from '../alm-conformance-carriers.ts';
 import { toRtcDropFaultCommand } from '../alm-conformance-fault-commands.ts';
 import { toHandedOverAssertions, toResultAssertion } from '../alm-conformance-message-commands.ts';
 import { toAddressedSendCommands } from '../alm-conformance-receipt-commands.ts';
@@ -11,8 +10,12 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../alm-conformance-scenario-definition.ts';
+import { ALM_CARRIER_MATRIX } from '../carrier-matrix/alm-carrier-matrix.ts';
+import { resolveAlmCarrierMatrixCellCarriers } from '../carrier-matrix/resolve-alm-carrier-matrix-cell-carriers.ts';
+import { toAlmCarrierOutcomeFacts } from '../carrier-matrix/to-alm-carrier-outcome-facts.ts';
 
-const HAND_OVER = [['from', 'rtc'], ['to', 'ws'], ['reason', 'not-ready']] as const;
+/** The hand-over the addressed send comes to under the fallback strategy, as the matrix states it. */
+const HAND_OVER = ALM_CARRIER_MATRIX['peer-unicast-off-overlay-next-hop'].cells['rtc-with-ws-fallback'].outcome;
 
 /**
  * The fallback: the sender drops its own RTC frames of an addressed send, so the third `not-ready` attempt hands the
@@ -23,7 +26,7 @@ export const unicastFallback: AlmConformanceScenarioDefinition = {
     scenarioId: 'unicast-fallback',
     scenarioKey: 'unicast-fallback',
     tags: FULL_TAGS,
-    carriers: ALM_CONFORMANCE_FALLBACK_CARRIERS,
+    carriers: resolveAlmCarrierMatrixCellCarriers('unicast-fallback'),
     roles: ['sender', 'receiver'],
     laneFamily: 'addressed',
     toSenderCommands: toUnicastFallbackSenderCommands,
@@ -37,13 +40,13 @@ function toUnicastFallbackSenderCommands(
         toRtcDropFaultCommand(sender, 'hold-rtc', 'until-cleared'),
         ...toAddressedSendCommands(sender, 'receiver'),
         ...toHandedOverAssertions(sender, 'observe-acknowledged-1'),
-        ...HAND_OVER.map(([field, expected]) =>
+        ...toAlmCarrierOutcomeFacts(HAND_OVER).map(([name, field, operator, expected]) =>
             toResultAssertion({
                 step: sender,
-                name: `assert-fallback-${field}-1`,
+                name: `assert-${name}-1`,
                 resultName: 'observe-acknowledged-1',
-                field: `carrierFallback.${field}`,
-                operator: 'equals',
+                field,
+                operator,
                 expected
             })
         ),
