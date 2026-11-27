@@ -39,6 +39,11 @@ describe('the batch that completed an ordered delivery', () => {
             await admit(fixture, first);
             await hold.entered;
             await admit(fixture, second);
+            // Message 2's own commit batch waits behind the held one, so its row is untouched when the hold goes.
+            expect(await readWorkRow(fixture, toDispatchId(second))).toMatchObject({
+                status: EntityStatus.NEW,
+                dequeueAudit: { attempts: 0 }
+            });
 
             hold.release();
             await runInboundWorkDueNow(fixture);
@@ -79,43 +84,41 @@ describe('the batch that completed an ordered delivery', () => {
         expect(drains.map((drain) => drain.promoted)).toEqual([15, 15, 15, 15]);
     });
 
-    // Pins that a hand-on runs after every claim its batch already held: a busy track does not push other tracks' and
+    // Pins the run order of a batch that holds several claims and hands on: every hand-on runs after the claims the
+    // batch already held, in the order their predecessors completed, so a busy track does not push other tracks' and
     // unordered deliveries back behind its own.
-    it('runs a handed-on delivery after the claims its batch had already picked up', async () => {
+    it('runs handed-on deliveries after the claims its batch had already picked up', async () => {
         let canDispatch = false;
         const fixture = createRuntime('successor-after-batch', 'memory', { canDispatchMessage: () => canDispatch });
-        const [a1, a2, b1] = [toTrackMessage('a', 1), toTrackMessage('a', 2), toTrackMessage('b', 1)];
+        const [a1, a2, a3] = [toTrackMessage('a', 1), toTrackMessage('a', 2), toTrackMessage('a', 3)];
+        const [b1, b2] = [toTrackMessage('b', 1), toTrackMessage('b', 2)];
         const unordered = createInboundTestMessage({ msgId: 'unordered' });
-        for (const msg of [a1, a2, b1, unordered]) {
+        for (const msg of [a1, a2, a3, b1, b2, unordered]) {
             await admit(fixture, msg);
         }
 
         canDispatch = true;
         await runInboundWorkDueNow(fixture);
 
-        const ran = readClaimingDrains(fixture).find((drain) => drain.claimedEffectIds.includes(toDispatchId(a1)))!;
-        const order = ran.claimedEffectIds;
-        expect(order.at(-1)).toBe(toDispatchId(a2));
-        expect(order.indexOf(toDispatchId(a2))).toBeGreaterThan(order.indexOf(toDispatchId(b1)));
-        expect(order.indexOf(toDispatchId(a2))).toBeGreaterThan(order.indexOf(toDispatchId(unordered)));
-        expect(ran.promoted).toBe(1);
-        const received = fixture.deliveredMessages.map((msg) => msg.id.msgId);
-        expect(received.filter((msgId) => msgId.startsWith('a-'))).toEqual(['a-1', 'a-2']);
-        expect(received.filter((msgId) => msgId.startsWith('b-'))).toEqual(['b-1']);
-        expect(received).toContain('unordered');
+        const drains = readClaimingDrains(fixture);
+        expect(drains.map((drain) => drain.claimedEffectIds)).toEqual([
+            [a1, b1, unordered, a2, b2, a3].map(toDispatchId)
+        ]);
+        expect(drains[0]!.promoted).toBe(3);
+        expect(fixture.deliveredMessages.map((msg) => msg.id.msgId)).toEqual(['a-1', 'b-1', 'unordered', 'a-2', 'b-2', 'a-3']);
     });
 
     // Pins that a completion with nothing admitted after it hands nothing on, and that a later admission's own commit
-    // delivers it.
+    // delivers it: the engine is never run here, so only each commit's own batch can deliver.
     it('hands nothing on when the next message is not admitted yet', async () => {
         const fixture = createRuntime('successor-not-admitted', 'memory', {});
         await admit(fixture, toMessage(1));
-        await runInboundWorkDueNow(fixture);
+        await vi.waitFor(() => expect(readClaimingDrains(fixture)).toHaveLength(1));
         const [firstDrain] = readClaimingDrains(fixture);
         expect(firstDrain).toMatchObject({ claimedCount: 1, promoted: 0 });
 
         await admit(fixture, toMessage(2));
-        await runInboundWorkDueNow(fixture);
+        await vi.waitFor(() => expect(readClaimingDrains(fixture)).toHaveLength(2));
 
         expect(readReceivedSeqs(fixture)).toEqual([1, 2]);
         expect(readClaimingDrains(fixture).map((drain) => [drain.claimedCount, drain.promoted])).toEqual([[1, 0], [1, 0]]);
@@ -145,7 +148,9 @@ describe('the batch that completed an ordered delivery', () => {
     });
 
     // Pins that an expired successor is not handed on, and that the copy after it is still answered by the rotation as
-    // it is without a hand-on.
+    // it is without a hand-on. Here the queue no longer returns the expired row, so the hand-on finds none to reserve; the
+    // claim's own expiry check is pinned at the selector. A hand-on cannot skip to message 3 either: its readiness waits
+    // on message 2.
     it('hands on no expired successor, and the copy after it is answered resync-required', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         onTestFinished(() => {
@@ -161,6 +166,9 @@ describe('the batch that completed an ordered delivery', () => {
         await admit(fixture, second);
         await admit(fixture, third);
 
+        // Message 2's row expires before the hold goes.
+        const expiring = await readWorkRow(fixture, toDispatchId(second));
+        expect(expiring?.audit.expiryTs.epochMilliseconds).toBeLessThanOrEqual(admittedAtMs + 6_000);
         vi.setSystemTime(admittedAtMs + 6_000);
         hold.release();
         await runInboundWorkDueNow(fixture);
@@ -193,6 +201,11 @@ describe('ALInboundAdmissionStore.readOrderedSuccessor', () => {
         });
         await commit(toMessage(3));
         expect(await admissionStore.readOrderedSuccessor(TRACK_KEY, 1)).toBeUndefined();
+        // A copy buffered behind a gap has a slot and no delivery row until the gap closes: the slot names none.
+        const buffered = await admissionStore.readBufferedRelease({ trackKey: TRACK_KEY, seq: 3, nowMs: Date.now() });
+        expect(buffered?.snapshot.seq).toBe(3);
+        expect(buffered?.snapshot.delivery).toBeUndefined();
+        expect(await admissionStore.readOrderedSuccessor(TRACK_KEY, 2)).toBeUndefined();
         await commit(toMessage(2));
         expect(await admissionStore.readOrderedSuccessor(TRACK_KEY, 2)).toEqual({
             effectId: toALInboundReleaseEffectId(TRACK_KEY, 3),

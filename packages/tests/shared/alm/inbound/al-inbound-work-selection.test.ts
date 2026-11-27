@@ -56,6 +56,7 @@ import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import type { ALInboundAdmissionStore, ALInboundDurableEffect } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { createInboundTestDispatch, readInboundTestDispatchEffect } from '../create-inbound-test-dispatch.ts';
 import {
+    createInboundTestBackendStores,
     createInboundTestMessage,
     createInboundTestOrderedDelivery,
     createInboundTestRuntime,
@@ -690,10 +691,34 @@ describe('ALInboundWorkSelector ordered successor', () => {
         expect(await fixture.readSuccessorRow()).toEqual(before);
     });
 
-    // Pins that an expired successor is left to the rotation, which no longer claims it either.
+    // Pins that a retried successor is handed on once its delay has passed: the retry schedule delays it, never strands it.
+    it('reserves a retried successor whose delay has passed', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
+        const fixture = await createOrderedSuccessorFixture({});
+        const [claim] = await fixture.port.claimObserved([fixture.successorEntry]);
+        await fixture.port.releaseAll([{ claim: claim!, outcome: { status: 'retry' } }]);
+        const retried = await fixture.readSuccessorRow();
+        expect(retried?.status).toBe(EntityStatus.RETRY);
+        // The queue reserves by its own clock, so the system clock moves with the fixture's reading.
+        vi.setSystemTime(retried!.dequeueAudit.nextTs!.epochMilliseconds);
+        fixture.setNowMs(retried!.dequeueAudit.nextTs!.epochMilliseconds);
+
+        const handedOn = await fixture.selector.claimOrderedSuccessor(fixture.port, fixture.position);
+
+        expect(handedOn?.entry.key).toEqual(fixture.successorEntry.key);
+        expect((await fixture.readSuccessorRow())?.status).toBe(EntityStatus.RESERVED);
+        expect(handedOn?.attempts).toBe(2);
+    });
+
+    // Pins that an expired successor is left to the rotation, which no longer claims it either: the selector's clock
+    // stands at the row's own expiry, so the expiry check is what refuses it.
     it('answers nothing for an expired successor', async () => {
-        const fixture = await createOrderedSuccessorFixture({ selectorAheadMs: 120_000 });
+        const fixture = await createOrderedSuccessorFixture({});
         const before = await fixture.readSuccessorRow();
+        fixture.setNowMs(before!.audit.expiryTs.epochMilliseconds);
 
         expect(await fixture.selector.claimOrderedSuccessor(fixture.port, fixture.position)).toBeUndefined();
 
@@ -719,6 +744,20 @@ describe('ALInboundWorkSelector ordered successor', () => {
 
         expect(fixture.readKeys).toEqual([]);
         expect(await fixture.readSuccessorRow()).toEqual(before);
+    });
+
+    // Pins what a hand-on does on a track that has ended, its progress row gone: the successor's readiness reads
+    // `resync-required`, which a claim may take to reject it, by the rotation's page and by the hand-on alike.
+    it('reserves the successor of a track whose progress row is gone, as the rotation would, to reject it', async () => {
+        const fixture = await createOrderedSuccessorFixture({});
+        await fixture.removeTrackProgress();
+        const before = await fixture.readSuccessorRow();
+        expect(before?.status).toBe(EntityStatus.NEW);
+
+        const handedOn = await fixture.selector.claimOrderedSuccessor(fixture.port, fixture.position);
+
+        expect(handedOn?.entry.key).toEqual(fixture.successorEntry.key);
+        expect((await fixture.readSuccessorRow())?.status).toBe(EntityStatus.RESERVED);
     });
 
     // Pins that a hand-on does not follow a track past an omission: the next copy stands at a later sequence.
@@ -1330,8 +1369,6 @@ function createPendingAdmissionEntry(namespace: string, observedAtMs: number = N
 }
 
 interface OrderedSuccessorFixtureInput {
-    /** Absent, the selector's clock reads the stores' own time. */
-    readonly selectorAheadMs?: number;
     /** Absent registers a consumer for every message. */
     readonly canDispatchMessage?: (msg: ALMessage) => boolean;
     /** Absent, the lane claims the carrier the messages were admitted on. */
@@ -1349,13 +1386,18 @@ interface OrderedSuccessorFixture {
     readonly readSuccessorRow: () => Promise<ResourceEntry | undefined>;
     /** The work rows the port read by key, in order: the store's own record of the rows a hand-on looked at. */
     readonly readKeys: readonly ResourceEntryKeyString[];
+    /** The selector's clock. */
     readonly nowMs: () => number;
+    /** Moves the one reading the port, the delivery and the selector share to `atMs`. */
+    readonly setNowMs: (atMs: number) => void;
+    /** Removes the track's delivery progress row, as its lapse would: the track has ended for this store. */
+    readonly removeTrackProgress: () => Promise<void>;
 }
 
 /** Message 1 of a recorded track admitted over WS and completed, and the copy after it admitted behind it. */
 async function createOrderedSuccessorFixture(input: OrderedSuccessorFixtureInput): Promise<OrderedSuccessorFixture> {
     const namespace = 'inbound-ordered-successor';
-    const stores = createInboundTestStores({
+    const { backend, stores } = createInboundTestBackendStores({
         namespace,
         storage: 'memory',
         observer: createPassThroughIndexedDbOperationObserver()
@@ -1371,11 +1413,13 @@ async function createOrderedSuccessorFixture(input: OrderedSuccessorFixtureInput
         kind: 'completed',
         position: { trackKey, completedThrough: 1 }
     });
-    // One still reading for the port and the delivery, so a retry delay cannot pass while the case runs.
-    const atMs = Date.now();
-    const nowMs = () => atMs + (input.selectorAheadMs ?? 0);
-    const delivery = createInboundTestDispatch(stores, () => atMs, input.canDispatchMessage).delivery;
-    const port = createTestALInboundWorkPort({ carrier: input.laneCarrier ?? 'ws', ...stores, nowMs: () => atMs });
+    // One still reading for the port, the delivery and the selector, so a retry delay cannot pass while the case runs;
+    // only the case moves it.
+    let atMs = Date.now();
+    const readAtMs = () => atMs;
+    const nowMs = readAtMs;
+    const delivery = createInboundTestDispatch(stores, readAtMs, input.canDispatchMessage).delivery;
+    const port = createTestALInboundWorkPort({ carrier: input.laneCarrier ?? 'ws', ...stores, nowMs: readAtMs });
     const readKeys: ResourceEntryKeyString[] = [];
     const successorKey = toALInboundWorkKey(namespace, successor.effectId);
     return {
@@ -1398,7 +1442,15 @@ async function createOrderedSuccessorFixture(input: OrderedSuccessorFixtureInput
         successorEntry: successor.entry,
         readSuccessorRow: async () => (await stores.workQueue.getItem(successorKey)) ?? undefined,
         readKeys,
-        nowMs
+        nowMs,
+        setNowMs: (movedToMs) => {
+            atMs = movedToMs;
+        },
+        removeTrackProgress: async () => {
+            await backend.write(async (tx) => {
+                await tx.remove(`${namespace}:delivered:${trackKey}`);
+            });
+        }
     };
 }
 

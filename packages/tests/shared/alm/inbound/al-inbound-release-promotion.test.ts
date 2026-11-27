@@ -39,7 +39,7 @@ const ROOM = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'roo
 const SERVER_PEER_ID = 'default-qbox-server';
 
 describe('promotion of a buffered track\'s next release', () => {
-    // Pins that a batch hands on no more deliveries than it ran behind their own track's previous delivery, the dispatch
+    // Pins that a batch hands on exactly the deliveries it ran behind their own track's previous delivery, the dispatch
     // that closed the gap included, and that the track is received in order.
     it('delivers a buffered track in sequence order, each delivery handed on only after its predecessor delivered', async () => {
         const deliveredSeqs: (number | undefined)[] = [];
@@ -55,8 +55,9 @@ describe('promotion of a buffered track\'s next release', () => {
         expect(sumPromoted(drains)).toBeGreaterThan(0);
         const deliveries = toTrackDeliveries(toSequence(1, 21).map(toBufferedTrackMessage));
         for (const drain of drains) {
-            expect(drain.promoted).toBeLessThanOrEqual(countDeliveriesBehindTheirPredecessor(drain, deliveries));
+            expect(drain.promoted).toBe(countDeliveriesBehindTheirPredecessor(drain, deliveries));
         }
+        expect(drains.map((drain) => drain.promoted)).toEqual([15, 4]);
     });
 
     // Pins the page bound on a buffered drain: the batch of the message that closed the gap hands on until the page is
@@ -66,14 +67,15 @@ describe('promotion of a buffered track\'s next release', () => {
 
         const drains = await admitBufferedTrack(fixture, { buffered: 64 });
 
-        expect(fixture.delivered).toHaveLength(65);
+        expect(fixture.deliveredMessages.map((msg) => msg.ordering?.seq)).toEqual(toSequence(1, 65));
         expect(drains).toHaveLength(BUFFERED_64_DRAIN_BATCHES);
         expect(drains.map((drain) => drain.claimedCount)).toEqual(BUFFERED_64_CLAIMED_PER_BATCH);
         expect(drains.map((drain) => drain.promoted)).toEqual(BUFFERED_64_PROMOTED_PER_BATCH);
     }, TEST_TIMEOUT_MS);
 
-    // Pins that a delivery is handed on only behind its own track's previous delivery, with two tracks draining together.
-    it('promotes a release only behind its own track\'s predecessor, with two tracks draining together', async () => {
+    // Pins that a delivery is handed on only behind its own track's previous delivery, with two tracks buffered at once:
+    // every hand-on a drain counts is one behind its own track's predecessor, so a cross-track hand-on reads red.
+    it('hands on a delivery only behind its own track\'s predecessor, on two buffered tracks', async () => {
         const delivered: string[] = [];
         const fixture = await startInboundRuntime('promotion-tracks', {
             gateDispatch: async (msg) => {
@@ -101,8 +103,9 @@ describe('promotion of a buffered track\'s next release', () => {
             ['chat', 'other'].flatMap((track) => toSequence(1, 12).map((seq) => createTrackMessage(track, seq)))
         );
         for (const drain of drains) {
-            expect(drain.promoted).toBeLessThanOrEqual(countDeliveriesBehindTheirPredecessor(drain, deliveries));
+            expect(drain.promoted).toBe(countDeliveriesBehindTheirPredecessor(drain, deliveries));
         }
+        expect(sumPromoted(drains)).toBe(22);
     });
 
     it('promotes nothing behind a release that did not complete, and delivers it on its retry before its successor', async () => {

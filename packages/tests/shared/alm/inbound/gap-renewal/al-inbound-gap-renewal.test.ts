@@ -17,6 +17,7 @@ import type {
     ALInboundGapRenewalEffect
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { toALInboundMessageKey, toALInboundMessageReference } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
+import { toALInboundLocalDeliveryEffectId, toALInboundReleaseEffectId } from '@shared/alm/inbound/al-inbound-effect-intent.ts';
 import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALPersistedInboundEffect } from '@shared/alm/inbound/al-inbound-work-entry.ts';
@@ -884,6 +885,38 @@ describe('a receiver holding a recorded track at its start (the bounded hold)', 
         expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([3, 5, 6]);
         expect(['5', '6'].flatMap((msgId) => readNackReasons(fixture, msgId))).not.toContain('resync-required');
         expect(await readPendingInboundWork(fixture)).toEqual([]);
+    });
+
+    // Pins a hand-on after a completion that moves its track past several sequences: the run's last delivery (3) reaches
+    // past the passed copy (4), so its completion states 4, the slot read at 5 names message 5's row, and the batch
+    // that ran 3 hands on 5 and then 6, where a read at 3's own sequence plus one would find no slot.
+    it('hands on the message after the passed copies in the batch that completed the run\'s last delivery', async () => {
+        let thirdHeld = true;
+        const fixture = createRenewalFixture('memory', {
+            canDispatchMessage: (msg) => !thirdHeld || msg.ordering?.seq !== 3
+        });
+        await fixture.runtime.admitIncomingMessage(recordedMessage(3), INBOUND_TEST_SOURCE);
+        await fixture.runtime.admitIncomingMessage(recordedMessage(4, { ttlMs: SHORT_TTL_MS }), INBOUND_TEST_SOURCE);
+        await fixture.runtime.admitIncomingMessage(recordedMessage(6), INBOUND_TEST_SOURCE);
+        await advanceThrough(fixture, [1_000, 3_000, 7_000]);
+        await fixture.runtime.admitIncomingMessage(recordedMessage(5), INBOUND_TEST_SOURCE);
+        await advanceTo(fixture, 7_000);
+        const before = fixture.diagnostics.length;
+        thirdHeld = false;
+
+        await advanceThrough(fixture, [8_000, 10_000]);
+
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([3, 5, 6]);
+        const drains = fixture.diagnostics.slice(before).flatMap((event) => event.kind === 'effect-drain' && event.claimedCount > 0 ? [event] : []);
+        const trackKey = toALOrderingTrackKey(recordedMessage(3))!;
+        expect(drains.map((drain) => [drain.claimedEffectIds, drain.promoted])).toEqual([[
+            [
+                toALInboundReleaseEffectId(trackKey, 3),
+                toALInboundLocalDeliveryEffectId(recordedMessage(5), false),
+                toALInboundReleaseEffectId(trackKey, 6)
+            ],
+            2
+        ]]);
     });
 
     it('keeps asking, numbered 4, on a track that delivered something, and enters nowhere', async () => {
