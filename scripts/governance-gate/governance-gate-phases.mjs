@@ -11,7 +11,8 @@ export const governanceGatePhases = [
         command: 'check:retained-legacy',
         showSuccessfulOutput: true
     },
-    { phase: 'transaction-writes', command: 'check:transaction-writes' }
+    { phase: 'transaction-writes', command: 'check:transaction-writes' },
+    { phase: 'direct-writes', command: 'check:direct-writes', showSuccessfulOutput: true }
 ];
 
 const forbiddenScriptPatterns = [
