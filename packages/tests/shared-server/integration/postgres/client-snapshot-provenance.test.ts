@@ -20,6 +20,7 @@ import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-de
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
 import { putAuthorisedWsTestTicket } from '../../rallar-system/client-state/authorised-ws-test-ticket.ts';
+import { TEST_WS_CONNECTION_HOLDER_ID } from '../../rallar-system/client-state/connection-holder/test-support/test-ws-connection-holder.ts';
 import {
     createRuntimeStatePostgresSql,
     requirePostgresClient,
@@ -95,6 +96,7 @@ describe('Postgres client snapshot provenance transaction', () => {
                         authSession,
                         generationId: 'proof-generation',
                         ticketDigest,
+                        holderId: TEST_WS_CONNECTION_HOLDER_ID,
                         traceId: 'trace-client-snapshot-provenance',
                         input: { ...scope, clientInstanceId: 'browser', connectedAtEpochMs: now, expiresAtEpochMs: now + 60_000 }
                     })

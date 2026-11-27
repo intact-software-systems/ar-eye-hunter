@@ -37,6 +37,7 @@ import {
     toTrackIndexTestMessage
 } from '../../../../packages/tests/shared-server/rallar-system/app-outbox/app-outbox-track-index-fixture.ts';
 import { putAuthorisedWsTestTicket } from '../../../../packages/tests/shared-server/rallar-system/client-state/authorised-ws-test-ticket.ts';
+import { TEST_WS_CONNECTION_HOLDER_ID } from '../../../../packages/tests/shared-server/rallar-system/client-state/connection-holder/test-support/test-ws-connection-holder.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/client-state/test-disconnected-session-retention.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
@@ -378,6 +379,7 @@ async function startFixtureConnect({ sql, sessions, client, generationId, connec
         authSession: SESSION,
         generationId,
         ticketDigest,
+        holderId: TEST_WS_CONNECTION_HOLDER_ID,
         traceId: 'trace-pglite-authorised-ws-connect-write',
         input: { applicationId: 'app-1', workspaceId: 'default', connectedAtEpochMs }
     }).then((written) => written.right);

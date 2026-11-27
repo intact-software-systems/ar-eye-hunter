@@ -5,7 +5,7 @@ import type {
     RuntimeStateGuardedBatchWrite
 } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
-import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { ClientAuthorisedWsSessionConnectAppInboxPayload } from '../inbox/app-client-inbox-contracts.ts';
 import { decodeClientAuthorisedWsSessionConnectAppInboxPayload } from '../inbox/client-state-inbox-command-codec.ts';
 import {
@@ -70,7 +70,9 @@ export function toWsConnectionHolderGenerationKeySuffix(ref: WsConnectionHolderG
 export function decodeWsConnectionHolderRecordEntry(entry: RuntimeStateEntry): WsConnectionHolderRecordEntry {
     return withClientStateRepositoryInvariantError(entry.key, () => {
         const keyParts = decodeClientStateStorageKey(entry.key, ['holder', 'session', 'generation']);
-        const record = decodeWsConnectionHolderRecord(JSON.parse(entry.value) as JsonWireValue);
+        const record = decodeWsConnectionHolderRecord(
+            decodeJsonWireValue(JSON.parse(entry.value), 'WebSocket connection holder record')
+        );
         if (
             record.holderId !== readDecodedClientStateStorageKeyPart(keyParts, 0) ||
             record.connection.authSession.sessionId !== readDecodedClientStateStorageKeyPart(keyParts, 1) ||
@@ -160,7 +162,9 @@ function decodeWsConnectionHolderRecord(value: JsonWireValue): WsConnectionHolde
     return {
         version: 1,
         holderId: stored.holderId,
-        connection: decodeClientAuthorisedWsSessionConnectAppInboxPayload(stored.connection as JsonWireValue),
+        connection: decodeClientAuthorisedWsSessionConnectAppInboxPayload(
+            decodeJsonWireValue(stored.connection, 'WebSocket connection holder connection')
+        ),
         expireAtEpochMs: stored.expireAtEpochMs
     };
 }

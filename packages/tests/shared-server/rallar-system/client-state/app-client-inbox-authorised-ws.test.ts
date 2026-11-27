@@ -8,6 +8,7 @@ import type { ClientMutationWritten, ClientStateWritten } from '@shared-server/r
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import {
+    toAuthorisedWsClientConnectEnqueue,
     toAuthorisedWsClientConnection,
     type ToAuthorisedWsClientConnectionInput
 } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
@@ -31,11 +32,13 @@ import { readCompletedAppInboxResult } from '../app-inbox/test-support/read-comp
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { putAuthorisedWsTestTicket } from './authorised-ws-test-ticket.ts';
 import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from './client-state-test-runtime.ts';
+import { TEST_WS_CONNECTION_HOLDER_ID } from './connection-holder/test-support/test-ws-connection-holder.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 const CONNECT_TRACE_ID = 'trace-app-client-inbox-authorised-ws';
 
 const SERVICE_ID = 'server-12345678';
+const HOLDER_ID = '00000000-0000-4000-8000-0000000000a1';
 const AUDIENCE_SCOPE = { applicationId: 'ar-eye-hunter', workspaceId: 'default' } as const;
 
 const groupSnapshotValidationCounts = vi.hoisted(() => new Map<string, number>());
@@ -91,6 +94,32 @@ it('awaits only the authorised websocket connect, which its upgrade route waits 
     expect(toAppInboxCompletionAwaitability(AppInboxType.CLIENT_AUTHORISED_WS_CONNECT)).toBe('awaitable');
 });
 
+it('stores the enqueuing process as the connect\'s holder, under the resource id of its generation', () => {
+    const authSession = issuedSession('alice', 'alice-ws-session');
+
+    const enqueue = toAuthorisedWsClientConnectEnqueue({
+        authSession,
+        generationId: 'generation:1',
+        ticketDigest: 'ticket-digest',
+        holderId: HOLDER_ID,
+        traceId: CONNECT_TRACE_ID,
+        input: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
+    });
+
+    expect(enqueue.resourceId).toBe(
+        'authorised-ws-connect:ar-eye-hunter:default:alice:alice:alice-ws-session:generation%3A1'
+    );
+    expect(enqueue.data).toEqual({
+        connection: toAuthorisedWsClientConnection({
+            authSession,
+            generationId: 'generation:1',
+            input: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
+        }),
+        ticketDigest: 'ticket-digest',
+        holderId: HOLDER_ID
+    });
+});
+
 it('consumes the upgrade ticket in the connect transaction so a replayed ticket is rejected and writes nothing', async () => {
     const queue = new TestResourceInbox();
     const reader = new InboxQueueReader(queue, { newLaneConcurrency: 1 });
@@ -104,8 +133,20 @@ it('consumes the upgrade ticket in the connect transaction so a replayed ticket 
     const ticketDigest = await putAuthorisedWsTestTicket(authSessions, authSession);
 
     const connects = [
-        service.writeAuthorisedWsClientConnect({ authSession, generationId: 'generation-1', ticketDigest, traceId: CONNECT_TRACE_ID }),
-        service.writeAuthorisedWsClientConnect({ authSession, generationId: 'generation-2', ticketDigest, traceId: CONNECT_TRACE_ID })
+        service.writeAuthorisedWsClientConnect({
+            authSession,
+            generationId: 'generation-1',
+            ticketDigest,
+            holderId: TEST_WS_CONNECTION_HOLDER_ID,
+            traceId: CONNECT_TRACE_ID
+        }),
+        service.writeAuthorisedWsClientConnect({
+            authSession,
+            generationId: 'generation-2',
+            ticketDigest,
+            holderId: TEST_WS_CONNECTION_HOLDER_ID,
+            traceId: CONNECT_TRACE_ID
+        })
     ];
     await queue.waitForEntryCount(2);
     const [first, replay] = await drainUntilSettled(reader, connects);
@@ -242,6 +283,7 @@ it('serves an authorised websocket disconnect after its own connect behind a bac
             authSession: session,
             generationId: 'generation-1',
             ticketDigest: await putAuthorisedWsTestTicket(authSessions, session),
+            holderId: TEST_WS_CONNECTION_HOLDER_ID,
             traceId: CONNECT_TRACE_ID
         }));
     }
@@ -249,6 +291,7 @@ it('serves an authorised websocket disconnect after its own connect behind a bac
     const closingConnected = service.writeAuthorisedWsClientConnect({
         ...closingConnect,
         ticketDigest: await putAuthorisedWsTestTicket(authSessions, closing),
+        holderId: TEST_WS_CONNECTION_HOLDER_ID,
         traceId: CONNECT_TRACE_ID
     });
     await queue.waitForEntryCount(backlog.length + 1);
@@ -530,7 +573,7 @@ async function connectAuthorisedWs(
     input: ToAuthorisedWsClientConnectionInput & Readonly<{ ticketDigest: string; }>
 ): Promise<Either<AppInboxFailure, AuthorisedWsClientMutationResult>> {
     const queuedBefore = (await queue.readEntries()).length;
-    const connected = service.writeAuthorisedWsClientConnect({ ...input, traceId: CONNECT_TRACE_ID });
+    const connected = service.writeAuthorisedWsClientConnect({ ...input, holderId: TEST_WS_CONNECTION_HOLDER_ID, traceId: CONNECT_TRACE_ID });
     await queue.waitForEntryCount(queuedBefore + 1);
     const [result] = await drainUntilSettled(reader, [connected]);
     return result!;

@@ -7,6 +7,7 @@ import type { StateScope } from '@shared/api/state-types.ts';
 
 import { isAppOutboxSidecarInsert } from '../../rallar-system/app-inbox/test-support/create-app-inbox-test-database-sql.ts';
 import { putAuthorisedWsTestTicket } from '../../rallar-system/client-state/authorised-ws-test-ticket.ts';
+import { TEST_WS_CONNECTION_HOLDER_ID } from '../../rallar-system/client-state/connection-holder/test-support/test-ws-connection-holder.ts';
 import {
     createRuntimeStatePostgresSql,
     requirePostgresClient,
@@ -111,6 +112,7 @@ async function prepareConnect(
                 authSession,
                 generationId: `${authSession.sessionId}-generation`,
                 ticketDigest,
+                holderId: TEST_WS_CONNECTION_HOLDER_ID,
                 traceId: 'trace-authorised-ws-connect-statements',
                 input: { ...scope, clientInstanceId: 'browser', connectedAtEpochMs: Date.now() }
             })

@@ -20,6 +20,8 @@ export interface ToAuthorisedWsClientConnectionInput {
 
 export interface ToAuthorisedWsClientConnectEnqueueInput extends ToAuthorisedWsClientConnectionInput {
     readonly ticketDigest: string;
+    /** The enqueuing process, which holds the socket whichever server's worker runs the connect. */
+    readonly holderId: string;
     /** The upgrade request's trace: it rides the admitted envelope, never the stored connect command. */
     readonly traceId: string;
 }
@@ -45,7 +47,11 @@ export function toAuthorisedWsClientConnectEnqueue(
             'connectAuthorisedWsSession'
         ),
         data: encodeAppInboxCommand(
-            { connection, ticketDigest: input.ticketDigest } satisfies ClientAuthorisedWsTicketConnectAppInboxPayload,
+            {
+                connection,
+                ticketDigest: input.ticketDigest,
+                holderId: input.holderId
+            } satisfies ClientAuthorisedWsTicketConnectAppInboxPayload,
             'Authorized WebSocket connect AppInbox command'
         )
     };

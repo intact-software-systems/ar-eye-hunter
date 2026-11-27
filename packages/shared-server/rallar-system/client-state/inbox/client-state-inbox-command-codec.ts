@@ -147,12 +147,17 @@ export function decodeClientAuthorisedWsTicketConnectAppInboxPayload(
     value: JsonWireValue
 ): ClientAuthorisedWsTicketConnectAppInboxPayload {
     const payload = requireJsonWireObject(value, 'Authorised WebSocket ticket connect AppInbox payload');
-    requireExactKeys(payload, ['connection', 'ticketDigest'], 'Authorised WebSocket ticket connect AppInbox payload');
+    requireExactKeys(
+        payload,
+        ['connection', 'ticketDigest', 'holderId'],
+        'Authorised WebSocket ticket connect AppInbox payload'
+    );
     return {
         connection: decodeClientAuthorisedWsSessionConnectAppInboxPayload(
             requireJsonWireValue(payload.connection, 'Authorised WebSocket connection')
         ),
-        ticketDigest: decodeString(payload.ticketDigest, 'Authorised WebSocket ticket digest')
+        ticketDigest: decodeString(payload.ticketDigest, 'Authorised WebSocket ticket digest'),
+        holderId: decodeString(payload.holderId, 'Authorised WebSocket connection holder id')
     };
 }
 

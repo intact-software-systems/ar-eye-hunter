@@ -40,6 +40,7 @@ import { createResourceInboxTestStorage } from '../../queuebox/resource-inbox-te
 import { createAppInboxTestResilience } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { putAuthorisedWsTestTicket } from '../client-state/authorised-ws-test-ticket.ts';
 import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from '../client-state/client-state-test-runtime.ts';
+import { TEST_WS_CONNECTION_HOLDER_ID } from '../client-state/connection-holder/test-support/test-ws-connection-holder.ts';
 import {
     createRuntime,
     ref,
@@ -406,6 +407,7 @@ describe('party views follow semantic client presence', () => {
                     authSession: session,
                     generationId,
                     ticketDigest,
+                    holderId: TEST_WS_CONNECTION_HOLDER_ID,
                     traceId: 'ws-presence-test',
                     input: {
                         applicationId: ref.applicationId,

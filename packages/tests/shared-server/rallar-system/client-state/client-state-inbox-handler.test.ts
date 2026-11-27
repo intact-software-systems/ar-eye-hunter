@@ -91,6 +91,7 @@ import {
     requireWrite
 } from './client-mutation-compute-test-fixtures.ts';
 import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from './client-state-test-runtime.ts';
+import { TEST_WS_CONNECTION_HOLDER_ID } from './connection-holder/test-support/test-ws-connection-holder.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 const NOW_EPOCH_MS = 1_000;
@@ -222,6 +223,7 @@ describe('ClientStateInboxHandler phases', () => {
                 authSession: SESSION,
                 generationId: CONNECTION.generationId,
                 ticketDigest: TICKET_DIGEST,
+                holderId: TEST_WS_CONNECTION_HOLDER_ID,
                 traceId: 'trace-client-state-inbox-handler',
                 input: {
                     ...SCOPE,
@@ -233,7 +235,7 @@ describe('ClientStateInboxHandler phases', () => {
         );
 
         const result = await fixture.handler.processAuthorisedWsConnect(
-            { connection: CONNECTION, ticketDigest: TICKET_DIGEST },
+            { connection: CONNECTION, ticketDigest: TICKET_DIGEST, holderId: TEST_WS_CONNECTION_HOLDER_ID },
             context
         );
 

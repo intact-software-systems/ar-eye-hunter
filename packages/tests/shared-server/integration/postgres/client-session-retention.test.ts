@@ -12,6 +12,7 @@ import type { ClientSession } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 
 import { putAuthorisedWsTestTicket } from '../../rallar-system/client-state/authorised-ws-test-ticket.ts';
+import { TEST_WS_CONNECTION_HOLDER_ID } from '../../rallar-system/client-state/connection-holder/test-support/test-ws-connection-holder.ts';
 import {
     createRuntimeStatePostgresSql,
     requirePostgresClient,
@@ -160,6 +161,7 @@ async function connect(
             authSession,
             generationId: connection.generationId,
             ticketDigest,
+            holderId: TEST_WS_CONNECTION_HOLDER_ID,
             traceId: 'trace-client-session-retention',
             input: { ...harness.scope, clientInstanceId: connection.clientInstanceId, connectedAtEpochMs }
         })

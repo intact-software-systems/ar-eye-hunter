@@ -21,6 +21,7 @@ import { WSContext, type WSEvents } from 'hono/ws';
 import { pauseNextAuthorisedWsConnectRead } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/app-inbox-ws-close-test-harness.ts';
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { putAuthorisedWsTestTicket } from '../../../../packages/tests/shared-server/rallar-system/client-state/authorised-ws-test-ticket.ts';
+import { TEST_WS_CONNECTION_HOLDER_ID } from '../../../../packages/tests/shared-server/rallar-system/client-state/connection-holder/test-support/test-ws-connection-holder.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/client-state/test-disconnected-session-retention.ts';
 import { TestWebSocket } from '../../../../packages/tests/shared/websocket/test-web-socket.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
@@ -96,6 +97,7 @@ async function createWsConnectFixture(
     const app = createTracedApiTestApp();
     registerWsRoutes(app, {
         serverPeerId: 'test-server',
+        holderId: TEST_WS_CONNECTION_HOLDER_ID,
         socketServer,
         appClientInboxService: client,
         readWsConnectTicket: async (ticketDigest) => (await sessions.findWebSocketTicketByDigestEntry(ticketDigest))?.value,
@@ -308,6 +310,7 @@ test('a connect whose ticket was spent after its read conflicts on the guarded d
                 authSession: harness.authority,
                 generationId,
                 ticketDigest,
+                holderId: TEST_WS_CONNECTION_HOLDER_ID,
                 traceId: 'trace-pglite-ws-ticket-connect',
                 input: { applicationId, workspaceId: 'default', connectedAtEpochMs: Date.now() }
             });

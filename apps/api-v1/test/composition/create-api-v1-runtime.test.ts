@@ -244,6 +244,7 @@ async function connectAccount(runtime: ApiV1Runtime, principalId: string, releas
         authSession: session,
         generationId,
         ticketDigest,
+        holderId: runtime.rtcTopologyDelivery.publisherStreamId,
         input,
         traceId: `connect-${principalId}`
     });
