@@ -292,9 +292,10 @@ each state one, so they take the ordered inbound path.
   neither enters the ordered inbound path. One ordered track through the WS server at +5 ms keeps up at 3 messages a
   second in both runs. At 4 a second every message still completes (80 of 80 in both runs) but the track runs seconds
   behind, its last message read 7.5 and 15.7 s after its send (5.8 and 6.4 s before the batch-age bound below). At 5 a
-  second only the track's first messages complete, the rest passing their 30 s lifetime and ending `timed-out`, on the
-  code with the hand-on and on the code before it: 20 to 69 of 100 over four runs with the hand-on, 11 to 72 over eight
-  without; with the hand-on built the track ended `resync-required`, a NACK to its sender, in both runs. At 10 a second
+  second only the track's first messages complete within their 30 s lifetime (the runs counted completions and did
+  not record which receipt the rest read), on the code with the hand-on and on the code before it: 20 to 69 of 100 over
+  four runs with the hand-on, 11 to 72 over eight without; with the hand-on built the track ended `resync-required`, a
+  NACK to its sender, in both runs, the code before it in one of its two. At 10 a second
   the sends parked at admission dominate: 4 and 0 of 200 completed, the track not ended. A track whose sender keeps its
   rate is handed on at most a page of 16 a batch, and its lag climbs while the rate holds (under load the worst of each
   of three runs was 1.3, 5.1 and 7.7 s before the batch-age bound, 13.1, 3.1 and 3.4 s with it, not told apart); a lane
@@ -305,7 +306,7 @@ each state one, so they take the ordered inbound path.
   that runs longer than its 10 s lease lets another instance claim the rows it completed early: an ordered one reads
   `completed` and is not dispatched again, an unordered one is handed to the application a second time. A batch hands
   nothing on once it has run 5 s, half its lease, counted from before its first reservation. That stops new hand-ons,
-  not the claims the batch already holds, so a batch ends by about 5 s plus one claim for each track it still holds:
+  not the claims the batch already holds, so a batch ends by about 5 s plus the time those claims take:
   at +10 ms a statement, in three runs, 44 of the 61 batches that handed on ran past 5 s, the longest 6.07 s with 13
   claims, and none came near the lease (before the bound, 21 of 33 batches held 16 claims and the five longest of each
   run took 7.3 to 8.0 s). A page of a batch's own 16 claims, with no hand-on, still passes the lease on a database
@@ -318,7 +319,7 @@ each state one, so they take the ordered inbound path.
   publishers on the same server left the unordered publishers complete (200 of 200 in every run) but read a message at
   a p50 of 0.83 and 1.44 s with the batch-age bound and 0.72 and 0.86 s before it (two runs each, not told apart),
   against 0.454 s without the track: the track's batches run long, and a message arriving on that lane waits for the
-  batch. The code before the hand-on cost them the same or more (1.38 and 0.70 s).
+  batch. The code before the hand-on read 1.38 and 0.70 s, not told apart from either.
 - **The sender's version still moves.** A message end through the message-end bundle (a spent repair budget, a
   re-plan refused for good, a receipt control's included) and each ACK window fence the sender, so a server
   publication's own receipt windows keep competing for the server's version row.

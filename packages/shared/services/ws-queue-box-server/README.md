@@ -21,8 +21,10 @@ completes before its sender's next one arrives; when it does not, a lagging trac
 climbs while the rate holds. One ordered track keeps up at 3 messages a second in both
 runs; at 4 a second every message completes but the track runs seconds behind; at 5 a
 second only its first messages complete; at 10 a second the sends parked at admission
-dominate. A batch stops handing on at half its work lease (D786; D784, D785,
-`plans/backlog.md`, "What stays of the limit of one ordered track"). A room channel
+dominate. A batch stops handing on at half its work lease (D786), which costs ordered
+latency on a saturated database and bounds when hand-ons stop, not when a batch ends: the
+claims it already holds still run (D784, D785, `plans/backlog.md`, "What stays of the limit
+of one ordered track"; the inbound README's "Under load." gives both). A room channel
 declared `order: 'edge'` sends unordered messages that the receiving page sorts, so it does
 not take that path.
 

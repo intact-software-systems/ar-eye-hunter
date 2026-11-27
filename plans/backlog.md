@@ -1006,10 +1006,13 @@ and it has no status list.
     held 16 claims, the longest took 5.8 to 6.1 s and none came near the
     lease, but 44 of the 61 drains that handed on ran past 5 s (worst 6.07 s
     with 13 claims, 1 068 ms past): the bound stops new hand-ons, not the
-    claims the batch already holds, about one more for each track it still
-    holds. Its cost: at +10 ms the recipients' read p50 rose to 8.6 to 10.7 s
-    from 7.2 and 8.1 s (later in every run), and one track at 4 a second ended
-    further behind; loaded, quiet and the unordered guard were not told apart.
+    claims the batch already holds, which still run (at +10 ms about one for
+    each lagging track). Its
+    cost: at +10 ms the recipients' read p50 rose to 8.6 to 10.7 s from 7.2
+    and 8.1 s (later in every run) and receipts were read at 14.4 to 14.7 a
+    second against 14.8 and 15.1 (fewer in every run), and one track at 4 a
+    second ended further behind; loaded, quiet and the unordered guard were
+    not told apart.
     What stays: the claims a batch already holds when it stops, and a page of
     its own 16 claims with no hand-on, which still passes the lease at about
     0.6 s a claim and is older than this work. Releasing a row when its claim
@@ -1046,13 +1049,15 @@ and it has no status list.
     completed 200 of 200 in both runs and read 19.3 to 19.4 receipts a second,
     as without it, but their read's p50 was 0.715 and 0.862 s against 0.454 s
     without the track (1.6 and 1.9 times), at most 1.63 and 2.83 s against
-    1.06 s, because the track's batches ran at the page (16 claims) for 6.0 and
-    6.1 s and a message arriving on that lane waits for the batch; the track
+    1.06 s, because before the bound the track's batches ran at the page (16
+    claims) for 6.0 and 6.1 s and a message arriving on that lane waits for the
+    batch; the track
     itself completed 50 and 70 of 100 and ended once. With the batch-age bound
     their p50 read 0.829 and 1.436 s (two runs each, not told apart; the
-    second 3.2 times the guard's). The code before the hand-on, whose buffered
-    releases also fill pages for such a track, read the unordered publishers at
-    1.378 and 0.698 s: the same cost or more. Not run: more than one
+    second 3.2 times the guard's), the track's longest batches 5.31 and 5.25 s
+    with 15 claims. The code before the hand-on, whose buffered releases also
+    fill pages for such a track, read the unordered publishers at 1.378 and
+    0.698 s, not told apart. Not run: more than one
     over-driven track, or one on a loaded host.
   - What can still hand a delivered message to the application again: every
     completion attempt lost, a shutdown or a crash between dispatch and
@@ -1094,7 +1099,8 @@ and it has no status list.
     "A batch past its lease"). Not tried and not measured.
   - A bound on hand-ons per track per batch. Not tried and not measured. It
     would cap what one over-driven track costs the lane's other traffic
-    (above, 0.26 to 0.41 s on the unordered p50); its expected problem,
+    (above, 0.26 to 0.41 s on the unordered p50 before the bound, 0.38 and
+    0.98 s with it); its expected problem,
     reasoned and not measured, is a new parameter that lowers what a lagging
     track is carried per batch.
   - A head read when a hand-on stops at the page. Not tried and not measured,

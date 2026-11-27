@@ -781,19 +781,21 @@ held 16 claims and the longest took 5.8 to 6.1 s; 44 of the 61 drains that hande
 A page of a batch's own 16 claims, with no hand-on, still takes about 16 claims' time and would pass the lease at about
 0.6 s a claim; that is older than the hand-on. The bound costs ordered latency where the hand-on carried the load: at
 +10 ms every message still completed, but the recipients' read p50 was 8.6 to 10.7 s over three runs against 7.2 and
-8.1 s before it, later in every run. The bound trades later ordered messages, on a saturated database and for a track
+8.1 s before it, later in every run, and receipts were read at 14.4 to 14.7 a second against 14.8 and 15.1, fewer in
+every run. The bound trades later ordered messages, on a saturated database and for a track
 past its rate, for a wider margin under the lease.
 
 One ordered track keeps up at 3 messages a second in both runs. At 4 a second every message still completes (80 of 80 in
 both runs) but the track runs seconds behind: its last message was read 15.7 and 7.5 s after its send with the bound,
 5.8 and 6.4 s before it, further behind in both runs. At 5 a second only the track's first messages complete, on both
 codes: 20 to 69 of 100 over four runs with the hand-on, 11 to 72 over eight without; with the hand-on built the track
-ended `resync-required` in both runs. At 10 a second the sends parked at admission dominate: 4 and 0 of 200 completed,
-the track not ended. One track at 5 a second beside five unordered publishers on the same server left the unordered
-publishers complete (200 of 200 in every run) at a read p50 of 0.83 and 1.44 s with the bound and 0.72 and 0.86 s before
-it, against 0.454 s without the track, since a message arriving on that lane waits for the track's batch; the code
-before the hand-on cost them the same or more (1.38 and 0.70 s). How the code stood before, and the changes not built
-with what is known of each, are in `plans/backlog.md` ("What stays of the limit of one ordered track").
+ended `resync-required` in both runs, the code before it in one of its two. At 10 a second the sends parked at admission
+dominate: 4 and 0 of 200 completed, the track not ended. One track at 5 a second beside five unordered publishers on the
+same server left the unordered publishers complete (200 of 200 in every run) at a read p50 of 0.83 and 1.44 s with the
+bound and 0.72 and 0.86 s before it (two runs each, not told apart), against 0.454 s without the track, since a message
+arriving on that lane waits for the track's batch; the code before the hand-on read 1.38 and 0.70 s, not told apart from
+either. How the code stood before, and the changes not built with what is known of each, are in `plans/backlog.md`
+("What stays of the limit of one ordered track").
 
 `validateALInboundControlAdmission` returns every reason an acknowledgement is
 inadmissible; the caller joins them into one rejection reason. Only an absent pending
