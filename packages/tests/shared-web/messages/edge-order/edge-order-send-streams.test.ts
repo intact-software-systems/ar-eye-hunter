@@ -49,7 +49,8 @@ function openSend(streams: EdgeOrderSendStreams): EdgeOrderOpenSend {
         order: 'edge',
         topicId: EDGE_ORDER_TEST_MOVES.topicId,
         typeId: EDGE_ORDER_TEST_MOVES.typeId,
-        roomRef: EDGE_ORDER_TEST_ROOM
+        roomRef: EDGE_ORDER_TEST_ROOM,
+        retried: true
     });
     if (send === undefined) {
         throw new Error('An edge-ordered channel\'s send has a position.');
@@ -123,7 +124,13 @@ describe('the page\'s edge-ordered send streams: what a send\'s lifecycle tells 
         const streams = createStreams();
         const first = openObservedSend(streams);
         openObservedSend(streams);
-        streams.openSend({ order: 'edge', topicId: 'room.chat', typeId: 'chat.line', roomRef: EDGE_ORDER_TEST_ROOM });
+        streams.openSend({
+            order: 'edge',
+            topicId: 'room.chat',
+            typeId: 'chat.line',
+            roomRef: EDGE_ORDER_TEST_ROOM,
+            retried: true
+        });
 
         expect(streams.getUsage()).toEqual({ sendStreams: 2, openSends: 3 });
         first.setState('acknowledged');
@@ -144,7 +151,8 @@ describe('the page\'s edge-ordered send streams: what a send\'s lifecycle tells 
                 order: 'edge',
                 topicId: EDGE_ORDER_TEST_MOVES.topicId,
                 typeId: EDGE_ORDER_TEST_MOVES.typeId,
-                roomRef: { ...EDGE_ORDER_TEST_ROOM, groupId: room }
+                roomRef: { ...EDGE_ORDER_TEST_ROOM, groupId: room },
+                retried: true
             });
             if (send === undefined) {
                 throw new Error('An edge-ordered channel\'s send has a position.');

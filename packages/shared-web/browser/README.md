@@ -393,6 +393,15 @@ Message ownership is concentrated under [`messages/`](./messages/):
     above them is stated by a later stamp once those are passed, and until then it is waited for like any missing
     message. A hole leaves the stamps when every send below it has ended, because the lowest open position then
     says it. A stamp with no hole carries no `holes` field.
+  - **A send nothing retries: newest wins.** A send is retried only when it is at-least-once and asks a receipt
+    ([`isEdgeOrderRetriedSend`](./messages/edge-order/validate-edge-order-send.ts), decided in the application's
+    call from the send's options and the channel's defaults). A lost copy of any other send (`reliability:
+    'best-effort'`, `ack: 'none'`, or the same asked through `qos`) never comes back, so no receiver waits for it:
+    from the moment it takes its position it is a hole to every later stamp, and the stream keeps nothing of it. A
+    receiver that gets a later message first hands that one over at once, reports the skipped position as an
+    `ended-at-sender` gap, and drops the earlier message as `late` if it still arrives. Such a send is itself held
+    for an earlier retried send that is still missing, like any message. A stream none of whose sends is retried
+    never makes a receiver wait, not even at its entry.
   - **Receive.** `BrowserRallarMessageSubscriptions.dispatch` passes every message of a declared topic and type to
     [EdgeOrderArrivals](./messages/edge-order/edge-order-arrivals.ts), which unwraps it and runs it through one
     [EdgeOrderReceiver](./messages/edge-order/edge-order-receiver.ts) that both carriers share. The page listens
@@ -452,9 +461,9 @@ Message ownership is concentrated under [`messages/`](./messages/):
   - **Refused as `unsupported`**, at the definition: a `live` channel, a `granted` channel, a channel with a
     durability other than `volatile`, `channel(...)` without a room, and `onOrderGap`, `orderGapWaitMs` or
     `orderEntryWindowMs` on a channel that declares no order
-    ([`validate-edge-order-channel.ts`](./messages/edge-order/validate-edge-order-channel.ts)). At the send, before it takes a position: `reliability: 'best-effort'`, `ack: 'none'` or
-    `'group-leader'`, a `qos.delivery` other than at-least-once, a `qos.ack` other than `receiver`,
-    `exceptPeerIds`, `recipientPeerIds`, `principalId`, `peerId` (the server included), a `scope` other than
+    ([`validate-edge-order-channel.ts`](./messages/edge-order/validate-edge-order-channel.ts)). At the send, before it takes a position: `ack: 'group-leader'` and a `qos.ack` other than `receiver` or `none` (a
+    hop's or a leader's receipt does not say the recipients have the message, so the sender could call a send
+    over that a recipient still waits for), `exceptPeerIds`, `recipientPeerIds`, `principalId`, `peerId` (the server included), a `scope` other than
     `room`, `orderingKey`, `seq`, `qos.supersedence`, a `qos.durability` other than `volatile`, and the
     `ws-then-rtc` strategy. A granted channel still waits: a late subscriber is a late joiner, which is now
     handled, but its wrapped payload has not been proven through the publisher proof and the `subscribe` election.

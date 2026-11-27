@@ -11,11 +11,9 @@ export namespace EdgeOrderSender {
      */
     export type SendEnd = 'open' | 'delivered' | 'undelivered';
 
-    /** What the stream reads of one open send each time it stamps another. */
+    /** What the stream reads of one open send that is retried, each time it stamps another. */
     export interface OpenSend {
         readonly expiresAtMs: number;
-        /** False for a send nothing retries: a lost copy never comes back, so no receiver waits for it. */
-        readonly retried: boolean;
         getEnd(): SendEnd;
     }
 }
@@ -32,12 +30,17 @@ interface EdgeOrderSettlingSend {
     readonly openUntilMs: number;
 }
 
-/** `unobserved`: the send has its position and no lifecycle yet. `hole`: it ended and nothing of it can arrive. */
+/**
+ * `unobserved`: a retried send that has its position and no lifecycle yet. `hole`: a position no receiver waits for,
+ * because the send ended and nothing of it can arrive, or because nothing retries it.
+ */
 type EdgeOrderSendSlot = EdgeOrderSender.OpenSend | EdgeOrderSettlingSend | 'unobserved' | 'hole';
 
 /**
  * The send side of one edge-ordered stream. A send takes its position in the application's own call, before
- * anything is awaited; it is stamped when its message is built, and observed once it has a lifecycle to read.
+ * anything is awaited; it is stamped when its message is built, and a retried one is observed once it has a
+ * lifecycle to read. A send nothing retries is a hole to every later stamp from the moment it takes its position: a
+ * lost copy of it never comes back, so the newest message wins and a late one is dropped.
  */
 export class EdgeOrderSender {
     private readonly stream: string;
@@ -55,9 +58,10 @@ export class EdgeOrderSender {
         this.acknowledgedSettleMs = acknowledgedSettleMs;
     }
 
-    openSend(): number {
+    /** `retried`: the send is at-least-once and asks a receipt, so a lost copy of it comes back. */
+    openSend(retried: boolean): number {
         this.lastPosition += 1;
-        this.slots.set(this.lastPosition, 'unobserved');
+        this.slots.set(this.lastPosition, retried ? 'unobserved' : 'hole');
         return this.lastPosition;
     }
 
@@ -80,8 +84,9 @@ export class EdgeOrderSender {
     }
 
     /**
-     * Closes a send of which nothing set out: it failed, or was refused, before any carrier took it. While no
-     * later send has taken a position, the next send gets this one, so the stream has no hole at all.
+     * Closes a retried send of which nothing set out: it failed, or was refused, before any carrier took it. While
+     * no later send has taken a position, the next send gets this one, so the stream has no hole at all. A send
+     * nothing retries keeps its position: it is a hole already.
      */
     endSend(position: number): void {
         if (this.slots.get(position) !== 'unobserved') {
@@ -188,7 +193,7 @@ function toSendSlotAt(
     return end === 'undelivered' || slot.expiresAtMs <= nowMs ? 'hole' : slot;
 }
 
-/** Absent for a hole, and for a send nothing retries: no receiver waits for either. */
+/** Absent for a hole: no receiver waits for it. */
 function toCanArriveUntil(slot: EdgeOrderSendSlot): number | undefined {
     if (slot === 'hole') {
         return undefined;
@@ -196,8 +201,5 @@ function toCanArriveUntil(slot: EdgeOrderSendSlot): number | undefined {
     if (slot === 'unobserved') {
         return Number.MAX_SAFE_INTEGER;
     }
-    if ('openUntilMs' in slot) {
-        return slot.openUntilMs;
-    }
-    return slot.retried ? slot.expiresAtMs : undefined;
+    return 'openUntilMs' in slot ? slot.openUntilMs : slot.expiresAtMs;
 }

@@ -12,6 +12,7 @@ import {
     type EdgeOrderSendStreams
 } from '@shared-web/browser/messages/edge-order/edge-order-send-streams.ts';
 import { toEdgeOrderWireJson } from '@shared-web/browser/messages/edge-order/edge-order-wire-payload.ts';
+import { isEdgeOrderRetriedSend } from '@shared-web/browser/messages/edge-order/validate-edge-order-send.ts';
 import type {
     RallarMessageHandle,
     RallarMessagePayload,
@@ -247,12 +248,7 @@ export class BrowserRallarMessageSender {
             room,
             resolved,
             captured: this.capturePayload(send.payload),
-            edgeOrderSend: this.input.edgeOrderStreams.openSend({
-                order: channel?.order,
-                topicId: send.topicId,
-                typeId: send.typeId,
-                roomRef
-            })
+            edgeOrderSend: this.openEdgeOrderSend(send, channel, roomRef)
         };
         return await endEdgeOrderSendOnFailure(scopedMessage.edgeOrderSend, this.deliverScopedMessage(scopedMessage));
     }
@@ -425,12 +421,7 @@ export class BrowserRallarMessageSender {
     private async sendRoomMessage<T>(send: RoomMessageSend<T>): Promise<RallarMessageHandle> {
         const { input, target, channel } = send;
         const captured = this.capturePayload(input.payload);
-        const edgeOrderSend = this.input.edgeOrderStreams.openSend({
-            order: channel?.order,
-            topicId: input.topicId,
-            typeId: input.typeId,
-            roomRef: target.roomRef
-        });
+        const edgeOrderSend = this.openEdgeOrderSend(input, channel, target.roomRef);
         return await endEdgeOrderSendOnFailure(edgeOrderSend, this.deliverRoomMessage(send, captured, edgeOrderSend));
     }
 
@@ -464,6 +455,30 @@ export class BrowserRallarMessageSender {
             payloadIssues: payloadValidation.issues,
             channel,
             edgeOrderSend
+        });
+    }
+
+    /**
+     * The position an edge-ordered channel's send takes in its stream, in the application's own call; absent for a
+     * send of any other channel. Whether anything retries the send is decided here too, from the options the send
+     * states and the channel's defaults, so a later send's stamp never asks a receiver to wait for it.
+     */
+    private openEdgeOrderSend(
+        send: Pick<RallarMessageSendBase<never>, 'topicId' | 'typeId' | 'ttlMs' | 'reliability' | 'ack' | 'qos'>,
+        channel: BrowserTypedChannelPolicy | undefined,
+        roomRef: GroupRef | undefined
+    ): EdgeOrderOpenSend | undefined {
+        return this.input.edgeOrderStreams.openSend({
+            order: channel?.order,
+            topicId: send.topicId,
+            typeId: send.typeId,
+            roomRef,
+            retried: isEdgeOrderRetriedSend(toBrowserMessageSendDefaults({
+                send,
+                channel,
+                hasLogicalAudience: true,
+                laneTtlMs: BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS
+            }))
         });
     }
 

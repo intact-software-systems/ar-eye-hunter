@@ -477,10 +477,6 @@ describe('an edge-ordered room channel: refused shapes', () => {
     });
 
     it.each<[string, string, (channel: RallarTypedMessageChannel<EdgeOrderTestMove>) => Promise<object>]>([
-        ['a best-effort send', '$.reliability', (channel) => channel.send({ n: 1 }, { reliability: 'best-effort' })],
-        ['a best-effort QoS request', '$.qos.delivery', (channel) => channel.send({ n: 1 }, { qos: { delivery: { algo: 'best-effort' } } })],
-        ['a send that asks no receipt', '$.ack', (channel) => channel.sendWs({ n: 1 }, { ack: 'none' })],
-        ['a QoS request for no receipt', '$.qos.ack', (channel) => channel.sendRtc({ n: 1 }, { qos: { ack: { algo: 'none' } } })],
         ['a send to the room\'s leader', '$.ack', (channel) => channel.send({ n: 1 }, { ack: 'group-leader' })],
         ['a send that skips sessions', '$.exceptPeerIds', (channel) => channel.send({ n: 1 }, { exceptPeerIds: ['bob-session'] })],
         ['a send to a fixed list', '$.recipientPeerIds', (channel) => channel.sendWs({ n: 1 }, { recipientPeerIds: ['bob-session'] })],

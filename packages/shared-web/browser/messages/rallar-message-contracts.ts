@@ -24,9 +24,10 @@ export interface RallarMessageOrder {
 }
 
 /**
- * Why a page gave up positions of an edge-ordered stream. The message could no longer arrive: `ended-at-sender`, its
- * sender said the send was over (refused, cancelled, past its deadline, or acknowledged by the recipients it had);
- * `cannot-arrive`, the time its sender gave it to arrive has passed. A bound of this page was reached, and the
+ * Why a page gave up positions of an edge-ordered stream. No one waits for the message any more: `ended-at-sender`,
+ * its sender said so, because the send was over (refused, cancelled, past its deadline, or acknowledged by the
+ * recipients it had) or because nothing retries it and a later message arrived first; `cannot-arrive`, the time its
+ * sender gave it to arrive has passed. A bound of this page was reached, and the
  * message is dropped as late if it still arrives: `held-message-deadline`, a later message could be held no longer
  * without passing its own deadline; `channel-wait-cap`, `held-message-cap` and `held-byte-cap`, a later message was
  * held as long, or the stream held as much, as the page allows; `stream-cap`, the page follows no more streams.
@@ -266,8 +267,10 @@ export interface RallarTypedMessageChannelDefinition {
     /**
      * `edge`, on a room channel: one sender page's messages reach this page's handlers in the order that page called
      * `send`, whichever carrier each came over. Rallar Web numbers each send, wraps the payload with the number and
-     * sorts at the receiver in memory, so both ends declare it; a message that can no longer arrive is skipped. Its
-     * sends are whole-room, at-least-once, receipted and volatile: every other shape is refused `unsupported`.
+     * sorts at the receiver in memory, so both ends declare it; a message that can no longer arrive is skipped. A
+     * send nothing retries (best-effort, or one that asks no receipt) is never waited for: the newest message wins,
+     * and one that arrives after a later one is dropped. Its sends are whole-room and volatile, and a receipt, when
+     * a send asks one, is every recipient's: every other shape is refused `unsupported`.
      */
     readonly order?: 'edge';
     /**

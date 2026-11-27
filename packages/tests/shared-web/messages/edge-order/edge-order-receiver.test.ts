@@ -84,9 +84,9 @@ function stamp(position: number, statement: Partial<Omit<EdgeOrderStamp, 'positi
 
 /** The stamp a sender page gives its next send, which stays open until `expiresAtMs`. */
 function stampNextSend(sender: EdgeOrderSender, retried: boolean, expiresAtMs = FAR_DEADLINE_MS): EdgeOrderStamp {
-    const position = sender.openSend();
+    const position = sender.openSend(retried);
     const edgeOrderStamp = sender.stampSend(position, START_MS);
-    sender.observeSend(position, { expiresAtMs, retried, getEnd: () => 'open' });
+    sender.observeSend(position, { expiresAtMs, getEnd: () => 'open' });
     return edgeOrderStamp;
 }
 
@@ -207,7 +207,7 @@ describe('EdgeOrderReceiver: the gap rule', () => {
     it('never waits for a send nothing retries: the newest is handed over and the late one is dropped', () => {
         const fixture = createReceiverFixture();
         const sender = new EdgeOrderSender('A', NO_SETTLE_MS);
-        // Three sends in one turn: none has reached the carrier when the next is stamped.
+        // Three sends in one turn: each later stamp says no receiver waits for the ones before it.
         const first = stampNextSend(sender, false, 3_000);
         const second = stampNextSend(sender, false, 3_000);
         const third = stampNextSend(sender, false, 3_000);
@@ -217,7 +217,7 @@ describe('EdgeOrderReceiver: the gap rule', () => {
 
         expect(fixture.handedOver).toEqual(['m1', 'm3']);
         expect(fixture.gaps).toEqual([
-            { ...ORIGIN, stream: 'A', fromPosition: 2, toPosition: 2, reason: 'cannot-arrive' }
+            { ...ORIGIN, stream: 'A', fromPosition: 2, toPosition: 2, reason: 'ended-at-sender' }
         ]);
         expect(fixture.timers.pendingCount()).toBe(0);
         expect(accept(fixture, second)).toBe('late');
@@ -298,11 +298,10 @@ describe('EdgeOrderReceiver: the gap rule', () => {
         const sender = new EdgeOrderSender('A', NO_SETTLE_MS);
         let earlierSendsEnded = false;
         const stampOpenSend = (): EdgeOrderStamp => {
-            const position = sender.openSend();
+            const position = sender.openSend(true);
             const edgeOrderStamp = sender.stampSend(position, START_MS);
             sender.observeSend(position, {
                 expiresAtMs: FAR_DEADLINE_MS,
-                retried: true,
                 getEnd: () => earlierSendsEnded ? 'delivered' : 'open'
             });
             return edgeOrderStamp;
