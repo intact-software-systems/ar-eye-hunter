@@ -2,10 +2,11 @@
 
 Review date: 2026-09-05
 
-Reviewed source: `cfcc9a6c7` (`main` after PR #731; markers refreshed 2026-10-29, originally
-written against `02d65ac4a`). That was the last reading of the whole document. Each pull
-request since has restated the blocks its change touched, so a block is as current as the last
-pull request that changed it.
+Reviewed source: `cfcc9a6c7` (`main` after PRs #731 and #729; markers refreshed 2026-10-29, originally
+written against `02d65ac4a`). That was the last reading of the whole document. Since then a
+pull request has restated the blocks it knew its change touched, and not every change was
+caught: #869 moved the durable send's pin and left this document's line, corrected on
+2026-11-27. A block is no more current than the last pull request that changed it.
 
 Related documents: [delivery roadmap](./alm-improvement-plan.md),
 [persistence and performance QoS plan](./alm-qos-product-plan.md),
@@ -720,7 +721,7 @@ ruling 6; the director relay's WS unicast is gone since S3c-ii). A per-send
 receipted best-effort send is a contradiction; with an explicit `ack` the
 caller's ack wins (R-S3a-2). A WebSocket frame accepted by the browser API or an
 RTC payload accepted by `RTCDataChannel.send` is not a logical delivery receipt.
-A director command that falls back to WS is not delivered twice for that reason:
+A director command that falls back to WS is not delivered twice by the fallback:
 the session's one inbound store is shared by both carriers (D20, D54), so the
 second copy meets its first admission and is answered `duplicate`. Relay
 commands are still at-least-once, and the game's sequence tracker refuses a
@@ -1623,15 +1624,16 @@ ALM is product-complete when all of the following are true. Every capability is
 in scope by roadmap decision D5.
 
 Each criterion carries a mark read on `e8620c06c` (`main` after PR #944) on 2026-11-27. **Met**:
-every clause has evidence in the tree. **Partial**: the mark names what is evidenced and what is
-not. **Open**: there is no evidence either way. The roadmap's
+every clause has evidence in the tree. **Partial**: the mark names evidence for part of the
+criterion and what it found unevidenced; it is not a clause-by-clause reading. **Open**: there is
+no evidence either way. The roadmap's
 [requirement matrix](./alm-improvement-plan.md#requirement-to-evidence-matrix) holds the evidence
 by release.
 
 1. The same scenario suite runs over RTC and WS and produces equivalent logical
    admission, ordering, reliability, ACK, repair, expiry, and terminal outcomes.
 
-   **Partial.** Evidenced: one scenario catalogue runs over `ws`, `rtc` and
+   **Partial.** Evidenced: one scenario catalog runs over `ws`, `rtc` and
    `rtc-with-ws-fallback` and asserts the same logical outcome on every carrier a scenario names
    (`tests/playwright/rallar-black-box/full-stack-alm-conformance.spec.ts`), and its `smoke`
    scope is required (D702). Not evidenced: 8 proofs of the carrier matrix are `unproven`
@@ -1645,7 +1647,8 @@ by release.
    (`decodeALMessageValue`), the control decoder (`decodeALControlMessage`) and the
    persisted-envelope decoders on every stored row. Not evidenced: the origin of an RTC room
    send that asks no logical receipt. It is unsigned, so a room member can deliver content
-   under another session's id (D759, limit 1).
+   under another session's id (D759, limit 1). Whether every ordinary RTC room send is signed
+   is open: decision 3 of `plans/active/alm-v1-production-readiness.md`.
 3. At-least-once cannot be selected without an effective receipt strategy, and
    data-channel drops cannot be reported as successful sends. Partial progress
    and non-delivery uncertainty remain visible, including after cancellation.
@@ -1661,23 +1664,28 @@ by release.
 
    **Met.** A volatile send and a volatile inbound message spend 0 `al-admission` and 0
    non-probe `al-work` operations, and a `local-checkpoint` send spends none on its send path,
-   pinned in `packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts`. Stated beside
-   the zero: the durable owners' idle probes, and a room send that names an ordering key, which
-   is sequenced on the durable lane whatever its durability (D529).
+   pinned in `packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts`; the required
+   `volatile-default` scenario reads the same zero for a receipted send on both pages of every
+   carrier. Stated beside the zero: the durable owners' idle probes, and a room send that names
+   an ordering key, which is sequenced on the durable lane whatever its durability (D529).
 5. Durable messages have one existing QueueBox/ResourceInbox work owner and bounded indexed queries;
    transaction/row/byte budgets do not grow with unrelated messages or old
    sessions, and each durability tier meets its recorded storage budget.
 
-   **Met.** One work owner per side on the QueueBox port
+   **Partial.** Evidenced: one work owner per side on the QueueBox port
    (`packages/shared/alm/work/al-work-queue-port.ts`; F2, #559) and one durable owner per
    session (`packages/shared/alm/work/al-durable-work-ownership.ts`; I2a-ii, #630); index-range
    reads bounded by `maxToRead` (`packages/shared/queuebox/indexed-db-queue-box-store.ts`); an
    ended session's rows purged
    (`packages/tests/shared-web/al-runtime/browser-al-runtime-stores.test.ts`); and each tier's
    storage cost pinned as an exact count
-   (`packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts`). Stated beside it: no
-   store orders RESERVED rows by lease end, so past one page a lapsed lease is advertised late
-   (`plans/backlog.md`).
+   (`packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts`). Not evidenced: that
+   each durability tier meets its recorded storage budget. The durable send's `al-admission`
+   pin is 11 since #869, one above the 10 that D87 recorded and said may only fall, and no
+   decision row records the rise. A decision row that accepts 11 as the budget, or the extra
+   read removed, makes this criterion met. Stated beside it: no store orders RESERVED rows by
+   lease end, so past one page a lapsed lease is advertised late (`plans/backlog.md`); and "do
+   not grow with unrelated messages" rests on the bounded reads, with no pin of its own.
 6. Room multicast requires matching server-provided room authority, preserves
    bounded evidence catch-up/bootstrap and optimistic room progress, enforces
    authoritative membership fencing on every room send, respects required
@@ -1685,9 +1693,10 @@ by release.
 
    **Partial.** Evidenced: a reliable room send's audience is frozen at admission on both
    carriers (S2c-ii, #595), and every room send carries the roster fence and is refused
-   `membership-fenced` past it (R2, #642). Not evidenced: a room send whose `contextId` names
-   another room. The WS server refuses it, no RTC receiver checks it, and the browser's
-   refusal at the call is ruled and not built on this commit (D788).
+   `membership-fenced` past it (R2, #642). Not evidenced on every carrier: a room send whose
+   `contextId` names another room is refused by the WS server alone (#937, D788). No RTC
+   receiver checks it, and the browser's refusal at the call is ruled and not built on this
+   commit.
 7. Every target/ACK mode, including principal, world, all, and fixed audiences
    and the group-leader mode, has one documented semantic proven by the
    conformance lane over both carriers and exercised by one of the two games. A
@@ -1697,7 +1706,8 @@ by release.
    carriers (the `same-principal` family, D161), the leader ACK over three (the `leader-ack`
    family, D169), and the games send to a principal and to the group leader (D162, D167,
    D168). Not evidenced: no game sends a `world` broadcast, and a client's `all` is refused at
-   the call, which unit tests pin and no lane cell witnesses (D161).
+   the call, which unit tests pin and no lane cell witnesses (row D161 lists an `all-refused`
+   cell; the tree holds none).
 8. Ordering, diagnostic, control, retry, repair, and storage work is bounded and
    has clean resync/terminal behavior, aggregate memory bounds, and bounded
    audience/snapshot paging without an accidental room-size restriction.

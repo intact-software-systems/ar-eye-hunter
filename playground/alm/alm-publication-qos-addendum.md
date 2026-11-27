@@ -502,10 +502,10 @@ repository's focused exception process; this proposal creates no exception.
 
 ## 7. Delivery horizon
 
-Slices 1 to 9 below are delivered, each with its "As applied" record. What
-follows them is under "After Slice 9" and "Later outcomes" and stays
-outcome-shaped. Recover current owners and tests again before implementing a
-further slice.
+Slices 1 to 9 below are delivered. Slices 1 to 8 each carry an "As applied"
+record; Slice 9's section states what it built. "After Slice 9" records the
+work built since, and "Later outcomes" stays outcome-shaped. Recover current
+owners and tests again before implementing a further slice.
 
 ### Slice 1: bounded publication pacing
 
