@@ -30,6 +30,9 @@ import { toQueuedMessageAdmission } from '../browser-message-sender-fixture.ts';
 
 export const EDGE_ORDER_TEST_ROOM: GroupRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 
+/** The one recipient an acknowledgement in these tests names: who it is does not matter to the order. */
+const RECIPIENT_PEER_ID = 'recipient-session';
+
 export interface EdgeOrderTestMove {
     readonly n: number;
 }
@@ -54,6 +57,11 @@ export interface EdgeOrderPage {
     readonly diagnostics: ALInboundRuntimeDiagnosticsEvent[];
     /** An arrival at this page over one carrier, as its inbound runtime hands an admitted message over. */
     deliver(carrier: ALDeliveryCarrier, message: ALMessage): Promise<void>;
+    /**
+     * Every recipient's receipt for a message this page sent reaches it: its handle reads `acknowledged`. A recipient
+     * acknowledges when it admits a message, so a test can say this before it delivers the message to that page.
+     */
+    acknowledge(carrier: ALDeliveryCarrier, message: ALMessage): void;
     /** The connect goes away: what the lifecycle composition runs at detach. */
     detach(): void;
     /** Each call to connect waits for the next resolver a test queued here; with none queued it resolves at once. */
@@ -98,7 +106,7 @@ export function createEdgeOrderPage(input: EdgeOrderPageInput): EdgeOrderPage {
         readRtcCaptureReceipt: () => undefined
     }, () => context.session);
     sessionDeliveries.beginSession(context.session);
-    feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
+    const settlementEpoch = feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
     const diagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
     const heldConnects: Array<Promise<void>> = [];
     const controller = new BrowserRallarMessagesController({
@@ -167,6 +175,22 @@ export function createEdgeOrderPage(input: EdgeOrderPageInput): EdgeOrderPage {
                 await handler.onMessage(message);
             }
         },
+        acknowledge: (carrier, message) =>
+            settlementEpoch.settlements[carrier]({
+                kind: 'acknowledgement',
+                msgId: message.id.msgId,
+                carrier,
+                atMs: Date.now(),
+                mode: 'receiver',
+                confirmedHopPeerIds: [RECIPIENT_PEER_ID],
+                unconfirmedHopPeerIds: [],
+                expectedRecipientPeerIds: [RECIPIENT_PEER_ID],
+                confirmedRecipientPeerIds: [RECIPIENT_PEER_ID],
+                unconfirmedRecipientPeerIds: [],
+                outsideAudienceRecipientPeerIds: [],
+                complete: true,
+                traceId: message.id.traceId
+            }),
         detach: () => controller.subscriptions.dropHeldEdgeOrderMessages()
     };
 }

@@ -20,8 +20,20 @@ export namespace EdgeOrderSender {
     }
 }
 
+/**
+ * How long a send that every recipient acknowledged stays open: the entry window's figure. A recipient acknowledges
+ * when it admits a message, which is before its own sorter has it, so a stamp made in this time still says the send
+ * can arrive.
+ */
+export const EDGE_ORDER_ACKNOWLEDGED_SETTLE_MS = 500;
+
+/** An acknowledged send in its settle time, counted from the stamp that first read the acknowledgement. */
+interface EdgeOrderSettlingSend {
+    readonly openUntilMs: number;
+}
+
 /** `unobserved`: the send has its position and no lifecycle yet. `hole`: it ended and nothing of it can arrive. */
-type EdgeOrderSendSlot = EdgeOrderSender.OpenSend | 'unobserved' | 'hole';
+type EdgeOrderSendSlot = EdgeOrderSender.OpenSend | EdgeOrderSettlingSend | 'unobserved' | 'hole';
 
 /**
  * The send side of one edge-ordered stream. A send takes its position in the application's own call, before
@@ -29,15 +41,18 @@ type EdgeOrderSendSlot = EdgeOrderSender.OpenSend | 'unobserved' | 'hole';
  */
 export class EdgeOrderSender {
     private readonly stream: string;
+    private readonly acknowledgedSettleMs: number;
     private lastPosition = 0;
     /**
-     * In rising position order: every send still open, and every hole above the lowest of them. So the first key is
-     * the lowest open position, and a hole leaves when the sends below it have ended.
+     * In rising position order: every send still open, an acknowledged one in its settle time among them, and every
+     * hole above the lowest of them. So the first key is the lowest open position, and a hole leaves when the sends
+     * below it have ended.
      */
     private readonly slots = new Map<number, EdgeOrderSendSlot>();
 
-    constructor(stream: string) {
+    constructor(stream: string, acknowledgedSettleMs: number) {
         this.stream = stream;
+        this.acknowledgedSettleMs = acknowledgedSettleMs;
     }
 
     openSend(): number {
@@ -91,12 +106,12 @@ export class EdgeOrderSender {
      */
     closeEndedSends(nowMs: number): void {
         for (const [position, slot] of this.slots) {
-            const end = typeof slot === 'string' ? 'open' : getSendEndAt(slot, nowMs);
-            if (end === 'delivered') {
+            const slotNow = toSendSlotAt(slot, nowMs, this.acknowledgedSettleMs);
+            if (slotNow === undefined) {
                 this.slots.delete(position);
             }
-            else if (end === 'undelivered') {
-                this.slots.set(position, 'hole');
+            else if (slotNow !== slot) {
+                this.slots.set(position, slotNow);
             }
         }
         for (const [position, slot] of this.slots) {
@@ -107,22 +122,22 @@ export class EdgeOrderSender {
         }
     }
 
-    /** A send with no deadline yet can arrive for as long as any receiver is willing to wait. */
+    /**
+     * The latest time a send still open below `position` can arrive: its deadline, the end of its settle time once
+     * it is acknowledged, or as long as any receiver is willing to wait while it has no deadline yet.
+     */
     private computeEarlierCanArriveUntil(position: number): number | undefined {
-        let latestDeadlineMs: number | undefined;
+        let latestMs: number | undefined;
         for (const [openPosition, slot] of this.slots) {
             if (openPosition >= position) {
                 break;
             }
-            if (slot === 'hole' || (slot !== 'unobserved' && !slot.retried)) {
-                continue;
-            }
-            const deadlineMs = slot === 'unobserved' ? Number.MAX_SAFE_INTEGER : slot.expiresAtMs;
-            if (latestDeadlineMs === undefined || deadlineMs > latestDeadlineMs) {
-                latestDeadlineMs = deadlineMs;
+            const canArriveUntilMs = toCanArriveUntil(slot);
+            if (canArriveUntilMs !== undefined && (latestMs === undefined || canArriveUntilMs > latestMs)) {
+                latestMs = canArriveUntilMs;
             }
         }
-        return latestDeadlineMs;
+        return latestMs;
     }
 
     private computeHolesBelow(position: number): readonly EdgeOrderPositionRun[] {
@@ -149,8 +164,40 @@ export class EdgeOrderSender {
     }
 }
 
-/** A send past its deadline is over whatever its lifecycle says: no copy of it is handed over any more. */
-function getSendEndAt(send: EdgeOrderSender.OpenSend, nowMs: number): EdgeOrderSender.SendEnd {
-    const end = send.getEnd();
-    return end === 'open' && send.expiresAtMs <= nowMs ? 'undelivered' : end;
+/**
+ * The slot as it stands at `nowMs`; absent once nothing of the send is left to state. A send past its deadline is over
+ * whatever its lifecycle says, since no copy of it is handed over any more, and an acknowledged send is open for its
+ * settle time and never past its deadline.
+ */
+function toSendSlotAt(
+    slot: EdgeOrderSendSlot,
+    nowMs: number,
+    acknowledgedSettleMs: number
+): EdgeOrderSendSlot | undefined {
+    if (typeof slot === 'string') {
+        return slot;
+    }
+    if ('openUntilMs' in slot) {
+        return slot.openUntilMs > nowMs ? slot : undefined;
+    }
+    const end = slot.getEnd();
+    if (end === 'delivered') {
+        const openUntilMs = Math.min(nowMs + acknowledgedSettleMs, slot.expiresAtMs);
+        return openUntilMs > nowMs ? { openUntilMs } : undefined;
+    }
+    return end === 'undelivered' || slot.expiresAtMs <= nowMs ? 'hole' : slot;
+}
+
+/** Absent for a hole, and for a send nothing retries: no receiver waits for either. */
+function toCanArriveUntil(slot: EdgeOrderSendSlot): number | undefined {
+    if (slot === 'hole') {
+        return undefined;
+    }
+    if (slot === 'unobserved') {
+        return Number.MAX_SAFE_INTEGER;
+    }
+    if ('openUntilMs' in slot) {
+        return slot.openUntilMs;
+    }
+    return slot.retried ? slot.expiresAtMs : undefined;
 }

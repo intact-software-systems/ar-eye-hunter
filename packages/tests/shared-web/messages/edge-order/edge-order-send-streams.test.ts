@@ -15,6 +15,7 @@ import { EDGE_ORDER_TEST_MOVES, EDGE_ORDER_TEST_ROOM } from './edge-order-page-f
 
 const NOW_MS = 1_000;
 const DEADLINE_MS = 31_000;
+const SETTLE_MS = 500;
 
 interface ObservedSend {
     readonly send: EdgeOrderOpenSend;
@@ -24,7 +25,11 @@ interface ObservedSend {
 
 function createStreams(): EdgeOrderSendStreams {
     let minted = 0;
-    return new EdgeOrderSendStreams({ newStreamId: () => `stream-${minted += 1}`, maxStreams: 4 });
+    return new EdgeOrderSendStreams({
+        newStreamId: () => `stream-${minted += 1}`,
+        maxStreams: 4,
+        acknowledgedSettleMs: SETTLE_MS
+    });
 }
 
 function toLifecycle(state: ALDeliveryState): ALDeliveryLifecycle {
@@ -81,8 +86,18 @@ describe('the page\'s edge-ordered send streams: what a send\'s lifecycle tells 
         expect(stampAfterSecondEnded(state)).toMatchObject({ position: 4, lowestOpenPosition: 1, holes: [[2, 2]] });
     });
 
-    it('states an acknowledged send as neither open nor a hole: a recipient has it', () => {
-        expect(stampAfterSecondEnded('acknowledged')).toMatchObject({ position: 4, lowestOpenPosition: 1, holes: [] });
+    it('keeps an acknowledged send open for its settle time: a recipient has it and may not have sorted it yet', () => {
+        const streams = createStreams();
+        const first = openObservedSend(streams);
+        first.setState('acknowledged');
+
+        expect(openSend(streams).stamp(NOW_MS)).toMatchObject({
+            position: 2,
+            lowestOpenPosition: 1,
+            earlierCanArriveUntilMs: NOW_MS + SETTLE_MS,
+            holes: []
+        });
+        expect(openSend(streams).stamp(NOW_MS + SETTLE_MS)).toMatchObject({ position: 3, lowestOpenPosition: 2 });
     });
 
     it.each<ALDeliveryState>(['failed', 'unobservable'])(
@@ -113,6 +128,9 @@ describe('the page\'s edge-ordered send streams: what a send\'s lifecycle tells 
         expect(streams.getUsage()).toEqual({ sendStreams: 2, openSends: 3 });
         first.setState('acknowledged');
         streams.closeEndedSends(NOW_MS);
+        // The acknowledged send is open for its settle time, and gone after it.
+        expect(streams.getUsage()).toEqual({ sendStreams: 2, openSends: 3 });
+        streams.closeEndedSends(NOW_MS + SETTLE_MS);
         expect(streams.getUsage()).toEqual({ sendStreams: 2, openSends: 2 });
         // The send that was never observed has no deadline yet, so it stays.
         streams.closeEndedSends(DEADLINE_MS);

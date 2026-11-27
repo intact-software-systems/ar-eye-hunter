@@ -19,6 +19,8 @@ export namespace EdgeOrderSendStreams {
          * starts a new stream.
          */
         readonly maxStreams: number;
+        /** How long a send every recipient acknowledged stays open: a recipient may not have sorted it yet. */
+        readonly acknowledgedSettleMs: number;
     }
 
     /** What the send side keeps at an instant: the streams it minted, and their open sends and stated holes. */
@@ -42,10 +44,12 @@ export namespace EdgeOrderSendStreams {
 export class EdgeOrderSendStreams {
     private readonly streams: LatestRepository<string, EdgeOrderSender>;
     private readonly newStreamId: () => string;
+    private readonly acknowledgedSettleMs: number;
 
     constructor(input: EdgeOrderSendStreams.Input) {
         this.streams = new LatestRepository({ maxEntries: input.maxStreams });
         this.newStreamId = input.newStreamId;
+        this.acknowledgedSettleMs = input.acknowledgedSettleMs;
     }
 
     /**
@@ -59,7 +63,7 @@ export class EdgeOrderSendStreams {
         }
         const key = JSON.stringify([send.topicId ?? send.typeId, send.typeId, toALGroupTargetKey(roomRef)]);
         // Taken out and put back, so the stream last sent on is the newest and the cap pushes out the one idle longest.
-        const stream = this.streams.take(key) ?? new EdgeOrderSender(this.newStreamId());
+        const stream = this.streams.take(key) ?? new EdgeOrderSender(this.newStreamId(), this.acknowledgedSettleMs);
         this.streams.set(key, stream);
         return new EdgeOrderOpenSend(stream, stream.openSend());
     }
@@ -113,10 +117,10 @@ export class EdgeOrderOpenSend {
 
     /**
      * From here the stream reads the send's end from its handle. A handle that is already terminal was refused
-     * before any carrier took the message, so nothing of it set out. An acknowledged send reads `delivered`. A send
-     * that failed, or whose observation was lost, reads `open` until its deadline: a copy already on its way can
-     * still arrive. Any other end is `undelivered`. Every edge-ordered send is at-least-once and receipted, so each
-     * is one a receiver waits for.
+     * before any carrier took the message, so nothing of it set out. An acknowledged send reads `delivered`, and
+     * the stream keeps it open for its settle time. A send that failed, or whose observation was lost, reads `open`
+     * until its deadline: a copy already on its way can still arrive. Any other end is `undelivered`. Every
+     * edge-ordered send is at-least-once and receipted, so each is one a receiver waits for.
      */
     observe(handle: Pick<RallarMessageHandle, 'lifecycle'>): void {
         const submitted = handle.lifecycle();

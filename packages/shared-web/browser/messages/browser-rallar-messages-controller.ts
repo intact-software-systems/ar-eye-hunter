@@ -10,6 +10,7 @@ import {
     EDGE_ORDER_MAX_SEND_STREAMS,
     EdgeOrderSendStreams
 } from '@shared-web/browser/messages/edge-order/edge-order-send-streams.ts';
+import { EDGE_ORDER_ACKNOWLEDGED_SETTLE_MS } from '@shared-web/browser/messages/edge-order/edge-order-sender.ts';
 import type { BrowserGrantedTopics } from '@shared-web/browser/messages/publication/browser-granted-topics.ts';
 import type {
     RallarMessageHandler,
@@ -85,7 +86,8 @@ export class BrowserRallarMessagesController {
         });
         const edgeOrderStreams = new EdgeOrderSendStreams({
             newStreamId: input.newEdgeOrderStreamId,
-            maxStreams: EDGE_ORDER_MAX_SEND_STREAMS
+            maxStreams: EDGE_ORDER_MAX_SEND_STREAMS,
+            acknowledgedSettleMs: EDGE_ORDER_ACKNOWLEDGED_SETTLE_MS
         });
         const sender = createMessageSender(input, inputValidator, edgeOrderStreams);
         this.sender = sender;

@@ -60,7 +60,11 @@ export function createBrowserMessageSenderFixture(
     const roomRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
     const connect = vi.fn<() => Promise<ApiMiddleware>>().mockResolvedValue(middleware);
     const sender = new BrowserRallarMessageSender({
-        edgeOrderStreams: new EdgeOrderSendStreams({ newStreamId: () => crypto.randomUUID(), maxStreams: 256 }),
+        edgeOrderStreams: new EdgeOrderSendStreams({
+            newStreamId: () => crypto.randomUUID(),
+            maxStreams: 256,
+            acknowledgedSettleMs: 500
+        }),
         sessionDeliveries,
         creation: {
             createUnicast: newALUnicastMessage,

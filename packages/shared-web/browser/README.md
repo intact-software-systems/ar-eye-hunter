@@ -381,8 +381,11 @@ Message ownership is concentrated under [`messages/`](./messages/):
     ([`edge-order-wire-payload.ts`](./messages/edge-order/edge-order-wire-payload.ts)) before the message is
     created, so a publisher proof would sign it, and the payload limit counts the wrapper.
   - **How a send ends, as receivers are told.** The stream reads each open send from its handle when it stamps the
-    next one, with no listener or timer. `acknowledged` ends it as delivered: every recipient has it, so it is
-    neither open nor a hole. `rejected`, `cancelled`, `expired` and `superseded`, and any send past its deadline,
+    next one, with no listener or timer. `acknowledged` means every recipient has admitted it, which is before a
+    recipient's own sorter has it, so the send stays open for a settle time of 500 ms
+    (`EDGE_ORDER_ACKNOWLEDGED_SETTLE_MS`), counted from the stamp that first reads the acknowledgement: a stamp
+    made in that time says the send can still arrive until the settle time ends, not until its deadline, and after
+    it the send is over and is no hole. `rejected`, `cancelled`, `expired` and `superseded`, and any send past its deadline,
     end it as a hole: nothing of it can be handed over any more. A `failed` or `unobservable` send stays open
     until its deadline, because a copy can still be on its way, and is a hole from then on. A send that fails
     before it has a handle, or whose handle is refused at once, gives its position to the next send when no later
@@ -448,9 +451,12 @@ Message ownership is concentrated under [`messages/`](./messages/):
     belongs to the one room its messages carry. A hole is closed by a later message that states it: when the
     sender sends nothing more, a receiver waits for a missing message until the time the last stamp gave it. A
     receiver waits until the latest deadline among the sender's earlier open sends, not the missing message's
-    own. A sender reads `acknowledged` when every recipient has admitted the message, which can be before a
-    recipient's own sorter has it: a later message that says so, and overtakes it inside that recipient, makes
-    the receiver skip it and drop it as late. Nothing is stored, so order restarts at a reload. A handler that
+    own. The settle time covers a message that a recipient has acknowledged and not yet sorted; one whose
+    delivery lane is held up for longer than the settle time after every recipient acknowledged it can still be
+    skipped, and dropped as late when it comes. Because the settle time starts when the stream reads the
+    acknowledgement, a message sent after a pause still says its predecessor can arrive for 500 ms: a receiver
+    that never gets that predecessor waits that long for it, and one whose first message it is waits its entry
+    window. Nothing is stored, so order restarts at a reload. A handler that
     never settles stops the later turns of its own stream, and, as a handler of any channel does, the deliveries
     of the carrier its message came over; a stream that arrives over the other carrier goes on.
 - [`rallar-message-contracts.ts`](./messages/rallar-message-contracts.ts),

@@ -11,6 +11,8 @@ import type { RallarMessageOrderGap } from '@shared-web/browser/messages/rallar-
 import { createManualTimers, type ManualTimers } from '../../../shared/resilience/manual-timers.ts';
 
 const START_MS = 1_000;
+/** A sender whose acknowledged sends are over at once: these tests are about the receiver. */
+const NO_SETTLE_MS = 0;
 /** The channel and sender of every arrival, unless a test names another sender. */
 const ORIGIN = { topicId: 'room.moves', typeId: 'game.move', senderId: 'p' };
 const FAR_DEADLINE_MS = 31_000;
@@ -129,7 +131,7 @@ describe('EdgeOrderReceiver: order', () => {
 
     it('treats a new stream from the same sender, as a reload makes one, as its own order beside the old one', () => {
         const fixture = createReceiverFixture();
-        const beforeReload = new EdgeOrderSender('A');
+        const beforeReload = new EdgeOrderSender('A', NO_SETTLE_MS);
         const afterReload = new EdgeOrderSender('B');
 
         accept(fixture, stampNextSend(beforeReload, true), { message: 'a1' });
@@ -185,7 +187,7 @@ describe('EdgeOrderReceiver: the gap rule', () => {
 
     it('never waits for a send nothing retries: the newest is handed over and the late one is dropped', () => {
         const fixture = createReceiverFixture();
-        const sender = new EdgeOrderSender('A');
+        const sender = new EdgeOrderSender('A', NO_SETTLE_MS);
         // Three sends in one turn: none has reached the carrier when the next is stamped.
         const first = stampNextSend(sender, false, 3_000);
         const second = stampNextSend(sender, false, 3_000);
@@ -252,7 +254,7 @@ describe('EdgeOrderReceiver: the gap rule', () => {
 
     it('closes a hole at once when a later message says the missing send has ended', () => {
         const fixture = createReceiverFixture();
-        const sender = new EdgeOrderSender('A');
+        const sender = new EdgeOrderSender('A', NO_SETTLE_MS);
         let earlierSendsEnded = false;
         const stampOpenSend = (): EdgeOrderStamp => {
             const position = sender.openSend();

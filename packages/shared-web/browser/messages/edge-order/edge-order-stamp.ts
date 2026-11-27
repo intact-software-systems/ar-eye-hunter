@@ -15,7 +15,8 @@ export const EDGE_ORDER_MAX_STATED_HOLES = 16;
  *
  * `holes` are the positions between `lowestOpenPosition` and `position` of which no copy can be handed over any
  * more: the send never set out, was refused or cancelled, or is past its deadline. A send every recipient acknowledged
- * is no hole: a recipient has it, and may not have sorted it yet. The runs rise, do not touch, and number at most
+ * is no hole: a recipient has it and may not have sorted it yet, so it stays open for a settle time, and
+ * `earlierCanArriveUntilMs` covers that time. The runs rise, do not touch, and number at most
  * `EDGE_ORDER_MAX_STATED_HOLES`. Whoever decodes a stamp checks all of this.
  */
 export interface EdgeOrderStamp {

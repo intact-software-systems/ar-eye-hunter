@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { EdgeOrderSender } from '@shared-web/browser/messages/edge-order/edge-order-sender.ts';
+import type { EdgeOrderStamp } from '@shared-web/browser/messages/edge-order/edge-order-stamp.ts';
 
 const NOW_MS = 1_000;
+/** A stream whose acknowledged sends are over at once: the tests of what a stamp states apart from the settle time. */
+const NO_SETTLE_MS = 0;
+const SETTLE_MS = 500;
 
 interface ObservedSend {
     readonly position: number;
@@ -34,7 +38,7 @@ function send(sender: EdgeOrderSender, expiresAtMs: number, retried = true): Obs
 
 describe('EdgeOrderSender', () => {
     it('numbers the sends of its stream from 1, one position per call', () => {
-        const sender = new EdgeOrderSender('stream-a');
+        const sender = new EdgeOrderSender('stream-a', NO_SETTLE_MS);
 
         // Three calls in one turn, as an application that sends in a loop makes them: nothing is awaited between.
         const positions = [sender.openSend(), sender.openSend(), sender.openSend()];
@@ -48,7 +52,7 @@ describe('EdgeOrderSender', () => {
     });
 
     it('states the latest deadline among earlier open sends, and none once they have ended', () => {
-        const sender = new EdgeOrderSender('stream-a');
+        const sender = new EdgeOrderSender('stream-a', NO_SETTLE_MS);
 
         const first = send(sender, 10_000);
         expect(first.stamp).toEqual({
@@ -99,7 +103,7 @@ describe('EdgeOrderSender', () => {
     });
 
     it('keeps the lowest open position at the oldest send that has not ended, whatever order they end in', () => {
-        const sender = new EdgeOrderSender('stream-a');
+        const sender = new EdgeOrderSender('stream-a', NO_SETTLE_MS);
         const first = send(sender, 10_000);
         const second = send(sender, 10_000);
         send(sender, 10_000);
@@ -112,7 +116,7 @@ describe('EdgeOrderSender', () => {
     });
 
     it('states no deadline for a send nothing retries, and keeps it open until it ends', () => {
-        const sender = new EdgeOrderSender('stream-a');
+        const sender = new EdgeOrderSender('stream-a', NO_SETTLE_MS);
         const unretried = send(sender, 9_000, false);
 
         // Nothing brings send 1 back if it is lost, so no later message tells a receiver to wait for it.
@@ -124,7 +128,7 @@ describe('EdgeOrderSender', () => {
     });
 
     it('ends a send whose deadline has passed, whatever its lifecycle says', () => {
-        const sender = new EdgeOrderSender('stream-a');
+        const sender = new EdgeOrderSender('stream-a', NO_SETTLE_MS);
         send(sender, 5_000);
         send(sender, 9_000);
 
@@ -140,7 +144,7 @@ describe('EdgeOrderSender', () => {
     });
 
     it('tells receivers to wait as long as they may for an earlier send that has no deadline yet', () => {
-        const sender = new EdgeOrderSender('stream-a');
+        const sender = new EdgeOrderSender('stream-a', NO_SETTLE_MS);
         // Send 1 took its position and is still connecting; send 2 is built first.
         sender.openSend();
         const second = sender.openSend();
@@ -155,7 +159,7 @@ describe('EdgeOrderSender', () => {
     });
 
     it('gives the position of a send that never set out to the next send, so it leaves no hole', () => {
-        const sender = new EdgeOrderSender('stream-a');
+        const sender = new EdgeOrderSender('stream-a', NO_SETTLE_MS);
         send(sender, 10_000);
         const refused = sender.openSend();
         sender.endSend(refused);
@@ -165,7 +169,7 @@ describe('EdgeOrderSender', () => {
     });
 
     it('closes the position of a send that never set out once a later send has taken the next one', () => {
-        const sender = new EdgeOrderSender('stream-a');
+        const sender = new EdgeOrderSender('stream-a', NO_SETTLE_MS);
         // Two calls in one turn: the second has its position before the first is found refused.
         const refused = sender.openSend();
         const next = sender.openSend();
@@ -182,7 +186,7 @@ describe('EdgeOrderSender', () => {
     });
 
     it('does not count a later send that was built first among the earlier ones', () => {
-        const sender = new EdgeOrderSender('stream-a');
+        const sender = new EdgeOrderSender('stream-a', NO_SETTLE_MS);
         const first = sender.openSend();
         send(sender, 30_000);
 
@@ -196,7 +200,7 @@ describe('EdgeOrderSender', () => {
     });
 
     it('states a refused or cancelled send between open ones as a hole at once, and an acknowledged one never', () => {
-        const sender = new EdgeOrderSender('stream-a');
+        const sender = new EdgeOrderSender('stream-a', NO_SETTLE_MS);
         send(sender, 10_000);
         const refused = send(sender, 10_000);
         const acknowledged = send(sender, 10_000);
@@ -218,7 +222,7 @@ describe('EdgeOrderSender', () => {
     });
 
     it('states a send that never set out as a hole once a later send has taken the next position', () => {
-        const sender = new EdgeOrderSender('stream-a');
+        const sender = new EdgeOrderSender('stream-a', NO_SETTLE_MS);
         send(sender, 10_000);
         const neverSetOut = sender.openSend();
         const next = sender.openSend();
@@ -228,7 +232,7 @@ describe('EdgeOrderSender', () => {
     });
 
     it('states neighbouring holes as one run, and only those below the stamped send', () => {
-        const sender = new EdgeOrderSender('stream-a');
+        const sender = new EdgeOrderSender('stream-a', NO_SETTLE_MS);
         send(sender, 10_000);
         const refused = [send(sender, 10_000), send(sender, 10_000), send(sender, 10_000)];
         const builtLate = sender.openSend();
@@ -243,7 +247,7 @@ describe('EdgeOrderSender', () => {
     });
 
     it('keeps a failed send open until its deadline, and states it as a hole from then on', () => {
-        const sender = new EdgeOrderSender('stream-a');
+        const sender = new EdgeOrderSender('stream-a', NO_SETTLE_MS);
         send(sender, 20_000);
         // A failed send reads open: a copy that already set out can still arrive.
         send(sender, 5_000);
@@ -255,7 +259,7 @@ describe('EdgeOrderSender', () => {
     });
 
     it('drops a hole from its stamps once every send below it has ended: the lowest open position says it', () => {
-        const sender = new EdgeOrderSender('stream-a');
+        const sender = new EdgeOrderSender('stream-a', NO_SETTLE_MS);
         const first = send(sender, 10_000);
         send(sender, 10_000).refuse();
         send(sender, 10_000);
@@ -266,7 +270,7 @@ describe('EdgeOrderSender', () => {
     });
 
     it('states at most 16 runs of holes, the lowest first, and the next ones once those are passed', () => {
-        const sender = new EdgeOrderSender('stream-a');
+        const sender = new EdgeOrderSender('stream-a', NO_SETTLE_MS);
         const first = send(sender, 10_000);
         // Positions 2 to 41: every even one refused, every odd one open, so each hole is a run of its own.
         const sends = Array.from({ length: 40 }, () => send(sender, 10_000));
@@ -287,7 +291,7 @@ describe('EdgeOrderSender', () => {
     });
 
     it('counts the sends still open and the holes it still states, and nothing once they have ended', () => {
-        const sender = new EdgeOrderSender('stream-a');
+        const sender = new EdgeOrderSender('stream-a', NO_SETTLE_MS);
         const first = send(sender, 10_000);
         send(sender, 10_000).refuse();
         send(sender, 8_000);
@@ -298,6 +302,93 @@ describe('EdgeOrderSender', () => {
         sender.closeEndedSends(NOW_MS);
         expect(sender.getOpenSendCount()).toBe(1);
         sender.closeEndedSends(8_000);
+        expect(sender.getOpenSendCount()).toBe(0);
+    });
+});
+
+describe('EdgeOrderSender: the settle time of an acknowledged send', () => {
+    /** Opens a send, stamps it at `nowMs` and observes it with a deadline of 30 s; `acknowledge` ends it as delivered. */
+    function sendAt(sender: EdgeOrderSender, nowMs: number): { readonly stamp: EdgeOrderStamp; acknowledge(): void; } {
+        const position = sender.openSend();
+        const stamp = sender.stampSend(position, nowMs);
+        let end: EdgeOrderSender.SendEnd = 'open';
+        sender.observeSend(position, { expiresAtMs: 31_000, retried: true, getEnd: () => end });
+        return {
+            stamp,
+            acknowledge: () => {
+                end = 'delivered';
+            }
+        };
+    }
+
+    it('keeps an acknowledged send open for the settle time, and says it can arrive until that ends, not until its deadline', () => {
+        const sender = new EdgeOrderSender('stream-a', SETTLE_MS);
+        sendAt(sender, 1_000).acknowledge();
+
+        // Every recipient has admitted send 1; one of them may not have sorted it yet.
+        expect(sendAt(sender, 1_200).stamp).toEqual({
+            stream: 'stream-a',
+            position: 2,
+            lowestOpenPosition: 1,
+            earlierCanArriveUntilMs: 1_700,
+            holes: []
+        });
+    });
+
+    it('counts the settle time from the stamp that first read the acknowledgement, for every stamp made inside it', () => {
+        const sender = new EdgeOrderSender('stream-a', SETTLE_MS);
+        sendAt(sender, 1_000).acknowledge();
+        const second = sendAt(sender, 1_200);
+        second.acknowledge();
+
+        // Send 1 settles at 1 700 and send 2, whose acknowledgement is first read here, at 2 199.
+        expect(sendAt(sender, 1_699).stamp).toMatchObject({ lowestOpenPosition: 1, earlierCanArriveUntilMs: 2_199 });
+    });
+
+    it('closes an acknowledged send once its settle time has passed, as any ended send', () => {
+        const sender = new EdgeOrderSender('stream-a', SETTLE_MS);
+        sendAt(sender, 1_000).acknowledge();
+        sender.closeEndedSends(1_200);
+
+        expect(sender.stampSend(sender.openSend(), 1_699)).toMatchObject({ lowestOpenPosition: 1 });
+        expect(sender.stampSend(sender.openSend(), 1_700)).toEqual({
+            stream: 'stream-a',
+            position: 3,
+            lowestOpenPosition: 2,
+            earlierCanArriveUntilMs: Number.MAX_SAFE_INTEGER,
+            holes: []
+        });
+    });
+
+    it('does not keep an acknowledged send open past its own deadline', () => {
+        const sender = new EdgeOrderSender('stream-a', SETTLE_MS);
+        sendAt(sender, 1_000).acknowledge();
+
+        expect(sendAt(sender, 30_800).stamp).toMatchObject({ lowestOpenPosition: 1, earlierCanArriveUntilMs: 31_000 });
+        // Send 2 was never acknowledged and is past the same deadline: both are over.
+        expect(sendAt(sender, 31_000).stamp.lowestOpenPosition).toBe(3);
+    });
+
+    it('is no hole while it settles, and lets a hole above it go once it is over', () => {
+        const sender = new EdgeOrderSender('stream-a', SETTLE_MS);
+        sendAt(sender, 1_000).acknowledge();
+        const refused = sender.openSend();
+        const third = sender.openSend();
+        sender.endSend(refused);
+
+        expect(sender.stampSend(third, 1_100)).toMatchObject({ lowestOpenPosition: 1, holes: [[2, 2]] });
+        expect(sender.stampSend(sender.openSend(), 1_600)).toMatchObject({ lowestOpenPosition: 3, holes: [] });
+    });
+
+    it('still drains: a settling send is counted until its settle time has passed, and not after', () => {
+        const sender = new EdgeOrderSender('stream-a', SETTLE_MS);
+        sendAt(sender, 1_000).acknowledge();
+
+        sender.closeEndedSends(1_100);
+        expect(sender.getOpenSendCount()).toBe(1);
+        sender.closeEndedSends(1_599);
+        expect(sender.getOpenSendCount()).toBe(1);
+        sender.closeEndedSends(1_600);
         expect(sender.getOpenSendCount()).toBe(0);
     });
 });
