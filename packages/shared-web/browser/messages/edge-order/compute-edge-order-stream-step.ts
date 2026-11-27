@@ -58,7 +58,7 @@ export function computeEdgeOrderStreamStep<Message>(
     }
     const holding = { stream, lowest, release: computeHeldRelease(stream, limits), nowMs };
     return stream.nextPosition === undefined
-        ? computeEntryStep(holding, limits.entryWaitMs)
+        ? computeEntryStep(holding)
         : computeGapStep(holding, stream.nextPosition);
 }
 
@@ -102,13 +102,10 @@ function computeFirstOpenPosition<Message>(
     return firstOpenPosition;
 }
 
-function computeEntryStep<Message>(
-    holding: EdgeOrderHoldingStream<Message>,
-    entryWaitMs: number
-): EdgeOrderStreamStep<Message> {
+function computeEntryStep<Message>(holding: EdgeOrderHoldingStream<Message>): EdgeOrderStreamStep<Message> {
     const { stream, lowest, nowMs } = holding;
     const entryEndsAtMs = Math.min(
-        stream.firstSeenAtMs + entryWaitMs,
+        stream.firstSeenAtMs + stream.waits.orderEntryWindowMs,
         lowest.stamp.earlierCanArriveUntilMs ?? nowMs,
         holding.release.atMs
     );
@@ -141,7 +138,7 @@ function computeHeldRelease<Message>(
     }
     let earliest: EdgeOrderHeldRelease = { atMs: Number.POSITIVE_INFINITY, reason: 'held-message-deadline' };
     for (const held of stream.held.values()) {
-        const release = computeHeldMessageRelease(held, limits.gapWaitCapMs);
+        const release = computeHeldMessageRelease(held, stream.waits.orderGapWaitMs);
         if (release.atMs < earliest.atMs) {
             earliest = release;
         }
@@ -151,10 +148,10 @@ function computeHeldRelease<Message>(
 
 function computeHeldMessageRelease<Message>(
     held: EdgeOrderHeldMessage<Message>,
-    gapWaitCapMs: number | undefined
+    orderGapWaitMs: number | undefined
 ): EdgeOrderHeldRelease {
     const deadlineAtMs = held.expiresAtMs - HAND_OVER_LEAD_MS;
-    const capAtMs = gapWaitCapMs === undefined ? Number.POSITIVE_INFINITY : held.heldSinceMs + gapWaitCapMs;
+    const capAtMs = orderGapWaitMs === undefined ? Number.POSITIVE_INFINITY : held.heldSinceMs + orderGapWaitMs;
     return capAtMs < deadlineAtMs
         ? { atMs: capAtMs, reason: 'channel-wait-cap' }
         : { atMs: deadlineAtMs, reason: 'held-message-deadline' };

@@ -414,10 +414,22 @@ Message ownership is concentrated under [`messages/`](./messages/):
     no longer arrive), `held-message-deadline`, `channel-wait-cap`, `held-message-cap`, `held-byte-cap` and
     `stream-cap` (a bound of this page was reached; the message is dropped as late if it still arrives), and
     `held-message-expired` (the position arrived and was held past its own deadline).
+  - **The two waits a channel may set.** `orderGapWaitMs` is the longest this page holds a message of the
+    channel for an earlier one that is missing, counted from when the message was first held; past it the page
+    skips the missing positions with a `channel-wait-cap` gap, and their messages are dropped as late if they
+    still arrive. Absent, only the sender's statement and the held message's own deadline bound the wait.
+    `orderEntryWindowMs` is the length of the entry window below, 500 ms when absent. Both are whole
+    milliseconds, 0 or more, and 0 means no wait. They are receive-side and belong to this page: the sender's page
+    is not told. Like `onOrderGap` they are kept per topic and type
+    ([EdgeOrderArrivals.declare](./messages/edge-order/edge-order-arrivals.ts)): for each of the three, the latest
+    declaration that names it stands, for every room, and a declaration that leaves it out changes nothing about
+    it. A stream takes the waits that stand when its next message arrives, so a declaration made while a message is
+    held applies to that message from the stream's next arrival on.
   - **A reload, a second tab and a late joiner.** A sender's streams are independent. A reloaded page, or another
     tab of the same login, sends on a new stream that starts at once at its receivers and neither closes nor waits
     for any other stream, so each stream is in its own order and nothing orders two streams against each other. A
-    receiver whose first message of a stream is past position 1 waits its entry window (500 ms) for earlier ones,
+    receiver whose first message of a stream is past position 1 waits its entry window (`orderEntryWindowMs`, 500
+    ms by default) for earlier ones,
     unless the sender says nothing earlier can still arrive, and then starts at the lowest message it holds, with
     no gap report. A message from before its entry that reaches it later is dropped as `late` and counted.
   - **What is not handed over** is stated in the connect's inbound diagnostics: `edge-order-arrival` for an
@@ -438,8 +450,9 @@ Message ownership is concentrated under [`messages/`](./messages/):
     given up since the page loaded (`lateDrops`, `gaps`, `heldDropped`). An idle page holds no message and has no
     open send; its stream and record counts stay where the caps left them.
   - **Refused as `unsupported`**, at the definition: a `live` channel, a `granted` channel, a channel with a
-    durability other than `volatile`, `channel(...)` without a room, and `onOrderGap` on a channel that declares no
-    order. At the send, before it takes a position: `reliability: 'best-effort'`, `ack: 'none'` or
+    durability other than `volatile`, `channel(...)` without a room, and `onOrderGap`, `orderGapWaitMs` or
+    `orderEntryWindowMs` on a channel that declares no order
+    ([`validate-edge-order-channel.ts`](./messages/edge-order/validate-edge-order-channel.ts)). At the send, before it takes a position: `reliability: 'best-effort'`, `ack: 'none'` or
     `'group-leader'`, a `qos.delivery` other than at-least-once, a `qos.ack` other than `receiver`,
     `exceptPeerIds`, `recipientPeerIds`, `principalId`, `peerId` (the server included), a `scope` other than
     `room`, `orderingKey`, `seq`, `qos.supersedence`, a `qos.durability` other than `volatile`, and the

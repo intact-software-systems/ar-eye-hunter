@@ -277,6 +277,20 @@ export interface RallarTypedMessageChannelDefinition {
      * Absent, a gap is stated in the inbound diagnostics and counted in `messages.readUsage()` only.
      */
     readonly onOrderGap?: (gap: RallarMessageOrderGap) => void | Promise<void>;
+    /**
+     * On an `order: 'edge'` channel: the longest this page holds a message of the channel for an earlier one that is
+     * missing, in whole milliseconds from when it was first held. Past it the page skips the missing positions,
+     * reports them as a `channel-wait-cap` gap, and drops their messages as late if they still arrive. Absent, the
+     * page waits as long as the sender says the missing message can arrive. Kept per topic and type like
+     * `onOrderGap`: the latest declaration that names it stands, for every room, from a stream's next arrival on.
+     */
+    readonly orderGapWaitMs?: number;
+    /**
+     * On an `order: 'edge'` channel: how long this page waits for earlier messages of a stream whose first message
+     * here is not its first, in whole milliseconds, before it starts at the lowest one it holds. Absent, 500. Kept
+     * per topic and type like `onOrderGap`: the latest declaration that names it stands, for every room.
+     */
+    readonly orderEntryWindowMs?: number;
 }
 
 export type RallarTypedPayloadHandler<T> = (
