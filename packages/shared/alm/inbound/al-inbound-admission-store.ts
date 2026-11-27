@@ -67,6 +67,8 @@ import {
     decodeALInboundDeliveryProgress,
     decodeALInboundOrderingSnapshot,
     readALInboundBufferedMessage,
+    toALInboundBufferedSlot,
+    toALInboundBufferedTrackPrefix,
     toALStoredInboundBufferedSnapshot,
     type ALInboundOrderedDeliverySnapshot,
     type ALInboundResolvedDeliverySnapshot
@@ -670,19 +672,14 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
                 trackKey,
                 nowMs
             });
-        const prefix = this.toBufferedTrackPrefix(trackKey);
+        const prefix = toALInboundBufferedTrackPrefix(this.namespace, trackKey);
         const stored = await database.list(
             prefix,
             (value, key) => decodeALInboundBufferedSnapshot(value, { trackKey, prefix, key })
         );
         const resolved = await Promise.all(
             stored.map(async (entry) =>
-                await readALInboundBufferedMessage({
-                    database,
-                    namespace: this.namespace,
-                    slot: { trackKey, prefix, key: entry.key },
-                    stored: entry.value
-                })
+                await readALInboundBufferedMessage({ database, namespace: this.namespace, stored: entry.value })
             )
         );
         const buffered = resolved.filter((snapshot) => snapshot !== undefined);
@@ -705,11 +702,11 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         trackKey: string,
         seq: number
     ): Promise<ALInboundResolvedDeliverySnapshot | undefined> {
-        const slot = { trackKey, prefix: this.toBufferedTrackPrefix(trackKey), key: this.toBufferedKey(trackKey, seq) };
+        const slot = toALInboundBufferedSlot(this.namespace, trackKey, seq);
         const stored = await database.read(slot.key, (value) => decodeALInboundBufferedSnapshot(value, slot));
         return stored === undefined
             ? undefined
-            : await readALInboundBufferedMessage({ database, namespace: this.namespace, slot, stored });
+            : await readALInboundBufferedMessage({ database, namespace: this.namespace, stored });
     }
 
     async readBufferedRelease(
@@ -892,7 +889,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
             await evictALInboundDeliveredMarkersPastCap({
                 backend: this.backend,
                 deliveredPrefix: this.toDeliveredPrefix(),
-                bufferedPrefix: `${this.namespace}:buffered:`,
+                namespace: this.namespace,
                 index,
                 maxMarkers,
                 nowMs: this.nowMs(),
@@ -1067,7 +1064,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
                 return await applyALInboundControlMutation(tx, this.namespace, mutation);
             case 'set-buffered':
                 return await tx.set(
-                    this.toBufferedKey(mutation.snapshot.trackKey, mutation.snapshot.seq),
+                    toALInboundBufferedSlot(this.namespace, mutation.snapshot.trackKey, mutation.snapshot.seq).key,
                     toALStoredInboundBufferedSnapshot(mutation.snapshot),
                     mutation.expireAtTimestamp
                 );
@@ -1076,7 +1073,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
                 return await tx.set(progressKey, mutation.value, mutation.value.expireAtTimestamp);
             }
             case 'delete-buffered':
-                return await tx.remove(this.toBufferedKey(mutation.trackKey, mutation.seq));
+                return await tx.remove(toALInboundBufferedSlot(this.namespace, mutation.trackKey, mutation.seq).key);
         }
     }
 
@@ -1177,14 +1174,6 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
 
     private toSupersedenceReplacementKey(msgId: string): string {
         return `${this.namespace}:supersedence:replacement:${msgId}`;
-    }
-
-    private toBufferedKey(trackKey: string, seq: number): string {
-        return `${this.namespace}:buffered:${trackKey}:${seq}`;
-    }
-
-    private toBufferedTrackPrefix(trackKey: string): string {
-        return `${this.namespace}:buffered:${trackKey}:`;
     }
 }
 

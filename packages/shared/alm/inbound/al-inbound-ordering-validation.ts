@@ -90,6 +90,21 @@ export interface ALInboundBufferedSlot {
     readonly key: string;
 }
 
+/** The prefix every buffered slot of `namespace` is stored under: the one home of the slot key format. */
+export function toALInboundBufferedPrefix(namespace: string): string {
+    return `${namespace}:buffered:`;
+}
+
+/** The prefix every buffered slot of one track is stored under. */
+export function toALInboundBufferedTrackPrefix(namespace: string, trackKey: string): string {
+    return `${toALInboundBufferedPrefix(namespace)}${trackKey}:`;
+}
+
+export function toALInboundBufferedSlot(namespace: string, trackKey: string, seq: number): ALInboundBufferedSlot {
+    const prefix = toALInboundBufferedTrackPrefix(namespace, trackKey);
+    return { trackKey, prefix, key: `${prefix}${seq}` };
+}
+
 export function decodeALInboundOrderingSnapshot(value: unknown): ALOrderingTrackSnapshot {
     const snapshot = decodeALAdmissionRecord(value, ['lastContiguousSeq', 'bufferedSeqs', 'updatedAtMs']);
     const lastContiguousSeq = decodeALAdmissionNumber(snapshot.lastContiguousSeq);
@@ -188,23 +203,25 @@ function decodeBufferedCopyCarrier(value: unknown): ALInboundBufferedCopyCarrier
 export interface ReadALInboundBufferedMessageInput {
     readonly database: Pick<ALAdmissionBackend, 'read'>;
     readonly namespace: string;
-    /** The slot `stored` was read from. */
-    readonly slot: ALInboundBufferedSlot;
     readonly stored: ALStoredInboundBufferedSnapshot;
 }
 
 /**
- * The buffered slot only names its message, so every ordering decision resolves the owner row first. A slot and its
- * message row expire together, and no backend holds one snapshot or one clock reading across a read chain, so a chain
- * may read the slot before that instant and the row after it, or after a writer that met both expired deleted them.
- * The slot's own key, read again, decides: gone, the pair left together and the chain read no slot (`undefined`);
- * still stored, the slot lost its row, which no write leaves, and that is corruption.
+ * The buffered slot only names its message, so every ordering decision resolves the owner row first. When the slot is
+ * the message's only owned work the two expire at one instant, and no backend reads a chain at one snapshot or one
+ * clock reading, so a chain may read the slot before that instant and the row after it, or after a writer that met
+ * both expired deleted them. The slot's own key, read again through `database`, decides: gone, the pair left together
+ * and the chain read no slot (`undefined`); still there, the slot reads as having lost its row, and that is thrown as
+ * corruption. The second read reaches the store everywhere but in a PostgreSQL commit, which answers a key it has read
+ * from the row it recorded then: a commit that read the slot and then lost both rows to the expiry sweep, its own
+ * clock still before their expiry, still throws.
  */
 export async function readALInboundBufferedMessage(
     input: ReadALInboundBufferedMessageInput
 ): Promise<ALInboundResolvedDeliverySnapshot | undefined> {
-    const { database, namespace, slot, stored } = input;
+    const { database, namespace, stored } = input;
     const owner = await readALInboundStoredMessage({ database, namespace, reference: stored.message });
+    const slot = toALInboundBufferedSlot(namespace, stored.trackKey, stored.seq);
     if (owner === undefined && !await readALInboundBufferedSlotStored(database, slot)) {
         return undefined;
     }

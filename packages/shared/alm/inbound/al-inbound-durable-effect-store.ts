@@ -19,7 +19,8 @@ import {
     decodeALInboundDeliveryProgress,
     decodeALInboundOrderingSnapshot,
     readALInboundBufferedMessage,
-    type ALInboundBufferedSlot,
+    toALInboundBufferedSlot,
+    toALInboundBufferedTrackPrefix,
     type ALInboundOrderedDeliverySnapshot,
     type ALInboundResolvedDeliverySnapshot,
     type ALStoredInboundBufferedSnapshot
@@ -94,10 +95,7 @@ export class ALInboundDurableEffectStore {
             if (predecessorSeq <= completedThrough) {
                 return { completedThrough, predecessor: undefined };
             }
-            const predecessor = await this.readSlotMessage(
-                session,
-                await this.readReachingSlot(session, trackKey, predecessorSeq)
-            );
+            const predecessor = await this.readReachingSlotMessage(session, trackKey, predecessorSeq);
             return {
                 completedThrough,
                 predecessor: predecessor === undefined
@@ -120,39 +118,38 @@ export class ALInboundDurableEffectStore {
         });
     }
 
-    private toBufferedSlot(trackKey: string, seq: number): ALInboundBufferedSlot {
-        const prefix = `${this.namespace}:buffered:${trackKey}:`;
-        return { trackKey, prefix, key: `${prefix}${seq}` };
-    }
-
     private async readSlot(
         session: ALAdmissionReadSession,
         trackKey: string,
         seq: number
     ): Promise<ALStoredInboundBufferedSnapshot | undefined> {
-        const slot = this.toBufferedSlot(trackKey, seq);
+        const slot = toALInboundBufferedSlot(this.namespace, trackKey, seq);
         return await session.read(slot.key, (value) => decodeALInboundBufferedSnapshot(value, slot));
     }
 
     /**
-     * The slot whose completed delivery reaches `seq`: its own, read by its key, or on a miss one whose reach a bounded
-     * hold extended past it, found among the track's slots.
+     * The message of the slot whose completed delivery reaches `seq`: its own slot, read by its key, or when that is
+     * absent, or left with its message during the read, one whose reach a bounded hold extended past it, found among
+     * the track's slots.
      */
-    private async readReachingSlot(
+    private async readReachingSlotMessage(
         session: ALAdmissionReadSession,
         trackKey: string,
         seq: number
-    ): Promise<ALStoredInboundBufferedSnapshot | undefined> {
-        const own = await this.readSlot(session, trackKey, seq);
+    ): Promise<ALInboundResolvedDeliverySnapshot | undefined> {
+        const own = await this.readSlotMessage(session, await this.readSlot(session, trackKey, seq));
         if (own !== undefined) {
             return own;
         }
-        const { prefix } = this.toBufferedSlot(trackKey, seq);
+        const prefix = toALInboundBufferedTrackPrefix(this.namespace, trackKey);
         const slots = await session.list(
             prefix,
             (value, key) => decodeALInboundBufferedSnapshot(value, { trackKey, prefix, key })
         );
-        return slots.find((slot) => isALInboundDeliveryReaching(slot.value, seq))?.value;
+        return await this.readSlotMessage(
+            session,
+            slots.find((slot) => isALInboundDeliveryReaching(slot.value, seq))?.value
+        );
     }
 
     /** The slot's message, or `undefined` for no slot: none was read, or it expired with its message meanwhile. */
@@ -160,12 +157,9 @@ export class ALInboundDurableEffectStore {
         session: ALAdmissionReadSession,
         stored: ALStoredInboundBufferedSnapshot | undefined
     ): Promise<ALInboundResolvedDeliverySnapshot | undefined> {
-        return stored === undefined ? undefined : await readALInboundBufferedMessage({
-            database: session,
-            namespace: this.namespace,
-            slot: this.toBufferedSlot(stored.trackKey, stored.seq),
-            stored
-        });
+        return stored === undefined
+            ? undefined
+            : await readALInboundBufferedMessage({ database: session, namespace: this.namespace, stored });
     }
 
     private async readOrderingPredecessor(
