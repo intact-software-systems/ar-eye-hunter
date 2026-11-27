@@ -8,6 +8,7 @@ import type { ALChannelPurpose } from '@shared/al-contracts/resolve-al-channel-s
 import type { ALDeliveryLifecycle, ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALInboundResyncCursor } from '@shared/alm/inbound/al-inbound-resync-required.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 export type RallarTypedMessageSendStrategy = 'ws' | 'rtc' | 'ws-then-rtc' | 'rtc-with-ws-fallback';
@@ -137,10 +138,15 @@ export interface RallarMessageReplyWaitOptions {
     readonly signal?: AbortSignal;
 }
 
-/** `lifecycle` is the request's when the wait resolves; the reply payload is unvalidated. */
+/**
+ * `lifecycle` is the request's when the wait resolves; the reply payload is unvalidated. `unanswerable` is a request
+ * on a topic WS cannot carry: a reply travels WS on the request's topic, so `issues` are the ones the responder's
+ * `reply()` is refused with, whatever the request's own delivery came to.
+ */
 export type RallarMessageReplyOutcome<T> =
     | Readonly<{ status: 'replied'; reply: RallarMessage<T>; lifecycle: ALDeliveryLifecycle; }>
-    | Readonly<{ status: 'timeout' | 'aborted' | 'undelivered'; lifecycle: ALDeliveryLifecycle; }>;
+    | Readonly<{ status: 'timeout' | 'aborted' | 'undelivered'; lifecycle: ALDeliveryLifecycle; }>
+    | Readonly<{ status: 'unanswerable'; issues: readonly RallarValidationIssue[]; lifecycle: ALDeliveryLifecycle; }>;
 
 export interface RallarMessageHandle {
     readonly msgId: string;
@@ -156,10 +162,10 @@ export interface RallarMessageHandle {
     onEvent(listener: RallarMessageDeliveryListener): RallarUnsubscribe;
     wait(options?: RallarMessageWaitOptions): Promise<RallarMessageDeliveryOutcome>;
     /**
-     * Never throws. A timeout leaves the request as it is; `aborted` and `undelivered` end only this wait, and the
-     * first timeout ends every wait of the request. A request deadline that lapses during the wait ends it
-     * `undelivered`; a reply that arrives after the deadline is still matched and kept, so a later `awaitReply`
-     * resolves `replied`.
+     * Never throws. A request on a topic WS cannot carry resolves `unanswerable` at the call, before any wait. A
+     * timeout leaves the request as it is; `aborted` and `undelivered` end only this wait, and the first timeout ends
+     * every wait of the request. A request deadline that lapses during the wait ends it `undelivered`; a reply that
+     * arrives after the deadline is still matched and kept, so a later `awaitReply` resolves `replied`.
      */
     awaitReply<T>(options: RallarMessageReplyWaitOptions): Promise<RallarMessageReplyOutcome<T>>;
     cancel(): void;

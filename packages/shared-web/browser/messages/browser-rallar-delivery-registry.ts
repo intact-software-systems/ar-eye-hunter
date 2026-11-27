@@ -26,12 +26,14 @@ import {
     computeALDeliveryUnobservable
 } from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
+import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import {
     BrowserMessageFallbackController,
     type BrowserMessageFallbackCandidate
 } from './browser-message-fallback-controller.ts';
 import { BrowserMessageReplySlot } from './reply/browser-message-reply-slot.ts';
+import { validateBrowserReplyRoute } from './reply/validate-browser-reply-route.ts';
 
 /** The mutable observation of one message; the handle handed to the sender closes over exactly this object. */
 interface DeliveryObservation {
@@ -45,6 +47,8 @@ interface DeliveryObservation {
     readonly waits: Map<number, DeliveryWait>;
     readonly deadlines: Set<DeliveryDeadlineTimer>;
     readonly replySlot: BrowserMessageReplySlot;
+    /** Why no reply to the message can travel; empty for a message whose reply can. */
+    readonly replyRouteIssues: readonly RallarValidationIssue[];
     lifecycle: ALDeliveryLifecycle;
     /**
      * The carrier of the last settlement seen, which is the one a cancel is recorded against; after a
@@ -239,7 +243,8 @@ export class BrowserRallarDeliveryRegistry {
             terminalAtMs: undefined,
             replySlot: new BrowserMessageReplySlot(
                 message.targets?.mode === 'unicast' ? message.targets.toPeerId : undefined
-            )
+            ),
+            replyRouteIssues: validateBrowserReplyRoute(message)
         };
     }
 
@@ -332,11 +337,22 @@ export class BrowserRallarDeliveryRegistry {
         });
     }
 
-    /** The message deadline ends a reply wait `undelivered` when it lapses, whoever reads the lifecycle first. */
+    /**
+     * A message no reply can travel to is refused before any timer is armed. Otherwise the message deadline ends the
+     * reply wait `undelivered` when it lapses, whoever reads the lifecycle first.
+     */
     private async awaitReply<T>(
         observation: DeliveryObservation,
         options: RallarMessageReplyWaitOptions
     ): Promise<RallarMessageReplyOutcome<T>> {
+        if (observation.replyRouteIssues.length > 0) {
+            return {
+                status: 'unanswerable',
+                issues: observation.replyRouteIssues,
+                lifecycle: this.readLifecycle(observation)
+            };
+        }
+
         const deadline: DeliveryDeadlineTimer = { observation, timerId: undefined };
         observation.deadlines.add(deadline);
         this.scheduleDeadlineTimer(deadline);
