@@ -291,7 +291,11 @@ orderings unless it says otherwise below: two lines are worded by the ordering, 
   reader now reads that slot's key once more and, finding it gone too, reads no slot
   (`readALInboundBufferedMessage`, `packages/shared/alm/inbound/al-inbound-ordering-validation.ts`),
   so that expiry no longer throws. The error recorded here now means a slot still stored without
-  its message row: a stored record that is invalid.
+  its message row, or a message row that names another track or sequence: a stored record that is
+  invalid. Or it is the one remaining case the inbound README's "A buffered copy that expires
+  during a read." names: a PostgreSQL commit that read a slot and then lost the slot and its message
+  row to the expiry sweep before its own clock reached their expiry, which throws with no record
+  invalid.
 - **Lateness.** From a send's due instant to its offer: how late the load generator itself was.
 - **Copies written to the recipient's socket, of expected.** A copy is one expected recipient's
   share of a send, fourteen a send. It is "written" when the server wrote its frame to that

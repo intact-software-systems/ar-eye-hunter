@@ -9,13 +9,16 @@ It builds no ACK relay: every instance counts in the receipt record they share.
 The track order holds no diagnostics sink: a recipient the server sends nothing
 is an ACK the aggregation counts in the record, for every origin.
 Socket ingress registration is last; every captured dependency exists first.
-An ingress whose admission throws answers its sender nothing: the
-[socket bridge](../../websocket/json-web-socket-server.ts) logs one
+An ingress whose admission throws before its commit answers its sender nothing:
+the [socket bridge](../../websocket/json-web-socket-server.ts) logs one
 `Callback onMessage failed:` line and keeps the connection open, no `admitted`
-and no NACK is written, and a client whose first hop waits offers the frame again.
-A throw there is a real fault, such as a stored row that fails its decoder; a
-buffered copy that expires while the admission reads it is no slot, not a throw
-(the inbound README's "A buffered copy that expires during a read.").
+and no NACK is written, and a client whose receipted send waits on its first hop
+offers the frame again. A throw there is a real fault, such as a stored row that
+fails its decoder or a buffered slot whose message row is lost or names another
+track or sequence, or the one remaining case the inbound README's "A buffered
+copy that expires during a read." names (a PostgreSQL commit that lost a slot
+and its message row to the expiry sweep). A buffered copy that expires while the
+admission reads it is otherwise no slot, not a throw.
 `dispose` unregisters ingress, stops the receipt record's worker and disposes both
 ALM runtimes. A supplied engine retains its other tasks. The record's rows,
 operations, clocks, pinned costs and stated limits are the
