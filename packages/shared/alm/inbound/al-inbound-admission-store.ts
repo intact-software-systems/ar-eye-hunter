@@ -1,5 +1,4 @@
 import { readALTargetGroupRef, type ALMessage } from '../../al-contracts/al-contract.ts';
-import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
 import type { ALAckPayload, ALNackPayload, ALPendingAckSnapshot } from '../../al-contracts/al-control.ts';
 import type {
     ALMessageHandlingPlan,
@@ -57,7 +56,7 @@ import {
     type ALInboundMessageReference,
     type ALStoredInboundMessage
 } from './al-inbound-canonical-message.ts';
-import { ALInboundDurableEffectStore } from './al-inbound-durable-effect-store.ts';
+import { ALInboundDurableEffectStore, type ALInboundOrderedSuccessor } from './al-inbound-durable-effect-store.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 import {
     decodeALInboundBufferedSnapshot,
@@ -268,12 +267,6 @@ export interface ALInboundBufferedReleaseReadDto {
 export interface ALInboundOrderedDeliveryRead {
     readonly completedThrough: number;
     readonly predecessor: ALInboundDeliveryPredecessor | undefined;
-}
-
-/** The delivery row a track's slot names, and the carrier whose lane claims it. */
-export interface ALInboundOrderedSuccessor {
-    readonly effectId: string;
-    readonly carrier: ALDeliveryCarrier;
 }
 
 export type ALInboundDeliveryPredecessor =

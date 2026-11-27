@@ -1,3 +1,4 @@
+import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
 import { EntityStatus, NOT_COMPLETED_RETRYABLE_STATUSES } from '../../queuebox/ResourceEntry.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
 import { toError } from '../../resilience/to-error.ts';
@@ -12,11 +13,7 @@ import {
     computeALOrderingDeliveryPredecessorSeq,
     isALInboundDeliveryReaching
 } from './admission/al-inbound-delivery-progress.ts';
-import type {
-    ALInboundDeliveryPredecessor,
-    ALInboundOrderedDeliveryRead,
-    ALInboundOrderedSuccessor
-} from './al-inbound-admission-store.ts';
+import type { ALInboundDeliveryPredecessor, ALInboundOrderedDeliveryRead } from './al-inbound-admission-store.ts';
 import { decodeALInboundDeliveryProgress, decodeALInboundOrderingSnapshot } from './al-inbound-ordering-validation.ts';
 import {
     assertALInboundDeliveryOwner,
@@ -30,6 +27,12 @@ import {
     toALInboundWorkKey,
     type ALInboundDurableEffectWrite
 } from './al-inbound-work-entry.ts';
+
+/** The delivery row a track's slot names, and the carrier whose lane claims it. */
+export interface ALInboundOrderedSuccessor {
+    readonly effectId: string;
+    readonly carrier: ALDeliveryCarrier;
+}
 
 export namespace ALInboundDurableEffectStore {
     export interface Dependencies {
