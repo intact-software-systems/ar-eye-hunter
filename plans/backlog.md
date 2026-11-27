@@ -481,9 +481,11 @@ and it has no status list.
   durable session-to-principal fact would let the dequeue judge it.
 - A server repair report per logical recipient over `ws` (S7-ii, D580): the WS
   server orders the track and is the one requester of its gaps, so the
-  receivers never report a gap and `repair-exhausted` is unobservable over
-  `ws`; a report per logical recipient would make a second
-  receiver a second requester there.
+  receivers never report a gap; a report per logical recipient would make a
+  second receiver a second requester there. `repair-exhausted` itself is
+  observed over `ws`: the lane cell `repair-exhausted` runs there since #934,
+  where the server's renewal finds the sender's budget spent and the send ends
+  `skipped`/`repair-exhausted` (D580 as amended).
 - A hint-dependent repair planner under the per-gap identity (S7-ii, D573): a
   planner whose prepared payload changes with the hint (the RTC overlay
   planner) finds the budget spent on a changed payload and states
@@ -708,10 +710,10 @@ and it has no status list.
 - A lane cell cannot assert a difference of two stats reads (no delta
   operator), so the paced cells assert connect-wide invariants; per-cell figure
   counts need one (D652).
-- The bounded histogram has no merge (D650): `computeBoundedHistogramQuantile`
-  reads one histogram, so the publication workload family reports each
-  subscriber's delivered sample age on its own. A figure across subscribers or
-  across runs needs the merge; its first reader adds it.
+- No figure merges a bounded histogram across runs (D650). The merge exists
+  since #933 (`computeBoundedHistogramMerged` in `packages/shared/measurement/`),
+  and the publication workload family reports one delivered sample age per
+  room and per point with it; a figures record still covers one run.
 - Two functions named `decodeLoopResultValue` guard a loop's result value by
   different fields: the private one in
   `packages/shared-test/rallar-bb-test/runtime/to-runtime-stats.ts` (a string
@@ -1169,17 +1171,21 @@ and it has no status list.
     time; whether the inbound may serialize in memory what the store arbitrates
     is a question of the write doctrine.
 
-  Built by other work: a room channel declared `order: 'edge'` sends unordered
-  messages that the receiving page puts back in its sending page's order, for
-  whole-room, receipted, at-least-once, volatile sends; other shapes are
-  refused `unsupported` (`packages/shared-web/browser/README.md`, "Edge
-  order"). Whether it carries a stream faster than one ordered track is its
-  plan's open measurement. That plan, "Edge order: ordered room sends, sorted
-  at the two ends" (`plans/active/edge-ordered-room-sends.md`), also lists as
-  open: that measurement, for one fast sender and for five; newest wins for
-  unretried and `live` sends; streams for listed, principal and peer
-  audiences; a real consumer, with the measurement run again on the product
-  code; and whether hop order stays, which it leaves open.
+  Built by other work, on `main` (#916, #929): a room channel declared
+  `order: 'edge'` sends unordered messages that the receiving page puts back
+  in its sending page's order (`packages/shared-web/browser/README.md`, "Edge
+  order"). Since #929 that covers sends nothing retries and `live` channels,
+  as newest wins, and streams for listed, principal and peer audiences. Its
+  plan, "Edge order: ordered room sends, sorted at the two ends"
+  (`plans/active/edge-ordered-room-sends.md`), holds its measurement (section
+  2.5; the suite is on `main` since #915): on pull request 885's head
+  `8dece84d9`, unordered receipted sends sorted at the receiver kept up at 5
+  and at 10 a second from one sender and for five senders at 2 a second, at +0
+  and +5 ms, where one ordered track holds about 3 a second at +5 ms; at 30 a
+  second they fell behind at +5 ms. A read there is the instance's write to a
+  socket, with no browser. That plan lists as open: a real consumer, with the
+  measurement run again (#915 owes the full table on a quiet machine); and whether
+  hop order stays, which it leaves open.
 - Thirteen tests use a gap NACK that names no range as a whole-message resend,
   a shape no producer emits, so the decoder still accepts it (D692):
   `al-indexeddb-runtime-stores.test.ts`, `al-outbound-durable-effects.test.ts`
