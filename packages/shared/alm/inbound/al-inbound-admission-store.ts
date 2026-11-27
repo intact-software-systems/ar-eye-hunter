@@ -675,11 +675,17 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
             prefix,
             (value, key) => decodeALInboundBufferedSnapshot(value, { trackKey, prefix, key })
         );
-        const buffered = await Promise.all(
+        const resolved = await Promise.all(
             stored.map(async (entry) =>
-                await readALInboundBufferedMessage({ database, namespace: this.namespace, stored: entry.value })
+                await readALInboundBufferedMessage({
+                    database,
+                    namespace: this.namespace,
+                    slot: { trackKey, prefix, key: entry.key },
+                    stored: entry.value
+                })
             )
         );
+        const buffered = resolved.filter((snapshot) => snapshot !== undefined);
         return { trackKey, snapshot, buffered: buffered.sort((left, right) => left.seq - right.seq), evicted };
     }
 
@@ -699,14 +705,11 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         trackKey: string,
         seq: number
     ): Promise<ALInboundResolvedDeliverySnapshot | undefined> {
-        const prefix = this.toBufferedTrackPrefix(trackKey);
-        const stored = await database.read(
-            this.toBufferedKey(trackKey, seq),
-            (value, key) => decodeALInboundBufferedSnapshot(value, { trackKey, prefix, key })
-        );
+        const slot = { trackKey, prefix: this.toBufferedTrackPrefix(trackKey), key: this.toBufferedKey(trackKey, seq) };
+        const stored = await database.read(slot.key, (value) => decodeALInboundBufferedSnapshot(value, slot));
         return stored === undefined
             ? undefined
-            : await readALInboundBufferedMessage({ database, namespace: this.namespace, stored });
+            : await readALInboundBufferedMessage({ database, namespace: this.namespace, slot, stored });
     }
 
     async readBufferedRelease(

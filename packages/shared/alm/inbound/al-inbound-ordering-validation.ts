@@ -188,15 +188,26 @@ function decodeBufferedCopyCarrier(value: unknown): ALInboundBufferedCopyCarrier
 export interface ReadALInboundBufferedMessageInput {
     readonly database: Pick<ALAdmissionBackend, 'read'>;
     readonly namespace: string;
+    /** The slot `stored` was read from. */
+    readonly slot: ALInboundBufferedSlot;
     readonly stored: ALStoredInboundBufferedSnapshot;
 }
 
-/** The buffered slot only names its message, so every ordering decision resolves the owner row first. */
+/**
+ * The buffered slot only names its message, so every ordering decision resolves the owner row first. A slot and its
+ * message row expire together, and no backend holds one snapshot or one clock reading across a read chain, so a chain
+ * may read the slot before that instant and the row after it, or after a writer that met both expired deleted them.
+ * The slot's own key, read again, decides: gone, the pair left together and the chain read no slot (`undefined`);
+ * still stored, the slot lost its row, which no write leaves, and that is corruption.
+ */
 export async function readALInboundBufferedMessage(
     input: ReadALInboundBufferedMessageInput
-): Promise<ALInboundResolvedDeliverySnapshot> {
-    const { database, namespace, stored } = input;
+): Promise<ALInboundResolvedDeliverySnapshot | undefined> {
+    const { database, namespace, slot, stored } = input;
     const owner = await readALInboundStoredMessage({ database, namespace, reference: stored.message });
+    if (owner === undefined && !await readALInboundBufferedSlotStored(database, slot)) {
+        return undefined;
+    }
     if (
         owner === undefined || toALOrderingTrackKey(owner.msg) !== stored.trackKey ||
         owner.msg.ordering?.seq !== stored.seq
@@ -217,6 +228,13 @@ export async function readALInboundBufferedMessage(
         ownerRetainUntilMs: owner.retainUntilMs,
         ...(stored.delivery === undefined ? {} : { delivery: stored.delivery })
     };
+}
+
+async function readALInboundBufferedSlotStored(
+    database: Pick<ALAdmissionBackend, 'read'>,
+    slot: ALInboundBufferedSlot
+): Promise<boolean> {
+    return await database.read(slot.key, (value) => decodeALInboundBufferedSnapshot(value, slot)) !== undefined;
 }
 
 export function validateALInboundBufferedMessages(bundle: ALInboundCommitBundle): readonly ALMessageRejection[] {
