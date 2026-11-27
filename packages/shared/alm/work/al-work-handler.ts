@@ -599,14 +599,23 @@ export class ALWorkHandler {
                 continue;
             }
             releases.push(release);
-            if (this.shutdown.signal.aborted) {
-                continue;
-            }
-            const successors = await this.claimSuccessors(release, progress.claimedCount);
-            queued.push(...successors);
-            progress.claimedCount += successors.length;
+            await this.queueSuccessors(release, queued, progress);
         }
         return this.shutdown.signal.aborted ? undefined : run;
+    }
+
+    /** Queues the successor a completed claim hands its place to behind every claim the batch holds, unless disposed. */
+    private async queueSuccessors(
+        release: ALWorkRelease,
+        queued: ALWorkClaim[],
+        progress: ALWorkBatchReport.Progress
+    ): Promise<void> {
+        if (this.shutdown.signal.aborted) {
+            return;
+        }
+        const successors = await this.claimSuccessors(release, progress.claimedCount);
+        queued.push(...successors);
+        progress.claimedCount += successors.length;
     }
 
     /** The batch's next claim: an expedited row still pending goes before every claim the batch already holds. */
