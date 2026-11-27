@@ -70,15 +70,18 @@ export function validateMutationRouteInventory(
     inventory: readonly MutationRouteInventoryEntry[],
     options: MutationRouteValidationOptions = {}
 ): readonly string[] {
-    return validateMutationRouteInventoryWithMemo(MUTATION_ROUTE_RESULT_MEMO, inventory, options);
+    return validateMutationRouteInventoryWithMemo(
+        MUTATION_ROUTE_RESULT_MEMO,
+        inventory,
+        options.sourceOverrides ?? new Map<string, string>()
+    );
 }
 
 export function validateMutationRouteInventoryWithMemo(
     memo: MutationRouteResultMemo,
     inventory: readonly MutationRouteInventoryEntry[],
-    options: MutationRouteValidationOptions = {}
+    sourceOverrides: ReadonlyMap<string, string>
 ): readonly string[] {
-    const sourceOverrides = options.sourceOverrides ?? new Map<string, string>();
     const programs = new Map<string, MutationRoutingAstNode>();
     const issues = [...validateInventoryKeys(inventory)];
     for (const item of inventory) {
@@ -92,7 +95,7 @@ export function validateMutationRouteInventoryWithMemo(
             issues.push(...remembered);
             continue;
         }
-        const result = validateRoute(item, canonical, createSourceReader(sourceOverrides, programs));
+        const result = readMutationRouteResult(item, canonical, createSourceReader(sourceOverrides, programs));
         memo.setResult(item, result, sourceOverrides);
         issues.push(...result.issues);
     }
@@ -117,7 +120,7 @@ function validateInventoryKeys(inventory: readonly MutationRouteInventoryEntry[]
     return issues;
 }
 
-function validateRoute(
+function readMutationRouteResult(
     item: MutationRouteInventoryEntry,
     canonical: MutationRouteInventoryEntry,
     sources: SourceReader
