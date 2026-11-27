@@ -23,8 +23,9 @@ type InvalidResultNumberReference =
 type ResolvedPayloadMinimums = Readonly<Record<string, number>>;
 
 /**
- * A wait's `timeoutFrom` as a recipe authors it: exactly one result reference, which a loop child may key by its
- * `{loop.*}` placeholders; the schema and the control validation hold a recipe to it when it is loaded.
+ * A wait's `timeoutFrom` as a recipe authors it: exactly one result reference, which a loop child may key by
+ * `{loop.index}`, `{loop.iteration}`, `{loop.elapsedMs}` or `{loop.commandIndex}` and by no other placeholder; the
+ * schema and the control validation hold a recipe to it when it is loaded.
  */
 export const WAIT_TIMEOUT_FROM_PATTERN_SOURCE =
     '^\\{resultCache\\.(?:[^{}]|\\{loop\\.(?:index|iteration|elapsedMs|commandIndex)\\})+\\}$';

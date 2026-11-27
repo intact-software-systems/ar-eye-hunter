@@ -30,8 +30,13 @@ import {
     decodeAlmMessagesSubscriptionsResultValue,
     decodeAlmTopicSubscriptionResultValue
 } from './decode-alm-topic-subscription-result.ts';
+import { computeAlmReceivedSampleAge } from './messages-received/compute-alm-received-sample-age.ts';
 import { observeAlmMatchingMessages } from './messages-received/observe-alm-matching-messages.ts';
-import { computeAlmPayloadFieldAscends, toAlmReceivedOutcome } from './messages-received/to-alm-received-outcome.ts';
+import {
+    computeAlmPayloadFieldAscends,
+    toAlmReceivedOutcome,
+    type AlmReceivedJudgement
+} from './messages-received/to-alm-received-outcome.ts';
 import type {
     RallarBlackBoxTestFaultInjectResultValue,
     RallarBlackBoxTestMessagesObserveResultValue
@@ -468,37 +473,7 @@ async function countAlmReceivedMessages(
     const connection = input.port.resolveConnection(command, input.context);
     const abort = input.port.commandAbortScope(command, input.context);
     try {
-        const { copies, stalled } = await observeAlmMatchingMessages({
-            port: input.port,
-            context: input.context,
-            holdFullWindow: command.absent === true,
-            count: command.count,
-            match: { connection, typeId: command.typeId, msgId: command.msgId },
-            deadlineEpochMs: computeWaitDeadlineEpochMs(
-                { timeoutMs: command.windowMs, deadlineEpochMs: command.deadlineEpochMs },
-                input.port.now()
-            ),
-            stallMs: command.stallMs,
-            signal: abort.signal
-        });
-        const received = copies.map((data) =>
-            decodeAlmReceivedMessageIdentity(data).fold(
-                (field) => {
-                    throw toAlmInvalidRuntimeResultError(`messages.received event.data.${field}`);
-                },
-                (identity) => identity
-            )
-        );
-        const ascending = command.ascendingBy === undefined
-            ? undefined
-            : computeAlmPayloadFieldAscends(copies, command.ascendingBy);
-        const { outcome, summary } = toAlmReceivedOutcome({
-            command,
-            received,
-            ascending,
-            stalled,
-            currentStatus: input.context.state().status
-        });
+        const { outcome, summary } = await readAlmReceivedJudgement(input, connection, abort.signal);
         // The copy list is unbounded, so only the result carries it; the diagnostic stays a fixed-size summary.
         recordAlmDiagnostic({
             context: input.context,
@@ -523,6 +498,45 @@ async function countAlmReceivedMessages(
     finally {
         abort.cleanup();
     }
+}
+
+/** Watches the event log for the command's window, then judges the copies it retains and reads what else it names. */
+async function readAlmReceivedJudgement(
+    { port, command, context }: AlmBrowserCommandInput<'messages.received'>,
+    connection: string,
+    signal: AbortSignal | undefined
+): Promise<AlmReceivedJudgement> {
+    const { arrivals, stalled } = await observeAlmMatchingMessages({
+        port,
+        context,
+        holdFullWindow: command.absent === true,
+        count: command.count,
+        match: { connection, typeId: command.typeId, msgId: command.msgId },
+        deadlineEpochMs: computeWaitDeadlineEpochMs(
+            { timeoutMs: command.windowMs, deadlineEpochMs: command.deadlineEpochMs },
+            port.now()
+        ),
+        stallMs: command.stallMs,
+        signal
+    });
+    const copies = arrivals.map(({ copy }) => copy);
+    return toAlmReceivedOutcome({
+        command,
+        received: copies.map((copy) =>
+            decodeAlmReceivedMessageIdentity(copy).fold(
+                (field) => {
+                    throw toAlmInvalidRuntimeResultError(`messages.received event.data.${field}`);
+                },
+                (identity) => identity
+            )
+        ),
+        ascending: command.ascendingBy === undefined
+            ? undefined
+            : computeAlmPayloadFieldAscends(copies, command.ascendingBy),
+        sampleAge: command.ageFrom === undefined ? undefined : computeAlmReceivedSampleAge(arrivals, command.ageFrom),
+        stalled,
+        currentStatus: context.state().status
+    });
 }
 
 function readAlmWaitTimeoutMs(
