@@ -6184,7 +6184,7 @@ moved or changed test.
         "ownedPort": "console.error, the process log the router's live publication writes a failed publication to",
         "observableEffect": "The single log line is the only trace an operator has of a room message that reached nobody: the router discards the failed result and the delivery work completes.",
         "requiredConstraint": "Exactly one error line, naming the topic and the msgId, for one failed publication of one admitted message.",
-        "failureRationale": "Empty sockets and a completed work row look the same whether the loss was reported or silent; only the line on the log port shows it was reported, and its count changes when the republication of ruling M7 retries the publish."
+        "failureRationale": "Empty sockets and a completed work row look the same whether the loss was reported or silent; only the line on the log port shows it was reported. The count stays one while the publish is retried successfully, as in this case, and rises by one only for each retried publish that fails."
       }
     },
     {
@@ -6199,7 +6199,7 @@ moved or changed test.
         "ownedPort": "console.error, the process log the router's live publication writes a failed publication to",
         "observableEffect": "With no receipt to report it, the single log line is the only trace anyone has of a room message that reached nobody.",
         "requiredConstraint": "Exactly one error line, naming the topic and the msgId, for one failed publication of one admitted message.",
-        "failureRationale": "Empty sockets, no receipt and a completed work row look the same whether the loss was reported or silent; only the line on the log port shows it was reported, and its count changes when the republication of ruling M7 retries the publish."
+        "failureRationale": "Empty sockets, no receipt and a completed work row look the same whether the loss was reported or silent; only the line on the log port shows it was reported. The count stays one while the publish is retried successfully, as in this case, and rises by one only for each retried publish that fails."
       }
     }
   ],
@@ -13153,7 +13153,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar realtime maintainers",
-      "rationale": "The one line on the log port is the requirement itself: a failed live publication of an admitted message is reported once, and is otherwise invisible.",
+      "rationale": "The one line on the log port is the requirement itself: a failed live publication of an admitted message is reported once, and beyond the origin's eventual timed-out receipt nothing else records the loss.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/websocket/router/rallar-server-ws-live-path-missed-copy.test.ts#completes the delivery work of a receipted send whose publication failed and writes no copy"
     },
     {
@@ -13164,7 +13164,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar realtime maintainers",
-      "rationale": "The one line on the log port is the requirement itself: a failed live publication of an admitted message is reported once, and is otherwise invisible.",
+      "rationale": "The one line on the log port is the requirement itself: a failed live publication of an unreceipted message is reported once, and nothing else records the loss.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/websocket/router/rallar-server-ws-live-path-missed-copy.test.ts#completes the delivery work of an unreceipted send whose publication failed and writes no copy"
     }
   ]
