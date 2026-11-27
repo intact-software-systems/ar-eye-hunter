@@ -7,7 +7,10 @@ import type {
     RallarDirectorStatus
 } from '@shared-web/browser/director/rallar-director-facade.ts';
 import { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
-import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type {
+    RallarMessageHandle,
+    RallarTypedMessageChannel
+} from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import { AL_CHANNEL_SEND_DEFAULTS } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import type { ALDeliveryFailure } from '@shared/alm/delivery/al-delivery-failure.ts';
@@ -25,6 +28,9 @@ type DirectorCarrier = 'ws' | 'rtc';
 export const RALLAR_DIRECTOR_RELAY_PROTOCOL = 'rallar.director.relay.v1';
 
 const DIRECTOR_COMMAND_UNCONFIRMED_REASON = 'The director did not confirm the command before its deadline.';
+
+/** How long a send nothing retries lives: an unreceipted output, a heartbeat or a snapshot. */
+const DIRECTOR_BEST_EFFORT_TTL_MS = 5_000;
 
 export namespace BrowserDirectorRelayTransport {
     export interface Input {
@@ -46,12 +52,22 @@ export namespace BrowserDirectorRelayTransport {
         readonly claim: RallarDirectorRelayClaim | undefined;
     }
 
-    export interface SendRoomEnvelopeInput<T> {
+    /** A heartbeat or a snapshot: best effort over one carrier, then the other. */
+    export interface SendBestEffortRoomEnvelopeInput<T> {
         readonly current: RallarDirectorStatus;
         readonly topicId: string;
         readonly typeId: string;
         readonly payload: T;
         readonly bestEffortFirst?: DirectorCarrier;
+    }
+
+    export interface SendOutputEnvelopeInput<T> {
+        /** The relay's edge-ordered output channel. */
+        readonly channel: RallarTypedMessageChannel<RallarDirectorRelayEnvelope<T>>;
+        readonly current: RallarDirectorStatus;
+        readonly topicId: string;
+        readonly typeId: string;
+        readonly payload: T;
         /** Undefined sends best effort; a stated ack asks the frozen room audience for a logical receipt. */
         readonly ack: RallarDirectorOutputOptions['ack'] | undefined;
     }
@@ -101,24 +117,34 @@ export class BrowserDirectorRelayTransport {
         }
     }
 
-    public async sendRoomEnvelope<T>(
-        input: BrowserDirectorRelayTransport.SendRoomEnvelopeInput<T>
+    public async sendOutputEnvelope<T>(
+        input: BrowserDirectorRelayTransport.SendOutputEnvelopeInput<T>
     ): Promise<RallarDirectorRelaySendResult> {
         const rejection = this.readRoomSendRejection(input.current);
         if (rejection) {
             return rejection;
         }
-        const roomRef = input.current.roomRef;
-        if (!roomRef) {
-            throw new Error('Validated director room target is missing.');
-        }
-        return input.ack === undefined
-            ? await this.sendBestEffortRoomEnvelope(input, roomRef)
-            : await this.sendReceiptRoomEnvelope(input, roomRef);
+        const delivery = toOutputDelivery(input.ack);
+        const receipt = await input.channel.send(createEnvelope(input), {
+            roomRef: requireRoomRef(input.current),
+            strategy: 'rtc-with-ws-fallback',
+            ...delivery
+        });
+        const outcome = await receipt.wait({ until: AL_DELIVERY_ADMITTED_STATES, timeoutMs: delivery.ttlMs });
+        return isSuccessfulDirectorDelivery(outcome.lifecycle)
+            ? { status: 'sent', receipt }
+            : { status: 'failed', receipt, reason: outcome.lifecycle.evidence.reason };
     }
 
-    private async sendBestEffortRoomEnvelope<T>(
-        input: BrowserDirectorRelayTransport.SendRoomEnvelopeInput<T>,
+    public async sendBestEffortRoomEnvelope<T>(
+        input: BrowserDirectorRelayTransport.SendBestEffortRoomEnvelopeInput<T>
+    ): Promise<RallarDirectorRelaySendResult> {
+        const rejection = this.readRoomSendRejection(input.current);
+        return rejection ?? await this.sendOverCarriers(input, requireRoomRef(input.current));
+    }
+
+    private async sendOverCarriers<T>(
+        input: BrowserDirectorRelayTransport.SendBestEffortRoomEnvelopeInput<T>,
         roomRef: GroupRef
     ): Promise<RallarDirectorRelaySendResult> {
         const message = {
@@ -128,7 +154,7 @@ export class BrowserDirectorRelayTransport {
             payload: createEnvelope(input),
             reliability: 'best-effort' as const,
             ack: 'none' as const,
-            ttlMs: 5_000
+            ttlMs: DIRECTOR_BEST_EFFORT_TTL_MS
         };
         const wait = { until: AL_DELIVERY_ADMITTED_STATES, timeoutMs: message.ttlMs };
         const sends: Partial<Record<DirectorCarrier, RallarMessageHandle>> = {};
@@ -155,31 +181,6 @@ export class BrowserDirectorRelayTransport {
             return ['rtc', 'ws'];
         }
         return this.input.isWebSocketDown() ? ['rtc'] : ['ws', 'rtc'];
-    }
-
-    private async sendReceiptRoomEnvelope<T>(
-        input: BrowserDirectorRelayTransport.SendRoomEnvelopeInput<T>,
-        roomRef: GroupRef
-    ): Promise<RallarDirectorRelaySendResult> {
-        const ttlMs = BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS;
-        const receipt = await this.input.messages
-            .room<RallarDirectorRelayEnvelope<T>>({
-                topicId: input.topicId,
-                typeId: input.typeId,
-                roomRef,
-                purpose: 'notification',
-                access: 'members'
-            })
-            .send(createEnvelope(input), {
-                strategy: 'rtc-with-ws-fallback',
-                reliability: 'at-least-once',
-                ack: input.ack,
-                ttlMs
-            });
-        const outcome = await receipt.wait({ until: AL_DELIVERY_ADMITTED_STATES, timeoutMs: ttlMs });
-        return isSuccessfulDirectorDelivery(outcome.lifecycle)
-            ? { status: 'sent', receipt }
-            : { status: 'failed', receipt, reason: outcome.lifecycle.evidence.reason };
     }
 
     private readCommandRejection(
@@ -269,7 +270,7 @@ function toDirectorCommandFailureStatus(
 }
 
 function createEnvelope<T>(
-    input: BrowserDirectorRelayTransport.SendCommandInput<T> | BrowserDirectorRelayTransport.SendRoomEnvelopeInput<T>
+    input: Pick<BrowserDirectorRelayTransport.SendCommandInput<T>, 'current' | 'topicId' | 'typeId' | 'payload'>
 ): RallarDirectorRelayEnvelope<T> {
     if (!input.current.appointment || !input.current.roomId) {
         throw new Error('Cannot create director envelope without appointment.');
@@ -283,6 +284,20 @@ function createEnvelope<T>(
         sentAtEpochMs: Date.now(),
         payload: input.payload
     };
+}
+
+function requireRoomRef(current: RallarDirectorStatus): GroupRef {
+    if (!current.roomRef) {
+        throw new Error('Validated director room target is missing.');
+    }
+    return current.roomRef;
+}
+
+/** A receipted output is retried for the default message lifetime; an unreceipted one is sent once, best effort. */
+function toOutputDelivery(ack: RallarDirectorOutputOptions['ack'] | undefined) {
+    return ack === undefined
+        ? { reliability: 'best-effort' as const, ack: 'none' as const, ttlMs: DIRECTOR_BEST_EFFORT_TTL_MS }
+        : { reliability: 'at-least-once' as const, ack, ttlMs: BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS };
 }
 
 function isRoomRefusal(lifecycle: ALDeliveryLifecycle): boolean {

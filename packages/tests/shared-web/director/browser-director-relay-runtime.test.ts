@@ -793,19 +793,27 @@ describe('Rallar director relay', () => {
             heartbeatTtlMs: 60_000
         }));
         mockRtcNoRoute();
+        const wsMessages = captureWsOutbox();
         const relay = createRallarFacade().director.createRelay<DirectorMove, DirectorAcknowledgement>({
             roomId: 'room-1',
             topicId: 'app.game.director',
             intentTypeId: 'game.intent',
-            outputTypeId: 'game.output'
+            outputTypeId: 'game.output',
+            heartbeatIntervalMs: 60_000
         });
 
         const result = await relay.sendOutput({ ok: true });
         relay.stop();
 
-        expect(result.status).toBe('sent');
-        expect(result.rtc?.lifecycle().state).toBe('failed');
-        expect(result.ws?.lifecycle().state).toBe('queued');
+        expect(result).toEqual({ status: 'sent', receipt: expect.objectContaining({ typeId: 'game.output' }) });
+        expect(result.receipt?.lifecycle()).toMatchObject({ state: 'queued', ackMode: 'none' });
+        const outputs = wsMessages.filter((message) => message.payload.typeId === 'game.output');
+        expect(outputs).toHaveLength(1);
+        expect(outputs[0]).toMatchObject({
+            id: { msgId: result.receipt?.msgId },
+            targets: { mode: 'multicast' },
+            delivery: { reliability: 'best-effort', ack: 'none' }
+        });
     });
 
     it('sends a receipt output as one room multicast that falls back to WS without a second message', async () => {
@@ -820,17 +828,7 @@ describe('Rallar director relay', () => {
             heartbeatTtlMs: 60_000
         }));
         mockRtcNoRoute();
-        const wsMessages: ALMessage[] = [];
-        mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(async (message) => {
-            wsMessages.push(message);
-            return {
-                status: 'enqueued',
-                verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
-                message,
-                entries: [],
-                trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message)
-            };
-        });
+        const wsMessages = captureWsOutbox();
         const relay = createRallarFacade().director.createRelay<DirectorMove, DirectorAcknowledgement>({
             roomId: 'room-1',
             topicId: 'app.game.director',
@@ -1096,6 +1094,22 @@ function captureRtcInbox(): Map<string, Parameters<typeof mocks.rtcRxStreamer.on
         return mocks.ctx.middleware.rtcRxStreamer;
     });
     return rtcInbox;
+}
+
+/** What the room WebSocket admits, in order; each is admitted durable. */
+function captureWsOutbox(): ALMessage[] {
+    const wsMessages: ALMessage[] = [];
+    mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(async (message) => {
+        wsMessages.push(message);
+        return {
+            status: 'enqueued',
+            verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
+            message,
+            entries: [],
+            trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message)
+        };
+    });
+    return wsMessages;
 }
 
 function captureWsInbox(): WsInboxDouble {

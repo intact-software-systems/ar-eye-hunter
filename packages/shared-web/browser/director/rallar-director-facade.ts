@@ -1,5 +1,6 @@
 import type {
     RallarMessageHandle,
+    RallarMessageOrderGap,
     RallarMessagePayload
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
@@ -71,8 +72,11 @@ export type RallarDirectorRelaySendStatus =
 
 export interface RallarDirectorRelaySendResult {
     readonly status: RallarDirectorRelaySendStatus;
+    /** A heartbeat's or a snapshot's RTC send. */
     readonly rtc?: RallarMessageHandle;
+    /** A heartbeat's or a snapshot's WS send. */
     readonly ws?: RallarMessageHandle;
+    /** The one room message an output was sent as, receipted or not, or a command. */
     readonly receipt?: RallarMessageHandle;
     readonly reason?: string;
 }
@@ -109,6 +113,8 @@ export interface RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot = TOutput
         relay: RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot>
     ) => void | TOutput | readonly TOutput[] | Promise<void | TOutput | readonly TOutput[]>;
     readonly onOutput?: (message: RallarDirectorRelayMessage<TOutput>) => void | Promise<void>;
+    /** Called when this page gave up positions of the appointed director's output stream. */
+    readonly onOutputGap?: (gap: RallarMessageOrderGap) => void | Promise<void>;
     readonly onSnapshot?: (message: RallarDirectorRelayMessage<TSnapshot>) => void | Promise<void>;
     readonly onSyncRequest?: (
         message: RallarDirectorRelayMessage<RallarMessagePayload>,

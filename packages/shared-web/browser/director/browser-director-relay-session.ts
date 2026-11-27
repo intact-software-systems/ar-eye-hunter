@@ -8,7 +8,11 @@ import type {
     RallarDirectorRelaySendResult,
     RallarDirectorStatus
 } from '@shared-web/browser/director/rallar-director-facade.ts';
-import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type {
+    RallarMessageOrderGap,
+    RallarMessagePayload,
+    RallarTypedMessageChannel
+} from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -25,6 +29,12 @@ import type { BrowserDirectorRelayTransport } from './browser-director-relay-tra
 import type { BrowserDirectorStatusRuntime } from './browser-director-status-runtime.ts';
 
 const RALLAR_DIRECTOR_DEFAULT_TOPIC_ID = 'app.rallar.director';
+
+/**
+ * A receipted output is retried after its 2 s ACK timeout, so 3 s covers the first retry and its delivery. A later
+ * output is not held longer than that for a missing one.
+ */
+const DIRECTOR_OUTPUT_GAP_WAIT_MS = 3_000;
 
 export namespace BrowserDirectorRelaySession {
     export interface Input<TIntent, TOutput, TSnapshot> {
@@ -52,6 +62,7 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
     private readonly snapshotTypeId: string;
     private readonly syncRequestTypeId: string;
     private readonly roomTarget: string | GroupRef | undefined;
+    private readonly outputChannel: RallarTypedMessageChannel<RallarDirectorRelayEnvelope<TOutput>>;
     private readonly subscriptions = new SubscriptionScope();
     private readonly timers: ReturnType<typeof setInterval>[] = [];
     private stopped = false;
@@ -68,6 +79,17 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
         this.syncRequestTypeId = input.config.syncRequestTypeId ??
             `${this.topicId}.sync-request`;
         this.roomTarget = input.config.roomRef ?? input.config.roomId;
+        this.outputChannel = input.messages.room<RallarDirectorRelayEnvelope<TOutput>>({
+            roomId: input.config.roomRef ? undefined : input.config.roomId,
+            roomRef: input.config.roomRef,
+            topicId: this.topicId,
+            typeId: input.config.outputTypeId,
+            purpose: 'notification',
+            access: 'members',
+            order: 'edge',
+            orderGapWaitMs: DIRECTOR_OUTPUT_GAP_WAIT_MS,
+            onOrderGap: (gap) => this.receiveOutputGap(gap)
+        });
     }
 
     public start(): RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot> {
@@ -98,7 +120,8 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
         options?: RallarDirectorOutputOptions
     ): Promise<RallarDirectorRelaySendResult> => {
         const guarded = this.guardSend();
-        return guarded ?? await this.input.transport.sendRoomEnvelope({
+        return guarded ?? await this.input.transport.sendOutputEnvelope({
+            channel: this.outputChannel,
             current: this.status(),
             topicId: this.topicId,
             typeId: this.input.config.outputTypeId,
@@ -117,7 +140,7 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
             this.input.status.recordHeartbeat(current.roomRef, current.appointment);
             this.input.status.emit();
         }
-        return await this.input.transport.sendRoomEnvelope({
+        return await this.input.transport.sendBestEffortRoomEnvelope({
             current,
             topicId: this.topicId,
             typeId: this.heartbeatTypeId,
@@ -125,8 +148,7 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
             payload: {
                 sessionId: current.appointment?.sessionId,
                 epoch: current.appointment?.epoch
-            },
-            ack: undefined
+            }
         });
     };
 
@@ -141,12 +163,11 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
         if (resolved === undefined) {
             return { status: 'failed', reason: 'No director snapshot is available.' };
         }
-        return await this.input.transport.sendRoomEnvelope({
+        return await this.input.transport.sendBestEffortRoomEnvelope({
             current: this.status(),
             topicId: this.topicId,
             typeId: this.snapshotTypeId,
-            payload: resolved,
-            ack: undefined
+            payload: resolved
         });
     };
 
@@ -307,6 +328,14 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
         await this.input.config.onOutput?.(
             toTypedRelayMessage<TOutput>(message)
         );
+    }
+
+    /** The declaration stands for every room on this page and a gap names none, so the sender is the fence. */
+    private async receiveOutputGap(gap: RallarMessageOrderGap): Promise<void> {
+        if (this.stopped || gap.senderId !== this.status().appointment?.sessionId) {
+            return;
+        }
+        await this.input.config.onOutputGap?.(gap);
     }
 
     private async receiveSnapshot(
