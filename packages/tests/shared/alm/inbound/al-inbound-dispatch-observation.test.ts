@@ -11,9 +11,9 @@ import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-res
 import { planALMessageHandling, type ALMessageHandlingPlan } from '@shared/al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { createVolatileALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
-import type { ALInboundOrderedDeliveryRead } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { ALInboundAdmittedDelivery, type ALInboundDeliveryObservation } from '@shared/alm/inbound/al-inbound-admitted-delivery.ts';
 import { toALInboundMessageReference } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
+import type { ALInboundOrderedDeliveryRead } from '@shared/alm/inbound/al-inbound-durable-effect-store.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import {

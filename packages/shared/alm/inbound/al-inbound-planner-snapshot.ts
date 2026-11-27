@@ -20,11 +20,8 @@ import {
     resolveALOrderingObserverRole,
     type ALOrderingObserver
 } from './admission/resolve-al-ordering-observer-role.ts';
-import type {
-    ALInboundBufferedReleaseReadDto,
-    ALInboundOrderedDeliveryRead,
-    ALInboundSupersedenceReadState
-} from './al-inbound-admission-store.ts';
+import type { ALInboundBufferedReleaseReadDto, ALInboundSupersedenceReadState } from './al-inbound-admission-store.ts';
+import type { ALInboundOrderedDeliveryRead } from './al-inbound-durable-effect-store.ts';
 import type { ALInboundOrderedDelivery } from './al-inbound-ordered-delivery.ts';
 
 export interface ALInboundPlannerSnapshot {

@@ -13,7 +13,6 @@ import {
     computeALOrderingDeliveryPredecessorSeq,
     isALInboundDeliveryReaching
 } from './admission/al-inbound-delivery-progress.ts';
-import type { ALInboundDeliveryPredecessor, ALInboundOrderedDeliveryRead } from './al-inbound-admission-store.ts';
 import { decodeALInboundDeliveryProgress, decodeALInboundOrderingSnapshot } from './al-inbound-ordering-validation.ts';
 import {
     assertALInboundDeliveryOwner,
@@ -27,6 +26,15 @@ import {
     toALInboundWorkKey,
     type ALInboundDurableEffectWrite
 } from './al-inbound-work-entry.ts';
+
+export interface ALInboundOrderedDeliveryRead {
+    readonly completedThrough: number;
+    readonly predecessor: ALInboundDeliveryPredecessor | undefined;
+}
+
+export type ALInboundDeliveryPredecessor =
+    | { readonly kind: 'effect'; }
+    | { readonly kind: 'resync-required'; };
 
 /** The delivery row a track's slot names, and the carrier whose lane claims it. */
 export interface ALInboundOrderedSuccessor {

@@ -56,7 +56,11 @@ import {
     type ALInboundMessageReference,
     type ALStoredInboundMessage
 } from './al-inbound-canonical-message.ts';
-import { ALInboundDurableEffectStore, type ALInboundOrderedSuccessor } from './al-inbound-durable-effect-store.ts';
+import {
+    ALInboundDurableEffectStore,
+    type ALInboundOrderedDeliveryRead,
+    type ALInboundOrderedSuccessor
+} from './al-inbound-durable-effect-store.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 import {
     decodeALInboundBufferedSnapshot,
@@ -263,15 +267,6 @@ export interface ALInboundBufferedReleaseReadDto {
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
     readonly durability: ALStoreDurability;
 }
-
-export interface ALInboundOrderedDeliveryRead {
-    readonly completedThrough: number;
-    readonly predecessor: ALInboundDeliveryPredecessor | undefined;
-}
-
-export type ALInboundDeliveryPredecessor =
-    | { readonly kind: 'effect'; }
-    | { readonly kind: 'resync-required'; };
 
 export type ALInboundAdmissionMutation =
     | Readonly<{
