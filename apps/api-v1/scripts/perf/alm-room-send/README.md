@@ -78,20 +78,22 @@ envelope of every copy the server writes to it, and the run records of each fram
 an ordering key. The report counts the copies that did, `delivery.copiesNamingAnOrderingKey`, from
 those frames and never from the shape: it equals the copies written in a run on the ordering key
 and is 0 in a run of unordered sends. Any other value says the run did not offer what its command
-line named.
+line named. A run that wrote no copy counts 0 under either ordering and shows nothing either way.
 
 ### What the unordered shape stands for
 
 The unordered shape is the envelope of the ordered shape with its `ordering` field left out, and
 nothing else changed. It stands for one send of the product and no other: the room broadcast that a
 browser's typed channel of purpose `notification` writes to its WS socket under the `ws` strategy
-when its caller names no `orderingKey`. A browser's room send is ordered only when its caller names
-one (`toWsBroadcastOptions` in
+when its caller names no `orderingKey` and no other option of the send beyond that strategy, and
+the channel declares no durability of its own. A browser's WS room broadcast is ordered only when
+its caller names an `orderingKey` (`toWsBroadcastOptions` in
 `packages/shared-web/browser/messages/browser-rallar-message-sender.ts`). The [limits](#limits)
 name where the cell's envelope still differs from that browser's: it carries no room send fence.
 
-"The default room send" has three readings. The cell offers the first, for one purpose and on one
-strategy, and neither of the other two:
+A reader may take the unordered shape for a browser's default room send. That phrase has three
+readings. The cell offers the first, for one purpose and on one strategy, and neither of the other
+two:
 
 - **The send a typed channel's purpose gives its defaults to: offered, for `notification`.** A
   typed channel has no default purpose: it states `command`, `notification` or `live`, and the
@@ -102,8 +104,9 @@ strategy, and neither of the other two:
   asks no receipt and lives 1 s.
 - **The send of a typed channel's default strategy: not offered.** A typed channel's `send` that
   names no strategy takes `rtc-with-ws-fallback`, and builds a room send that narrows no audience
-  as a multicast (`sendRoomWithFallback` and `createRtcMessage` in the same file). The cell offers
-  the `ws` strategy's room broadcast, under both orderings.
+  as a multicast (`sendRoomWithFallback` and `createRtcMessage` in
+  `packages/shared-web/browser/messages/browser-rallar-message-sender.ts`). The cell offers the
+  `ws` strategy's room broadcast, under both orderings.
 - **The lane send: not offered.** A send that names no channel (`rallar.messages.ws.send`) is
   at-least-once and asks no receipt (`toBrowserMessageSendDefaults` in
   `packages/shared-web/browser/messages/to-browser-message-send-defaults.ts`). Every send of the
@@ -195,9 +198,10 @@ invocation that leaves either out is refused. Every other shape option it leaves
 value of the reference shape, which the defaults above are and which states no ordering. An
 invocation with an issue in its options prints every issue, runs nothing and exits with status 2:
 one that names no ordering, or one the cell does not know, is still told every issue of its other
-options. No issue repeats a text of the command line, an `--ordering` the cell does not know
-included, and a `--database-url` that is no `postgres://` or `postgresql://` URL is refused there,
-before anything could print it. So is one that holds whitespace, a quote (`"` or `'`), a backtick
+options. An issue of a number that decodes and the shape refuses states the number back. No issue
+repeats any other value of the command line, an `--ordering` the cell does not know included, and
+a `--database-url` that is no `postgres://` or `postgresql://` URL is refused there, before
+anything could print it. So is one that holds whitespace, a quote (`"` or `'`), a backtick
 or an angle bracket: percent-encode each, in a password too. The URL parser takes such a character
 as it is, and the removal of URL-shaped text from an error's message stops at one, so the rest of a
 password that held one could be printed.
@@ -538,7 +542,9 @@ in one reference set of 16 runs:
   and had no `--ordering`. In today's options each run is `--ordering=ordering-key`.
 - **Commit.** `87b3c8f`, on the branch of pull request #927, whose product code was `main`'s at
   `a9bd9e3`. The artifacts of the set carry the earlier schema `rallar.alm.ordered-send-cell.v1`,
-  which stated no ordering and held the two track figures outside `tracks`.
+  which stated no ordering and held the two track figures outside `tracks`. It names
+  `delivery.copiesReadOutOfOfferOrder` as `copiesReadOutOfTrackOrder` and has no
+  `delivery.copiesNamingAnOrderingKey`.
 - **Shapes.** 20 s of offers, observed for 75 s after the last one. Five publishers at 2 sends a
   second at the API's default pool of 5: three runs at +0 ms and three at +5 ms under
   `client-stand-in`, one at +0 ms and three at +5 ms under `none`. The same at a pool of 10 and

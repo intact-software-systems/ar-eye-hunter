@@ -144,9 +144,8 @@ describe('toRoomSendArtifact', () => {
         expect(artifact.databaseLatency.delayed.join(' ')).toContain('NOTIFY publish');
         expect(artifact.databaseLatency.notDelayed.join(' ')).toContain('delivery of a NOTIFY');
         expect(artifact.limits.join(' ')).toContain(
-            'One event loop runs the three instances and the load, where a deployment gives each instance a process. ' +
-                'With no latency added the loop is busy most of the time, and of three runs of one shape the slowest ' +
-                'took 2.3 times the fastest at the 99th percentile from offer to complete receipt'
+            'runs of one shape differ from one another at the high percentiles of the delay from offer to complete ' +
+                'receipt, so one run is no figure'
         );
         expect(artifact.limits.join(' ')).toContain('room authorizer');
         expect(artifact.limits.join(' ')).toContain('Nothing reorders a copy of an unordered send');

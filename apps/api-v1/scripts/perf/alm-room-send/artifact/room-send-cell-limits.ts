@@ -25,9 +25,9 @@ export const ROOM_SEND_UNDELAYED_ROUND_TRIPS: readonly string[] = [
 /** What a run of the cell does not show, or shows differently from a deployment. An artifact carries the list. */
 export const ROOM_SEND_CELL_LIMITS: readonly string[] = [
     'One event loop runs the three instances and the load, where a deployment gives each instance a process. With ' +
-    'no latency added the loop is busy most of the time, and of three runs of one shape the slowest took 2.3 times ' +
-    'the fastest at the 99th percentile from offer to complete receipt (the reference set of ordered sends in the ' +
-    'cell\'s README): an absolute delay at +0 ms measures the harness as much as the server.',
+    'no latency added the loop is busy most of the time, and runs of one shape differ from one another at the high ' +
+    'percentiles of the delay from offer to complete receipt, so one run is no figure: an absolute delay at +0 ms ' +
+    'measures the harness as much as the server.',
     'The delay is a timer in the run\'s process: it fires late on a busy loop, so the latency added to a round trip ' +
     'is at least the shape\'s and often more.',
     'The room authorizer admits a fixed audience and reads nothing. The API\'s reads the room\'s snapshot for each of ' +

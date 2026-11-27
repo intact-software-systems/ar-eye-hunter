@@ -151,11 +151,10 @@ const ROOM_PRESENCE_LIFETIME_MS = 24 * 60 * 60 * 1_000;
  *
  * What differs from a deployment:
  * - one event loop runs the three instances and the load, where a deployment gives each instance a process. With no
- *   added latency that loop is busy most of the time, and of three runs of one shape the slowest took 2.3 times the
- *   fastest at the 99th percentile from offer to complete receipt (the reference set of ordered sends in the cell's
- *   README): an absolute delay there measures the harness as much as the server. The result carries the loop's lag
- *   over the send window and over the tail to judge a run by, and the processor time of the whole process beside
- *   each;
+ *   added latency that loop is busy most of the time, and runs of one shape differ from one another at the high
+ *   percentiles of the delay from offer to complete receipt, so one run is no figure: an absolute delay there
+ *   measures the harness as much as the server. The result carries the loop's lag over the send window and over the
+ *   tail to judge a run by, and the processor time of the whole process beside each;
  * - a frame enters at `acceptIncomingMessage`, below the socket bridge, so its size check and its JSON parse are no
  *   part of a run, and a session is a socket object the server writes to, with no WebSocket;
  * - a recipient has no client runtime: its socket takes every frame the server writes, a repeated copy, which a
