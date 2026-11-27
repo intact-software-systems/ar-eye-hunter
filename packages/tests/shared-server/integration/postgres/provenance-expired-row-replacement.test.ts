@@ -94,7 +94,7 @@ describe.each(PRODUCERS)(
                     typeId: EnqueuedType.WS_OUTBOX,
                     resourceId: `provenance-${runId}`,
                     seq: undefined,
-                    expiresAt: Temporal.Now.instant().add({ minutes: 10 })
+                    expiresAt: Temporal.Instant.fromEpochMilliseconds(Date.now() + 10 * 60_000)
                 });
                 const proofKey = toWsOutboxProvenanceKey(entry.key);
                 const first = toInsert(entry, toProducerFacts);
