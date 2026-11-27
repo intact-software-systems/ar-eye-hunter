@@ -1,7 +1,9 @@
 import { AL_PUBLICATION_FIGURE_AGE_BOUNDS_MS } from '@shared/alm/outbound/publication/al-outbound-publication-figures.ts';
 import type { ALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import { isApiJsonObject, type ApiJsonValue } from '@shared/api/api-json-value.ts';
+import { assertBoundedHistogram } from '@shared/measurement/assert-bounded-histogram.ts';
 import { decodeBoundedHistogramOnBounds, type BoundedHistogram } from '@shared/measurement/bounded-histogram.ts';
+import { computeBoundedHistogramMerged } from '@shared/measurement/compute-bounded-histogram-merged.ts';
 import {
     computeBoundedHistogramQuantile,
     type BoundedHistogramQuantile
@@ -10,6 +12,7 @@ import { Either, EitherCollectors } from '@shared/resilience/Either.ts';
 
 import { decodeALOutboundPublicationStageReport } from '../../../alm/decode-al-outbound-publication-stage-report.ts';
 import type { AlmReceivedSampleAge } from '../../../alm/rallar-black-box-alm-result-values.ts';
+import type { RallarBlackBoxDistributedGroupRef } from '../../../distributed-run.ts';
 import {
     decodeFiniteNumber,
     decodeNonNegativeInteger,
@@ -29,11 +32,18 @@ import {
  */
 export interface PublicationWorkloadRun {
     readonly parameters: PublicationWorkloadParameters;
-    readonly publisher: PublicationWorkloadPublisherResults;
+    /** One entry per room of the point, in the point's order. */
+    readonly rooms: readonly PublicationWorkloadRoomResults[];
+}
+
+/** The agents of one room that left results, by role. The plan states how many of each role the point asked for. */
+export interface PublicationWorkloadRoomResults {
+    readonly publishers: readonly PublicationWorkloadPublisherResults[];
     readonly subscribers: readonly PublicationWorkloadSubscriberResults[];
 }
 
 export interface PublicationWorkloadPublisherResults {
+    readonly agentId: string;
     /** The `value` of the result of the publisher's `loop`. */
     readonly loop: ApiJsonValue | undefined;
     /** The `value` of the result of the `stats` the publisher read after its window. */
@@ -61,12 +71,24 @@ export interface PublicationWorkloadConfiguredFigures {
 }
 
 export interface PublicationWorkloadMeasuredFigures {
-    readonly publisher: PublicationWorkloadPublisherFigures;
-    /** One entry per subscriber result of the run, in its order; the plan's `subscriberCount` is how many it asked for. */
+    /** One entry per room of the point, in the point's order. */
+    readonly rooms: readonly PublicationWorkloadRoomFigures[];
+    /** Every subscriber result of every room together. */
+    readonly delivered: PublicationWorkloadDeliveredFigures;
+}
+
+export interface PublicationWorkloadRoomFigures {
+    readonly group: RallarBlackBoxDistributedGroupRef;
+    /** One entry per publisher result of the room, in its order. */
+    readonly publishers: readonly PublicationWorkloadPublisherFigures[];
+    /** One entry per subscriber result of the room, in its order; the plan's `subscriberCount` is how many it asked for. */
     readonly subscribers: readonly PublicationWorkloadSubscriberFigures[];
+    /** The room's subscriber results together. */
+    readonly delivered: PublicationWorkloadDeliveredFigures;
 }
 
 export interface PublicationWorkloadPublisherFigures {
+    readonly agentId: string;
     /**
      * The loop's `passed`: the sends the harness submitted. A live send returns as soon as its value is staged or
      * refused, so this is not what the stage handed to a carrier; `publicationStage.counters.admitted` is.
@@ -86,7 +108,7 @@ export interface PublicationWorkloadPublisherFigures {
 
 export interface PublicationWorkloadSubscriberFigures {
     readonly agentId: string;
-    /** Every copy the count matched. More copies than the publisher had frames stay more: nothing clips it to the plan. */
+    /** Every copy the count matched. More copies than the publishers had frames stay more: nothing clips it to the plan. */
     readonly observed: number;
     /** The matched copies that gave no age; `observed` is these and the recorded samples together. */
     readonly unrecordedSamples: number;
@@ -94,10 +116,23 @@ export interface PublicationWorkloadSubscriberFigures {
 }
 
 /**
- * A subscriber's delivered sample ages in milliseconds: its clock when its event log recorded a copy, less the
- * publisher's clock when its loop resolved that send. An age therefore holds the harness's admission, the publication
- * stage's hold, the transit, the delivery to the page's subscriber and the bridge into the agent's runtime, and between
- * two machines their clock offset too. It covers only the copies that arrived, so it is read beside `observed`.
+ * Several subscriber results as one: their copies and their unrecorded samples added, and every recorded age in one
+ * histogram. A percentile of it therefore ranks every delivered sample; it is no mean of the subscribers' percentiles.
+ */
+export interface PublicationWorkloadDeliveredFigures {
+    /** The subscriber results it covers. With none it reads 0 copies and `no-samples`. */
+    readonly subscriberCount: number;
+    readonly observed: number;
+    readonly unrecordedSamples: number;
+    readonly sampleAgeMs: PublicationWorkloadSampleAge;
+}
+
+/**
+ * Delivered sample ages in milliseconds, of one subscriber or of several together: a subscriber's clock when its event
+ * log recorded a copy, less the publisher's clock when its loop resolved that send. An age therefore holds the
+ * harness's admission, the publication stage's hold, the transit, the delivery to the page's subscriber and the bridge
+ * into the agent's runtime, and between two machines their clock offset too. It covers only the copies that arrived, so
+ * it is read beside `observed`.
  */
 export type PublicationWorkloadSampleAge = PublicationWorkloadNoSampleAge | PublicationWorkloadRecordedSampleAge;
 
@@ -117,44 +152,97 @@ export interface PublicationWorkloadRecordedSampleAge {
     readonly p99: BoundedHistogramQuantile;
 }
 
-type PublicationWorkloadLoopFigures = Omit<PublicationWorkloadPublisherFigures, 'publicationStage'>;
+type PublicationWorkloadLoopFigures = Omit<PublicationWorkloadPublisherFigures, 'agentId' | 'publicationStage'>;
 
-const LOOP_PATH = '$.publisher.loop';
-const ALM_USAGE_PATH = '$.publisher.stats.rallar.alm';
+/** A subscriber's figures beside the histogram they summarise, which a delivered figure merges. */
+interface DecodedSubscriber {
+    readonly figures: PublicationWorkloadSubscriberFigures;
+    readonly ageMs: BoundedHistogram;
+}
+
+interface DecodedRoom {
+    readonly publishers: readonly PublicationWorkloadPublisherFigures[];
+    readonly subscribers: readonly DecodedSubscriber[];
+    readonly delivered: PublicationWorkloadDeliveredFigures;
+}
 
 /**
  * The left names every field that cannot be read, each issue starting with the field's path: under `$.parameters` a
- * bound of the family the point breaks, under `$.publisher.loop`, `$.publisher.stats` and `$.subscribers[n].received`
- * a field of that result value.
+ * bound of the family the point breaks, `$.rooms` where the run holds another number of rooms than the point, and
+ * under `$.rooms[r].publishers[p].loop`, `$.rooms[r].publishers[p].stats` and `$.rooms[r].subscribers[s].received` a
+ * field of that result value.
  */
 export function toPublicationWorkloadFigures(
     run: PublicationWorkloadRun
 ): Either<readonly string[], PublicationWorkloadFigures> {
     const parameterIssues = validatePublicationWorkloadParameters(run.parameters)
         .map((issue) => `$.parameters${issue.path.slice(1)} is not valid: ${issue.message}`);
-    const loop = decodeLoopFigures(run.publisher.loop);
-    const publicationStage = decodePublicationStage(run.publisher.stats);
-    const subscribers = run.subscribers.map(decodeSubscriberFigures);
+    const groups = [run.parameters.group];
+    const rooms = run.rooms.map((room, index) => decodeRoom(room, `$.rooms[${index}]`));
+    const decodedRooms = EitherCollectors.toListFoldRights(rooms);
+    const delivered = computeDeliveredFigures(decodedRooms.flatMap((room) => room.subscribers));
     const issues = [
         ...parameterIssues,
-        ...(loop.left ?? []),
-        ...(publicationStage.left ?? []),
-        ...EitherCollectors.toListFoldLefts(subscribers).flat()
+        ...(run.rooms.length === groups.length
+            ? []
+            : [`$.rooms must hold one entry per room of the point, which names ${groups.length}`]),
+        ...EitherCollectors.toListFoldLefts(rooms).flat(),
+        ...(delivered.left === undefined ? [] : [`$.rooms give no delivered sample age: ${delivered.left}`])
     ];
-    if (issues.length > 0 || loop.right === undefined || publicationStage.right === undefined) {
+    if (issues.length > 0 || delivered.right === undefined) {
         return Either.ofLeft(issues);
     }
     return Either.ofRight({
         configured: { parameters: run.parameters, plan: computePublicationWorkloadPlan(run.parameters) },
         measured: {
-            publisher: { ...loop.right, publicationStage: publicationStage.right },
-            subscribers: EitherCollectors.toListFoldRights(subscribers)
+            rooms: decodedRooms.map((room, index) => ({
+                group: groups[index],
+                publishers: room.publishers,
+                subscribers: room.subscribers.map((subscriber) => subscriber.figures),
+                delivered: room.delivered
+            })),
+            delivered: delivered.right
         }
     });
 }
 
+function decodeRoom(room: PublicationWorkloadRoomResults, path: string): Either<readonly string[], DecodedRoom> {
+    const publishers = room.publishers
+        .map((publisher, index) => decodePublisherFigures(publisher, `${path}.publishers[${index}]`));
+    const subscribers = room.subscribers
+        .map((subscriber, index) => decodeSubscriber(subscriber, `${path}.subscribers[${index}].received`));
+    const decodedSubscribers = EitherCollectors.toListFoldRights(subscribers);
+    const delivered = computeDeliveredFigures(decodedSubscribers);
+    const issues = [
+        ...EitherCollectors.toListFoldLefts(publishers).flat(),
+        ...EitherCollectors.toListFoldLefts(subscribers).flat(),
+        ...(delivered.left === undefined ? [] : [`${path}.subscribers give no delivered sample age: ${delivered.left}`])
+    ];
+    if (issues.length > 0 || delivered.right === undefined) {
+        return Either.ofLeft(issues);
+    }
+    return Either.ofRight({
+        publishers: EitherCollectors.toListFoldRights(publishers),
+        subscribers: decodedSubscribers,
+        delivered: delivered.right
+    });
+}
+
+function decodePublisherFigures(
+    publisher: PublicationWorkloadPublisherResults,
+    path: string
+): Either<readonly string[], PublicationWorkloadPublisherFigures> {
+    const loop = decodeLoopFigures(publisher.loop, `${path}.loop`);
+    const publicationStage = decodePublicationStage(publisher.stats, `${path}.stats.rallar.alm`);
+    if (loop.right === undefined || publicationStage.right === undefined) {
+        return Either.ofLeft([...(loop.left ?? []), ...(publicationStage.left ?? [])]);
+    }
+    return Either.ofRight({ agentId: publisher.agentId, ...loop.right, publicationStage: publicationStage.right });
+}
+
 function decodeLoopFigures(
-    loop: ApiJsonValue | undefined
+    loop: ApiJsonValue | undefined,
+    path: string
 ): Either<readonly string[], PublicationWorkloadLoopFigures> {
     const record = decodeRecord(loop);
     const pacing = decodeRecord(record.pacing);
@@ -164,16 +252,16 @@ function decodeLoopFigures(
     const elapsedMs = decodeFiniteNumber(pacing.elapsedMs);
     const achievedRateHz = decodeFiniteNumber(pacing.achievedRateHz);
     const issues = [
-        ...(submittedSends === undefined ? [`${LOOP_PATH}.passed must be a whole number of at least 0`] : []),
-        ...validateLoopChildResultCount(childResultCount, completedIterations),
+        ...(submittedSends === undefined ? [`${path}.passed must be a whole number of at least 0`] : []),
+        ...validateLoopChildResultCount(childResultCount, completedIterations, path),
         ...(completedIterations === undefined
-            ? [`${LOOP_PATH}.pacing.completedIterations must be a whole number of at least 0`]
+            ? [`${path}.pacing.completedIterations must be a whole number of at least 0`]
             : []),
         ...(elapsedMs === undefined || elapsedMs < 0
-            ? [`${LOOP_PATH}.pacing.elapsedMs must be a finite number of at least 0`]
+            ? [`${path}.pacing.elapsedMs must be a finite number of at least 0`]
             : []),
         ...(pacing.achievedRateHz !== undefined && achievedRateHz === undefined
-            ? [`${LOOP_PATH}.pacing.achievedRateHz must be a finite number where the loop states one`]
+            ? [`${path}.pacing.achievedRateHz must be a finite number where the loop states one`]
             : [])
     ];
     if (
@@ -196,32 +284,33 @@ function decodeLoopFigures(
  */
 function validateLoopChildResultCount(
     childResultCount: number | undefined,
-    completedIterations: number | undefined
+    completedIterations: number | undefined,
+    path: string
 ): readonly string[] {
     if (childResultCount === undefined) {
-        return [`${LOOP_PATH}.childResultCount must be a whole number of at least 0`];
+        return [`${path}.childResultCount must be a whole number of at least 0`];
     }
     return completedIterations === undefined || childResultCount === completedIterations
         ? []
-        : [`${LOOP_PATH}.childResultCount must be ${LOOP_PATH}.pacing.completedIterations, one child per iteration`];
+        : [`${path}.childResultCount must be ${path}.pacing.completedIterations, one child per iteration`];
 }
 
 /** The stage decoder names each bad field under `publication.`, the block `stats.rallar.alm` holds it in. */
 function decodePublicationStage(
-    stats: ApiJsonValue | undefined
+    stats: ApiJsonValue | undefined,
+    almUsagePath: string
 ): Either<readonly string[], ALOutboundPublicationStageReport> {
     const { publication } = decodeRecord(decodeRecord(decodeRecord(stats).rallar).alm);
     return isApiJsonObject(publication)
         ? decodeALOutboundPublicationStageReport(publication)
-            .mapLeft((issues) => issues.map((issue) => `${ALM_USAGE_PATH}.${issue}`))
-        : Either.ofLeft([`${ALM_USAGE_PATH}.publication must be an object: the stats of a page that connected`]);
+            .mapLeft((issues) => issues.map((issue) => `${almUsagePath}.${issue}`))
+        : Either.ofLeft([`${almUsagePath}.publication must be an object: the stats of a page that connected`]);
 }
 
-function decodeSubscriberFigures(
+function decodeSubscriber(
     subscriber: PublicationWorkloadSubscriberResults,
-    index: number
-): Either<readonly string[], PublicationWorkloadSubscriberFigures> {
-    const path = `$.subscribers[${index}].received`;
+    path: string
+): Either<readonly string[], DecodedSubscriber> {
     const received = decodeRecord(subscriber.received);
     const observed = decodeNonNegativeInteger(received.observed);
     const sampleAge = decodeSampleAge(received.sampleAge, `${path}.sampleAge`);
@@ -238,10 +327,8 @@ function decodeSubscriberFigures(
         ]);
     }
     return Either.ofRight({
-        agentId: subscriber.agentId,
-        observed,
-        unrecordedSamples,
-        sampleAgeMs: toSampleAge(ageMs)
+        figures: { agentId: subscriber.agentId, observed, unrecordedSamples, sampleAgeMs: toSampleAge(ageMs) },
+        ageMs
     });
 }
 
@@ -263,6 +350,32 @@ function decodeSampleAge(value: unknown, path: string): Either<readonly string[]
         return Either.ofLeft(issues);
     }
     return Either.ofRight({ from: PUBLICATION_WORKLOAD_SENT_AT_FIELD, ageMs: ageMs.right, unrecordedSamples });
+}
+
+/**
+ * The merge starts from the histogram with no sample, so no subscriber reads `no-samples` and one reads as itself.
+ * Every subscriber's histogram was decoded on the family's bounds, so the merge has nothing to refuse; a refusal
+ * would still be the left, not a throw.
+ */
+function computeDeliveredFigures(
+    subscribers: readonly DecodedSubscriber[]
+): Either<string, PublicationWorkloadDeliveredFigures> {
+    const noAgeMs = assertBoundedHistogram(AL_PUBLICATION_FIGURE_AGE_BOUNDS_MS, 'AL_PUBLICATION_FIGURE_AGE_BOUNDS_MS');
+    return subscribers
+        .reduce<Either<string, BoundedHistogram>>(
+            (merged, subscriber) =>
+                merged.flatMap(
+                    (refusal) => Either.ofLeft(refusal),
+                    (ageMs) => computeBoundedHistogramMerged(ageMs, subscriber.ageMs)
+                ),
+            Either.ofRight(noAgeMs)
+        )
+        .mapRight((ageMs) => ({
+            subscriberCount: subscribers.length,
+            observed: subscribers.reduce((total, { figures }) => total + figures.observed, 0),
+            unrecordedSamples: subscribers.reduce((total, { figures }) => total + figures.unrecordedSamples, 0),
+            sampleAgeMs: toSampleAge(ageMs)
+        }));
 }
 
 function toSampleAge(ageMs: BoundedHistogram): PublicationWorkloadSampleAge {

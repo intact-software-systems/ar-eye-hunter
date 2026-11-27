@@ -2,9 +2,10 @@
 
 The family lives in `conformance/alm/publication-workload/`. One point of it is one room in which one
 publisher sends paced `live` publications and every other agent subscribes. A run of a point gives a
-figures record: what the point asked for, beside what the run observed, with the age of each
-delivered sample. The family builds recipes and reads results. It starts no browser and holds no
-manifest; a caller puts the two recipes into a distributed run.
+figures record: what the point asked for, beside what the run observed, with the ages of the
+delivered samples of each subscriber, of the room and of the point. The family builds recipes and
+reads results. It starts no browser and holds no manifest; a caller puts the two recipes into a
+distributed run.
 
 ## A point
 
@@ -104,24 +105,34 @@ the recipe schema, the control validation and the distributed preflight only.
 
 ## The figures record
 
-`toPublicationWorkloadFigures({ parameters, publisher: { loop, stats }, subscribers })` reads the
-result values of three commands: the publisher's `publication-workload-publisher-frames` and
-`publication-workload-publisher-stats`, and each subscriber's
-`publication-workload-subscriber-received`. Its left is `readonly string[]`: every field it could
-not read, each starting with the field's path. The record keeps `configured` and `measured` apart,
-no field mixes them, and it judges nothing: the recipes' asserts are the gates.
+`toPublicationWorkloadFigures({ parameters, rooms: [{ publishers, subscribers }] })` reads the result
+values of three commands: each publisher's `publication-workload-publisher-frames` (`loop`) and
+`publication-workload-publisher-stats` (`stats`), and each subscriber's
+`publication-workload-subscriber-received` (`received`), every one beside its `agentId`. `rooms`
+holds one entry per room of the point, which is one; a room holds one entry per agent that left
+results, and the record does not count them against the plan. Its left is `readonly string[]`: every
+field it could not read, each starting with the field's path, which is `$.parameters...`, `$.rooms`
+for another number of rooms than the point's, `$.rooms[r].publishers[p].loop...`,
+`$.rooms[r].publishers[p].stats...` or `$.rooms[r].subscribers[s].received...`. The record keeps
+`configured` and `measured` apart, no field mixes them, and it judges nothing: the recipes' asserts
+are the gates.
 
-| Field                                  | Meaning                                                                                                                                                                          |
-| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `configured.parameters`                | The point as given.                                                                                                                                                              |
-| `configured.plan`                      | `frameCount`, `configuredRateHz`, `subscriberCount`, `expectedInboundMessages` and `minExpectedInboundMessages` for one subscriber, `minAcceptedSends`, `logicalFanoutMessages`. |
-| `measured.publisher.submittedSends`    | The loop's `passed`: the send commands the harness submitted. A live send returns once its value is staged or refused, so this is not what reached a carrier.                    |
-| `measured.publisher.publicationStage`  | The publisher page's stage as its `stats` read it. `counters.admitted` is what the stage handed to a carrier, and the publisher's gate.                                          |
-| `...publisher.achievedIterationRateHz` | The loop's iteration rate, whether a send was admitted or not: the intervals between iterations over the loop's elapsed time. `null` where the loop states none.                 |
-| `...publisher.completedIterations`     | The iterations the loop ran, with `elapsedMs` their time.                                                                                                                        |
-| `measured.subscribers[].observed`      | The distinct messages of the frame type delivered to the application when the count settled.                                                                                     |
-| `...subscribers[].unrecordedSamples`   | The observed messages that gave no age: no finite stamp, or a stamp later than the arrival. Never clamped into a bucket.                                                         |
-| `...subscribers[].sampleAgeMs`         | `no-samples`, or `recorded` with `count`, `min`, `max` and `p50`, `p95`, `p99`.                                                                                                  |
+`measured.rooms[]` holds one entry per room, each with its `group`. In the table, `room` is one of
+them.
+
+| Field                                     | Meaning                                                                                                                                                                          |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `configured.parameters`                   | The point as given.                                                                                                                                                              |
+| `configured.plan`                         | `frameCount`, `configuredRateHz`, `subscriberCount`, `expectedInboundMessages` and `minExpectedInboundMessages` for one subscriber, `minAcceptedSends`, `logicalFanoutMessages`. |
+| `room.publishers[].submittedSends`        | The loop's `passed`: the send commands the harness submitted. A live send returns once its value is staged or refused, so this is not what reached a carrier.                    |
+| `room.publishers[].publicationStage`      | The publisher page's stage as its `stats` read it. `counters.admitted` is what the stage handed to a carrier, and the publisher's gate.                                          |
+| `...publishers[].achievedIterationRateHz` | The loop's iteration rate, whether a send was admitted or not: the intervals between iterations over the loop's elapsed time. `null` where the loop states none.                 |
+| `...publishers[].completedIterations`     | The iterations the loop ran, with `elapsedMs` their time.                                                                                                                        |
+| `room.subscribers[].observed`             | The distinct messages of the frame type delivered to the application when the count settled.                                                                                     |
+| `...subscribers[].unrecordedSamples`      | The observed messages that gave no age: no finite stamp, or a stamp later than the arrival. Never clamped into a bucket.                                                         |
+| `...subscribers[].sampleAgeMs`            | `no-samples`, or `recorded` with `count`, `min`, `max` and `p50`, `p95`, `p99`.                                                                                                  |
+| `room.delivered`                          | The room's subscriber results as one: `subscriberCount` of them, their `observed` and `unrecordedSamples` added, and one `sampleAgeMs` over every age they recorded.             |
+| `measured.delivered`                      | The same over the subscriber results of every room.                                                                                                                              |
 
 Read each figure with these limits:
 
@@ -144,6 +155,11 @@ Read each figure with these limits:
 - **A percentile is a bucket.** `p50`, `p95` and `p99` are `{ atLeast, atMost }`: the bucket of the
   nearest-rank sample on `AL_PUBLICATION_FIGURE_AGE_BOUNDS_MS`, narrowed by `min` and `max`. They
   compare bucket by bucket with the stage's `selectionAgeMs`, and are not exact values.
+- **A delivered age is one histogram.** `delivered.sampleAgeMs` reads the subscribers' histograms
+  merged by `computeBoundedHistogramMerged`, so its percentiles rank every delivered sample; it is no
+  mean of the subscribers' percentiles. With no subscriber result it is `no-samples` beside counts of
+  0, never a zero age. It weighs a subscriber by the samples it recorded, so one that received little
+  hardly moves it: read it beside each subscriber's own figures.
 - **There is no delivery ratio.** A ratio needs a denominator, and a run has three: the planned
   frames, the submitted sends, and the stage's `admitted`. The record states all three and divides by
   none.
@@ -158,6 +174,5 @@ Read each figure with these limits:
 - More than one room, more than one publisher, and a rate above the publication cadence.
 - Subscription churn, and seeded loss or delay.
 - Hosted manifests, and the clock offset a hosted age needs.
-- One histogram across subscribers or across runs: the bounded histogram has no merge, so each
-  subscriber's ages are reported on their own.
+- One histogram across runs: a record covers one run.
 - The bound on a frame's size in the stage: `payloadBytes` is not the envelope.

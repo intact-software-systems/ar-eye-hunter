@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
     toPublicationWorkloadFigures,
+    type PublicationWorkloadPublisherResults,
+    type PublicationWorkloadRoomResults,
     type PublicationWorkloadRun
 } from '@shared-test/rallar-bb-test/conformance/alm/publication-workload/to-publication-workload-figures.ts';
 import type { PublicationWorkloadParameters } from '@shared-test/rallar-bb-test/conformance/alm/publication-workload/validate-publication-workload-parameters.ts';
@@ -145,14 +147,46 @@ function toReceivedResult(observed: number, ageMs: ApiJsonObject, unrecordedSamp
     };
 }
 
-const RUN: PublicationWorkloadRun = {
-    parameters: POINT,
-    publisher: { loop: LOOP_RESULT, stats: STATS_RESULT },
+/** Twelve samples, all above 5 and up to 10 ms. */
+const AGES_UP_TO_10_MS = {
+    upperBounds: AL_PUBLICATION_FIGURE_AGE_BOUNDS_MS,
+    bucketCounts: [0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    count: 12,
+    sum: 96,
+    min: 6,
+    max: 10
+} satisfies BoundedHistogram;
+
+/** Eight samples: seven above 50 and up to 100 ms, and one above 200 and up to 500. */
+const AGES_ABOVE_50_MS = {
+    upperBounds: AL_PUBLICATION_FIGURE_AGE_BOUNDS_MS,
+    bucketCounts: [0, 0, 0, 0, 0, 0, 7, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+    count: 8,
+    sum: 945,
+    min: 60,
+    max: 420
+} satisfies BoundedHistogram;
+
+const PUBLISHER: PublicationWorkloadPublisherResults = {
+    agentId: 'agent-1',
+    loop: LOOP_RESULT,
+    stats: STATS_RESULT
+};
+
+const ROOM: PublicationWorkloadRoomResults = {
+    publishers: [PUBLISHER],
     subscribers: [
         { agentId: 'agent-2', received: toReceivedResult(60, FIRST_AGE_MS, 0) },
         { agentId: 'agent-3', received: toReceivedResult(58, SECOND_AGE_MS, 1) }
     ]
 };
+
+const RUN: PublicationWorkloadRun = { parameters: POINT, rooms: [ROOM] };
+
+/** A run of the point whose one room left these results. */
+function toRunOfRoom(room: PublicationWorkloadRoomResults): PublicationWorkloadRun {
+    return { parameters: POINT, rooms: [room] };
+}
 
 interface UnreadableRun {
     readonly unreadable: string;
@@ -163,65 +197,65 @@ interface UnreadableRun {
 const UNREADABLE_RUNS: readonly UnreadableRun[] = [
     {
         unreadable: 'a loop result that is no object',
-        run: { ...RUN, publisher: { ...RUN.publisher, loop: 'cancelled' } },
+        run: toRunOfRoom({ ...ROOM, publishers: [{ ...PUBLISHER, loop: 'cancelled' }] }),
         paths: [
-            '$.publisher.loop.passed',
-            '$.publisher.loop.childResultCount',
-            '$.publisher.loop.pacing.completedIterations',
-            '$.publisher.loop.pacing.elapsedMs'
+            '$.rooms[0].publishers[0].loop.passed',
+            '$.rooms[0].publishers[0].loop.childResultCount',
+            '$.rooms[0].publishers[0].loop.pacing.completedIterations',
+            '$.rooms[0].publishers[0].loop.pacing.elapsedMs'
         ]
     },
     {
         unreadable: 'a loop that ran 61 children in its 60 iterations, so not one send per iteration',
-        run: { ...RUN, publisher: { ...RUN.publisher, loop: { ...LOOP_RESULT, childResultCount: 61 } } },
-        paths: ['$.publisher.loop.childResultCount']
+        run: toRunOfRoom({ ...ROOM, publishers: [{ ...PUBLISHER, loop: { ...LOOP_RESULT, childResultCount: 61 } }] }),
+        paths: ['$.rooms[0].publishers[0].loop.childResultCount']
     },
     {
         unreadable: 'a loop whose elapsed time is negative',
-        run: {
-            ...RUN,
-            publisher: { ...RUN.publisher, loop: { ...LOOP_RESULT, pacing: { ...LOOP_RESULT.pacing, elapsedMs: -1 } } }
-        },
-        paths: ['$.publisher.loop.pacing.elapsedMs']
+        run: toRunOfRoom({
+            ...ROOM,
+            publishers: [{ ...PUBLISHER, loop: { ...LOOP_RESULT, pacing: { ...LOOP_RESULT.pacing, elapsedMs: -1 } } }]
+        }),
+        paths: ['$.rooms[0].publishers[0].loop.pacing.elapsedMs']
     },
     {
         unreadable: 'a stats result that read no publication stage',
-        run: { ...RUN, publisher: { ...RUN.publisher, stats: { status: 'ready', rallar: { connected: true } } } },
-        paths: ['$.publisher.stats.rallar.alm.publication']
+        run: toRunOfRoom({ ...ROOM, publishers: [{ ...PUBLISHER, stats: { status: 'ready', rallar: { connected: true } } }] }),
+        paths: ['$.rooms[0].publishers[0].stats.rallar.alm.publication']
     },
     {
         unreadable: 'a publication stage with a negative holding',
-        run: {
-            ...RUN,
-            publisher: {
-                ...RUN.publisher,
+        run: toRunOfRoom({
+            ...ROOM,
+            publishers: [{
+                ...PUBLISHER,
                 stats: { rallar: { alm: { publication: { ...PUBLICATION_STAGE, staged: -1 } } } }
-            }
-        },
-        paths: ['$.publisher.stats.rallar.alm.publication.staged']
+            }]
+        }),
+        paths: ['$.rooms[0].publishers[0].stats.rallar.alm.publication.staged']
     },
     {
         unreadable: 'a subscriber whose count left no result value',
-        run: { ...RUN, subscribers: [{ agentId: 'agent-2', received: undefined }] },
-        paths: ['$.subscribers[0].received.observed', '$.subscribers[0].received.sampleAge']
+        run: toRunOfRoom({ ...ROOM, subscribers: [{ agentId: 'agent-2', received: undefined }] }),
+        paths: ['$.rooms[0].subscribers[0].received.observed', '$.rooms[0].subscribers[0].received.sampleAge']
     },
     {
         unreadable: 'a sample age whose unrecorded samples are no count',
-        run: { ...RUN, subscribers: [{ agentId: 'agent-2', received: toReceivedResult(60, FIRST_AGE_MS, -1) }] },
-        paths: ['$.subscribers[0].received.sampleAge.unrecordedSamples']
+        run: toRunOfRoom({ ...ROOM, subscribers: [{ agentId: 'agent-2', received: toReceivedResult(60, FIRST_AGE_MS, -1) }] }),
+        paths: ['$.rooms[0].subscribers[0].received.sampleAge.unrecordedSamples']
     },
     {
         unreadable: 'a count that named no ageFrom',
-        run: {
-            ...RUN,
-            subscribers: [RUN.subscribers[0], { agentId: 'agent-3', received: { observed: 58, received: [] } }]
-        },
-        paths: ['$.subscribers[1].received.sampleAge']
+        run: toRunOfRoom({
+            ...ROOM,
+            subscribers: [ROOM.subscribers[0], { agentId: 'agent-3', received: { observed: 58, received: [] } }]
+        }),
+        paths: ['$.rooms[0].subscribers[1].received.sampleAge']
     },
     {
         unreadable: 'a sample age on other bounds, read from another payload field',
-        run: {
-            ...RUN,
+        run: toRunOfRoom({
+            ...ROOM,
             subscribers: [{
                 agentId: 'agent-2',
                 received: {
@@ -233,13 +267,16 @@ const UNREADABLE_RUNS: readonly UnreadableRun[] = [
                     }
                 }
             }]
-        },
-        paths: ['$.subscribers[0].received.sampleAge.from', '$.subscribers[0].received.sampleAge.ageMs.upperBounds']
+        }),
+        paths: [
+            '$.rooms[0].subscribers[0].received.sampleAge.from',
+            '$.rooms[0].subscribers[0].received.sampleAge.ageMs.upperBounds'
+        ]
     },
     {
         unreadable: 'a count that differs from its recorded and unrecorded samples together',
-        run: { ...RUN, subscribers: [{ agentId: 'agent-2', received: toReceivedResult(62, FIRST_AGE_MS, 1) }] },
-        paths: ['$.subscribers[0].received.observed']
+        run: toRunOfRoom({ ...ROOM, subscribers: [{ agentId: 'agent-2', received: toReceivedResult(62, FIRST_AGE_MS, 1) }] }),
+        paths: ['$.rooms[0].subscribers[0].received.observed']
     },
     {
         unreadable: 'a point that breaks a bound of the family',
@@ -248,25 +285,59 @@ const UNREADABLE_RUNS: readonly UnreadableRun[] = [
     },
     {
         unreadable: 'several results at once',
-        run: {
-            ...RUN,
-            publisher: {
+        run: toRunOfRoom({
+            ...ROOM,
+            publishers: [{
+                agentId: 'agent-1',
                 loop: { ...LOOP_RESULT, passed: '59', pacing: { ...LOOP_RESULT.pacing, achievedRateHz: 'paced' } },
                 stats: {}
-            },
-            subscribers: [RUN.subscribers[0], { agentId: 'agent-3', received: { observed: 58 } }]
-        },
+            }],
+            subscribers: [ROOM.subscribers[0], { agentId: 'agent-3', received: { observed: 58 } }]
+        }),
         paths: [
-            '$.publisher.loop.passed',
-            '$.publisher.loop.pacing.achievedRateHz',
-            '$.publisher.stats.rallar.alm.publication',
-            '$.subscribers[1].received.sampleAge'
+            '$.rooms[0].publishers[0].loop.passed',
+            '$.rooms[0].publishers[0].loop.pacing.achievedRateHz',
+            '$.rooms[0].publishers[0].stats.rallar.alm.publication',
+            '$.rooms[0].subscribers[1].received.sampleAge'
         ]
+    },
+    {
+        unreadable: 'a second publisher whose stats read no publication stage',
+        run: toRunOfRoom({ ...ROOM, publishers: [PUBLISHER, { ...PUBLISHER, agentId: 'agent-4', stats: {} }] }),
+        paths: ['$.rooms[0].publishers[1].stats.rallar.alm.publication']
+    },
+    {
+        unreadable: 'the results of two rooms for a point of one room',
+        run: { parameters: POINT, rooms: [ROOM, ROOM] },
+        paths: ['$.rooms']
+    },
+    {
+        unreadable: 'the results of no room',
+        run: { parameters: POINT, rooms: [] },
+        paths: ['$.rooms']
     }
 ];
 
 describe('toPublicationWorkloadFigures', () => {
-    it('repeats the point as configured, and reports the loop\'s iteration rate and each subscriber\'s age ranges as measured', () => {
+    it('repeats the point as configured, and reports as measured its room: the publisher\'s loop and stage, each subscriber\'s age ranges, and what was delivered', () => {
+        // The 117 ages of both subscribers, counted up bucket by bucket: 4 up to 5 ms, 34 up to 10, 92 up to 20, 109 up to
+        // 50, 115 up to 100, 116 up to 200 and 117 up to 500. Rank 59 lies in (10, 20], rank 112 in (50, 100] and rank
+        // 116 in (100, 200]. 60 + 58 = 118 messages, one of them without an age.
+        const delivered = {
+            subscriberCount: 2,
+            observed: 118,
+            unrecordedSamples: 1,
+            sampleAgeMs: {
+                kind: 'recorded',
+                count: 117,
+                min: 3,
+                max: 420,
+                p50: { atLeast: 10, atMost: 20 },
+                p95: { atLeast: 50, atMost: 100 },
+                p99: { atLeast: 100, atMost: 200 }
+            }
+        };
+
         expect(toPublicationWorkloadFigures(RUN).right).toEqual({
             configured: {
                 parameters: POINT,
@@ -282,45 +353,92 @@ describe('toPublicationWorkloadFigures', () => {
                 }
             },
             measured: {
-                publisher: {
-                    submittedSends: 59,
-                    completedIterations: 60,
-                    elapsedMs: 30_260,
-                    achievedIterationRateHz: 1.9498,
-                    publicationStage: PUBLICATION_STAGE
-                },
-                subscribers: [
-                    {
-                        agentId: 'agent-2',
-                        observed: 60,
-                        unrecordedSamples: 0,
-                        sampleAgeMs: {
-                            kind: 'recorded',
-                            count: 60,
-                            min: 3,
-                            max: 140,
-                            p50: { atLeast: 10, atMost: 20 },
-                            p95: { atLeast: 20, atMost: 50 },
-                            p99: { atLeast: 100, atMost: 140 }
+                rooms: [{
+                    group: { applicationId: 'workload-app', workspaceId: 'workload-workspace', groupId: 'workload-room' },
+                    publishers: [{
+                        agentId: 'agent-1',
+                        submittedSends: 59,
+                        completedIterations: 60,
+                        elapsedMs: 30_260,
+                        achievedIterationRateHz: 1.9498,
+                        publicationStage: PUBLICATION_STAGE
+                    }],
+                    subscribers: [
+                        {
+                            agentId: 'agent-2',
+                            observed: 60,
+                            unrecordedSamples: 0,
+                            sampleAgeMs: {
+                                kind: 'recorded',
+                                count: 60,
+                                min: 3,
+                                max: 140,
+                                p50: { atLeast: 10, atMost: 20 },
+                                p95: { atLeast: 20, atMost: 50 },
+                                p99: { atLeast: 100, atMost: 140 }
+                            }
+                        },
+                        {
+                            agentId: 'agent-3',
+                            observed: 58,
+                            unrecordedSamples: 1,
+                            sampleAgeMs: {
+                                kind: 'recorded',
+                                count: 57,
+                                min: 6,
+                                max: 420,
+                                p50: { atLeast: 10, atMost: 20 },
+                                p95: { atLeast: 50, atMost: 100 },
+                                p99: { atLeast: 200, atMost: 420 }
+                            }
                         }
-                    },
-                    {
-                        agentId: 'agent-3',
-                        observed: 58,
-                        unrecordedSamples: 1,
-                        sampleAgeMs: {
-                            kind: 'recorded',
-                            count: 57,
-                            min: 6,
-                            max: 420,
-                            p50: { atLeast: 10, atMost: 20 },
-                            p95: { atLeast: 50, atMost: 100 },
-                            p99: { atLeast: 200, atMost: 420 }
-                        }
-                    }
-                ]
+                    ],
+                    delivered
+                }],
+                delivered
             }
         });
+    });
+
+    it('reports one delivered sample age for the room and for the point: both subscribers\' histograms merged, their messages and unrecorded samples added', () => {
+        const figures = toPublicationWorkloadFigures(toRunOfRoom({
+            ...ROOM,
+            subscribers: [
+                { agentId: 'agent-2', received: toReceivedResult(13, AGES_UP_TO_10_MS, 1) },
+                { agentId: 'agent-3', received: toReceivedResult(8, AGES_ABOVE_50_MS, 0) }
+            ]
+        }));
+
+        // Twenty ages: 12 up to 10 ms, 7 up to 100 and 1 up to 500. Rank 10 lies in (5, 10], which the smallest sample
+        // starts at 6, rank 19 in (50, 100] and rank 20 in (200, 500], which the largest sample ends at 420. 13 + 8 = 21
+        // messages, one of them without an age.
+        const delivered = {
+            subscriberCount: 2,
+            observed: 21,
+            unrecordedSamples: 1,
+            sampleAgeMs: {
+                kind: 'recorded',
+                count: 20,
+                min: 6,
+                max: 420,
+                p50: { atLeast: 6, atMost: 10 },
+                p95: { atLeast: 50, atMost: 100 },
+                p99: { atLeast: 200, atMost: 420 }
+            }
+        };
+        expect(figures.left).toBeUndefined();
+        expect(figures.right?.measured.rooms[0].delivered).toEqual(delivered);
+        expect(figures.right?.measured.delivered).toEqual(delivered);
+    });
+
+    it('reports no sample age for a room with no subscriber result, not a zero', () => {
+        const figures = toPublicationWorkloadFigures(toRunOfRoom({ ...ROOM, subscribers: [] }));
+
+        const delivered = { subscriberCount: 0, observed: 0, unrecordedSamples: 0, sampleAgeMs: { kind: 'no-samples' } };
+        expect(figures.left).toBeUndefined();
+        expect(figures.right?.measured.rooms[0].subscribers).toEqual([]);
+        expect(figures.right?.measured.rooms[0].delivered).toEqual(delivered);
+        expect(figures.right?.measured.delivered).toEqual(delivered);
     });
 
     it.each(UNREADABLE_RUNS)('names every field it cannot read of $unreadable', ({ run, paths }) => {
@@ -331,10 +449,10 @@ describe('toPublicationWorkloadFigures', () => {
     });
 
     it('reads a loop of one iteration, which has no interval and so states no rate, as a rate of null', () => {
-        const figures = toPublicationWorkloadFigures({
-            ...RUN,
-            publisher: {
-                ...RUN.publisher,
+        const figures = toPublicationWorkloadFigures(toRunOfRoom({
+            ...ROOM,
+            publishers: [{
+                ...PUBLISHER,
                 loop: {
                     ...LOOP_RESULT,
                     iterations: 1,
@@ -343,26 +461,27 @@ describe('toPublicationWorkloadFigures', () => {
                     failed: 0,
                     pacing: { requestedIntervalMs: 500, requestedRateHz: 2, plannedIterations: 60, completedIterations: 1, elapsedMs: 12 }
                 }
-            }
-        });
+            }]
+        }));
 
         expect(figures.left).toBeUndefined();
-        expect(figures.right?.measured.publisher).toEqual({
+        expect(figures.right?.measured.rooms[0].publishers).toEqual([{
+            agentId: 'agent-1',
             submittedSends: 1,
             completedIterations: 1,
             elapsedMs: 12,
             achievedIterationRateHz: null,
             publicationStage: PUBLICATION_STAGE
-        });
+        }]);
     });
 
     it('says that a subscriber recorded no age, and reports no zero in its place', () => {
-        const figures = toPublicationWorkloadFigures({
-            ...RUN,
+        const figures = toPublicationWorkloadFigures(toRunOfRoom({
+            ...ROOM,
             subscribers: [{ agentId: 'agent-2', received: toReceivedResult(3, NO_AGE_MS, 3) }]
-        });
+        }));
 
-        expect(figures.right?.measured.subscribers).toEqual([
+        expect(figures.right?.measured.rooms[0].subscribers).toEqual([
             { agentId: 'agent-2', observed: 3, unrecordedSamples: 3, sampleAgeMs: { kind: 'no-samples' } }
         ]);
     });
@@ -376,12 +495,13 @@ describe('toPublicationWorkloadFigures', () => {
             sum: 885
         } satisfies BoundedHistogram;
 
-        const figures = toPublicationWorkloadFigures({
-            ...RUN,
+        const figures = toPublicationWorkloadFigures(toRunOfRoom({
+            ...ROOM,
             subscribers: [{ agentId: 'agent-2', received: toReceivedResult(61, ageMs, 0) }]
-        });
+        }));
 
         expect(figures.right?.configured.plan.expectedInboundMessages).toBe(60);
-        expect(figures.right?.measured.subscribers[0]).toMatchObject({ observed: 61, sampleAgeMs: { count: 61 } });
+        expect(figures.right?.measured.rooms[0].subscribers[0])
+            .toMatchObject({ observed: 61, sampleAgeMs: { count: 61 } });
     });
 });

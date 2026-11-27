@@ -140,14 +140,19 @@ test('runs the publication workload local point on three agents and records its 
         ).toBeDefined();
         const figures = toPublicationWorkloadFigures({
             parameters: LOCAL_POINT,
-            publisher: {
-                loop: readResultValue(publisherRun!, RESULT_COMMAND_IDS.publisherFrames),
-                stats: readResultValue(publisherRun!, RESULT_COMMAND_IDS.publisherStats)
-            },
-            subscribers: agentRuns.filter((run) => run.recipeId === recipes.subscriber.recipe.recipeId).map((run) => ({
-                agentId: run.agentId,
-                received: readResultValue(run, RESULT_COMMAND_IDS.subscriberReceived)
-            }))
+            rooms: [{
+                publishers: [{
+                    agentId: publisherRun!.agentId,
+                    loop: readResultValue(publisherRun!, RESULT_COMMAND_IDS.publisherFrames),
+                    stats: readResultValue(publisherRun!, RESULT_COMMAND_IDS.publisherStats)
+                }],
+                subscribers: agentRuns
+                    .filter((run) => run.recipeId === recipes.subscriber.recipe.recipeId)
+                    .map((run) => ({
+                        agentId: run.agentId,
+                        received: readResultValue(run, RESULT_COMMAND_IDS.subscriberReceived)
+                    }))
+            }]
         });
         const figuresPath = testInfo.outputPath('publication-workload-figures.json');
         await writeFile(figuresPath, `${JSON.stringify(figures.right ?? { issues: figures.left }, null, 2)}\n`);
@@ -158,11 +163,11 @@ test('runs the publication workload local point on three agents and records its 
 
         expect(figures.right, `The run gives a figures record; issues: ${(figures.left ?? []).join('; ')}`)
             .toBeDefined();
-        const { configured: { plan }, measured } = figures.right!;
-        expect(measured.publisher.publicationStage.counters.admitted, 'The stage handed enough frames to a carrier')
+        const { configured: { plan }, measured: { rooms: [room] } } = figures.right!;
+        expect(room.publishers[0].publicationStage.counters.admitted, 'The stage handed enough frames to a carrier')
             .toBeGreaterThanOrEqual(plan.minAcceptedSends);
-        expect(measured.subscribers, 'Every subscriber of the point has figures').toHaveLength(plan.subscriberCount);
-        for (const { agentId, observed, unrecordedSamples, sampleAgeMs } of measured.subscribers) {
+        expect(room.subscribers, 'Every subscriber of the point has figures').toHaveLength(plan.subscriberCount);
+        for (const { agentId, observed, unrecordedSamples, sampleAgeMs } of room.subscribers) {
             expect(observed, `${agentId} received enough of the frames`).toBeGreaterThanOrEqual(
                 plan.minExpectedInboundMessages
             );
