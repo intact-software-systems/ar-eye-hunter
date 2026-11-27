@@ -1,11 +1,11 @@
 # Edge order: ordered room sends, sorted at the two ends
 
 Status: rulings 1 to 5, 7 and 8 are made, ruling 6 is open. The verdict is **viable**: the measurement the plan
-owed is run (section 2.5, slice 1), and it holds up to 10 messages a second from one sender. Slices 2 to 4 are on
-`main` since 2026-11-27 (PR 916, one commit that holds PRs 916, 924 and 926). Slice 1 is built and waits in PR 915
-behind PR 885; slice 5 is built and waits in PR 929 (section 3, "What the slices found"). Edge order builds on the
-unordered path, which keeps up under load only on the tree of PR 885, so it follows that pull request and does not
-replace it.
+owed is run (section 2.5, slice 1), and it holds up to 10 messages a second from one sender. Slices 1 to 5 are on
+`main` since 2026-11-27: slices 2 to 4 as PR 916 (one commit that holds PRs 916, 924 and 926), slice 5 as PR 929
+and slice 1 as PR 915 (section 3, "What the slices found"). Slice 6, a real consumer, is next and needs one
+ruling first: which stream. Edge order builds on the unordered path, which keeps up under load only with PR 885's
+changes; they are on `main` since the same day, so edge order followed that pull request and did not replace it.
 
 Working name: **edge order**. Today's ordered mode (`orderingKey`) is called **hop order** in this document, because
 every hop enforces it.
@@ -411,20 +411,30 @@ Each slice is one pull request and leaves the product working. The riskiest ques
 
 | Slice                               | Builds                                                                                                                                                                                                                                                               | Proves                                                                                                                                                                                       | Does not yet do                                                                        | Ruling needed first                    |
 | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | -------------------------------------- |
-| 1. Measure                          | Done (PR 915). The measurement of section 2.5, kept in the repository as a manual Postgres suite so later slices can run it again. No product code.                                                                                                                  | Whether the unordered path with a counter keeps up for one fast sender and for five, and how much reordering a receiver really sees.                                                         | Anything for apps.                                                                     | None. It needs PR 885's tree.          |
+| 1. Measure                          | Done, on `main` (PR 915). The measurement of section 2.5, kept in the repository as a manual Postgres suite so later slices can run it again. No product code.                                                                                                       | Whether the unordered path with a counter keeps up for one fast sender and for five, and how much reordering a receiver really sees.                                                         | Anything for apps.                                                                     | None. It needs PR 885's tree.          |
 | 2. The rule, unwired                | Done, on `main` (PR 916). The stamp and the sorter as pure code in `shared-web/browser/messages/edge-order/`, with the spike's cases as unit tests. Nothing imports it.                                                                                              | The gap rule, the entry rule, the caps and the deadline rule, case by case.                                                                                                                  | Any send or receive path. No bundle change.                                            | 1 (gap rule), 2 (entry rule)           |
 | 3. One path end to end              | Done, on `main` (PR 916). `order: 'edge'` on a room channel; the counter taken at `send`; the sorter before the listener registries; whole-room, receipted, at-least-once sends over `ws`, `rtc` and `rtc-with-ws-fallback`. Other shapes are refused `unsupported`. | Browser tests with two pages; a conformance-lane cell `edge-order-stream` on the three carriers and one under the lane's seeded jitter; the public API snapshot; the measured bundle figure. | Holes from ended sends, the gap callback, reload, narrowed audiences, unretried sends. | 3 (where the counter rides), 4 (names) |
 | 4. Holes, reload and reports        | Done, on `main` (PR 916). The `f` floor for ended sends; the gap report to the app and the usage counters; the caps as growth surfaces; a new stream after a reload; the late joiner.                                                                                | Lane cells under the 25 % seeded loss, across a sender reload and with a late joiner; a long-run memory test.                                                                                | Unretried sends and narrowed audiences.                                                | 5 (what a reload means at receivers)   |
-| 5. Newest wins, and other audiences | Unretried and `live` sends as "newest wins, a late one is dropped"; one stream per audience for listed, principal and peer sends; supersedence.                                                                                                                      | A lane cell under seeded loss: never out of order, drops counted.                                                                                                                            | Realtime lanes.                                                                        | None expected                          |
+| 5. Newest wins, and other audiences | Done, on `main` (PR 929). Unretried and `live` sends as "newest wins, a late one is dropped"; one stream per audience for listed, principal and peer sends; supersedence.                                                                                            | A lane cell under seeded loss: never out of order, drops counted.                                                                                                                            | Realtime lanes.                                                                        | None expected                          |
 | 6. A real consumer                  | One app stream moved to edge order; the product description, the browser README and the realtime skill updated; the measurement of slice 1 run again with the product code.                                                                                          | The hosted lane and the app's own tests.                                                                                                                                                     |                                                                                        | Which stream                           |
 | 7. Hop order's future               | Whatever ruling 6 says.                                                                                                                                                                                                                                              |                                                                                                                                                                                              |                                                                                        | 6                                      |
 
-**What the slices found.** Each line is the slice's own report in its pull request. Slices 2 to 4 landed together: on 2026-11-27 the maintainer chose to merge the stack top-down, so PR 926 was merged into PR 924 and PR 924 into PR 916, and PR 916 went to `main` as one commit. The sections above are as they were written before the slices ran, except sections 2.3 to 2.5, which hold slice 1's measurement.
+**What the slices found.** Each line is the slice's own report in its pull request. Slices 2 to 4 landed together: on 2026-11-27 the maintainer chose to merge the stack top-down, so PR 926 was merged into PR 924 and PR 924 into PR 916, and PR 916 went to `main` as one commit. Slices 5 and 1 followed the same day, each as its own pull request. The sections above are as they were written before the slices ran, except sections 2.3 to 2.5, which hold slice 1's measurement.
 
-- **Slice 1, PR 915 (stacked on PR 885).** Unordered sends sorted at the receiver keep up at 5 and 10 messages a
+- **Slice 1, PR 915 (built on PR 885, landed after it).** Unordered sends sorted at the receiver keep up at 5 and 10 messages a
   second from one sender and for five senders at 2 a second each: every message before its deadline, sorted p95 at
   most 0.50 s, at most 2 messages held. At 30 a second, above the session budget, the path keeps up at +0 ms and
-  falls behind at +5 ms. The reordering is the server's: every session on one instance read the same order. Sections 2.3 and 2.5 above hold its figures.
+  falls behind at +5 ms. The reordering is the server's: every session on one instance read the same order. Sections 2.3 and 2.5 above hold its figures. What changed before it landed:
+  - The suite now stamps and sorts with the product's own `EdgeOrderSender` and `EdgeOrderReceiver` and keeps no
+    copy of the rule. The recorded arrivals of all 30 runs were replayed through the product receiver; every figure
+    came out the same, to within 0.1 ms.
+  - **The +0 ms rows of section 2.5 overstate the lag.** The suite's first latency wrapper waited one timer turn
+    before every statement, also at +0 ms; `main`'s helper adds nothing at 0. Runs on 2026-11-27, on a machine that
+    was not quiet, read about half the lag at +0 ms (p50 35 to 88 ms where the table says 105 to 110). The +5 ms
+    rows are close to the table.
+  - In 5 of those 11 runs at +0 ms the last ten messages were more than 1.5 times slower than the first ten. The two
+    runs that started under a load of 6 stayed flat, so this may be the busy machine; it is not settled.
+  - **Owed:** the full 30-run table again on a quiet machine. Slice 6 runs it.
 - **Slice 2, PR 916.** The stamp and the sorter as unwired code with 31 tests. The stamp's fields are `stream`,
   `position`, the lowest open position and the latest deadline of earlier open sends.
 - **Slice 3, PR 924 (stacked on PR 916).** `order: 'edge'` works end to end on a room channel, with two-page tests
@@ -462,11 +472,46 @@ Each slice is one pull request and leaves the product working. The riskiest ques
   - Bundle cost, with ruling 7's settle time built: `browser/rallar.ts` 335.296 to 336.334 KiB, the headless agent
     436.714 to 438.188 KiB. The maintainer had both budgets raised in that pull request, to 337 and 439.
 
+- **Slice 5, PR 929.** The two channel options of ruling 8, a `granted` channel, sends nothing retries and `live`
+  channels, narrowed audiences and supersedence, with 235 edge-order tests and two new lane cells,
+  `granted-rtc-edge-order-stream` and `edge-order-unretried-loss-stream`. What it decided and found, where the
+  sections above say less or say it differently:
+  - **A send nothing retries** (best-effort, or one that asks no receipt) is a hole from the moment it takes its
+    position, so no receiver waits for it: newest wins, and a late one is dropped and counted. Whether a send is
+    retried is decided at the call. Section 2.2 says "`w` is empty" for such a send; the hole is what was built.
+  - **A `live` channel** numbers each publication stream (channel, room, audience and `resourceId`) on its own, and
+    a value takes its position when it leaves the sender's stage, not at the call. A value the stage replaced
+    takes no position, so it is not a gap at any receiver.
+  - **Narrowed audiences:** one stream per channel, room and audience. Every audience counts against the page's
+    256 send streams; past that the stream used least recently starts anew, as after a reload. An application that
+    gives every message its own recipient list gets no order between them.
+  - **Supersedence:** a latest-wins send with a `supersedenceKey` states every earlier open retried send of its key
+    as a hole in its own stamp, because a copy ALM supersedes on receipt is never acknowledged and the newest value
+    would otherwise wait for it. Latest-wins without a key, and `replacesMsgId`, are refused.
+  - **A `granted` channel** works with no product change beyond lifting the refusal: the payload is wrapped before
+    the publisher proof is signed. Without edge order the same lane cell handed the receiver `p1, p3, p4, p2`.
+  - **The two options** are receive-side, per topic and type on a page, as `onOrderGap` is. For each, the latest
+    declaration that names it stands, and a stream follows the values that stand at its next arrival.
+    `orderGapWaitMs: 0` makes a channel newest-wins at that page.
+  - **Still refused:** a durability other than `volatile`, a channel without a room, `scope: 'world'`,
+    `orderingKey` and `seq` (hop order, ruling 6), a hop's or a leader's receipt, the `ws-then-rtc` strategy, and a
+    send addressed to the server's peer.
+  - **Seeded loss over RTC depends on a run's pace.** A frame the lane's loss drops over RTC is submitted again
+    after 50 ms and each attempt is a new draw, so the hosted run lost other sends than the local ones. The product
+    was right both times; the cell now claims the exact lost set over `ws` only.
+  - Not in the lane: narrowed audiences, supersedence and an edge-ordered live channel have unit and two-page tests
+    only.
+  - Bundle cost, merged with `main` on 2026-11-27: `browser/rallar.ts` 337.422 to 338.131 KiB (+0.71), the headless
+    agent 439.495 to 440.139 KiB (+0.64). The maintainer had both budgets raised in that pull request, to 339 and
+    441.
+
 **Where the work can stop and still be useful.**
 
 - After slice 1: the figures say what the unordered path carries, which PR 885 also needs.
 - After slice 3: an app can use edge order for the common case, a receipted room stream.
 - After slice 4: it is complete for reliable streams.
+- After slice 5: it also serves newest-wins streams, live values, granted channels and narrowed audiences. This is
+  where the work stands. No app uses it yet, and `docs/rallar-api-reference.md` does not describe it.
 
 **Hop order at the end (ruling 6).** Three choices, with what follows from each:
 
@@ -596,3 +641,6 @@ still be dropped as late. The receiver noting a message at admission stays the e
 - _One `order` object holding the mode, both options and the gap handler_ (not chosen). It would change ruling 4's
   `order: 'edge'` and `onOrderGap`, which slices 3 and 4 built.
 - _Do not expose them yet_ (not chosen). A channel could then not bound its worst-case wait.
+
+What follows from the ruling: slice 5 built both. They are receive-side and per topic and type on a page, the latest
+declaration that names one stands, and a stream follows them from its next arrival (section 3, slice 5).
