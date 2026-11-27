@@ -39,7 +39,8 @@ export function toGroupGuestAdmissionCommand(input: GroupGuestAdmission): GroupM
 export function assertGuestAdmissionCommand(command: GroupMutationCommand): void {
     if (command.operation !== 'joinGroup' || !/^guest-[0-9a-f]{64}$/.test(command.targetPrincipalId) ||
         command.input.participation !== 'player' || command.input.joinCode !== null ||
-        !isGuestInvitationVerifier(command.input.inviteToken)) {
+        !(command.input.guestBookingRevision === undefined ? isGuestInvitationVerifier(command.input.inviteToken) :
+            command.input.inviteToken === null && Number.isSafeInteger(command.input.guestBookingRevision) && command.input.guestBookingRevision > 0)) {
         throw new TypeError('Room guest redemption requires a scoped guest principal and invitation verifier.');
     }
     if (command.input.guestDisplayName !== undefined && !isRoomGuestDisplayName(command.input.guestDisplayName)) {
@@ -63,7 +64,7 @@ export function assertGuestInvitationVerifier(verifier: JsonWireObject[string] |
 }
 
 export function assertGuestAdmissionAuthority(command: GroupMutationCommand, facts: GroupMutationIngressFacts): void {
-    if (command.operation === 'joinGroup' && (command.input.guestTransport || command.input.guestDisplayName !== undefined) && facts.internalAuthority !== 'guest-redemption') {
+    if (command.operation === 'joinGroup' && (command.input.guestTransport || command.input.guestBookingRevision !== undefined || command.input.guestDisplayName !== undefined) && facts.internalAuthority !== 'guest-redemption') {
         throw new TypeError('A guest transport binding requires verified invitation redemption.');
     }
 }

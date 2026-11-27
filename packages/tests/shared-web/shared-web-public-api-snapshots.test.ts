@@ -14,6 +14,10 @@ interface PublicSurfaceSnapshot {
 
 const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
     {
+        filePath: 'packages/shared-web/browser/rooms/sessions/guest-session-booking.ts',
+        expected: { values: ['GuestSessionBooking'], types: [], starExports: [], namespaceExports: [] }
+    },
+    {
         filePath: 'packages/shared-web/browser/rooms/lobby/rallar-room-lobby.ts',
         expected: { values: ['RallarRoomLobby'], types: [], starExports: [], namespaceExports: [] }
     },

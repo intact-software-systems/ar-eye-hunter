@@ -80,6 +80,7 @@ async function createSession(
                 maxMembers: request.maxPlayers,
                 maxSpectators: 16,
                 scheduledStartAtEpochMs: request.startsAtEpochMs,
+                ...(request.guestBooking && { guestBooking: true }),
                 createdByPrincipalId: session.clientId
             },
             options: { authSession: session, signal: attemptSignal, requestId: request.requestId }

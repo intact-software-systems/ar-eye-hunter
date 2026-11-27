@@ -319,6 +319,7 @@ export type GroupMutationCommand =
                     participation: 'player' | 'spectator' | null;
                     guestTransport?: GroupGuestAdmission.Transport;
                     guestDisplayName?: string;
+                    guestBookingRevision?: number;
                     inviteToken: string | null;
                     joinCode: string | null;
                 }>;
@@ -582,6 +583,7 @@ export const GROUP_MUTATION_INTERNAL_AUTHORITY_MODES = [
     'session-cleanup',
     'formation-criterion',
     'guest-redemption',
+    'guest-booking',
     'temporary-room-creation',
     'guest-expiry',
     'formation-automation',

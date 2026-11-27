@@ -44,7 +44,7 @@ export class RoomEventRepository {
         };
         const notice = computeViewInvalidationPublication({ ...publication, resource: 'room-event', principalIds: facts.audience });
         const organizerNotice = computeViewInvalidationPublication({
-            ...publication, resource: 'room-event-organizer', principalIds: [after.organizerId]
+            ...publication, resource: 'room-event-organizer', principalIds: before ? [before.value.organizerId, after.organizerId] : [after.organizerId]
         });
         const row = { namespace: ROOM_EVENTS_NAMESPACE, key: groupStateGroupStorageKey(after.lobby), value: JSON.stringify(after),
             expireAtTimestamp: after.closed ? facts.createdAtEpochMs + facts.retentionMs : NEVER_EXPIRE_AT_TIMESTAMP };

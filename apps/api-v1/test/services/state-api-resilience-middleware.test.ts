@@ -228,7 +228,8 @@ function createStateApiConfiguration(
 }
 
 test('anonymous room operations share the ingress budget across caller-supplied client IDs', async () => {
-    for (const path of ['groups/court/guests/requests/abc', 'groups/court/guests/preview', 'temporary-rooms/requests/abc']) {
+    for (const path of ['groups/court/guests/requests/abc', 'groups/court/guests/preview', 'temporary-rooms/requests/abc',
+        'groups/court/session/guest/preview', 'groups/court/session/guest/requests/abc']) {
         const app = new Hono();
         app.use('/api/state/*', createStateApiResilienceMiddleware({
             namespace: crypto.randomUUID(),

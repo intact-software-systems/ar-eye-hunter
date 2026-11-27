@@ -30,6 +30,12 @@ const budgetsKiB = JSON.parse(readFileSync(path.join(scriptDir, '../bundle-budge
 
 const entries = [
     {
+        label: 'browser/rooms/sessions/guest-session-booking.ts',
+        entry: 'packages/shared-web/browser/rooms/sessions/guest-session-booking.ts',
+        output: 'guest-session-booking.min.js',
+        brotliBudgetKiB: budgetsKiB['browser/rooms/sessions/guest-session-booking.ts']
+    },
+    {
         label: 'browser/rooms/events/rallar-room-event.ts',
         entry: 'packages/shared-web/browser/rooms/events/rallar-room-event.ts',
         output: 'rallar-room-event.min.js',
