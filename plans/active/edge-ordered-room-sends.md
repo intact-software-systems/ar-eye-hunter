@@ -1,7 +1,7 @@
 # Edge order: ordered room sends, sorted at the two ends
 
 Status: a plan to decide on. Nothing is built. The verdict so far is **viable, with one measurement still owed**
-(section 2.5) and the maintainer's rulings in section 4: rulings 1 to 5 are made, rulings 6 and 7 are open. It
+(section 2.5) and the maintainer's rulings in section 4: rulings 1 to 5 and 7 are made, ruling 6 is open. It
 builds on the unordered path, which keeps up under load only on the tree of PR 885, so it follows that pull request
 and does not replace it.
 
@@ -380,7 +380,7 @@ as they were written before the slices ran.
     publisher proof and the `subscribe` election. It moves to slice 5.
   - The channel options for a shorter wait cap (ruling 1) and for the entry window's length (ruling 2) are not
     built, because their names are not ruled. They move to slice 5.
-  - **An acknowledged message can be dropped for order.** This is ruling 7.
+  - **An acknowledged message can be dropped for order.** Ruling 7 answers it with a short settle time.
   - Bundle cost: `browser/rallar.ts` 335.296 to 336.186 KiB against 336, the headless agent 436.714 to 438.213 KiB
     against 437. The budgets wait for the maintainer.
 
@@ -483,7 +483,8 @@ stream and not across a reload.
 **6. Hop order's future (slice 7).** Keep as it is, or keep it for server-authored streams only. See section 3. The
 recommendation is to decide after slice 6, with a consumer and figures in hand.
 
-**7. An acknowledged message that has not reached its sorter (found in slice 4; before slice 5).** A sender reads
+**7. An acknowledged message that has not reached its sorter (found in slice 4). Ruled on 2026-11-27: a short
+settle time.** A sender reads
 `acknowledged` when every recipient has admitted the message. A recipient's ACK is committed with the admission,
 before the message reaches its sorter, and WS and RTC each deliver through their own serial lane. So at one recipient
 message 5 can be admitted over WS and wait behind a slow handler while the sender, seeing it acknowledged, stamps
@@ -491,13 +492,19 @@ message 6 "everything below me has ended"; 6 arrives over RTC first, the sorter 
 comes. That breaks ruling 1's promise that a message that arrives is never dropped for order. It needs one stream
 over two carriers and a delivery lane that is held up, so it is narrow. It is in slice 3 as built.
 
-- _A short settle time_ (recommended). An acknowledged send counts as ended only a short time after the sender saw
+- _A short settle time_ (chosen). An acknowledged send counts as ended only a short time after the sender saw
   the ACK (500 ms, the entry window's figure). Cheap and contained in Rallar Web. What remains: a lane held up longer
   than the settle time.
-- _Acknowledged sends stay open until their deadline._ Closes the case fully. Every stamp then names a wait of up to
+- _Acknowledged sends stay open until their deadline_ (not chosen). Closes the case fully. Every stamp then names a wait of up to
   a message lifetime, the sender's table holds every send for its lifetime, and a receiver that was not in a send's
   audience waits for it up to that lifetime (30 s by default).
-- _The receiver notes a message when it is admitted._ Exact, with no added wait: the sorter learns at admission
+- _The receiver notes a message when it is admitted_ (not chosen). Exact, with no added wait: the sorter learns at admission
   that a position is on its way and waits for it whatever the sender says. It needs a new hand-off from the inbound
   runtime to Rallar Web at admission, outside the edge-order folder.
-- _Leave it and state it._ It is stated in the browser README now.
+- _Leave it and state it_ (not chosen). It is stated in the browser README now.
+
+What follows from the ruling: a send the sender saw acknowledged stays open for 500 ms more, and a stamp made in
+that time says the send can still arrive until the settle time ends, not until its deadline. A receiver that is
+missing such a message therefore waits at most the settle time for it. What remains, and is stated in the documents:
+a message whose delivery lane is held up for longer than the settle time after every recipient acknowledged it can
+still be dropped as late. The receiver noting a message at admission stays the exact fix if that ever matters.
