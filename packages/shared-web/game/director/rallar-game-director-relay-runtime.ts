@@ -244,7 +244,7 @@ export class RallarGameDirectorRelayRuntime<TInput, TIntent, TSnapshot, TEvent, 
         if (gap.reason === 'ended-at-sender') {
             return;
         }
-        this.requestSync({ reason: 'event-order-gap' }).catch((error: unknown) => {
+        void this.requestSync({ reason: 'event-order-gap' }).catch((error) => {
             console.error(
                 `Failed to request a sync for Rallar Game match ${this.input.config.protocol} after event order gap ${gap.reason}:`,
                 error

@@ -311,9 +311,9 @@ describe('the director relay\'s output gaps with two relays of one room on a pag
     });
 
     it('still passes the gap to one relay when the other relay\'s callback throws', async () => {
-        const logged: unknown[][] = [];
-        const consoleError = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
-            logged.push(args);
+        const logged: Error[] = [];
+        const consoleError = vi.spyOn(console, 'error').mockImplementation((_message: string, error: Error) => {
+            logged.push(error);
         });
         const pages = openTwoClientRelays(() => {
             throw new Error('The application failed on the gap.');
@@ -325,7 +325,7 @@ describe('the director relay\'s output gaps with two relays of one room on a pag
 
             expect(toGapSummaries(pages.second.gaps)).toEqual([[2, 2, 'channel-wait-cap']]);
             expect(pages.second.seen).toEqual([1, 3]);
-            expect(logged).toEqual([[expect.any(String), expect.objectContaining({ message: 'The application failed on the gap.' })]]);
+            expect(logged).toEqual([expect.objectContaining({ message: 'The application failed on the gap.' })]);
         }
         finally {
             consoleError.mockRestore();

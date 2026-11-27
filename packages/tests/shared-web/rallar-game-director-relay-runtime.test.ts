@@ -1,4 +1,10 @@
-import type { RallarDirectorRelayConfig, RallarDirectorRelayHandle, RallarMessageOrderGap, RallarMessageOrderGapReason } from '@shared-web/browser/rallar.ts';
+import type {
+    RallarDirectorRelayConfig,
+    RallarDirectorRelayHandle,
+    RallarDirectorRelaySendResult,
+    RallarMessageOrderGap,
+    RallarMessageOrderGapReason
+} from '@shared-web/browser/rallar.ts';
 import { RallarGameDirectorRelayRuntime } from '@shared-web/game/director/rallar-game-director-relay-runtime.ts';
 import type { RallarGameEnvelope } from '@shared-web/game/envelopes.ts';
 import type { RallarGameMatchConfig, RallarGameRallarFacade } from '@shared-web/game/match/rallar-game-match-contracts.ts';
@@ -114,7 +120,7 @@ describe('RallarGameDirectorRelayRuntime', () => {
             { reason: 'ended-at-sender', outcome: 'asks for no sync', syncRequests: [] }
         ] as const
     )('$outcome on an event order gap of reason $reason', async ({ reason, syncRequests }) => {
-        const requested: unknown[] = [];
+        const requested: RallarGameEnvelope<object>[] = [];
         const onOutputGap = startGapRuntime(async (envelope) => {
             requested.push(envelope);
             return { status: 'sent' };
@@ -126,7 +132,7 @@ describe('RallarGameDirectorRelayRuntime', () => {
     });
 
     it('returns from an event order gap without waiting for the director to confirm the sync request', async () => {
-        const requested: unknown[] = [];
+        const requested: RallarGameEnvelope<object>[] = [];
         const onOutputGap = startGapRuntime((envelope) => {
             requested.push(envelope);
             return new Promise(() => {});
@@ -152,9 +158,9 @@ describe('RallarGameDirectorRelayRuntime', () => {
             { failure: 'rejects', requestSync: () => Promise.reject(new Error('No admitted room presence.')) }
         ] as const
     )('logs a sync request that $failure on an event order gap once and returns normally', async ({ requestSync }) => {
-        const logged: unknown[][] = [];
-        const consoleError = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
-            logged.push(args);
+        const logged: LoggedError[] = [];
+        const consoleError = vi.spyOn(console, 'error').mockImplementation((message: string, error: Error) => {
+            logged.push({ message, error });
         });
         const onOutputGap = startGapRuntime(requestSync);
 
@@ -162,10 +168,10 @@ describe('RallarGameDirectorRelayRuntime', () => {
             await expect(Promise.resolve(onOutputGap(toOutputGap('channel-wait-cap')))).resolves.toBeUndefined();
             await new Promise((resolve) => setTimeout(resolve, 0));
 
-            expect(logged).toEqual([[
-                expect.stringMatching(/test\.game\.v1.*channel-wait-cap/u),
-                expect.objectContaining({ message: 'No admitted room presence.' })
-            ]]);
+            expect(logged).toEqual([{
+                message: expect.stringMatching(/test\.game\.v1.*channel-wait-cap/u),
+                error: expect.objectContaining({ message: 'No admitted room presence.' })
+            }]);
         }
         finally {
             consoleError.mockRestore();
@@ -173,12 +179,21 @@ describe('RallarGameDirectorRelayRuntime', () => {
     });
 });
 
+/** The relay's sync request as the match sends it: one sync-request envelope. */
+type SyncRequestDouble = (envelope: RallarGameEnvelope<object>) => Promise<RallarDirectorRelaySendResult>;
+
+/** What the runtime logged with `console.error`. */
+interface LoggedError {
+    readonly message: string;
+    readonly error: Error;
+}
+
 /** A started client runtime's gap callback, whose relay answers a sync request with `requestSync`. */
-function startGapRuntime(requestSync: PayloadRelayHandle['requestSync']): NonNullable<PayloadRelayConfig['onOutputGap']> {
+function startGapRuntime(requestSync: SyncRequestDouble): NonNullable<PayloadRelayConfig['onOutputGap']> {
     let relayConfig: PayloadRelayConfig | undefined;
     const runtime = createPublishingRuntime(vi.fn(), {
         isDirector: false,
-        relay: { requestSync },
+        relay: { requestSync: requestSync as PayloadRelayHandle['requestSync'] },
         recordConfig: (config) => {
             relayConfig = config;
         }
