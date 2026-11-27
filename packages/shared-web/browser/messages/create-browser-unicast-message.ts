@@ -14,7 +14,6 @@ import {
     type ALMessage,
     type newALUnicastMessage
 } from '@shared/al-contracts/al-contract.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     validateRallarRouteId,
     type RallarValidationIssue
@@ -33,11 +32,6 @@ export interface CreateBrowserUnicastMessageInput<T> {
     readonly laneTtlMs: number;
     /** Written verbatim: a public send's corrId, or the reply fields only the reply path sets. */
     readonly actions: ALActions | undefined;
-}
-
-export interface ValidateBrowserPeerInput<T> {
-    readonly send: RallarWsSendInput<T>;
-    readonly roomRef: GroupRef | undefined;
 }
 
 export interface ValidateBrowserPeerServerInput {
@@ -83,18 +77,11 @@ export function createBrowserUnicastMessage<T>(
     );
 }
 
-export function validateBrowserPeerInput<T>(
-    input: ValidateBrowserPeerInput<T>
-): readonly RallarValidationIssue[] {
-    const { send } = input;
+export function validateBrowserPeerInput<T>(send: RallarWsSendInput<T>): readonly RallarValidationIssue[] {
     if (send.peerId === undefined) {
         return [];
     }
-    return [
-        ...validatePeerId(send.peerId),
-        ...validatePeerCarriage(send),
-        ...validatePeerContext(send.contextId, input.roomRef)
-    ];
+    return [...validatePeerId(send.peerId), ...validatePeerCarriage(send)];
 }
 
 export function validateBrowserPeerServer(
@@ -153,17 +140,4 @@ function validatePeerCarriage<T>(send: RallarWsSendInput<T>): readonly RallarVal
         });
     }
     return issues;
-}
-
-function validatePeerContext(
-    contextId: string | undefined,
-    roomRef: GroupRef | undefined
-): readonly RallarValidationIssue[] {
-    return roomRef === undefined || contextId === undefined || contextId === roomRef.groupId
-        ? []
-        : [{
-            path: '$.contextId',
-            code: 'context-room-mismatch',
-            message: 'A peer-addressed send routes in the room it names: contextId must equal the room id.'
-        }];
 }

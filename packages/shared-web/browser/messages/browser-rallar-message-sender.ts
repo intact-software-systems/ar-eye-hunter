@@ -238,7 +238,8 @@ export class BrowserRallarMessageSender {
         throwIfMessageIssues([
             ...this.input.inputValidator.validateWs(resolved),
             ...this.input.inputValidator.validateWsOrdering(resolved),
-            ...validateBrowserPeerInput({ send, roomRef })
+            ...validateBrowserPeerInput(send),
+            ...validateRoomContext(send.contextId, roomRef)
         ]);
 
         const scopedMessage: ScopedMessageSend<T> = {
@@ -523,7 +524,10 @@ export class BrowserRallarMessageSender {
         const roomId = this.input.toRoomId(room);
 
         const roomRef = this.input.resolveRoomRef(room);
-        const issues = [...this.input.inputValidator.validateRtc(input, roomId)];
+        const issues = [
+            ...this.input.inputValidator.validateRtc(input, roomId),
+            ...validateRoomContext(input.contextId, roomRef)
+        ];
         if (!roomId) {
             issues.push({
                 path: '$.roomId',
@@ -685,6 +689,20 @@ function throwIfMessageIssues(issues: readonly RallarValidationIssue[]): void {
     if (issues.length > 0) {
         throwRallarValidation(issues);
     }
+}
+
+/** The WS server refuses a room send routed in another room (D82); the browser refuses it first, on every carrier. */
+function validateRoomContext(
+    contextId: string | undefined,
+    roomRef: GroupRef | undefined
+): readonly RallarValidationIssue[] {
+    return roomRef === undefined || contextId === undefined || contextId === roomRef.groupId
+        ? []
+        : [{
+            path: '$.contextId',
+            code: 'context-room-mismatch',
+            message: 'A room send routes in the room it names: contextId must equal the room id.'
+        }];
 }
 
 /**
