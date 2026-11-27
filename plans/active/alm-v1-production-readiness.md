@@ -745,17 +745,18 @@ Notes on the rows that need them:
 
 ### 5.6 Product surface, documents and adoption
 
-| Id | Item                                                                    | Source                   | Class   |
-| -- | ----------------------------------------------------------------------- | ------------------------ | ------- |
-| A1 | The contracts are not adopted                                           | addendum §6, §9          | Blocker |
-| A2 | No criterion of the product description is marked met                   | product description      | Blocker |
-| A3 | Rulings recorded as provisional or made for the maintainer              | D513 to D641, D717, D783 | Decide  |
-| A4 | No consumer for anything delivered after Release 8                      | roadmap                  | Blocker |
-| A5 | No developer documentation outside `playground/`                        | none exists              | Blocker |
-| A6 | Stale statements in current documents                                   | below                    | Should  |
-| A7 | A client cannot learn a topic's fanout or participation before it sends | D482, D517               | Blocker |
-| A8 | Public surface leftovers                                                | backlog                  | Should  |
-| A9 | Replies travel over WS only and do not survive a reload                 | D441 to D446             | Later   |
+| Id  | Item                                                                      | Source                               | Class   |
+| --- | ------------------------------------------------------------------------- | ------------------------------------ | ------- |
+| A1  | The contracts are not adopted                                             | addendum §6, §9                      | Blocker |
+| A2  | No criterion of the product description is marked met                     | product description                  | Blocker |
+| A3  | Rulings recorded as provisional or made for the maintainer                | D513 to D641, D717, D783             | Decide  |
+| A4  | No consumer for anything delivered after Release 8                        | roadmap                              | Blocker |
+| A5  | No developer documentation outside `playground/`                          | none exists                          | Blocker |
+| A6  | Stale statements in current documents                                     | below                                | Should  |
+| A7  | A client cannot learn a topic's fanout or participation before it sends   | D482, D517                           | Blocker |
+| A8  | Public surface leftovers                                                  | backlog                              | Should  |
+| A9  | Replies travel over WS only and do not survive a reload                   | D441 to D446                         | Later   |
+| A10 | Incoming database writes outside AppInbox are neither confirmed nor moved | D770, D779, the review of 2026-11-27 | Decide  |
 
 - **A1.** The addendum asks for a scope, default and cutover decision, a truthful security and
   revocation contract, the requirement-to-evidence matrix for the advertised modes, and current
@@ -797,6 +798,21 @@ Notes on the rows that need them:
   production calls the constructors; `validateALMessageInput` has no production caller;
   `BrowserPublicationStages.readLane` has no product consumer; `packages/shared/api/auth.ts` keeps
   a module-global session.
+- **A10.** The rule says AppInbox is mandatory for every incoming database mutation, with no
+  exception, in `AGENTS.md`, `CLAUDE.md`, `convergent-service-writing.md` and eight more
+  documents. On the WS server the ALM inbound admission store, the outbound admission store,
+  their work rows and the receipt record are written directly on incoming frames: on a
+  PostgreSQL cluster by every admitted message except a small RTC signal, and by every counted
+  ACK. Only the receipt record was put to the maintainer (D779, point 5, 2026-11-22), and the
+  record keeps the answer and not the question; the maintainer said on 2026-11-27 that they were
+  not aware of it. No AppInbox alternative was measured. The review is
+  `plans/active/app-inbox-direct-writes-review.md`. Open: (1) rule on the older stores, confirm
+  them as a named second path with written requirements or move them; (2) measure an
+  AppInbox-backed count in the receipt record's own cells (28 and 140 ACKs a second, +0 and
+  +5 ms), then rule on the record; (3) rule on each miss the review lists, among them a lost count
+  that is not retried, in-call retry loops, the row lock on claimed queue rows, the intermediate
+  work row before the terminal receipt's outbox row. Closed when the rule documents and the code say the
+  same thing and a guard fails on a new writer outside the registry.
 
 ### 5.7 Carrier parity between WS and RTC
 
@@ -993,7 +1009,9 @@ A proposal for the maintainer to amend. ALM is 1.0 when all eight hold.
    previous build. C2 is closed.
 8. **It is adopted.** The rulings of A3 are confirmed or changed, the completion criteria are
    marked, each 1.0 mode runs in a game, and the developer guide, the limits page and the
-   operations runbook exist outside `playground/`.
+   operations runbook exist outside `playground/`. A10 is ruled, and the mutation doctrine and the
+   code agree: every database write on an incoming path is behind AppInbox or in the registry with
+   the maintainer's quoted approval, and the direct-write guard is a governance-gate phase.
 
 Where each stands at `e30b2c9`. No criterion is changed, and none is met in full.
 
@@ -1189,6 +1207,18 @@ places:
   removes the stall it started from, which is R1. Decision 18 asks whether one fast ordered track is
   a 1.0 mode, and recommends ruling it together with that ruling.
 
+### The AppInbox review (A10)
+
+Two entries, because they have different deadlines. The maintainer ruled both on 2026-11-27: the
+guard is built now, and the AppInbox-backed count is measured before the revisit.
+
+- **The explicitness rule and the direct-write guard (A10, first half).** Documents, registry and
+  guard only; confirms nothing. Before the design of any slice that adds a store, a namespace or
+  a row family is approved. The presence slice (R3) is the next such design.
+- **The AppInbox revisit (A10, second half).** The measurement of an AppInbox-backed count, then
+  the maintainer's ruling on the receipt record and on the older stores. Before criterion 8 is
+  marked, and before any pull request that builds on the receipt record's storage.
+
 ### The queue after the two slices
 
 Outcome-shaped, in the order proposed at the first reading; the merges changed no order. Three
@@ -1296,8 +1326,13 @@ reference set is not rerun on #885's later heads or on `main` as merged (R1).
    are", so the receipt record is not the only one. Third, no agent proposes a write outside
    AppInbox without saying so explicitly. `AGENTS.md` and `CLAUDE.md` say AppInbox is mandatory
    for every incoming database mutation (checked at `e30b2c9`); no sentence that names an
-   exception is added to either before the revisit. What is asked next is the review's own
-   question: confirm the direct writes with a written boundary, or move them behind AppInbox.
+   exception is added to either before the revisit. The review is written:
+   `plans/active/app-inbox-direct-writes-review.md` (A10). On 2026-11-27 the maintainer also
+   ruled that the direct-write guard is built now and that an AppInbox-backed ACK count is
+   measured before the revisit (section 7). What is asked next are A10's three open points, asked
+   one question at a time in section 11 of that review: rule on the older stores, confirm them as a named
+   second path with written requirements or move them; after the measurement, rule on the receipt
+   record; and rule on each miss the review lists.
 3. **Sign every ordinary RTC room send?** Recommend yes for 1.0. Without it the contract must say
    that a room member can speak as another on any unreceipted send, which is the default for
    `live`.
