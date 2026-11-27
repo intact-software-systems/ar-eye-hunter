@@ -10,10 +10,11 @@ holds no manifest; a caller puts the recipes into a distributed run.
 ## A point
 
 `PublicationWorkloadParameters` has no default: a caller states every field.
-`validatePublicationWorkloadParameters` returns every issue of a point, each under its `$.field` path.
-A field reports the first bound it breaks; each group, under `$.groups[n]`, `publication` and
-`loss` report every issue of their own validators. A bound stated against another field is checked only when that
-field holds its own bound; a group with an issue of its own is held to no rule among the groups.
+`validatePublicationWorkloadParameters` returns every issue of a point, each under its `$.field`
+path. A field reports the first bound it breaks; each group, under `$.groups[n]`, `publication` and
+`loss` report every issue of their own validators. A bound stated against another field is checked
+only when that field holds its own bound; a group with an issue of its own is held to no rule among
+the groups.
 
 | Field                 | Bound                                                                                                                                |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
@@ -44,13 +45,13 @@ and a point with it builds the commands it built before the field existed. A see
 seed that repeats it, so the record of a run holds what repeats the run. Its issues, each checked
 only where the fields it depends on hold their own bounds:
 
-| Code                       | Path           | When                                                                                                                                                             |
-| -------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `invalid-loss`             | `$.loss`       | The loss is of neither kind.                                                                                                                                     |
-| `invalid-seeded-loss`      | `$.loss`       | One issue for each sentence of the platform's `validateSeededTransportFaultAction`: the platform owns what can be injected.                                      |
-| `loss-ratio-not-below-one` | `$.loss.ratio` | The ratio is 1. No frame then leaves a publisher: that is a hold, not a loss.                                                                                    |
-| `loss-drops-no-frame`      | `$.loss`       | The seed's first `minAcceptedSends` draws all pass, so the recipe's assert that the fault acted could not pass. Needs the frame count and `minSendSuccessRatio`. |
-| `loss-leaves-no-frame`     | `$.loss`       | On `ws`, the seed drops every frame, so a subscriber expects none. Needs the frame count.                                                                        |
+| Code                       | Path           | When                                                                                                                                                                                                                                                                                                                                                          |
+| -------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `invalid-loss`             | `$.loss`       | The loss is of neither kind.                                                                                                                                                                                                                                                                                                                                  |
+| `invalid-seeded-loss`      | `$.loss`       | One issue for each sentence of the platform's `validateSeededTransportFaultAction`: the platform owns what can be injected.                                                                                                                                                                                                                                   |
+| `loss-ratio-not-below-one` | `$.loss.ratio` | The ratio is 1. No frame then leaves a publisher: that is a hold, not a loss.                                                                                                                                                                                                                                                                                 |
+| `loss-drops-no-frame`      | `$.loss`       | The seed's first `minAcceptedSends` draws all pass, so nothing makes the recipe's assert that the fault acted sure to pass: only a publisher's first `minAcceptedSends` frames are sure to be written. Over `rtc`, which draws for every send to every next hop, the rule is stricter than the assert needs. Needs the frame count and `minSendSuccessRatio`. |
+| `loss-leaves-no-frame`     | `$.loss`       | On `ws`, the seed drops every frame, so a subscriber expects none. Needs the frame count.                                                                                                                                                                                                                                                                     |
 
 The interval, the window and the frame count are one publisher's: every publisher of a point sends
 `frameCount` frames. The rate is the integer interval, so `configuredRateHz`
@@ -115,7 +116,7 @@ Each publisher then runs:
 5. `stats`, then the `complete` barrier, whose timeout holds every command of the window, the two
    fault steps included.
 6. Its gate: the stage's `admitted` counter is at least `minAcceptedSends`; under a seeded loss,
-   then `publication-workload-publisher-assert-loss-acted`: the release's `acted.drop` is at least 1.
+   then `publication-workload-publisher-assert-loss-acted`: the release's `acted.drop` is not 0.
 
 A subscriber waits at the `complete` barrier and then runs:
 
@@ -163,8 +164,10 @@ Over `ws` the seed decides which frames are lost, so `one-room-ws-loss` asks for
 expects: the stage hands on all 60 frames, and each subscriber counts exactly the 42 the loss lets
 pass and refuses a 43rd. `one-room-rtc-loss` keeps the family's band of 0.95, which is a band for a
 loaded machine and not a loss allowance: at this ratio a frame is lost only after about ten refusals
-in a row at one hop, or on a page that stalls for most of a publish interval, while a product that
-stopped resubmitting a refused frame would deliver about three quarters and fail it.
+in a row at one hop, or on a page that stalls for most of a publish interval. A product that
+stopped resubmitting a refused frame would, by the seed's own draws, lose at least 18 of its 120
+sends and fail it: the first 60 draws of seed 7 at 0.25 hold 18 drops, and two subscribers that each
+must observe 57 of 60 can lose 6 between them. No run has shown this.
 
 The test's manifest is a role map with one role per recipe, named by the recipe's id, so each recipe
 runs on its own agents and on no other. The agents are handed out in the order the rooms and their
@@ -176,39 +179,40 @@ targets, because every agent reports the group the manifest names; an agent's re
 therefore no evidence of the room it ran in. Its recipe id is.
 
 Three runs in a row of `one-room` and of `two-rooms`, when they were the family's only points,
-passed on one 4-CPU machine that other work was using at the time. From the command to its exit, `one-room` took 58.8, 62.4 and 63.5 s, and `two-rooms` took 52.3, 50.0
-and 52.1 s; the tests themselves took 52.5 to 57.5 s and 45.0 to 46.4 s. `two-rooms` is the shorter
-because its window is half as long, though it has twice the agents. In all six runs every
-publisher's stage admitted every one of its frames, and every subscriber observed every frame of its
-room, 120 messages a point: two subscribers of 60 frames in `one-room`, and two rooms of one
-subscriber of 2 x 30 frames in `two-rooms`, so the merge inside a room ran only in `one-room`, and
-the merge across rooms only in `two-rooms`. The point's delivered sample age had its median in the
-10 to 20 ms bucket in all six runs; its largest age was 63, 72 and 31 ms in `one-room` and 105, 72
-and 78 ms in `two-rooms`. These are observations of those runs on one machine, where the two clocks
-of an age are one clock. No test pins them, and none of them is a level.
+passed on one 4-CPU machine that other work was using at the time. From the command to its exit,
+`one-room` took 58.8, 62.4 and 63.5 s, and `two-rooms` took 52.3, 50.0 and 52.1 s; the tests
+themselves took 52.5 to 57.5 s and 45.0 to 46.4 s. `two-rooms` is the shorter because its window is
+half as long, though it has twice the agents. In all six runs every publisher's stage admitted every
+one of its frames, and every subscriber observed every frame of its room, 120 messages a point: two
+subscribers of 60 frames in `one-room`, and two rooms of one subscriber of 2 x 30 frames in
+`two-rooms`, so the merge inside a room ran only in `one-room`, and the merge across rooms only in
+`two-rooms`. The point's delivered sample age had its median in the 10 to 20 ms bucket in all six
+runs; its largest age was 63, 72 and 31 ms in `one-room` and 105, 72 and 78 ms in `two-rooms`. These
+are observations of those runs on one machine, where the two clocks of an age are one clock. No test
+pins them, and none of them is a level.
 
 Three runs in a row of each of the four points passed from one committed tree, on one 4-CPU machine
-that other work was using at the time. From the command to its exit, `one-room-ws-loss` took 68.9,
-62.5 and 69.7 s and `one-room-rtc-loss` 65.1, 67.8 and 76.9 s; `one-room` took 66.2, 66.7 and
-57.1 s and `two-rooms` 51.7, 51.1 and 53.4 s. In every run of `one-room-ws-loss` the publisher's
-stage admitted 60 frames, its fault dropped 18 sends, and each subscriber observed 42: the 18 the
-seed names. The point's median age was in the 20 to 50 ms bucket and its largest age 310, 62 and
-76 ms: a lost frame has no age, so the histogram is the carrier's own. In every run of
-`one-room-rtc-loss` the stage admitted 60 frames, the fault dropped 37 sends, and each subscriber
-observed all 60. The median stayed in the 10 to 20 ms bucket, the 95th percentile was in the 100 to
-200 ms bucket (100-181, 100-174 and 100-172 ms), and the largest age 181, 174 and 172 ms, where the
-two points without loss had their 95th percentile at or under 100 ms. That every run dropped 37 is
-what the seed gives when a fault is asked until 120 sends have passed, in a room of three where the
-publisher sends straight to both other members: it is an observation of that layout, not a property
-of the product, and no test asserts it.
+that other work was using at the time, at a load average of 6 to 9. From the command to its exit,
+`one-room-ws-loss` took 68.9, 62.5 and 69.7 s and `one-room-rtc-loss` 65.1, 67.8 and 76.9 s;
+`one-room` took 66.2, 66.7 and 57.1 s and `two-rooms` 51.7, 51.1 and 53.4 s. In every run of
+`one-room-ws-loss` the publisher's stage admitted 60 frames, its fault dropped 18 sends, and each
+subscriber observed 42: the 18 the seed names. The point's median age was in the 20 to 50 ms bucket
+and its largest age 310, 62 and 76 ms: a lost frame has no age, so the histogram holds only the
+frames the fault let pass. In every run of `one-room-rtc-loss` the stage admitted 60 frames, the
+fault dropped 37 sends, and each subscriber observed all 60. The median stayed in the 10 to 20 ms
+bucket, the 95th percentile was in the 100 to 200 ms bucket (100-181, 100-174 and 100-172 ms), and
+the largest age 181, 174 and 172 ms, where the two points without loss had their 95th percentile at
+or under 100 ms. That every run dropped 37 is what the seed gives when a fault is asked until 120
+sends have passed, in a room of three where the publisher sends straight to both other members: it
+is an observation of that layout, not a property of the product, and no test asserts it.
 
 A run of the script runs one point. Playwright always starts the in-memory API itself and refuses to
 run while its port already answers. It starts the headless SPA and the control server only when
-nothing answers on their ports; with `CI` set it starts those two itself as well. The API must be new
-to the point: every launch gives the same users, `controller-01` onward, a new password, so two
+nothing answers on their ports; with `CI` set it starts those two itself as well. The API must be
+new to the point: every launch gives the same users, `controller-01` onward, a new password, so two
 points cannot share one API. The control server keeps whole results only in recorder storage, which
-the script puts under `tmp/publication-workload/recorder` unless `RALLAR_BLACK_BOX_STORAGE_DIR` names
-another directory. The default directory is reused from run to run and grows with each.
+the script puts under `tmp/publication-workload/recorder` unless `RALLAR_BLACK_BOX_STORAGE_DIR`
+names another directory. The default directory is reused from run to run and grows with each.
 
 The test asserts that the run passed and that the figures record could be read, then on the record,
 for each room: it holds the figures of every publisher and every subscriber; each publisher's stage
@@ -221,8 +225,9 @@ gap, and its `stats` read `rallar.alm.overloaded` as `false`. Under a seeded los
 asserts that each publisher's `droppedSends` is at least 1, and for a `ws` point that each
 subscriber observed exactly its room's `published.admittedFrames` less `published.droppedSends`: two
 measured counts, which hold whatever frames the stage handed on, where a count against the plan
-would not. The test asserts no latency level, no percentile and no rate. The record is attached to the test as `publication-workload-figures.json`,
-beside the operator's native evidence in `observation/`.
+would not. The test asserts no latency level, no percentile and no rate. The record is attached to
+the test as `publication-workload-figures.json`, beside the operator's native evidence in
+`observation/`.
 
 No CI lane runs the tests. The app browser lane's `npm run test:rallar` lists the file, as it lists
 every full-stack spec, and skips every test because it does not set the opt-in environment. Only
@@ -294,9 +299,9 @@ Read each figure with these limits:
   bridge into the runtime together.
 - **The age spans two clocks.** Each end is `Date.now()` in whole milliseconds on that agent's own
   clock; a delivery within the same millisecond reads 0. On one machine the clocks are one. Between
-  machines every age also holds their offset, which nothing measures: a hosted rung needs it measured
-  before its ages read as latency. A subscriber whose clock is behind the stamp gives a negative age,
-  which is counted as unrecorded and fails that subscriber's gate.
+  machines every age also holds their offset, which nothing measures: a hosted rung needs it
+  measured before its ages read as latency. A subscriber whose clock is behind the stamp gives a
+  negative age, which is counted as unrecorded and fails that subscriber's gate.
 - **The age covers survivors.** Only delivered messages have one, so read it beside `observed`.
 - **`observed` is a snapshot.** The count returns as soon as `minExpectedInboundMessages` are on the
   log, and a later arrival is not in it. The publisher's pause before the `complete` barrier makes
@@ -322,25 +327,26 @@ Read each figure with these limits:
   ran none of its later commands, and the record needs the results of every agent of every room. It
   gives none for the rooms that ran well.
 - **The plan takes every frame to be admitted.** `expectedAdmissions` is `frameCount`, whatever
-  `publication.drain.bytes` is, and on the RTC carriers it takes every admitted frame to arrive. A fitting `payloadBytes` does not make that true, since the stage
-  charges the envelope against the budget.
+  `publication.drain.bytes` is, and on the RTC carriers it takes every admitted frame to arrive. A
+  fitting `payloadBytes` does not make that true, since the stage charges the envelope against the
+  budget.
 - **A percentile is a bucket.** `p50`, `p95` and `p99` are `{ atLeast, atMost }`: the bucket of the
   nearest-rank sample on `AL_PUBLICATION_FIGURE_AGE_BOUNDS_MS`, narrowed by `min` and `max`. They
   compare bucket by bucket with the stage's `selectionAgeMs`, and are not exact values.
 - **A delivered age is one histogram.** `delivered.sampleAgeMs` reads the subscribers' histograms
   merged by `computeBoundedHistogramMerged`, so its percentiles rank every recorded age; it is no
-  mean of the subscribers' percentiles. Where no subscriber recorded an age it is `no-samples`, never
-  a zero age. It weighs a subscriber by the samples it recorded, so one that received little hardly
-  moves it: read it beside each subscriber's own figures.
+  mean of the subscribers' percentiles. Where no subscriber recorded an age it is `no-samples`,
+  never a zero age. It weighs a subscriber by the samples it recorded, so one that received little
+  hardly moves it: read it beside each subscriber's own figures.
 - **There is no delivery ratio.** A ratio needs a denominator, and a run has three: the planned
-  frames, the submitted sends, and the stage's `admitted`. The record states all three and divides by
-  none.
-- **Every delivered frame is also harness load.** Each inbound event carries the whole payload and is
-  forwarded to the control server: `logicalFanoutMessages x payloadBytes` bytes, since a publisher's
-  page hears the other publishers too. That is trivial at 256 bytes and a load of its own at large
-  payloads.
-  `RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS` and `RALLAR_BLACK_BOX_RUNTIME_RETAIN_RESULTS` bound the
-  control server's memory, not the page's history.
+  frames, the submitted sends, and the stage's `admitted`. The record states all three and divides
+  by none.
+- **Every delivered frame is also harness load.** Each inbound event carries the whole payload and
+  is forwarded to the control server: `logicalFanoutMessages x payloadBytes` bytes, since a
+  publisher's page hears the other publishers too. That is trivial at 256 bytes and a load of its
+  own at large payloads. `RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS` and
+  `RALLAR_BLACK_BOX_RUNTIME_RETAIN_RESULTS` bound the control server's memory, not the page's
+  history.
 
 ## Reading a figure under loss
 
@@ -349,22 +355,25 @@ The family runs one purpose and one receipt mode: every frame is `purpose: 'live
 receipt, a gap request or a retransmission. What the product does with a frame the loss drops
 depends on the carrier:
 
-| Carrier                | What a dropped frame meets                                                                                                                                                                                                                  |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ws`                   | Nothing. The socket never writes the frame, so it never reaches the server and no recipient gets it, the room's other publishers included. No receipt, no track, no gap request.                                                            |
-| `rtc`                  | The first hop's own resubmission, 50 ms after each refusal, until the frame passes, its deadline ends it, or a newer value of its stream supersedes it. Each next hop has its own work, so one subscriber can get a frame another does not. |
-| `rtc-with-ws-fallback` | The same, and after three refusals in a row the message is handed to WS, where the loss does not stand. A page's one inbound store hands a message to the application once.                                                                 |
+| Carrier                | What a dropped frame meets                                                                                                                                                                                                                                        |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ws`                   | Nothing. The socket never writes the frame, so it never reaches the server and no recipient gets it, the room's other publishers included. No receipt, no track, no gap request.                                                                                  |
+| `rtc`                  | The publisher's page submits it to that next hop again, 50 ms after each refusal, until the frame passes, its deadline ends it, or a newer value of its stream supersedes it. Each next hop has its own work, so one subscriber can get a frame another does not. |
+| `rtc-with-ws-fallback` | The same, and after three refusals in a row the message is handed to WS, where the loss does not stand. A page's one inbound store hands a message to the application once.                                                                                       |
 
 Read the delivered age under loss with these rules:
 
-- **Over `ws` a lost frame has no sample.** The histogram holds the survivors and reads as the
-  carrier's histogram without loss; only `observed` beside `published` shows the loss.
+- **Over `ws` a lost frame has no sample.** The histogram holds the survivors, and the fault touches
+  no frame it lets pass, so by the code it reads as the carrier's histogram without loss; no `ws`
+  point without loss has run to compare it with. Only `observed` beside `published` shows the loss.
 - **Over `rtc`, at a ratio that loses nothing, no sample is missing.** A refused send's sample is in
   the histogram at its late age, 50 ms a refusal. Nothing marks it: a late sample and a repaired
-  sample are one thing in the record. The median does not see it; the 95th percentile does.
+  sample are one thing in the record. At a quarter loss the median does not see it and the 95th
+  percentile does: a percentile sees the late samples once their share passes its rank.
 - **Over `rtc`, at a ratio that loses frames, a survivor's age is under about one
   `publishIntervalMs`**, because the next value of the stream ends a frame that is still refused;
-  the stream's last frame, which has no successor, can be as old as `ttlMs`.
+  the stream's last frame, which has no successor, can be as old as `ttlMs` (read from the code and
+  one probe run at 0.9; no point of the family runs it).
 
 And with these limits:
 
@@ -372,22 +381,25 @@ And with these limits:
   `ws` every publisher of a point loses the same frame positions. A subscriber's count is over all
   its room's publishers together, so no gate depends on it, but a reader of one publisher's loss
   reads a loss correlated with every other publisher's.
-- **The loss is on publishers' pages only**, on their own frames of the family's type. No
-  subscriber arms one, and no inbound frame and no control frame is touched.
-- **A relay's forward is not lossy.** It is another page's send. In a room of three no page
-  forwards: each publisher sends straight to both other members.
+- **The loss is on publishers' pages only**, on every frame of the family's type that page sends:
+  the fault matches the type, not the sender. No subscriber arms one, and no inbound frame and no
+  control frame is touched. In a room of three, the only rooms the local points have, that is the
+  page's own frames: no page forwards, since each publisher sends straight to both other members.
+- **A subscriber's forward is not lossy**, since a subscriber arms no fault. A publisher's page that
+  forwarded another publisher's frames would draw for them and could drop them; that has been
+  neither read nor run.
 - **Under `rtc-with-ws-fallback` the WS leg is not lossy.**
 - **`droppedSends` counts sends, not frames, over `rtc`.** One frame refused at two next hops, or
   twice at one, is two. How many there are depends on the layout and the pace, so it is reported,
   not asserted.
 - **Nothing on a publisher's page counts a frame its carrier ended.** A frame still refused when its
   stream's next value is admitted, or at its `ttlMs`, is never delivered, and neither the stage's
-  `superseded` nor any other counter of the page names it. Only `published.admittedFrames` beside a
-  subscriber's `observed` shows it.
+  `superseded` nor `rallar.congestion` names it (one probe run read both). Only
+  `published.admittedFrames` beside a subscriber's `observed` shows it.
 - **Over `ws` which frames are lost is the seed's only while the stage hands on every frame in
   order**: the socket's k-th written frame meets the seed's k-th draw. The family refuses a rate
-  above the cadence, so that holds; the `ws` point's test compares two measured counts, which hold
-  even where it does not.
+  above the cadence, so that holds unless a page stalls past a frame's lifetime; the `ws` point's
+  test compares two measured counts, which hold even where it does not.
 - **The loss stands for the whole window.** It is armed before the first send and released after the
   drain, when no frame of the window is still resubmitted, so the release's counts are final.
 
@@ -402,7 +414,8 @@ And with these limits:
   present, which needs a count split by sequence number or by time that the harness does not have.
 - A clean part of the window after the loss. A live frame is never repaired after the fault ends,
   so it would measure what the points without loss already measure.
-- Loss on a relay's forwards, and on the WS leg of `rtc-with-ws-fallback`.
+- A fault on a subscriber's page, so on a subscriber's forwards, and on the WS leg of
+  `rtc-with-ws-fallback`.
 - A browser run of a loss point on `rtc-with-ws-fallback` or with two publishers, and a hosted loss
   point.
 - Seeded delay.
