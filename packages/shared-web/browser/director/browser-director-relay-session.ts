@@ -19,6 +19,7 @@ import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS } from '@shared/api/group-director.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
+import type { BrowserDirectorOutputChannels } from './browser-director-output-channels.ts';
 import {
     isAcceptedDirectorRelayEnvelope,
     isDirectorRelayEnvelope,
@@ -26,7 +27,6 @@ import {
 } from './browser-director-relay-observation.ts';
 import type { BrowserDirectorRelayTransport } from './browser-director-relay-transport.ts';
 import type { BrowserDirectorStatusRuntime } from './browser-director-status-runtime.ts';
-import { createDirectorOutputChannel } from './create-director-output-channel.ts';
 
 const RALLAR_DIRECTOR_DEFAULT_TOPIC_ID = 'app.rallar.director';
 
@@ -36,6 +36,8 @@ export namespace BrowserDirectorRelaySession {
         readonly status: BrowserDirectorStatusRuntime;
         readonly transport: BrowserDirectorRelayTransport;
         readonly messages: RallarMessagesOperations;
+        /** The page's relay output channels, which hand each live relay its own output gaps. */
+        readonly outputChannels: BrowserDirectorOutputChannels;
         readSession(): AuthSession | undefined;
         onStop(stop: () => void): void;
     }
@@ -73,13 +75,9 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
         this.syncRequestTypeId = input.config.syncRequestTypeId ??
             `${this.topicId}.sync-request`;
         this.roomTarget = input.config.roomRef ?? input.config.roomId;
-        this.outputChannel = createDirectorOutputChannel<TOutput>({
-            messages: input.messages,
+        this.outputChannel = input.outputChannels.open<TOutput>({
             topicId: this.topicId,
-            typeId: input.config.outputTypeId,
-            onOutputGap: input.config.onOutputGap,
-            isStopped: () => this.stopped,
-            readStatus: () => this.status()
+            typeId: input.config.outputTypeId
         });
     }
 
@@ -204,6 +202,12 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
     }
 
     private subscribe(): void {
+        this.subscriptions.add(this.input.outputChannels.onGap({
+            topicId: this.topicId,
+            typeId: this.input.config.outputTypeId,
+            onOutputGap: this.input.config.onOutputGap,
+            readStatus: this.status
+        }));
         this.subscriptions.add(this.input.messages.ws.onMessage<RallarDirectorRelayEnvelope>(
             { topicId: this.topicId },
             async (message) => {

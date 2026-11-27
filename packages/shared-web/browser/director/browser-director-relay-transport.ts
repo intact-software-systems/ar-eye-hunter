@@ -269,9 +269,15 @@ function toDirectorCommandFailureStatus(
     }
 }
 
-function createEnvelope<T>(
-    input: Pick<BrowserDirectorRelayTransport.SendCommandInput<T>, 'current' | 'topicId' | 'typeId' | 'payload'>
-): RallarDirectorRelayEnvelope<T> {
+/** What every director send stamps its envelope from: a command, an output, a heartbeat or a snapshot. */
+interface DirectorEnvelopeInput<T> {
+    readonly current: RallarDirectorStatus;
+    readonly topicId: string;
+    readonly typeId: string;
+    readonly payload: T;
+}
+
+function createEnvelope<T>(input: DirectorEnvelopeInput<T>): RallarDirectorRelayEnvelope<T> {
     if (!input.current.appointment || !input.current.roomId) {
         throw new Error('Cannot create director envelope without appointment.');
     }

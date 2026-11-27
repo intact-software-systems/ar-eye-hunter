@@ -4,6 +4,7 @@ import type {
 } from '@shared-web/browser/director/rallar-director-facade.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { BrowserDirectorOutputChannels } from './browser-director-output-channels.ts';
 import { BrowserDirectorRelaySession } from './browser-director-relay-session.ts';
 import type { BrowserDirectorRelayTransport } from './browser-director-relay-transport.ts';
 import type { BrowserDirectorStatusRuntime } from './browser-director-status-runtime.ts';
@@ -20,9 +21,11 @@ export namespace BrowserDirectorRelayRuntime {
 export class BrowserDirectorRelayRuntime {
     private readonly input: BrowserDirectorRelayRuntime.Input;
     private readonly stops = new Set<() => void>();
+    private readonly outputChannels: BrowserDirectorOutputChannels;
 
     public constructor(input: BrowserDirectorRelayRuntime.Input) {
         this.input = input;
+        this.outputChannels = new BrowserDirectorOutputChannels({ messages: input.messages });
     }
 
     public create<TIntent, TOutput, TSnapshot = TOutput>(
@@ -30,6 +33,7 @@ export class BrowserDirectorRelayRuntime {
     ): RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot> {
         const session = new BrowserDirectorRelaySession({
             ...this.input,
+            outputChannels: this.outputChannels,
             config,
             onStop: (stop) => this.stops.delete(stop)
         });

@@ -1,3 +1,4 @@
+import { BrowserDirectorOutputChannels } from '@shared-web/browser/director/browser-director-output-channels.ts';
 import { BrowserDirectorRelayTransport } from '@shared-web/browser/director/browser-director-relay-transport.ts';
 import type { RallarDirectorRelayEnvelope, RallarDirectorStatus } from '@shared-web/browser/director/rallar-director-facade.ts';
 import type {
@@ -477,13 +478,8 @@ describe('director notification fence', () => {
             isWebSocketDown: () => false
         });
 
-        const channel = facade.messages.room<RallarDirectorRelayEnvelope<OutputPayload>>({
-            topicId: 'room.director',
-            typeId: 'output',
-            purpose: 'notification',
-            access: 'members',
-            order: 'edge'
-        });
+        const channel = new BrowserDirectorOutputChannels({ messages: facade.messages })
+            .open<OutputPayload>({ topicId: 'room.director', typeId: 'output' });
 
         await transport.sendOutputEnvelope({ ...envelopeInput, channel, ack: 'all-logical-recipients' });
 

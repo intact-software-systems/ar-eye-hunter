@@ -22,8 +22,8 @@ import {
     vi
 } from 'vitest';
 
+import { BrowserDirectorOutputChannels } from '@shared-web/browser/director/browser-director-output-channels.ts';
 import { BrowserDirectorRelayTransport } from '@shared-web/browser/director/browser-director-relay-transport.ts';
-import type { RallarDirectorRelayEnvelope } from '@shared-web/browser/director/rallar-director-facade.ts';
 import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 
 import {
@@ -631,13 +631,8 @@ describe('arena match lifecycle delivery', () => {
         });
 
         await relay.sendOutputEnvelope({
-            channel: facade.messages.room<RallarDirectorRelayEnvelope<typeof started>>({
-                topicId: GAME_DIRECTOR_TOPIC_ID,
-                typeId: `${GAME_DIRECTOR_TOPIC_ID}.event.v1`,
-                purpose: 'notification',
-                access: 'members',
-                order: 'edge'
-            }),
+            channel: new BrowserDirectorOutputChannels({ messages: facade.messages })
+                .open<typeof started>({ topicId: GAME_DIRECTOR_TOPIC_ID, typeId: `${GAME_DIRECTOR_TOPIC_ID}.event.v1` }),
             current: { ...freshDirectorStatus(), roomRef: arenaRoomRef },
             topicId: GAME_DIRECTOR_TOPIC_ID,
             typeId: `${GAME_DIRECTOR_TOPIC_ID}.event.v1`,
