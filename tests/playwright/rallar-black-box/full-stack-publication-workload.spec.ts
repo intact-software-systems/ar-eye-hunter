@@ -67,7 +67,8 @@ const SECOND_ROOM_GROUP = { ...HETZNER_DISTRIBUTED_MANIFEST_GROUP, groupId: 'het
  * The family has no default, so every value is this proof's own choice. The second point's six agents are the most a
  * recorded 4-CPU run of the headless worker passed with (`docs/github-actions-black-box-headless-runbook.md`), and its
  * delivery level is the first hosted campaign's for several publishers
- * (`playground/alm/alm-first-hosted-campaign-targets.md`, section 2.3).
+ * (`playground/alm/alm-first-hosted-campaign-targets.md`, section 2.3). The two loss points take the conformance lane's
+ * seeded loss, a quarter from seed 7, whose first lost frames the lane already pins.
  */
 const LOCAL_POINTS: readonly LocalPoint[] = [
     {
@@ -107,6 +108,48 @@ const LOCAL_POINTS: readonly LocalPoint[] = [
             minSendSuccessRatio: 0.95,
             readyTimeoutMs: 45_000,
             loss: { kind: 'none' }
+        }
+    },
+    {
+        name: 'one-room-ws-loss',
+        description: 'The one-room point on ws under a seeded quarter loss: seed 7 drops 18 of the 60 frames.',
+        parameters: {
+            groups: [HETZNER_DISTRIBUTED_MANIFEST_GROUP],
+            participantCount: 3,
+            publisherCount: 1,
+            carrier: 'ws',
+            publishIntervalMs: 500,
+            windowMs: 30_000,
+            publication: { cadenceMs: 100, retainNewest: 1, drain: { messages: 8, bytes: 65_536 } },
+            payloadBytes: 256,
+            ttlMs: 5_000,
+            // Over ws the seed decides which frames are lost, so the expectation is exact: every frame is admitted,
+            // and each subscriber gets exactly the 42 the loss lets pass.
+            minReceiveRatio: 1,
+            minSendSuccessRatio: 1,
+            readyTimeoutMs: 45_000,
+            loss: { kind: 'seeded', ratio: 0.25, seed: 7 }
+        }
+    },
+    {
+        name: 'one-room-rtc-loss',
+        description: 'The one-room point on rtc under a seeded quarter loss: a refused send is sent again.',
+        parameters: {
+            groups: [HETZNER_DISTRIBUTED_MANIFEST_GROUP],
+            participantCount: 3,
+            publisherCount: 1,
+            carrier: 'rtc',
+            publishIntervalMs: 500,
+            windowMs: 30_000,
+            publication: { cadenceMs: 100, retainNewest: 1, drain: { messages: 8, bytes: 65_536 } },
+            payloadBytes: 256,
+            ttlMs: 5_000,
+            // The family's band for a loaded machine, not a loss allowance: a product that stopped resubmitting a
+            // refused frame would deliver about three quarters.
+            minReceiveRatio: 0.95,
+            minSendSuccessRatio: 0.95,
+            readyTimeoutMs: 45_000,
+            loss: { kind: 'seeded', ratio: 0.25, seed: 7 }
         }
     }
 ];
@@ -233,7 +276,9 @@ function isHeadlessFullStackOptedIn(): boolean {
 /**
  * Every room holds the figures of each of its agents; every publisher's stage handed enough frames to a carrier; every
  * subscriber received enough of its room's frames and no more than them, with an age for each; and each delivered
- * figure covers exactly its subscribers. No latency level, no percentile and no rate is asserted.
+ * figure covers exactly its subscribers. Under a seeded loss each publisher's fault dropped a send, and over `ws` each
+ * subscriber observed exactly what its room's publishers admitted less what their faults dropped: two measured counts,
+ * so the proof holds whatever frames the stage handed on. No latency level, no percentile and no rate is asserted.
  */
 function expectPointFigures(figures: PublicationWorkloadFigures): void {
     const { configured: { parameters, plan }, measured } = figures;
@@ -241,9 +286,22 @@ function expectPointFigures(figures: PublicationWorkloadFigures): void {
         const roomName = `room ${index + 1}`;
         expect(room.publishers, `Every publisher of ${roomName} has figures`).toHaveLength(parameters.publisherCount);
         expect(room.subscribers, `Every subscriber of ${roomName} has figures`).toHaveLength(plan.subscriberCount);
-        for (const { agentId, publicationStage } of room.publishers) {
+        for (const { agentId, publicationStage, droppedSends } of room.publishers) {
             expect(publicationStage.counters.admitted, `The stage of ${agentId} handed enough frames to a carrier`)
                 .toBeGreaterThanOrEqual(plan.minAcceptedSends);
+            if (parameters.loss.kind === 'seeded') {
+                expect(droppedSends, `The fault of ${agentId} dropped at least one send`).toBeGreaterThanOrEqual(1);
+            }
+        }
+        if (parameters.loss.kind === 'seeded' && parameters.carrier === 'ws') {
+            const { admittedFrames, droppedSends } = room.published;
+            const passedFrames = droppedSends === null ? undefined : admittedFrames - droppedSends;
+            for (const { agentId, observed } of room.subscribers) {
+                expect(
+                    observed,
+                    `${agentId} observed what the publishers of ${roomName} admitted less what their faults dropped`
+                ).toBe(passedFrames);
+            }
         }
         for (const { agentId, observed, unrecordedSamples, sampleAgeMs } of room.subscribers) {
             expect(observed, `${agentId} received enough of the frames of ${roomName}`).toBeGreaterThanOrEqual(
