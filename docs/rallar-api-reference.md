@@ -731,11 +731,11 @@ one room message over `rtc-with-ws-fallback`: at-least-once with
 `{ ack: 'all-logical-recipients' }`, best effort with no receipt and a 5 s
 lifetime otherwise. Both kinds share one stream, so a receiving page hands the
 director's outputs to `onOutput` in the order the director sent them. A later
-output waits at most 3 s for a missing one. When the page gives positions up,
-the relay calls the `onOutputGap(gap)` of its config with the
-`RallarMessageOrderGap`, for gaps of its own topic and output type whose
-sender is its appointed director. Heartbeats and snapshots are not
-edge-ordered.
+output waits at most 3 s for a missing one. When the page gives up positions
+of the appointed director's output stream, the relay calls `onOutputGap(gap)`
+of its config with that `RallarMessageOrderGap`. Heartbeats and snapshots are
+not edge-ordered: each is sent best effort over one carrier, and over the
+other when the first fails, a heartbeat WS first and a snapshot RTC first.
 
 While the local session is the director, its relay acts on an intent
 or sync request stamped with its own appointment epoch or an earlier one, since
@@ -780,12 +780,17 @@ calculate points or choose the winning metric.
 
 The match receives the director's events through the director relay, whose
 output type is edge-ordered (see Director above and Edge Order below): each
-event reaches `onEvent` once, in the director's send order, whichever carrier
-it came over. The match does not drop an event by its own sequence number.
-When the page gives an event up, the match asks the director for a sync with
-`{ reason: 'event-order-gap' }`, unless the gap's reason is `ended-at-sender`,
-as for an event sent without a receipt that a later event overtook; the
-director's next snapshot repairs that one.
+event reaches `onEvent` at most once, in the director's send order, whichever
+carrier it came over. The match does not drop an event by its own sequence
+number. When the page gives an event up, the match asks the director for a
+sync with `{ reason: 'event-order-gap' }`, and a director whose match reads
+snapshots (`readSnapshot`) answers with one. It asks nothing when the gap's
+reason is `ended-at-sender`, as for an event sent without a receipt that a
+later event overtook. A later snapshot from the director repairs such an event
+when the game sends snapshots: the relay's periodic snapshot, which runs while
+the match sets `readSnapshot` and leaves `autoSnapshotIntervalMs` on (2 s when
+absent), or the game's own `match.publishSnapshot(...)` calls. A game that
+sends no snapshots does not get the event back.
 
 `finalizeResult(summary)` resolves the match `GroupRef`, reads the live
 `rallar.director.status(...)`, and returns a `room-trusted` envelope only when
@@ -1985,10 +1990,11 @@ if (failure?.kind === 'relay-rejected' && failure.rejection.reason === 'held-by-
 ### Edge Order
 
 A room channel can ask for edge order. The sending page numbers each send when
-the application calls `send`. Each receiving page puts one sender's messages
-back in that order before its handlers see them. The messages travel as
-ordinary unordered messages over WS, RTC and any relay: no server and no relay
-orders them, and both ends do the work in memory.
+the application calls `send`. The number, the stamp, travels wrapped with the
+payload and is removed before a handler sees it. Each receiving page puts one
+sender's messages back in that order before its handlers see them. The
+messages travel as ordinary unordered messages over WS, RTC and any relay: no
+server and no relay orders them, and both ends do the work in memory.
 
 Ask for it with `order: 'edge'` on `rallar.messages.room(...)`. Both ends
 declare the same channel.
@@ -2014,27 +2020,33 @@ moves.onWs(applyMove);
 await moves.send({ from: 'e2', to: 'e4' }); // the position is taken here
 ```
 
+**Streams.** The messages are sorted per stream. A stream is one sender page,
+one channel (topic and type) and one room. A send that narrows its room
+(`recipientPeerIds`, `principalId`, `exceptPeerIds`, `peerId`) is on the
+stream of that audience, so it is ordered among the sends to the same audience
+only. An application that gives every message its own recipient list gets one
+stream per message and no order between them.
+
 Register the handler with both `onRtc` and `onWs`. The page sorts what both
 carriers bring as one stream, then hands each message to the handlers of the
 carrier it came over. A lane handler (`messages.rtc.onMessage`,
 `messages.ws.onMessage`) of the same topic and type is given the sorted
-messages too. The handler's `payload` is the application's own.
+messages too. On a granted channel, register with `subscribe(handler)`
+instead: it gets each publisher's publications in that publisher's send order,
+over either carrier. The handler's `payload` is the application's own.
 
-**What it promises.** A stream is one sender page, one channel (topic and type)
-and one room. A send that narrows its room (`recipientPeerIds`, `principalId`,
-`exceptPeerIds`, `peerId`) is on the stream of that audience, so it is ordered
-among the sends to the same audience only. An application that gives every
-message its own recipient list gets one stream per message and no order
-between them. For each stream:
+**What it promises.** For each stream:
 
 - Handlers see the messages in the order the sender called `send`, whichever
   carrier each came over.
 - A message is never handed over after a later one. A copy that arrives after a
   later message was handed over is dropped as late.
 - A message that can no longer arrive is skipped and reported to `onOrderGap`.
-  The stream does not stall for good.
+  The stream does not wait for it for good.
 - Messages are handed over one at a time: an async handler finishes before any
-  handler is given the stream's next message. Another stream does not wait.
+  handler is given the stream's next message. Another stream's turn does not
+  wait for it. A handler that never settles stops its own stream and, like a
+  handler of any channel, the deliveries of the carrier its message came over.
 
 **What it does not promise.**
 
@@ -2070,27 +2082,31 @@ stands for every room on the page, and a gap names no room: its `senderId` and
 | `cannot-arrive`         | The time the sender gave the message to arrive has passed                                                                                                              |
 | `held-message-deadline` | A later message could wait no longer without passing its own deadline                                                                                                  |
 | `channel-wait-cap`      | A later message was held for the channel's `orderGapWaitMs`                                                                                                            |
-| `held-message-cap`      | The stream held 256 messages waiting                                                                                                                                   |
-| `held-byte-cap`         | The stream held 1 MiB of messages waiting                                                                                                                              |
-| `stream-cap`            | The page already follows as many streams as it can (256)                                                                                                               |
+| `held-message-cap`      | The stream held more than 256 messages waiting                                                                                                                         |
+| `held-byte-cap`         | The stream held more than 1 MiB of messages waiting                                                                                                                    |
+| `stream-cap`            | The page followed 256 streams and a new one pushed this one out while it held messages                                                                                 |
 | `held-message-expired`  | The message arrived, but its own deadline passed while it waited for its turn, so it was not handed over                                                               |
 
 After any reason but `held-message-expired`, a skipped message that still
 arrives is dropped as late.
 
-**The two waits.** `orderGapWaitMs` is the longest the page holds a message for
+**The gap wait.** `orderGapWaitMs` is the longest the page holds a message for
 an earlier one that is missing, counted from when the message was first held.
 Past it the page skips the missing positions with a `channel-wait-cap` gap.
 Absent, the channel sets no cap: the page waits as long as the sender says the
 missing message can still arrive, and never past the held message's own
-deadline. `orderEntryWindowMs` is how long the page waits for earlier messages
-of a stream whose first message here is past position 1, such as on a late
-join. Absent, it is 500 ms. When the window ends the page starts at the lowest
-message it holds, with no gap report, and drops an earlier message that comes
-later as late; it does not wait at all when the sender says nothing earlier can
-still arrive. Both take whole milliseconds, 0 or more, and 0 means no wait.
-Both are receive-side: they set this page's waits, and the sender's page is not
-told. Like `onOrderGap` they are kept per topic and type on a page. The latest
+deadline.
+
+**The entry window.** `orderEntryWindowMs` is how long the page waits for
+earlier messages of a stream whose first message here is past position 1, such
+as on a late join. Absent, it is 500 ms. The page does not wait at all when the
+sender says nothing earlier can still arrive. When the window ends, the page
+starts at the lowest message it holds, with no gap report. An earlier message
+that comes after that is dropped as late.
+
+Both waits take whole milliseconds, 0 or more, and 0 means no wait. Both are
+receive-side: they set this page's waits, and the sender's page is not told.
+Like `onOrderGap` they are kept per topic and type on a page. The latest
 declaration that names one stands for every room, and a declaration that
 leaves one out changes nothing about it. A stream takes the waits that stand
 when its next message arrives.
@@ -2098,33 +2114,35 @@ when its next message arrives.
 **Sends nothing retries: newest wins.** A receiver waits only for a send that
 is retried: `at-least-once` with a receipt, once the channel's defaults are
 applied. A `best-effort` send, or one with `ack: 'none'`, is never waited for.
-When a later message arrives first, it is handed over at once, the skipped
-position is reported as `ended-at-sender`, and the earlier message is dropped
-as late if it still arrives. A stream none of whose sends is retried never
-makes a receiver wait, which suits positions and other live values. A `live`
-channel works this way, with one stream per `resourceId`. A latest-wins send
-with a `supersedenceKey` tells receivers not to wait for the earlier sends of
-its key that it replaces.
+When a later message arrives first, it is handed over at once, unless an
+earlier retried message is still missing. The skipped position is reported as
+`ended-at-sender`, and the earlier message is dropped as late if it still
+arrives. A stream none of whose sends is retried never makes a receiver wait,
+which suits positions and other live values. A `live` channel works this way,
+with one stream per `resourceId`. A latest-wins send with a `supersedenceKey`
+tells receivers not to wait for the earlier sends of its key that it replaces.
 
-**Limit:** an acknowledged message can in a narrow case still be skipped. Once
-every recipient has acknowledged a send, its sender says for 500 ms more that
-it can still arrive, then calls it over. A copy whose delivery is held up past
-that, after every recipient acknowledged it, is skipped and dropped as late
-when it comes.
+**An acknowledged message can still be skipped.** This is a narrow case. Once
+every recipient has acknowledged a send, from its next send on the sender says
+for 500 ms more that it can still arrive, then calls it over. A copy whose
+delivery is held up past that, after every recipient acknowledged it, is
+skipped and dropped as late when it comes.
 
 **Usage.** `rallar.messages.readUsage().edgeOrder` is a
 `RallarEdgeOrderUsage`. It gives what the page keeps at the read: `streams`
 (the senders' streams it follows), `heldMessages` (messages waiting for their
-turn), `evictedStreams` (the positions it remembers of streams pushed out at
-the stream cap), `sendStreams` (its own send streams) and `openSends` (its own
-sends that can still arrive). It also gives what the page gave up since it
-loaded: `lateDrops`, `gaps`, and `heldDropped` (held messages dropped when the
-connection went away). An idle page holds no message and has no open send.
+turn), `evictedStreams` (streams pushed out at the 256-stream cap whose
+position it still remembers), `sendStreams` (its own send streams) and
+`openSends` (its own sends that can still arrive). It also gives what the page
+gave up since it loaded: `lateDrops`, `gaps`, and `heldDropped` (held messages
+dropped when the connection went away). An idle page holds no message and has
+no open send.
 
 **Refused `unsupported`.** At the definition, which throws the issue:
 
 - `order` on `rallar.messages.channel(...)`: only a room channel is
-  edge-ordered.
+  edge-ordered. A `room(...)` definition that names no room is taken, since
+  each of its sends names its room.
 - A `durability` other than `volatile`: the order lives in memory only.
 - `onOrderGap`, `orderGapWaitMs` or `orderEntryWindowMs` on a channel that
   declares no order.
@@ -2137,13 +2155,16 @@ rejects with the issue:
 - `ack: 'group-leader'`, or a `qos.ack` other than `receiver` or `none`: a
   hop's or a leader's receipt does not say the recipients have the message.
 - `scope: 'world'`, which names no room.
-- `orderingKey` or `seq`, which ask for hop order.
+- `orderingKey` or `seq`, which ask for hop order, the server-backed order of
+  the next section.
 - A `qos.supersedence` that is not latest-wins with a `supersedenceKey` and no
   `replacesMsgId`.
 - A `qos.durability` other than `volatile`.
 - The `ws-then-rtc` strategy. `ws`, `rtc` and `rtc-with-ws-fallback` are taken.
-- A `peerId` that is the server's, refused once the connection names the
-  server's peer id. The position that send took leaves no gap anyone waits for.
+
+A send whose `peerId` is the server's is refused `unsupported` too, once the
+connection names the server's peer id. That send has taken a position, but it
+leaves no gap anyone waits for.
 
 **Both ends declare the channel.** A page that did not declare it gets the
 wrapped payload, `{ "edgeOrder": <stamp>, "payload": <the payload> }`, in
@@ -2152,18 +2173,21 @@ carries no stamp. Declare an edge-ordered channel only when every page that
 sends or receives on it has the declaration.
 
 **Edge order, hop order or neither.** Hop order is `orderingKey` (see
-Ordering, Repair And Resynchronization below): every hop orders the track, and
-the sender keeps its head in IndexedDB.
+Ordering, Repair And Resynchronization below). The sender numbers the track
+and keeps its head in IndexedDB, the authority that fixes a copy's audience
+(the RTC origin, the WS server) records what it sent each recipient, and each
+receiver delivers the track in sequence and asks for repair. A pure RTC relay
+forwards without ordering.
 
-|                         | Unordered (the default) | Edge order (`order: 'edge'`)                                    | Hop order (`orderingKey`)                                   |
-| ----------------------- | ----------------------- | --------------------------------------------------------------- | ----------------------------------------------------------- |
-| Who orders              | nobody                  | the sender's and each receiver's page, in memory                | every hop, in durable storage                               |
-| Order the app sees      | arrival order           | the sender's send order, per sender page                        | the sender's send order, per sender session                 |
-| Across a sender reload  | not applicable          | a new stream starts                                             | the track continues                                         |
-| A missing message       | not noticed             | waited for while it can still arrive, then skipped and reported | NACK and repair; then `resync-required`, and the track ends |
-| Late joiner             | gets what arrives       | starts at the first message it gets                             | enters at a recorded position                               |
-| Server work per message | the unordered path      | the unordered path, unchanged                                   | plus per-track progress at each hop                         |
-| Sender storage          | memory                  | memory                                                          | IndexedDB, forced                                           |
+|                         | Unordered (the default) | Edge order (`order: 'edge'`)                                    | Hop order (`orderingKey`)                                         |
+| ----------------------- | ----------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Who orders              | nobody                  | the sender's and each receiver's page, in memory                | the sender, the WS server and each receiver                       |
+| Order the app sees      | arrival order           | the sender's send order, per sender page                        | the sender's send order, per sender session                       |
+| Across a sender reload  | not applicable          | a new stream starts                                             | the track continues                                               |
+| A missing message       | not noticed             | waited for while it can still arrive, then skipped and reported | NACK and repair; then `resync-required`, and the track ends       |
+| Late joiner             | gets what arrives       | starts at the first message it gets                             | enters at a recorded position                                     |
+| Server work per message | the unordered path      | the unordered path, unchanged                                   | plus a per-track record of what the WS server sent each recipient |
+| Sender storage          | memory                  | memory                                                          | IndexedDB, forced                                                 |
 
 Use edge order for a stream where "what this sender did, in order" matters and
 the receivers are pages: chat, one player's moves and commands, collaborative
@@ -2174,10 +2198,10 @@ for latest-value state the application already compares by its own rule.
 
 **Worked example: the game director's events.** In a Rallar Game match one host
 page, the director, sends the match's events to its room through the director
-relay (see Director above): match started, hits, pickups, match ended. The
-relay declares its output type edge-ordered on the relay's topic. Its
-definition names no room; each output send names the director's
-room:
+relay: match started, hits, pickups, match ended. The relay declares its output
+type edge-ordered on the relay's topic. Its definition names no room; each
+output send names the director's room. How the relay sends outputs is in
+Director above, and what the match does with them is in Optional Match Support.
 
 ```ts
 const outputs = rallar.messages.room<RallarDirectorRelayEnvelope<TOutput>>({
@@ -2189,40 +2213,24 @@ const outputs = rallar.messages.room<RallarDirectorRelayEnvelope<TOutput>>({
     orderGapWaitMs: 3_000,
     onOrderGap: async (gap) => await notifyRelays(gap)
 });
-
-await outputs.send(envelope, {
-    roomRef,
-    strategy: 'rtc-with-ws-fallback',
-    reliability: 'at-least-once',
-    ack: 'all-logical-recipients',
-    ttlMs: 30_000
-});
 ```
 
-Each output is one room message. An output sent with
-`{ ack: 'all-logical-recipients' }` is at-least-once and lives 30 s, as above;
-one sent without it is `best-effort` with `ack: 'none'` and lives 5 s. Both
-kinds share one stream, so a receiving page hands the director's events over
-in the order the director sent them, whichever carrier each came over. A
-receipted output is retried after its 2 s ACK timeout, so a later event waits
-at most 3 s for a missing one before the page skips it. An unreceipted event
-is never waited for: a later one that overtakes it wins.
+What it shows:
 
-A gap goes to the `onOutputGap` of the relay whose topic, output type and
-appointed director it names; every live relay on the page hears it and checks
-that. On any reason but `ended-at-sender`, the match asks the director for a
-sync (`requestSync({ reason: 'event-order-gap' })`), and a director whose match
-reads snapshots (`readSnapshot`) answers with one. A lost unreceipted event
-ends at its sender, so the match asks for nothing and leaves it to the
-director's next snapshot. The match keeps no sequence check of its own for
-events. Heartbeats and snapshots are other
-types: they are not edge-ordered and are still sent best effort over one
-carrier, then the other.
+- Receipted and unreceipted events share one stream, so a receiving page hands
+  them over in the director's send order, whichever carrier each came over.
+- A receipted event is retried after its 2 s ACK timeout, so 3 s covers the
+  first retry and its delivery: a later event waits at most 3 s for a missing
+  one before the page skips it.
+- An unreceipted event is never waited for: a later one that overtakes it
+  wins, and the lost one is reported `ended-at-sender`.
+- On any other gap the match asks the director for a sync.
 
-Deployment note: a page on a bundle from before this change and a page on the
-new one, in the same room, do not hear each other's director events. The new
-page drops the unstamped event; the old page ignores the wrapped one.
-Heartbeats, intents, sync requests and snapshots still cross.
+Deployment note: a page on a bundle from before the relay's output type was
+edge-ordered and a page on a newer one, in the same room, do not hear each
+other's director events. The newer page drops the unstamped event; the older
+page ignores the wrapped one. Heartbeats, intents, sync requests and snapshots
+still cross.
 
 ### Ordering, Repair And Resynchronization
 

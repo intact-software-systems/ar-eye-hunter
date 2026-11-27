@@ -523,9 +523,12 @@ Message ownership is concentrated under [`messages/`](./messages/):
     open send; its stream and record counts stay where the caps left them.
   - **Refused as `unsupported`**, at the definition
     ([`validate-edge-order-channel.ts`](./messages/edge-order/validate-edge-order-channel.ts)): a channel with a
-    durability other than `volatile`, because the order lives in memory only; `channel(...)` without a room,
-    because a stream belongs to one room; and `onOrderGap`, `orderGapWaitMs` or `orderEntryWindowMs` on a channel
-    that declares no order. At the send, before it takes a position
+    durability other than `volatile`, because the order lives in memory only, and `onOrderGap`, `orderGapWaitMs` or
+    `orderEntryWindowMs` on a channel that declares no order. `order` on `channel(...)`, whatever it names
+    (`validateRoomlessChannelOrder` in
+    [`browser-typed-message-channels.ts`](./messages/browser-typed-message-channels.ts)): only `room(...)` is
+    edge-ordered, and a `room(...)` definition that names no room is taken, since each of its sends names its room.
+    At the send, before it takes a position
     ([`validate-edge-order-send.ts`](./messages/edge-order/validate-edge-order-send.ts)): `ack: 'group-leader'`
     and a `qos.ack` other than `receiver` or `none`, because a hop's or a leader's receipt does not say the
     recipients have the message, so the sender could call a send over that a recipient still waits for;
