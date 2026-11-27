@@ -1,8 +1,10 @@
 # ALM room-send cell
 
-A measurement cell that answers one question about the code it is run from: do ordered,
-receipt-tracked room sends on the WS carrier keep up under load, and what does added database
-latency do to them? It measures; it gates nothing, and no figure fails a run.
+A measurement cell that answers one question about the code it is run from: do receipt-tracked room
+sends on the WS carrier keep up under load, and what does added database latency do to them? A run
+asks it of one ordering, the one its command line names: sends on the room's ordering key, or sends
+that name no ordering key. Both go through the same instances, added latency, sender stand-in,
+report and artifact. It measures; it gates nothing, and no figure fails a run.
 
 ```repository-navigation-v1
 {
@@ -40,15 +42,65 @@ subscriber, wired as the API's middleware wires them. One port is replaced: the 
 which admits a fixed audience and reads nothing.
 
 The first sessions of the room publish. Each publisher offers the message a browser's
-`notification` channel sends for an ordered room send (at-least-once, a receipt of every recipient,
-30 s to live, volatile durability, on the room's ordering key), built through the product's own WS
-client planning, so the frame is the one that client writes. Offers are open-loop: a send is offered
-at its due instant whether or not an earlier one was answered, as a socket's frames are. Every other
-session is a recipient of every send and ACKs its first read of each copy.
+`notification` channel writes to its WS socket for a room send under the `ws` strategy: a room
+broadcast that is at-least-once, asks a receipt of every recipient, lives 30 s and is volatile. It
+is built through the product's own WS client planning, so the frame is the one that client writes.
+`--ordering` says whether every send of the run names an ordering key;
+[the next section](#the-two-orderings) says what each ordering is. Offers are open-loop: a send is
+offered at its due instant whether or not an earlier one was answered, as a socket's frames are.
+Every other session is a recipient of every send and ACKs its first read of each copy.
 
 After the last offer the run observes for a fixed tail of 75 s: the send's lifetime of 30 s and 45 s
 of grace for receipts the server writes late. The tail is the same for every shape, so what two runs
 read late or read again is counted over the same time.
+
+### The two orderings
+
+`--ordering` is required and has no default: no run is ordered or unordered by omission. Every send
+of a run has the ordering the run names, and one run never offers both.
+
+- **`ordering-key`.** Each send names the room's ordering key at its seq, the send's number among
+  its publisher's offers, from 1. A publisher is its track's only sender, so each publisher has a
+  track of its own. The server reports a gap in a track to its sender, and a client holds a copy
+  back for an earlier one of its track.
+- **`unordered`.** The envelope is the same with the `ordering` field left out: no ordering key and
+  no seq. Such a send is on no track. The server has no gap to report of it, and neither the server
+  nor a client puts its copies back in the order they were offered in.
+
+What the two share: the schedule, which reads nothing of the ordering, so a run of either offers
+the same sends under the same msgIds at the same due instants; the reliability, the receipt, the
+lifetime and the durability of the envelope, which are the `notification` channel's
+(`AL_CHANNEL_SEND_DEFAULTS.notification`); and the payload, which states the send's number among
+its publisher's offers, `{ seq }`, whether or not the envelope names a seq.
+
+### What the unordered shape stands for
+
+The unordered shape is the envelope of the ordered shape with its `ordering` field left out, and
+nothing else changed. It stands for one send of the product and no other: the room broadcast that a
+browser's typed channel of purpose `notification` writes to its WS socket under the `ws` strategy
+when its caller names no `orderingKey`. A browser's room send is ordered only when its caller names
+one (`toWsBroadcastOptions` in
+`packages/shared-web/browser/messages/browser-rallar-message-sender.ts`). The [limits](#limits)
+name where the cell's envelope still differs from that browser's: it carries no room send fence.
+
+"The default room send" has three readings. The cell offers the first, for one purpose and on one
+strategy, and neither of the other two:
+
+- **The send a typed channel's purpose gives its defaults to: offered, for `notification`.** A
+  typed channel has no default purpose: it states `command`, `notification` or `live`, and the
+  purpose fixes the default reliability, receipt, lifetime and durability of its sends
+  (`packages/shared/al-contracts/resolve-al-channel-send-defaults.ts`). The cell offers
+  `notification`'s send, which asks a receipt of `all-logical-recipients`. It offers neither a
+  `command` channel's send, which asks `receiver`, nor a `live` channel's, which is best-effort,
+  asks no receipt and lives 1 s.
+- **The send of a typed channel's default strategy: not offered.** A typed channel's `send` that
+  names no strategy takes `rtc-with-ws-fallback`, and builds a room send that narrows no audience
+  as a multicast (`sendRoomWithFallback` and `createRtcMessage` in the same file). The cell offers
+  the `ws` strategy's room broadcast, under both orderings.
+- **The lane send: not offered.** A send that names no channel (`rallar.messages.ws.send`) is
+  at-least-once and asks no receipt (`toBrowserMessageSendDefaults` in
+  `packages/shared-web/browser/messages/to-browser-message-send-defaults.ts`). Every send of the
+  cell asks one. The cell has no shape without a receipt, so no run says what a receipt costs.
 
 ### The path a send takes
 
@@ -77,15 +129,20 @@ answered `pending-admission` writes no receipt until its replay admits the send.
 
 A real client waits for that first answer: 2 s, then it writes the frame again, up to three times.
 Only a receipt of the send, in any phase, or a NACK that may end the send, ends the wait
-(`packages/shared/alm/outbound/first-hop/al-outbound-first-hop-wait.ts`). So when the receipt row
-is slow to reach the origin's socket, a client resends a send the server already holds, and after
-the third silent resend, about 8 s after the offer, it ends the message as `receipt-exhausted`.
-First-hop resends in a run are therefore the client's own behaviour under a slow receipt, not
-something the cell adds; the 8 s is read from the code and was not measured against a browser.
+(`packages/shared/alm/outbound/first-hop/al-outbound-first-hop-wait.ts`). The client plans the wait
+from the receipt a send asks and from its retry policy, never from its ordering key
+(`toWsQueueBoxClientFirstHopTrackingPlan` in
+`packages/shared/services/ws-queue-box-client/ws-queue-box-client-receipt-tracking.ts`), so a send
+of either ordering holds it. So when the receipt row is slow to reach the origin's socket, a client
+resends a send the server already holds, and after the third silent resend, about 8 s after the
+offer, it ends the message as `receipt-exhausted`. First-hop resends in a run are therefore the
+client's own behaviour under a slow receipt, not something the cell adds; the 8 s is read from the
+code and was not measured against a browser.
 
 The margin under that 2 s wait is thin at the reference load even with no latency added: in one
-reference run at +0 ms the 99th percentile from offer to complete receipt reached 1.95 s. That is why
-a healthy run can still show a few first-hop resends.
+reference run of ordered sends at +0 ms the 99th percentile from offer to complete receipt reached
+1.95 s ([reference figures](#reference-figures)). That is why a healthy run can still show a few
+first-hop resends.
 
 ## Running it
 
@@ -101,28 +158,36 @@ DATABASE_URL=postgres://app:app@127.0.0.1:5432/alm_cell_template npm run db:migr
 
 createdb -h 127.0.0.1 -U app -T alm_cell_template alm_cell_run
 npm run --silent perf:alm:room-send -- \
+  --ordering=ordering-key \
   --publishers=5 --sends-per-second=2 --duration-s=20 --delay-ms=5 \
   --database-url=postgres://app:app@127.0.0.1:5432/alm_cell_run
 dropdb -h 127.0.0.1 -U app alm_cell_run
 ```
 
+The same shape with unordered sends is the same command with `--ordering=unordered`, on a database
+of its own.
+
 Run from the repository root, one run at a time, on a machine doing nothing else. A run lasts its
 send window plus the 75 s tail. `npm run` prints the command line it runs, the database URL
 included; `--silent` keeps it off the terminal. The cell itself never prints or records the URL.
 
-| Option               | Default                 | Meaning                                                                                                                                               |
-| -------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--database-url`     | none, required          | The migrated database of this run, as a `postgres://` or `postgresql://` URL. A credential: it goes to the database lifecycles and nowhere else.      |
-| `--publishers`       | `5`                     | How many of the fifteen sessions publish, each on a track of its own; 1 to 15.                                                                        |
-| `--sends-per-second` | `2`                     | The sends each publisher offers every second; a whole number of at least 1.                                                                           |
-| `--duration-s`       | `20`                    | The length of the send window in seconds; a whole number of at least 1.                                                                               |
-| `--delay-ms`         | `0`                     | The nominal latency added to each delayed database round trip, in whole milliseconds. See [what is delayed](#what-the-added-latency-covers).          |
-| `--sender-recovery`  | `client-stand-in`       | What a publisher does beyond offering each send once: `none` or `client-stand-in`. See [sender recovery](#sender-recovery).                           |
-| `--application-pool` | the API's default       | The most connections each instance's application pool opens. The default is read from `apps/api-v1/resources/configuration/defaults-config.json`.     |
-| `--out`              | a file named by the run | The artifact's file. Left out, the run writes `tmp/perf/alm-room-send/<start>-p<publishers>-<rate>hz-d<delay>ms-<duration>s-<recovery>-pool<n>.json`. |
+| Option               | Default                 | Meaning                                                                                                                                                          |
+| -------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--ordering`         | none, required          | Whether every send of the run names the room's ordering key: `ordering-key` or `unordered`. See [the two orderings](#the-two-orderings).                         |
+| `--database-url`     | none, required          | The migrated database of this run, as a `postgres://` or `postgresql://` URL. A credential: it goes to the database lifecycles and nowhere else.                 |
+| `--publishers`       | `5`                     | How many of the fifteen sessions publish; 1 to 15. Under `ordering-key` each has a track of its own.                                                             |
+| `--sends-per-second` | `2`                     | The sends each publisher offers every second; a whole number of at least 1.                                                                                      |
+| `--duration-s`       | `20`                    | The length of the send window in seconds; a whole number of at least 1.                                                                                          |
+| `--delay-ms`         | `0`                     | The nominal latency added to each delayed database round trip, in whole milliseconds. See [what is delayed](#what-the-added-latency-covers).                     |
+| `--sender-recovery`  | `client-stand-in`       | What a publisher does beyond offering each send once: `none` or `client-stand-in`. See [sender recovery](#sender-recovery).                                      |
+| `--application-pool` | the API's default       | The most connections each instance's application pool opens. The default is read from `apps/api-v1/resources/configuration/defaults-config.json`.                |
+| `--out`              | a file named by the run | The artifact's file. Left out, the run writes `tmp/perf/alm-room-send/<start>-<ordering>-p<publishers>-<rate>hz-d<delay>ms-<duration>s-<recovery>-pool<n>.json`. |
 
-Each option is one `--name=value` token. An invocation with an issue in its options prints every
-issue, runs nothing and exits with status 2; no issue repeats a text of the command line, and a
+Each option is one `--name=value` token. `--ordering` and `--database-url` have no default, and an
+invocation that leaves either out is refused. Every other shape option it leaves out takes the
+value of the reference shape, which the defaults above are and which states no ordering. An
+invocation with an issue in its options prints every issue, runs nothing and exits with status 2;
+no issue repeats a text of the command line, an `--ordering` the cell does not know included, and a
 `--database-url` that is no `postgres://` or `postgresql://` URL is refused there, before anything
 could print it. So is one that holds whitespace, a quote (`"` or `'`), a backtick or an angle
 bracket: percent-encode each, in a password too. The URL parser takes such a character as it is, and
@@ -140,28 +205,35 @@ and the tail are fixed for every run and recorded in the artifact as its constan
 ## The artifact
 
 A run writes one JSON file, schema `rallar.alm.room-send-cell.v1`, under the git-ignored `tmp/`
-unless `--out` names another place. It holds:
+unless `--out` names another place. The name a run gives its file states its start and every field
+of its shape, the ordering first, as the `--out` row above shows, so the files of an ordered and an
+unordered run of one shape never share a name. It holds:
 
 - the commit, the branch and whether the tree was dirty; the options as the command line gave them,
-  without the database URL;
+  without the database URL, `--ordering` always among them;
 - the host's processor, core count and memory, the operating system, and the Bun and PostgreSQL
   server versions; the load average when the run started and when it ended;
-- the shape and the constants; the application pool the instances ran with beside the API's default;
-  which round trips the latency was added to and which not; the limits listed below;
+- the shape, its ordering included, and the constants; the application pool the instances ran with
+  beside the API's default; which round trips the latency was added to and which not; the limits
+  listed below;
 - the run's wall time and when observation ended; over the send window and over the tail, each
   apart, the event loop's lag and the processor time of the whole process, every thread;
-- the full report;
+- the full report. Every group of it but `tracks` is stated for a run of either ordering. `tracks`
+  holds the two figures that need a track: for a run on the ordering key it is
+  `{ "kind": "ordering-key", ... }` with both, and for a run of unordered sends it is
+  `{ "kind": "not-applicable" }`, never a zero;
 - of the observations, the count of each list, and:
   - in full, with their instants: the later offers (`resends`), the receipts, the NACKs and repair
     requests (`controls`), any control of another kind (`unclassifiedControls`), the sends the
     stand-in ended (`sendEnds`), and the first offers and the ACKs that threw. Each stayed under a
-    thousand entries in every reference run;
+    thousand entries in every run of the ordered [reference set](#reference-figures);
   - summarised: the repairs the stand-in declined (`declinedRepairs`), as the count by reason, the
     first 200 with their instants, and one row for each send and reason with its count and its first
     and last instant. A stalled track draws a decline for each ended send at each execution of each
-    request, and one reference run declined 7,111;
+    request, and one run of the ordered reference set declined 7,111;
   - counted and otherwise left out: the first offers, the ACKs, the arrivals and the hand-offs. A
-    reference run reads 2,800 copies.
+    run of the five-publisher reference shape expects 2,800 copies, fourteen for each of 200 sends,
+    under either ordering.
 
 It holds no database URL: the options are kept without it, and the message of an error is cut at 240
 characters and cleared of anything URL-shaped when it is recorded.
@@ -172,10 +244,14 @@ while a run lasts, so nothing is to be parsed from the terminal: read the artifa
 ## Reading the summary
 
 Every delay is measured on one monotonic clock of the run's process. A send is counted once, by its
-first offer, however often its publisher offered it again.
+first offer, however often its publisher offered it again. A line reads the same under both
+orderings unless it says otherwise below: two lines are worded by the ordering, and each prints
+`not applicable: unordered sends have no track` in place of a figure that needs a track.
 
-- **The first line.** The delay it states is nominal: what `--delay-ms` asked for, added to the
-  delayed round trips listed [below](#what-the-added-latency-covers) and to no others.
+- **The first line.** It names the run's ordering as its shape states it, `ordering ordering-key`
+  or `ordering unordered`, ahead of the rest of the shape. The delay it states is nominal: what
+  `--delay-ms` asked for, added to the delayed round trips listed
+  [below](#what-the-added-latency-covers) and to no others.
 - **Sends offered, and what the entry answered.** Over every send. `admitted` is an admission that
   committed. `pending-admission` is one whose commit lost its compare-and-set: the server kept the
   message as work for a replay to admit, and a receipt is still expected of it. `threw` is an offer
@@ -184,17 +260,19 @@ first offer, however often its publisher offered it again.
   of the error, with the first message under each name. An offer that threw says nothing of what
   the server did with the frame, so such a send is not among the sends that expect a receipt, and a
   receipt read of it is counted in the line of what was recorded beside the sends. One error a run
-  may record here is `ALAdmissionCorruptionError`, "Buffered inbound ordering slot lost its
-  canonical message" (`packages/shared/alm/inbound/al-inbound-ordering-validation.ts`): an
-  admission on an ordered track lists the track's buffered slots in one statement and reads each
-  slot's message in a later one, each read drops a row whose lifetime has ended, and a message that
-  expires between the two reads leaves a slot without its message. No stored record is invalid.
+  on the ordering key may record here is `ALAdmissionCorruptionError`, "Buffered inbound ordering
+  slot lost its canonical message"
+  (`packages/shared/alm/inbound/al-inbound-ordering-validation.ts`): an admission on an ordered
+  track lists the track's buffered slots in one statement and reads each slot's message in a later
+  one, each read drops a row whose lifetime has ended, and a message that expires between the two
+  reads leaves a slot without its message. No stored record is invalid.
 - **Lateness.** From a send's due instant to its offer: how late the load generator itself was.
 - **Copies written to the recipient's socket, of expected.** A copy is one expected recipient's
   share of a send, fourteen a send. It is "written" when the server wrote its frame to that
   recipient's socket at least once. That is a frame on the wire, **not a delivery to an
   application**: a session of the cell has no client runtime, and a real client drops a copy it has
-  taken before and holds back one that is ahead of its track.
+  taken before and, of a send that names an ordering key, holds back one that is ahead of its
+  track.
 - **Due time to first write, over the expected copies.** The headline. From a send's due instant,
   so it includes the offer's lateness, to the first write of each copy; nearest-rank percentiles
   over every expected copy, written or not. A copy never written ranks above every written one, so
@@ -202,10 +280,25 @@ first offer, however often its publisher offered it again.
 - **Due time to first write, over the written copies.** The same delay over only the copies that
   were written. When copies are missing it describes the survivors, so never read it without the
   count of copies written of expected beside it.
-- **Copies written more than once, ahead of a lower seq, past a predecessor never written.** The
-  order and the repeats on the wire. A hand-off comes before the compare-and-set that completes a
-  delivery; when that write loses, the send is handed off again and the router publishes its copies
-  again.
+- **Copies written more than once, out of the order offered, past a predecessor never written.**
+  The repeats and the order on the wire, three counts on one line.
+  - _More than once._ A hand-off comes before the compare-and-set that completes a delivery; when
+    that write loses, the send is handed off again and the router publishes its copies again. It is
+    counted the same way under both orderings.
+  - _Out of the order offered._ `delivery.copiesReadOutOfOfferOrder` in the artifact, counted the
+    same way under both orderings: the copies first written to a socket before the first write, to
+    the same socket, of a send the same publisher offered earlier. A copy counts once however many
+    earlier sends it was written ahead of, sends of different publishers are never compared, and a
+    copy never written is behind nothing. Under `ordering-key` the line words it "ahead of a lower
+    seq of their track": a client holds such a copy back, so its application may still see in order
+    what was written out of it. Under `unordered` the line words it "ahead of an earlier send of
+    their publisher": nothing puts that order back.
+  - _Past a predecessor never written._ Only a send on a track has a predecessor. Under
+    `ordering-key` it is `tracks.copiesReadPastAnUnreadPredecessor`: the copies written to a socket
+    that was never written a lower seq of the same publisher its session expected, which a client
+    holds back until that predecessor comes. Under `unordered` the line prints `not applicable:
+    unordered sends have no track` in its place, and the artifact states no number. A copy of an
+    unordered send that was never written is still counted, in copies written of expected.
 - **Sends a server instance handed to its application subscriber.** Counted where the router is
   called, on the server; "more than once" is the cause of the repeated copies above. "Answered
   pending-admission and never handed" counts the sends whose first offer the entry answered
@@ -222,7 +315,11 @@ first offer, however often its publisher offered it again.
   offer threw, counted for nothing: it would explain a receipt that never completes.
 - **Controls.** The NACKs and repair requests the publishers' sockets read, by reason. A control
   about a gap names the send whose arrival showed the gap, never a missing one, so a send that
-  "drew" a control is not a send that was lost.
+  "drew" a control is not a send that was lost. The server plans a `gap` NACK and a `missing-seq`
+  repair request only for a gap in a track (`planNack` in
+  `packages/shared/al-contracts/al-policy.ts`, `toRepairEffects` in
+  `packages/shared/alm/inbound/al-inbound-effect-intent.ts`), so neither is about an unordered
+  send. An `expired`, an `overloaded` or a `held-by-other` NACK needs no track.
 - **Resends.** Only under `client-stand-in`: the later offers by cause, `repair` or `first-hop`, and
   what came of each. The server answers `duplicate` to a send it has already admitted and hands
   nothing off for it, so a resend of an admitted send brings no copy. It is not without effect:
@@ -232,11 +329,14 @@ first offer, however often its publisher offered it again.
   ended, by cause, and the re-offers a repair request asked for that the stand-in did not make
   because the send had ended or expired, when the request was served or by the instant the re-offer
   was to leave. See [sender recovery](#sender-recovery).
-- **Before each track's first control.** The sends each publisher offered before it read the first
-  NACK or repair request naming a send of its track, and their copies. Up to that instant a track
-  has had only the server working for it, so this view is the one to compare between `none` and
-  `client-stand-in` and between delays. A send in the view may still have been written only after,
-  and because of, a later re-offer.
+- **Before each track's first control.** Under `ordering-key`, `tracks.beforeFirstControl` in the
+  artifact: the sends each publisher offered before it read the first NACK or repair request naming
+  a send of its track, and their copies. Up to that instant a track has had only the server working
+  for it, so this view is the one to compare between `none` and `client-stand-in` and between
+  delays. A send in the view may still have been written only after, and because of, a later
+  re-offer. Under `unordered` the line prints `not applicable: unordered sends have no track`: a
+  control about one unordered send says nothing of its publisher's other sends, so no instant
+  divides them.
 - **Send window, and tail.** How loaded the run's own process was, over the send window (its
   opening to its last offer) and over the tail, each apart: the lateness of a 10 ms timer and the
   processor time used. **Judge whether the one event loop kept up by the loop's lag**: every
@@ -252,15 +352,20 @@ read. A run of the cell leaves all three at zero.
 ## Sender recovery
 
 `none`: a publisher offers each send once and answers nothing the server asks. The run shows the
-server alone, and a track the server stalls stays stalled.
+server alone: a send it has not answered for is never offered again, and under `ordering-key` a
+track the server stalls stays stalled.
 
 `client-stand-in`: a publisher stands where a browser's WS client would, deciding with the product's
-own planner and limits.
+own planner and limits. There is one stand-in for both orderings, with no switch between them: it
+runs the product's planner over each send's own message (`toWsQueueBoxClientDispatchPlan`) and
+keeps the track the product keys the send on (`toALOrderingTrackKey`); a send that names no
+ordering key has no track. [By ordering](#sender-recovery-by-ordering) says what follows from that.
 
 - **Repair.** It answers a gap NACK or a repair request by offering the missing sequences of its
   track again, 32 to an execution, once for each request number, with four repairs to a send. A
-  re-offer leaves one turn of the event loop after its request was served; a send that ended or
-  expired in that turn is not offered, and its repair is counted as declined.
+  request that names no range, or no track, is answered with the one send it names. A re-offer
+  leaves one turn of the event loop after its request was served; a send that ended or expired in
+  that turn is not offered, and its repair is counted as declined.
 - **First hop.** A send that has read no receipt of any phase within 2 s of its offer is offered
   again, up to three times, 2 s apart.
 - **The end of a send.** It ends a send as the client ends a message, and offers an ended or expired
@@ -276,6 +381,37 @@ own planner and limits.
 
 A stand-in holds a send from its first offer whatever came of that offer, one that threw included:
 a client's frame has left its socket whatever the server then does with it.
+
+### Sender recovery by ordering
+
+The product's planner decides for each message, and the stand-in copies no decision of it.
+
+An unordered send of the cell is receipted, so under `client-stand-in` it keeps:
+
+- the first-hop wait: 2 s, then three resends 2 s apart, ended by a receipt of any phase or by a
+  NACK that may end the send;
+- every end of a send listed above, with the same causes;
+- the four repairs the planner plans for the envelope, and one re-offer of the send for a repair
+  request that names it and states no track, such as one of reason `retransmit`; the same request
+  read again brings none.
+
+It never draws:
+
+- a `gap` NACK or a `missing-seq` repair request. The server plans both only for a gap in a track,
+  and the send is on none;
+- a re-offer for a control that states a track, an expected sequence or a range. The stand-in
+  raises no repair hint for such a control about a send that has no track
+  (`toRoomSendRepairHint`).
+
+So no repair of a gap is part of a run of unordered sends: its resends of cause `repair`, if it has
+any, each answer a request for the one send named. The smoke on PostgreSQL asserts it of a small
+run: no `gap` NACK, no `missing-seq` request, no resend of cause `repair`, and every send ended on
+its terminal receipt.
+
+A send on the ordering key keeps the same wait, ends and repairs, and may also draw the two gap
+controls, which the stand-in answers with the missing sequences of the track.
+
+### What the stand-in leaves out
 
 It does not model the client's outbound commits and engine timing, so a re-offer leaves as soon as
 the run asks for it and an end takes effect at once; nor the client's ack-timeout schedule once the
@@ -293,7 +429,8 @@ server has answered. It is coarser than the client in three places, as the comme
   stand-in holds one for a send, its server being the one requester.
 
 What a browser does after `resync-required` or `receipt-exhausted` is not modelled under either
-recovery: a publisher goes on offering the next send of the same track.
+recovery: a publisher goes on offering its next send, on the same track when its sends name an
+ordering key.
 
 ## What the added latency covers
 
@@ -332,9 +469,13 @@ outside a transaction holds no connection while it waits.
 
 - **One event loop.** One process runs the three instances and the load, where a deployment gives
   each instance a process. With no latency added the loop is busy most of the time, and two runs of
-  one shape differ several times over in how long a receipt takes. **An absolute delay at +0 ms
-  varies from run to run and measures the harness as much as the product.** Compare runs by the
-  loop's lag over the send window and over the tail before comparing their delays.
+  one shape have differed several times over in how long a receipt took; both were of ordered
+  sends. **An absolute delay at +0 ms varies from run to run and measures the harness as much as
+  the product.** Compare runs by the loop's lag over the send window and over the tail before
+  comparing their delays, two runs that differ only in their ordering included.
+- **One ordering to a run.** Every send of a run is on the ordering key or every one is unordered.
+  No run mixes the two, and an ordered and an unordered run of one shape are two processes on two
+  databases at two times.
 - **No authorizer reads.** The API's room authorizer reads the room's snapshot for each of the
   three decisions a send takes, and once more for each replay and each second dispatch: at least
   three round trips a send that no run pays. The cell is optimistic by that much.
@@ -342,6 +483,14 @@ outside a transaction holds no connection while it waits.
   sends, and no diagnostics sink is installed, so the pools and the loop serve the sends alone.
 - **No client runtime at a recipient.** A recipient's socket takes every frame the server writes
   and sends no gap NACK of its own. Every delivery figure is on the wire.
+- **Nothing reorders an unordered copy.** A send that names no ordering key is on no track, so
+  neither the server nor a client holds its copy back for an earlier send of its publisher. The
+  copies a run of unordered sends counts as written ahead of an earlier send stay out of order,
+  where a client puts the same count of a run on the ordering key right.
+- **One envelope.** The `ws` strategy's room broadcast of a `notification` channel, receipted,
+  under both orderings. No run offers the multicast of a channel's default strategy, a `command`
+  or a `live` channel's send, or the lane send, which asks no receipt, as
+  [above](#what-the-unordered-shape-stands-for).
 - **No room send fence.** The envelope carries none, where a browser's room send carries the fence
   its room view resolves and the server checks it.
 - **Below the socket bridge.** A frame enters at the server's `acceptIncomingMessage`: the bridge's
@@ -358,6 +507,39 @@ outside a transaction holds no connection while it waits.
   work on the machine shows in the load average the artifact records.
 - **One clock, for the cell.** The cell reads and waits through one injected clock; the product's
   own services, stores and workers read the wall clock themselves.
+- **No unordered reference set.** Every measured figure this README states is of ordered sends, as
+  the next section says.
+
+## Reference figures
+
+Every figure this README states from a run was measured before the cell had an unordered shape,
+in one reference set of 16 runs:
+
+- **Ordering.** Ordered sends: the cell of that commit named the room's ordering key on every send
+  and had no `--ordering`. In today's options each run is `--ordering=ordering-key`.
+- **Commit.** `87b3c8f`, on the branch of pull request #927, whose product code was `main`'s at
+  `a9bd9e3`. The artifacts of the set carry the earlier schema `rallar.alm.ordered-send-cell.v1`,
+  which stated no ordering and held the two track figures outside `tracks`.
+- **Shapes.** 20 s of offers, observed for 75 s after the last one. Five publishers at 2 sends a
+  second at the API's default pool of 5: three runs at +0 ms and three at +5 ms under
+  `client-stand-in`, one at +0 ms and three at +5 ms under `none`. The same at a pool of 10 and
+  +5 ms: one run under each recovery. One publisher at 5 and at 10 sends a second under
+  `client-stand-in`: one run each at +0 ms and at +5 ms.
+- **Machine.** One 4-core Intel Xeon at 2.10 GHz with a local PostgreSQL 16.15, Bun 1.4.4, one run
+  at a time.
+
+| Figure                                                                       | Ordering | Commit    | Shape of the run it is from                                                              |
+| ---------------------------------------------------------------------------- | -------- | --------- | ---------------------------------------------------------------------------------------- |
+| 1.95 s, the 99th percentile from offer to complete receipt                   | ordered  | `87b3c8f` | Five publishers at 2 sends a second for 20 s, +0 ms, `client-stand-in`, pool 5; one run. |
+| 7,111 repairs declined in one run                                            | ordered  | `87b3c8f` | One publisher at 10 sends a second for 20 s, +5 ms, `client-stand-in`, pool 5; one run.  |
+| Under a thousand entries in each observation list the artifact keeps in full | ordered  | `87b3c8f` | Each of the 16 runs.                                                                     |
+
+The 2,800 copies of a five-publisher reference run are no measurement: five publishers at 2 sends
+a second for 20 s offer 200 sends, each to fourteen recipients.
+
+**No unordered reference set exists yet.** No figure of a run with `--ordering=unordered` has been
+measured on a quiet machine, and this README states none. The smoke on PostgreSQL runs a small
+unordered cell and proves behaviour, never timing.
 
 ## Navigation
 
@@ -365,14 +547,16 @@ outside a transaction holds no connection while it waits.
 | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `alm-room-send-cell.ts`            | The entry: decodes the options, runs, writes the artifact, prints the summary.                                               |
 | `decode-room-send-cell-options.ts` | The command line; `validate-room-send-shape.ts` the shape; `compute-room-send-schedule.ts` who sends what when.              |
+| `room-send-ordering.ts`            | The two orderings; `to-room-send-message.ts` the envelope a publisher offers under each.                                     |
 | `run-room-send-cell.ts`            | One run: the phases, the sessions' sockets, the offers, the ACKs and the tail.                                               |
 | `answer/`                          | What came of one offer: the entry's answer, or that it threw, with the error's name and a bounded message free of URLs.      |
-| `room-send-cell-observations.ts`   | The contract of what a run records; the observation log and the offer ledger fill it.                                        |
+| `room-send-cell-observations.ts`   | The contract of what a run records, its ordering included; the observation log and the offer ledger fill it.                 |
 | `instance/`                        | One API instance: its database lifecycle, the delayed database handle and notification port, its WS server and its sessions. |
-| `client-stand-in/`                 | What a publisher does under `client-stand-in`.                                                                               |
-| `report/`                          | `computeRoomSendReport` and each group of its figures, pure over the observations.                                           |
+| `client-stand-in/`                 | What a publisher does under `client-stand-in`, for a send of either ordering.                                                |
+| `report/`                          | `computeRoomSendReport` and each group of its figures, pure over the observations; `tracks` is the group that needs a track. |
 | `artifact/`                        | The artifact, what it keeps of the declined repairs, its limits, the environment it records, its file and its summary.       |
 
 The unit tests mirror these paths under `packages/tests/shared-server/performance/alm-room-send/`.
 `packages/tests/shared-server/integration/postgres/alm-room-send-cell.test.ts` runs a small cell
-on PostgreSQL to keep the harness working; it proves behaviour and never timing.
+on PostgreSQL, with ordered and with unordered sends, to keep the harness working; it proves
+behaviour and never timing.

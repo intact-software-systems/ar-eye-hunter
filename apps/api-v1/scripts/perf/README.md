@@ -25,7 +25,7 @@ Do not check in:
 | `api-v1-state-write-concurrency-bench.ts`        | Direct PostgreSQL API-v1 state-write benchmark for uncontended, shared-group, and hot-group concurrency.                                  |
 | `compare-api-v1-state-write-results.mjs`         | Validates state-write artifacts and enforces the relative performance and correctness gate.                                               |
 | `compare-api-v1-crdt-append-history-results.mjs` | Validates and compares diagnostic black-box append/replay timings at small, medium, and large bounded CRDT histories.                     |
-| `alm-room-send/alm-room-send-cell.ts`            | Measures ordered, receipt-tracked ALM room sends on three in-process API instances over PostgreSQL, with optional added database latency. |
+| `alm-room-send/alm-room-send-cell.ts`            | Measures ALM room sends, ordered or unordered, on three in-process API instances over PostgreSQL, with optionally added database latency. |
 
 ## Prerequisites
 
@@ -77,26 +77,39 @@ not measure process memory and its results do not support a memory claim.
 ## ALM room-send cell
 
 `npm run perf:alm:room-send` runs three API instances in one Bun process on one PostgreSQL
-database, with fifteen sessions in one room, and offers the ordered room sends of a browser's
-`notification` channel open-loop at a set rate. It reports how many copies the server wrote to the
-recipients' sockets and how long after each send fell due, the receipts the publishers read, the
-NACKs and repair requests the server sent, and how loaded the run's own event loop was.
-`--delay-ms` adds latency to the database round trips of the instances.
+database, with fifteen sessions in one room, and offers the receipt-tracked room sends of a
+browser's `notification` channel open-loop at a set rate. `--ordering` is required and has no
+default: `ordering-key` puts every send of the run on the room's ordering key, and `unordered`
+leaves the key out of every one. A run reports how many copies the server wrote to the recipients'
+sockets and how long after each send fell due, how many it wrote out of the order their publisher
+offered them in, the receipts the publishers read, the NACKs and repair requests the server sent,
+and how loaded the run's own event loop was. The two figures that need a track read
+`not applicable` for a run of unordered sends, never 0. `--delay-ms` adds latency to the database
+round trips of the instances.
 
 It needs a fresh migrated database for every run and writes its artifact under
-`tmp/perf/alm-room-send/`:
+`tmp/perf/alm-room-send/`, in a file whose name states the ordering:
 
 ```sh
 createdb -h 127.0.0.1 -U app -T alm_cell_template alm_cell_run
 npm run --silent perf:alm:room-send -- \
+  --ordering=ordering-key \
+  --delay-ms=5 --database-url=postgres://app:app@127.0.0.1:5432/alm_cell_run
+dropdb -h 127.0.0.1 -U app alm_cell_run
+
+createdb -h 127.0.0.1 -U app -T alm_cell_template alm_cell_run
+npm run --silent perf:alm:room-send -- \
+  --ordering=unordered \
   --delay-ms=5 --database-url=postgres://app:app@127.0.0.1:5432/alm_cell_run
 dropdb -h 127.0.0.1 -U app alm_cell_run
 ```
 
 It is a measurement and gates nothing. One event loop runs the three instances and the load, so an
 absolute figure with no latency added varies from run to run and measures the harness as much as
-the product. Every option, how to read each figure, which round trips the latency covers and every
-limit of the cell are in [`alm-room-send/README.md`](./alm-room-send/README.md).
+the product. Its reference figures are of ordered sends: no unordered reference set has been run.
+Every option, how to read each figure under each ordering, what the unordered shape stands for,
+which round trips the latency covers and every limit of the cell are in
+[`alm-room-send/README.md`](./alm-room-send/README.md).
 
 ## API-v1 State-write Concurrency Baseline
 

@@ -75,9 +75,11 @@ const NO_REPAIR_ANSWER: RoomSendClientStandIn.RepairAnswer = { reoffers: [], fol
  * - Repair. A gap NACK or a repair request its publisher's socket read raises the product's repair hint
  *   (`toRoomSendRepairHint`), and the hint is served as `computeRoomSendRepairReoffers` states: the missing
  *   sequences of the track that the publisher has offered, 32 to an execution, once for each request number, with the
- *   repairs the product plans for the send (`repairTracking.maxAttempts`: 4 for this envelope). The run offers what
- *   an execution decided a turn of its event loop later, and asks then whether each send may still be offered
- *   (`confirmRepairReoffer`): one that ended or expired in that turn is declined.
+ *   repairs the product plans for the send (`repairTracking.maxAttempts`: 4 for this envelope). A hint that names no
+ *   range or no track is served with the one send its control named, and no other hint is raised about a send that
+ *   names no ordering key: the server reports no gap of it, and a control that states a track raises nothing for it.
+ *   The run offers what an execution decided a turn of its event loop later, and asks then whether each send may
+ *   still be offered (`confirmRepairReoffer`): one that ended or expired in that turn is declined.
  * - First hop. A send holds the wait the product plans for it (`firstHopTracking`: a 2 s timeout and 3 retries for
  *   this envelope) from its first offer, and is offered again at each deadline (`computeRoomSendFirstHopTurn`). A
  *   receipt of the send its publisher read, in any phase, ends the wait, and so does a NACK that may end the send
@@ -90,7 +92,9 @@ const NO_REPAIR_ANSWER: RoomSendClientStandIn.RepairAnswer = { reoffers: [], fol
  *   recorded with its instant.
  *
  * Both limits come from `toWsQueueBoxClientDispatchPlan` over the send's own message, with the QoS provider the
- * message was planned with (`ROOM_SEND_WS_CLIENT_QOS_PROVIDER`).
+ * message was planned with (`ROOM_SEND_WS_CLIENT_QOS_PROVIDER`). So the product's planner decides for each send, and
+ * nothing here reads the ordering of a run's sends: a send that names no ordering key holds no track
+ * (`toALOrderingTrackKey`) and the same wait, repairs and ends as one that names the key.
  *
  * Where it is coarser than the product. The product marks a message ended on a NACK only when the NACK is a relay's
  * refusal of the whole send or removes an open receipt (`toALOutboundControlMessageEnd`): an `expired` or a `stale`
@@ -106,8 +110,8 @@ const NO_REPAIR_ANSWER: RoomSendClientStandIn.RepairAnswer = { reoffers: [], fol
  * What it does not model: the client's outbound commits, their conflicts and its engine's timing, so a re-offer
  * leaves as soon as the run asks for it and an end takes effect at once; the client's `ack-timeout` schedule once the
  * server has answered; what a browser does after `resync-required` or `receipt-exhausted`, since a publisher here
- * goes on offering the next send of the same track; and the client's control validation beyond what
- * `toRoomSendRepairHint` keeps. It holds everything in memory.
+ * goes on offering its next send, on the same track when its sends name an ordering key; and the client's control
+ * validation beyond what `toRoomSendRepairHint` keeps. It holds everything in memory.
  */
 export class RoomSendClientStandIn {
     private readonly serverPeerId: string;

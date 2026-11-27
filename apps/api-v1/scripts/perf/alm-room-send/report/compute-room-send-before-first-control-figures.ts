@@ -7,10 +7,11 @@ import type { ObservedRoomSend } from './to-observed-room-sends.ts';
 
 /**
  * The server by itself: the delivery of the sends each track offered before the server first asked the track's
- * publisher for anything. A track is one publisher's sends. A send is in the view when its first offer was read
- * before the instant its publisher read the first NACK or repair request that names a send of the track; a track
- * that drew no such control has every send in it. The two instants are readings of one clock, compared as such: a
- * send and a control are in different lists, so their order is in neither.
+ * publisher for anything. A track is one publisher's sends on the room's ordering key, so the view is of a run whose
+ * sends name that key: `computeRoomSendTrackFigures` states it for no other. A send is in the view when its first
+ * offer was read before the instant its publisher read the first NACK or repair request that names a send of the
+ * track; a track that drew no such control has every send in it. The two instants are readings of one clock, compared
+ * as such: a send and a control are in different lists, so their order is in neither.
  *
  * It is what to compare between a run under the sender recovery `none` and one under `client-stand-in`, and between
  * delays: up to its first control a track has had nothing but the server working for it, so no publisher's answer
