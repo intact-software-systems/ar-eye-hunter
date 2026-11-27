@@ -438,7 +438,14 @@ describe('Hetzner materialization contracts and effects', () => {
                     expect(payload.payload.roomRef).toEqual({ applicationId: 'rallar-server', workspaceId: 'default', groupId: roomId });
                     const child = toLoopChildCommand({
                         template: wait,
-                        context: { loopCommandId: 'arrival-test', index: sequence - 1, iteration: sequence, elapsedMs: 0, commandIndex: index }
+                        context: {
+                            loopCommandId: 'arrival-test',
+                            index: sequence - 1,
+                            iteration: sequence,
+                            elapsedMs: 0,
+                            atEpochMs: 1802088000000,
+                            commandIndex: index
+                        }
                     });
                     if (child.kind !== 'wait') {
                         throw new Error('Runtime loop expansion must retain the wait contract.');

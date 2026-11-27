@@ -80,7 +80,7 @@ function toFirstAttempt(poll: RallarBlackBoxTestLoopCommand): readonly RallarBla
     return poll.commands.map((template, commandIndex) =>
         toLoopChildCommand({
             template,
-            context: { loopCommandId: poll.commandId!, index: 0, iteration: 1, elapsedMs: 0, commandIndex }
+            context: { loopCommandId: poll.commandId!, index: 0, iteration: 1, elapsedMs: 0, atEpochMs: 0, commandIndex }
         })
     );
 }
