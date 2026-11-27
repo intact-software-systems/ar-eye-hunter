@@ -391,3 +391,103 @@ describe('edge-order-late-join', () => {
         }
     );
 });
+
+describe('edge-order-unretried-loss-stream', () => {
+    const KEY = 'edge-order-unretried-loss-stream';
+    /**
+     * What the seeded loss takes of sends 2 to 19 over `ws`, where a lost frame is gone and each send is one draw. Over
+     * the RTC carriers the page submits a dropped frame again after 50 ms, and each new attempt is a draw of its own:
+     * a hosted run of 2026-11-27 lost 2, 3, 9, 11, 14 and 19 where three local runs lost 2, 3, 9, 13 and 16.
+     */
+    const WS_LOST_RUNS = [[2, 3], [9, 9], [13, 13], [16, 16]] as const;
+    const WS_ARRIVING = 15;
+    const RTC_CARRIERS = ALM_CONFORMANCE_CARRIERS.filter((carrier) => carrier !== 'ws');
+
+    it.each(ALM_CONFORMANCE_CARRIERS)('over %s runs in the full scope with both pages edge-ordered', (carrier) => {
+        const cell = requireCell(KEY, carrier);
+
+        expect(cell.tags).toEqual(['full']);
+        for (const recipe of [cell.sender, cell.receiver]) {
+            expect(findCommand(recipe, 'connect')).toMatchObject({ kind: 'rtc.connect', rallar: { channelOrder: 'edge' } });
+        }
+    });
+
+    it.each(ALM_CONFORMANCE_CARRIERS)('over %s sends twenty best-effort room sends that ask no receipt, 2 to 19 under the held seeded loss', (carrier) => {
+        const sender = requireCell(KEY, carrier).sender;
+        const sends = toSends(sender);
+
+        expect(sends.map((send) => send.payload)).toEqual(toNumbers(1, LOSS_STREAM_SENDS).map((seq) => ({ marker: KEY, seq })));
+        for (const send of sends) {
+            expect(send).toMatchObject({ carrier, typeId: toTypeId(KEY, carrier), reliability: 'best-effort', ack: 'none' });
+            expect(send).not.toHaveProperty('orderingKey');
+            expect(send).not.toHaveProperty('seq');
+        }
+        expect(findCommand(sender, 'loss-arm')).toMatchObject({
+            kind: 'fault.inject',
+            carrier: carrier === 'ws' ? 'ws' : 'rtc',
+            match: { typeId: toTypeId(KEY, carrier) },
+            action: { loss: { ratio: 0.25, seed: 7 } },
+            remaining: 'until-cleared'
+        });
+        expect(toPlace(sender, 'send-1')).toBeLessThan(toPlace(sender, 'loss-arm'));
+        expect(toPlace(sender, 'loss-arm')).toBeLessThan(toPlace(sender, 'send-2'));
+        expect(toPlace(sender, 'send-19')).toBeLessThan(toPlace(sender, 'loss-release'));
+        expect(toPlace(sender, 'loss-release')).toBeLessThan(toPlace(sender, 'send-20'));
+        expect(findCommand(sender, 'assert-loss-dropped')).toMatchObject({ operator: 'gte', expected: 1 });
+    });
+
+    it.each(ALM_CONFORMANCE_CARRIERS)('over %s the receiver waits for the last send, which leaves after the loss', (carrier) => {
+        const receiver = requireCell(KEY, carrier).receiver;
+
+        expect(findCommand(receiver, 'received-last-send')).toMatchObject({
+            kind: 'wait',
+            match: {
+                equals: { marker: KEY, seq: LOSS_STREAM_SENDS },
+                payloadFields: { 'data.typeId': toTypeId(KEY, carrier) }
+            }
+        });
+    });
+
+    it('over ws the receiver records exactly the sends that arrive, in send order, and states each lost run as a gap', () => {
+        const receiver = requireCell(KEY, 'ws').receiver;
+        const typeId = toTypeId(KEY, 'ws');
+
+        expect(findCommand(receiver, `received-${WS_ARRIVING}`)).toMatchObject({ typeId, count: WS_ARRIVING, absent: false, ascendingBy: 'seq' });
+        expect(findCommand(receiver, `received-${WS_ARRIVING + 1}`)).toMatchObject({ typeId, count: WS_ARRIVING + 1, absent: true });
+        expect(toPlace(receiver, 'received-last-send')).toBeLessThan(toPlace(receiver, `received-${WS_ARRIVING}`));
+        for (const [from, to] of WS_LOST_RUNS) {
+            const gap = findCommand(receiver, `gap-${from}-${to}`);
+            expect(gap).toMatchObject({
+                kind: 'wait',
+                match: {
+                    payloadFields: {
+                        'data.kind': 'edge-order-gap',
+                        'data.typeId': typeId,
+                        'data.fromPosition': from,
+                        'data.toPosition': to,
+                        'data.reason': 'ended-at-sender'
+                    }
+                }
+            });
+            expect(gap).not.toHaveProperty('absent');
+        }
+    });
+
+    it.each(RTC_CARRIERS)(
+        'over %s the receiver claims only what holds at any pace: what it was handed is in send order, none twice',
+        (carrier) => {
+            const receiver = requireCell(KEY, carrier).receiver;
+
+            expect(findCommand(receiver, 'received-2')).toMatchObject({
+                typeId: toTypeId(KEY, carrier),
+                count: 2,
+                absent: false,
+                ascendingBy: 'seq'
+            });
+            expect(toPlace(receiver, 'received-last-send')).toBeLessThan(toPlace(receiver, 'received-2'));
+            const claimed = receiver.commands.map((command) => (command.commandId ?? '').slice(receiver.recipeId.length + 1));
+            expect(claimed.filter((name) => name.startsWith('received-'))).toEqual(['received-last-send', 'received-2']);
+            expect(claimed.filter((name) => name.startsWith('gap-') || name.startsWith('late-'))).toEqual([]);
+        }
+    );
+});

@@ -12,6 +12,7 @@ import {
 } from '@shared-web/browser/messages/edge-order/edge-order-received-stream.ts';
 import type { EdgeOrderReceiverLimits } from '@shared-web/browser/messages/edge-order/edge-order-receiver-limits.ts';
 import type { EdgeOrderStamp } from '@shared-web/browser/messages/edge-order/edge-order-stamp.ts';
+import type { EdgeOrderStreamWaits } from '@shared-web/browser/messages/edge-order/edge-order-stream-waits.ts';
 import type { RallarMessageOrderGap } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 
 export namespace EdgeOrderReceiver {
@@ -19,6 +20,8 @@ export namespace EdgeOrderReceiver {
         /** The channel the message came on and its sender; with the stamp's stream they name the stream. */
         readonly origin: Omit<EdgeOrderStreamOrigin, 'stream'>;
         readonly stamp: EdgeOrderStamp;
+        /** The waits that stand for the channel now: the stream follows them from this arrival on. */
+        readonly waits: EdgeOrderStreamWaits;
         readonly expiresAtMs: number;
         readonly byteLength: number;
         readonly message: Message;
@@ -78,7 +81,13 @@ export class EdgeOrderReceiver<Message> {
         const key = toEdgeOrderStreamKey(origin);
         const known = this.streams.take(key);
         const forgotten = known === undefined ? this.takeStreamToForget() : undefined;
-        const stream = known ?? createEdgeOrderReceivedStream<Message>(origin, nowMs, this.evictedStreams.take(key));
+        const stream = known ?? createEdgeOrderReceivedStream<Message>({
+            origin,
+            firstSeenAtMs: nowMs,
+            waits: arrival.waits,
+            nextPosition: this.evictedStreams.take(key)
+        });
+        stream.waits = arrival.waits;
         this.streams.acceptAt({ key, value: stream, nowEpochMs: nowMs });
         // The arrival's stream is in the table first: a hand-over can bring that stream's next arrival in the same turn.
         if (forgotten !== undefined) {

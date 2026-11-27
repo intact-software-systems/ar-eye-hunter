@@ -3,6 +3,10 @@ import { decodeALPublicationPolicy } from '@shared/al-contracts/publication/al-p
 import { AL_CHANNEL_PURPOSES } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 
+import {
+    validateEdgeOrderChannel,
+    type UncheckedChannelOption
+} from './edge-order/validate-edge-order-channel.ts';
 import type {
     RallarStorageUnavailablePolicy,
     RallarTypedMessageChannelDefinition
@@ -15,10 +19,12 @@ export interface RallarTypedChannelPolicyInput {
     readonly access?: string;
     readonly durability?: string;
     readonly onStorageUnavailable?: string;
-    readonly recovery?: unknown;
-    readonly publication?: unknown;
+    readonly recovery?: UncheckedChannelOption;
+    readonly publication?: UncheckedChannelOption;
     readonly order?: string;
-    readonly onOrderGap?: unknown;
+    readonly onOrderGap?: UncheckedChannelOption;
+    readonly orderGapWaitMs?: UncheckedChannelOption;
+    readonly orderEntryWindowMs?: UncheckedChannelOption;
 }
 
 const RALLAR_STORAGE_UNAVAILABLE_POLICIES: readonly RallarStorageUnavailablePolicy[] = ['refuse', 'volatile'];
@@ -58,7 +64,7 @@ export function validateRallarTypedChannelPolicy(
     }
     issues.push(...validateRallarChannelRecovery(definition.recovery));
     issues.push(...validateRallarChannelPublication(definition));
-    issues.push(...validateRallarChannelOrder(definition));
+    issues.push(...validateEdgeOrderChannel(definition));
     return issues;
 }
 
@@ -91,7 +97,9 @@ function validateRallarChannelDurability(definition: RallarTypedChannelPolicyInp
 }
 
 /** Absent is valid: the channel declares no owner. Stated, it must be callable. */
-function validateRallarChannelRecovery(recovery: unknown): readonly RallarValidationIssue[] {
+function validateRallarChannelRecovery(
+    recovery: UncheckedChannelOption | undefined
+): readonly RallarValidationIssue[] {
     if (recovery === undefined) {
         return [];
     }
@@ -123,43 +131,4 @@ function validateRallarChannelPublication(definition: RallarTypedChannelPolicyIn
         }];
     }
     return decodeALPublicationPolicy(definition.publication).left ?? [];
-}
-
-/**
- * Edge order lives in memory at the two ends and waits only for a send that is retried, so its channel is a
- * volatile command or notification channel. A granted topic is refused until its wrapped payload is proven through
- * the publisher proof and the `subscribe` election; a session that elects late is a late joiner like any other.
- */
-function validateRallarChannelOrder(definition: RallarTypedChannelPolicyInput): readonly RallarValidationIssue[] {
-    if (definition.order === undefined) {
-        return definition.onOrderGap === undefined
-            ? []
-            : [{
-                path: '$.onOrderGap',
-                code: 'unsupported',
-                message: 'Only an edge-ordered channel reports order gaps.'
-            }];
-    }
-    const refusal = definition.order === 'edge' ? resolveRallarEdgeOrderRefusal(definition) : undefined;
-    return [
-        ...(definition.order === 'edge'
-            ? []
-            : [{ path: '$.order', code: 'invalid-order', message: 'Order must be edge.' }]),
-        ...(refusal === undefined ? [] : [{ path: '$.order', code: 'unsupported', message: refusal }]),
-        ...(definition.onOrderGap === undefined || typeof definition.onOrderGap === 'function'
-            ? []
-            : [{ path: '$.onOrderGap', code: 'invalid-order-gap-handler', message: 'onOrderGap must be a function.' }])
-    ];
-}
-
-function resolveRallarEdgeOrderRefusal(definition: RallarTypedChannelPolicyInput): string | undefined {
-    if (definition.purpose === 'live') {
-        return 'A live channel is not edge-ordered: nothing retries its sends.';
-    }
-    if (definition.access === 'granted') {
-        return 'A granted channel is not edge-ordered yet: its signed payload is not proven with the order wrapper.';
-    }
-    return definition.durability !== undefined && definition.durability !== 'volatile'
-        ? 'An edge-ordered channel is volatile: its order lives in memory only.'
-        : undefined;
 }

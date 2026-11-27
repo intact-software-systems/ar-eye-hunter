@@ -1,4 +1,5 @@
 import type { EdgeOrderStamp } from '@shared-web/browser/messages/edge-order/edge-order-stamp.ts';
+import type { EdgeOrderStreamWaits } from '@shared-web/browser/messages/edge-order/edge-order-stream-waits.ts';
 import type { RallarMessageOrderGap } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 
 /** Whose stream it is and which channel's: what every gap of the stream names. */
@@ -21,6 +22,8 @@ export interface EdgeOrderHeldMessage<Message> {
 export interface EdgeOrderReceivedStream<Message> {
     readonly origin: EdgeOrderStreamOrigin;
     readonly firstSeenAtMs: number;
+    /** The waits its channel declared, as the stream's latest arrival stated them. */
+    waits: EdgeOrderStreamWaits;
     /** Absent while the stream is entering: nothing is handed over yet and earlier messages may still arrive. */
     nextPosition: number | undefined;
     /** The highest `lowestOpenPosition` any of its stamps stated: every send below it has ended at the sender. */
@@ -31,16 +34,20 @@ export interface EdgeOrderReceivedStream<Message> {
     readonly held: Map<number, EdgeOrderHeldMessage<Message>>;
 }
 
-/** A stream as its first arrival finds it: new, or back at the position the record of its eviction kept. */
+/** A stream as its first arrival finds it. */
+export interface EdgeOrderFirstArrival {
+    readonly origin: EdgeOrderStreamOrigin;
+    readonly firstSeenAtMs: number;
+    readonly waits: EdgeOrderStreamWaits;
+    /** The position the record of the stream's eviction kept; absent for a stream the page has no record of. */
+    readonly nextPosition: number | undefined;
+}
+
 export function createEdgeOrderReceivedStream<Message>(
-    origin: EdgeOrderStreamOrigin,
-    firstSeenAtMs: number,
-    nextPosition: number | undefined
+    firstArrival: EdgeOrderFirstArrival
 ): EdgeOrderReceivedStream<Message> {
     return {
-        origin,
-        firstSeenAtMs,
-        nextPosition,
+        ...firstArrival,
         endedBelowPosition: 0,
         heldBytes: 0,
         forgotten: false,

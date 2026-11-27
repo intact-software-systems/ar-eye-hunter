@@ -1,6 +1,7 @@
 import type { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
 import type { BrowserRallarMessageDispatch } from '@shared-web/browser/messages/browser-rallar-message-dispatch.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     AL_MESSAGE_RESOURCE_LIMITS,
     computeALMessageEnvelopeBytes
@@ -14,13 +15,30 @@ import {
     type ALOutboundPublicationStageReport
 } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import type { ALOutboundStagedPublication } from '@shared/alm/outbound/publication/al-outbound-staged-publication.ts';
+import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
-/** What a live channel's delivery asks of the stage: its channel's policy, and the lane and stream it is paced on. */
-export interface BrowserPublicationRequest {
+/** How a live channel's value is paced: its channel's policy, and the lane and stream it is paced on. */
+export interface BrowserPublicationPacing {
     readonly policy: ALPublicationPolicy;
     readonly laneKey: string;
     readonly streamKey: string;
+}
+
+/** A live value as it leaves the stage: its envelope with the stamped payload, and what that payload is refused for. */
+export interface BrowserStampedPublication {
+    readonly message: ALMessage;
+    readonly payloadIssues: readonly RallarValidationIssue[];
+}
+
+/** What a live channel's delivery asks of the stage, and of the dispatch that writes its leg at its opportunity. */
+export interface BrowserPublicationRequest extends BrowserPublicationPacing {
+    /**
+     * Defined exactly on an edge-ordered live channel. The dispatch calls it once, when the stage's opportunity
+     * selects the value and before its leg is written: it wraps the payload with the position the value takes
+     * then, so a value displaced on the stage takes none.
+     */
+    readonly stampAtOpportunity: ((message: ALMessage) => BrowserStampedPublication) | undefined;
 }
 
 const PUBLICATION_STAGE_TASK_ID = 'al-outbound-publication-stage';
@@ -37,7 +55,6 @@ export namespace BrowserPublicationStages {
         /** Writes the delivery's carrier leg once an opportunity selects it; it states its own failure as a settlement. */
         readonly writeLeg: () => Promise<void>;
     }
-
 }
 
 interface BrowserConnectPublicationStage {
@@ -53,7 +70,6 @@ interface BrowserConnectPublicationStage {
  */
 export class BrowserPublicationStages {
     private current: BrowserConnectPublicationStage | undefined;
-
 
     stage(staged: BrowserPublicationStages.StagedDelivery): void {
         if (this.current?.context === staged.delivery.context) {

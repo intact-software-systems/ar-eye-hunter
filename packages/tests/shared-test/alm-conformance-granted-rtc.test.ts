@@ -60,7 +60,8 @@ const GRANTED_RTC_START_STATES: StartStateTable = {
     'granted-rtc-list-non-holder': toWithRecipientB(PUBLISH),
     'granted-rtc-list-lane-roles': toWithRecipientB(SUBSCRIBE),
     'granted-rtc-relay-only': toWithRecipientB(PUBLISH),
-    'granted-rtc-ordered-relay': toWithRecipientB(PUBLISH)
+    'granted-rtc-ordered-relay': toWithRecipientB(PUBLISH),
+    'granted-rtc-edge-order-stream': toWithRecipientB(PUBLISH)
 };
 
 const GRANTED_TOPIC_ID = 'room.alm-conformance-granted';
@@ -178,7 +179,7 @@ function toVerdictFacts(
 }
 
 describe('the granted rtc cells', () => {
-    it('plans the granted family over rtc, the revoked publisher over the fallback carrier too, every cell full-only and the two relay cells last', () => {
+    it('plans the granted family over rtc, the revoked publisher over the fallback carrier too, every cell full-only and the three path cells last', () => {
         const families = {
             ws: [],
             rtc: [
@@ -195,7 +196,8 @@ describe('the granted rtc cells', () => {
                 ['granted-rtc-list-non-holder', 'three-agent'],
                 ['granted-rtc-list-lane-roles', 'three-agent'],
                 ['granted-rtc-relay-only', 'three-agent'],
-                ['granted-rtc-ordered-relay', 'three-agent']
+                ['granted-rtc-ordered-relay', 'three-agent'],
+                ['granted-rtc-edge-order-stream', 'three-agent']
             ],
             'rtc-with-ws-fallback': [['granted-rtc-revoked-publisher', 'two-agent']]
         } as const;
@@ -282,7 +284,8 @@ describe('the granted rtc cells', () => {
             ['granted-rtc-list-non-holder', [`messages.send ${receipted}`]],
             ['granted-rtc-list-lane-roles', [`messages.send ${receipted}`]],
             ['granted-rtc-relay-only', [`messages.send ${unreceipted}`]],
-            ['granted-rtc-ordered-relay', [`messages.send ${receipted}`]]
+            ['granted-rtc-ordered-relay', [`messages.send ${receipted}`]],
+            ['granted-rtc-edge-order-stream', [`messages.send ${receipted}`]]
         ]);
     });
 
@@ -662,6 +665,220 @@ describe('the granted rtc cells', () => {
             expect(toNestedRecipeCommands(recipe).filter((command) => command.kind === 'health'), recipe?.recipeId)
                 .toEqual([expect.objectContaining({ commandId: `${recipe!.recipeId}-overlay-next-hops` })]);
         }
+    });
+
+    describe('the edge-ordered granted stream', () => {
+        const key = 'granted-rtc-edge-order-stream';
+        const typeId = `alm.conformance.rtc.${key}`;
+        const toStep = (recipe: RallarBlackBoxTestRecipe | undefined, name: string) =>
+            toNestedRecipeCommands(recipe).find(({ commandId }) => commandId === `${recipe!.recipeId}-${name}`);
+
+        it('connects every page with its granted channel declared edge-ordered', () => {
+            const { sender, receiver, recipientB } = toGrantedRtcScenario(key);
+
+            for (const recipe of [sender, receiver, recipientB]) {
+                expect(toStep(recipe, 'connect'), recipe?.recipeId).toMatchObject({
+                    kind: 'rtc.connect',
+                    rallar: { channelOrder: 'edge', messageSelector: { topicId: GRANTED_TOPIC_ID, access: 'granted' } }
+                });
+            }
+        });
+
+        it('starts the stream with a probe the receiver alone confirms, then sends four receipted publications that state no hop order', () => {
+            const { sender } = toGrantedRtcScenario(key);
+            const prefix = `alm-rtc-${key}-sender`;
+            const sends = toNestedRecipeCommands(sender).flatMap((command) =>
+                command.kind === 'messages.send' && !('replayOnCarrier' in command) && command.commandId?.startsWith(`${prefix}-send-`) === true
+                    ? [command]
+                    : []
+            );
+
+            expect(toStep(sender, 'probe-entry')).toMatchObject({ kind: 'loop', until: 'first-success' });
+            expect(toStep(sender, 'probe-entry-send')).toMatchObject({
+                kind: 'messages.send',
+                topicId: GRANTED_TOPIC_ID,
+                payload: { marker: key, carrier: 'rtc', probe: 'probe-entry' }
+            });
+            expect(toReceiptCounts(sender)).toEqual({ expected: 1, confirmed: 1, outsideAudience: 0 });
+            expect(sends.map(({ commandId, topicId, payload, ack, reliability }) => ({ commandId, topicId, payload, ack, reliability })))
+                .toEqual([1, 2, 3, 4].map((index) => ({
+                    commandId: `${prefix}-send-${index}`,
+                    topicId: GRANTED_TOPIC_ID,
+                    payload: { marker: key, carrier: 'rtc', publication: `p${index}` },
+                    ack: 'all-logical-recipients',
+                    reliability: 'at-least-once'
+                })));
+            for (const send of sends) {
+                expect(send, send.commandId).not.toHaveProperty('orderingKey');
+                expect(send, send.commandId).not.toHaveProperty('seq');
+            }
+        });
+
+        it('holds p2 at the sender until p3 is acknowledged, and every publication ends acknowledged', () => {
+            const { sender } = toGrantedRtcScenario(key);
+            const prefix = `alm-rtc-${key}-sender`;
+            const order = [
+                '-probe-entry',
+                '-cue-entered-received',
+                '-send-1',
+                '-assert-reached-1',
+                '-hold-rtc',
+                '-send-2',
+                '-hold-message-2-rtc',
+                '-release-rtc',
+                '-send-3',
+                '-observe-acknowledged-3',
+                '-assert-reached-3',
+                '-release-message-2-rtc',
+                '-send-4',
+                '-cue-received-received'
+            ].map((suffix) => toStepIndex(sender, suffix));
+
+            expect(order).toEqual(order.toSorted((left, right) => left - right));
+            expect(toStep(sender, 'hold-message-2-rtc')).toMatchObject({
+                kind: 'fault.inject',
+                carrier: 'rtc',
+                match: { msgId: `{resultCache.${prefix}-send-2.value.msgId}` },
+                remaining: 'until-cleared'
+            });
+            expect(toStep(sender, 'release-message-2-rtc')).toMatchObject({
+                match: { msgId: `{resultCache.${prefix}-send-2.value.msgId}` },
+                remaining: 0
+            });
+            for (const index of [1, 2, 3, 4]) {
+                expect(toStep(sender, `observe-acknowledged-${index}`), `p${index}`).toMatchObject({
+                    kind: 'messages.observe',
+                    handleId: `alm-rtc-${key}-send-${index}`,
+                    state: ['acknowledged']
+                });
+                expect(toStep(sender, `assert-reached-${index}`), `p${index}`).toMatchObject({
+                    kind: 'assert',
+                    source: `resultCache.${prefix}-observe-acknowledged-${index}.value.state`,
+                    operator: 'equals',
+                    expected: 'acknowledged'
+                });
+            }
+            expect(toStepIndex(sender, '-observe-acknowledged-2')).toBeGreaterThan(toStepIndex(sender, '-release-message-2-rtc'));
+        });
+
+        it('reads the receiver held the sender\'s overtaking p3 after its entry, then handed each publisher\'s stream over rtc in send order with no gap', () => {
+            const { receiver } = toGrantedRtcScenario(key);
+            const prefix = `alm-rtc-${key}-receiver`;
+            const toOrdinal = (publication: string) => `resultCache.${prefix}-received-${publication}.value.event.history.ordinal`;
+            const toAfterPairs = (recipe: RallarBlackBoxTestRecipe | undefined) =>
+                toNestedRecipeCommands(recipe).flatMap((command) =>
+                    command.kind === 'assert' && command.commandId?.includes('-after-') === true
+                        ? [[command.commandId, command.source, command.operator, command.comparisonSource]]
+                        : []
+                );
+
+            expect(toStep(receiver, 'received-probe-entry')).toMatchObject({
+                kind: 'wait',
+                match: { equals: { marker: key, carrier: 'rtc', probe: 'probe-entry' }, payloadFields: { 'data.transport': 'rtc' } }
+            });
+            expect(toStepIndex(receiver, '-received-probe-entry')).toBeLessThan(toStepIndex(receiver, '-cue-entered'));
+            expect(toStep(receiver, 'cue-entered')).toMatchObject({ kind: 'messages.send', payload: { cue: 'entered' } });
+            expect(toStep(receiver, 'held-overtaking-publication')).toMatchObject({
+                kind: 'wait',
+                match: {
+                    kind: 'diagnostic',
+                    topic: INBOUND_DIAGNOSTICS_TOPIC,
+                    payloadFields: { 'data.kind': 'edge-order-arrival', 'data.outcome': 'held', 'data.typeId': typeId },
+                    // Held behind the sender's p2, not recipient-b's stream at its entry.
+                    contains: `"senderId":"{resultCache.${prefix}-received-probe-entry.value.event.payload.senderId}"`,
+                    sinceCommandIdPrefix: `${prefix}-cue-entered`
+                }
+            });
+            expect(toStep(receiver, 'held-overtaking-publication')).not.toHaveProperty('absent');
+            for (const publication of ['p1', 'p2', 'p3', 'p4', 'b1', 'b2']) {
+                expect(toStep(receiver, `received-${publication}`), publication).toMatchObject({
+                    kind: 'wait',
+                    match: { equals: { marker: key, carrier: 'rtc', publication }, payloadFields: { 'data.transport': 'rtc' } }
+                });
+                expect(toStep(receiver, `received-${publication}`), publication).not.toHaveProperty('absent');
+            }
+            expect(toAfterPairs(receiver)).toEqual(
+                [['p2', 'p1'], ['p3', 'p2'], ['p4', 'p3'], ['b2', 'b1']].map(([later, earlier]) => [
+                    `${prefix}-assert-${later}-after-${earlier}`,
+                    toOrdinal(later!),
+                    'gte',
+                    toOrdinal(earlier!)
+                ])
+            );
+            const order = [
+                '-received-p4',
+                '-assert-p4-after-p3',
+                '-received-b1',
+                '-received-b2',
+                '-assert-b2-after-b1',
+                '-no-order-gap'
+            ].map((suffix) => toStepIndex(receiver, suffix));
+            expect(order).toEqual(order.toSorted((left, right) => left - right));
+            expect(toStep(receiver, 'no-order-gap')).toMatchObject({
+                kind: 'wait',
+                absent: true,
+                match: { kind: 'diagnostic', payloadFields: { 'data.kind': 'edge-order-gap', 'data.typeId': typeId } }
+            });
+        });
+
+        it('has recipient-b publish its own receipted b1 and b2 once the owner cued start, and record no message of the cell\'s type on the granted topic', () => {
+            const { recipientB } = toGrantedRtcScenario(key);
+            const prefix = `alm-rtc-${key}-recipient-b`;
+            const sends = toNestedRecipeCommands(recipientB).flatMap((command) =>
+                command.kind === 'messages.send' && !('replayOnCarrier' in command) && command.commandId?.startsWith(`${prefix}-send-`) === true
+                    ? [command]
+                    : []
+            );
+            const order = [
+                '-cue-start-received',
+                '-probe-member',
+                '-send-1',
+                '-assert-reached-1',
+                '-send-2',
+                '-assert-reached-2',
+                '-cue-received-received',
+                '-absent-granted-arrival'
+            ].map((suffix) => toStepIndex(recipientB, suffix));
+
+            expect(order).toEqual(order.toSorted((left, right) => left - right));
+            expect(toStep(recipientB, 'probe-member')).toMatchObject({ kind: 'loop', until: 'first-success' });
+            expect(toStep(recipientB, 'probe-member-send')).toMatchObject({
+                kind: 'messages.send',
+                topicId: GRANTED_TOPIC_ID,
+                payload: { marker: key, carrier: 'rtc', probe: 'probe-member' }
+            });
+            expect(toReceiptCounts(recipientB)).toEqual({ expected: 1, confirmed: 1, outsideAudience: 0 });
+            expect(sends.map(({ commandId, topicId, payload, ack, reliability }) => ({ commandId, topicId, payload, ack, reliability })))
+                .toEqual([1, 2].map((index) => ({
+                    commandId: `${prefix}-send-${index}`,
+                    topicId: GRANTED_TOPIC_ID,
+                    payload: { marker: key, carrier: 'rtc', publication: `b${index}` },
+                    ack: 'all-logical-recipients',
+                    reliability: 'at-least-once'
+                })));
+            for (const send of sends) {
+                expect(send, send.commandId).not.toHaveProperty('orderingKey');
+            }
+            for (const index of [1, 2]) {
+                expect(toStep(recipientB, `observe-acknowledged-${index}`), `b${index}`).toMatchObject({
+                    kind: 'messages.observe',
+                    handleId: `${prefix}-send-${index}`,
+                    state: ['acknowledged']
+                });
+                expect(toStep(recipientB, `assert-reached-${index}`), `b${index}`).toMatchObject({
+                    source: `resultCache.${prefix}-observe-acknowledged-${index}.value.state`,
+                    operator: 'equals',
+                    expected: 'acknowledged'
+                });
+            }
+            expect(toStep(recipientB, 'absent-granted-arrival')).toMatchObject({
+                kind: 'wait',
+                absent: true,
+                match: { kind: 'message', payloadFields: { 'data.typeId': typeId, 'data.topicId': GRANTED_TOPIC_ID } }
+            });
+            expect(toStep(recipientB, 'absent-granted-arrival')).not.toHaveProperty(['match', 'equals']);
+            expect(toNestedRecipeCommands(recipientB).map((command) => command.kind)).not.toContain('messages.subscribe');
+        });
     });
 
     it('keeps the path cells\' topology commands as recorded', () => {

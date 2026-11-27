@@ -4,6 +4,7 @@ import {
 } from '@shared-web/browser/messages/edge-order/edge-order-received-stream.ts';
 import type { EdgeOrderReceiverLimits } from '@shared-web/browser/messages/edge-order/edge-order-receiver-limits.ts';
 import { EdgeOrderReceiver } from '@shared-web/browser/messages/edge-order/edge-order-receiver.ts';
+import type { EdgeOrderStreamWaits } from '@shared-web/browser/messages/edge-order/edge-order-stream-waits.ts';
 import { decodeEdgeOrderWirePayload } from '@shared-web/browser/messages/edge-order/edge-order-wire-payload.ts';
 import type {
     RallarMessageOrder,
@@ -47,7 +48,11 @@ export namespace EdgeOrderArrivals {
         readonly typeId: string;
     }
 
-    export type GapHandler = NonNullable<RallarTypedMessageChannelDefinition['onOrderGap']>;
+    /** What a channel's definition says of its receive side; a field it leaves out keeps what stood before. */
+    export type Declaration = Pick<
+        RallarTypedMessageChannelDefinition,
+        'onOrderGap' | 'orderGapWaitMs' | 'orderEntryWindowMs'
+    >;
 
     /** What the receive side keeps now, and what it has not handed over since the page loaded. */
     export interface Usage {
@@ -61,6 +66,8 @@ export namespace EdgeOrderArrivals {
 
     export interface Dependencies {
         readonly limits: EdgeOrderReceiverLimits;
+        /** The waits of a channel whose declarations name none. */
+        readonly defaultWaits: EdgeOrderStreamWaits;
         /**
          * The clock is the connect's server clock, the one the inbound runtime judges a hand-over deadline by, and
          * it throws once that connect is gone. Its timers are the page's.
@@ -72,6 +79,12 @@ export namespace EdgeOrderArrivals {
     }
 }
 
+/** A declared topic and type: what its declarations have said so far, each field as the latest one that named it. */
+interface EdgeOrderDeclaredRoute {
+    readonly onOrderGap: EdgeOrderArrivals.Declaration['onOrderGap'];
+    readonly waits: EdgeOrderStreamWaits;
+}
+
 /**
  * The receive side of the page's edge-ordered channels. One sorter serves both carriers, because one sender's
  * stream can arrive over both: each arrival is unwrapped, put in its stream's order, and handed over when its
@@ -79,8 +92,7 @@ export namespace EdgeOrderArrivals {
  * to the handler its channel declared.
  */
 export class EdgeOrderArrivals {
-    /** By route: the gap handler its latest declaration named; absent when no declaration named one. */
-    private readonly declaredRoutes = new Map<string, EdgeOrderArrivals.GapHandler | undefined>();
+    private readonly declaredRoutes = new Map<string, EdgeOrderDeclaredRoute>();
     private readonly receiver: EdgeOrderReceiver<EdgeOrderArrivals.HandOver>;
     private readonly dependencies: EdgeOrderArrivals.Dependencies;
     /**
@@ -107,12 +119,21 @@ export class EdgeOrderArrivals {
     }
 
     /**
-     * A page declares a channel's topic and type edge-ordered once; every room of that channel is then sorted. The
-     * latest gap handler declared for the route stands, as the latest channel for it does.
+     * A page declares a channel's topic and type edge-ordered once; every room of that channel is then sorted. Its
+     * gap handler and its two waits are kept per topic and type as well: the latest declaration that names one
+     * stands, for every room, and a declaration that leaves one out changes nothing about it.
      */
-    declare(route: EdgeOrderArrivals.Route, onOrderGap: EdgeOrderArrivals.GapHandler | undefined): void {
+    declare(route: EdgeOrderArrivals.Route, declaration: EdgeOrderArrivals.Declaration): void {
         const routeKey = toRouteKey(route.topicId ?? route.typeId, route.typeId);
-        this.declaredRoutes.set(routeKey, onOrderGap ?? this.declaredRoutes.get(routeKey));
+        const standing = this.declaredRoutes.get(routeKey);
+        const waits = standing?.waits ?? this.dependencies.defaultWaits;
+        this.declaredRoutes.set(routeKey, {
+            onOrderGap: declaration.onOrderGap ?? standing?.onOrderGap,
+            waits: {
+                orderGapWaitMs: declaration.orderGapWaitMs ?? waits.orderGapWaitMs,
+                orderEntryWindowMs: declaration.orderEntryWindowMs ?? waits.orderEntryWindowMs
+            }
+        });
     }
 
     isDeclared(message: ALMessage): boolean {
@@ -131,6 +152,8 @@ export class EdgeOrderArrivals {
         const outcome = this.receiver.accept({
             origin,
             stamp: wire.stamp,
+            waits: this.declaredRoutes.get(toRouteKey(origin.topicId, origin.typeId))?.waits ??
+                this.dependencies.defaultWaits,
             expiresAtMs: message.constraints?.expiresAtMs ?? Number.MAX_SAFE_INTEGER,
             byteLength: computeUtf8ByteLength(message.payload.resource),
             message: { carrier, message, payload: wire.payload, order }
@@ -230,7 +253,7 @@ export class EdgeOrderArrivals {
     /** What the application's handler throws, or rejects with, is logged, and the stream goes on. */
     private async notifyGap(gap: RallarMessageOrderGap): Promise<void> {
         try {
-            await this.declaredRoutes.get(toRouteKey(gap.topicId, gap.typeId))?.(gap);
+            await this.declaredRoutes.get(toRouteKey(gap.topicId, gap.typeId))?.onOrderGap?.(gap);
         }
         catch (error) {
             console.error('Error notifying Rallar order gap handler', error);

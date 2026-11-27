@@ -1,6 +1,7 @@
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import { BrowserRallarMessageSubscriptions } from '@shared-web/browser/messages/browser-rallar-message-subscriptions.ts';
 import { EDGE_ORDER_RECEIVER_DEFAULT_LIMITS } from '@shared-web/browser/messages/edge-order/edge-order-receiver-limits.ts';
+import { EDGE_ORDER_DEFAULT_STREAM_WAITS } from '@shared-web/browser/messages/edge-order/edge-order-stream-waits.ts';
 import type { RallarMessage } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessageReplySender } from '@shared-web/browser/messages/to-rallar-message.ts';
 import { createRallarFacade } from '@shared-web/browser/rallar.ts';
@@ -215,6 +216,7 @@ function createSubscriptionsFixture(): SubscriptionsFixture {
         readMiddleware: () => middleware,
         readInboundDiagnostics: () => (event) => diagnostics.push(event),
         edgeOrderLimits: EDGE_ORDER_RECEIVER_DEFAULT_LIMITS,
+        edgeOrderDefaultWaits: EDGE_ORDER_DEFAULT_STREAM_WAITS,
         timers: createDefaultTimers()
     });
     return {

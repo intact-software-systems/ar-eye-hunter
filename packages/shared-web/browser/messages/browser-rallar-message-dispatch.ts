@@ -117,11 +117,30 @@ export class BrowserRallarMessageDispatch {
             this.input.publicationStages.stage({
                 delivery: { ...delivery, publication },
                 epoch,
-                writeLeg: async () => await this.writeLeg(delivery, epoch, this.readAdmissionRefusal(delivery))
+                writeLeg: async () => await this.writeOpportunityLeg({ ...delivery, publication }, epoch)
             });
             return;
         }
         void this.writeLeg(delivery, epoch, refusal);
+    }
+
+    /**
+     * A staged value's leg, once its opportunity selected it. A value refused here, expired on the stage for one,
+     * settles as it stands. Any other edge-ordered value is stamped now, and the stamped envelope is judged again:
+     * the payload limit counts the wrapper.
+     */
+    private async writeOpportunityLeg(
+        delivery: BrowserPublicationStages.LiveDelivery,
+        epoch: BrowserDeliverySettlements.Epoch
+    ): Promise<void> {
+        const refusal = this.readAdmissionRefusal(delivery);
+        const { stampAtOpportunity } = delivery.publication;
+        if (refusal !== undefined || stampAtOpportunity === undefined) {
+            await this.writeLeg(delivery, epoch, refusal);
+            return;
+        }
+        const stamped = { ...delivery, ...stampAtOpportunity(delivery.message) };
+        await this.writeLeg(stamped, epoch, this.readAdmissionRefusal(stamped));
     }
 
     private verifyCapture(delivery: BrowserRallarMessageDispatch.Delivery): void {

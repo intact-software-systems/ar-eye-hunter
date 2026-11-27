@@ -1,5 +1,6 @@
 import { EdgeOrderArrivals } from '@shared-web/browser/messages/edge-order/edge-order-arrivals.ts';
 import type { EdgeOrderReceiverLimits } from '@shared-web/browser/messages/edge-order/edge-order-receiver-limits.ts';
+import type { EdgeOrderStreamWaits } from '@shared-web/browser/messages/edge-order/edge-order-stream-waits.ts';
 import type {
     RallarMessage,
     RallarMessageHandler,
@@ -37,6 +38,8 @@ interface BrowserRallarMessageSubscriptionsInput {
     readInboundDiagnostics(): ALInboundRuntimeDiagnosticsSink;
     /** The bounds of what the page holds for edge order, and the timers that release it. */
     readonly edgeOrderLimits: EdgeOrderReceiverLimits;
+    /** How long an edge-ordered channel waits when its declarations do not say. */
+    readonly edgeOrderDefaultWaits: EdgeOrderStreamWaits;
     readonly timers: Pick<Timers, 'schedule'>;
 }
 
@@ -59,6 +62,7 @@ export class BrowserRallarMessageSubscriptions {
         this.input = input;
         this.edgeOrderArrivals = new EdgeOrderArrivals({
             limits: input.edgeOrderLimits,
+            defaultWaits: input.edgeOrderDefaultWaits,
             timers: { nowMs: () => this.readConnectExpiryEpochMs(), schedule: input.timers.schedule },
             readInboundDiagnostics: input.readInboundDiagnostics,
             handOver: async (handOver) =>
@@ -73,11 +77,8 @@ export class BrowserRallarMessageSubscriptions {
      * From here every message of the channel's topic and type is sorted before a handler sees it. One sender's
      * stream can arrive over both carriers, so the page listens on both, whichever the application handles.
      */
-    public declareEdgeOrder(
-        route: EdgeOrderArrivals.Route,
-        onOrderGap: EdgeOrderArrivals.GapHandler | undefined
-    ): void {
-        this.edgeOrderArrivals.declare(route, onOrderGap);
+    public declareEdgeOrder(route: EdgeOrderArrivals.Route, declaration: EdgeOrderArrivals.Declaration): void {
+        this.edgeOrderArrivals.declare(route, declaration);
         this.subscribe('rtc', route, ignoreMessage);
         this.subscribe('ws', route, ignoreMessage);
     }

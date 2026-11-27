@@ -1,10 +1,16 @@
-import type { BrowserRallarMessageDispatch } from '@shared-web/browser/messages/browser-rallar-message-dispatch.ts';
+import type { BrowserPublicationPacing } from '@shared-web/browser/messages/publication/browser-publication-stages.ts';
 import type { BrowserTypedChannelPolicy } from '@shared-web/browser/messages/to-browser-message-send-defaults.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     toALPublicationLaneKey,
     toALPublicationStreamKey
 } from '@shared/al-contracts/publication/to-al-publication-stream-key.ts';
+
+export interface BrowserPublicationDelivery {
+    readonly message: ALMessage;
+    /** Defined exactly for a live channel's envelope. */
+    readonly publication: BrowserPublicationPacing | undefined;
+}
 
 /**
  * A live channel's envelope, conflated latest-wins on its stream so a late copy is superseded at admission and on
@@ -13,7 +19,7 @@ import {
 export function toBrowserPublicationDelivery(
     message: ALMessage,
     channel: BrowserTypedChannelPolicy | undefined
-): Pick<BrowserRallarMessageDispatch.Delivery, 'message' | 'publication'> {
+): BrowserPublicationDelivery {
     const policy = channel?.publication;
     if (policy === undefined) {
         return { message, publication: undefined };
