@@ -370,11 +370,6 @@ const UNPROVEN_CELLS = [
         'one lifecycle across the hand-over to WS, then a held-gap cell over this carrier'
     ],
     [
-        'room-audience-over-frame-limit',
-        'ws',
-        'a server test that delivers a granted publication to more than 256 subscribed sessions; it waits for the merge of pull request 885, which changes the test file that holds the harness'
-    ],
-    [
         'revoked-publish-unknown-to-sender',
         'rtc-with-ws-fallback',
         'a receipted publication over this carrier: no hop answers the frame it drops, so the receipt runs out and the send is handed to WS, where the server refuses it `no-publish-grant`; nothing pins that chain'
