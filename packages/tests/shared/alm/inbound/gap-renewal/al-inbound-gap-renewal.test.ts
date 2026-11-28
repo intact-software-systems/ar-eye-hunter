@@ -757,34 +757,32 @@ describe('a receiver holding a recorded track at its start (the bounded hold)', 
 
     // A commit refused as `conflict` is also what a PostgreSQL commit answers when another writer deleted a buffered
     // copy's rows between its reads of them.
-    for (const refusal of ['expired', 'conflict'] as const) {
-        it(`runs its last timer again when the end's commit is refused as ${refusal}, and then enters`, async () => {
-            const fixture = createRenewalFixture('memory');
-            for (const seq of [2, 3]) {
-                await fixture.runtime.admitIncomingMessage(recordedMessage(seq), INBOUND_TEST_SOURCE);
+    it.each(['expired', 'conflict'] as const)('runs its last timer again when the end\'s commit is refused as %s, and then enters', async (refusal) => {
+        const fixture = createRenewalFixture('memory');
+        for (const seq of [2, 3]) {
+            await fixture.runtime.admitIncomingMessage(recordedMessage(seq), INBOUND_TEST_SOURCE);
+        }
+        await advanceThrough(fixture, [1_000, 3_000]);
+        const timer = await readLastRenewalTimer(fixture);
+        vi.setSystemTime(START_MS + 7_000);
+        const admissionStore = fixture.stores.admissionStore;
+        let refusals = 1;
+        const { renewal, diagnostics } = createDirectRenewal(fixture, {
+            commitBundle: async (bundle) => {
+                refusals -= 1;
+                return refusals >= 0 ? refusal : await admissionStore.commitBundle(bundle);
             }
-            await advanceThrough(fixture, [1_000, 3_000]);
-            const timer = await readLastRenewalTimer(fixture);
-            vi.setSystemTime(START_MS + 7_000);
-            const admissionStore = fixture.stores.admissionStore;
-            let refusals = 1;
-            const { renewal, diagnostics } = createDirectRenewal(fixture, {
-                commitBundle: async (bundle) => {
-                    refusals -= 1;
-                    return refusals >= 0 ? refusal : await admissionStore.commitBundle(bundle);
-                }
-            });
-
-            expect(await renewal.renew(timer, timer.payload)).toEqual({ outcome: { status: 'retry' }, wroteWork: false });
-            expect(diagnostics.filter((event) => event.kind === 'ordering-position')).toEqual([]);
-            expect(await renewal.renew(timer, timer.payload)).toEqual({ outcome: { status: 'completed' }, wroteWork: true });
-            expect(diagnostics.filter((event) => event.kind === 'ordering-position')).toMatchObject([{ status: 'entered', seq: 2 }]);
-            await advanceTo(fixture, 7_000);
-
-            expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([2, 3]);
-            expect(gapControls(fixture).filter((control) => control.gapRequestNumber === 4)).toEqual([]);
         });
-    }
+
+        expect(await renewal.renew(timer, timer.payload)).toEqual({ outcome: { status: 'retry' }, wroteWork: false });
+        expect(diagnostics.filter((event) => event.kind === 'ordering-position')).toEqual([]);
+        expect(await renewal.renew(timer, timer.payload)).toEqual({ outcome: { status: 'completed' }, wroteWork: true });
+        expect(diagnostics.filter((event) => event.kind === 'ordering-position')).toMatchObject([{ status: 'entered', seq: 2 }]);
+        await advanceTo(fixture, 7_000);
+
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([2, 3]);
+        expect(gapControls(fixture).filter((control) => control.gapRequestNumber === 4)).toEqual([]);
+    });
 
     // The retry reads the track's live copies again: a buffered slot is written with its message's own expiry, and every
     // later rewrite of it takes a release row's, which is that expiry too, so a copy whose message expired is not live.

@@ -394,7 +394,7 @@ function expireBeforeMessageRead(pair: SeededTrackPair): void {
  * operation these cases call reaches that row only through the buffered slot that names it, so the slot has been read
  * and the row's read has not decided yet.
  */
-function tearBeforeMessageRead(
+export function tearBeforeMessageRead(
     stores: InboundTestBackendStores,
     seq: number,
     tear: () => void | Promise<void>
