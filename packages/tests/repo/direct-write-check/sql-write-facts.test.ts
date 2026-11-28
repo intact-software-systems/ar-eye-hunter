@@ -116,6 +116,53 @@ describe('SQL write facts', () => {
             { id: 'packages/shared-server/app-outbox/install-durable-deadline.ts#installDurableDeadline', count: 1 }
         ]);
     });
+
+    it('follows a root handle through code that feeds it into a write, hop by hop, to a fixed point', () => {
+        const facts = computeFixtureFacts({
+            'packages/shared-server/app-data/p-sql-app-data-repository.ts': `
+                import type { PSqlSql } from '../postgres/p-sql-sql.ts';
+                export class PSqlAppDataRepository {
+                    constructor(private readonly sql: PSqlSql) {}
+                    async remove(key: string): Promise<void> { await this.sql\`delete from app_data_store where key = \${key}\`; }
+                }
+            `,
+            'packages/shared-server/app-data/create-app-data-repository.ts': `
+                import type { PSqlSql } from '../postgres/p-sql-sql.ts';
+                import { PSqlAppDataRepository } from './p-sql-app-data-repository.ts';
+                export function createAppDataRepository(sql: PSqlSql): PSqlAppDataRepository {
+                    return new PSqlAppDataRepository(sql);
+                }
+            `,
+            'packages/shared-server/app-data/create-app-data-runtime.ts': `
+                import type { PSqlSql } from '../postgres/p-sql-sql.ts';
+                import { createAppDataRepository } from './create-app-data-repository.ts';
+                export function createAppDataRuntime(database: PSqlSql): unknown {
+                    return createAppDataRepository(database);
+                }
+            `,
+            'packages/shared-server/rallar-system/websocket/ws-display-frame-handler.ts': `
+                import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
+                import { createAppDataRuntime } from '../../app-data/create-app-data-runtime.ts';
+                import { createAppDataRepository } from '../../app-data/create-app-data-repository.ts';
+                export class WsDisplayFrameHandler {
+                    constructor(private readonly sql: PSqlSql) {}
+                    onOpen(): unknown { return createAppDataRuntime(this.sql); }
+                    onFrame(): Promise<unknown> {
+                        return this.sql.begin(async (transaction) => createAppDataRepository(transaction));
+                    }
+                }
+            `
+        });
+
+        expect(facts.nonTransactionHandleFeeds).toEqual([
+            { id: 'packages/shared-server/app-data/create-app-data-repository.ts#createAppDataRepository', count: 1 },
+            { id: 'packages/shared-server/app-data/create-app-data-runtime.ts#createAppDataRuntime', count: 1 },
+            {
+                id: 'packages/shared-server/rallar-system/websocket/ws-display-frame-handler.ts#WsDisplayFrameHandler.onOpen',
+                count: 1
+            }
+        ]);
+    });
 });
 
 function computeFixtureFacts(sources: Readonly<Record<string, string>>) {

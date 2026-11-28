@@ -143,27 +143,57 @@ const WRITE_PATTERNS = [
 const WRITE_KEYWORD = /\b(?:insert\s+into|update|delete\s+from|truncate|merge\s+into)\b/iu;
 const LOCK_PATTERN = /\bfor\s+(?:no\s+key\s+)?update(?:\s+of\s+([a-z_][a-z0-9_]*))?/giu;
 
+/**
+ * A feed's own file becomes a write target in turn, so a root handle passed to code that feeds it into a write is a
+ * feed too. The target files only grow; the rounds stop when one adds no file.
+ */
 function computeHandleFeedFacts(project, scope, writeFiles) {
-    const siteIds = findProjectInvocations(project)
+    const candidateCalls = findProjectInvocations(project)
         .filter((invocation) => !writeFiles.has(toRepositoryPath(invocation.getSourceFile(), scope.root)))
-        .filter((invocation) => feedsRootHandleIntoWrite(invocation, scope, writeFiles))
-        .map((invocation) => toSiteId(invocation, scope.root));
-    return toCountedFacts(siteIds);
+        .map((invocation) => toCandidateCall(invocation, scope))
+        .filter((call) => call !== undefined);
+    let feeds = [];
+    let targetFiles = writeFiles;
+    let previousTargetCount = -1;
+    while (targetFiles.size !== previousTargetCount) {
+        previousTargetCount = targetFiles.size;
+        feeds = candidateCalls.filter((call) => feedsRootHandleIntoWrite(call, targetFiles));
+        targetFiles = new Set([...writeFiles, ...feeds.map((call) => call.path)]);
+    }
+    return toCountedFacts(feeds.map((call) => toSiteId(call.invocation, scope.root)));
 }
 
-function feedsRootHandleIntoWrite(invocation, scope, writeFiles) {
-    const candidates = (invocation.getArguments() ?? []).filter((argument) => !isLiteralOrCallback(argument));
-    if (candidates.length === 0) {
-        return false;
+/** A call that hands over a value which may be a handle, with where its callees live; resolved once for every round. */
+function toCandidateCall(invocation, scope) {
+    const argumentIndexes = (invocation.getArguments() ?? [])
+        .map((argument, index) => isLiteralOrCallback(argument) ? -1 : index)
+        .filter((index) => index >= 0);
+    if (argumentIndexes.length === 0) {
+        return undefined;
     }
     const callees = toCalleeDeclarations(invocation);
-    const declaredInWriteFile = callees.some((declaration) =>
-        writeFiles.has(toRepositoryPath(declaration.getSourceFile(), scope.root))
-    );
-    return candidates.some((argument) => {
-        const index = invocation.getArguments().indexOf(argument);
-        return (declaredInWriteFile || callees.some((declaration) => isTransactionParameterAt(declaration, index))) &&
-            isRootHandle(argument);
+    return {
+        invocation,
+        path: toRepositoryPath(invocation.getSourceFile(), scope.root),
+        calleePaths: callees.map((declaration) => toRepositoryPath(declaration.getSourceFile(), scope.root)),
+        argumentIndexes,
+        transactionParameterIndexes: argumentIndexes.filter((index) =>
+            callees.some((declaration) => isTransactionParameterAt(declaration, index))
+        ),
+        rootHandleByIndex: new Map()
+    };
+}
+
+/** Root-handle resolution is the costly step, so it runs only for a call that reaches a write, and once per argument. */
+function feedsRootHandleIntoWrite(call, targetFiles) {
+    const indexes = call.calleePaths.some((calleePath) => targetFiles.has(calleePath))
+        ? call.argumentIndexes
+        : call.transactionParameterIndexes;
+    return indexes.some((index) => {
+        if (!call.rootHandleByIndex.has(index)) {
+            call.rootHandleByIndex.set(index, isRootHandle(call.invocation.getArguments()[index]));
+        }
+        return call.rootHandleByIndex.get(index);
     });
 }
 

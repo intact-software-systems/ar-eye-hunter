@@ -788,8 +788,8 @@ review. A `basis` says what was read in the code, in one sentence.
     {
       "id": "apps/api-v1/src/composition/create-api-v1-mutation-runtime.ts#createApiV1MutationResources",
       "class": "composition-root",
-      "count": 2,
-      "basis": "Constructs the root-bound results and runtime-state repositories that AppInbox and the domain repositories are given."
+      "count": 5,
+      "basis": "Constructs on the root handle AppInbox's queue repository (createPSqlResourceInboxRepository, wrapped by the PSqlQueueBox AppInbox uses), the results and runtime-state repositories, and the client and group state-event repositories that the domain repositories are given."
     },
     {
       "id": "apps/api-v1/src/composition/create-api-v1-mutation-runtime.ts#createMutationGroupStateService",
@@ -847,8 +847,8 @@ review. A `basis` says what was read in the code, in one sentence.
         "alm-outbound-admission",
         "alm-receipt-record"
       ],
-      "count": 2,
-      "basis": "The backend builds its read repository and work-entry reader on the root handle it holds."
+      "count": 3,
+      "basis": "The backend builds on the root handle it holds its read repository, its work-entry reader, and its own queue workQueue, a PSqlQueueBox over createPSqlResourceInboxRepository(sql) through which the three stores write resource_inbox outside write."
     },
     {
       "id": "packages/shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts#writePSqlAdmissionCommit",
