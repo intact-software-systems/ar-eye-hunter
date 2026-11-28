@@ -20,6 +20,9 @@ const QUEUE_SOURCES = {
         import type { EnqueueResourceEntryController, ResourceEntry } from '../../../shared/queuebox/queue-box-types.ts';
         export declare class PSqlQueueBox implements EnqueueResourceEntryController {
             enqueueIfAbsent(entry: ResourceEntry): Promise<ResourceEntry>;
+            setItem(key: string, entry: ResourceEntry, options: object): Promise<void>;
+            removeItem(key: string): Promise<void>;
+            deleteExpired(): Promise<number>;
             replaceIfObserved(expected: ResourceEntry, replacement: ResourceEntry): Promise<ResourceEntry | null>;
             findByKey(key: string): Promise<ResourceEntry | undefined>;
         }
@@ -48,6 +51,29 @@ describe('queue write facts', () => {
         expect(facts).toEqual([
             { id: `${ROUTE_PATH}#DisplayRoutes.onDrain`, count: 2, methods: ['releaseEntries', 'reserveEntries'] },
             { id: `${ROUTE_PATH}#DisplayRoutes.onPost`, count: 3, methods: ['enqueueIfAbsent', 'replaceIfObserved'] }
+        ]);
+    });
+
+    it('records a call on a Pick of a queue contract, and the row writes setItem, removeItem and deleteExpired', () => {
+        const facts = computeFixtureFacts(`
+            import type { EnqueueResourceEntryController, ResourceEntry } from '../../../../../packages/shared/queuebox/queue-box-types.ts';
+            import type { PSqlQueueBox } from '../../../../../packages/shared-server/queuebox/postgres/p-sql-queue-box.ts';
+            export async function onClockArm(
+                outbox: Pick<EnqueueResourceEntryController, 'enqueueIfAbsent'>,
+                entry: ResourceEntry
+            ): Promise<void> {
+                await outbox.enqueueIfAbsent(entry);
+            }
+            export async function onDisplay(queue: PSqlQueueBox, entry: ResourceEntry): Promise<void> {
+                await queue.setItem(entry.key, entry, {});
+                await queue.removeItem(entry.key);
+                await queue.deleteExpired();
+            }
+        `);
+
+        expect(facts).toEqual([
+            { id: `${ROUTE_PATH}#onClockArm`, count: 1, methods: ['enqueueIfAbsent'] },
+            { id: `${ROUTE_PATH}#onDisplay`, count: 3, methods: ['deleteExpired', 'removeItem', 'setItem'] }
         ]);
     });
 

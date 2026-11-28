@@ -74,8 +74,9 @@ Tests live under [`packages/tests/repo/direct-write-check/`](../../packages/test
 
 - A queue write through a port declared outside the queue packages: `ALWorkQueuePort.retainIfAbsent` (a new caller of
   it on an incoming path writes `resource_inbox` and is not caught), the inbox and outbox readers of
-  `packages/shared/services`, and AppInbox's own `enqueue`. Only a call whose receiver's type `packages/shared/queuebox`
-  or `packages/shared-server/queuebox` declares is a fact.
+  `packages/shared/services`, and AppInbox's own `enqueue`. Only a call whose receiver's type, or whose method's
+  declaration (so a `Pick<>` of a queue contract is seen), `packages/shared/queuebox` or
+  `packages/shared-server/queuebox` holds is a fact.
 - A new caller of a registered store higher in the call chain, such as a new WebSocket topic that publishes through the
   router with an outbox fan-out: it reaches the outbound store through ordinary product API.
 - A row family whose key is built inline rather than by an exported `toAL...Key` or `toAL...Prefix` builder under

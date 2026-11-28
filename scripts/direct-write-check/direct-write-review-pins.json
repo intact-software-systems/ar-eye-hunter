@@ -144,11 +144,23 @@
     "nonTransactionHandleFeeds packages/shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts#PSqlGroupStateEventRepository.readGroupEvent": {
       "class": "passive-statement"
     },
+    "queueWriteCallers apps/api-v1/src/composition/create-api-v1-system-installers.ts#createActivationStatusClockArm": {
+      "class": "downstream-work"
+    },
+    "queueWriteCallers packages/shared-server/queuebox/postgres/p-sql-queue-box.ts#PSqlQueueBox.cleanup": {
+      "class": "queue-machinery"
+    },
+    "queueWriteCallers packages/shared-server/queuebox/postgres/p-sql-queue-box.ts#PSqlQueueBox.deleteExpired": {
+      "class": "queue-machinery"
+    },
     "queueWriteCallers packages/shared-server/queuebox/postgres/p-sql-queue-box.ts#PSqlQueueBox.enqueueIfAbsent": {
       "class": "queue-machinery"
     },
     "queueWriteCallers packages/shared-server/queuebox/postgres/p-sql-queue-box.ts#PSqlQueueBox.replaceIfObserved": {
       "class": "queue-machinery"
+    },
+    "queueWriteCallers packages/shared-server/queuebox/postgres/resource-inbox-maintenance.ts#evictResourceInbox": {
+      "class": "downstream-work"
     },
     "queueWriteCallers packages/shared-server/rallar-system/group-state/presence/group-presence-summary-claim.ts#claimPendingGroupPresenceSummaryWork": {
       "class": "downstream-work"
@@ -202,6 +214,9 @@
       "methods": ["reserveEntries"]
     },
     "queueWriteCallers packages/shared/queuebox/in-memory-queue-box.ts#InMemoryQueueBox.enqueueIfAbsent": {
+      "class": "browser-or-memory"
+    },
+    "queueWriteCallers packages/shared/queuebox/in-memory-queue-box.ts#InMemoryQueueBox.getAllKeys": {
       "class": "browser-or-memory"
     },
     "queueWriteCallers packages/shared/queuebox/indexed-db-queue-box.ts#IndexedDbQueueBox.enqueueIfAbsent": {

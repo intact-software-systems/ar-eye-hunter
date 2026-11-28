@@ -70,18 +70,18 @@ incoming path outside AppInbox, it is under the rule.
 
 ## What the check computes
 
-| List                              | A surface is                                                                                                                                                                 |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `admissionBackendImplementations` | a class implementing the ALM admission port, with whether it holds a PostgreSQL handle                                                                                       |
-| `admissionBackendConstructions`   | a construction of a PostgreSQL implementation, with the namespace text it is given                                                                                           |
-| `admissionBackendWrites`          | a `write` call whose receiver is the port or one of its implementations                                                                                                      |
-| `wiringImports`                   | a runtime import of one of `wiringModules`                                                                                                                                   |
-| `transactionOpeners`              | a call of `begin`, `transaction`, `savepoint` or `runInPSqlTransaction` that hands over a callback                                                                           |
-| `sqlWriteFiles`                   | a file holding an SQL write or row lock not tagged on a `PSqlSql` parameter named `transaction` or `tx`                                                                      |
-| `nonTransactionHandleFeeds`       | a root `PSqlSql` handle passed to a `transaction` parameter, or to code declared in an `sqlWriteFiles` file or in a file that itself feeds a root handle, to a fixed point   |
-| `repositoryWriteCallers`          | a class or function that calls a write of `repositoryContractModules` on a root repository, or reaches one                                                                   |
-| `queueWriteCallers`               | a class method or function that writes, claims or releases queue rows through a receiver whose type `packages/shared/queuebox` or `packages/shared-server/queuebox` declares |
-| `rowFamilies`                     | an exported `toAL...Key` or `toAL...Prefix` function or arrow under `packages/shared/alm`, or a work topic of `workTopicConstants`                                           |
+| List                              | A surface is                                                                                                                                                                                                       |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `admissionBackendImplementations` | a class implementing the ALM admission port, with whether it holds a PostgreSQL handle                                                                                                                             |
+| `admissionBackendConstructions`   | a construction of a PostgreSQL implementation, with the namespace text it is given                                                                                                                                 |
+| `admissionBackendWrites`          | a `write` call whose receiver is the port or one of its implementations                                                                                                                                            |
+| `wiringImports`                   | a runtime import of one of `wiringModules`                                                                                                                                                                         |
+| `transactionOpeners`              | a call of `begin`, `transaction`, `savepoint` or `runInPSqlTransaction` that hands over a callback                                                                                                                 |
+| `sqlWriteFiles`                   | a file holding an SQL write or row lock not tagged on a `PSqlSql` parameter named `transaction` or `tx`                                                                                                            |
+| `nonTransactionHandleFeeds`       | a root `PSqlSql` handle passed to a `transaction` parameter, or to code declared in an `sqlWriteFiles` file or in a file that itself feeds a root handle, to a fixed point                                         |
+| `repositoryWriteCallers`          | a class or function that calls a write of `repositoryContractModules` on a root repository, or reaches one                                                                                                         |
+| `queueWriteCallers`               | a class method or function that writes, claims, releases or deletes queue rows through a receiver whose type, or a method whose declaration, `packages/shared/queuebox` or `packages/shared-server/queuebox` holds |
+| `rowFamilies`                     | an exported `toAL...Key` or `toAL...Prefix` function or arrow under `packages/shared/alm`, or a work topic of `workTopicConstants`                                                                                 |
 
 Identities are `path#owner` and never contain a line number. `scripts/direct-write-check/README.md` says what the check
 does not see.
@@ -1030,6 +1030,33 @@ review. A `basis` says what was read in the code, in one sentence.
   ],
   "queueWriteCallers": [
     {
+      "id": "apps/api-v1/src/composition/create-api-v1-system-installers.ts#createActivationStatusClockArm",
+      "class": "downstream-work",
+      "count": 1,
+      "methods": [
+        "enqueueIfAbsent"
+      ],
+      "basis": "Arms the activation-status clock row with enqueueIfAbsent on the outbox, a Pick-narrowed queue. Trigger: the topology work cycle, which the code comment at its composition names as the only producer; this entry did not trace it further."
+    },
+    {
+      "id": "packages/shared-server/queuebox/postgres/p-sql-queue-box.ts#PSqlQueueBox.cleanup",
+      "class": "queue-machinery",
+      "count": 1,
+      "methods": [
+        "deleteExpired"
+      ],
+      "basis": "PSqlQueueBox.cleanup starts its own deleteExpired, the expiry sweep of resource_inbox rows past their expiry."
+    },
+    {
+      "id": "packages/shared-server/queuebox/postgres/p-sql-queue-box.ts#PSqlQueueBox.deleteExpired",
+      "class": "queue-machinery",
+      "count": 1,
+      "methods": [
+        "deleteExpired"
+      ],
+      "basis": "PSqlQueueBox forwards deleteExpired to its ResourceInbox maintenance, which deletes resource_inbox rows past their expiry."
+    },
+    {
       "id": "packages/shared-server/queuebox/postgres/p-sql-queue-box.ts#PSqlQueueBox.enqueueIfAbsent",
       "class": "queue-machinery",
       "count": 1,
@@ -1046,6 +1073,15 @@ review. A `basis` says what was read in the code, in one sentence.
         "replaceIfObserved"
       ],
       "basis": "PSqlQueueBox forwards replaceIfObserved to its entry repository. Called by the ALM backend's queue on an incoming path, the write belongs to the three stores under review."
+    },
+    {
+      "id": "packages/shared-server/queuebox/postgres/resource-inbox-maintenance.ts#evictResourceInbox",
+      "class": "downstream-work",
+      "count": 2,
+      "methods": [
+        "deleteExpired"
+      ],
+      "basis": "Deletes expired resource_inbox entries and results, one deleteExpired each. Trigger: startResourceInboxExpiryEviction, a repeating timer in the same file."
     },
     {
       "id": "packages/shared-server/rallar-system/group-state/presence/group-presence-summary-claim.ts#claimPendingGroupPresenceSummaryWork",
@@ -1178,6 +1214,15 @@ review. A `basis` says what was read in the code, in one sentence.
         "writeIfAbsent"
       ],
       "basis": "The in-memory queue forwards enqueueIfAbsent to its own writeIfAbsent and writes no database."
+    },
+    {
+      "id": "packages/shared/queuebox/in-memory-queue-box.ts#InMemoryQueueBox.getAllKeys",
+      "class": "browser-or-memory",
+      "count": 1,
+      "methods": [
+        "deleteExpired"
+      ],
+      "basis": "The in-memory queue drops its expired entries before listing keys and writes no database."
     },
     {
       "id": "packages/shared/queuebox/indexed-db-queue-box.ts#IndexedDbQueueBox.enqueueIfAbsent",
