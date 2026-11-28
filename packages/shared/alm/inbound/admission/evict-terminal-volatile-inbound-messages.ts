@@ -22,6 +22,8 @@ import {
 import {
     AL_INBOUND_BUFFERED_SLOT_FIELDS,
     decodeALInboundBufferedSnapshot,
+    toALInboundBufferedPrefix,
+    toALInboundBufferedSlot,
     type ALStoredInboundBufferedSnapshot
 } from '../al-inbound-ordering-validation.ts';
 import {
@@ -147,7 +149,7 @@ function readHeldInboundRows(backend: InMemoryAdmissionBackend, namespace: strin
         else if (key.startsWith(`${namespace}:msg-owner:`)) {
             provenance.push(readProvenance(raw, namespace));
         }
-        else if (key.startsWith(`${namespace}:buffered:`)) {
+        else if (key.startsWith(toALInboundBufferedPrefix(namespace))) {
             buffered.push({ key, snapshot: readBuffered(key, row, namespace) });
         }
         else if (key.startsWith(`${namespace}:control:pending:`)) {
@@ -181,11 +183,11 @@ function readBuffered(key: string, row: ALAdmissionStoredValue, namespace: strin
         const record = decodeALAdmissionRecord(value, AL_INBOUND_BUFFERED_SLOT_FIELDS, ['delivery']);
         const trackKey = decodeALAdmissionString(record.trackKey);
         const seq = decodeALAdmissionNumber(record.seq);
-        const prefix = `${namespace}:buffered:${trackKey}:`;
-        if (key !== `${prefix}${seq}`) {
+        const slot = toALInboundBufferedSlot(namespace, trackKey, seq);
+        if (key !== slot.key) {
             throw new TypeError('Buffered slot key differs from its track and sequence');
         }
-        return decodeALInboundBufferedSnapshot(value, { trackKey, prefix, key });
+        return decodeALInboundBufferedSnapshot(value, slot);
     });
 }
 

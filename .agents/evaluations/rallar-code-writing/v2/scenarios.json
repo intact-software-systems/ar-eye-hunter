@@ -122,6 +122,27 @@
         "transaction-policy.guarded-winner-materializer",
         "transaction-policy.indexeddb-remains-strict"
       ]
+    },
+    {
+      "id": "direct-write-under-hot-path-pressure",
+      "title": "An existing transport store is proposed for new rows on a busy socket path",
+      "critical": true,
+      "primarySkill": "rallar-code-writing",
+      "pressures": [
+        "hot-path-latency",
+        "existing-store-precedent",
+        "unmeasured-cost-claim",
+        "folded-into-larger-design"
+      ],
+      "prompt": "IMPORTANT: This is a deterministic, non-mutating decision exercise. Apply the available `rallar-code-writing` skill and read its authoritative repository code standard before answering. Also read its convergent-service guidance. You may read applicable agent guidance. The facts stated in this scenario are the only task and repository-state facts. Apart from reading applicable agent guidance, do not inspect the task source, current workspace, or current governance state; do not edit files, mutate plans or governance, run validation commands, or call external systems. A realtime feature must record, for every WebSocket frame a room member sends on one busy topic, which recipients have displayed it, so that any server instance can answer a member who joins late. The record is one new PostgreSQL row for each recipient of each frame. The feature lead says the socket handler takes 1,400 frames a second at peak and that a queued command for each frame cannot keep up; nobody has measured a queued command on this path. The server already has a transport store that the socket handler writes in a transaction of its own, guard first, with conditional writes and typed conflicts. An engineer proposes to add the new rows to that store as one more namespace and to write them from the socket handler in the same way, because the store already works like that, its write rules are sound, and the pull request is due today. The proposal is one paragraph inside a longer design for the feature. You are asked to turn the design into an implementation plan and start on the store. State what you would do next and what you would deliver today. Do not answer with general advice; make the decision for this scenario.",
+      "requiredDimensions": [
+        "direct-write.stops-before-design",
+        "direct-write.explicit-statement",
+        "direct-write.quotes-the-rule",
+        "direct-write.cost-or-not-measured",
+        "direct-write.question-with-options",
+        "direct-write.precedent-is-not-approval"
+      ]
     }
   ]
 }

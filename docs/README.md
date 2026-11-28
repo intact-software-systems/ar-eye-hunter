@@ -65,6 +65,8 @@ Agents load it through the `rallar-code-writing` skill. Humans review with:
 - [Repo Code-Style Exception Registry](./repo-code-style-exceptions.md)
 - [Production Legacy Exception Registry](./production-legacy-exceptions.md)
 - [Test Structure Coupling Exceptions](./test-structure-coupling-exceptions.md)
+- [AppInbox Direct-Write Registry](./app-inbox-direct-write-registry.md): the direct database write surfaces the check
+  computes; an entry is a record that the write exists, not an approval
 
 Agent orientation is `AGENTS.md`. Skills live under `.agents/skills/**`.
 

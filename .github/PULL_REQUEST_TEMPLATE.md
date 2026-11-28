@@ -6,6 +6,10 @@
 
 <!-- Describe the behavior and ownership boundaries changed. -->
 
+**Database writes on incoming paths**
+
+- Writes outside AppInbox added, moved or widened (rows, incoming path, registry entry, the maintainer's approval quoted): None
+
 ## Acceptance
 
 <!-- List observable conditions that prove the outcome. -->

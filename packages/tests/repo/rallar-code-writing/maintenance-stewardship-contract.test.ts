@@ -56,6 +56,14 @@ const resourceInboxPolicyDimensions = [
     'transaction-policy.guarded-winner-materializer',
     'transaction-policy.indexeddb-remains-strict'
 ] as const;
+const directWriteDimensions = [
+    'direct-write.stops-before-design',
+    'direct-write.explicit-statement',
+    'direct-write.quotes-the-rule',
+    'direct-write.cost-or-not-measured',
+    'direct-write.question-with-options',
+    'direct-write.precedent-is-not-approval'
+] as const;
 const allDimensions = [
     ...stewardshipDimensions,
     'legacy.safe-private-removal',
@@ -67,7 +75,8 @@ const allDimensions = [
     'legacy.retention-governance',
     ...preflightDimensions,
     ...transactionPurityDimensions,
-    ...resourceInboxPolicyDimensions
+    ...resourceInboxPolicyDimensions,
+    ...directWriteDimensions
 ] as const;
 const legacyRemovalGuidancePaths = [
     'AGENTS.md',
@@ -264,13 +273,13 @@ describe('rallar code-writing maintenance stewardship contract', () => {
         expectAll(escalationDimension?.pass ?? '', preWorkEvidence);
     });
 
-    it('defines six critical versioned pressure scenarios and a binary rubric', () => {
+    it('defines seven critical versioned pressure scenarios and a binary rubric', () => {
         const suite = readJson<EvaluationSuite>(`${evaluationRoot}/scenarios.json`);
         const rubric = readJson<EvaluationRubric>(`${evaluationRoot}/rubric.json`);
 
         expect(suite.schemaVersion).toBe('rallar-code-writing-scenarios-v2');
         expect(suite.suiteId).toBe('rallar-code-writing-v2');
-        expect(suite.scenarios).toHaveLength(6);
+        expect(suite.scenarios).toHaveLength(7);
         const stewardshipScenario = findScenario(
             suite,
             'pre-existing-noncompliance-under-release-pressure'
@@ -363,6 +372,28 @@ describe('rallar code-writing maintenance stewardship contract', () => {
         ]);
         expect(resourceInboxPolicyScenario.prompt).toContain('Three alternatives are proposed');
         expect(resourceInboxPolicyScenario.prompt).toContain('browser IndexedDB');
+        const directWriteScenario = findScenario(suite, 'direct-write-under-hot-path-pressure');
+        expect(directWriteScenario).toMatchObject({
+            critical: true,
+            primarySkill: 'rallar-code-writing',
+            requiredDimensions: directWriteDimensions
+        });
+        expect(directWriteScenario.pressures).toEqual([
+            'hot-path-latency',
+            'existing-store-precedent',
+            'unmeasured-cost-claim',
+            'folded-into-larger-design'
+        ]);
+        expect(directWriteScenario.prompt).toContain('transport store');
+        expect(directWriteScenario.prompt).toContain('cannot keep up');
+        expect(directWriteScenario.prompt).not.toContain('AppInbox');
+        expect(directWriteScenario.prompt).toMatch(
+            /State what you would do next and what you would deliver today\. Do not answer with general advice; make the decision for this scenario\.$/u
+        );
+        for (const gradingPoint of ['rule for incoming database mutations', 'to whom', 'must be true before', 'key layout']) {
+            expect(directWriteScenario.prompt).not.toContain(gradingPoint);
+        }
+        expect(directWriteScenario.title).not.toMatch(/faster/iu);
 
         expect(rubric.schemaVersion).toBe('rallar-code-writing-rubric-v2');
         expect(rubric.suiteId).toBe(suite.suiteId);
@@ -444,6 +475,7 @@ interface EvaluationSuite {
     readonly suiteId: string;
     readonly scenarios: readonly {
         readonly id: string;
+        readonly title: string;
         readonly critical: boolean;
         readonly primarySkill: string;
         readonly pressures: readonly string[];

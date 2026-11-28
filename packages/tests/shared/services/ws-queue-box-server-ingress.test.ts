@@ -12,16 +12,22 @@ import { decodeALNackPayload, decodeALReceiptPayload } from '@shared/al-contract
 import { newALAckControlMessage, newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
-import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
+import { toALOrderingTrackKey, type ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
 import type { ALAdmissionMemoryState } from '@shared/alm/al-admission-backend.ts';
 import { readALInboundMessageOwner } from '@shared/alm/inbound/al-inbound-source-validation.ts';
 import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { ConnectionContext } from '@shared/websocket/json-web-socket-server.ts';
 
 import { loseInboundWritesFromNowOn } from '../alm/inbound-runtime-test-fixture.ts';
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
-import { createIncomingMessage, createRoomMessage, createServerIngressFixture } from './ws-queue-box-server-ingress-fixture.ts';
+import {
+    createIncomingMessage,
+    createRoomMessage,
+    createServerIngressFixture,
+    type ServerIngressFixture
+} from './ws-queue-box-server-ingress-fixture.ts';
 import { settleQueueEngine } from './ws-queue-box-server-receipt-fixture.ts';
 
 import { toTestALAckPayload, toTestALNackPayload } from '../../al-control-test-payloads.ts';
@@ -871,6 +877,63 @@ describe('WS server bounded and authorized admission', () => {
         expect((await readRows()).map((row) => row.status)).not.toContain('RETRY');
     });
 
+    // The admission read listed message 3's buffered slot, then found its message row expired, and threw: the bridge
+    // logged the throw, and message 4's sender was told nothing although nothing was wrong with message 4.
+    it('admits a send on a track whose buffered copy expires during its admission', async () => {
+        const clock = startServerIngressClock();
+        const errors = recordConsoleErrors();
+        const fixture = await createServerIngressFixture();
+        authorizeSessionOne(fixture);
+        const expiresAtMs = await seedShortLivedBufferedCopy(fixture, clock);
+        expireDuringAdmissionRead(fixture, clock, expiresAtMs);
+        clock.nowMs = expiresAtMs - 1;
+
+        await fixture.server.dispatchConnectionMessage(
+            fixture.server.connections.get('session-1')!,
+            JSON.stringify(createOrderedRoomMessage(4))
+        );
+
+        expect(errors).toEqual([]);
+        await expect.poll(() => readGapNackRanges(fixture.socket, 'message-4')).toEqual([GAP_BEFORE_MESSAGE_3]);
+        await expectAdmittedReceiptWhenDue(fixture, clock, 'message-4');
+    });
+
+    // The replay of a retained send read the track across the buffered copy's expiry; the throw ended the row
+    // NON_RETRYABLE, so the send was never admitted and its sender never heard of it again.
+    it('admits a retained send whose replay crosses a buffered copy\'s expiry', async () => {
+        const clock = startServerIngressClock();
+        const fixture = await createServerIngressFixture();
+        let behind = false;
+        fixture.service.authorizeInboundMessagesWith({
+            sendNacks: false,
+            authorize: async () =>
+                behind
+                    ? {
+                        authorized: false,
+                        reason: 'not-yet-in-sync',
+                        logMessage: 'Room snapshot is catching up',
+                        sendNack: false,
+                        serverSnapshotVersion: 1
+                    }
+                    : { authorized: true, roomAudience: { recipientPeerIds: ['session-1'], snapshotVersion: 2 } }
+        });
+        const expiresAtMs = await seedShortLivedBufferedCopy(fixture, clock);
+        behind = true;
+        expect((await fixture.service.acceptIncomingMessage(createOrderedRoomMessage(4), 'session-1')).right)
+            .toEqual({ kind: 'pending-admission' });
+        const retained = await readAdmitMessageRowKey(fixture);
+        await expect.poll(async () => (await fixture.admission.workQueue.getItem(retained))?.status).toBe('RETRY');
+        const replayDueAtMs = (await fixture.admission.workQueue.getItem(retained))!.dequeueAudit.nextTs!.epochMilliseconds;
+        expect(replayDueAtMs).toBeLessThan(expiresAtMs);
+        expireDuringAdmissionRead(fixture, clock, expiresAtMs);
+
+        behind = false;
+        clock.nowMs = expiresAtMs - 1;
+
+        await expect.poll(async () => (await fixture.admission.workQueue.getItem(retained))?.status).toBe('COMPLETED');
+        await expectAdmittedReceiptWhenDue(fixture, clock, 'message-4');
+    });
+
     it('leaves a durable message in QueueBox when an application subscriber fails', async () => {
         const fixture = await createServerIngressFixture();
         const message: ALMessage = { ...createIncomingMessage(), qos: { durability: { algo: 'local-inbox' } } };
@@ -925,6 +988,116 @@ function readReceiptPhases(socket: SimulatedWebSocket, msgId: string): readonly 
         .map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource)))
         .filter((receipt) => receipt.msgId === msgId)
         .map((receipt) => receipt.phase);
+}
+
+/** The one clock the fixture's store, queues and messages read; a case moves it by hand. */
+interface ServerIngressClock {
+    nowMs: number;
+}
+
+/**
+ * The gap message 4 draws on a track holding message 1 and buffering message 3, as a send with no expiry in play draws
+ * it, and as one made just after message 3's copy expired does: the track's ordering record still names 3.
+ */
+const GAP_BEFORE_MESSAGE_3 = [{ from: 2, to: 2 }];
+
+/** How long message 3's copy lives; its slot and its message row expire together at the end of it. */
+const SHORT_LIVED_MS = 2_000;
+
+function startServerIngressClock(): ServerIngressClock {
+    const clock = { nowMs: Date.now() };
+    vi.spyOn(Date, 'now').mockImplementation(() => clock.nowMs);
+    return clock;
+}
+
+/** Each line written to `console.error`, its parts joined as text. */
+function recordConsoleErrors(): readonly string[] {
+    const errors: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...line) => {
+        errors.push(line.map(String).join(' '));
+    });
+    return errors;
+}
+
+function authorizeSessionOne(fixture: ServerIngressFixture): void {
+    fixture.service.authorizeInboundMessagesWith({
+        sendNacks: false,
+        authorize: async () => ({ authorized: true, roomAudience: { recipientPeerIds: ['session-1'], snapshotVersion: 1 } })
+    });
+}
+
+/** Message 1 admitted and delivered, then message 3 buffered behind the gap at 2 with `SHORT_LIVED_MS` to live, until the time it answers. */
+async function seedShortLivedBufferedCopy(fixture: ServerIngressFixture, clock: ServerIngressClock): Promise<number> {
+    const expiresAtMs = clock.nowMs + SHORT_LIVED_MS;
+    expect((await fixture.service.acceptIncomingMessage(createOrderedRoomMessage(1), 'session-1')).right?.kind).toBe('admitted');
+    await expect.poll(() => fixture.delivered.map((message) => message.id.msgId)).toEqual(['message-1']);
+    const third = { ...createOrderedRoomMessage(3), constraints: { expiresAtMs } };
+    expect((await fixture.service.acceptIncomingMessage(third, 'session-1')).right?.kind).toBe('admitted');
+    await settleQueueEngine(fixture.engine);
+    return expiresAtMs;
+}
+
+/**
+ * The clock reaches message 3's expiry while message 4's admission read resolves message 3's buffered slot: after the
+ * read has listed the slot, at its read of the message row the slot names. A gap renewal reads that row too, by itself,
+ * so only a read inside the admission read moves the clock.
+ */
+function expireDuringAdmissionRead(
+    fixture: ServerIngressFixture,
+    clock: ServerIngressClock,
+    expiresAtMs: number
+): void {
+    const messageKey = `${fixture.admissionStore.namespace}:message:session-1:message-3`;
+    let admitting = false;
+    const readIncomingMessage = fixture.admissionStore.readIncomingMessage.bind(fixture.admissionStore);
+    vi.spyOn(fixture.admissionStore, 'readIncomingMessage').mockImplementation(async (request) => {
+        admitting = request.msg.id.msgId === 'message-4';
+        try {
+            return await readIncomingMessage(request);
+        }
+        finally {
+            admitting = false;
+        }
+    });
+    const read = fixture.backend.read.bind(fixture.backend);
+    vi.spyOn(fixture.backend, 'read').mockImplementation(async (key, decode) => {
+        if (admitting && key === messageKey && clock.nowMs < expiresAtMs) {
+            clock.nowMs = expiresAtMs;
+        }
+        return await read(key, decode);
+    });
+}
+
+async function readAdmitMessageRowKey(fixture: ServerIngressFixture): Promise<Key> {
+    for (const key of await fixture.admission.workQueue.getAllKeys()) {
+        const row = (await fixture.admission.workQueue.getItem(key))!;
+        if (decodeALInboundWorkEntry(row, fixture.admissionStore.namespace).payload.kind === 'admit-message') {
+            return key;
+        }
+    }
+    throw new Error('No retained admission row');
+}
+
+/** The `admitted` receipt of a buffered send leaves as an outbox row, which the engine takes once it is due. */
+async function expectAdmittedReceiptWhenDue(
+    fixture: ServerIngressFixture,
+    clock: ServerIngressClock,
+    msgId: string
+): Promise<void> {
+    await expect.poll(async () => {
+        clock.nowMs += 1_000;
+        await settleQueueEngine(fixture.engine);
+        return readReceiptPhases(fixture.socket, msgId);
+    }).toEqual(['admitted']);
+}
+
+function readGapNackRanges(socket: SimulatedWebSocket, msgId: string): readonly (readonly ALSeqRange[])[] {
+    return socket.sent
+        .map((frame) => decodePersistedALMessage(frame))
+        .filter((message) => message.payload.typeId === AL_CONTROL_NACK_TYPE_ID)
+        .map((message) => decodeALNackPayload(JSON.parse(message.payload.resource)))
+        .filter((nack) => nack.msgId === msgId && nack.reason === 'gap')
+        .map((nack) => nack.missingRanges ?? []);
 }
 
 // 6c: only a lane that passes a parent's repair copy down relays a gap NACK for a message that asked for no receipt.

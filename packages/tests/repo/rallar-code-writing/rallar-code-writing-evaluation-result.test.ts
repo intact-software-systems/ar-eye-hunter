@@ -70,7 +70,13 @@ const additionalScenarioDimensions = [
     [
         'resource-inbox-policy-under-scope-pressure',
         'transaction-policy.indexeddb-remains-strict'
-    ]
+    ],
+    ['direct-write-under-hot-path-pressure', 'direct-write.stops-before-design'],
+    ['direct-write-under-hot-path-pressure', 'direct-write.explicit-statement'],
+    ['direct-write-under-hot-path-pressure', 'direct-write.quotes-the-rule'],
+    ['direct-write-under-hot-path-pressure', 'direct-write.cost-or-not-measured'],
+    ['direct-write-under-hot-path-pressure', 'direct-write.question-with-options'],
+    ['direct-write-under-hot-path-pressure', 'direct-write.precedent-is-not-approval']
 ] as const;
 
 afterEach(() => {
@@ -123,15 +129,15 @@ describe('rallar code-writing evaluation result validation', () => {
         );
     });
 
-    it('requires all six critical scenarios and their raw output artifacts', () => {
+    it('requires all seven critical scenarios and their raw output artifacts', () => {
         const validationInput = createValidationInput();
 
-        expect(validationInput.result.scenarioResults).toHaveLength(6);
+        expect(validationInput.result.scenarioResults).toHaveLength(7);
         expect(validationInput.result.summary).toEqual({
-            criticalPassed: 6,
-            criticalTotal: 6,
-            passed: 6,
-            total: 6
+            criticalPassed: 7,
+            criticalTotal: 7,
+            passed: 7,
+            total: 7
         });
 
         validationInput.result.scenarioResults[0].rawOutputArtifact = 'missing-agent-output.txt';
@@ -147,10 +153,10 @@ describe('rallar code-writing evaluation result validation', () => {
         scenarioResult.verdict = 'fail';
         scenarioResult.criticalFailures = [dimensionId];
         consistentInput.result.summary = {
-            criticalPassed: 5,
-            criticalTotal: 6,
-            passed: 5,
-            total: 6
+            criticalPassed: 6,
+            criticalTotal: 7,
+            passed: 6,
+            total: 7
         };
 
         expect(validateEvaluationResult(consistentInput)).toEqual([]);
@@ -162,8 +168,8 @@ describe('rallar code-writing evaluation result validation', () => {
             expect.arrayContaining([
                 `${scenarioId} verdict must be fail when a required dimension fails`,
                 `${scenarioId} criticalFailures must exactly list failed required dimensions`,
-                'result.summary.passed must equal 5',
-                'result.summary.criticalPassed must equal 5'
+                'result.summary.passed must equal 6',
+                'result.summary.criticalPassed must equal 6'
             ])
         );
     });
@@ -177,10 +183,10 @@ describe('rallar code-writing evaluation result validation', () => {
             scenarioResult.verdict = 'fail';
             scenarioResult.criticalFailures = [dimensionId];
             consistentInput.result.summary = {
-                criticalPassed: 5,
-                criticalTotal: 6,
-                passed: 5,
-                total: 6
+                criticalPassed: 6,
+                criticalTotal: 7,
+                passed: 6,
+                total: 7
             };
 
             expect(validateEvaluationResult(consistentInput)).toEqual([]);
@@ -191,8 +197,8 @@ describe('rallar code-writing evaluation result validation', () => {
                 expect.arrayContaining([
                     `${legacyScenarioId} verdict must be fail when a required dimension fails`,
                     `${legacyScenarioId} criticalFailures must exactly list failed required dimensions`,
-                    'result.summary.passed must equal 5',
-                    'result.summary.criticalPassed must equal 5'
+                    'result.summary.passed must equal 6',
+                    'result.summary.criticalPassed must equal 6'
                 ])
             );
         }
