@@ -56,23 +56,16 @@ function holdsPostgresHandle(declaration) {
         .some((member) => isExactType(member, 'PSqlSql'));
 }
 
+/** One identity per owner and namespace text, so a new namespace on the PostgreSQL backend is a new surface. */
 function computeConstructionFacts(project, scope, postgresClasses) {
-    const namespacesById = new Map();
-    for (const construction of findProjectNodes(project, SyntaxKind.NewExpression)) {
-        const declarations = toResolvedSymbol(construction.getExpression())?.getDeclarations() ?? [];
-        if (!declarations.some((declaration) => postgresClasses.has(declaration))) {
-            continue;
-        }
-        const id = toSiteId(construction, scope.root);
-        namespacesById.set(id, [...(namespacesById.get(id) ?? []), toNamespaceText(construction)]);
-    }
-    return sortFacts(
-        [...namespacesById].map(([id, namespaces]) => ({
-            id,
-            count: namespaces.length,
-            namespaces: namespaces.toSorted()
-        }))
-    );
+    const siteIds = findProjectNodes(project, SyntaxKind.NewExpression)
+        .filter((construction) =>
+            (toResolvedSymbol(construction.getExpression())?.getDeclarations() ?? []).some((declaration) =>
+                postgresClasses.has(declaration)
+            )
+        )
+        .map((construction) => `${toSiteId(construction, scope.root)}@${toNamespaceText(construction)}`);
+    return toCountedFacts(siteIds);
 }
 
 function toNamespaceText(construction) {

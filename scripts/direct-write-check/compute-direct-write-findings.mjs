@@ -6,6 +6,11 @@ const UNREGISTERED_ADVICE =
     'maintainer approves it; without that approval, remove the write. Registering it records that it exists; ' +
     'it is not an approval.';
 const STALE_ADVICE = 'Remove the entry, or re-key it to the owner that now holds the write; neither changes a review.';
+const CHANGED_ADVICE = 'Update the entry to what the source now holds, and say in the pull request why it changed.';
+const WIDENED_STORE_ADVICE =
+    'This surface belongs to a store under review. A larger count, a new namespace, statement or method widens that ' +
+    'store: it needs the maintainer\'s approval first (convergent-service-writing.md, "Writes outside AppInbox"). ' +
+    'Without it, remove the change.';
 
 /** Compares source facts with registry entries in both directions; a fact's identity is its fact set and id. */
 export function computeDirectWriteFindings(facts, registry) {
@@ -42,7 +47,7 @@ function computeAttributeFindings(factSet, fact, entry) {
                 'direct-write.changed',
                 `${factSet} ${fact.id}: ${attribute} registered ${JSON.stringify(entry[attribute])}, ` +
                     `found ${JSON.stringify(fact[attribute])}`,
-                'Update the entry to what the source now holds, and say in the pull request why it changed.'
+                entry.class === 'transport-direct' ? WIDENED_STORE_ADVICE : CHANGED_ADVICE
             )
         );
 }

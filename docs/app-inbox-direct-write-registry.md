@@ -214,39 +214,30 @@ review. A `basis` says what was read in the code, in one sentence.
   ],
   "admissionBackendConstructions": [
     {
-      "id": "packages/shared-server/al-runtime/postgres/create-p-sql-al-receipt-record-stores.ts#createPSqlALReceiptRecordStores",
+      "id": "packages/shared-server/al-runtime/postgres/create-p-sql-al-receipt-record-stores.ts#createPSqlALReceiptRecordStores@toALReceiptRecordNamespace(input.namespace)",
       "class": "transport-direct",
       "stores": [
         "alm-receipt-record"
       ],
       "count": 1,
-      "namespaces": [
-        "toALReceiptRecordNamespace(input.namespace)"
-      ],
       "basis": "Constructs the PostgreSQL backend for the receipt record on input.repository.sql, the root handle of the WS server runtime."
     },
     {
-      "id": "packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts#createPSqlALInboundRuntimeStores",
+      "id": "packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts#createPSqlALInboundRuntimeStores@`${input.namespace}:inbound:admission`",
       "class": "transport-direct",
       "stores": [
         "alm-inbound-admission"
       ],
       "count": 1,
-      "namespaces": [
-        "`${input.namespace}:inbound:admission`"
-      ],
       "basis": "Constructs the PostgreSQL backend for the inbound admission store on input.repository.sql, the root handle of the WS server runtime."
     },
     {
-      "id": "packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts#createPSqlALOutboundRuntimeStores",
+      "id": "packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts#createPSqlALOutboundRuntimeStores@toALOutboundAdmissionNamespace(input.namespace)",
       "class": "transport-direct",
       "stores": [
         "alm-outbound-admission"
       ],
       "count": 1,
-      "namespaces": [
-        "toALOutboundAdmissionNamespace(input.namespace)"
-      ],
       "basis": "Constructs the PostgreSQL backend for the outbound admission store on input.repository.sql, the root handle of the WS server runtime."
     }
   ],

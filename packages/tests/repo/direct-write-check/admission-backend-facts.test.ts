@@ -4,11 +4,7 @@ import { computeAdmissionBackendFacts } from '../../../../scripts/direct-write-c
 import { ADMISSION_PORT_SOURCES, createDirectWriteFixture } from './direct-write-check-fixture.ts';
 
 const STORE_PATH = 'packages/shared/alm/inbound/al-inbound-admission-store.ts';
-
-interface ConstructionFact {
-    readonly id: string;
-    readonly namespaces: readonly string[];
-}
+const STORES_PATH = 'packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 
 interface RowFamilyFact {
     readonly id: string;
@@ -26,9 +22,8 @@ describe('admission backend facts', () => {
             { id: 'packages/shared/alm/in-memory-admission-backend.ts#InMemoryAdmissionBackend', backend: 'not-postgres' }
         ]);
         expect(facts.admissionBackendConstructions).toEqual([{
-            id: 'packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts#createPSqlALInboundRuntimeStores',
-            count: 1,
-            namespaces: ['`${storeNamespace}:inbound:admission`']
+            id: `${STORES_PATH}#createPSqlALInboundRuntimeStores@\`\${storeNamespace}:inbound:admission\``,
+            count: 1
         }]);
         expect(facts.admissionBackendWrites).toEqual([{ id: `${STORE_PATH}#ALInboundAdmissionStore.admit`, count: 1 }]);
     });
@@ -45,26 +40,41 @@ describe('admission backend facts', () => {
             `
         });
 
-        expect(facts.admissionBackendConstructions.map((fact: ConstructionFact) => [fact.id, fact.namespaces])).toEqual([
-            [
-                'packages/shared-server/al-runtime/postgres/create-p-sql-al-receipt-record-stores.ts#createPSqlALReceiptRecordStores',
-                ['\'receipt:record\'']
-            ],
-            [
-                'packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts#createPSqlALInboundRuntimeStores',
-                ['`${storeNamespace}:inbound:admission`']
-            ]
+        expect(facts.admissionBackendConstructions).toEqual([
+            {
+                id: 'packages/shared-server/al-runtime/postgres/create-p-sql-al-receipt-record-stores.ts' +
+                    '#createPSqlALReceiptRecordStores@\'receipt:record\'',
+                count: 1
+            },
+            { id: `${STORES_PATH}#createPSqlALInboundRuntimeStores@\`\${storeNamespace}:inbound:admission\``, count: 1 }
         ]);
     });
 
-    it('changes the construction fact when only the namespace it is given changes', () => {
-        const path = 'packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
+    it('gives a construction a new identity when only the namespace it is given changes', () => {
         const facts = computeFixtureFacts({
             ...ADMISSION_PORT_SOURCES,
-            [path]: ADMISSION_PORT_SOURCES[path].replace(':inbound:admission', ':inbound:holder')
+            [STORES_PATH]: ADMISSION_PORT_SOURCES[STORES_PATH].replace(':inbound:admission', ':inbound:holder')
         });
 
-        expect(facts.admissionBackendConstructions[0]?.namespaces).toEqual(['`${storeNamespace}:inbound:holder`']);
+        expect(facts.admissionBackendConstructions).toEqual([
+            { id: `${STORES_PATH}#createPSqlALInboundRuntimeStores@\`\${storeNamespace}:inbound:holder\``, count: 1 }
+        ]);
+    });
+
+    it('records a second backend with a new namespace inside a registered factory as its own fact', () => {
+        const facts = computeFixtureFacts({
+            ...ADMISSION_PORT_SOURCES,
+            [STORES_PATH]: ADMISSION_PORT_SOURCES[STORES_PATH].replace(
+                'return new PSqlAdmissionWorkBackend({ sql, namespace });',
+                'void new PSqlAdmissionWorkBackend({ sql, namespace: `${storeNamespace}:displayed` });\n' +
+                    'return new PSqlAdmissionWorkBackend({ sql, namespace });'
+            )
+        });
+
+        expect(facts.admissionBackendConstructions).toEqual([
+            { id: `${STORES_PATH}#createPSqlALInboundRuntimeStores@\`\${storeNamespace}:displayed\``, count: 1 },
+            { id: `${STORES_PATH}#createPSqlALInboundRuntimeStores@\`\${storeNamespace}:inbound:admission\``, count: 1 }
+        ]);
     });
 
     it('counts a new write through the port in a store method and ignores reads and unrelated writes', () => {

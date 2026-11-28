@@ -44,4 +44,23 @@ describe('direct-write findings', () => {
                 'it is not an approval.'
         );
     });
+
+    it('tells the author of a widened transport-direct surface that the store under review needs an approval first', () => {
+        const entry = { id: 'packages/a.ts#admit', count: 1, class: 'transport-direct', stores: ['alm-x'], basis: BASIS };
+        const [widened] = computeDirectWriteFindings(
+            { admissionBackendWrites: [{ id: 'packages/a.ts#admit', count: 2 }] },
+            { admissionBackendWrites: [entry] }
+        );
+        const [moved] = computeDirectWriteFindings(
+            { transactionOpeners: [{ id: 'packages/a.ts#sweep', count: 2 }] },
+            { transactionOpeners: [{ id: 'packages/a.ts#sweep', count: 1, class: 'downstream-work', basis: BASIS }] }
+        );
+
+        expect(widened?.advice).toBe(
+            'This surface belongs to a store under review. A larger count, a new namespace, statement or method widens ' +
+                'that store: it needs the maintainer\'s approval first (convergent-service-writing.md, "Writes outside ' +
+                'AppInbox"). Without it, remove the change.'
+        );
+        expect(moved?.advice).toBe('Update the entry to what the source now holds, and say in the pull request why it changed.');
+    });
 });

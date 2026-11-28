@@ -1,94 +1,613 @@
 {
   "approvedStoreIds": [],
   "stores": [
-    {
-      "id": "alm-inbound-admission",
-      "state": "under-review"
+    { "id": "alm-inbound-admission", "state": "under-review" },
+    { "id": "alm-outbound-admission", "state": "under-review" },
+    { "id": "alm-receipt-record", "state": "under-review" }
+  ],
+  "surfaces": {
+    "admissionBackendConstructions packages/shared-server/al-runtime/postgres/create-p-sql-al-receipt-record-stores.ts#createPSqlALReceiptRecordStores@toALReceiptRecordNamespace(input.namespace)": {
+      "class": "transport-direct",
+      "stores": ["alm-receipt-record"],
+      "count": 1
     },
-    {
-      "id": "alm-outbound-admission",
-      "state": "under-review"
+    "admissionBackendConstructions packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts#createPSqlALInboundRuntimeStores@`${input.namespace}:inbound:admission`": {
+      "class": "transport-direct",
+      "stores": ["alm-inbound-admission"],
+      "count": 1
     },
-    {
-      "id": "alm-receipt-record",
-      "state": "under-review"
+    "admissionBackendConstructions packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts#createPSqlALOutboundRuntimeStores@toALOutboundAdmissionNamespace(input.namespace)": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"],
+      "count": 1
+    },
+    "admissionBackendImplementations packages/shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts#PSqlAdmissionWorkBackend": {
+      "class": "transport-direct",
+      "stores": ["alm-inbound-admission", "alm-outbound-admission", "alm-receipt-record"],
+      "backend": "postgres"
+    },
+    "admissionBackendImplementations packages/shared/alm/al-admission-backend.ts#InMemoryAdmissionBackend": {
+      "class": "browser-or-memory"
+    },
+    "admissionBackendImplementations packages/shared/alm/indexed-db-admission-backend.ts#IndexedDbAdmissionBackend": {
+      "class": "browser-or-memory"
+    },
+    "admissionBackendWrites packages/shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts#removeUnlessLive": {
+      "class": "transport-direct",
+      "stores": ["alm-inbound-admission"],
+      "count": 1
+    },
+    "admissionBackendWrites packages/shared/alm/inbound/admission/evict-al-inbound-ordering-tracks-past-cap.ts#removeUnchangedTracks": {
+      "class": "transport-direct",
+      "stores": ["alm-inbound-admission"],
+      "count": 1
+    },
+    "admissionBackendWrites packages/shared/alm/inbound/al-inbound-admission-store.ts#ProviderBackedALInboundAdmissionStore.writeUnlessConflicted": {
+      "class": "transport-direct",
+      "stores": ["alm-inbound-admission"],
+      "count": 1
+    },
+    "admissionBackendWrites packages/shared/alm/outbound/admission/al-outbound-admission-store.ts#ProviderBackedALOutboundAdmissionStore.commitOrderingMessageEnd": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"],
+      "count": 1
+    },
+    "admissionBackendWrites packages/shared/alm/outbound/admission/al-outbound-admission-store.ts#ProviderBackedALOutboundAdmissionStore.writeCommit": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"],
+      "count": 1
+    },
+    "admissionBackendWrites packages/shared/alm/outbound/al-outbound-pending-admission.ts#retainALOutboundPendingAdmission": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"],
+      "count": 1
+    },
+    "admissionBackendWrites packages/shared/alm/outbound/control/al-outbound-control-admission.ts#ALOutboundControlAdmission.commitRetrySchedule": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"],
+      "count": 1
+    },
+    "admissionBackendWrites packages/shared/alm/outbound/control/al-outbound-control-admission.ts#ALOutboundControlAdmission.writeControlAdmission": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"],
+      "count": 1
+    },
+    "admissionBackendWrites packages/shared/alm/receipt-record/al-receipt-record.ts#ALReceiptRecord.writeUnlessConflict": {
+      "class": "transport-direct",
+      "stores": ["alm-receipt-record"],
+      "count": 1
+    },
+    "nonTransactionHandleFeeds apps/api-v1/src/admin-operations/create-api-admin-inbox-service.ts#createApiAdminInboxService": {
+      "class": "composition-root"
+    },
+    "nonTransactionHandleFeeds apps/api-v1/src/composition/create-api-v1-admin-services.ts#createApiV1AdminServices": {
+      "class": "composition-root"
+    },
+    "nonTransactionHandleFeeds apps/api-v1/src/composition/create-api-v1-admin-services.ts#createApiV1AdminTopologyPlans": {
+      "class": "composition-root"
+    },
+    "nonTransactionHandleFeeds apps/api-v1/src/composition/create-api-v1-mutation-runtime.ts#createApiV1MutationResources": {
+      "class": "composition-root"
+    },
+    "nonTransactionHandleFeeds apps/api-v1/src/composition/create-api-v1-mutation-runtime.ts#createMutationGroupStateService": {
+      "class": "composition-root"
+    },
+    "nonTransactionHandleFeeds apps/api-v1/src/composition/create-api-v1-runtime.ts#startRuntimeStateExpiry.initialiseRuntimeStateExpiryEviction": {
+      "class": "downstream-work"
+    },
+    "nonTransactionHandleFeeds apps/api-v1/src/composition/create-api-v1-system-installers.ts#createTopologyAppOutboxOptions": {
+      "class": "composition-root"
+    },
+    "nonTransactionHandleFeeds apps/api-v1/src/composition/create-default-rallar-server.ts#constructDefaultRallarServer": {
+      "class": "public-surface"
+    },
+    "nonTransactionHandleFeeds apps/api-v1/src/composition/create-default-rallar-server.ts#createDefaultApiV1RestServices": {
+      "class": "composition-root"
+    },
+    "nonTransactionHandleFeeds apps/api-v1/src/runtime/rtc-topology/create-api-rtc-topology-runtime.ts#createApiRtcTopologyRuntime": {
+      "class": "downstream-work"
+    },
+    "nonTransactionHandleFeeds apps/ar-eye-hunter-server-v1/src/create-arena-tournament-services.ts#createArenaTournamentServices": {
+      "class": "composition-root"
+    },
+    "nonTransactionHandleFeeds apps/relic-hunter-server-v1/src/create-relic-game-services.ts#createRelicGameServices": {
+      "class": "composition-root"
+    },
+    "nonTransactionHandleFeeds packages/shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts#PSqlAdmissionWorkBackend.constructor": {
+      "class": "transport-direct",
+      "stores": ["alm-inbound-admission", "alm-outbound-admission", "alm-receipt-record"],
+      "count": 3
+    },
+    "nonTransactionHandleFeeds packages/shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts#writePSqlAdmissionCommit": {
+      "class": "transport-direct",
+      "stores": ["alm-inbound-admission", "alm-outbound-admission", "alm-receipt-record"],
+      "count": 2
+    },
+    "nonTransactionHandleFeeds packages/shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts#createPSqlResourceInboxRepository": {
+      "class": "queue-machinery"
+    },
+    "nonTransactionHandleFeeds packages/shared-server/rallar-system/app-outbox/install-durable-deadline.ts#installDurableDeadline.onMessage": {
+      "class": "downstream-work"
+    },
+    "nonTransactionHandleFeeds packages/shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts#PSqlClientStateEventRepository.appendClientEvent": {
+      "class": "passive-statement"
+    },
+    "nonTransactionHandleFeeds packages/shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts#PSqlClientStateEventRepository.listClientEvents": {
+      "class": "passive-statement"
+    },
+    "nonTransactionHandleFeeds packages/shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts#PSqlGroupStateEventRepository.appendGroupEvent": {
+      "class": "passive-statement"
+    },
+    "nonTransactionHandleFeeds packages/shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts#PSqlGroupStateEventRepository.listGroupEvents": {
+      "class": "passive-statement"
+    },
+    "nonTransactionHandleFeeds packages/shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts#PSqlGroupStateEventRepository.readGroupEvent": {
+      "class": "passive-statement"
+    },
+    "queueWriteCallers packages/shared-server/queuebox/postgres/p-sql-queue-box.ts#PSqlQueueBox.enqueueIfAbsent": {
+      "class": "queue-machinery"
+    },
+    "queueWriteCallers packages/shared-server/queuebox/postgres/p-sql-queue-box.ts#PSqlQueueBox.replaceIfObserved": {
+      "class": "queue-machinery"
+    },
+    "queueWriteCallers packages/shared-server/rallar-system/group-state/presence/group-presence-summary-claim.ts#claimPendingGroupPresenceSummaryWork": {
+      "class": "downstream-work"
+    },
+    "queueWriteCallers packages/shared-server/rallar-system/group-state/presence/group-presence-summary-claim.ts#releaseUnexpandedGroupPresenceSummaryWork": {
+      "class": "downstream-work"
+    },
+    "queueWriteCallers packages/shared-server/rallar-system/queue-pubsub/requeue-remote-ws-outbox-delivery-failure.ts#requeueRemoteWsOutboxDeliveryFailure": {
+      "class": "downstream-work"
+    },
+    "queueWriteCallers packages/shared/alm/inbound/lane/al-inbound-store-lane.ts#ALInboundStoreLane.writeRetainedDeliveryDueNow": {
+      "class": "transport-direct",
+      "stores": ["alm-inbound-admission"],
+      "count": 1,
+      "methods": ["replaceIfObserved"]
+    },
+    "queueWriteCallers packages/shared/alm/work/al-work-queue-port.ts#createALWorkQueuePort.retainIfAbsent": {
+      "class": "transport-direct",
+      "stores": ["alm-inbound-admission", "alm-outbound-admission", "alm-receipt-record"],
+      "count": 1,
+      "methods": ["enqueueIfAbsent"]
+    },
+    "queueWriteCallers packages/shared/alm/work/al-work-queue-port.ts#finalizeExhaustedALWork": {
+      "class": "transport-direct",
+      "stores": ["alm-inbound-admission", "alm-outbound-admission", "alm-receipt-record"],
+      "count": 1,
+      "methods": ["reserveRetryExhaustionFinalizations"]
+    },
+    "queueWriteCallers packages/shared/alm/work/al-work-queue-port.ts#releaseALWorkClaims": {
+      "class": "transport-direct",
+      "stores": ["alm-inbound-admission", "alm-outbound-admission", "alm-receipt-record"],
+      "count": 1,
+      "methods": ["releaseEntries"]
+    },
+    "queueWriteCallers packages/shared/alm/work/al-work-queue-port.ts#releaseALWorkClaimsSerially": {
+      "class": "transport-direct",
+      "stores": ["alm-inbound-admission", "alm-outbound-admission", "alm-receipt-record"],
+      "count": 1,
+      "methods": ["releaseEntries"]
+    },
+    "queueWriteCallers packages/shared/alm/work/al-work-queue-port.ts#reserveALWorkTimeouts": {
+      "class": "transport-direct",
+      "stores": ["alm-inbound-admission", "alm-outbound-admission", "alm-receipt-record"],
+      "count": 1,
+      "methods": ["reserveTimeoutEntries"]
+    },
+    "queueWriteCallers packages/shared/alm/work/al-work-queue-port.ts#reservePendingALWork": {
+      "class": "transport-direct",
+      "stores": ["alm-inbound-admission", "alm-outbound-admission", "alm-receipt-record"],
+      "count": 1,
+      "methods": ["reserveEntries"]
+    },
+    "queueWriteCallers packages/shared/queuebox/in-memory-queue-box.ts#InMemoryQueueBox.enqueueIfAbsent": {
+      "class": "browser-or-memory"
+    },
+    "queueWriteCallers packages/shared/queuebox/indexed-db-queue-box.ts#IndexedDbQueueBox.enqueueIfAbsent": {
+      "class": "browser-or-memory"
+    },
+    "queueWriteCallers packages/shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts#releaseResourceInboxFailure": {
+      "class": "queue-machinery"
+    },
+    "queueWriteCallers packages/shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts#releaseResourceInboxSuccesses": {
+      "class": "queue-machinery"
+    },
+    "queueWriteCallers packages/shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts#reserveResourceInboxAttempts": {
+      "class": "queue-machinery"
+    },
+    "queueWriteCallers packages/shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts#reserveResourceInboxFairness": {
+      "class": "queue-machinery"
+    },
+    "queueWriteCallers packages/shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts#reserveResourceInboxFinalizations": {
+      "class": "queue-machinery"
+    },
+    "queueWriteCallers packages/shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts#reserveResourceInboxTimeouts": {
+      "class": "queue-machinery"
+    },
+    "queueWriteCallers packages/shared/services/queue-message-reader.ts#QueueMessageReader.writeIfAbsent": {
+      "class": "queue-machinery"
+    },
+    "repositoryWriteCallers packages/shared-server/app-data/app-data-optimistic-writer.ts#AppDataOptimisticWriter": {
+      "class": "public-surface"
+    },
+    "repositoryWriteCallers packages/shared-server/app-data/app-data-store-cache.ts#AppDataStoreCache": {
+      "class": "public-surface"
+    },
+    "repositoryWriteCallers packages/shared-server/app-data/rallar-server-app-data-store.ts#RallarServerAppDataStore": {
+      "class": "public-surface"
+    },
+    "repositoryWriteCallers packages/shared-server/rallar-system/auth/persistence/auth-session-persistence.ts#AuthSessionPersistence": {
+      "class": "no-production-caller"
+    },
+    "repositoryWriteCallers packages/shared-server/rallar-system/auth/persistence/auth-session-repository.ts#AuthSessionRepository": {
+      "class": "no-production-caller"
+    },
+    "repositoryWriteCallers packages/shared-server/rallar-system/auth/persistence/auth-ticket-persistence.ts#AuthTicketPersistence": {
+      "class": "no-production-caller"
+    },
+    "repositoryWriteCallers packages/shared-server/rallar-system/auth/persistence/auth-user-repository.ts#AuthUserRepository": {
+      "class": "no-production-caller"
+    },
+    "repositoryWriteCallers packages/shared-server/rallar-system/client-state/persistence/client-state-repository.ts#ClientStateRepository": {
+      "class": "no-production-caller"
+    },
+    "repositoryWriteCallers packages/shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-repository.ts#GroupAggregateRepository": {
+      "class": "no-production-caller"
+    },
+    "repositoryWriteCallers packages/shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-repository.ts#advanceGroupStateAuthorityFence": {
+      "class": "no-production-caller"
+    },
+    "repositoryWriteCallers packages/shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts#GroupLifecyclePolicyRepository": {
+      "class": "no-production-caller"
+    },
+    "repositoryWriteCallers packages/shared-server/rallar-system/group-state/persistence/group-state-repository.ts#GroupStateRepository": {
+      "class": "no-production-caller"
+    },
+    "repositoryWriteCallers packages/shared-server/rallar-system/group-state/persistence/membership/group-membership-repository.ts#GroupMembershipRepository": {
+      "class": "no-production-caller"
+    },
+    "repositoryWriteCallers packages/shared-server/rallar-system/group-state/persistence/presence/group-presence-repository.ts#GroupPresenceRepository": {
+      "class": "no-production-caller"
+    },
+    "repositoryWriteCallers packages/shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts#RtcRttRepository": {
+      "class": "no-production-caller"
+    },
+    "repositoryWriteCallers packages/shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts#GroupTopologyConfigRepository": {
+      "class": "no-production-caller"
+    },
+    "repositoryWriteCallers packages/shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts#RtcTopologySnapshotRepository": {
+      "class": "no-production-caller"
+    },
+    "repositoryWriteCallers packages/shared-server/runtime-state/runtime-state-json-persistence-provider.ts#RuntimeStateJsonPersistenceProvider": {
+      "class": "no-production-caller"
+    },
+    "repositoryWriteCallers packages/shared-server/runtime-state/runtime-state-json-store.ts#RuntimeStateJsonStore": {
+      "class": "no-production-caller"
+    },
+    "rowFamilies packages/shared/alm/al-admission-work-backend.ts#AL_ADMISSION_WORK_COMPLETED_RETENTION.AL_OUTBOUND": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/al-admission-work-backend.ts#AL_ADMISSION_WORK_COMPLETED_RETENTION.AL_OUTBOUND_IDENTITY": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/al-admission-work-backend.ts#AL_ADMISSION_WORK_COMPLETED_RETENTION.AL_OUTBOUND_MESSAGE": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/al-admission-work-backend.ts#AL_ADMISSION_WORK_COMPLETED_RETENTION.WS_OUTBOX": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/inbound/al-inbound-canonical-message.ts#toALInboundMessageKey": {
+      "class": "transport-direct",
+      "stores": ["alm-inbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/inbound/al-inbound-source-validation.ts#toALInboundMessageOwnerKey": {
+      "class": "transport-direct",
+      "stores": ["alm-inbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/inbound/al-inbound-work-entry.ts#toALInboundWorkKey": {
+      "class": "transport-direct",
+      "stores": ["alm-inbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/inbound/control/al-inbound-control-rows.ts#toALInboundControlAcksKey": {
+      "class": "transport-direct",
+      "stores": ["alm-inbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/inbound/control/al-inbound-control-rows.ts#toALInboundControlNacksKey": {
+      "class": "transport-direct",
+      "stores": ["alm-inbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/inbound/control/al-inbound-control-rows.ts#toALInboundControlOwnersKey": {
+      "class": "transport-direct",
+      "stores": ["alm-inbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/inbound/control/al-inbound-control-rows.ts#toALInboundControlPendingKey": {
+      "class": "transport-direct",
+      "stores": ["alm-inbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-admission-keys.ts#toALOutboundControlHistoryKey": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-admission-keys.ts#toALOutboundFirstHopWaitKey": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-admission-keys.ts#toALOutboundMessageOwnerKey": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-admission-keys.ts#toALOutboundNotYetInSyncRetryKey": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-admission-keys.ts#toALOutboundOriginMessageKey": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-admission-keys.ts#toALOutboundRepairAttemptKey": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-admission-keys.ts#toALOutboundSentMessageKey": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-admission-keys.ts#toALOutboundSupersedenceLatestKey": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-admission-keys.ts#toALOutboundSupersedenceReplacementKey": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-admission-keys.ts#toALOutboundVersionKey": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts#toALOutboundOrderingHeadKey": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts#toALOutboundOrderingMessageKey": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts#toALOutboundOrderingTrackPrefix": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts#toALOutboundRoomSentFloorKey": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts#toALOutboundSentPositionKey": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/outbound/al-outbound-canonical-message.ts#toALOutboundCanonicalKey": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/outbound/al-outbound-canonical-message.ts#toALOutboundIdentityKey": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/outbound/al-outbound-work-entry.ts#toALOutboundWorkKey": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/outbound/to-al-outbound-effect-id.ts#toALOutboundRepairRequesterKey": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/receipt-record/al-receipt-record-keys.ts#toALReceiptRecordConfirmationKey": {
+      "class": "transport-direct",
+      "stores": ["alm-receipt-record"]
+    },
+    "rowFamilies packages/shared/alm/receipt-record/al-receipt-record-keys.ts#toALReceiptRecordConfirmationPrefix": {
+      "class": "transport-direct",
+      "stores": ["alm-receipt-record"]
+    },
+    "rowFamilies packages/shared/alm/receipt-record/al-receipt-record-keys.ts#toALReceiptRecordHeadKey": {
+      "class": "transport-direct",
+      "stores": ["alm-receipt-record"]
+    },
+    "rowFamilies packages/shared/alm/receipt-record/al-receipt-record-work-entry.ts#toALReceiptRecordWorkKey": {
+      "class": "transport-direct",
+      "stores": ["alm-receipt-record"]
+    },
+    "sqlWriteFiles packages/shared-server/app-data/postgres/p-sql-app-data-repository.ts": {
+      "class": "passive-statement"
+    },
+    "sqlWriteFiles packages/shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts": {
+      "class": "queue-machinery"
+    },
+    "sqlWriteFiles packages/shared-server/queuebox/postgres/p-sql-resource-inbox-finalization-repository.ts": {
+      "class": "queue-machinery"
+    },
+    "sqlWriteFiles packages/shared-server/queuebox/postgres/p-sql-resource-inbox-reservation-repository.ts": {
+      "class": "queue-machinery"
+    },
+    "sqlWriteFiles packages/shared-server/queuebox/postgres/replace-observed-resource-inbox-entry.ts": {
+      "class": "queue-machinery"
+    },
+    "sqlWriteFiles packages/shared-server/queuebox/postgres/requeue-observed-resource-inbox-delivery-failure.ts": {
+      "class": "queue-machinery"
+    },
+    "sqlWriteFiles packages/shared-server/queuebox/postgres/resource-inbox-entry-insert-values.ts": {
+      "class": "queue-machinery"
+    },
+    "sqlWriteFiles packages/shared-server/queuebox/postgres/resource-inbox-maintenance.ts": {
+      "class": "queue-machinery"
+    },
+    "sqlWriteFiles packages/shared-server/queuebox/postgres/resource-inbox-results-repository.ts": {
+      "class": "queue-machinery"
+    },
+    "sqlWriteFiles packages/shared-server/queuebox/postgres/write-resource-inbox-entry-if-absent-or-match.ts": {
+      "class": "queue-machinery"
+    },
+    "sqlWriteFiles packages/shared-server/rallar-system/admin-operations/postgres/p-sql-admin-prune-repository.ts": {
+      "class": "downstream-work"
+    },
+    "sqlWriteFiles packages/shared-server/rallar-system/app-outbox/app-outbox-sidecar.ts": {
+      "class": "passive-statement"
+    },
+    "sqlWriteFiles packages/shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts": {
+      "class": "passive-statement"
+    },
+    "sqlWriteFiles packages/shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-queries.ts": {
+      "class": "passive-statement"
+    },
+    "sqlWriteFiles packages/shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-queries.ts": {
+      "class": "passive-statement"
+    },
+    "sqlWriteFiles packages/shared-server/rallar-system/topology/replay/postgres/compact-rtc-topology-delivery-entries.ts": {
+      "class": "downstream-work"
+    },
+    "sqlWriteFiles packages/shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-delivery-repository.ts": {
+      "class": "downstream-work"
+    },
+    "sqlWriteFiles packages/shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-replay-maintenance.ts": {
+      "class": "downstream-work"
+    },
+    "sqlWriteFiles packages/shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-replay-repository.ts": {
+      "class": "downstream-work"
+    },
+    "sqlWriteFiles packages/shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts": {
+      "class": "passive-statement"
+    },
+    "sqlWriteFiles packages/shared-server/runtime-state/postgres/write-runtime-state-conditional.ts": {
+      "class": "passive-statement"
+    },
+    "sqlWriteFiles packages/shared-server/runtime-state/postgres/write-runtime-state-guarded-batch.ts": {
+      "class": "passive-statement"
+    },
+    "transactionOpeners apps/api-v1/src/db/pglite-sql-adapter.ts#attachPGliteBegin": {
+      "class": "adapter"
+    },
+    "transactionOpeners apps/api-v1/src/db/postgres-sql-adapter.ts#createPostgresSqlClient.begin": {
+      "class": "adapter"
+    },
+    "transactionOpeners apps/api-v1/src/db/postgres-sql-adapter.ts#createTransactionSql.savepoint": {
+      "class": "adapter"
+    },
+    "transactionOpeners packages/shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts#PSqlAdmissionWorkBackend.write": {
+      "class": "transport-direct",
+      "stores": ["alm-inbound-admission", "alm-outbound-admission", "alm-receipt-record"],
+      "count": 1
+    },
+    "transactionOpeners packages/shared-server/postgres/create-p-sql-counter-scope.ts#toCountedSql.begin": {
+      "class": "adapter"
+    },
+    "transactionOpeners packages/shared-server/postgres/create-p-sql-counter-scope.ts#toCountedSql.savepoint": {
+      "class": "adapter"
+    },
+    "transactionOpeners packages/shared-server/postgres/read-postgres-snapshot.ts#readPostgresSnapshot": {
+      "class": "adapter"
+    },
+    "transactionOpeners packages/shared-server/postgres/run-in-p-sql-transaction.ts#runInPSqlTransaction": {
+      "class": "adapter"
+    },
+    "transactionOpeners packages/shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts#createPSqlResourceInboxRepository.transaction": {
+      "class": "queue-machinery"
+    },
+    "transactionOpeners packages/shared-server/queuebox/postgres/p-sql-queue-box.ts#PSqlQueueBox.enqueue": {
+      "class": "queue-machinery"
+    },
+    "transactionOpeners packages/shared-server/queuebox/postgres/p-sql-queue-box.ts#PSqlQueueBox.releaseEntries": {
+      "class": "queue-machinery"
+    },
+    "transactionOpeners packages/shared-server/queuebox/postgres/p-sql-queue-box.ts#PSqlQueueBox.reserveEntries": {
+      "class": "queue-machinery"
+    },
+    "transactionOpeners packages/shared-server/queuebox/postgres/p-sql-queue-box.ts#PSqlQueueBox.reserveObservedEntries": {
+      "class": "queue-machinery"
+    },
+    "transactionOpeners packages/shared-server/queuebox/postgres/p-sql-queue-box.ts#PSqlQueueBox.reserveOverdueRetryEntries": {
+      "class": "queue-machinery"
+    },
+    "transactionOpeners packages/shared-server/queuebox/postgres/p-sql-queue-box.ts#PSqlQueueBox.reserveRetryExhaustionFinalizations": {
+      "class": "queue-machinery"
+    },
+    "transactionOpeners packages/shared-server/queuebox/postgres/p-sql-queue-box.ts#PSqlQueueBox.reserveTimeoutEntries": {
+      "class": "queue-machinery"
+    },
+    "transactionOpeners packages/shared-server/queuebox/postgres/p-sql-queue-box.ts#PSqlQueueBox.writeIfAbsent": {
+      "class": "queue-machinery"
+    },
+    "transactionOpeners packages/shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts#PSqlResourceInboxEntryRepository.writeMaterializedIfAbsentOrReplaceExpired": {
+      "class": "queue-machinery"
+    },
+    "transactionOpeners packages/shared-server/rallar-system/admin-operations/prune/admin-prune-page-worker.ts#AdminPrunePageWorker.processReservedEntry": {
+      "class": "downstream-work"
+    },
+    "transactionOpeners packages/shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts#finalizeAppInboxRetry": {
+      "class": "app-inbox"
+    },
+    "transactionOpeners packages/shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts#AppInboxTransactionWriter.inTransaction": {
+      "class": "app-inbox"
+    },
+    "transactionOpeners packages/shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts#AppInboxTransactionWriter.writeComputedQueueFailure": {
+      "class": "app-inbox"
+    },
+    "transactionOpeners packages/shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts#GroupPresenceSummaryWork.finishAbsentGroupWork": {
+      "class": "downstream-work"
+    },
+    "transactionOpeners packages/shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts#GroupPresenceSummaryWork.writeExpansion": {
+      "class": "downstream-work"
+    },
+    "transactionOpeners packages/shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-receipt-cleanup.ts#deleteGuardedRtcRttReceipt": {
+      "class": "downstream-work"
+    },
+    "transactionOpeners packages/shared-server/rallar-system/topology/replay/postgres/compact-rtc-topology-delivery-entries.ts#compactRtcTopologyDeliveryEntries": {
+      "class": "downstream-work"
+    },
+    "transactionOpeners packages/shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-replay-maintenance.ts#retireRtcTopologyReplayEmptyStreams": {
+      "class": "downstream-work"
+    },
+    "transactionOpeners packages/shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-replay-repository.ts#PSqlRtcTopologyReplayRepository.capturePage": {
+      "class": "downstream-work"
+    },
+    "transactionOpeners packages/shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-replay-repository.ts#PSqlRtcTopologyReplayRepository.discoverPublishers": {
+      "class": "downstream-work"
+    },
+    "transactionOpeners packages/shared-server/rallar-system/topology/replay/work/rtc-topology-work-completion.ts#writeRtcTopologyWorkCompletion": {
+      "class": "downstream-work"
+    },
+    "transactionOpeners packages/shared-server/rallar-system/topology/replay/work/write-rtc-topology-publication-transaction.ts#writeRtcTopologyPublicationTransaction": {
+      "class": "downstream-work"
+    },
+    "transactionOpeners packages/shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts#PSqlRuntimeStateRepository.begin": {
+      "class": "adapter"
+    },
+    "wiringImports apps/api-v1/src/composition/create-api-v1-runtime.ts#import:packages/shared-server/al-runtime/postgres/create-p-sql-al-receipt-record-stores.ts": {
+      "class": "transport-direct",
+      "stores": ["alm-receipt-record"]
+    },
+    "wiringImports apps/api-v1/src/composition/create-api-v1-runtime.ts#import:packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts": {
+      "class": "transport-direct",
+      "stores": ["alm-inbound-admission", "alm-outbound-admission"]
+    },
+    "wiringImports apps/relic-hunter-server-v1/src/create-relic-game-services.ts#import:packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts": {
+      "class": "transport-direct",
+      "stores": ["alm-outbound-admission"]
+    },
+    "wiringImports packages/shared-server/al-runtime/postgres/create-p-sql-al-receipt-record-stores.ts#import:packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts": {
+      "class": "transport-direct",
+      "stores": ["alm-receipt-record"]
+    },
+    "wiringImports packages/shared-server/al-runtime/postgres/create-p-sql-al-receipt-record-stores.ts#import:packages/shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts": {
+      "class": "transport-direct",
+      "stores": ["alm-receipt-record"]
+    },
+    "wiringImports packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts#import:packages/shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts": {
+      "class": "transport-direct",
+      "stores": ["alm-inbound-admission", "alm-outbound-admission"]
     }
-  ],
-  "transportDirectSurfaces": [
-    "admissionBackendConstructions packages/shared-server/al-runtime/postgres/create-p-sql-al-receipt-record-stores.ts#createPSqlALReceiptRecordStores",
-    "admissionBackendConstructions packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts#createPSqlALInboundRuntimeStores",
-    "admissionBackendConstructions packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts#createPSqlALOutboundRuntimeStores",
-    "admissionBackendImplementations packages/shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts#PSqlAdmissionWorkBackend",
-    "admissionBackendWrites packages/shared/alm/inbound/admission/evict-al-inbound-delivered-markers-past-cap.ts#removeUnlessLive",
-    "admissionBackendWrites packages/shared/alm/inbound/admission/evict-al-inbound-ordering-tracks-past-cap.ts#removeUnchangedTracks",
-    "admissionBackendWrites packages/shared/alm/inbound/al-inbound-admission-store.ts#ProviderBackedALInboundAdmissionStore.writeUnlessConflicted",
-    "admissionBackendWrites packages/shared/alm/outbound/admission/al-outbound-admission-store.ts#ProviderBackedALOutboundAdmissionStore.commitOrderingMessageEnd",
-    "admissionBackendWrites packages/shared/alm/outbound/admission/al-outbound-admission-store.ts#ProviderBackedALOutboundAdmissionStore.writeCommit",
-    "admissionBackendWrites packages/shared/alm/outbound/al-outbound-pending-admission.ts#retainALOutboundPendingAdmission",
-    "admissionBackendWrites packages/shared/alm/outbound/control/al-outbound-control-admission.ts#ALOutboundControlAdmission.commitRetrySchedule",
-    "admissionBackendWrites packages/shared/alm/outbound/control/al-outbound-control-admission.ts#ALOutboundControlAdmission.writeControlAdmission",
-    "admissionBackendWrites packages/shared/alm/receipt-record/al-receipt-record.ts#ALReceiptRecord.writeUnlessConflict",
-    "nonTransactionHandleFeeds packages/shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts#PSqlAdmissionWorkBackend.constructor",
-    "nonTransactionHandleFeeds packages/shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts#writePSqlAdmissionCommit",
-    "queueWriteCallers packages/shared/alm/inbound/lane/al-inbound-store-lane.ts#ALInboundStoreLane.writeRetainedDeliveryDueNow",
-    "queueWriteCallers packages/shared/alm/work/al-work-queue-port.ts#createALWorkQueuePort.retainIfAbsent",
-    "queueWriteCallers packages/shared/alm/work/al-work-queue-port.ts#finalizeExhaustedALWork",
-    "queueWriteCallers packages/shared/alm/work/al-work-queue-port.ts#releaseALWorkClaims",
-    "queueWriteCallers packages/shared/alm/work/al-work-queue-port.ts#releaseALWorkClaimsSerially",
-    "queueWriteCallers packages/shared/alm/work/al-work-queue-port.ts#reserveALWorkTimeouts",
-    "queueWriteCallers packages/shared/alm/work/al-work-queue-port.ts#reservePendingALWork",
-    "rowFamilies packages/shared/alm/al-admission-work-backend.ts#AL_ADMISSION_WORK_COMPLETED_RETENTION.AL_OUTBOUND",
-    "rowFamilies packages/shared/alm/al-admission-work-backend.ts#AL_ADMISSION_WORK_COMPLETED_RETENTION.AL_OUTBOUND_IDENTITY",
-    "rowFamilies packages/shared/alm/al-admission-work-backend.ts#AL_ADMISSION_WORK_COMPLETED_RETENTION.AL_OUTBOUND_MESSAGE",
-    "rowFamilies packages/shared/alm/al-admission-work-backend.ts#AL_ADMISSION_WORK_COMPLETED_RETENTION.WS_OUTBOX",
-    "rowFamilies packages/shared/alm/inbound/al-inbound-canonical-message.ts#toALInboundMessageKey",
-    "rowFamilies packages/shared/alm/inbound/al-inbound-source-validation.ts#toALInboundMessageOwnerKey",
-    "rowFamilies packages/shared/alm/inbound/al-inbound-work-entry.ts#toALInboundWorkKey",
-    "rowFamilies packages/shared/alm/inbound/control/al-inbound-control-rows.ts#toALInboundControlAcksKey",
-    "rowFamilies packages/shared/alm/inbound/control/al-inbound-control-rows.ts#toALInboundControlNacksKey",
-    "rowFamilies packages/shared/alm/inbound/control/al-inbound-control-rows.ts#toALInboundControlOwnersKey",
-    "rowFamilies packages/shared/alm/inbound/control/al-inbound-control-rows.ts#toALInboundControlPendingKey",
-    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-admission-keys.ts#toALOutboundControlHistoryKey",
-    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-admission-keys.ts#toALOutboundFirstHopWaitKey",
-    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-admission-keys.ts#toALOutboundMessageOwnerKey",
-    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-admission-keys.ts#toALOutboundNotYetInSyncRetryKey",
-    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-admission-keys.ts#toALOutboundOriginMessageKey",
-    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-admission-keys.ts#toALOutboundRepairAttemptKey",
-    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-admission-keys.ts#toALOutboundSentMessageKey",
-    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-admission-keys.ts#toALOutboundSupersedenceLatestKey",
-    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-admission-keys.ts#toALOutboundSupersedenceReplacementKey",
-    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-admission-keys.ts#toALOutboundVersionKey",
-    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts#toALOutboundOrderingHeadKey",
-    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts#toALOutboundOrderingMessageKey",
-    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts#toALOutboundOrderingTrackPrefix",
-    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts#toALOutboundRoomSentFloorKey",
-    "rowFamilies packages/shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts#toALOutboundSentPositionKey",
-    "rowFamilies packages/shared/alm/outbound/al-outbound-canonical-message.ts#toALOutboundCanonicalKey",
-    "rowFamilies packages/shared/alm/outbound/al-outbound-canonical-message.ts#toALOutboundIdentityKey",
-    "rowFamilies packages/shared/alm/outbound/al-outbound-work-entry.ts#toALOutboundWorkKey",
-    "rowFamilies packages/shared/alm/outbound/to-al-outbound-effect-id.ts#toALOutboundRepairRequesterKey",
-    "rowFamilies packages/shared/alm/receipt-record/al-receipt-record-keys.ts#toALReceiptRecordConfirmationKey",
-    "rowFamilies packages/shared/alm/receipt-record/al-receipt-record-keys.ts#toALReceiptRecordConfirmationPrefix",
-    "rowFamilies packages/shared/alm/receipt-record/al-receipt-record-keys.ts#toALReceiptRecordHeadKey",
-    "rowFamilies packages/shared/alm/receipt-record/al-receipt-record-work-entry.ts#toALReceiptRecordWorkKey",
-    "transactionOpeners packages/shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts#PSqlAdmissionWorkBackend.write",
-    "wiringImports apps/api-v1/src/composition/create-api-v1-runtime.ts#import:packages/shared-server/al-runtime/postgres/create-p-sql-al-receipt-record-stores.ts",
-    "wiringImports apps/api-v1/src/composition/create-api-v1-runtime.ts#import:packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts",
-    "wiringImports apps/relic-hunter-server-v1/src/create-relic-game-services.ts#import:packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts",
-    "wiringImports packages/shared-server/al-runtime/postgres/create-p-sql-al-receipt-record-stores.ts#import:packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts",
-    "wiringImports packages/shared-server/al-runtime/postgres/create-p-sql-al-receipt-record-stores.ts#import:packages/shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts",
-    "wiringImports packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts#import:packages/shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts"
-  ],
-  "classCounts": {
-    "adapter": 8,
-    "app-inbox": 3,
-    "browser-or-memory": 4,
-    "composition-root": 9,
-    "downstream-work": 21,
-    "no-production-caller": 16,
-    "passive-statement": 13,
-    "public-surface": 4,
-    "queue-machinery": 29,
-    "transport-direct": 63
   }
 }

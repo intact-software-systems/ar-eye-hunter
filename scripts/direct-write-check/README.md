@@ -50,9 +50,12 @@ governance-gate phase. An entry in the registry records that a write exists; it 
   store free of any answer, dated the day the three stores were found, and an `approved` one complete.
 - [validate-direct-write-review-pins.mjs](./validate-direct-write-review-pins.mjs) compares the registry with
   [direct-write-review-pins.json](./direct-write-review-pins.json), read from the analysed tree: the approved store ids
-  (none), the stores and their states, every registered `transport-direct` surface, and the number of surfaces in each class. An
-  approval, a new store, a new or removed `transport-direct` surface, or a surface added or given another class fails
-  with `direct-write.registry-invalid` before any analysis until that file changes too.
+  (none), the stores and their states, and for every registered surface its class, with the computed attributes and
+  stores of a `transport-direct` one. An approval, a new store, a surface added, removed or given another class, and a
+  `transport-direct` surface whose count, statements, methods or stores moved fail with `direct-write.registry-invalid`
+  before any analysis until that file changes too. A PostgreSQL backend construction has one identity per namespace
+  text (`path#owner@<namespace>`), so a new namespace is a new surface. The pins make a change deliberate and visible
+  in the same pull request; whoever edits the registry can edit them too, so they are not a control.
 - The fact sets, each `computeXxxFacts(project, scope)` over shared walks in
   [direct-write-sites.mjs](./direct-write-sites.mjs):
   [admission-backend-facts.mjs](./admission-backend-facts.mjs) (port implementations, PostgreSQL constructions, port
@@ -61,7 +64,8 @@ governance-gate phase. An entry in the registry records that a write exists; it 
   [repository-write-facts.mjs](./repository-write-facts.mjs) (root repository writes and their callers to a fixed point)
   and [queue-write-facts.mjs](./queue-write-facts.mjs) (queue row writes, claims and releases on a queue-typed receiver).
 - [compute-direct-write-findings.mjs](./compute-direct-write-findings.mjs) reports `direct-write.unregistered`,
-  `direct-write.stale-entry` and `direct-write.changed` (a count, namespace, backend or statement list that moved).
+  `direct-write.stale-entry` and `direct-write.changed` (a count, backend, statement or method list that moved; for a
+  `transport-direct` surface the advice says the store under review needs the maintainer's approval first).
 
 Tests live under [`packages/tests/repo/direct-write-check/`](../../packages/tests/repo/direct-write-check/) and run in
 `npm run test:repo-governance`.
