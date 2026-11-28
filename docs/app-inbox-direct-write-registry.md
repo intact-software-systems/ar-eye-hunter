@@ -5,10 +5,17 @@ An entry records that a write exists. It is not an approval. No entry in this fi
 The repository rule is that AppInbox is mandatory for incoming database mutations
 ([`AGENTS.md`](../AGENTS.md), and the canonical service reference
 [`convergent-service-writing.md`](../.agents/skills/rallar-code-writing/references/convergent-service-writing.md),
-"Transaction and retry ownership" and "Writes outside AppInbox"). This file lists every database write surface the
-source contains that is not a statement executed on the transaction AppInbox hands to a service.
-`npm run check:direct-writes` computes those surfaces from the source and fails when the source and this file differ in
-either direction. Listing a surface here records that it exists; it says nothing about whether it may stay.
+"Transaction and retry ownership" and "Writes outside AppInbox"). This file lists the database write surfaces
+`npm run check:direct-writes` computes from the source that are not a statement executed on the transaction AppInbox
+hands to a service. It is not a complete list of direct writes: `scripts/direct-write-check/README.md` says what the
+check does not see. The check fails when the source and this file differ in either direction. Listing a surface here
+records that it exists; it says nothing about whether it may stay.
+
+Among what the check does not see: a queue write through a port declared outside the queue packages (a new caller of
+`ALWorkQueuePort.retainIfAbsent` on an incoming path writes `resource_inbox` unseen), a new caller of a store higher in
+the call chain, a row whose key is built inline, a root handle carried inside an object literal or named `transaction`,
+and whether a surface is on an incoming path at all. A passing check is therefore not evidence that a change writes
+nothing outside AppInbox.
 
 ## The three stores under review
 
@@ -22,8 +29,8 @@ other write.
 | `alm-outbound-admission` | `packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts#createPSqlALOutboundRuntimeStores`      | a republished frame with an outbox fan-out; a control |
 | `alm-receipt-record`     | `packages/shared-server/al-runtime/postgres/create-p-sql-al-receipt-record-stores.ts#createPSqlALReceiptRecordStores` | a receipted data frame; an incoming ACK               |
 
-Their rows, paths and transaction are stated in each store's entry in the block below. Every source surface that
-belongs to one of them is class `transport-direct` and names it.
+Their rows, paths and transaction are stated in each store's entry in the block below, including write paths the
+check does not compute. Every computed surface that belongs to one of them is class `transport-direct` and names it.
 
 ## What under review means
 
@@ -31,28 +38,35 @@ An `under-review` store carries `state`, `since` and `raised` and nothing else: 
 becomes `approved` only with the question put to the maintainer word for word (it contains "outside AppInbox"), every
 option word for word (at least two, one of them naming AppInbox as the path), the recommended option, what AppInbox
 would cost instead or "not measured", the answer word for word, and the date of that answer, which may not be before
-2026-11-27. The approval also needs an edit to the pinned list `APPROVED_DIRECT_WRITE_IDS` in
+2026-11-27. An `under-review` store is dated 2026-11-27, the day the three stores were found.
+
+The check also reads `scripts/direct-write-check/direct-write-review-pins.json`, which holds the approved store ids
+(none), the three stores and their states, every registered `transport-direct` surface, and the number of surfaces in each class.
+An approval, a new store, a new or removed `transport-direct` surface, and a surface added or given another class fail
+the check until that file changes too; an approval also needs an edit to the pinned list `APPROVED_DIRECT_WRITE_IDS` in
 `packages/tests/repo/direct-write-check/direct-write-registry.test.ts`, which is empty. No check can tell a quoted answer
-the maintainer gave from one an agent wrote; the review that happens is the one in the default-branch request
-`AGENTS.md` requires for a change to this file, which quotes this file's whole diff.
+the maintainer gave from one an agent wrote, or tell whether a class is true; the review that happens is the one in the
+default-branch commit and push requests `AGENTS.md` requires for a change to this file, which quote this file's whole
+diff and say which entries were added, removed or given another class.
 
 ## Classes
 
-| Class                  | Meaning                                                                                                       |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `app-inbox`            | AppInbox's own transaction writer and retry finalization                                                      |
-| `queue-machinery`      | the specialized ResourceInbox and QueueBox owners                                                             |
-| `adapter`              | opens, nests or wraps a transaction for its caller and decides no write itself                                |
-| `passive-statement`    | holds or runs SQL on the handle it is given                                                                   |
-| `downstream-work`      | runs from a queue row or a timer; its `basis` names the trigger                                               |
-| `no-production-caller` | write-capable code that nothing in production calls                                                           |
-| `public-surface`       | an exported API that writes directly; no incoming caller in this repository                                   |
-| `composition-root`     | constructs a write-capable repository on a root connection; the writes it enables are recorded where they run |
-| `browser-or-memory`    | an in-memory or browser IndexedDB implementation; outside the rule, which is a server rule                    |
-| `transport-direct`     | written directly on an incoming path; names the store it belongs to, and only a store carries a review        |
+| Class                  | Meaning                                                                                                |
+| ---------------------- | ------------------------------------------------------------------------------------------------------ |
+| `app-inbox`            | AppInbox's own transaction writer and retry finalization                                               |
+| `queue-machinery`      | the specialized ResourceInbox and QueueBox owners                                                      |
+| `adapter`              | opens, nests or wraps a transaction for its caller and decides no write itself                         |
+| `passive-statement`    | holds or runs SQL on the handle it is given                                                            |
+| `downstream-work`      | runs from a queue row or a timer; its `basis` names the trigger                                        |
+| `no-production-caller` | write-capable code that nothing in production calls                                                    |
+| `public-surface`       | an exported API that writes directly; no incoming caller in this repository                            |
+| `composition-root`     | constructs a write-capable repository on a root connection                                             |
+| `browser-or-memory`    | an in-memory or browser IndexedDB implementation; outside the rule, which is a server rule             |
+| `transport-direct`     | written directly on an incoming path; names the store it belongs to, and only a store carries a review |
 
 Work started by a queue row or a timer is outside the rule's definition of an incoming path; it is listed so that a new
-caller from an incoming path is visible.
+caller from an incoming path is visible. The row that starts such work is itself a database write; written on an
+incoming path outside AppInbox, it is under the rule.
 
 ## What the check computes
 
@@ -74,8 +88,11 @@ does not see.
 
 ## Updating this file
 
-When the check reports `direct-write.unregistered`, the write is new. If it is on an incoming path, the proposal must
-first say "This writes outside AppInbox", as the canonical service reference requires, before any entry is written.
+When the check reports `direct-write.unregistered`, the write is new. If it is on an incoming path, it needs the
+maintainer's approval before the code exists: the proposal says "This writes outside AppInbox" and records the question
+and the answer as the canonical service reference requires, and the write enters this file only as an `approved` store.
+`under-review` is the state of the three stores found on 2026-11-27 and is never the state of a new write. Without that
+approval, remove the write.
 When it reports `direct-write.stale-entry` or `direct-write.changed`, re-key or update the entry; that changes no
 review. A `basis` says what was read in the code, in one sentence.
 
@@ -83,7 +100,7 @@ review. A `basis` says what was read in the code, in one sentence.
 {
   "version": 1,
   "owner": "Repository-governance maintainers",
-  "reviewCondition": "Every under-review store stays under review until the maintainer rules on it at the revisit of 2026-11-27; this file records no ruling.",
+  "reviewCondition": "Every under-review store stays under review until the maintainer rules on it at the revisit the maintainer ordered on 2026-11-27; this file records no ruling.",
   "wiringModules": [
     "packages/shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts",
     "packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts",
@@ -110,12 +127,13 @@ review. A `basis` says what was read in the code, in one sentence.
       "namespace": "`${input.namespace}:inbound:admission`",
       "rows": [
         "runtime_state_store rows of the inbound admission namespace: the message owner row and the canonical inbound message row of each admitted message, with its admission state rows (packages/shared/alm/inbound/README.md, \"Every stored key\").",
-        "resource_inbox work rows AL_INBOUND/<namespace>/<effectId>, written in the same commit."
+        "resource_inbox work rows AL_INBOUND/<namespace>/<effectId>: written in the commit of PSqlAdmissionWorkBackend.write when a message is admitted, and, for a frame retained before it can be judged, by workPort.retainIfAbsent through the backend's own queue, outside that commit."
       ],
       "incomingPaths": [
-        "A WebSocket data frame: registerSocketIngress onMessage -> acceptIncomingMessage -> admitAuthorizedMessage -> inboundRuntime.admitIncomingMessage (packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts)."
+        "A WebSocket data frame: registerSocketIngress onMessage -> acceptIncomingMessage -> admitAuthorizedMessage -> inboundRuntime.admitIncomingMessage (packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts).",
+        "A WebSocket data frame the ingress authority cannot judge yet: registerSocketIngress -> inboundRuntime.retainIncomingMessage (ws-queue-box-server-service.ts) -> workPort.retainIfAbsent (packages/shared/alm/inbound/al-inbound-message-admission.ts), which writes the retained pending-admission work row through the backend's own queue."
       ],
-      "transaction": "PSqlAdmissionWorkBackend.write opens its own transaction with this.sql.begin; AppInbox is not involved.",
+      "transaction": "PSqlAdmissionWorkBackend.write opens its own transaction with this.sql.begin; AppInbox is not involved. The store also writes resource_inbox through the backend's own queue (backend.workQueue, a PSqlQueueBox on the root handle, handed out by createPSqlALInboundRuntimeStores): retained work through workPort.retainIfAbsent (al-inbound-message-admission.ts, inbound/control/al-inbound-control-admission.ts, inbound/gap-renewal/al-inbound-gap-renewal.ts), a replaced retained delivery through workQueue.replaceIfObserved (inbound/lane/al-inbound-store-lane.ts), and claims and releases (work/al-work-queue-port.ts). queueWriteCallers records the port's and the lane's own calls; a new caller of the port is not computed.",
       "review": {
         "state": "under-review",
         "since": "2026-11-27",
@@ -130,13 +148,16 @@ review. A `basis` says what was read in the code, in one sentence.
       "namespace": "toALOutboundAdmissionNamespace(input.namespace)",
       "rows": [
         "runtime_state_store rows named by the key builders of al-outbound-admission-keys.ts and al-outbound-ordering-track-keys.ts (listed under rowFamilies): message owner, versions, sent message, origin message, repair attempt, first-hop wait, retry, supersedence and control history rows, and per ordering track the head, messages, sent positions and room sent floor.",
-        "resource_inbox work rows of the topics AL_OUTBOUND, AL_OUTBOUND_MESSAGE and AL_OUTBOUND_IDENTITY, and rows of type WS_OUTBOX, written in the same commits."
+        "resource_inbox work rows of the topics AL_OUTBOUND, AL_OUTBOUND_MESSAGE and AL_OUTBOUND_IDENTITY, and rows of type WS_OUTBOX, written in the commits of PSqlAdmissionWorkBackend.write; AL_OUTBOUND work rows are also written by workPort.retainIfAbsent through the backend's own queue (outbound/control/al-outbound-control-admission.ts, outbound/message-end/al-outbound-lane-message-end.ts), outside those commits."
       ],
       "incomingPaths": [
         "A WebSocket frame that the router republishes with an outbox fan-out: WsQueueBoxServerService.enqueueOutboxIfAbsent -> outboundRuntime.enqueueIfAbsent.",
-        "An incoming ACK, NACK or repair control addressed to the server: acceptServerControl -> outboundRuntime.acceptControlMessage(message, 'peer')."
+        "An incoming ACK, NACK or repair control addressed to the server: acceptServerControl -> outboundRuntime.acceptControlMessage(message, 'peer').",
+        "A control the server sends back whose target has no socket on this instance: sendControlMessages (ws-queue-box-server-service.ts) -> WsQueueBoxServerControlDelivery.sendControlMessages -> outbound.enqueueIfAbsent (ws-queue-box-server-control-delivery.ts).",
+        "A receipt control at the admission of a receipted data frame: admitAuthorizedMessage -> receipts.writeAdmittedReceipt -> the receipt aggregation's enqueueOutbox (ws-queue-box-server-receipt-aggregation.ts), wired to outboundRuntime.enqueueIfAbsent in ws-queue-box-server-service.ts.",
+        "The settlement of the server's own receipt row: the receipt aggregation's acceptServerReceipt (ws-queue-box-server-receipt-aggregation.ts), wired to outboundRuntime.acceptReceipt in ws-queue-box-server-service.ts."
       ],
-      "transaction": "PSqlAdmissionWorkBackend.write opens its own transaction with this.sql.begin; AppInbox is not involved.",
+      "transaction": "PSqlAdmissionWorkBackend.write opens its own transaction with this.sql.begin; AppInbox is not involved. The store also writes resource_inbox through the backend's own queue (backend.workQueue, a PSqlQueueBox on the root handle, handed out by createPSqlALOutboundRuntimeStores): retained work through workPort.retainIfAbsent, and claims and releases (work/al-work-queue-port.ts). queueWriteCallers records the port's own calls; a new caller of the port is not computed.",
       "review": {
         "state": "under-review",
         "since": "2026-11-27",
@@ -157,8 +178,8 @@ review. A `basis` says what was read in the code, in one sentence.
         "A WebSocket data frame that opens a receipt: admitAuthorizedMessage -> receipts.writeAdmittedReceipt (ws-queue-box-server-service.ts).",
         "An incoming ACK control: onControlMessage -> receipts.acceptControlMessage (ws-queue-box-server-service.ts)."
       ],
-      "transaction": "PSqlAdmissionWorkBackend.write opens its own transaction with this.sql.begin; AppInbox is not involved.",
-      "earlierRecord": "D770 and D779 in playground/alm/alm-improvement-plan.md",
+      "transaction": "PSqlAdmissionWorkBackend.write opens its own transaction with this.sql.begin; AppInbox is not involved. Its worker (receipt-record/al-receipt-record-worker.ts) claims and releases resource_inbox rows through the backend's own queue, backend.workQueue, with the ALM work queue port (work/al-work-queue-port.ts), outside write.",
+      "earlierRecord": "D770 and D779 in playground/alm/alm-improvement-plan.md record an earlier answer. It predates the rule of 2026-11-27 and is not an approval; the maintainer has not ruled.",
       "review": {
         "state": "under-review",
         "since": "2026-11-27",
@@ -422,61 +443,61 @@ review. A `basis` says what was read in the code, in one sentence.
       "id": "packages/shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts#createPSqlResourceInboxRepository.transaction",
       "class": "queue-machinery",
       "count": 1,
-      "basis": "A specialized ResourceInbox or QueueBox transaction owner listed in transaction-boundaries.mjs; it serves AppInbox and the ALM backend queues."
+      "basis": "A specialized ResourceInbox or QueueBox transaction owner listed in transaction-boundaries.mjs; it serves AppInbox and the ALM backend queues. Called by the ALM backend's queue on an incoming path, the write belongs to the three stores under review."
     },
     {
       "id": "packages/shared-server/queuebox/postgres/p-sql-queue-box.ts#PSqlQueueBox.enqueue",
       "class": "queue-machinery",
       "count": 1,
-      "basis": "A specialized ResourceInbox or QueueBox transaction owner listed in transaction-boundaries.mjs; it serves AppInbox and the ALM backend queues."
+      "basis": "A specialized ResourceInbox or QueueBox transaction owner listed in transaction-boundaries.mjs; it serves AppInbox and the ALM backend queues. Called by the ALM backend's queue on an incoming path, the write belongs to the three stores under review."
     },
     {
       "id": "packages/shared-server/queuebox/postgres/p-sql-queue-box.ts#PSqlQueueBox.releaseEntries",
       "class": "queue-machinery",
       "count": 1,
-      "basis": "A specialized ResourceInbox or QueueBox transaction owner listed in transaction-boundaries.mjs; it serves AppInbox and the ALM backend queues."
+      "basis": "A specialized ResourceInbox or QueueBox transaction owner listed in transaction-boundaries.mjs; it serves AppInbox and the ALM backend queues. Called by the ALM backend's queue on an incoming path, the write belongs to the three stores under review."
     },
     {
       "id": "packages/shared-server/queuebox/postgres/p-sql-queue-box.ts#PSqlQueueBox.reserveEntries",
       "class": "queue-machinery",
       "count": 2,
-      "basis": "A specialized ResourceInbox or QueueBox transaction owner listed in transaction-boundaries.mjs; it serves AppInbox and the ALM backend queues."
+      "basis": "A specialized ResourceInbox or QueueBox transaction owner listed in transaction-boundaries.mjs; it serves AppInbox and the ALM backend queues. Called by the ALM backend's queue on an incoming path, the write belongs to the three stores under review."
     },
     {
       "id": "packages/shared-server/queuebox/postgres/p-sql-queue-box.ts#PSqlQueueBox.reserveObservedEntries",
       "class": "queue-machinery",
       "count": 1,
-      "basis": "A specialized ResourceInbox or QueueBox transaction owner listed in transaction-boundaries.mjs; it serves AppInbox and the ALM backend queues."
+      "basis": "A specialized ResourceInbox or QueueBox transaction owner listed in transaction-boundaries.mjs; it serves AppInbox and the ALM backend queues. Called by the ALM backend's queue on an incoming path, the write belongs to the three stores under review."
     },
     {
       "id": "packages/shared-server/queuebox/postgres/p-sql-queue-box.ts#PSqlQueueBox.reserveOverdueRetryEntries",
       "class": "queue-machinery",
       "count": 1,
-      "basis": "A specialized ResourceInbox or QueueBox transaction owner listed in transaction-boundaries.mjs; it serves AppInbox and the ALM backend queues."
+      "basis": "A specialized ResourceInbox or QueueBox transaction owner listed in transaction-boundaries.mjs; it serves AppInbox and the ALM backend queues. Called by the ALM backend's queue on an incoming path, the write belongs to the three stores under review."
     },
     {
       "id": "packages/shared-server/queuebox/postgres/p-sql-queue-box.ts#PSqlQueueBox.reserveRetryExhaustionFinalizations",
       "class": "queue-machinery",
       "count": 1,
-      "basis": "A specialized ResourceInbox or QueueBox transaction owner listed in transaction-boundaries.mjs; it serves AppInbox and the ALM backend queues."
+      "basis": "A specialized ResourceInbox or QueueBox transaction owner listed in transaction-boundaries.mjs; it serves AppInbox and the ALM backend queues. Called by the ALM backend's queue on an incoming path, the write belongs to the three stores under review."
     },
     {
       "id": "packages/shared-server/queuebox/postgres/p-sql-queue-box.ts#PSqlQueueBox.reserveTimeoutEntries",
       "class": "queue-machinery",
       "count": 1,
-      "basis": "A specialized ResourceInbox or QueueBox transaction owner listed in transaction-boundaries.mjs; it serves AppInbox and the ALM backend queues."
+      "basis": "A specialized ResourceInbox or QueueBox transaction owner listed in transaction-boundaries.mjs; it serves AppInbox and the ALM backend queues. Called by the ALM backend's queue on an incoming path, the write belongs to the three stores under review."
     },
     {
       "id": "packages/shared-server/queuebox/postgres/p-sql-queue-box.ts#PSqlQueueBox.writeIfAbsent",
       "class": "queue-machinery",
       "count": 1,
-      "basis": "A specialized ResourceInbox or QueueBox transaction owner listed in transaction-boundaries.mjs; it serves AppInbox and the ALM backend queues."
+      "basis": "A specialized ResourceInbox or QueueBox transaction owner listed in transaction-boundaries.mjs; it serves AppInbox and the ALM backend queues. Called by the ALM backend's queue on an incoming path, the write belongs to the three stores under review."
     },
     {
       "id": "packages/shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts#PSqlResourceInboxEntryRepository.writeMaterializedIfAbsentOrReplaceExpired",
       "class": "queue-machinery",
       "count": 1,
-      "basis": "A specialized ResourceInbox or QueueBox transaction owner listed in transaction-boundaries.mjs; it serves AppInbox and the ALM backend queues."
+      "basis": "A specialized ResourceInbox or QueueBox transaction owner listed in transaction-boundaries.mjs; it serves AppInbox and the ALM backend queues. Called by the ALM backend's queue on an incoming path, the write belongs to the three stores under review."
     },
     {
       "id": "packages/shared-server/rallar-system/admin-operations/prune/admin-prune-page-worker.ts#AdminPrunePageWorker.processReservedEntry",

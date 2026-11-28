@@ -50,7 +50,7 @@ governance-gate phase. An entry in the registry records that a write exists; it 
   store free of any answer, dated the day the three stores were found, and an `approved` one complete.
 - [validate-direct-write-review-pins.mjs](./validate-direct-write-review-pins.mjs) compares the registry with
   [direct-write-review-pins.json](./direct-write-review-pins.json), read from the analysed tree: the approved store ids
-  (none), the stores and their states, every `transport-direct` surface, and the number of surfaces in each class. An
+  (none), the stores and their states, every registered `transport-direct` surface, and the number of surfaces in each class. An
   approval, a new store, a new or removed `transport-direct` surface, or a surface added or given another class fails
   with `direct-write.registry-invalid` before any analysis until that file changes too.
 - The fact sets, each `computeXxxFacts(project, scope)` over shared walks in
@@ -84,4 +84,10 @@ Tests live under [`packages/tests/repo/direct-write-check/`](../../packages/test
 - SQL assembled from pieces no single literal holds, and a write to a table that is not a model of
   `apps/api-v1/prisma/schema.prisma`.
 - Whether a surface is on an incoming path at all: the check inventories surfaces; the classes in the registry are a
-  human reading of the code.
+  human reading of the code. The review pins make a class change visible; they do not make a class true.
+- Evasions by syntax: an opener or write called by element access (`sql['begin'](...)`) or through a bound or
+  destructured method, a subclass of the PostgreSQL backend that does not repeat `implements`, and a re-export of a
+  wiring module (`export ... from`).
+- The state of `main` itself: the check runs in the governance gate of each pull request at that pull request's head,
+  not on a `main` push, so two pull requests that each pass alone can leave `main` with source and registry differing
+  until the next pull request runs it.
