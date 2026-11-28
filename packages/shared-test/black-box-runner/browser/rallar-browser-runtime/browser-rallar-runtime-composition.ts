@@ -78,7 +78,6 @@ import type {
     BlackBoxRallarControlSubmitInput,
     BlackBoxRallarDirectorOutputRecord
 } from './black-box-rallar-operation-contracts.ts';
-import { computeAlmConformanceQosDefaults } from './messaging/compute-alm-conformance-qos-defaults.ts';
 import {
     replayBlackBoxCapturedMessage,
     type BlackBoxCapturedMessageReplay
@@ -238,7 +237,7 @@ export function createBlackBoxBrowserRallarRuntimeDependency(
     const { state, session, stateEvents, messaging, realtime } = createBrowserParticipantCore({
         foundation,
         delivery: browserDeliveryComposition,
-        qosProvider: { defaultsForMessage: computeAlmConformanceQosDefaults },
+        qosProvider: {},
         readVolatileSessionLimits: input.readVolatileSessionLimits,
         readPublicationStageLimits: input.readPublicationStageLimits
     });

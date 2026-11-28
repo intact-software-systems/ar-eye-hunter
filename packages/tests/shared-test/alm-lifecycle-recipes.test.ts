@@ -31,8 +31,14 @@ describe('ALM lifecycle recipe evidence', () => {
                     !Array.isArray(command.payload) && 'specimen' in command.payload && command.payload.specimen === 'supersedence'
                 );
             expect(replaceable).toHaveLength(2);
-            expect(replaceable.map((command) => ({ ack: command.ack, seq: command.seq, orderingKey: command.orderingKey })))
-                .toEqual([{ ack: 'receiver', seq: undefined, orderingKey: undefined }, { ack: 'receiver', seq: undefined, orderingKey: undefined }]);
+            const replaceableSend = { ack: 'receiver', seq: undefined, orderingKey: undefined, supersedenceKey: 'delivery-lifecycle-supersedence' };
+            expect(replaceable.map(({ ack, seq, orderingKey, supersedenceKey }) => ({ ack, seq, orderingKey, supersedenceKey })))
+                .toEqual([replaceableSend, replaceableSend]);
+            expect(
+                scenario!.sender.commands.filter(isRallarBlackBoxTestMessagesSendCommand)
+                    .filter((command) => !replaceable.includes(command))
+                    .map((command) => command.supersedenceKey)
+            ).toEqual([undefined, undefined]);
             expectReplacementSubmittedAfterRelease(scenario!.sender.commands);
             expectNoSingleAcknowledgedObserve(scenario!.sender.commands);
             expectReceiptsAfterSupersedeRelease(scenario!.sender.commands);

@@ -22,6 +22,9 @@ import {
 } from '../alm-conformance-scenario-definition.ts';
 import { toSettledStateCommands } from '../to-settled-state-commands.ts';
 
+/** One key for the cell: both specimens share its sender, room and type, so the replacement supersedes the old. */
+const SUPERSEDENCE_KEY = 'delivery-lifecycle-supersedence';
+
 export const deliveryLifecycle: AlmConformanceScenarioDefinition = {
     scenarioId: 'delivery-lifecycle',
     scenarioKey: 'delivery-lifecycle',
@@ -179,14 +182,14 @@ function toSupersedenceCommands(sender: AlmConformanceStepInput): readonly Ralla
             ...sender,
             index: 3,
             payload: toLifecyclePayload(sender, 'supersedence', 'old'),
-            delivery: { ack: 'receiver' }
+            delivery: { ack: 'receiver', supersedenceKey: SUPERSEDENCE_KEY }
         }),
         ...toRetainedEvidenceCommands({ ...sender, index: 3 }, false),
         toSendCommand({
             ...sender,
             index: 4,
             payload: toLifecyclePayload(sender, 'supersedence', 'replacement'),
-            delivery: { ack: 'receiver' }
+            delivery: { ack: 'receiver', supersedenceKey: SUPERSEDENCE_KEY }
         }),
         ...toAdmissionCommands({ ...sender, index: 4 }),
         ...toSettledStateCommands({ ...sender, index: 3 }, 'superseded'),
