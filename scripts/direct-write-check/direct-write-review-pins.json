@@ -320,6 +320,14 @@
       "class": "transport-direct",
       "stores": ["alm-inbound-admission"]
     },
+    "rowFamilies packages/shared/alm/inbound/al-inbound-ordering-validation.ts#toALInboundBufferedPrefix": {
+      "class": "transport-direct",
+      "stores": ["alm-inbound-admission"]
+    },
+    "rowFamilies packages/shared/alm/inbound/al-inbound-ordering-validation.ts#toALInboundBufferedTrackPrefix": {
+      "class": "transport-direct",
+      "stores": ["alm-inbound-admission"]
+    },
     "rowFamilies packages/shared/alm/inbound/al-inbound-source-validation.ts#toALInboundMessageOwnerKey": {
       "class": "transport-direct",
       "stores": ["alm-inbound-admission"]
