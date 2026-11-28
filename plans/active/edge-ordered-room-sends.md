@@ -1,10 +1,12 @@
 # Edge order: ordered room sends, sorted at the two ends
 
-Status: rulings 1 to 5 and 7 to 12 are made, ruling 6 is open. The verdict is **viable**: the measurement the plan
+Status: rulings 1 to 16 are made. The verdict is **viable**: the measurement the plan
 owed is run (section 2.5, slice 1), and it holds up to 10 messages a second from one sender. Slices 1 to 5 are on
 `main` since 2026-11-27: slices 2 to 4 as PR 916 (one commit that holds PRs 916, 924 and 926), slice 5 as PR 929
 and slice 1 as PR 915 (section 3, "What the slices found"). Slice 6, a real consumer, is being built in PR 947:
-ruling 9 names the game director's event stream, and rulings 10 to 12 settle its design. Edge order builds on the unordered path, which keeps up under load only with PR 885's
+ruling 9 names the game director's event stream, and rulings 10 to 12 settle its design. Ruling 6 keeps hop order as
+it is, so slice 7 changes nothing in hop order: it adds the three lane cells of ruling 13. A small pull request after
+slice 6 builds rulings 14 to 16 (one snapshot for a burst of sync requests, and the room in the gap). Edge order builds on the unordered path, which keeps up under load only with PR 885's
 changes; they are on `main` since the same day, so edge order followed that pull request and did not replace it.
 
 Working name: **edge order**. Today's ordered mode (`orderingKey`) is called **hop order** in this document, because
@@ -434,7 +436,8 @@ Each slice is one pull request and leaves the product working. The riskiest ques
 | 4. Holes, reload and reports        | Done, on `main` (PR 916). The `f` floor for ended sends; the gap report to the app and the usage counters; the caps as growth surfaces; a new stream after a reload; the late joiner.                                                                                | Lane cells under the 25 % seeded loss, across a sender reload and with a late joiner; a long-run memory test.                                                                                | Unretried sends and narrowed audiences.                                                | 5 (what a reload means at receivers)   |
 | 5. Newest wins, and other audiences | Done, on `main` (PR 929). Unretried and `live` sends as "newest wins, a late one is dropped"; one stream per audience for listed, principal and peer sends; supersedence.                                                                                            | A lane cell under seeded loss: never out of order, drops counted.                                                                                                                            | Realtime lanes.                                                                        | None expected                          |
 | 6. A real consumer                  | The game director's event stream (ruling 9) moved to edge order; the product description, the browser README and the realtime skill updated. (Slice 1's measurement with the product code: done, PR 946.)                                                            | The hosted lane and the app's own tests.                                                                                                                                                     |                                                                                        | 9 (which stream)                       |
-| 7. Hop order's future               | Whatever ruling 6 says.                                                                                                                                                                                                                                              |                                                                                                                                                                                              |                                                                                        | 6                                      |
+| 7. The missing lane cells           | Ruling 6 keeps hop order as it is, so nothing is built for it. Ruling 13: conformance-lane cells for the three slice 5 behaviours that have none: narrowed audiences, supersedence and an edge-ordered live channel.                                                 | Each of the three in real browsers over `ws`, `rtc` and `rtc-with-ws-fallback`: never out of order.                                                                                          |                                                                                        |                                        |
+| 8. The director's follow-up         | After slice 6, as its own small pull request. The director answers a burst of sync requests with one snapshot, collected over 250 ms (rulings 14 and 15). An order gap names its room, and the relay fences on it (ruling 16).                                       | A room of several pages that give up the same event gets one snapshot; a session that directs two rooms on one topic has each gap passed to the right relay only.                            |                                                                                        |                                        |
 
 **What the slices found.** Each line is the slice's own report in its pull request. Slices 2 to 4 landed together: on 2026-11-27 the maintainer chose to merge the stack top-down, so PR 926 was merged into PR 924 and PR 924 into PR 916, and PR 916 went to `main` as one commit. Slices 5 and 1 followed the same day, each as its own pull request. The sections above are as they were written before the slices ran, except sections 2.3 to 2.5, which hold slice 1's measurement.
 
@@ -528,7 +531,8 @@ Each slice is one pull request and leaves the product working. The riskiest ques
 - After slice 5: it also serves newest-wins streams, live values, granted channels and narrowed audiences. This is
   where the work stands. No app uses it yet, and `docs/rallar-api-reference.md` does not describe it.
 
-**Hop order at the end (ruling 6).** Three choices, with what follows from each:
+**Hop order at the end (ruling 6). Ruled on 2026-11-28: keep it as it is.** The three choices were, with what
+follows from each:
 
 - **Keep it as it is.** Nothing changes. Browser-origin ordered sends stay available with PR 885's repairs, and stay
   the only order that continues across a reload. The cost is the code and the lane cells that exist today.
@@ -619,8 +623,17 @@ What follows from the ruling: slice 4 adds no stream-to-stream rule. The old str
 by the receiver's stream cap (256 streams) like any other, and the documents say plainly that order holds within one page's
 stream and not across a reload.
 
-**6. Hop order's future (slice 7).** Keep as it is, or keep it for server-authored streams only. See section 3. The
-recommendation is to decide after slice 6, with a consumer and figures in hand.
+**6. Hop order's future (slice 7). Ruled on 2026-11-28: keep it as it is.**
+
+- _Keep it as it is_ (chosen). Nothing is removed. Browser ordered sends stay, with PR 885's repairs, as the only
+  order that continues across a sender reload. Slice 6's documents say when to use which mode.
+- _Server-authored streams only_ (not chosen). It would have refused a browser send with `orderingKey`: a public API
+  change, and the conformance lane's browser-ordered cells would have had to go or be rewritten.
+
+What was known when it was ruled, on `main` at `aa2494be7`: no app sends `orderingKey` from a browser; Relic's
+server authors its round transitions with it (`packages/relic-hunters/server/compute-relic-game-publications.ts`);
+15 scenario files of the conformance lane send it from browsers. Slice 6 was not on `main` yet, so the director's
+stream had no time in use: the ruling was asked earlier than this plan had recommended, at the maintainer's request.
 
 **7. An acknowledged message that has not reached its sorter (found in slice 4). Ruled on 2026-11-27: a short
 settle time.** A sender reads
@@ -743,3 +756,40 @@ director for a snapshot.**
 - _Nothing_ (not chosen). The gap is counted and stated in the diagnostics only.
 - _Ask on every gap_ (not chosen). One sync request for every lost hit, which adds load when the room already
   loses packets.
+
+**13. Lane cells for the slice 5 behaviours that have none (slice 7). Ruled on 2026-11-28: build the three cells.**
+Narrowed audiences, supersedence and an edge-ordered live channel have unit and two-page tests only. The lane
+already has cells for the plain stream, loss, unretried loss, a late joiner, a reload and the granted channel.
+
+- _Build the three cells_ (chosen), over the three carriers. The headless agent's bundle has under 1 KiB of
+  headroom, so the slice may need a budget ruling.
+- _Backlog, then close_ (not chosen). One line in `plans/backlog.md`.
+- _None_ (not chosen). The unit and two-page tests would have stood as the proof.
+
+**14. A burst of sync requests at the director (found in slice 6). Ruled on 2026-11-28: one snapshot for the
+burst.** Every page that gives up the same director event asks for its own snapshot (ruling 12), and the director
+answered each request with one snapshot to the whole room.
+
+- _Coalesce at the director_ (chosen). Requests that arrive within a short window share one snapshot. Its own small
+  pull request, apart from the lane cells.
+- _Leave it_ (not chosen). Game rooms are small.
+- _Measure first_ (not chosen). A count in the relay's diagnostics, and a decision later.
+
+**15. How long the director collects sync requests (with ruling 14). Ruled on 2026-11-28: 250 ms.** The first
+request opens the window. The snapshot is read and sent when the window closes, so every request is answered by a
+snapshot read after it arrived.
+
+- _250 ms_ (chosen). Covers the usual spread of arrival times between pages, and adds at most a quarter second to a
+  repair that has already waited 3 s.
+- _100 ms_ (not chosen). Pages on slow links may fall outside it.
+- _500 ms_ (not chosen). Half a second on every sync answer, a single player's included.
+- _No delay_ (not chosen). Only requests that arrive while a snapshot is being read and sent would share it.
+
+**16. An order gap does not name its room (found in slice 6). Ruled on 2026-11-28: add the room.** A channel is
+declared per topic and type for every room, so a page that follows two rooms cannot tell which room's stream had
+the gap. The relay therefore fenced on the sender only, and a session that directs two rooms on one topic had each
+gap passed to both relays.
+
+- _Add the room to the gap_ (chosen). The gap gains the room's `contextId`, taken from the stream's messages, and
+  the relay fences on it. A small public addition to edge order, built with ruling 14.
+- _Leave it_ (not chosen). The case is rare and costs one needless sync request.
