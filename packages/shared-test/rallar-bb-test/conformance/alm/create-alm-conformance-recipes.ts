@@ -49,6 +49,7 @@ import { fixedListDelivery } from './scenarios/audiences/fixed-list-delivery.ts'
 import { principalDelivery } from './scenarios/audiences/principal-delivery.ts';
 import { worldRouting } from './scenarios/audiences/world-routing.ts';
 import { boundedRejection } from './scenarios/bounded-rejection.ts';
+import { serverCommandRefusedAtCall } from './scenarios/call-refusal/server-command-refused-at-call.ts';
 import { claimExpiresReclaims } from './scenarios/claim/claim-expires-reclaims.ts';
 import { claimFirstWins } from './scenarios/claim/claim-first-wins.ts';
 import { claimRefusedOnRtc } from './scenarios/claim/claim-refused-on-rtc.ts';
@@ -264,6 +265,7 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     wsUnicastReceipt,
     unicastFallback,
     serverCommand,
+    serverCommandRefusedAtCall,
     serverOriginated,
     serverOrderedEntry,
     capacity,

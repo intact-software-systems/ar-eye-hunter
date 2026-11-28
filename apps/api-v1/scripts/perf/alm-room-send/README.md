@@ -566,11 +566,15 @@ Every figure this README states from a run is from one of two reference sets of 
 one machine, one run at a time, or from the one run on the build with the receipt record below.
 Both sets were measured on the build before the durable receipt record, which counted a receipt in
 the memory of the instance that admitted its send, relayed an ACK to it from the others, and stored
-`admitted` as an outbox row. No figure of either set is of the build with the record, where the
-instances count in one record on PostgreSQL and `admitted` is written on the admitting socket. On
-that build one run was made, of the ordered set's five-publisher shape at +5 ms under
-`client-stand-in`, on another machine; its figures are stated apart, below, and are of that build
-only.
+`admitted` as an outbox row. No figure of either set is of a build with the record, where the
+instances count in one record on PostgreSQL and `admitted` is written on the admitting socket. Three
+readings were made on such builds, all from heads of pull request #885 before it merged and none on
+`main` as merged. One run, of the ordered set's five-publisher shape at +5 ms under
+`client-stand-in`, on another machine: its figures are stated apart, below. The sixteen shapes with
+ordered sends, 18 runs on head `29e4c50c` merged with `main` at `430e94f7`, and the sixteen shapes
+with unordered sends, 16 runs on head `a2407688` with the cell as #932 left it, both on the
+reference machine with the cell adapted to count in the record: their figures are in two comments
+on that pull request of 2026-11-27 and are not restated here.
 
 ### The ordered set
 
@@ -640,8 +644,9 @@ What the set supports:
 
 What it does not support: why the receipt is late (no cause was looked for); a spread, with three
 runs of two shapes and one of each other; a comparison with the ordered set, as the
-[limits](#limits) say; and any figure of the build with the receipt record, where no unordered run
-has been made. The smoke on PostgreSQL runs a small unordered cell and proves behaviour, never
+[limits](#limits) say; and any figure of a build with the receipt record. Sixteen unordered runs
+were made on one, pull request #885's head `a2407688`, and are reported in a comment on that pull
+request, not here. The smoke on PostgreSQL runs a small unordered cell and proves behaviour, never
 timing.
 
 ### One run on the build with the receipt record

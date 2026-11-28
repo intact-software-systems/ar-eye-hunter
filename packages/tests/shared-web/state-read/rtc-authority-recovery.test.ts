@@ -71,6 +71,7 @@ import {
     type TransportFaultPort
 } from '@shared/transport-faults/transport-fault-port.ts';
 
+import { requireMessageSendHandle } from '../../shared-test/rallar-browser-runtime/require-message-send-handle.ts';
 import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
 import { createRoomPublicationVerifier } from '../../shared/multicast/rtc-publication-proof-verifier-fixtures.ts';
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from '../../shared/multicast/rtc-topic-subscription-reader-fixtures.ts';
@@ -689,7 +690,9 @@ it('delivers the canonical generated supersedence specimen through the page deco
     const old = await ledger.sendMessage(requireBlackBoxRallarInput(decodeBlackBoxRallarMessageSendInput(sends[0])));
     await vi.advanceTimersByTimeAsync(100);
     expect(sender.messages()).toEqual([]);
-    const replacement = await ledger.sendMessage(requireBlackBoxRallarInput(decodeBlackBoxRallarMessageSendInput(sends[1])));
+    const replacement = requireMessageSendHandle(
+        await ledger.sendMessage(requireBlackBoxRallarInput(decodeBlackBoxRallarMessageSendInput(sends[1])))
+    );
     await vi.advanceTimersByTimeAsync(100);
     expect(await ledger.readReceipts({ connection: 'sender', handleId: old.handleId })).toMatchObject({ state: 'superseded', submitted: false });
     expect(sender.messages()).toEqual([]);

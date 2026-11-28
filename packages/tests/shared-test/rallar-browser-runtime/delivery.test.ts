@@ -52,6 +52,7 @@ import {
     resetFacade
 } from './browser-rallar-runtime-test-harness.ts';
 import { openFacadeDelivery, toRoomRosterSession } from './browser-runtime-facade-test-double.ts';
+import { requireMessageSendHandle } from './require-message-send-handle.ts';
 
 interface DeliveryFixture {
     readonly registry: BrowserRallarDeliveryRegistry;
@@ -943,7 +944,7 @@ it('projects a world send on rtc, refused unsupported by the injected middleware
 it('projects the hand-over to the fallback carrier on every ledger view (D56)', async () => {
     const runtime = await loadDeliveryRuntime();
     await runtime.connect(connection);
-    const { msgId } = await runtime.sendMessage(send);
+    const { msgId } = requireMessageSendHandle(await runtime.sendMessage(send));
     facade.deliveries.record({
         kind: 'carrier-fallback',
         msgId,

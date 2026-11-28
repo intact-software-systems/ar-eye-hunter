@@ -127,6 +127,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
             'qos',
             'maxRepairs',
             'toPeer',
+            'observe',
             'replayOnCarrier'
         ]
     },
@@ -339,6 +340,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES = {
     /** Roles, as `messagesToPeer`: the page resolves each to one session of a fixed audience. */
     messagesRecipientPeer: ['receiver', 'recipient-b'],
     messagesOwnership: ['shared', 'exclusive'],
+    messagesSendObserve: ['call-refused'],
     /** One carrier leg: the carrier a replay or a raw control is admitted on. */
     messagesCarrierLeg: ['ws', 'rtc'],
     faultCarrier: ['ws', 'rtc', 'storage', 'product-socket'],
