@@ -4,6 +4,7 @@ import { BrowserDirectorStatusRuntime } from '@shared-web/browser/director/brows
 import { RoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { createDefaultTimers } from '@shared/resilience/timers.ts';
 
 import { createDefaultTestSession } from '../api-middleware-test-double.ts';
 import { createEdgeOrderPage, type EdgeOrderPage } from '../messages/edge-order/edge-order-page-fixture.ts';
@@ -29,6 +30,7 @@ export function createDirectorRelayPage(sessionId: string, snapshots: readonly G
             isWebSocketDown: () => false
         }),
         messages: page.messages,
+        timers: createDefaultTimers(),
         readSession: () => session
     });
     return { page, session, status, runtime };

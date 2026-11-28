@@ -829,6 +829,38 @@ describe('Rallar Game match', () => {
         });
     });
 
+    it('hands the fresh local director\'s own sync request to its handler and its relay\'s snapshot window, sending no snapshot itself', async () => {
+        const fake = createFakeRallar({ directorPeerId: 'peer-a', directorIsFresh: true });
+        const onSyncRequest = vi.fn();
+        const match = createMatch(fake, {
+            onSyncRequest,
+            readSnapshot: () => ({ tick: 99 })
+        });
+        await match.start();
+
+        const result = await match.requestSync({ reason: 'arena-join' });
+
+        expect(result).toEqual({ status: 'sent', transport: 'local' });
+        expect(onSyncRequest).toHaveBeenCalledOnce();
+        expect(fake.relay.requestSync).toHaveBeenCalledOnce();
+        expect(fake.relay.requestSync).toHaveBeenCalledWith(
+            expect.objectContaining({ kind: 'sync-request', payload: { reason: 'arena-join' } })
+        );
+        expect(fake.relay.sendSnapshot).not.toHaveBeenCalled();
+    });
+
+    it('does not hand the fresh local director\'s own sync request to its relay when the match reads no snapshot', async () => {
+        const fake = createFakeRallar({ directorPeerId: 'peer-a', directorIsFresh: true });
+        const onSyncRequest = vi.fn();
+        const match = createMatch(fake, { onSyncRequest });
+        await match.start();
+
+        expect(await match.requestSync({ reason: 'arena-join' })).toEqual({ status: 'sent', transport: 'local' });
+        expect(onSyncRequest).toHaveBeenCalledOnce();
+        expect(fake.relay.requestSync).not.toHaveBeenCalled();
+        expect(fake.relay.sendSnapshot).not.toHaveBeenCalled();
+    });
+
     it('sets recovery status when the director is stale', async () => {
         const fake = createFakeRallar({
             directorPeerId: 'peer-b',

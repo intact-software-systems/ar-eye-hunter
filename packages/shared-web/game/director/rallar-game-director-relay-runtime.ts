@@ -147,12 +147,8 @@ export class RallarGameDirectorRelayRuntime<TInput, TIntent, TSnapshot, TEvent, 
         }
 
         await this.input.routeEnvelope(envelope, 'sync-request', this.input.config.onSyncRequest);
-        const snapshot = await this.input.config.readSnapshot?.();
-        if (snapshot !== undefined) {
-            const snapshotEnvelope = this.input.createEnvelope('snapshot', snapshot, {
-                directorEpoch: director.appointment.epoch
-            });
-            await this.sendSnapshot(snapshotEnvelope);
+        if (this.input.config.readSnapshot) {
+            await this.ensureRelay().requestSync(envelope);
         }
         return { status: 'sent', transport: 'local' };
     }
