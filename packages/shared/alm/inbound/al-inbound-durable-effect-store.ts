@@ -13,12 +13,16 @@ import {
     computeALOrderingDeliveryPredecessorSeq,
     isALInboundDeliveryReaching
 } from './admission/al-inbound-delivery-progress.ts';
-import { decodeALInboundDeliveryProgress, decodeALInboundOrderingSnapshot } from './al-inbound-ordering-validation.ts';
 import {
     assertALInboundDeliveryOwner,
     decodeALInboundBufferedSnapshot,
+    decodeALInboundDeliveryProgress,
+    decodeALInboundOrderingSnapshot,
     readALInboundBufferedMessage,
+    toALInboundBufferedSlot,
+    toALInboundBufferedTrackPrefix,
     type ALInboundOrderedDeliverySnapshot,
+    type ALInboundResolvedDeliverySnapshot,
     type ALStoredInboundBufferedSnapshot
 } from './al-inbound-ordering-validation.ts';
 import {
@@ -77,9 +81,12 @@ export class ALInboundDurableEffectStore {
             if (beforeSeq <= completedThrough + 1) {
                 return { completedThrough, predecessor: undefined };
             }
-            const next = await this.readSlot(session, trackKey, completedThrough + 1);
+            const next = await this.readSlotMessage(
+                session,
+                await this.readSlot(session, trackKey, completedThrough + 1)
+            );
             if (next !== undefined) {
-                return { completedThrough, predecessor: await this.readSlotPredecessor(session, next) };
+                return { completedThrough, predecessor: await this.readDeliveryPredecessor(session, next) };
             }
             const own = await this.readSlot(session, trackKey, beforeSeq);
             const predecessorSeq = own === undefined
@@ -88,12 +95,12 @@ export class ALInboundDurableEffectStore {
             if (predecessorSeq <= completedThrough) {
                 return { completedThrough, predecessor: undefined };
             }
-            const predecessor = await this.readReachingSlot(session, trackKey, predecessorSeq);
+            const predecessor = await this.readReachingSlotMessage(session, trackKey, predecessorSeq);
             return {
                 completedThrough,
                 predecessor: predecessor === undefined
                     ? await this.readOrderingPredecessor(session, trackKey, predecessorSeq)
-                    : await this.readSlotPredecessor(session, predecessor)
+                    : await this.readDeliveryPredecessor(session, predecessor)
             };
         });
     }
@@ -116,40 +123,43 @@ export class ALInboundDurableEffectStore {
         trackKey: string,
         seq: number
     ): Promise<ALStoredInboundBufferedSnapshot | undefined> {
-        const prefix = `${this.namespace}:buffered:${trackKey}:`;
-        return await session.read(
-            `${prefix}${seq}`,
-            (value, key) => decodeALInboundBufferedSnapshot(value, { trackKey, prefix, key })
-        );
+        const slot = toALInboundBufferedSlot(this.namespace, trackKey, seq);
+        return await session.read(slot.key, (value) => decodeALInboundBufferedSnapshot(value, slot));
     }
 
     /**
-     * The slot whose completed delivery reaches `seq`: its own, read by its key, or on a miss one whose reach a bounded
-     * hold extended past it, found among the track's slots.
+     * The message of the slot whose completed delivery reaches `seq`: its own slot, read by its key, or when that is
+     * absent, or left with its message during the read, one whose reach a bounded hold extended past it, found among
+     * the track's slots.
      */
-    private async readReachingSlot(
+    private async readReachingSlotMessage(
         session: ALAdmissionReadSession,
         trackKey: string,
         seq: number
-    ): Promise<ALStoredInboundBufferedSnapshot | undefined> {
-        const own = await this.readSlot(session, trackKey, seq);
+    ): Promise<ALInboundResolvedDeliverySnapshot | undefined> {
+        const own = await this.readSlotMessage(session, await this.readSlot(session, trackKey, seq));
         if (own !== undefined) {
             return own;
         }
-        const prefix = `${this.namespace}:buffered:${trackKey}:`;
+        const prefix = toALInboundBufferedTrackPrefix(this.namespace, trackKey);
         const slots = await session.list(
             prefix,
             (value, key) => decodeALInboundBufferedSnapshot(value, { trackKey, prefix, key })
         );
-        return slots.find((slot) => isALInboundDeliveryReaching(slot.value, seq))?.value;
+        return await this.readSlotMessage(
+            session,
+            slots.find((slot) => isALInboundDeliveryReaching(slot.value, seq))?.value
+        );
     }
 
-    private async readSlotPredecessor(
+    /** The slot's message, or `undefined` for no slot: none was read, or it expired with its message meanwhile. */
+    private async readSlotMessage(
         session: ALAdmissionReadSession,
-        stored: ALStoredInboundBufferedSnapshot
-    ): Promise<ALInboundDeliveryPredecessor> {
-        const snapshot = await readALInboundBufferedMessage({ database: session, namespace: this.namespace, stored });
-        return await this.readDeliveryPredecessor(session, snapshot);
+        stored: ALStoredInboundBufferedSnapshot | undefined
+    ): Promise<ALInboundResolvedDeliverySnapshot | undefined> {
+        return stored === undefined
+            ? undefined
+            : await readALInboundBufferedMessage({ database: session, namespace: this.namespace, stored });
     }
 
     private async readOrderingPredecessor(

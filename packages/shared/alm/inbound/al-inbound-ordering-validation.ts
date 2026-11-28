@@ -90,6 +90,21 @@ export interface ALInboundBufferedSlot {
     readonly key: string;
 }
 
+/** The prefix every buffered slot of `namespace` is stored under: the one home of the slot key format. */
+export function toALInboundBufferedPrefix(namespace: string): string {
+    return `${namespace}:buffered:`;
+}
+
+/** The prefix every buffered slot of one track is stored under. */
+export function toALInboundBufferedTrackPrefix(namespace: string, trackKey: string): string {
+    return `${toALInboundBufferedPrefix(namespace)}${trackKey}:`;
+}
+
+export function toALInboundBufferedSlot(namespace: string, trackKey: string, seq: number): ALInboundBufferedSlot {
+    const prefix = toALInboundBufferedTrackPrefix(namespace, trackKey);
+    return { trackKey, prefix, key: `${prefix}${seq}` };
+}
+
 export function decodeALInboundOrderingSnapshot(value: unknown): ALOrderingTrackSnapshot {
     const snapshot = decodeALAdmissionRecord(value, ['lastContiguousSeq', 'bufferedSeqs', 'updatedAtMs']);
     const lastContiguousSeq = decodeALAdmissionNumber(snapshot.lastContiguousSeq);
@@ -191,12 +206,29 @@ export interface ReadALInboundBufferedMessageInput {
     readonly stored: ALStoredInboundBufferedSnapshot;
 }
 
-/** The buffered slot only names its message, so every ordering decision resolves the owner row first. */
+/**
+ * The buffered slot only names its message, so every ordering decision resolves the owner row first. When the slot is
+ * the message's only owned work the two expire at one instant, and no backend reads a chain at one snapshot or one
+ * clock reading, so a chain may read the slot before that instant and the row after it, or after a writer that met
+ * both expired deleted them. The slot's own key, read again through `database`, decides: gone, the pair left together
+ * and the chain read no slot (`undefined`); still there, the slot reads as having lost its row, and that is thrown as
+ * corruption. The second read reaches the store everywhere but in a PostgreSQL commit, which answers a key it has read
+ * from the row it recorded then. So any commit there that re-reads a slot (one guarded by a track read, as an
+ * admission's and a bounded hold's end's are; one guarded by a slot read, as a release's and a resync rejection's are;
+ * or a delivery completion's write) and that read it and then lost both rows to the expiry sweep, its own clock still
+ * before their expiry, still throws. In a replay that loses an accepted message silently; in a delivery completion, a
+ * bounded hold's end or a resync rejection it ends the work row `non-retryable`, and a resync rejection's NACK is not
+ * written (those two consequences are read from the code, not run). That one stated case is not decided here.
+ */
 export async function readALInboundBufferedMessage(
     input: ReadALInboundBufferedMessageInput
-): Promise<ALInboundResolvedDeliverySnapshot> {
+): Promise<ALInboundResolvedDeliverySnapshot | undefined> {
     const { database, namespace, stored } = input;
     const owner = await readALInboundStoredMessage({ database, namespace, reference: stored.message });
+    const slot = toALInboundBufferedSlot(namespace, stored.trackKey, stored.seq);
+    if (owner === undefined && !await readALInboundBufferedSlotStored(database, slot)) {
+        return undefined;
+    }
     if (
         owner === undefined || toALOrderingTrackKey(owner.msg) !== stored.trackKey ||
         owner.msg.ordering?.seq !== stored.seq
@@ -217,6 +249,13 @@ export async function readALInboundBufferedMessage(
         ownerRetainUntilMs: owner.retainUntilMs,
         ...(stored.delivery === undefined ? {} : { delivery: stored.delivery })
     };
+}
+
+async function readALInboundBufferedSlotStored(
+    database: Pick<ALAdmissionBackend, 'read'>,
+    slot: ALInboundBufferedSlot
+): Promise<boolean> {
+    return await database.read(slot.key, (value) => decodeALInboundBufferedSnapshot(value, slot)) !== undefined;
 }
 
 export function validateALInboundBufferedMessages(bundle: ALInboundCommitBundle): readonly ALMessageRejection[] {

@@ -6171,6 +6171,36 @@ moved or changed test.
         "requiredConstraint": "Zero encodes when no two controls share a non-null proof identity.",
         "failureRationale": "The grouped result is the same whether or not the scan encodes content it never needs to compare, so only the absent encoder call shows honest traffic pays nothing. D606: a child that reuses one proof over up to 256 altered contents made a relay encode the signed content pairwise, about 90 ms per retried-copy grouping against about 1.2 ms; the encode count is the cost the scan owes and the only observable that tells a linear scan from a pairwise one."
       }
+    },
+    {
+      "id": "ws-live-path-failed-publication-reported-once",
+      "domain": "WS server live-path room publication",
+      "owner": "Rallar realtime maintainers",
+      "summary": "A room send on an undeclared topic whose live notice fails to publish completes its delivery work with no copy written, and the server reports the failure in exactly one error line naming the topic and the message.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/websocket/router/rallar-server-ws-live-path-missed-copy.test.ts#completes the delivery work of a receipted send whose publication failed and writes no copy",
+      "coverageRelation": "The test makes the in-memory notice bus refuse the next publish, offers the send on a real two-instance cluster, and reads the sockets, the topic handler, the delivery work row and the console error port the router's publication writes to.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "console.error, the process log the router's live publication writes a failed publication to",
+        "observableEffect": "The single log line is the only trace an operator has of a room message that reached nobody: the router discards the failed result and the delivery work completes.",
+        "requiredConstraint": "Exactly one error line, naming the topic and the msgId, for one failed publication of one admitted message.",
+        "failureRationale": "Empty sockets and a completed work row look the same whether the loss was reported or silent; only the line on the log port shows it was reported."
+      }
+    },
+    {
+      "id": "ws-live-path-failed-unreceipted-publication-reported-once",
+      "domain": "WS server live-path room publication",
+      "owner": "Rallar realtime maintainers",
+      "summary": "An unreceipted at-least-once room send on an undeclared topic whose live notice fails to publish completes its delivery work with no copy written and no receipt, and the server reports the failure in exactly one error line naming the topic and the message.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/websocket/router/rallar-server-ws-live-path-missed-copy.test.ts#completes the delivery work of an unreceipted send whose publication failed and writes no copy",
+      "coverageRelation": "The test makes the in-memory notice bus refuse the next publish, offers the unreceipted send on a real two-instance cluster, and reads the sockets, the origin's receipts, the topic handler, the delivery work row and the console error port the router's publication writes to.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "console.error, the process log the router's live publication writes a failed publication to",
+        "observableEffect": "With no receipt to report it, the single log line is the only trace anyone has of a room message that reached nobody.",
+        "requiredConstraint": "Exactly one error line, naming the topic and the msgId, for one failed publication of one admitted message.",
+        "failureRationale": "Empty sockets, no receipt and a completed work row look the same whether the loss was reported or silent; only the line on the log port shows it was reported."
+      }
     }
   ],
   "entries": [
@@ -13114,6 +13144,28 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "The absent encode is the requirement itself: content is encoded only for two controls under one non-null proof, so honest controls cost nothing (D606).",
       "semanticCoverage": "packages/tests/shared/alm/inbound/control/is-al-same-receipt-statement-encode-count.test.ts#encodes nothing for honest controls: absent proofs, or pairwise different proofs"
+    },
+    {
+      "id": "test-structure-coupling-79bbf89d6c9529cc",
+      "path": "packages/tests/shared-server/rallar-system/websocket/router/rallar-server-ws-live-path-missed-copy.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ws-live-path-failed-publication-reported-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar realtime maintainers",
+      "rationale": "The one line on the log port is the requirement itself: a failed live publication of an admitted message is reported once, and beyond the origin's eventual timed-out receipt nothing else records the loss.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/websocket/router/rallar-server-ws-live-path-missed-copy.test.ts#completes the delivery work of a receipted send whose publication failed and writes no copy"
+    },
+    {
+      "id": "test-structure-coupling-0a03d609fa2dd438",
+      "path": "packages/tests/shared-server/rallar-system/websocket/router/rallar-server-ws-live-path-missed-copy.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ws-live-path-failed-unreceipted-publication-reported-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar realtime maintainers",
+      "rationale": "The one line on the log port is the requirement itself: a failed live publication of an unreceipted message is reported once, and nothing else records the loss.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/websocket/router/rallar-server-ws-live-path-missed-copy.test.ts#completes the delivery work of an unreceipted send whose publication failed and writes no copy"
     }
   ]
 }

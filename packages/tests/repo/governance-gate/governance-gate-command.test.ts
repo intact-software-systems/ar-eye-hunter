@@ -13,7 +13,8 @@ const requiredPhaseCommands = {
     'check:repo-structure': ['repo-structure', 0],
     'check:repo-style': ['repo-style', 0],
     'check:retained-legacy': ['retained-legacy', 0],
-    'check:transaction-writes': ['transaction-writes', 0]
+    'check:transaction-writes': ['transaction-writes', 0],
+    'check:direct-writes': ['direct-writes', 0]
 } as const;
 
 afterEach(() => {
@@ -35,9 +36,12 @@ describe('governance gate command', () => {
             'retained-legacy fixture success',
             'PASS: governance gate retained-legacy',
             'PASS: governance gate transaction-writes',
-            'PASS: governance gate (4 phases)'
+            'direct-writes fixture success',
+            'PASS: governance gate direct-writes',
+            'PASS: governance gate (5 phases)'
         ]);
         expect(readExecutedPhases(fixtureRoot).sort()).toEqual([
+            'direct-writes',
             'repo-structure',
             'repo-style',
             'retained-legacy',
@@ -84,7 +88,8 @@ describe('governance gate command', () => {
             ['repo-structure', 'check:repo-structure'],
             ['repo-style', 'check:repo-style'],
             ['retained-legacy', 'check:retained-legacy'],
-            ['transaction-writes', 'check:transaction-writes']
+            ['transaction-writes', 'check:transaction-writes'],
+            ['direct-writes', 'check:direct-writes']
         ] as const
     )('attributes a non-zero %s result to its canonical command', (phase, command) => {
         const commands = { ...requiredPhaseCommands, [command]: [phase, 7] as const };
