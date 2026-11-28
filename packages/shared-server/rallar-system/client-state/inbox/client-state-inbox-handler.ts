@@ -375,7 +375,10 @@ export class ClientStateInboxHandler {
         return computed;
     }
 
-    /** The connect's guarded batch is its first write: the ticket, lifecycle and client rows in one statement. */
+    /**
+     * The connect's guarded batch is its first write: the ticket, lifecycle, holder-record and client rows in one
+     * statement.
+     */
     private async writeAuthorisedConnectMutation(
         context: AppInboxMessageContext<AuthorisedWsClientMutationResult>,
         computed: Extract<AuthorisedWsConnectOperationComputed, { outcome: 'completed'; }>

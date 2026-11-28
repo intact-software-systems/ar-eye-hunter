@@ -105,7 +105,7 @@ export type AuthorisedWsConnectOperationComputed =
         & Omit<Extract<ClientMutationOperationComputed, { outcome: 'completed'; }>, 'holderRelease'>
         & {
             ticketConsumption: AuthWsTicketConsumption;
-            /** The ticket, lifecycle and client rows, all written by this one statement. */
+            /** The ticket, lifecycle, holder-record and client rows, all written by this one statement. */
             runtimeBatch: RuntimeStateGuardedBatchWrite;
         }
     >
