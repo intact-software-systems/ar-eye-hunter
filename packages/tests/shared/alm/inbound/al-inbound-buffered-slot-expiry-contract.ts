@@ -213,9 +213,9 @@ export function describeALInboundBufferedSlotExpiryContract(backend: ALInboundBu
             expect(torn).toEqual(late);
         });
 
-        // Three commits re-read a slot: an admission's lists its track, a release's and a delivery completion's read
-        // the slot by its key. A writer that met the copy's slot and message row expired deletes both between the
-        // commit's slot read and its message read.
+        // Each commit that re-reads a slot, by its guard: an admission's lists its track; a release's, a resync
+        // rejection's and a delivery completion's read the slot by its key. A writer that met the copy's slot and
+        // message row expired deletes both between the commit's slot read and its message read.
         for (const commit of LOSING_COMMITS) {
             if (commitSlotReread === 'store') {
                 it(`answers conflict for ${commit} whose commit loses the copy's rows to another writer during its re-read`, async () => {
@@ -260,8 +260,8 @@ export function describeALInboundBufferedSlotExpiryContract(backend: ALInboundBu
     });
 }
 
-/** The three commits that re-read a buffered slot, as the case names read them. */
-const LOSING_COMMITS = ['an admission', 'a release', 'a delivery completion'] as const;
+/** The commits that re-read a buffered slot, as the case names read them. */
+const LOSING_COMMITS = ['an admission', 'a release', 'a resync rejection', 'a delivery completion'] as const;
 
 type LosingCommit = (typeof LOSING_COMMITS)[number];
 
@@ -284,7 +284,27 @@ async function readLosingCommit(
     if (commit === 'a delivery completion') {
         return async () => await store.commitDeliveryCompletion(toCompletion(pair, read));
     }
+    if (commit === 'a resync rejection') {
+        return toLosingResyncRejection(pair, read);
+    }
     return async () => await store.commitBundle(toReleaseCommit(pair, read));
+}
+
+/**
+ * The ordered delivery's own rejection, deciding on the release read made before the tear. It hands the delivery back
+ * (`retry`) only when its commit answers `conflict`; a rejection that commits throws.
+ */
+function toLosingResyncRejection(
+    pair: SeededTrackPair,
+    read: ALInboundBufferedReleaseReadDto
+): () => Promise<'conflict'> {
+    const store = pair.torn.stores.admissionStore;
+    vi.spyOn(store, 'readBufferedRelease').mockResolvedValueOnce(read);
+    const delivery = createInboundTestOrderedDelivery(store);
+    return async () => {
+        expect(await delivery.reject(createOrderedMessage(pair.shortSeq), 1)).toBe('retry');
+        return 'conflict';
+    };
 }
 
 /**
