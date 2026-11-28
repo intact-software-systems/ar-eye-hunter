@@ -9,6 +9,7 @@ import { ADMISSION_PORT_SOURCES, APP_INBOX_SHAPED_SOURCES } from './direct-write
 const repoRoot = process.cwd();
 const commandPath = path.join(repoRoot, 'scripts/direct-write-check/check-direct-writes.mjs');
 const REGISTRY_PATH = 'docs/app-inbox-direct-write-registry.md';
+const PINS_PATH = 'scripts/direct-write-check/direct-write-review-pins.json';
 const BACKEND_PATH = 'packages/shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 const STORES_PATH = 'packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 const INBOUND_PATH = 'packages/shared/alm/inbound/al-inbound-admission-store.ts';
@@ -131,6 +132,67 @@ describe('direct-write check command', () => {
         );
     });
 
+    it('fails before any analysis when the registry moved from the review pins the check reads, or they are missing', () => {
+        const registry = baseRegistry();
+        const [store] = registry.stores;
+        const approval = {
+            state: 'approved',
+            question: 'This writes outside AppInbox: may the inbound store keep its own transaction?',
+            options: ['Keep the direct write.', 'Move the write through AppInbox.'],
+            recommended: 'Move the write through AppInbox.',
+            costOfAppInbox: 'not measured',
+            answer: 'Keep the direct write.',
+            answeredOn: '2026-11-28'
+        };
+        const displayedStore = { ...store, id: 'alm-displayed-record' };
+        const displayedWrite = {
+            id: 'packages/shared/alm/displayed/al-displayed-record.ts#ALDisplayedRecord.write',
+            count: 1,
+            class: 'transport-direct',
+            basis: BASIS,
+            stores: ['alm-displayed-record']
+        };
+        const approved = createTree(baseSources(), { ...registry, stores: [{ ...store, review: approval }] });
+        const fourthStore = createTree(baseSources(), {
+            ...registry,
+            stores: [store, displayedStore],
+            admissionBackendWrites: [...registry.admissionBackendWrites, displayedWrite]
+        });
+        const reclassed = createTree(baseSources(), {
+            ...registry,
+            transactionOpeners: registry.transactionOpeners.map((entry) => entry.class === 'app-inbox' ? { ...entry, class: 'passive-statement' } : entry)
+        });
+        const unpinned = createTree(baseSources(), registry);
+        rmSync(path.join(unpinned, PINS_PATH));
+
+        const results = [approved, fourthStore, reclassed, unpinned].map((root) => runCheck(root));
+
+        expect(results.map((result) => result.status)).toEqual([1, 1, 1, 1]);
+        expect(results.map((result) => `${result.stdout}${result.stderr}`.includes('analysed'))).toEqual([
+            false,
+            false,
+            false,
+            false
+        ]);
+        expect(results[0]?.stderr).toContain(
+            'direct-write.registry-invalid stores: the registry approves [alm-inbound-admission], the review pins approve []'
+        );
+        expect(results[1]?.stderr).toContain(
+            'direct-write.registry-invalid stores: the registry holds [alm-displayed-record under-review, ' +
+                'alm-inbound-admission under-review], the review pins hold [alm-inbound-admission under-review]'
+        );
+        expect(results[1]?.stderr).toContain(
+            `direct-write.registry-invalid admissionBackendWrites ${displayedWrite.id}: ` +
+                'a transport-direct surface the review pins do not hold'
+        );
+        expect(results[2]?.stderr).toContain(
+            'direct-write.registry-invalid classes: the registry holds ' +
+                '{"browser-or-memory":1,"passive-statement":1,"transport-direct":5}, the review pins hold ' +
+                '{"app-inbox":1,"browser-or-memory":1,"transport-direct":5}'
+        );
+        expect(results[3]?.stderr).toContain(`direct-write.registry-invalid ${PINS_PATH} cannot be read as JSON`);
+    });
+
     it('prints each entry that differs from the base registry', () => {
         const root = createTree(baseSources(), baseRegistry());
         git(root, ['init', '--quiet']);
@@ -141,7 +203,8 @@ describe('direct-write check command', () => {
             [REGISTRY_PATH]: toRegistryDocument({
                 ...registry,
                 transactionOpeners: registry.transactionOpeners.filter((entry) => !entry.id.startsWith(WRITER_PATH))
-            })
+            }),
+            [PINS_PATH]: JSON.stringify({ ...basePins(), classCounts: { 'browser-or-memory': 1, 'transport-direct': 5 } })
         });
         writeTree(root, { [WRITER_PATH]: 'export const retired = true;\n' });
 
@@ -210,6 +273,21 @@ function baseRegistry() {
     };
 }
 
+function basePins() {
+    return {
+        approvedStoreIds: [],
+        stores: [{ id: 'alm-inbound-admission', state: 'under-review' }],
+        transportDirectSurfaces: [
+            `admissionBackendConstructions ${STORES_PATH}#createPSqlALInboundRuntimeStores`,
+            `admissionBackendImplementations ${BACKEND_PATH}#PSqlAdmissionWorkBackend`,
+            `admissionBackendWrites ${INBOUND_PATH}#ALInboundAdmissionStore.admit`,
+            `transactionOpeners ${BACKEND_PATH}#PSqlAdmissionWorkBackend.write`,
+            `wiringImports ${STORES_PATH}#import:${BACKEND_PATH}`
+        ],
+        classCounts: { 'app-inbox': 1, 'browser-or-memory': 1, 'transport-direct': 5 }
+    };
+}
+
 function createTree(sources: Readonly<Record<string, string>>, registry: object): string {
     const root = mkdtempSync(path.join(tmpdir(), 'rallar-direct-write-check-'));
     fixtureRoots.push(root);
@@ -226,7 +304,8 @@ function createTree(sources: Readonly<Record<string, string>>, registry: object)
             }
         }),
         'apps/api-v1/prisma/schema.prisma': 'model resource_inbox {\n}\nmodel runtime_state_store {\n}\n',
-        [REGISTRY_PATH]: toRegistryDocument(registry)
+        [REGISTRY_PATH]: toRegistryDocument(registry),
+        [PINS_PATH]: JSON.stringify(basePins(), null, 2)
     });
     return root;
 }

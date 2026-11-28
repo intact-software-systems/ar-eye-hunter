@@ -16,8 +16,10 @@ import { computeQueueWriteFacts } from './queue-write-facts.mjs';
 import { computeRepositoryWriteFacts } from './repository-write-facts.mjs';
 import { computeSqlWriteFacts } from './sql-write-facts.mjs';
 import { computeTransactionOpenerFacts } from './transaction-opener-facts.mjs';
+import { validateDirectWriteReviewPins } from './validate-direct-write-review-pins.mjs';
 
 const REGISTRY_PATH = 'docs/app-inbox-direct-write-registry.md';
+const REVIEW_PINS_PATH = 'scripts/direct-write-check/direct-write-review-pins.json';
 const SCHEMA_PATH = 'apps/api-v1/prisma/schema.prisma';
 const SOURCE_EXTENSIONS = '{ts,tsx,mts,cts}';
 const ANALYSED_SOURCES = [`packages/**/*.${SOURCE_EXTENSIONS}`, `apps/*/src/**/*.${SOURCE_EXTENSIONS}`];
@@ -41,10 +43,11 @@ const EXCLUDED_SOURCES = [
 process.exitCode = runDirectWriteCheck(readArguments(process.argv.slice(2)));
 
 function runDirectWriteCheck({ root, base }) {
-    const read = toDirectWriteRegistry(readFileSync(path.join(root, REGISTRY_PATH), 'utf8'));
-    const issues = read.kind === 'invalid' ? read.issues : validateDirectWriteRegistry(read.registry);
-    if (issues.length > 0) {
-        return reportFailure(issues.map((issue) => ({ line: `direct-write.registry-invalid ${issue}`, advice: '' })));
+    const read = readValidatedRegistry(root);
+    if (read.issues.length > 0) {
+        return reportFailure(
+            read.issues.map((issue) => ({ line: `direct-write.registry-invalid ${issue}`, advice: '' }))
+        );
     }
     const project = loadAnalysedProject(root);
     const scope = toScope(root, read.registry);
@@ -63,6 +66,42 @@ function runDirectWriteCheck({ root, base }) {
     }
     console.log(`PASS: direct-write check (${project.getSourceFiles().length} files analysed)`);
     return 0;
+}
+
+/** The registry, then the review pins it must match; any issue stops the check before the analysis. */
+function readValidatedRegistry(root) {
+    const document = readOptionalText(root, REGISTRY_PATH);
+    if (document === undefined) {
+        return { issues: [`${REGISTRY_PATH} cannot be read`] };
+    }
+    const read = toDirectWriteRegistry(document);
+    const issues = read.kind === 'invalid' ? read.issues : validateDirectWriteRegistry(read.registry);
+    if (issues.length > 0) {
+        return { issues };
+    }
+    const pins = toReviewPins(readOptionalText(root, REVIEW_PINS_PATH));
+    if (pins === undefined) {
+        return { issues: [`${REVIEW_PINS_PATH} cannot be read as JSON`] };
+    }
+    return { registry: read.registry, issues: validateDirectWriteReviewPins(read.registry, pins) };
+}
+
+function readOptionalText(root, repositoryPath) {
+    try {
+        return readFileSync(path.join(root, repositoryPath), 'utf8');
+    }
+    catch {
+        return undefined;
+    }
+}
+
+function toReviewPins(text) {
+    try {
+        return text === undefined ? undefined : JSON.parse(text);
+    }
+    catch {
+        return undefined;
+    }
 }
 
 function computeDirectWriteFacts(project, scope) {

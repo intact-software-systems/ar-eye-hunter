@@ -7,12 +7,14 @@ import {
     toDirectWriteRegistry,
     validateDirectWriteRegistry
 } from '../../../../scripts/direct-write-check/direct-write-registry.mjs';
+import { validateDirectWriteReviewPins } from '../../../../scripts/direct-write-check/validate-direct-write-review-pins.mjs';
 
 const FENCE = 'app-inbox-direct-write-registry-v1';
 const REGISTRY_PATH = 'docs/app-inbox-direct-write-registry.md';
+const REVIEW_PINS_PATH = 'scripts/direct-write-check/direct-write-review-pins.json';
 /**
  * The stores the maintainer has approved to write outside AppInbox, by id. Moving an entry to approved needs an
- * edit here, in a diff whose only content is that id. Owner: repository-governance maintainers. Removal condition:
+ * edit here and in the review pins the check reads. Owner: repository-governance maintainers. Removal condition:
  * the maintainer's revisit has ruled on every under-review store.
  */
 const APPROVED_DIRECT_WRITE_IDS: readonly string[] = [];
@@ -104,6 +106,17 @@ describe('direct-write registry contract', () => {
         ]);
     });
 
+    it('refuses an under-review store raised on any day but the one the three stores were found', () => {
+        const registry = registryWith({
+            review: { state: 'under-review', since: '2026-11-28', raised: 'The maintainer revisit of 2026-11-27.' }
+        });
+
+        expect(validateDirectWriteRegistry(registry)).toEqual([
+            'stores alm-example-store: since must be 2026-11-27; under-review is the state of the stores found that day, ' +
+            'never of a new write'
+        ]);
+    });
+
     it('refuses an approval that is incomplete, placeholder, unasked under the rule, or dated before the rule', () => {
         const registry = registryWith({
             review: {
@@ -157,7 +170,7 @@ describe('the committed direct-write registry', () => {
     });
 
     it('keeps every transport-direct store under review and says that no entry is approved', () => {
-        const stores = (registry as { readonly stores?: readonly { readonly id: string; readonly review?: { readonly state?: string; }; }[]; }).stores ?? [];
+        const stores = (registry as CommittedRegistry).stores ?? [];
 
         expect(stores.map((store) => [store.id, store.review?.state])).toEqual([
             ['alm-inbound-admission', 'under-review'],
@@ -168,7 +181,28 @@ describe('the committed direct-write registry', () => {
             'An entry records that a write exists. It is not an approval. No entry in this file is approved.'
         );
     });
+
+    it('matches the review pins the check reads, which approve nothing and hold the three stores under review', () => {
+        const pins = JSON.parse(readFileSync(path.join(process.cwd(), REVIEW_PINS_PATH), 'utf8')) as CommittedReviewPins;
+
+        expect(validateDirectWriteReviewPins(registry, pins)).toEqual([]);
+        expect(pins.approvedStoreIds).toEqual([...APPROVED_DIRECT_WRITE_IDS]);
+        expect(pins.stores).toEqual([
+            { id: 'alm-inbound-admission', state: 'under-review' },
+            { id: 'alm-outbound-admission', state: 'under-review' },
+            { id: 'alm-receipt-record', state: 'under-review' }
+        ]);
+    });
 });
+
+interface CommittedRegistry {
+    readonly stores?: readonly { readonly id: string; readonly review?: { readonly state?: string; }; }[];
+}
+
+interface CommittedReviewPins {
+    readonly approvedStoreIds: readonly string[];
+    readonly stores: readonly { readonly id: string; readonly state: string; }[];
+}
 
 type JsonValue = string | number | boolean | null | readonly JsonValue[] | JsonObject;
 

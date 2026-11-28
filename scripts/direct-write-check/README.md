@@ -21,6 +21,10 @@
     {
       "path": "scripts/direct-write-check/direct-write-registry.mjs",
       "symbol": "validateDirectWriteRegistry"
+    },
+    {
+      "path": "scripts/direct-write-check/validate-direct-write-review-pins.mjs",
+      "symbol": "validateDirectWriteReviewPins"
     }
   ]
 }
@@ -41,7 +45,12 @@ governance-gate phase. An entry in the registry records that a write exists; it 
   (`--base`, default `origin/main`; a missing base prints `base not available` and does not fail).
 - [direct-write-registry.mjs](./direct-write-registry.mjs) owns the block format: `toDirectWriteRegistry` reads the one
   fenced block and `validateDirectWriteRegistry` returns every issue, including the rules that keep an `under-review`
-  store free of any answer and an `approved` one complete.
+  store free of any answer, dated the day the three stores were found, and an `approved` one complete.
+- [validate-direct-write-review-pins.mjs](./validate-direct-write-review-pins.mjs) compares the registry with
+  [direct-write-review-pins.json](./direct-write-review-pins.json), read from the analysed tree: the approved store ids
+  (none), the stores and their states, every `transport-direct` surface, and the number of surfaces in each class. An
+  approval, a new store, a new or removed `transport-direct` surface, or a surface added or given another class fails
+  with `direct-write.registry-invalid` before any analysis until that file changes too.
 - The fact sets, each `computeXxxFacts(project, scope)` over shared walks in
   [direct-write-sites.mjs](./direct-write-sites.mjs):
   [admission-backend-facts.mjs](./admission-backend-facts.mjs) (port implementations, PostgreSQL constructions, port

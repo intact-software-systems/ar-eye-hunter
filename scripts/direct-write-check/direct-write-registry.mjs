@@ -147,6 +147,11 @@ function validateUnderReview(review) {
     if (!isIsoDate(review.since)) {
         issues.push('since must be an ISO date (YYYY-MM-DD)');
     }
+    else if (review.since !== DIRECT_WRITE_RULE_DATE) {
+        issues.push(
+            `since must be ${DIRECT_WRITE_RULE_DATE}; under-review is the state of the stores found that day, never of a new write`
+        );
+    }
     if (!hasConcreteText(review.raised)) {
         issues.push('raised must say where the review was raised');
     }
