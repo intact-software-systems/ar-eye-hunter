@@ -113,7 +113,7 @@ export interface LiveRoomSendInput {
 
 /** The session every case sends from. */
 export const LIVE_ROOM_ORIGIN = 'p';
-/** The room most cases use: the origin and one recipient on each instance. */
+/** The room most cases use: the origin and two recipients, `r1` and `r2`; each case chooses their instances. */
 export const LIVE_ROOM_SESSION_IDS: readonly string[] = [LIVE_ROOM_ORIGIN, 'r1', 'r2'];
 
 /** The receipt fixture's room: its `roomMessage` is a send to this room on this implicit topic. */

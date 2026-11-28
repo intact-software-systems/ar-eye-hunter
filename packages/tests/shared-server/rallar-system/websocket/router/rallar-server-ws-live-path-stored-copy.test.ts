@@ -1,5 +1,6 @@
 // Ruling M1 and slice 4 cited below are the maintainer's ruling on R16 of plans/active/alm-v1-production-readiness.md
-// (a room copy missed on the default fan-out) and that item's repair on a server of one process.
+// (a room copy missed on the default fan-out) and that item's repair on a server of one process, numbered within R16
+// and not the plan's own slices.
 import { describe, expect, it } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';

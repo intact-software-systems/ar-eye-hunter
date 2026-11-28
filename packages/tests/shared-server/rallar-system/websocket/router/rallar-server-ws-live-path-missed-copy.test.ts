@@ -1,5 +1,6 @@
 // The rulings M1, M7 and M8 cited below are the maintainer's rulings on R16 of plans/active/alm-v1-production-readiness.md
-// (a room copy missed on the default fan-out); slices 2 and 3 are that item's resend and its failed-NOTIFY republication.
+// (a room copy missed on the default fan-out); slices 2 and 3 are that item's resend and its failed-NOTIFY republication,
+// numbered within R16 and not the plan's own slices.
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -36,7 +37,7 @@ const LIFETIME_MS = 10_000;
 const ACK_TIMEOUT_MS = 2_000;
 /** The line `publishRallarServerLiveWsNotice` prints for an admitted message whose notice failed to publish. */
 const PUBLICATION_FAILED_LINE = 'Rallar server WS admitted publication failed for room.notification (m-1): NOTIFY failed';
-/** Over the 8,000 bytes a notice carries inline, so the notice carries the message's key in the inbound store. */
+/** Over the 8,000 bytes below which a notice carries the message inline, so it carries the message's key instead. */
 const KEY_NOTICE_TEXT = 'x'.repeat(9_000);
 
 describe('a room send on an undeclared topic, live-only across two instances', () => {
@@ -201,8 +202,10 @@ describe('a room send on an undeclared topic, live-only across two instances', (
 
     // P7. Pins what a resend sent as a key notice would meet: such a notice names no recipients, so the receiving
     // instance writes the copy to every session of the stored admitted audience it holds, the origin's own socket
-    // there included. An inline notice names its recipients and leaves the origin out. Slice 2 builds on it; no ruling
-    // turns it.
+    // there included. An inline notice names its recipients and leaves the origin out. The origin's socket on b stands
+    // for an origin connected to another instance than the one it sent on. While this holds, a resend narrowed to the
+    // recipients that have not confirmed cannot go out as a key notice. No ruling covers whether the origin's own
+    // socket should receive the copy; that question is with the maintainer.
     it('writes a key notice\'s copy to every admitted session on the receiving instance, the origin\'s own socket included', async () => {
         const fixture = await createLiveRoomClusterFixture({ roomSessionIds: LIVE_ROOM_SESSION_IDS, volatileInbound: false });
         const { a, b } = fixture.instances;

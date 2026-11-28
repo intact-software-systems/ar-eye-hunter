@@ -6184,7 +6184,7 @@ moved or changed test.
         "ownedPort": "console.error, the process log the router's live publication writes a failed publication to",
         "observableEffect": "The single log line is the only trace an operator has of a room message that reached nobody: the router discards the failed result and the delivery work completes.",
         "requiredConstraint": "Exactly one error line, naming the topic and the msgId, for one failed publication of one admitted message.",
-        "failureRationale": "Empty sockets and a completed work row look the same whether the loss was reported or silent; only the line on the log port shows it was reported. The count stays one while the publish is retried successfully, as in this case, and rises by one only for each retried publish that fails."
+        "failureRationale": "Empty sockets and a completed work row look the same whether the loss was reported or silent; only the line on the log port shows it was reported."
       }
     },
     {
@@ -6199,7 +6199,7 @@ moved or changed test.
         "ownedPort": "console.error, the process log the router's live publication writes a failed publication to",
         "observableEffect": "With no receipt to report it, the single log line is the only trace anyone has of a room message that reached nobody.",
         "requiredConstraint": "Exactly one error line, naming the topic and the msgId, for one failed publication of one admitted message.",
-        "failureRationale": "Empty sockets, no receipt and a completed work row look the same whether the loss was reported or silent; only the line on the log port shows it was reported. The count stays one while the publish is retried successfully, as in this case, and rises by one only for each retried publish that fails."
+        "failureRationale": "Empty sockets, no receipt and a completed work row look the same whether the loss was reported or silent; only the line on the log port shows it was reported."
       }
     }
   ],
