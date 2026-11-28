@@ -24,9 +24,13 @@ interface Snapshot {
     readonly revision: number;
 }
 
-/** What the director's application holds and was asked: the snapshot it answers with and the requests it saw. */
+/**
+ * What the director's application holds and was asked: the snapshot it answers with, how often the relay read it, and
+ * the requests it saw.
+ */
 interface DirectorApplication {
     snapshot: Snapshot;
+    snapshotReads: number;
     readonly syncRequests: RallarMessagePayload[];
 }
 
@@ -34,7 +38,6 @@ interface DirectorRelay {
     readonly page: EdgeOrderPage;
     readonly relay: RallarDirectorRelayHandle<never, never, Snapshot>;
     readonly application: DirectorApplication;
-    readonly readSnapshot: ReturnType<typeof vi.fn<() => Snapshot>>;
 }
 
 interface SyncRoom {
@@ -57,8 +60,11 @@ function createRoomSnapshot(directorSessionId: string, epoch: number): GroupSnap
 }
 
 function createDirectorRelay(page: DirectorRelayPage, snapshot: GroupSnapshot, readsSnapshot: boolean): DirectorRelay {
-    const application: DirectorApplication = { snapshot: { revision: 1 }, syncRequests: [] };
-    const readSnapshot = vi.fn(() => application.snapshot);
+    const application: DirectorApplication = { snapshot: { revision: 1 }, snapshotReads: 0, syncRequests: [] };
+    const readSnapshot = () => {
+        application.snapshotReads += 1;
+        return application.snapshot;
+    };
     const relay = page.runtime.create<never, never, Snapshot>({
         roomRef: snapshot.group,
         topicId: TOPIC_ID,
@@ -73,7 +79,7 @@ function createDirectorRelay(page: DirectorRelayPage, snapshot: GroupSnapshot, r
             application.syncRequests.push(message.data);
         }
     });
-    return { page: page.page, relay, application, readSnapshot };
+    return { page: page.page, relay, application };
 }
 
 function createSyncRoom(readsSnapshot = true): SyncRoom {
@@ -168,7 +174,7 @@ describe('the director\'s answer to a burst of sync requests', () => {
         await settleTurns();
 
         expect(readSentSnapshots(room.director.page)).toEqual([{ revision: 2 }]);
-        expect(room.director.readSnapshot).toHaveBeenCalledOnce();
+        expect(room.director.application.snapshotReads).toBe(1);
     });
 
     it('opens a new window for a request that arrives after the last one closed', async () => {

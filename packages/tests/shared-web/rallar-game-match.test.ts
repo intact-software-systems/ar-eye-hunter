@@ -831,9 +831,11 @@ describe('Rallar Game match', () => {
 
     it('hands the fresh local director\'s own sync request to its handler and its relay\'s snapshot window, sending no snapshot itself', async () => {
         const fake = createFakeRallar({ directorPeerId: 'peer-a', directorIsFresh: true });
-        const onSyncRequest = vi.fn();
+        const effects = recordOwnSyncRequestEffects(fake);
         const match = createMatch(fake, {
-            onSyncRequest,
+            onSyncRequest: (request) => {
+                effects.push({ effect: 'onSyncRequest', envelope: request });
+            },
             readSnapshot: () => ({ tick: 99 })
         });
         await match.start();
@@ -841,24 +843,27 @@ describe('Rallar Game match', () => {
         const result = await match.requestSync({ reason: 'arena-join' });
 
         expect(result).toEqual({ status: 'sent', transport: 'local' });
-        expect(onSyncRequest).toHaveBeenCalledOnce();
-        expect(fake.relay.requestSync).toHaveBeenCalledOnce();
-        expect(fake.relay.requestSync).toHaveBeenCalledWith(
-            expect.objectContaining({ kind: 'sync-request', payload: { reason: 'arena-join' } })
-        );
-        expect(fake.relay.sendSnapshot).not.toHaveBeenCalled();
+        const syncRequest = expect.objectContaining({ kind: 'sync-request', payload: { reason: 'arena-join' } });
+        expect(effects).toEqual([
+            { effect: 'onSyncRequest', envelope: syncRequest },
+            { effect: 'relay.requestSync', envelope: syncRequest }
+        ]);
     });
 
     it('does not hand the fresh local director\'s own sync request to its relay when the match reads no snapshot', async () => {
         const fake = createFakeRallar({ directorPeerId: 'peer-a', directorIsFresh: true });
-        const onSyncRequest = vi.fn();
-        const match = createMatch(fake, { onSyncRequest });
+        const effects = recordOwnSyncRequestEffects(fake);
+        const match = createMatch(fake, {
+            onSyncRequest: (request) => {
+                effects.push({ effect: 'onSyncRequest', envelope: request });
+            }
+        });
         await match.start();
 
         expect(await match.requestSync({ reason: 'arena-join' })).toEqual({ status: 'sent', transport: 'local' });
-        expect(onSyncRequest).toHaveBeenCalledOnce();
-        expect(fake.relay.requestSync).not.toHaveBeenCalled();
-        expect(fake.relay.sendSnapshot).not.toHaveBeenCalled();
+        expect(effects).toEqual([
+            { effect: 'onSyncRequest', envelope: expect.objectContaining({ kind: 'sync-request' }) }
+        ]);
     });
 
     it('sets recovery status when the director is stale', async () => {
@@ -1012,6 +1017,26 @@ describe('Rallar Game match', () => {
         });
     });
 });
+
+/** What a director's own sync request reached, in order: its handler, its relay's sync request or a snapshot send. */
+interface OwnSyncRequestEffect {
+    readonly effect: 'onSyncRequest' | 'relay.requestSync' | 'relay.sendSnapshot';
+    readonly envelope: unknown;
+}
+
+/** The fake relay's sync request and snapshot sends, recorded into the log the test's handler also writes. */
+function recordOwnSyncRequestEffects(fake: FakeRallar): OwnSyncRequestEffect[] {
+    const effects: OwnSyncRequestEffect[] = [];
+    vi.mocked(fake.relay.requestSync).mockImplementation(async (envelope) => {
+        effects.push({ effect: 'relay.requestSync', envelope });
+        return { status: 'sent' };
+    });
+    vi.mocked(fake.relay.sendSnapshot).mockImplementation(async (envelope) => {
+        effects.push({ effect: 'relay.sendSnapshot', envelope });
+        return { status: 'sent' };
+    });
+    return effects;
+}
 
 function createMatch(
     fake: FakeRallar,
