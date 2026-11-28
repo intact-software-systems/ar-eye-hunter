@@ -55,7 +55,9 @@ describe('governance gate workflow', () => {
         expect(packageJson.scripts).toMatchObject({
             'check:repo-structure': 'node scripts/repo-structure-check.mjs',
             'check:repo-style': 'node scripts/repo-style-check.mjs --cognitive-metrics',
-            'check:retained-legacy': 'node scripts/review-legacy.mjs origin/main HEAD --registry docs/production-legacy-exceptions.md'
+            'check:retained-legacy': 'node scripts/review-legacy.mjs origin/main HEAD --registry docs/production-legacy-exceptions.md',
+            'check:transaction-writes': 'node scripts/transaction-write-check/check-transaction-writes.mjs',
+            'check:direct-writes': 'node scripts/direct-write-check/check-direct-writes.mjs'
         });
     });
 

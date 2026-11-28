@@ -12,6 +12,7 @@ export const exactBuildContractPaths = new Set([
     'apps/api-v1/README.md',
     'docker-compose.yml',
     'docs/README.md',
+    'docs/app-inbox-direct-write-registry.md',
     'docs/architecture.md',
     'docs/environment-variables.md',
     'docs/github-actions-black-box-headless-runbook.md',

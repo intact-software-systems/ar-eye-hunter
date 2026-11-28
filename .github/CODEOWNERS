@@ -1,0 +1,7 @@
+# A record of ownership. No branch protection is assumed to enforce it. What binds an agent is AGENTS.md: a write
+# outside AppInbox is never implied and its code follows only the maintainer's approval, whoever merges. When an agent
+# commits to or pushes the default branch, the review that happens is the one in the request AGENTS.md requires for a
+# change to the registry file named below, which quotes that file's whole diff. A merge the maintainer performs in
+# GitHub makes no such request; the pull request's own statement of writes outside AppInbox and its diff are then the
+# record.
+/docs/app-inbox-direct-write-registry.md @intact-software-systems
