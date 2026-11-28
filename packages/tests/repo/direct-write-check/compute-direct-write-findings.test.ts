@@ -39,7 +39,8 @@ describe('direct-write findings', () => {
 
         expect(finding?.advice).toBe(
             'If this write is on an incoming path, the proposal must first say "This writes outside AppInbox" ' +
-                '(convergent-service-writing.md, "Writes outside AppInbox"). Registering it records that it exists; ' +
+                '(convergent-service-writing.md, "Writes outside AppInbox"). Code for such a write follows only after the ' +
+                'maintainer approves it; without that approval, remove the write. Registering it records that it exists; ' +
                 'it is not an approval.'
         );
     });
