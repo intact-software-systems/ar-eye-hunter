@@ -49,10 +49,11 @@ an approval also needs an edit to the pinned list `APPROVED_DIRECT_WRITE_IDS` in
 `packages/tests/repo/direct-write-check/direct-write-registry.test.ts`, which is empty. These files and tests are
 friction, not a control: they make a change deliberate and visible in the same pull request, and whoever edits this file
 can edit them too. No check can tell a quoted answer the maintainer gave from one an agent wrote, or tell whether a class
-is true. What binds an agent is the rule in `AGENTS.md`: when an agent commits to or pushes the default branch, the
-review that happens is the one in the request that rule requires for a change to this file, which quotes this file's
-whole diff and says which entries were added, removed or given another class. A merge the maintainer performs in GitHub
-makes no such request.
+is true. What binds an agent is `AGENTS.md`: a write outside AppInbox is never implied and its code follows only the
+maintainer's approval, whoever merges. When an agent commits to or pushes the default branch, the review that happens is
+the one in the request `AGENTS.md` requires for a change to this file, which quotes this file's whole diff and says
+which entries were added, removed or given another class. A merge the maintainer performs in GitHub makes no such
+request; the pull request's own statement of writes outside AppInbox and its diff are then the record.
 
 ## Classes
 
@@ -98,8 +99,11 @@ maintainer's approval before the code exists: the proposal says "This writes out
 and the answer as the canonical service reference requires, and the write enters this file only as an `approved` store.
 `under-review` is the state of the three stores found on 2026-11-27 and is never the state of a new write. Without that
 approval, remove the write.
-When it reports `direct-write.stale-entry` or `direct-write.changed`, re-key or update the entry; that changes no
-review. A `basis` says what was read in the code, in one sentence.
+When it reports `direct-write.stale-entry`, remove the entry or re-key it to the owner that now holds the write; that
+changes no review. When it reports `direct-write.changed` for a `transport-direct` surface, the change widens a store
+under review if it adds a write (a larger count, a new statement or method): it needs the maintainer's approval first,
+as above, and without it the change is removed. For any other surface, update the entry and say in the pull request why
+it changed. A `basis` says what was read in the code, in one sentence.
 
 ```app-inbox-direct-write-registry-v1
 {
@@ -184,7 +188,7 @@ review. A `basis` says what was read in the code, in one sentence.
         "An incoming ACK control: onControlMessage -> receipts.acceptControlMessage (ws-queue-box-server-service.ts)."
       ],
       "transaction": "PSqlAdmissionWorkBackend.write opens its own transaction with this.sql.begin; AppInbox is not involved. Its worker (receipt-record/al-receipt-record-worker.ts) claims and releases resource_inbox rows through the backend's own queue, backend.workQueue, with the ALM work queue port (work/al-work-queue-port.ts), outside write.",
-      "earlierRecord": "D770 and D779 in playground/alm/alm-improvement-plan.md are an earlier decision record of this store, written before the rule of 2026-11-27. It is not an approval; the maintainer has not ruled.",
+      "earlierRecord": "Decision rows D770 and D779 of the ALM improvement plan are an earlier decision record of this store, written before the rule of 2026-11-27. That plan is a temporary document under `playground/alm/` and is removed when ALM is feature complete. The record is not an approval; the maintainer has not ruled.",
       "review": {
         "state": "under-review",
         "since": "2026-11-27",
@@ -1041,7 +1045,7 @@ review. A `basis` says what was read in the code, in one sentence.
       "methods": [
         "enqueueIfAbsent"
       ],
-      "basis": "Arms the activation-status clock row with enqueueIfAbsent on the outbox, a Pick-narrowed queue. Trigger: the topology work cycle, which the code comment at its composition names as the only producer; this entry did not trace it further."
+      "basis": "Arms the activation-status clock row with enqueueIfAbsent on the outbox, a Pick-narrowed queue. Trigger: petitionGroupActivationStatus (group-activation-status-observer.ts), called only by the RTC topology work handler and by the clock's own work handler, both outbox message handlers installed by install-topology-app-outbox.ts."
     },
     {
       "id": "packages/shared-server/queuebox/postgres/p-sql-queue-box.ts#PSqlQueueBox.cleanup",

@@ -57,9 +57,10 @@ describe('direct-write findings', () => {
         );
 
         expect(widened?.advice).toBe(
-            'This surface belongs to a store under review. A larger count, a new namespace, statement or method widens ' +
-                'that store: it needs the maintainer\'s approval first (convergent-service-writing.md, "Writes outside ' +
-                'AppInbox"). Without it, remove the change.'
+            'This surface belongs to a store under review. If the change adds a write (a larger count, a new statement ' +
+                'or method), it widens that store and needs the maintainer\'s approval first (convergent-service-writing.md, ' +
+                '"Writes outside AppInbox"); without that approval, remove the change. If it only removes a write, update ' +
+                'the entry and the review pins.'
         );
         expect(moved?.advice).toBe('Update the entry to what the source now holds, and say in the pull request why it changed.');
     });
