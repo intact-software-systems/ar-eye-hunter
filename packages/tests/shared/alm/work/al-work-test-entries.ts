@@ -1,9 +1,16 @@
+import { onTestFinished } from 'vitest';
+
 import type {
     ALWorkDiagnostics,
     ALWorkReadinessProbeDiagnostics,
     ALWorkReadySelection
 } from '@shared/alm/work/al-work-handler.ts';
-import type { ALWorkClaim, ALWorkOutcome, ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
+import type {
+    ALWorkClaim,
+    ALWorkOutcome,
+    ALWorkQueuePort,
+    ALWorkRelease
+} from '@shared/alm/work/al-work-queue-port.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import {
     EntityStatus,
@@ -11,6 +18,7 @@ import {
     toResourceEntryWithKey,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 const RETRY_PAGE_SIZE = 16;
 
@@ -115,4 +123,23 @@ export function toFakeALWorkClaim(effectId: string): ALWorkClaim {
 /** The queue key of the fake claim for `effectId`, as a commit names the rows it wrote. */
 export function toFakeALWorkKey(effectId: string): string {
     return toKeyAsString(toFakeALWorkClaim(effectId).entry.key);
+}
+
+/** An engine stopped when the case finishes. */
+export function createEngine(): InboxOutboxEngine {
+    const engine = new InboxOutboxEngine();
+    onTestFinished(() => engine.stop());
+    return engine;
+}
+
+/** A port whose every flush is kept whole, so a pin can count the batches and read their order. */
+export function recordingPort(claims: readonly string[], flushes: ALWorkRelease[][]): ALWorkQueuePort {
+    return {
+        ...fakePort({ claims, onRelease: () => {} }),
+        releaseAll: async (releases) => {
+            if (releases.length > 0) {
+                flushes.push([...releases]);
+            }
+        }
+    };
 }
