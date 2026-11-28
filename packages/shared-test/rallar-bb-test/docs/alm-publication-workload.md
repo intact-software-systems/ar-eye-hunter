@@ -116,7 +116,7 @@ Each publisher then runs:
 5. `stats`, then the `complete` barrier, whose timeout holds every command of the window, the two
    fault steps included.
 6. Its gate: the stage's `admitted` counter is at least `minAcceptedSends`; under a seeded loss,
-   then `publication-workload-publisher-assert-loss-acted`: the release's `acted.drop` is not 0.
+   then `publication-workload-publisher-assert-loss-acted`: the release's `acted.drop` is at least 1.
 
 A subscriber waits at the `complete` barrier and then runs:
 
@@ -243,22 +243,21 @@ the result values of four commands: each publisher's `publication-workload-publi
 (`loop`), `publication-workload-publisher-stats` (`stats`) and
 `publication-workload-publisher-loss-release` (`lossRelease`, `undefined` for a point with no loss),
 and each subscriber's `publication-workload-subscriber-received` (`received`), every one beside its
-`agentId`. `rooms`
-holds one entry per group of the point, in the groups' order, and each names the `group` its results
-were read under. A room holds one result per publisher and one per subscriber of the point,
-`publisherCount` and the plan's `subscriberCount` of them: a run that left fewer is no run of the
-point. A run names an agent once, whatever the room and the role, since an agent runs one recipe in
-one room: a result given twice would count its messages twice, in its room's figures or, given to
-two rooms, in the point's. Its left is `readonly string[]`: every field it could not read, each
-starting with the field's path, which is `$.parameters...`, `$.rooms` for another number of rooms
-than the point's, `$.rooms[r].group` for a room that names another group than the point's at that
-place, `$.rooms[r].publishers` or `$.rooms[r].subscribers` for another number of results than the
-point has agents of that role, `...publishers[p].agentId` or `...subscribers[s].agentId` for each
-result that names an agent an earlier result of the run names, `$.rooms[r].publishers[p].loop...`,
-`$.rooms[r].publishers[p].stats...`, `$.rooms[r].publishers[p].lossRelease...` (a seeded point's
-release with no readable `acted` counts, or a release for a point with no loss) or
-`$.rooms[r].subscribers[s].received...`. The issues come in
-that order: the point's, the rooms', the repeated agents', then the fields of each result. A run
+`agentId`. `rooms` holds one entry per group of the point, in the groups' order, and each names the
+`group` its results were read under. A room holds one result per publisher and one per subscriber of
+the point, `publisherCount` and the plan's `subscriberCount` of them: a run that left fewer is no
+run of the point. A run names an agent once, whatever the room and the role, since an agent runs one
+recipe in one room: a result given twice would count its messages twice, in its room's figures or,
+given to two rooms, in the point's. Its left is `readonly string[]`: every field it could not read,
+each starting with the field's path, which is `$.parameters...`, `$.rooms` for another number of
+rooms than the point's, `$.rooms[r].group` for a room that names another group than the point's at
+that place, `$.rooms[r].publishers` or `$.rooms[r].subscribers` for another number of results than
+the point has agents of that role, `...publishers[p].agentId` or `...subscribers[s].agentId` for
+each result that names an agent an earlier result of the run names,
+`$.rooms[r].publishers[p].loop...`, `$.rooms[r].publishers[p].stats...`,
+`$.rooms[r].publishers[p].lossRelease...` (a seeded point's release with no readable `acted` counts,
+or a release for a point with no loss) or `$.rooms[r].subscribers[s].received...`. The issues come
+in that order: the point's, the rooms', the repeated agents', then the fields of each result. A run
 that breaks several has all of them in its left. A point that breaks a bound has no plan, so its
 results are not counted against it. The record keeps `configured` and `measured` apart, and it
 judges nothing: the recipes' asserts are the gates.
@@ -369,7 +368,9 @@ Read the delivered age under loss with these rules:
 - **Over `rtc`, at a ratio that loses nothing, no sample is missing.** A refused send's sample is in
   the histogram at its late age, 50 ms a refusal. Nothing marks it: a late sample and a repaired
   sample are one thing in the record. At a quarter loss the median does not see it and the 95th
-  percentile does: a percentile sees the late samples once their share passes its rank.
+  percentile does (observed in the three runs of `one-room-rtc-loss` above): a percentile sees the
+  late samples once they are a larger share than lies above its rank, more than 5 % for the 95th
+  (derived from what a percentile is).
 - **Over `rtc`, at a ratio that loses frames, a survivor's age is under about one
   `publishIntervalMs`**, because the next value of the stream ends a frame that is still refused;
   the stream's last frame, which has no successor, can be as old as `ttlMs` (read from the code and
@@ -384,7 +385,10 @@ And with these limits:
 - **The loss is on publishers' pages only**, on every frame of the family's type that page sends:
   the fault matches the type, not the sender. No subscriber arms one, and no inbound frame and no
   control frame is touched. In a room of three, the only rooms the local points have, that is the
-  page's own frames: no page forwards, since each publisher sends straight to both other members.
+  page's own frames: no page forwards, since each publisher sends straight to both other members
+  (observed: in each of the three runs of `one-room-rtc-loss` the accepted overlay gives every
+  member the other two as next hops and the director names no relay; the layout rule for three
+  members was not read).
 - **A subscriber's forward is not lossy**, since a subscriber arms no fault. A publisher's page that
   forwarded another publisher's frames would draw for them and could drop them; that has been
   neither read nor run.

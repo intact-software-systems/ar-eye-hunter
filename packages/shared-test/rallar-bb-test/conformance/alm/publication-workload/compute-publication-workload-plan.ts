@@ -19,8 +19,8 @@ export interface PublicationWorkloadPlan {
     readonly expectedAdmissions: number;
     /**
      * One publisher's admissions the plan expects no subscriber to get: over `ws` the frames the point's seeded loss
-     * drops, derived from its seed and never read from a run; 0 with no loss and on the RTC carriers, whose first hop
-     * sends a refused frame again.
+     * drops, derived from its seed and never read from a run; 0 with no loss and on the RTC carriers, where the
+     * publisher's page submits a refused frame to that next hop again.
      */
     readonly expectedLostFrames: number;
     /**

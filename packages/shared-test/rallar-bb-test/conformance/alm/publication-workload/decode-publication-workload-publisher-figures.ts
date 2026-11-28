@@ -42,8 +42,9 @@ export interface PublicationWorkloadPublisherFigures {
     readonly publicationStage: ALOutboundPublicationStageReport;
     /**
      * The release's `acted.drop`: the sends this publisher's fault dropped. Over `ws` each is a socket write and a
-     * frame no recipient got; over `rtc` each is a send to one next hop that its channel refused and its first hop sent
-     * again 50 ms later. `null` for a point with no loss, whose recipes arm none: never 0 in its place.
+     * frame no recipient got; over `rtc` each is a send to one next hop that its channel refused, and the publisher's
+     * page submits the frame to that next hop again 50 ms later. `null` for a point with no loss, whose recipes arm
+     * none: never 0 in its place.
      */
     readonly droppedSends: number | null;
 }
