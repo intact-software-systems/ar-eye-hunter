@@ -216,6 +216,20 @@ describe('the director\'s answer to a burst of sync requests', () => {
 });
 
 describe('the director\'s own sync request', () => {
+    it('opens a window alone and answers with one snapshot 250 ms later', async () => {
+        const room = createSyncRoom();
+
+        expect(await room.director.relay.requestSync({ reason: 'own-page' })).toEqual({ status: 'sent' });
+        await vi.advanceTimersByTimeAsync(249);
+        await settleTurns();
+        expect(readSentSnapshots(room.director.page)).toEqual([]);
+
+        await vi.advanceTimersByTimeAsync(1);
+        await settleTurns();
+        expect(readSentSnapshots(room.director.page)).toEqual([{ revision: 1 }]);
+        expect(room.director.application.syncRequests).toEqual([]);
+    });
+
     it('joins the window of the room\'s requests without putting a request on the wire', async () => {
         const room = createSyncRoom();
         await deliverSyncRequest(room, 'room');

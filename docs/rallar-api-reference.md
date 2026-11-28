@@ -703,11 +703,13 @@ window. The first request opens the window, and every request that comes in
 while it is open is answered by the one snapshot the relay reads with
 `readSnapshot` when the window closes; `onSyncRequest` still runs once per
 request. On the director's own page `requestSync(...)` sends no sync request:
-it joins the same window and returns `sent`, and returns `not-director` only
-when the relay config has no `readSnapshot`. The snapshot comes from the relay's
-`readSnapshot`, so in Rallar Game, whose `readSnapshot` reads none for a
-session that holds no role or only a spectator's, it is sent only while the
-director's session holds a non-spectator role in the room. A relay stopped
+it joins the same window and returns `sent`. A relay whose config has no
+`readSnapshot` opens no window and answers no sync request with a snapshot; on
+the director's own page its `requestSync(...)` is then refused before sending
+as a command is, `not-director` for a fresh director. The snapshot comes from
+the relay's `readSnapshot`, so in Rallar Game, whose `readSnapshot` reads none
+for a session that holds no role or only a spectator's, it is sent only while
+the director's session holds a non-spectator role in the room. A relay stopped
 inside the window, or one whose appointment moved to another session, sends
 nothing when it closes.
 

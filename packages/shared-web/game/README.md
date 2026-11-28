@@ -40,10 +40,11 @@ are grouped by the owner that makes each runtime decision:
    (reason `event-order-gap`) and does not wait for it, unless the gap is one
    the sender said is over (`ended-at-sender`), most often a lost unreceipted
    event; the next snapshot repairs that one. The director answers a burst of
-   sync requests with one snapshot within 250 ms, and the match's `requestSync`
-   on the director's own page runs `onSyncRequest` and joins the same window;
-   that snapshot comes from the relay's `readSnapshot`, so it is sent only while
-   the director's session holds a non-spectator role in the room.
+   sync requests with one snapshot, 250 ms after the first request, and when the
+   match has a `readSnapshot` the match's `requestSync` on the director's own
+   page runs `onSyncRequest` and joins the same window; that snapshot comes
+   from the relay's `readSnapshot`, so it is sent only while the director's
+   session holds a non-spectator role in the room.
 2. `match/rallar-game-match-status-runtime.ts` owns lifecycle flags, director
    freshness recovery, egress state, and status observers.
 3. Director-owned input is handled locally or relayed by
