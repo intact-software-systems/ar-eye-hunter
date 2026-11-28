@@ -4,7 +4,8 @@ import type { PublicationWorkloadPublisherResults } from '@shared-test/rallar-bb
 import {
     toPublicationWorkloadFigures,
     type PublicationWorkloadRoomResults,
-    type PublicationWorkloadRun
+    type PublicationWorkloadRun,
+    type PublicationWorkloadSubscriberResults
 } from '@shared-test/rallar-bb-test/conformance/alm/publication-workload/to-publication-workload-figures.ts';
 import type { PublicationWorkloadParameters } from '@shared-test/rallar-bb-test/conformance/alm/publication-workload/validate-publication-workload-parameters.ts';
 import {
@@ -31,7 +32,8 @@ const POINT: PublicationWorkloadParameters = {
     ttlMs: 5_000,
     minReceiveRatio: 0.95,
     minSendSuccessRatio: 0.95,
-    readyTimeoutMs: 45_000
+    readyTimeoutMs: 45_000,
+    loss: { kind: 'none' }
 };
 
 /**
@@ -174,7 +176,55 @@ const AGES_ABOVE_50_MS = {
 const PUBLISHER: PublicationWorkloadPublisherResults = {
     agentId: 'agent-1',
     loop: LOOP_RESULT,
-    stats: STATS_RESULT
+    stats: STATS_RESULT,
+    lossRelease: undefined
+};
+
+/** The conformance lane's seeded loss: a quarter of the frames, from seed 7, which drops 18 of 60 frames on ws. */
+const QUARTER_LOSS = { kind: 'seeded', ratio: 0.25, seed: 7 } as const;
+
+const WS_LOSS_POINT: PublicationWorkloadParameters = { ...POINT, carrier: 'ws', loss: QUARTER_LOSS };
+
+/** The value of a loss release's result: the fault's totals, of which a loss only ever drops. */
+function toLossReleaseResult(drop: number): ApiJsonObject {
+    return {
+        faultId: 'publication-workload-loss',
+        injected: true,
+        acted: { drop, delay: 0, rewrite: 0, 'not-ready': 0, backpressure: 0 }
+    };
+}
+
+/** A publisher whose stage handed `admitted` frames to a carrier and whose fault dropped `drop` sends. */
+function toLossPublisher(agentId: string, admitted: number, drop: number): PublicationWorkloadPublisherResults {
+    const counters = { ...PUBLICATION_STAGE.counters, staged: admitted, admitted };
+    return {
+        agentId,
+        loop: { ...LOOP_RESULT, passed: 60, failed: 0 },
+        stats: { rallar: { alm: { publication: { ...PUBLICATION_STAGE, counters } } } },
+        lossRelease: toLossReleaseResult(drop)
+    };
+}
+
+/** `count` samples, all above 10 and up to 20 ms. */
+function toAgesUpTo20Ms(count: number): BoundedHistogram {
+    return {
+        upperBounds: AL_PUBLICATION_FIGURE_AGE_BOUNDS_MS,
+        bucketCounts: [0, 0, 0, 0, count, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        count,
+        sum: 15 * count,
+        min: 11,
+        max: 20
+    };
+}
+
+function toLossSubscriber(agentId: string, observed: number): PublicationWorkloadSubscriberResults {
+    return { agentId, received: toReceivedResult(observed, { ...toAgesUpTo20Ms(observed) }, 0) };
+}
+
+const LOSS_ROOM: PublicationWorkloadRoomResults = {
+    group: GROUP,
+    publishers: [toLossPublisher('agent-1', 60, 17)],
+    subscribers: [toLossSubscriber('agent-2', 43), toLossSubscriber('agent-3', 43)]
 };
 
 const ROOM: PublicationWorkloadRoomResults = {
@@ -319,7 +369,8 @@ const UNREADABLE_RUNS: readonly UnreadableRun[] = [
             publishers: [{
                 agentId: 'agent-1',
                 loop: { ...LOOP_RESULT, passed: '59', pacing: { ...LOOP_RESULT.pacing, achievedRateHz: 'paced' } },
-                stats: {}
+                stats: {},
+                lossRelease: undefined
             }],
             subscribers: [ROOM.subscribers[0], { agentId: 'agent-3', received: { observed: 58 } }]
         }),
@@ -442,6 +493,38 @@ const UNREADABLE_RUNS: readonly UnreadableRun[] = [
         paths: ['$.rooms[1].group']
     },
     {
+        unreadable: 'a publisher of a seeded point that left no value of its loss release',
+        run: {
+            parameters: WS_LOSS_POINT,
+            rooms: [{ ...LOSS_ROOM, publishers: [{ ...LOSS_ROOM.publishers[0], lossRelease: undefined }] }]
+        },
+        paths: ['$.rooms[0].publishers[0].lossRelease']
+    },
+    {
+        unreadable: 'a loss release whose dropped sends are no whole number',
+        run: {
+            parameters: WS_LOSS_POINT,
+            rooms: [{ ...LOSS_ROOM, publishers: [{ ...LOSS_ROOM.publishers[0], lossRelease: toLossReleaseResult(1.5) }] }]
+        },
+        paths: ['$.rooms[0].publishers[0].lossRelease.acted']
+    },
+    {
+        unreadable: 'a loss release for a point with no loss, whose recipes arm none',
+        run: toRunOfRoom({ ...ROOM, publishers: [{ ...PUBLISHER, lossRelease: toLossReleaseResult(0) }] }),
+        paths: ['$.rooms[0].publishers[0].lossRelease']
+    },
+    {
+        unreadable: 'a publisher of a seeded point whose loop and loss release are both unreadable: the loop, then the release',
+        run: {
+            parameters: WS_LOSS_POINT,
+            rooms: [{
+                ...LOSS_ROOM,
+                publishers: [{ ...LOSS_ROOM.publishers[0], loop: { ...LOOP_RESULT, passed: '60' }, lossRelease: 'released' }]
+            }]
+        },
+        paths: ['$.rooms[0].publishers[0].loop.passed', '$.rooms[0].publishers[0].lossRelease.acted']
+    },
+    {
         // One agent leaves no subscriber, and the agents are the wrong value: a room has at least 2.
         unreadable: 'a point of one agent, which its two subscriber results are then not counted against',
         run: { ...RUN, parameters: { ...POINT, participantCount: 1 } },
@@ -453,7 +536,9 @@ describe('toPublicationWorkloadFigures', () => {
     it('repeats the point as configured, and reports as measured its room: the publisher\'s loop and stage, each subscriber\'s age ranges, and what was delivered', () => {
         // The 117 ages of both subscribers, counted up bucket by bucket: 4 up to 5 ms, 34 up to 10, 92 up to 20, 109 up to
         // 50, 115 up to 100, 116 up to 200 and 117 up to 500. Rank 59 lies in (10, 20], rank 112 in (50, 100] and rank
-        // 116 in (100, 200]. 60 + 58 = 118 messages, one of them without an age.
+        // 116 in (100, 200]. 60 + 58 = 118 messages, one of them without an age. The point arms no loss, so no fault
+        // counted a dropped send, and none is reported as 0.
+        const published = { publisherCount: 1, admittedFrames: 59, droppedSends: null };
         const delivered = {
             subscriberCount: 2,
             observed: 118,
@@ -481,6 +566,7 @@ describe('toPublicationWorkloadFigures', () => {
                     agentCount: 3,
                     subscriberCount: 2,
                     expectedAdmissions: 60,
+                    expectedLostFrames: 0,
                     expectedInboundMessages: 60,
                     minExpectedInboundMessages: 57,
                     minAcceptedSends: 57,
@@ -496,8 +582,10 @@ describe('toPublicationWorkloadFigures', () => {
                         completedIterations: 60,
                         elapsedMs: 30_260,
                         achievedIterationRateHz: 1.9498,
-                        publicationStage: PUBLICATION_STAGE
+                        publicationStage: PUBLICATION_STAGE,
+                        droppedSends: null
                     }],
+                    published,
                     subscribers: [
                         {
                             agentId: 'agent-2',
@@ -530,9 +618,53 @@ describe('toPublicationWorkloadFigures', () => {
                     ],
                     delivered
                 }],
+                published,
                 delivered
             }
         });
+    });
+
+    it('states for a ws point under loss what was published beside what arrived: one publisher that admitted 60 and dropped 17, two subscribers that observed 43 each', () => {
+        // The plan derives 18 lost frames from seed 7; the run's release read 17, and the record reports the 17.
+        const figures = toPublicationWorkloadFigures({ parameters: WS_LOSS_POINT, rooms: [LOSS_ROOM] });
+
+        const published = { publisherCount: 1, admittedFrames: 60, droppedSends: 17 };
+        expect(figures.left).toBeUndefined();
+        expect(figures.right?.configured.parameters.loss).toEqual({ kind: 'seeded', ratio: 0.25, seed: 7 });
+        expect(figures.right?.configured.plan).toMatchObject({ expectedLostFrames: 18, expectedInboundMessages: 42 });
+        expect(figures.right?.measured.rooms[0].publishers.map(({ agentId, droppedSends }) => ({ agentId, droppedSends })))
+            .toEqual([{ agentId: 'agent-1', droppedSends: 17 }]);
+        expect(figures.right?.measured.rooms[0].published).toEqual(published);
+        expect(figures.right?.measured.published).toEqual(published);
+        expect(figures.right?.measured.rooms[0].subscribers.map(({ observed }) => observed)).toEqual([43, 43]);
+        expect(figures.right?.measured.delivered).toMatchObject({ subscriberCount: 2, observed: 86 });
+    });
+
+    it('adds the publishers of a room into its published figure, and every room\'s into the point\'s', () => {
+        const point = { ...POINT, groups: [GROUP, SECOND_GROUP], publisherCount: 2, loss: QUARTER_LOSS };
+        const figures = toPublicationWorkloadFigures({
+            parameters: point,
+            rooms: [
+                {
+                    group: GROUP,
+                    publishers: [toLossPublisher('agent-1', 60, 37), toLossPublisher('agent-2', 59, 20)],
+                    subscribers: [toLossSubscriber('agent-3', 120)]
+                },
+                {
+                    group: SECOND_GROUP,
+                    publishers: [toLossPublisher('agent-4', 58, 1), toLossPublisher('agent-5', 60, 0)],
+                    subscribers: [toLossSubscriber('agent-6', 118)]
+                }
+            ]
+        });
+
+        // 60 + 59 = 119 admitted and 37 + 20 = 57 dropped; 58 + 60 = 118 and 1 + 0 = 1; 119 + 118 = 237 and 57 + 1 = 58.
+        expect(figures.left).toBeUndefined();
+        expect(figures.right?.measured.rooms.map((room) => room.published)).toEqual([
+            { publisherCount: 2, admittedFrames: 119, droppedSends: 57 },
+            { publisherCount: 2, admittedFrames: 118, droppedSends: 1 }
+        ]);
+        expect(figures.right?.measured.published).toEqual({ publisherCount: 4, admittedFrames: 237, droppedSends: 58 });
     });
 
     it('reports one delivered sample age for the room and for the point: both subscribers\' histograms merged, their messages and unrecorded samples added', () => {
@@ -615,7 +747,8 @@ describe('toPublicationWorkloadFigures', () => {
             completedIterations: 1,
             elapsedMs: 12,
             achievedIterationRateHz: null,
-            publicationStage: PUBLICATION_STAGE
+            publicationStage: PUBLICATION_STAGE,
+            droppedSends: null
         }]);
     });
 

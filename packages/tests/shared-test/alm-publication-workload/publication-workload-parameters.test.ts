@@ -11,6 +11,7 @@ import {
     type PublicationWorkloadParameters
 } from '@shared-test/rallar-bb-test/conformance/alm/publication-workload/validate-publication-workload-parameters.ts';
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
+import { createScriptedTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
 const GROUP = { applicationId: 'workload-app', workspaceId: 'workload-workspace', groupId: 'workload-room' };
 
@@ -27,10 +28,28 @@ const POINT: PublicationWorkloadParameters = {
     ttlMs: 5_000,
     minReceiveRatio: 0.95,
     minSendSuccessRatio: 0.99,
-    readyTimeoutMs: 45_000
+    readyTimeoutMs: 45_000,
+    loss: { kind: 'none' }
 };
 
 const UNKNOWN_CARRIER: string = 'sctp';
+const UNKNOWN_LOSS_KIND: string = 'scripted';
+
+/** The conformance lane's seeded loss: a quarter of the frames, from seed 7. */
+const QUARTER_LOSS = { kind: 'seeded', ratio: 0.25, seed: 7 } as const;
+
+/** Seed 11 at a quarter passes its first six draws and drops its seventh. */
+const LATE_FIRST_DROP_LOSS = { kind: 'seeded', ratio: 0.25, seed: 11 } as const;
+
+/** One room of three agents, one of them sending every 500 ms for 30 seconds on ws under a quarter loss: 60 frames. */
+const WS_LOSS_POINT: PublicationWorkloadParameters = {
+    ...POINT,
+    participantCount: 3,
+    carrier: 'ws',
+    windowMs: 30_000,
+    minSendSuccessRatio: 0.95,
+    loss: QUARTER_LOSS
+};
 
 function toRooms(roomCount: number): readonly (typeof GROUP)[] {
     return Array.from({ length: roomCount }, (_, index) => ({ ...GROUP, groupId: `workload-room-${index + 1}` }));
@@ -198,6 +217,35 @@ const BROKEN_BOUNDS: readonly BrokenBound[] = [
         bound: '10,000 frames, which the payload is then not sized for',
         change: { windowMs: 5_000_000, payloadBytes: 50 },
         issue: { path: '$.windowMs', code: 'frame-count-above-limit' }
+    },
+    {
+        bound: 'a loss of neither kind',
+        change: { loss: { kind: UNKNOWN_LOSS_KIND } as PublicationWorkloadParameters['loss'] },
+        issue: { path: '$.loss', code: 'invalid-loss' }
+    },
+    {
+        // At 1 no frame leaves a publisher: that is a hold, though the platform's seeded loss accepts it.
+        bound: 'a loss of every frame',
+        change: { loss: { ...QUARTER_LOSS, ratio: 1 } },
+        issue: { path: '$.loss.ratio', code: 'loss-ratio-not-below-one' }
+    },
+    {
+        // 3,000 / 500 = 6 frames, all six of them at 0.99; seed 11 drops none of its first six draws.
+        bound: 'a loss that drops none of the frames the publisher must hand on',
+        change: { windowMs: 3_000, loss: LATE_FIRST_DROP_LOSS },
+        issue: { path: '$.loss', code: 'loss-drops-no-frame' }
+    },
+    {
+        // 500 / 500 = 1 frame, and seed 7 drops its first draw: on ws no subscriber has a frame to expect.
+        bound: 'a loss on ws that drops every frame',
+        change: { carrier: 'ws', windowMs: 500, loss: QUARTER_LOSS },
+        issue: { path: '$.loss', code: 'loss-leaves-no-frame' }
+    },
+    {
+        // 3,250 / 500 is 6.5 frames, so the loss is not held to a frame count: as 6 frames it would drop none.
+        bound: 'a window that is no multiple of the interval, which the loss is then not held to',
+        change: { windowMs: 3_250, loss: LATE_FIRST_DROP_LOSS },
+        issue: { path: '$.windowMs', code: 'window-not-multiple-of-publish-interval' }
     }
 ];
 
@@ -296,6 +344,7 @@ describe('publication workload parameters', () => {
             agentCount: 15,
             subscriberCount: 14,
             expectedAdmissions: 600,
+            expectedLostFrames: 0,
             expectedInboundMessages: 600,
             minExpectedInboundMessages: 570,
             minAcceptedSends: 594,
@@ -314,6 +363,7 @@ describe('publication workload parameters', () => {
             agentCount: 15,
             subscriberCount: 10,
             expectedAdmissions: 600,
+            expectedLostFrames: 0,
             expectedInboundMessages: 3_000,
             minExpectedInboundMessages: 2_700,
             minAcceptedSends: 594,
@@ -334,11 +384,92 @@ describe('publication workload parameters', () => {
             agentCount: 50,
             subscriberCount: 9,
             expectedAdmissions: 600,
+            expectedLostFrames: 0,
             expectedInboundMessages: 600,
             minExpectedInboundMessages: 570,
             minAcceptedSends: 594,
             logicalFanoutMessages: 27_000
         });
+    });
+
+    it('expects 42 of a publisher\'s 60 frames on ws under a quarter loss from seed 7: 18 lost, at least 40 at 0.95, and a fan-out of 84', () => {
+        // Seed 7 at 0.25 drops sequence numbers 1, 2, 8, 12, 15, 21, 23, 24, 25, 29, 38, 39, 42, 43, 53, 54, 57 and 60:
+        // eighteen, which two browser runs read from both subscribers' logs and whose first five the conformance lane's
+        // unretried-loss cell pins. 60 - 18 = 42 frames reach each subscriber; 40 of 42 is 0.952; 57 of 60 is 0.95 for
+        // the stage, which hands on every frame the loss later drops; 42 x 2 other members = 84 fan-out messages.
+        expect(computePublicationWorkloadPlan(WS_LOSS_POINT)).toEqual({
+            frameCount: 60,
+            configuredRateHz: 2,
+            roomCount: 1,
+            agentCount: 3,
+            subscriberCount: 2,
+            expectedAdmissions: 60,
+            expectedLostFrames: 18,
+            expectedInboundMessages: 42,
+            minExpectedInboundMessages: 40,
+            minAcceptedSends: 57,
+            logicalFanoutMessages: 84
+        });
+        expect(validatePublicationWorkloadParameters(WS_LOSS_POINT)).toEqual([]);
+    });
+
+    it.each(['rtc', 'rtc-with-ws-fallback'] as const)(
+        'expects every frame on %s under the same loss: a refused frame is sent again',
+        (carrier) => {
+            expect(computePublicationWorkloadPlan({ ...WS_LOSS_POINT, carrier })).toMatchObject({
+                expectedLostFrames: 0,
+                expectedInboundMessages: 60,
+                minExpectedInboundMessages: 57
+            });
+        }
+    );
+
+    it('expects (30 - 10) x 2 = 40 from two publishers on ws: each page draws from the same seed', () => {
+        // 15,000 / 500 = 30 frames a publisher; seed 7 drops ten of its first thirty draws, the first ten numbers above.
+        expect(computePublicationWorkloadPlan({ ...WS_LOSS_POINT, publisherCount: 2, windowMs: 15_000 }))
+            .toMatchObject({ expectedLostFrames: 10, expectedInboundMessages: 40, logicalFanoutMessages: 80 });
+    });
+
+    it.each([
+        { ratio: 0.25, seed: 7, frameCount: 60 },
+        { ratio: 0.1, seed: 7, frameCount: 30 },
+        { ratio: 0.5, seed: 11, frameCount: 13 },
+        { ratio: 0.75, seed: 123_456, frameCount: 200 }
+    ])(
+        'loses exactly the frames the transport fault port drops when it is asked for each frame in order: $ratio from seed $seed over $frameCount frames',
+        ({ ratio, seed, frameCount }) => {
+            const port = createScriptedTransportFaultPort();
+            port.inject({
+                faultId: 'oracle',
+                carrier: 'ws',
+                match: { controlType: undefined, typeId: 'oracle.frame', msgId: undefined },
+                action: { loss: { ratio, seed } },
+                remaining: 'until-cleared'
+            });
+            const frame = JSON.stringify({ id: { msgId: 'm' }, payload: { typeId: 'oracle.frame' } });
+            const dropped = Array.from({ length: frameCount }, () => port.decideSend('ws', frame))
+                .filter((decision) => decision.kind === 'drop').length;
+
+            const plan = computePublicationWorkloadPlan({
+                ...WS_LOSS_POINT,
+                windowMs: frameCount * 500,
+                loss: { kind: 'seeded', ratio, seed }
+            });
+            expect(plan.expectedLostFrames).toBe(dropped);
+        }
+    );
+
+    it.each([
+        { loss: { ...QUARTER_LOSS, ratio: 0 }, sentence: 'loss.ratio must be above 0 and at most 1' },
+        { loss: { ...QUARTER_LOSS, ratio: 1.5 }, sentence: 'loss.ratio must be above 0 and at most 1' },
+        { loss: { ...QUARTER_LOSS, ratio: Number.NaN }, sentence: 'loss.ratio must be above 0 and at most 1' },
+        { loss: { ...QUARTER_LOSS, seed: 1.5 }, sentence: 'loss.seed must be an integer' }
+    ])('refuses a seeded loss the platform cannot inject at the loss, in the platform\'s own words: $sentence', ({ loss, sentence }) => {
+        expect(validatePublicationWorkloadParameters({ ...POINT, loss })).toEqual([{
+            path: '$.loss',
+            code: 'invalid-seeded-loss',
+            message: expect.stringContaining(sentence)
+        }]);
     });
 
     it.each([

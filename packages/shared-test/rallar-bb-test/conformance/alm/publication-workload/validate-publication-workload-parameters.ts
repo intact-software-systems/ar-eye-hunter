@@ -14,8 +14,12 @@ import { RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS } from '../../../rallar-black-bo
 import { decodePositiveInteger } from '../../../runtime/decode-runtime-result-values.ts';
 
 import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
-import { computePublicationWorkloadFrameCount } from './compute-publication-workload-plan.ts';
+import {
+    computePublicationWorkloadFrameCount,
+    computePublicationWorkloadMinimumCount
+} from './compute-publication-workload-plan.ts';
 import { computePublicationWorkloadMinimumPayloadBytes } from './to-publication-workload-payload.ts';
+import { validatePublicationWorkloadLoss, type PublicationWorkloadLoss } from './validate-publication-workload-loss.ts';
 
 /** One point of the publication workload family. The family has no default for any field. */
 export interface PublicationWorkloadParameters {
@@ -42,6 +46,7 @@ export interface PublicationWorkloadParameters {
      */
     readonly minSendSuccessRatio: number;
     readonly readyTimeoutMs: number;
+    readonly loss: PublicationWorkloadLoss;
 }
 
 const PUBLICATION_WORKLOAD_LIMITS = {
@@ -61,27 +66,36 @@ const PUBLICATION_WORKLOAD_LIMITS = {
 const SMALLEST_FRAME_COUNT = 1;
 
 /**
- * A field contributes the first bound it breaks; each group and `publication` contribute every issue of their own
- * validators. A bound stated against another field is checked only when that other field holds its own bound.
+ * A field contributes the first bound it breaks; each group, `publication` and `loss` contribute every issue of their
+ * own validators. A bound stated against another field is checked only when that other field holds its own bound.
  */
 export function validatePublicationWorkloadParameters(
     parameters: PublicationWorkloadParameters
 ): readonly RallarValidationIssue[] {
     const publicationIssues = validateALPublicationPolicy(parameters.publication);
     const wholeFrameCount = resolveWholeFrameCount(parameters);
+    const windowIssue = validateWindowMs(parameters, wholeFrameCount);
+    const sendSuccessIssue = validateShare(parameters, 'minSendSuccessRatio', 'invalid-min-send-success-ratio');
+    const frameCount = windowIssue === undefined ? wholeFrameCount : undefined;
     return [
         ...validateGroups(parameters),
         validateParticipantCount(parameters.participantCount),
         validatePublisherCount(parameters),
         validateCarrier(parameters.carrier),
         validatePublishIntervalMs(parameters, publicationIssues),
-        validateWindowMs(parameters, wholeFrameCount),
+        windowIssue,
         ...publicationIssues,
         validatePayloadBytes(parameters, wholeFrameCount, publicationIssues),
         validatePositiveMilliseconds(parameters, 'ttlMs', 'invalid-ttl-ms'),
         validateShare(parameters, 'minReceiveRatio', 'invalid-min-receive-ratio'),
-        validateShare(parameters, 'minSendSuccessRatio', 'invalid-min-send-success-ratio'),
-        validatePositiveMilliseconds(parameters, 'readyTimeoutMs', 'invalid-ready-timeout-ms')
+        sendSuccessIssue,
+        validatePositiveMilliseconds(parameters, 'readyTimeoutMs', 'invalid-ready-timeout-ms'),
+        ...validatePublicationWorkloadLoss(parameters, {
+            frameCount,
+            minAcceptedSends: frameCount === undefined || sendSuccessIssue !== undefined
+                ? undefined
+                : computePublicationWorkloadMinimumCount(frameCount, parameters.minSendSuccessRatio)
+        })
     ].filter((issue) => issue !== undefined);
 }
 

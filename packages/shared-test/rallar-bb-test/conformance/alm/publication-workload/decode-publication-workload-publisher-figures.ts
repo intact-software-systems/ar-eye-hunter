@@ -1,6 +1,7 @@
 import type { ALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import { isApiJsonObject, type ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import { decodeTransportFaultActedCounts } from '@shared/transport-faults/to-transport-fault-acted-counts.ts';
 
 import { decodeALOutboundPublicationStageReport } from '../../../alm/decode-al-outbound-publication-stage-report.ts';
 import {
@@ -9,6 +10,8 @@ import {
     decodeRecord
 } from '../../../runtime/decode-runtime-result-values.ts';
 
+import type { PublicationWorkloadLoss } from './validate-publication-workload-loss.ts';
+
 /** What one publisher of a room left: a value is `undefined` where the command's result holds none. */
 export interface PublicationWorkloadPublisherResults {
     readonly agentId: string;
@@ -16,6 +19,8 @@ export interface PublicationWorkloadPublisherResults {
     readonly loop: ApiJsonValue | undefined;
     /** The `value` of the result of the `stats` the publisher read after its window. */
     readonly stats: ApiJsonValue | undefined;
+    /** The `value` of the result of the publisher's loss release; a point with no loss arms none and has none. */
+    readonly lossRelease: ApiJsonValue | undefined;
 }
 
 export interface PublicationWorkloadPublisherFigures {
@@ -35,24 +40,42 @@ export interface PublicationWorkloadPublisherFigures {
     readonly achievedIterationRateHz: number | null;
     /** The publisher page's publication stage as its `stats` read it: holdings, limits, counters and figures. */
     readonly publicationStage: ALOutboundPublicationStageReport;
+    /**
+     * The release's `acted.drop`: the sends this publisher's fault dropped. Over `ws` each is a socket write and a
+     * frame no recipient got; over `rtc` each is a send to one next hop that its channel refused, and the publisher's
+     * page submits the frame to that next hop again 50 ms later. `null` for a point with no loss, whose recipes arm
+     * none: never 0 in its place.
+     */
+    readonly droppedSends: number | null;
 }
 
-type PublicationWorkloadLoopFigures = Omit<PublicationWorkloadPublisherFigures, 'agentId' | 'publicationStage'>;
+type PublicationWorkloadLoopFigures = Omit<
+    PublicationWorkloadPublisherFigures,
+    'agentId' | 'publicationStage' | 'droppedSends'
+>;
 
 /**
- * The left names every field of the publisher's two result values that cannot be read, each issue starting with the
- * field's path: under `<path>.loop` a field of the loop's result, under `<path>.stats` one of the page's stage.
+ * The left names every field of the publisher's three result values that cannot be read, each issue starting with the
+ * field's path: under `<path>.loop` a field of the loop's result, under `<path>.stats` one of the page's stage, and at
+ * `<path>.lossRelease` a release a seeded point lacks or a point with no loss has.
  */
 export function decodePublicationWorkloadPublisherFigures(
     publisher: PublicationWorkloadPublisherResults,
-    path: string
+    path: string,
+    loss: PublicationWorkloadLoss
 ): Either<readonly string[], PublicationWorkloadPublisherFigures> {
     const loop = decodeLoopFigures(publisher.loop, `${path}.loop`);
     const publicationStage = decodePublicationStage(publisher.stats, `${path}.stats.rallar.alm`);
-    if (loop.right === undefined || publicationStage.right === undefined) {
-        return Either.ofLeft([...(loop.left ?? []), ...(publicationStage.left ?? [])]);
+    const droppedSends = decodeDroppedSends(publisher.lossRelease, `${path}.lossRelease`, loss);
+    if (loop.right === undefined || publicationStage.right === undefined || droppedSends.right === undefined) {
+        return Either.ofLeft([...(loop.left ?? []), ...(publicationStage.left ?? []), ...(droppedSends.left ?? [])]);
     }
-    return Either.ofRight({ agentId: publisher.agentId, ...loop.right, publicationStage: publicationStage.right });
+    return Either.ofRight({
+        agentId: publisher.agentId,
+        ...loop.right,
+        publicationStage: publicationStage.right,
+        droppedSends: droppedSends.right
+    });
 }
 
 function decodeLoopFigures(
@@ -120,4 +143,24 @@ function decodePublicationStage(
         ? decodeALOutboundPublicationStageReport(publication)
             .mapLeft((issues) => issues.map((issue) => `${almUsagePath}.${issue}`))
         : Either.ofLeft([`${almUsagePath}.publication must be an object: the stats of a page that connected`]);
+}
+
+/** A seeded point's publisher released its fault and read its counts; a point with no loss injected none. */
+function decodeDroppedSends(
+    lossRelease: ApiJsonValue | undefined,
+    path: string,
+    loss: PublicationWorkloadLoss
+): Either<readonly string[], number | null> {
+    if (loss.kind !== 'seeded') {
+        return lossRelease === undefined
+            ? Either.ofRight(null)
+            : Either.ofLeft([`${path} must be absent: a point with no loss arms no fault`]);
+    }
+    if (lossRelease === undefined) {
+        return Either.ofLeft([`${path} must be the value of the publisher's loss release`]);
+    }
+    return decodeTransportFaultActedCounts(decodeRecord(lossRelease).acted).flatMap(
+        (issue) => Either.ofLeft([`${path}.acted must be the fault's acted counts: ${issue}`]),
+        (acted) => Either.ofRight(acted.drop)
+    );
 }

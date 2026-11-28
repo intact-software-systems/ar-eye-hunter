@@ -21,6 +21,10 @@ import { toAlmCohortCommandPrefix } from '../cohort/to-alm-cohort-command-prefix
 import { toPauseWait } from '../to-pause-command.ts';
 import { computePublicationWorkloadPlan, type PublicationWorkloadPlan } from './compute-publication-workload-plan.ts';
 import {
+    createPublicationWorkloadLossCommands,
+    type PublicationWorkloadLossCommands
+} from './create-publication-workload-loss-commands.ts';
+import {
     PUBLICATION_WORKLOAD_SENT_AT_FIELD,
     toPublicationWorkloadPayload
 } from './to-publication-workload-payload.ts';
@@ -121,17 +125,23 @@ export function createPublicationWorkloadRecipes(
 }
 
 /**
- * Every publisher runs the same window, meets the subscribers at the complete barrier and then answers its own gate; a
- * subscriber waits at that barrier through a publisher's whole window and then counts.
+ * Every publisher runs the same window, meets the subscribers at the complete barrier and then answers its own gates,
+ * under a loss the loss's too; a subscriber waits at that barrier through a publisher's whole window and then counts.
  */
 function createRoomRoles(room: PublicationWorkloadRoom): readonly PublicationWorkloadRoleRecipe[] {
     const { parameters, plan } = room;
-    const window = createPublisherWindowCommands(room);
+    const lossCommands = createPublicationWorkloadLossCommands({
+        parameters,
+        commandPrefix: toCommandPrefix('publisher'),
+        typeId: FRAME_TYPE_ID
+    });
+    const window = createPublisherWindowCommands(room, lossCommands);
     const completeTimeoutMs = computeCommandsTimeoutMs(window, 'the complete barrier');
     const publisherCommands = [
         ...window,
         createBarrier('publisher', 'complete', completeTimeoutMs),
-        createAcceptedSendsAssert(plan)
+        createAcceptedSendsAssert(plan),
+        ...lossCommands.asserts
     ];
     const subscriberCommands = [
         createBarrier('subscriber', 'complete', completeTimeoutMs),
@@ -218,14 +228,20 @@ function createSetupCommands(
 /**
  * The sends, and the stats once the stage holds nothing of the window. A staged value leaves the stage at an
  * opportunity, admitted or, past its lifetime, expired, and the next opportunity is at most one cadence away: one
- * lifetime and one cadence after the last send, the stage's counters are final.
+ * lifetime and one cadence after the last send, the stage's counters are final. A loss stands from before the first
+ * send to that point, when no frame of the window is still resubmitted either.
  */
-function createPublisherWindowCommands(room: PublicationWorkloadRoom): readonly RallarBlackBoxTestCommand[] {
+function createPublisherWindowCommands(
+    room: PublicationWorkloadRoom,
+    lossCommands: PublicationWorkloadLossCommands
+): readonly RallarBlackBoxTestCommand[] {
     const { parameters } = room;
     const prefix = toCommandPrefix('publisher');
     return [
+        ...lossCommands.arm,
         createPublishLoop(room),
         toPauseWait(`${prefix}-drain`, parameters.publication.cadenceMs + parameters.ttlMs),
+        ...lossCommands.release,
         { kind: 'stats', commandId: `${prefix}-stats`, timeoutMs: STATS_TIMEOUT_MS }
     ];
 }
@@ -302,17 +318,18 @@ function createSubscriberCountCommands(
             windowMs: parameters.ttlMs,
             timeoutMs: parameters.ttlMs + RESPONSE_MARGIN_MS
         },
-        ...createSubscriberCountGuards(plan.frameCount * parameters.publisherCount),
+        ...createSubscriberCountGuards(plan.expectedInboundMessages),
         { kind: 'stats', commandId: `${prefix}-stats`, timeoutMs: STATS_TIMEOUT_MS }
     ];
 }
 
 /**
  * The count's three guards need no arithmetic: no message without an age, as many ages as messages, and no more
- * messages than `publishedFrames`, the frames of the room's publishers together. A page's one inbound store delivers a
- * message once whichever carriers brought it, so a count above them holds another sender's messages or another run's.
+ * messages than `expectedInboundMessages`, the frames of the room's publishers together less those a `ws` loss drops.
+ * A page's one inbound store delivers a message once whichever carriers brought it, so a count above them holds another
+ * sender's messages or another run's. A `ws` publisher that wrote fewer frames meets no more passing draws among them.
  */
-function createSubscriberCountGuards(publishedFrames: number): readonly RallarBlackBoxTestCommand[] {
+function createSubscriberCountGuards(expectedInboundMessages: number): readonly RallarBlackBoxTestCommand[] {
     const prefix = toCommandPrefix('subscriber');
     const received = `resultCache.${prefix}-received.value`;
     return [
@@ -335,7 +352,7 @@ function createSubscriberCountGuards(publishedFrames: number): readonly RallarBl
             commandId: `${prefix}-assert-copies-within-frames`,
             source: `${received}.observed`,
             operator: 'lte',
-            expected: publishedFrames
+            expected: expectedInboundMessages
         }
     ];
 }

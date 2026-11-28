@@ -67,7 +67,8 @@ const SECOND_ROOM_GROUP = { ...HETZNER_DISTRIBUTED_MANIFEST_GROUP, groupId: 'het
  * The family has no default, so every value is this proof's own choice. The second point's six agents are the most a
  * recorded 4-CPU run of the headless worker passed with (`docs/github-actions-black-box-headless-runbook.md`), and its
  * delivery level is the first hosted campaign's for several publishers
- * (`playground/alm/alm-first-hosted-campaign-targets.md`, section 2.3).
+ * (`playground/alm/alm-first-hosted-campaign-targets.md`, section 2.3). The two loss points take the conformance lane's
+ * seeded loss, a quarter from seed 7, whose first lost frames the lane already pins.
  */
 const LOCAL_POINTS: readonly LocalPoint[] = [
     {
@@ -85,7 +86,8 @@ const LOCAL_POINTS: readonly LocalPoint[] = [
             ttlMs: 5_000,
             minReceiveRatio: 0.95,
             minSendSuccessRatio: 0.95,
-            readyTimeoutMs: 45_000
+            readyTimeoutMs: 45_000,
+            loss: { kind: 'none' }
         }
     },
     {
@@ -104,7 +106,51 @@ const LOCAL_POINTS: readonly LocalPoint[] = [
             ttlMs: 5_000,
             minReceiveRatio: 0.9,
             minSendSuccessRatio: 0.95,
-            readyTimeoutMs: 45_000
+            readyTimeoutMs: 45_000,
+            loss: { kind: 'none' }
+        }
+    },
+    {
+        name: 'one-room-ws-loss',
+        description: 'The one-room point on ws under a seeded quarter loss: seed 7 drops 18 of the 60 frames.',
+        parameters: {
+            groups: [HETZNER_DISTRIBUTED_MANIFEST_GROUP],
+            participantCount: 3,
+            publisherCount: 1,
+            carrier: 'ws',
+            publishIntervalMs: 500,
+            windowMs: 30_000,
+            publication: { cadenceMs: 100, retainNewest: 1, drain: { messages: 8, bytes: 65_536 } },
+            payloadBytes: 256,
+            ttlMs: 5_000,
+            // Over ws the seed decides which frames are lost, so the expectation is exact: every frame is admitted,
+            // and each subscriber gets exactly the 42 the loss lets pass.
+            minReceiveRatio: 1,
+            minSendSuccessRatio: 1,
+            readyTimeoutMs: 45_000,
+            loss: { kind: 'seeded', ratio: 0.25, seed: 7 }
+        }
+    },
+    {
+        name: 'one-room-rtc-loss',
+        description: 'The one-room point on rtc under a seeded quarter loss: a refused send is sent again.',
+        parameters: {
+            groups: [HETZNER_DISTRIBUTED_MANIFEST_GROUP],
+            participantCount: 3,
+            publisherCount: 1,
+            carrier: 'rtc',
+            publishIntervalMs: 500,
+            windowMs: 30_000,
+            publication: { cadenceMs: 100, retainNewest: 1, drain: { messages: 8, bytes: 65_536 } },
+            payloadBytes: 256,
+            ttlMs: 5_000,
+            // The family's band for a loaded machine, not a loss allowance: a product that stopped resubmitting a
+            // refused frame would, by the seed's own draws, lose at least 18 of its 120 sends and fail it; no run has
+            // shown this.
+            minReceiveRatio: 0.95,
+            minSendSuccessRatio: 0.95,
+            readyTimeoutMs: 45_000,
+            loss: { kind: 'seeded', ratio: 0.25, seed: 7 }
         }
     }
 ];
@@ -113,6 +159,7 @@ const LOCAL_POINTS: readonly LocalPoint[] = [
 const RESULT_COMMAND_IDS = {
     publisherFrames: 'publication-workload-publisher-frames',
     publisherStats: 'publication-workload-publisher-stats',
+    publisherLossRelease: 'publication-workload-publisher-loss-release',
     subscriberReceived: 'publication-workload-subscriber-received'
 } as const;
 
@@ -138,7 +185,7 @@ for (const point of LOCAL_POINTS) {
         test.skip(!isHeadlessFullStackOptedIn(), 'Opt-in standalone headless full-stack observation required');
         test.skip(
             process.env.RALLAR_BLACK_BOX_PUBLICATION_WORKLOAD_POINT !== point.name,
-            'RALLAR_BLACK_BOX_PUBLICATION_WORKLOAD_POINT names the other point'
+            'RALLAR_BLACK_BOX_PUBLICATION_WORKLOAD_POINT names another point'
         );
         expect(
             process.env.RALLAR_BLACK_BOX_STORAGE_DIR,
@@ -206,6 +253,7 @@ for (const point of LOCAL_POINTS) {
                 }`
             ).toBeDefined();
             expectPointFigures(figures.right!);
+            expectLossFigures(figures.right!);
             expectAgentPages(recipes, agentRuns);
         }
         finally {
@@ -273,6 +321,35 @@ function expectPointFigures(figures: PublicationWorkloadFigures): void {
 }
 
 /**
+ * Under a seeded loss each publisher's fault dropped a send, and over `ws` each subscriber observed exactly what its
+ * room's publishers admitted less what their faults dropped: two measured counts, so the proof holds whatever frames
+ * the stage handed on. A point with no loss is held to nothing here.
+ */
+function expectLossFigures(figures: PublicationWorkloadFigures): void {
+    const { configured: { parameters }, measured } = figures;
+    if (parameters.loss.kind !== 'seeded') {
+        return;
+    }
+    for (const [index, room] of measured.rooms.entries()) {
+        for (const { agentId, droppedSends } of room.publishers) {
+            expect(droppedSends, `The fault of ${agentId} dropped at least one send`).toBeGreaterThanOrEqual(1);
+        }
+        if (parameters.carrier === 'ws') {
+            const { admittedFrames, droppedSends } = room.published;
+            const passedFrames = droppedSends === null ? undefined : admittedFrames - droppedSends;
+            for (const { agentId, observed } of room.subscribers) {
+                expect(
+                    observed,
+                    `${agentId} observed what the publishers of room ${
+                        index + 1
+                    } admitted less what their faults dropped`
+                ).toBe(passedFrames);
+            }
+        }
+    }
+}
+
+/**
  * A page that dropped events would under-count, and a page the product held over its volatile budget would have refused
  * frames the point's level then blames on delivery.
  */
@@ -309,7 +386,8 @@ function toRoomResults(
         publishers: runsOfKind('publisher').map((run) => ({
             agentId: run.agentId,
             loop: readResultValue(run, RESULT_COMMAND_IDS.publisherFrames),
-            stats: readResultValue(run, RESULT_COMMAND_IDS.publisherStats)
+            stats: readResultValue(run, RESULT_COMMAND_IDS.publisherStats),
+            lossRelease: readResultValue(run, RESULT_COMMAND_IDS.publisherLossRelease)
         })),
         subscribers: runsOfKind('subscriber').map((run) => ({
             agentId: run.agentId,
