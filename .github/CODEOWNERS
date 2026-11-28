@@ -1,4 +1,4 @@
-# A record of ownership. No branch protection is assumed to enforce it: the review that happens is the one in the
-# default-branch commit and push requests that AGENTS.md requires for a change to the registry file named below, which
-# quote that file's whole diff.
+# A record of ownership. No branch protection is assumed to enforce it: when an agent commits to or pushes the default
+# branch, the review that happens is the one in the request AGENTS.md requires for a change to the registry file named
+# below, which quotes that file's whole diff. A merge the maintainer performs in GitHub makes no such request.
 /docs/app-inbox-direct-write-registry.md @intact-software-systems

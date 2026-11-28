@@ -19,7 +19,8 @@ nothing outside AppInbox.
 
 ## The three stores under review
 
-These three stores are written directly on incoming WebSocket paths, in a transaction the ALM backend opens itself.
+These three stores are written directly on incoming WebSocket paths, in a transaction the ALM backend opens itself and
+through the backend's own queue outside that transaction.
 Each is `under-review`: the maintainer learned of them on 2026-11-27 and has not ruled. They are not precedent for any
 other write.
 
@@ -41,13 +42,17 @@ would cost instead or "not measured", the answer word for word, and the date of 
 2026-11-27. An `under-review` store is dated 2026-11-27, the day the three stores were found.
 
 The check also reads `scripts/direct-write-check/direct-write-review-pins.json`, which holds the approved store ids
-(none), the three stores and their states, every registered `transport-direct` surface, and the number of surfaces in each class.
-An approval, a new store, a new or removed `transport-direct` surface, and a surface added or given another class fail
-the check until that file changes too; an approval also needs an edit to the pinned list `APPROVED_DIRECT_WRITE_IDS` in
-`packages/tests/repo/direct-write-check/direct-write-registry.test.ts`, which is empty. No check can tell a quoted answer
-the maintainer gave from one an agent wrote, or tell whether a class is true; the review that happens is the one in the
-default-branch commit and push requests `AGENTS.md` requires for a change to this file, which quote this file's whole
-diff and say which entries were added, removed or given another class.
+(none), the three stores and their states, and the class of every registered surface, with the computed attributes and
+stores of each `transport-direct` one. An approval, a new store, a surface added, removed or given another class, and a
+`transport-direct` surface whose count, statements, methods or stores moved fail the check until that file changes too;
+an approval also needs an edit to the pinned list `APPROVED_DIRECT_WRITE_IDS` in
+`packages/tests/repo/direct-write-check/direct-write-registry.test.ts`, which is empty. These files and tests are
+friction, not a control: they make a change deliberate and visible in the same pull request, and whoever edits this file
+can edit them too. No check can tell a quoted answer the maintainer gave from one an agent wrote, or tell whether a class
+is true. What binds an agent is the rule in `AGENTS.md`: when an agent commits to or pushes the default branch, the
+review that happens is the one in the request that rule requires for a change to this file, which quotes this file's
+whole diff and says which entries were added, removed or given another class. A merge the maintainer performs in GitHub
+makes no such request.
 
 ## Classes
 
@@ -179,7 +184,7 @@ review. A `basis` says what was read in the code, in one sentence.
         "An incoming ACK control: onControlMessage -> receipts.acceptControlMessage (ws-queue-box-server-service.ts)."
       ],
       "transaction": "PSqlAdmissionWorkBackend.write opens its own transaction with this.sql.begin; AppInbox is not involved. Its worker (receipt-record/al-receipt-record-worker.ts) claims and releases resource_inbox rows through the backend's own queue, backend.workQueue, with the ALM work queue port (work/al-work-queue-port.ts), outside write.",
-      "earlierRecord": "D770 and D779 in playground/alm/alm-improvement-plan.md record an earlier answer. It predates the rule of 2026-11-27 and is not an approval; the maintainer has not ruled.",
+      "earlierRecord": "D770 and D779 in playground/alm/alm-improvement-plan.md are an earlier decision record of this store, written before the rule of 2026-11-27. It is not an approval; the maintainer has not ruled.",
       "review": {
         "state": "under-review",
         "since": "2026-11-27",
