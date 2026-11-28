@@ -27,7 +27,7 @@ export interface EdgeOrderSendFacts {
 }
 
 /** An arrival the receiver did not hand over at once, as its `edge-order-arrival` states it. */
-export type EdgeOrderArrivalOutcome = 'held' | 'late';
+export type EdgeOrderArrivalOutcome = 'held';
 
 /** The positions of a stream the receiver gave up, as its `edge-order-gap` states them. */
 export interface EdgeOrderGap {
@@ -115,7 +115,8 @@ export function toNoHeldArrivalWait(receiver: AlmConformanceStepInput): RallarBl
 
 /**
  * The handler was given the arrival `later` after `earlier`: the page records an arrival when its handler runs, and
- * numbers what it records in that order.
+ * numbers what it records in that order. `later` and `earlier` name the waits `received-<name>`, which
+ * `toEdgeOrderSendWait` is given in full.
  */
 export function toHandedOverAfterAssertion(
     receiver: AlmConformanceStepInput,

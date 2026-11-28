@@ -741,22 +741,25 @@ describe('edge-order-live-stream', () => {
         }
     });
 
-    it.each(ALM_CONFORMANCE_CARRIERS)('over %s publishes three live values on one stream, 1 and 2 with a lifetime that outlasts the cell', (carrier) => {
-        const sender = requireCell(KEY, carrier).sender;
-        const sends = toSends(sender);
+    it.each(ALM_CONFORMANCE_CARRIERS)(
+        'over %s publishes three live values on one stream, 1 and 2 with the 30 s lifetime, so neither expires on the stage while held',
+        (carrier) => {
+            const sender = requireCell(KEY, carrier).sender;
+            const sends = toSends(sender);
 
-        expect(sends.map((send) => send.commandId)).toEqual([0, 1, 2].map((seq) => `${sender.recipeId}-send-${seq}`));
-        sends.forEach((send, seq) => {
-            expect(send).toMatchObject({ purpose: 'live', publication: PUBLICATION, resourceId: `alm-${KEY}` });
-            expect(send.payload).toEqual({ specimen: 'paced', seq });
-            expect(send).not.toHaveProperty('orderingKey');
-            expect(send).not.toHaveProperty('reliability');
-            expect(send).not.toHaveProperty('ack');
-        });
-        expect(sends[0]).not.toHaveProperty('ttlMs');
-        expect(sends[1]).toMatchObject({ ttlMs: 30000 });
-        expect(sends[2]).toMatchObject({ ttlMs: 30000 });
-    });
+            expect(sends.map((send) => send.commandId)).toEqual([0, 1, 2].map((seq) => `${sender.recipeId}-send-${seq}`));
+            sends.forEach((send, seq) => {
+                expect(send).toMatchObject({ purpose: 'live', publication: PUBLICATION, resourceId: `alm-${KEY}` });
+                expect(send.payload).toEqual({ specimen: 'paced', seq });
+                expect(send).not.toHaveProperty('orderingKey');
+                expect(send).not.toHaveProperty('reliability');
+                expect(send).not.toHaveProperty('ack');
+            });
+            expect(sends[0]).not.toHaveProperty('ttlMs');
+            expect(sends[1]).toMatchObject({ ttlMs: 30000 });
+            expect(sends[2]).toMatchObject({ ttlMs: 30000 });
+        }
+    );
 
     it.each(ALM_CONFORMANCE_CARRIERS)(
         'over %s holds value 1 until value 2 is admitted and value 1 superseded, then releases it',
@@ -810,7 +813,7 @@ describe('edge-order-live-stream', () => {
                 }
             });
             expect(findCommand(receiver, 'gap-2-2')).not.toHaveProperty('absent');
-            expect(findCommand(receiver, 'received-3')).toMatchObject({ count: 3, absent: true, windowMs: 4000 });
+            expect(findCommand(receiver, 'received-3')).toMatchObject({ count: 3, absent: true, windowMs: 4000, timeoutMs: 5000 });
             expect(JSON.stringify(receiver.commands)).not.toContain('"data.outcome":"late"');
         }
     );

@@ -32,11 +32,16 @@ interface NarrowedStream {
     readonly sends: readonly [first: number, second: number];
 }
 
+/** The recipient roles of the cell: each is inside one narrowed stream. */
+type NarrowedStreamRole = 'receiver' | 'sibling';
+
 /** The fixed list names the receiver alone; the sender's principal reaches its other session, the sibling, alone. */
-const NARROWED_STREAMS: ReadonlyMap<AlmConformanceRole, NarrowedStream> = new Map([
-    ['receiver', { facts: { audience: { recipientPeers: ['receiver'] } }, sends: [2, 6] }],
-    ['sibling', { facts: { audience: { scope: 'principal', principalId: '{auth.clientId}' } }, sends: [3, 7] }]
-]);
+const NARROWED_STREAMS: Readonly<Record<NarrowedStreamRole, NarrowedStream>> = {
+    receiver: { facts: { audience: { recipientPeers: ['receiver'] } }, sends: [2, 6] },
+    sibling: { facts: { audience: { scope: 'principal', principalId: '{auth.clientId}' } }, sends: [3, 7] }
+};
+
+const NARROWED_STREAM_LIST: readonly NarrowedStream[] = Object.values(NARROWED_STREAMS);
 
 /**
  * One sender's sends on an `order: 'edge'` channel to three audiences: the room, a fixed list of the receiver alone,
@@ -44,7 +49,8 @@ const NARROWED_STREAMS: ReadonlyMap<AlmConformanceRole, NarrowedStream> = new Ma
  * held at the sender while room send 5 and the narrowed sends 6 and 7 are acknowledged, so each recipient holds send 5
  * for its turn and hands its narrowed send over meanwhile: one stream does not wait for another. Each recipient is
  * handed both of its streams in send order, five arrivals in all, and states no gap: the stream it is outside leaves
- * no hole in the room's. The order is judged pairwise, since nothing orders two streams against each other.
+ * no hole in the room's. The order is judged pairwise, since nothing orders two streams against each other. A peer
+ * (`toPeer`) or `exceptPeerIds` audience is left to the unit tests, because the lane cannot address one.
  */
 export const edgeOrderAudiences: AlmConformanceScenarioDefinition = {
     scenarioId: 'edge-order-audiences',
@@ -60,9 +66,8 @@ export const edgeOrderAudiences: AlmConformanceScenarioDefinition = {
 
 function toAudienceStreamSenderCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const held = { ...sender, index: HELD_SEND };
-    const streams = [...NARROWED_STREAMS.values()];
-    const beforeHold = [1, ...streams.map((stream) => stream.sends[0])];
-    const whileHeld = [OVERTAKING_SEND, ...streams.map((stream) => stream.sends[1])];
+    const beforeHold = [1, ...NARROWED_STREAM_LIST.map((stream) => stream.sends[0])];
+    const whileHeld = [OVERTAKING_SEND, ...NARROWED_STREAM_LIST.map((stream) => stream.sends[1])];
     return [
         ...beforeHold.flatMap((seq) => toAudienceSendCommands(sender, seq)),
         ...beforeHold.flatMap((seq) => toSettledStateCommands({ ...sender, index: seq }, 'acknowledged')),
@@ -78,13 +83,15 @@ function toAudienceStreamSenderCommands(sender: AlmConformanceStepInput): readon
 
 /** A send to no narrowed stream goes to the room. */
 function toAudienceSendCommands(sender: AlmConformanceStepInput, seq: number): readonly RallarBlackBoxTestCommand[] {
-    const stream = [...NARROWED_STREAMS.values()].find((candidate) => candidate.sends.includes(seq));
+    const stream = NARROWED_STREAM_LIST.find((candidate) => candidate.sends.includes(seq));
     return toEdgeOrderSendCommands(sender, seq, stream?.facts);
 }
 
 /** Each recipient is handed the room's stream and the narrowed stream it is inside. */
 function toAudienceStreamRecipientCommands(recipient: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
-    const [first, second] = toNarrowedStream(recipient.role).sends;
+    const { role } = recipient;
+    assertNarrowedStreamRole(role);
+    const [first, second] = NARROWED_STREAMS[role].sends;
     const handedOver: ReadonlyArray<readonly [later: number, earlier: number]> = [
         [HELD_SEND, 1],
         [OVERTAKING_SEND, HELD_SEND],
@@ -105,10 +112,9 @@ function toAudienceStreamRecipientCommands(recipient: AlmConformanceStepInput): 
     ];
 }
 
-function toNarrowedStream(role: AlmConformanceRole): NarrowedStream {
-    const stream = NARROWED_STREAMS.get(role);
-    if (stream === undefined) {
+/** The cell declares the sender and the two recipient roles, so a recipient's recipe is never written for another role. */
+function assertNarrowedStreamRole(role: AlmConformanceRole): asserts role is NarrowedStreamRole {
+    if (!Object.hasOwn(NARROWED_STREAMS, role)) {
         throw new Error(`edge-order-audiences has no narrowed stream for the ${role} role.`);
     }
-    return stream;
 }
