@@ -34,6 +34,7 @@ import {
     edgeOrderJitterStream,
     edgeOrderStream
 } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/edge-order/edge-order-stream.ts';
+import { edgeOrderSupersedence } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/edge-order/edge-order-supersedence.ts';
 import { edgeOrderUnretriedLossStream } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/edge-order/edge-order-unretried-loss-stream.ts';
 import { bufferedTrackDrains } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/fairness/buffered-track-drains.ts';
 import { churnBoundedTracks } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/fairness/churn-bounded-tracks.ts';
@@ -137,6 +138,7 @@ const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
     { scenarioKey: 'edge-order-reload', carriers: edgeOrderReload.carriers },
     { scenarioKey: 'edge-order-late-join', carriers: edgeOrderLateJoin.carriers },
     { scenarioKey: 'edge-order-unretried-loss-stream', carriers: edgeOrderUnretriedLossStream.carriers },
+    { scenarioKey: 'edge-order-supersedence', carriers: edgeOrderSupersedence.carriers },
     // The membership fence cells' lane evidence is local and the hosted full read's; manifest 22 stays as recorded.
     { scenarioKey: 'fenced-delivery', carriers: fencedDelivery.carriers },
     // A combined recipe keeps only its first prologue, so the recipient that leaves here would miss every later cell.

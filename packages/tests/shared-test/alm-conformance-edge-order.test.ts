@@ -621,3 +621,87 @@ describe('edge-order-audiences', () => {
         }
     );
 });
+
+describe('edge-order-supersedence', () => {
+    const KEY = 'edge-order-supersedence';
+    const SENDS = 4;
+    const KEYED_SENDS = [2, 3];
+
+    it.each(ALM_CONFORMANCE_CARRIERS)('over %s runs in the full scope with both pages edge-ordered', (carrier) => {
+        const cell = requireCell(KEY, carrier);
+
+        expect(cell.tags).toEqual(['full']);
+        for (const recipe of [cell.sender, cell.receiver]) {
+            expect(findCommand(recipe, 'connect')).toMatchObject({ kind: 'rtc.connect', rallar: { channelOrder: 'edge' } });
+        }
+    });
+
+    it.each(ALM_CONFORMANCE_CARRIERS)('over %s sends four receipted room sends that state no hop order, 2 and 3 under one latest-wins key', (carrier) => {
+        const sends = toSends(requireCell(KEY, carrier).sender);
+
+        expect(sends.map((send) => send.payload)).toEqual(toNumbers(1, SENDS).map((seq) => ({ marker: KEY, seq })));
+        sends.forEach((send, index) => {
+            expect(send).toMatchObject({ reliability: 'at-least-once', ack: 'receiver' });
+            expect(send).not.toHaveProperty('orderingKey');
+            expect(send).not.toHaveProperty('seq');
+            if (KEYED_SENDS.includes(index + 1)) {
+                expect(send).toMatchObject({ supersedenceKey: 'cursor' });
+            }
+            else {
+                expect(send).not.toHaveProperty('supersedenceKey');
+            }
+        });
+    });
+
+    it.each(ALM_CONFORMANCE_CARRIERS)(
+        'over %s holds send 2 until send 3 has superseded it and is acknowledged, then releases it and sends 4',
+        (carrier) => {
+            const sender = requireCell(KEY, carrier).sender;
+            const faultCarriers = carrier === 'rtc-with-ws-fallback' ? ['rtc', 'ws'] : [carrier];
+            const names = [
+                'observe-acknowledged-1',
+                'send-2',
+                ...faultCarriers.map((faultCarrier) => `hold-message-2-${faultCarrier}`),
+                'send-3',
+                'observe-superseded-2',
+                'observe-acknowledged-3',
+                ...faultCarriers.map((faultCarrier) => `release-message-2-${faultCarrier}`),
+                'send-4',
+                'observe-acknowledged-4'
+            ];
+            const places = names.map((name) => toPlace(sender, name));
+
+            expect(places).toEqual([...places].sort((left, right) => left - right));
+            expect(findCommand(sender, 'assert-superseded-2')).toMatchObject({ operator: 'equals', expected: 'superseded' });
+        }
+    );
+
+    it.each(ALM_CONFORMANCE_CARRIERS)(
+        'over %s the receiver records 1, 3 and 4 in send order, states 2 as a hole its sender ended, and held nothing',
+        (carrier) => {
+            const receiver = requireCell(KEY, carrier).receiver;
+            const typeId = toTypeId(KEY, carrier);
+
+            expect(findCommand(receiver, 'received-3')).toMatchObject({ typeId, count: 3, absent: false, ascendingBy: 'seq' });
+            expect(findCommand(receiver, 'gap-2-2')).toMatchObject({
+                kind: 'wait',
+                match: {
+                    payloadFields: {
+                        'data.kind': 'edge-order-gap',
+                        'data.typeId': typeId,
+                        'data.fromPosition': 2,
+                        'data.toPosition': 2,
+                        'data.reason': 'ended-at-sender'
+                    }
+                }
+            });
+            expect(findCommand(receiver, 'gap-2-2')).not.toHaveProperty('absent');
+            expect(findCommand(receiver, 'no-held-arrival')).toMatchObject({
+                absent: true,
+                match: { payloadFields: { 'data.kind': 'edge-order-arrival', 'data.outcome': 'held', 'data.typeId': typeId } }
+            });
+            expect(findCommand(receiver, 'received-4')).toMatchObject({ count: 4, absent: true });
+            expect(toPlace(receiver, 'received-3')).toBeLessThan(toPlace(receiver, 'no-held-arrival'));
+        }
+    );
+});

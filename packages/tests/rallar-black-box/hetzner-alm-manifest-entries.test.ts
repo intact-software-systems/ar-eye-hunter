@@ -209,7 +209,8 @@ describe('ALM conformance hosted lane families', () => {
                 'edge-order-loss-stream',
                 'edge-order-reload',
                 'edge-order-late-join',
-                'edge-order-unretried-loss-stream'
+                'edge-order-unretried-loss-stream',
+                'edge-order-supersedence'
             ].flatMap((key) => ALM_CONFORMANCE_CARRIERS.map((carrier) => `alm-${carrier}-${key}`)),
             'alm-rtc-with-ws-fallback-backpressure-hands-over',
             'alm-rtc-backpressure-refused',

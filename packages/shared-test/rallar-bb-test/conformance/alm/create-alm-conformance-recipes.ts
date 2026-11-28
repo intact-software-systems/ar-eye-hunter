@@ -68,6 +68,7 @@ import { edgeOrderLateJoin } from './scenarios/edge-order/edge-order-late-join.t
 import { edgeOrderLossStream } from './scenarios/edge-order/edge-order-loss-stream.ts';
 import { edgeOrderReload } from './scenarios/edge-order/edge-order-reload.ts';
 import { edgeOrderJitterStream, edgeOrderStream } from './scenarios/edge-order/edge-order-stream.ts';
+import { edgeOrderSupersedence } from './scenarios/edge-order/edge-order-supersedence.ts';
 import { edgeOrderUnretriedLossStream } from './scenarios/edge-order/edge-order-unretried-loss-stream.ts';
 import { bufferedTrackDrains } from './scenarios/fairness/buffered-track-drains.ts';
 import { churnBoundedTracks } from './scenarios/fairness/churn-bounded-tracks.ts';
@@ -258,6 +259,7 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     edgeOrderReload,
     edgeOrderLateJoin,
     edgeOrderUnretriedLossStream,
+    edgeOrderSupersedence,
     ...crossCarrierDuplicate,
     notYetInSync,
     fallbackWithinDeadline,

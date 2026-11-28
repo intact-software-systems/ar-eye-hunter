@@ -76,6 +76,7 @@ export type AlmConformanceScenarioId =
     | 'edge-order-loss-stream'
     | 'edge-order-reload'
     | 'edge-order-stream'
+    | 'edge-order-supersedence'
     | 'edge-order-unretried-loss-stream'
     | 'fallback-within-deadline'
     | 'fenced-catch-up'

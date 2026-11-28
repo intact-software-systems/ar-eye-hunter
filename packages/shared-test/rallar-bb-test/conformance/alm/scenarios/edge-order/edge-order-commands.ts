@@ -22,6 +22,8 @@ export interface EdgeOrderSendFacts {
     readonly ttlMs?: number;
     /** Absent, the room. */
     readonly audience?: AlmConformanceRoomSendAudience;
+    /** Absent, the send replaces no earlier send and no later send replaces it. */
+    readonly supersedenceKey?: string;
 }
 
 /** An arrival the receiver did not hand over at once, as its `edge-order-arrival` states it. */
@@ -61,6 +63,7 @@ export function toEdgeOrderSendCommands(
                 reliability: 'at-least-once',
                 ack: 'receiver',
                 ...(facts.ttlMs === undefined ? {} : { ttlMs: facts.ttlMs }),
+                ...(facts.supersedenceKey === undefined ? {} : { supersedenceKey: facts.supersedenceKey }),
                 ...facts.audience
             }
         }),
@@ -99,6 +102,15 @@ export function toEdgeOrderGapWait(
 /** The page gave up no position of a stream of the cell's type. */
 export function toNoOrderGapWait(receiver: AlmConformanceStepInput): RallarBlackBoxTestWaitCommand {
     return toEdgeOrderEventWait(receiver, 'no-order-gap', { kind: 'edge-order-gap', gap: undefined, absent: true });
+}
+
+/** The page held no arrival of the cell's type for its turn, at any point of the cell. */
+export function toNoHeldArrivalWait(receiver: AlmConformanceStepInput): RallarBlackBoxTestWaitCommand {
+    return toEdgeOrderEventWait(receiver, 'no-held-arrival', {
+        kind: 'edge-order-arrival',
+        outcome: 'held',
+        absent: true
+    });
 }
 
 /**
