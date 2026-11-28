@@ -1,13 +1,23 @@
 import type { EdgeOrderStamp } from '@shared-web/browser/messages/edge-order/edge-order-stamp.ts';
 import type { EdgeOrderStreamWaits } from '@shared-web/browser/messages/edge-order/edge-order-stream-waits.ts';
 import type { RallarMessageOrderGap } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import { toALGroupTargetKey } from '@shared/al-contracts/al-contract.ts';
 
-/** Whose stream it is and which channel's: what every gap of the stream names. */
-export type EdgeOrderStreamOrigin = Pick<RallarMessageOrderGap, 'topicId' | 'typeId' | 'senderId' | 'stream'>;
+/** Whose stream it is, which channel's and which room's: what every gap of the stream names. */
+export type EdgeOrderStreamOrigin = Pick<
+    RallarMessageOrderGap,
+    'topicId' | 'typeId' | 'senderId' | 'roomRef' | 'stream'
+>;
 
-/** One key per stream of a page: a sender's stream id is its own, and is kept apart per channel and sender. */
+/** One key per stream of a page: a sender's stream id is its own, and is kept apart per channel, sender and room. */
 export function toEdgeOrderStreamKey(origin: EdgeOrderStreamOrigin): string {
-    return JSON.stringify([origin.topicId, origin.typeId, origin.senderId, origin.stream]);
+    return JSON.stringify([
+        origin.topicId,
+        origin.typeId,
+        origin.senderId,
+        toALGroupTargetKey(origin.roomRef),
+        origin.stream
+    ]);
 }
 
 export interface EdgeOrderHeldMessage<Message> {

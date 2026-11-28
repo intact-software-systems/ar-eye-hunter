@@ -147,12 +147,8 @@ export class RallarGameDirectorRelayRuntime<TInput, TIntent, TSnapshot, TEvent, 
         }
 
         await this.input.routeEnvelope(envelope, 'sync-request', this.input.config.onSyncRequest);
-        const snapshot = await this.input.config.readSnapshot?.();
-        if (snapshot !== undefined) {
-            const snapshotEnvelope = this.input.createEnvelope('snapshot', snapshot, {
-                directorEpoch: director.appointment.epoch
-            });
-            await this.sendSnapshot(snapshotEnvelope);
+        if (this.input.config.readSnapshot) {
+            await this.ensureRelay().requestSync(envelope);
         }
         return { status: 'sent', transport: 'local' };
     }
@@ -244,9 +240,12 @@ export class RallarGameDirectorRelayRuntime<TInput, TIntent, TSnapshot, TEvent, 
         if (gap.reason === 'ended-at-sender') {
             return;
         }
+        const { config } = this.input;
         void this.requestSync({ reason: 'event-order-gap' }).catch((error) => {
             console.error(
-                `Failed to request a sync for Rallar Game match ${this.input.config.protocol} after event order gap ${gap.reason}:`,
+                `Failed to request a sync for Rallar Game match ${
+                    config.matchId ?? '(no match id)'
+                } (${config.protocol}) in room ${gap.roomRef.groupId} after event order gap ${gap.reason}:`,
                 error
             );
         });

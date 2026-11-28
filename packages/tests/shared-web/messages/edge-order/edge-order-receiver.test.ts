@@ -12,13 +12,15 @@ import {
     type EdgeOrderStreamWaits
 } from '@shared-web/browser/messages/edge-order/edge-order-stream-waits.ts';
 import type { RallarMessageOrderGap } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import { createManualTimers, type ManualTimers } from '../../../shared/resilience/manual-timers.ts';
 
 const START_MS = 1_000;
 /** A sender whose acknowledged sends are over at once: these tests are about the receiver. */
 const NO_SETTLE_MS = 0;
-/** The channel and sender of every arrival, unless a test names another sender. */
-const ORIGIN = { topicId: 'room.moves', typeId: 'game.move', senderId: 'p' };
+const ROOM: GroupRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
+/** The channel, sender and room of every arrival, unless a test names another. */
+const ORIGIN = { topicId: 'room.moves', typeId: 'game.move', senderId: 'p', roomRef: ROOM };
 const FAR_DEADLINE_MS = 31_000;
 
 interface ReceiverFixture {
@@ -146,6 +148,23 @@ describe('EdgeOrderReceiver: order', () => {
 
         expect(fixture.handedOver).toEqual(['p1', 'q1']);
         expect(fixture.receiver.getCounts().streams).toBe(2);
+    });
+
+    it.each<[string, GroupRef]>([
+        ['another room', { ...ROOM, groupId: 'other-room' }],
+        ['a room of the same id in another workspace', { ...ROOM, workspaceId: 'other-workspace' }]
+    ])('keeps one stream id of one sender in %s apart, and names each stream\'s own room in its gaps', (_room, otherRoom) => {
+        const fixture = createReceiverFixture();
+
+        accept(fixture, stamp(1), { message: 'here1' });
+        accept(fixture, stamp(1), { origin: { ...ORIGIN, roomRef: otherRoom }, message: 'there1' });
+        accept(fixture, stamp(3), { origin: { ...ORIGIN, roomRef: otherRoom }, message: 'there3' });
+
+        expect(fixture.handedOver).toEqual(['here1', 'there1', 'there3']);
+        expect(fixture.receiver.getCounts().streams).toBe(2);
+        expect(fixture.gaps).toEqual([
+            { ...ORIGIN, roomRef: otherRoom, stream: 'A', fromPosition: 2, toPosition: 2, reason: 'ended-at-sender' }
+        ]);
     });
 
     it('treats a new stream from the same sender, as a reload makes one, as its own order beside the old one', () => {

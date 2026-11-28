@@ -8,6 +8,7 @@ import type {
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { AsyncNotifications } from '@shared/cache/async-notifications.ts';
 
 /**
@@ -81,10 +82,13 @@ export class BrowserDirectorOutputChannels {
 }
 
 /**
- * Every relay on the page hears every gap, so its own route is checked. The declaration stands for every room and a
- * gap names none, so the sender is the fence: only the relay's current director's stream is its own.
+ * Every relay on the page hears every gap, and the declaration stands for every room, so a relay checks its route,
+ * its room and its director: one session can direct two rooms on one topic, and only a gap of this relay's room,
+ * from its current director's stream, is its own.
  */
 function isRelayGap(listener: BrowserDirectorOutputChannels.GapListener, gap: RallarMessageOrderGap): boolean {
+    const status = listener.readStatus();
     return gap.topicId === listener.topicId && gap.typeId === listener.typeId &&
-        gap.senderId === listener.readStatus().appointment?.sessionId;
+        status.roomRef !== undefined && isSameGroupRef(gap.roomRef, status.roomRef) &&
+        gap.senderId === status.appointment?.sessionId;
 }

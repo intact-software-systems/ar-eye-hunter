@@ -472,8 +472,9 @@ Message ownership is concentrated under [`messages/`](./messages/):
     position that a stamp it has says is over: one below the lowest open position, or a hole stated by a message
     it holds. A message it holds is never skipped, so a send cancelled after a copy arrived is still handed over.
     Each run of positions given up is reported once to the `onOrderGap` its channel declared, as a
-    `RallarMessageOrderGap` (topic, type, sender, stream, positions, reason), in the stream's turn: after the
-    handlers of the message before it and before those of the message after it. The latest `onOrderGap` declared
+    `RallarMessageOrderGap` (topic, type, sender, room as `roomRef`, stream, positions, reason), in the stream's
+    turn: after the handlers of the message before it and before those of the message after it. The latest
+    `onOrderGap` declared
     for a topic and type stands, for every room, as the latest `recovery` does; what it throws or rejects with is
     logged and does not stop the stream. The reasons are `ended-at-sender` and `cannot-arrive` (the message could
     no longer arrive), `held-message-deadline`, `channel-wait-cap`, `held-message-cap`, `held-byte-cap` and
@@ -508,8 +509,9 @@ Message ownership is concentrated under [`messages/`](./messages/):
     unless the sender says nothing earlier can still arrive, and then starts at the lowest message it holds, with
     no gap report. A message from before its entry that reaches it later is dropped as `late` and counted.
   - **What is not handed over** is stated in the connect's inbound diagnostics: `edge-order-arrival` for an
-    arrival that is `held` for its turn or dropped (`unwrapped`, `late`, `duplicate`, `expired`), `edge-order-gap`
-    for positions the receiver gave up, with its channel and reason, and `edge-order-held-dropped` when the
+    arrival that is `held` for its turn or dropped (`unwrapped`: no stamp, or a stamp on an envelope that names no
+    room, so it belongs to no stream; `late`, `duplicate`, `expired`), `edge-order-gap` for
+    positions the receiver gave up, with its channel and reason, and `edge-order-held-dropped` when the
     connect goes away and the held messages with it (the `edge-order-held-messages` lifecycle participant). A
     stream keeps its position across that, so a copy of a message already handed over stays late.
   - **Memory.** A receiver holds at most 256 messages and 1 MiB per stream, each until its own deadline at the
@@ -541,9 +543,10 @@ Message ownership is concentrated under [`messages/`](./messages/):
     `qos.durability` other than `volatile`; and the `ws-then-rtc` strategy. After the connect: a `peerId` that is the server's.
   - **Limits.** Both ends must declare the channel: a receiver that did not is given the wrapped payload in
     arrival order, and a receiver that did drops a message without a stamp. The declaration, and with it
-    `onOrderGap`, is per topic and type on a page, for every room; a gap report names its stream, and a stream
-    belongs to the one room its messages carry. A hole is closed by a later message that states it: when the
-    sender sends nothing more, a receiver waits for a missing message until the time the last stamp gave it. A
+    `onOrderGap`, is per topic and type on a page, for every room; a gap report names its room and its stream, and
+    a stream is kept per channel, sender and room, so one stream id in two rooms is two streams. A hole is closed
+    by a later message that states it: when the sender sends nothing more, a receiver waits for a missing message until
+    the time the last stamp gave it. A
     receiver waits until the latest deadline among the sender's earlier open sends, not the missing message's
     own. The settle time covers a message that a recipient has acknowledged and not yet sorted; one whose
     delivery lane is held up for longer than the settle time after every recipient acknowledged it can still be
@@ -556,9 +559,10 @@ Message ownership is concentrated under [`messages/`](./messages/):
   - **First consumer.** The director relay's output type is edge-ordered.
     [BrowserDirectorOutputChannels](./director/browser-director-output-channels.ts), one per page, declares each
     relay's output channel with no room and `orderGapWaitMs` 3 000 ms, and fans each gap out to every live relay on
-    the page; a relay passes on to its config's `onOutputGap` a gap of its own topic and output type whose sender is
-    its appointed director. [`sendOutputEnvelope`](./director/browser-director-relay-transport.ts) sends each output
-    as one room message over `rtc-with-ws-fallback`, receipted (`at-least-once`, `all-logical-recipients`, 30 s) or
+    the page; a relay passes on to its config's `onOutputGap` a gap of its own topic, output type and room whose
+    sender is its appointed director. [`sendOutputEnvelope`](./director/browser-director-relay-transport.ts) sends
+    each output as one room message over `rtc-with-ws-fallback`, receipted (`at-least-once`,
+    `all-logical-recipients`, 30 s) or
     not (`best-effort`, `ack: 'none'`, 5 s), so both kinds share one stream. Rallar Game's match
     ([`rallar-game-director-relay-runtime.ts`](../game/director/rallar-game-director-relay-runtime.ts)) asks the
     director for a sync on a gap that is not `ended-at-sender`. Heartbeats and snapshots are not edge-ordered.

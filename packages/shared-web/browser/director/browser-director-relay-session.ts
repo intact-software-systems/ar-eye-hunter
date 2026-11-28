@@ -19,6 +19,8 @@ import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS } from '@shared/api/group-director.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
+import type { Timers } from '@shared/resilience/timers.ts';
+import { LatestValueTimer } from '@shared/resilience/timing/latest-value-timer.ts';
 import type { BrowserDirectorOutputChannels } from './browser-director-output-channels.ts';
 import {
     isAcceptedDirectorRelayEnvelope,
@@ -29,6 +31,7 @@ import type { BrowserDirectorRelayTransport } from './browser-director-relay-tra
 import type { BrowserDirectorStatusRuntime } from './browser-director-status-runtime.ts';
 
 const RALLAR_DIRECTOR_DEFAULT_TOPIC_ID = 'app.rallar.director';
+const DIRECTOR_SYNC_SNAPSHOT_WINDOW_MS = 250;
 
 export namespace BrowserDirectorRelaySession {
     export interface Input<TIntent, TOutput, TSnapshot> {
@@ -38,6 +41,7 @@ export namespace BrowserDirectorRelaySession {
         readonly messages: RallarMessagesOperations;
         /** The page's relay output channels, which hand each live relay its own output gaps. */
         readonly outputChannels: BrowserDirectorOutputChannels;
+        readonly timers: Timers;
         readSession(): AuthSession | undefined;
         onStop(stop: () => void): void;
     }
@@ -61,6 +65,7 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
     private readonly outputChannel: RallarTypedMessageChannel<RallarDirectorRelayEnvelope<TOutput>>;
     private readonly subscriptions = new SubscriptionScope();
     private readonly timers: ReturnType<typeof setInterval>[] = [];
+    private readonly syncSnapshot: LatestValueTimer<void>;
     private stopped = false;
 
     public constructor(
@@ -79,6 +84,7 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
             topicId: this.topicId,
             typeId: input.config.outputTypeId
         });
+        this.syncSnapshot = new LatestValueTimer(input.timers);
     }
 
     public start(): RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot> {
@@ -164,7 +170,7 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
         payload?: TPayload
     ): Promise<RallarDirectorRelaySendResult> => {
         const guarded = this.guardSend();
-        return guarded ?? await this.input.transport.sendCommand({
+        return guarded ?? this.joinSyncSnapshotWindow() ?? await this.input.transport.sendCommand({
             current: this.status(),
             topicId: this.topicId,
             typeId: this.syncRequestTypeId,
@@ -186,6 +192,7 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
                 clearInterval(timer);
             }
             this.timers.length = 0;
+            this.syncSnapshot.cancel();
             this.input.onStop(this.stop);
         }
     };
@@ -252,14 +259,12 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
         input: BrowserDirectorRelaySession.InboundMessage<RallarMessagePayload>
     ): Promise<void> {
         const roomRef = this.status().roomRef;
-        if (
-            !roomRef || !input.roomRef || !isSameGroupRef(roomRef, input.roomRef) ||
-            !isDirectorRelayEnvelope(input.envelope, this.topicId)
-        ) {
-            return;
-        }
         const commandTypeIds = [this.input.config.intentTypeId, this.syncRequestTypeId];
-        if (this.stopped || !isAcceptedDirectorRelayEnvelope(this.status(), input.envelope, commandTypeIds)) {
+        if (
+            this.stopped || !roomRef || !input.roomRef || !isSameGroupRef(roomRef, input.roomRef) ||
+            !isDirectorRelayEnvelope(input.envelope, this.topicId) ||
+            !isAcceptedDirectorRelayEnvelope(this.status(), input.envelope, commandTypeIds)
+        ) {
             return;
         }
         await this.route({
@@ -357,9 +362,20 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
             message,
             this
         );
-        if (this.input.config.readSnapshot) {
-            await this.sendSnapshot();
+        this.joinSyncSnapshotWindow();
+    }
+
+    /**
+     * A sync request the director gets, from the room or from its own page, joins one window whose snapshot answers
+     * them all; it answers `sent`, or undefined when there is no window to join: a stopped relay, one that reads no
+     * snapshot, or a page that does not direct the room.
+     */
+    private joinSyncSnapshotWindow(): RallarDirectorRelaySendResult | undefined {
+        if (!this.input.config.readSnapshot || !this.canSendOnTimer()) {
+            return undefined;
         }
+        this.syncSnapshot.schedule(undefined, DIRECTOR_SYNC_SNAPSHOT_WINDOW_MS, () => this.sendSnapshotOnTimer());
+        return { status: 'sent' };
     }
 
     private startHeartbeatTimer(): void {
@@ -382,13 +398,13 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
             return;
         }
         this.timers.push(setInterval(
-            () => this.sendPeriodicSnapshot(),
+            () => this.sendSnapshotOnTimer(),
             this.input.config.snapshotIntervalMs ?? 2_000
         ));
     }
 
     private sendPeriodicHeartbeat(): void {
-        if (!this.canSendPeriodic()) {
+        if (!this.canSendOnTimer()) {
             return;
         }
         void this.sendHeartbeat().catch((error) => {
@@ -396,8 +412,8 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
         });
     }
 
-    private sendPeriodicSnapshot(): void {
-        if (!this.canSendPeriodic()) {
+    private sendSnapshotOnTimer(): void {
+        if (!this.canSendOnTimer()) {
             return;
         }
         void this.sendSnapshot().catch((error) => {
@@ -405,7 +421,7 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
         });
     }
 
-    private canSendPeriodic(): boolean {
+    private canSendOnTimer(): boolean {
         if (this.stopped) {
             return false;
         }

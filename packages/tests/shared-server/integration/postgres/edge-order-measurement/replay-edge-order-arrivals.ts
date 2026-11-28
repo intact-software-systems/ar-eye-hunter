@@ -3,6 +3,7 @@ import { EdgeOrderReceiver } from '@shared-web/browser/messages/edge-order/edge-
 import type { EdgeOrderStamp } from '@shared-web/browser/messages/edge-order/edge-order-stamp.ts';
 import { EDGE_ORDER_DEFAULT_STREAM_WAITS } from '@shared-web/browser/messages/edge-order/edge-order-stream-waits.ts';
 import type { RallarMessageOrderGap } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 
 import { createManualTimers } from '../../../../shared/resilience/manual-timers.ts';
 
@@ -36,6 +37,8 @@ export interface EdgeOrderReplay {
 
 /** The one channel every measured room message travels on; with the publisher it names an arrival's stream. */
 const MEASURED_CHANNEL = { topicId: 'room.notification', typeId: 'message.v1' };
+/** The one room every measured stream is replayed in. */
+const MEASURED_ROOM: GroupRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 
 /**
  * Runs one recipient's arrivals, in arrival order, through the browser's edge-order receiver on a clock that only
@@ -62,7 +65,7 @@ export async function replayEdgeOrderArrivals(
     for (const arrival of arrivals) {
         await timers.advanceTo(arrival.arrivedAtMs);
         receiver.accept({
-            origin: { ...MEASURED_CHANNEL, senderId: arrival.publisher },
+            origin: { ...MEASURED_CHANNEL, senderId: arrival.publisher, roomRef: MEASURED_ROOM },
             stamp: arrival.stamp,
             waits: EDGE_ORDER_DEFAULT_STREAM_WAITS,
             expiresAtMs: arrival.expiresAtMs,

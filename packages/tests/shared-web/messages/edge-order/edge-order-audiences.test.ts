@@ -5,11 +5,12 @@ import type {
     RallarTypedMessageChannel,
     RallarTypedMessageSendOptions
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 
 import {
     createEdgeOrderPage,
     EDGE_ORDER_TEST_MOVES,
+    EDGE_ORDER_TEST_ROOM,
     type EdgeOrderPage,
     type EdgeOrderTestMove
 } from './edge-order-page-fixture.ts';
@@ -31,6 +32,13 @@ const NARROWED: ReadonlyArray<[string, SendOptions, 'ws' | 'rtc']> = [
     ['everyone but one session', { strategy: 'ws', exceptPeerIds: ['carol-session'] }, 'ws'],
     ['one peer over WS', { strategy: 'ws', peerId: 'bob-session' }, 'ws'],
     ['one peer over RTC', { strategy: 'rtc', peerId: 'bob-session' }, 'rtc']
+];
+
+/** Every audience a send can name: the whole room over each carrier, and each narrowed one. */
+const EVERY_AUDIENCE: ReadonlyArray<[string, SendOptions, 'ws' | 'rtc']> = [
+    ['the whole room over WS', { strategy: 'ws' }, 'ws'],
+    ['the whole room over RTC', { strategy: 'rtc' }, 'rtc'],
+    ...NARROWED
 ];
 
 function createAudiencePages(): AudiencePages {
@@ -74,6 +82,15 @@ describe('an edge-ordered room channel: narrowed audiences', () => {
         expect(readStamp(narrowed)).toMatchObject({ position: 1, lowestOpenPosition: 1 });
         expect(readStamp(narrowed).stream).not.toBe(readStamp(room[0]).stream);
         expect(pages.alice.messages.readUsage().edgeOrder).toMatchObject({ sendStreams: 2 });
+    });
+
+    it.each(EVERY_AUDIENCE)('names the room in the envelope of a send to %s', async (_audience, options, carrier) => {
+        const pages = createAudiencePages();
+
+        await pages.send.send({ n: 1 }, options);
+
+        expect(pages.alice.sent[carrier]).toHaveLength(1);
+        expect(readALTargetGroupRef(pages.alice.sent[carrier][0])).toEqual(EDGE_ORDER_TEST_ROOM);
     });
 
     it.each(NARROWED)('sorts a stream sent to %s at its receiver like any other', async (_audience, options, carrier) => {

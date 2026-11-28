@@ -8,7 +8,7 @@ import type {
     RallarDirectorRelayHandle
 } from '@shared-web/browser/director/rallar-director-facade.ts';
 import type { RallarMessageOrderGap } from '@shared-web/browser/messages/rallar-message-contracts.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { toCanonicalGroupRef, type GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { createDefaultTestSession } from '../api-middleware-test-double.ts';
 import { createDirectorGroupSnapshot } from '../director-group-snapshot-fixture.ts';
@@ -115,6 +115,32 @@ function createTwoRoomPage(): TwoRoomPage {
         secondDirector: createRelayPage('second-director-session', secondRoom),
         first: openRelay(client.runtime, firstRoom),
         second: openRelay(client.runtime, secondRoom),
+        client: client.page
+    };
+}
+
+/** One director session appointed in two rooms of one topic and output type, and a client page that follows both. */
+interface OneDirectorTwoRoomPage {
+    /** The director page's relay of the first room. */
+    readonly firstDirector: RelayPage;
+    readonly first: RelayRecord;
+    readonly second: RelayRecord;
+    readonly firstRoom: GroupSnapshot;
+    readonly client: EdgeOrderPage;
+}
+
+function createOneDirectorTwoRoomPage(): OneDirectorTwoRoomPage {
+    const firstRoom = createRoomSnapshot('room-1', DIRECTOR_SESSION_ID);
+    const secondRoom = createRoomSnapshot('room-2', DIRECTOR_SESSION_ID);
+    const director = createDirectorRelayPage(DIRECTOR_SESSION_ID, [firstRoom, secondRoom]);
+    const firstDirector = { page: director.page, ...openRelay(director.runtime, firstRoom) };
+    openRelay(director.runtime, secondRoom);
+    const client = createDirectorRelayPage('client-session', [firstRoom, secondRoom]);
+    return {
+        firstDirector,
+        first: openRelay(client.runtime, firstRoom),
+        second: openRelay(client.runtime, secondRoom),
+        firstRoom,
         client: client.page
     };
 }
@@ -286,6 +312,20 @@ describe('the director relay\'s output gaps with two relays of one topic on a pa
 
         expect(toGapSummaries(pages.first.gaps)).toEqual([[2, 2, 'channel-wait-cap']]);
         expect(pages.second.gaps).toEqual([]);
+    });
+});
+
+describe('the director relay\'s output gaps of one director session directing two rooms on one topic', () => {
+    it('passes a gap in one room\'s stream to the relay of that room only, naming the room', async () => {
+        const pages = createOneDirectorTwoRoomPage();
+        await deliverAroundAGap(pages.firstDirector, pages.client);
+
+        await vi.advanceTimersByTimeAsync(3_000);
+
+        expect(pages.first.seen).toEqual([1, 3]);
+        expect(toGapSummaries(pages.first.gaps)).toEqual([[2, 2, 'channel-wait-cap']]);
+        expect(pages.second.gaps).toEqual([]);
+        expect(pages.first.gaps[0].roomRef).toEqual(toCanonicalGroupRef(pages.firstRoom.group));
     });
 });
 

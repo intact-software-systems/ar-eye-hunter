@@ -13,12 +13,13 @@ import type {
     RallarMessageTransport,
     RallarTypedMessageChannelDefinition
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toALMessageTrace } from '@shared/al-contracts/trace/to-al-message-trace.ts';
 import {
     recordALInboundDiagnostic,
     type ALInboundRuntimeDiagnosticsSink
 } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import { computeUtf8ByteLength } from '@shared/encoding/compute-utf8-byte-length.ts';
 import { KeyedSerialRuns } from '@shared/resilience/keyed-serial-runs.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
@@ -110,8 +111,7 @@ export class EdgeOrderArrivals {
                 nowMs: () => dependencies.timers.nowMs(),
                 schedule: (run, delayMs) => dependencies.timers.schedule(() => this.runWake(run), delayMs)
             },
-            handOver: (handOver) => {
-                const origin = toStreamOrigin(handOver.message, handOver.order.stream);
+            handOver: (handOver, origin) => {
                 this.runInStreamTurn(origin, async () => await this.handOverInTurn(origin, handOver));
             },
             reportGap: (gap) => this.reportGap(gap)
@@ -143,12 +143,13 @@ export class EdgeOrderArrivals {
     /** Settles when the arrival and every message it released have been handed over; at once when it is held. */
     async accept(carrier: EdgeOrderCarrier, message: ALMessage): Promise<void> {
         const wire = decodeEdgeOrderWirePayload(message.payload.resource);
-        if (wire === undefined) {
+        const roomRef = readALTargetGroupRef(message);
+        if (wire === undefined || roomRef === undefined) {
             this.recordArrival({ carrier, message, outcome: 'unwrapped', order: undefined });
             return;
         }
         const order: RallarMessageOrder = { stream: wire.stamp.stream, position: wire.stamp.position };
-        const origin = toStreamOrigin(message, order.stream);
+        const origin = toStreamOrigin(message, roomRef, order.stream);
         const outcome = this.receiver.accept({
             origin,
             stamp: wire.stamp,
@@ -276,11 +277,12 @@ export class EdgeOrderArrivals {
     }
 }
 
-function toStreamOrigin(message: ALMessage, stream: string): EdgeOrderStreamOrigin {
+function toStreamOrigin(message: ALMessage, roomRef: GroupRef, stream: string): EdgeOrderStreamOrigin {
     return {
         topicId: message.route.topicId,
         typeId: message.payload.typeId,
         senderId: message.id.senderId,
+        roomRef,
         stream
     };
 }

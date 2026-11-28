@@ -205,6 +205,7 @@ export function createBrowserDirectorComposition(
         status: directorStatus,
         transport: relayTransport,
         messages: input.messaging.messages,
+        timers: createDefaultTimers(),
         readSession
     });
     const director: RallarDirectorFacade = {

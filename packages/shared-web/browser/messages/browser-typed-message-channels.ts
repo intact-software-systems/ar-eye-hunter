@@ -203,7 +203,10 @@ function toChannelSend<TSend extends BrowserLiveSendOptions & EdgeOrderSendOptio
     return send;
 }
 
-/** One stream is one channel in one room, so `channel(...)`, whose sends each name their room, takes no order. */
+/**
+ * An edge-ordered stream is one channel in one room. A `room(...)` send always has one, the room it names or the
+ * page's default or current room; a `channel(...)` send need not, so `channel(...)` takes no order.
+ */
 function validateRoomlessChannelOrder(
     definition: RallarTypedMessageChannelDefinition
 ): readonly RallarValidationIssue[] {
