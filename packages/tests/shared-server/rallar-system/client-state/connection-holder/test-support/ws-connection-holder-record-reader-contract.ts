@@ -206,7 +206,7 @@ function connection(sessionId: string, generationId: string): ClientAuthorisedWs
     };
 }
 
-/** Writes the record as a connect does: the computed insert, applied through the guarded batch statement. */
+/** Writes the row a connect writes: the computed insert, here as the guard of its own guarded batch statement. */
 async function writeRecord(sql: PSqlSql, stored: WsConnectionHolderRecord): Promise<void> {
     const insert = computeWsConnectionHolderRecorded({ ...stored, current: null });
     if (insert === null) {

@@ -52,11 +52,11 @@ authorised socket generation. Its owner is
   it, and reads that stream's lease in its read phase on the database clock: a
   holder whose lease is not live answers the connect `inactive`. The upgrade
   route builds no connect before its process's runtime is ready.
-- **Lifetime:** a record expires with its generation's open guard, the
-  connect's lease or the AppInbox retry horizon past the generation's start,
-  whichever is later. An expired record reads as absent and the runtime-state
-  expiry worker removes it. Nothing yet ends the records of a process lost
-  without closing its sockets; they wait for that expiry.
+- **Lifetime:** a record expires at the open-guard expiry its own connect
+  computes, the connect's lease or the AppInbox retry horizon past the
+  generation's start, whichever is later. An expired record reads as absent and
+  the runtime-state expiry worker removes it. Nothing yet ends the records of a
+  process lost without closing its sockets; they wait for that expiry.
 
 ## Current-value boundaries
 
