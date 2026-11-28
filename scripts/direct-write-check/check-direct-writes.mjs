@@ -18,20 +18,23 @@ import { computeTransactionOpenerFacts } from './transaction-opener-facts.mjs';
 
 const REGISTRY_PATH = 'docs/app-inbox-direct-write-registry.md';
 const SCHEMA_PATH = 'apps/api-v1/prisma/schema.prisma';
-const ANALYSED_SOURCES = [
-    'packages/**/*.ts',
-    'apps/api-v1/src/**/*.ts',
-    'apps/relic-hunter-server-v1/src/**/*.ts',
-    'apps/ar-eye-hunter-server-v1/src/**/*.ts',
-    'apps/rallar-black-box-control-server/src/**/*.ts'
+const SOURCE_EXTENSIONS = '{ts,tsx,mts,cts}';
+const ANALYSED_SOURCES = [`packages/**/*.${SOURCE_EXTENSIONS}`, `apps/*/src/**/*.${SOURCE_EXTENSIONS}`];
+/** Browser apps are excluded by name, so a new app under `apps/` is analysed until someone names it here. */
+const BROWSER_APPS = [
+    'apps/ar-eye-hunter-v1',
+    'apps/grumpy-town',
+    'apps/rallar-black-box',
+    'apps/rallar-black-box-headless',
+    'apps/relic-hunters-v1'
 ];
 const EXCLUDED_SOURCES = [
     'packages/tests/**',
     'packages/shared-test/**',
     'packages/shared-rtc-bench/**',
+    ...BROWSER_APPS.map((app) => `${app}/**`),
     '**/node_modules/**',
-    '**/{fixtures,fixture,mocks,mock,generated,vendor}/**',
-    '**/*.{d,test,spec}.ts'
+    `**/*.{d,test,spec}.${SOURCE_EXTENSIONS}`
 ];
 
 process.exitCode = runDirectWriteCheck(readArguments(process.argv.slice(2)));

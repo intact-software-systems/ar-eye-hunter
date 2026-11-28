@@ -34,9 +34,10 @@ governance-gate phase. An entry in the registry records that a write exists; it 
 
 - [check-direct-writes.mjs#runDirectWriteCheck](./check-direct-writes.mjs#runDirectWriteCheck) reads and validates the
   registry first and stops with `direct-write.registry-invalid` before any analysis when it is malformed. It then loads
-  one ts-morph project over `packages/**`, `apps/api-v1/src`, the two game servers and the control server (tests,
-  `shared-test`, `shared-rtc-bench`, fixtures and declaration files excluded), computes the nine fact sets, and reports
-  every difference. On success it prints the registry census and the entries that differ from the base branch
+  one ts-morph project over the `.ts`, `.tsx`, `.mts` and `.cts` files of `packages/**` and of every `apps/*/src`
+  except the five browser apps it names in `BROWSER_APPS` (so a new app is analysed until it is named there), without
+  `packages/tests`, `shared-test`, `shared-rtc-bench`, declaration and test files; it computes the fact sets and
+  reports every difference. On success it prints the registry census and the entries that differ from the base branch
   (`--base`, default `origin/main`; a missing base prints `base not available` and does not fail).
 - [direct-write-registry.mjs](./direct-write-registry.mjs) owns the block format: `toDirectWriteRegistry` reads the one
   fenced block and `validateDirectWriteRegistry` returns every issue, including the rules that keep an `under-review`

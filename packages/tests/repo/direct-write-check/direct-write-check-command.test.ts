@@ -73,6 +73,30 @@ describe('direct-write check command', () => {
         expect(result.stderr).toContain('FAIL: direct-write check (1 finding)');
     });
 
+    it('analyses a write in a folder named generated, in a .mts or .tsx file, and in a new server app', () => {
+        const rootWrite = (importPath: string) => `
+            import type { PSqlSql } from '${importPath}';
+            export async function onDisplayFrame(sql: PSqlSql, key: string): Promise<void> {
+                await sql\`insert into runtime_state_store (store_key) values (\${key})\`;
+            }
+        `;
+        const writes = {
+            'packages/shared-server/rallar-system/generated/on-display-frame.ts': rootWrite('../../postgres/p-sql-sql.ts'),
+            'packages/shared-server/rallar-system/websocket/on-display-frame.mts': rootWrite('../../postgres/p-sql-sql.ts'),
+            'packages/shared-server/rallar-system/websocket/on-display-panel.tsx': rootWrite('../../postgres/p-sql-sql.ts'),
+            'apps/display-server-v1/src/on-display-frame.ts': rootWrite('../../../packages/shared-server/postgres/p-sql-sql.ts')
+        };
+        const root = createTree({ ...baseSources(), ...writes }, baseRegistry());
+
+        const result = runCheck(root);
+
+        expect(result.status).toBe(1);
+        for (const writePath of Object.keys(writes)) {
+            expect(result.stderr).toContain(`direct-write.unregistered sqlWriteFiles ${writePath}\n`);
+        }
+        expect(result.stderr).toContain('FAIL: direct-write check (4 findings)');
+    });
+
     it('fails naming the entry when its write is removed from the source', () => {
         const sources: Record<string, string> = baseSources();
         delete sources[INBOUND_PATH];
