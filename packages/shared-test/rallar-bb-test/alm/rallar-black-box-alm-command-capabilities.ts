@@ -36,6 +36,10 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
             'ownership (shared, exclusive) passes the send\'s ownership to the product as given; ' +
             'resourceId names the route\'s resource, which an exclusive send claims for the sending session; absent, ' +
             'the product mints a fresh resource per send. ' +
+            'observe call-refused witnesses a send the product refuses at the call: only that validation refusal is ' +
+            'the value, { handleId, carrier, callRefusal } with each issue\'s path and code in order; a call that ' +
+            'opens a handle fails the command RALLAR_BLACK_BOX_ALM_SEND_NOT_REFUSED, and any other failure fails it ' +
+            'as an ordinary send. ' +
             'A replay names only replayOnCarrier (and connection): a ' +
             'harness capability the product never exercises, it re-admits the envelope an earlier handle\'s first ' +
             'carrier captured on the other carrier, opens no handle, and returns that admission verdict.',
@@ -44,6 +48,7 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
         liveServiceRequirements: ['api-v1'],
         artifactExpectations: [
             'send result with handleId, carrier, and admission status',
+            'call refusal result with handleId, carrier, and the refusal\'s issues',
             'replay result with handleId, msgId, carrier, and admission verdict'
         ],
         example: {
