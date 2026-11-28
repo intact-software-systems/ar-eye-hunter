@@ -46,8 +46,9 @@ governance-gate phase. An entry in the registry records that a write exists; it 
   [direct-write-sites.mjs](./direct-write-sites.mjs):
   [admission-backend-facts.mjs](./admission-backend-facts.mjs) (port implementations, PostgreSQL constructions, port
   writes, wiring imports, row families), [transaction-opener-facts.mjs](./transaction-opener-facts.mjs),
-  [sql-write-facts.mjs](./sql-write-facts.mjs) (SQL write files, root handles fed into writes) and
-  [repository-write-facts.mjs](./repository-write-facts.mjs) (root repository writes and their callers to a fixed point).
+  [sql-write-facts.mjs](./sql-write-facts.mjs) (SQL write files, root handles fed into writes, to a fixed point),
+  [repository-write-facts.mjs](./repository-write-facts.mjs) (root repository writes and their callers to a fixed point)
+  and [queue-write-facts.mjs](./queue-write-facts.mjs) (queue row writes, claims and releases on a queue-typed receiver).
 - [compute-direct-write-findings.mjs](./compute-direct-write-findings.mjs) reports `direct-write.unregistered`,
   `direct-write.stale-entry` and `direct-write.changed` (a count, namespace, backend or statement list that moved).
 
@@ -56,8 +57,10 @@ Tests live under [`packages/tests/repo/direct-write-check/`](../../packages/test
 
 ## What it does not see
 
-- A write through the queue API (`enqueue`, `enqueueIfAbsent`, `writeIfAbsent`, `replaceIfObserved`): AppInbox and the
-  transport both enqueue through it, so a `WS_OUTBOX` row enqueued directly from a new incoming path is not caught.
+- A queue write through a port declared outside the queue packages: `ALWorkQueuePort.retainIfAbsent` (a new caller of
+  it on an incoming path writes `resource_inbox` and is not caught), the inbox and outbox readers of
+  `packages/shared/services`, and AppInbox's own `enqueue`. Only a call whose receiver's type `packages/shared/queuebox`
+  or `packages/shared-server/queuebox` declares is a fact.
 - A new caller of a registered store higher in the call chain, such as a new WebSocket topic that publishes through the
   router with an outbox fan-out: it reaches the outbound store through ordinary product API.
 - A row family whose key is built inline rather than by an exported `toAL...Key` or `toAL...Prefix` builder under

@@ -56,17 +56,18 @@ caller from an incoming path is visible.
 
 ## What the check computes
 
-| List                              | A surface is                                                                                                                                                               |
-| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `admissionBackendImplementations` | a class implementing the ALM admission port, with whether it holds a PostgreSQL handle                                                                                     |
-| `admissionBackendConstructions`   | a construction of a PostgreSQL implementation, with the namespace text it is given                                                                                         |
-| `admissionBackendWrites`          | a `write` call whose receiver is the port or one of its implementations                                                                                                    |
-| `wiringImports`                   | a runtime import of one of `wiringModules`                                                                                                                                 |
-| `transactionOpeners`              | a call of `begin`, `transaction`, `savepoint` or `runInPSqlTransaction` that hands over a callback                                                                         |
-| `sqlWriteFiles`                   | a file holding an SQL write or row lock not tagged on a `PSqlSql` parameter named `transaction` or `tx`                                                                    |
-| `nonTransactionHandleFeeds`       | a root `PSqlSql` handle passed to a `transaction` parameter, or to code declared in an `sqlWriteFiles` file or in a file that itself feeds a root handle, to a fixed point |
-| `repositoryWriteCallers`          | a class or function that calls a write of `repositoryContractModules` on a root repository, or reaches one                                                                 |
-| `rowFamilies`                     | an exported `toAL...Key` or `toAL...Prefix` function or arrow under `packages/shared/alm`, or a work topic of `workTopicConstants`                                         |
+| List                              | A surface is                                                                                                                                                                 |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `admissionBackendImplementations` | a class implementing the ALM admission port, with whether it holds a PostgreSQL handle                                                                                       |
+| `admissionBackendConstructions`   | a construction of a PostgreSQL implementation, with the namespace text it is given                                                                                           |
+| `admissionBackendWrites`          | a `write` call whose receiver is the port or one of its implementations                                                                                                      |
+| `wiringImports`                   | a runtime import of one of `wiringModules`                                                                                                                                   |
+| `transactionOpeners`              | a call of `begin`, `transaction`, `savepoint` or `runInPSqlTransaction` that hands over a callback                                                                           |
+| `sqlWriteFiles`                   | a file holding an SQL write or row lock not tagged on a `PSqlSql` parameter named `transaction` or `tx`                                                                      |
+| `nonTransactionHandleFeeds`       | a root `PSqlSql` handle passed to a `transaction` parameter, or to code declared in an `sqlWriteFiles` file or in a file that itself feeds a root handle, to a fixed point   |
+| `repositoryWriteCallers`          | a class or function that calls a write of `repositoryContractModules` on a root repository, or reaches one                                                                   |
+| `queueWriteCallers`               | a class method or function that writes, claims or releases queue rows through a receiver whose type `packages/shared/queuebox` or `packages/shared-server/queuebox` declares |
+| `rowFamilies`                     | an exported `toAL...Key` or `toAL...Prefix` function or arrow under `packages/shared/alm`, or a work topic of `workTopicConstants`                                           |
 
 Identities are `path#owner` and never contain a line number. `scripts/direct-write-check/README.md` says what the check
 does not see.
@@ -1013,6 +1014,230 @@ review. A `basis` says what was read in the code, in one sentence.
       "class": "no-production-caller",
       "count": 5,
       "basis": "Write methods on a root repository; neither the type-resolved closure nor a text search of their names found a production caller outside the repository classes."
+    }
+  ],
+  "queueWriteCallers": [
+    {
+      "id": "packages/shared-server/queuebox/postgres/p-sql-queue-box.ts#PSqlQueueBox.enqueueIfAbsent",
+      "class": "queue-machinery",
+      "count": 1,
+      "methods": [
+        "writeIfAbsent"
+      ],
+      "basis": "PSqlQueueBox forwards enqueueIfAbsent to its own writeIfAbsent. Called by the ALM backend's queue on an incoming path, the write belongs to the three stores under review."
+    },
+    {
+      "id": "packages/shared-server/queuebox/postgres/p-sql-queue-box.ts#PSqlQueueBox.replaceIfObserved",
+      "class": "queue-machinery",
+      "count": 1,
+      "methods": [
+        "replaceIfObserved"
+      ],
+      "basis": "PSqlQueueBox forwards replaceIfObserved to its entry repository. Called by the ALM backend's queue on an incoming path, the write belongs to the three stores under review."
+    },
+    {
+      "id": "packages/shared-server/rallar-system/group-state/presence/group-presence-summary-claim.ts#claimPendingGroupPresenceSummaryWork",
+      "class": "downstream-work",
+      "count": 1,
+      "methods": [
+        "reserveEntries"
+      ],
+      "basis": "Claims pending presence summary rows. Trigger: GroupPresenceSummaryWork in group-presence-summary-worker.ts, run from a queued summary row."
+    },
+    {
+      "id": "packages/shared-server/rallar-system/group-state/presence/group-presence-summary-claim.ts#releaseUnexpandedGroupPresenceSummaryWork",
+      "class": "downstream-work",
+      "count": 1,
+      "methods": [
+        "releaseEntries"
+      ],
+      "basis": "Releases claimed presence summary rows it did not expand. Trigger: GroupPresenceSummaryWork in group-presence-summary-worker.ts."
+    },
+    {
+      "id": "packages/shared-server/rallar-system/queue-pubsub/requeue-remote-ws-outbox-delivery-failure.ts#requeueRemoteWsOutboxDeliveryFailure",
+      "class": "downstream-work",
+      "count": 1,
+      "methods": [
+        "replaceIfObserved"
+      ],
+      "basis": "Requeues a WS_OUTBOX row whose delivery, announced by another server instance over cluster pub/sub (queue-box-pub-sub-bridge.ts), failed here; whether that notice is a peer message under the rule is open for the maintainer."
+    },
+    {
+      "id": "packages/shared/alm/inbound/lane/al-inbound-store-lane.ts#ALInboundStoreLane.writeRetainedDeliveryDueNow",
+      "class": "transport-direct",
+      "stores": [
+        "alm-inbound-admission"
+      ],
+      "count": 1,
+      "methods": [
+        "replaceIfObserved"
+      ],
+      "basis": "The inbound store lane replaces a retained delivery row through the backend's own workQueue, outside PSqlAdmissionWorkBackend.write."
+    },
+    {
+      "id": "packages/shared/alm/work/al-work-queue-port.ts#createALWorkQueuePort.retainIfAbsent",
+      "class": "transport-direct",
+      "stores": [
+        "alm-inbound-admission",
+        "alm-outbound-admission",
+        "alm-receipt-record"
+      ],
+      "count": 1,
+      "methods": [
+        "enqueueIfAbsent"
+      ],
+      "basis": "The ALM work queue port writes, claims or releases resource_inbox rows through the backend's own workQueue, outside PSqlAdmissionWorkBackend.write."
+    },
+    {
+      "id": "packages/shared/alm/work/al-work-queue-port.ts#finalizeExhaustedALWork",
+      "class": "transport-direct",
+      "stores": [
+        "alm-inbound-admission",
+        "alm-outbound-admission",
+        "alm-receipt-record"
+      ],
+      "count": 1,
+      "methods": [
+        "reserveRetryExhaustionFinalizations"
+      ],
+      "basis": "The ALM work queue port writes, claims or releases resource_inbox rows through the backend's own workQueue, outside PSqlAdmissionWorkBackend.write."
+    },
+    {
+      "id": "packages/shared/alm/work/al-work-queue-port.ts#releaseALWorkClaims",
+      "class": "transport-direct",
+      "stores": [
+        "alm-inbound-admission",
+        "alm-outbound-admission",
+        "alm-receipt-record"
+      ],
+      "count": 1,
+      "methods": [
+        "releaseEntries"
+      ],
+      "basis": "The ALM work queue port writes, claims or releases resource_inbox rows through the backend's own workQueue, outside PSqlAdmissionWorkBackend.write."
+    },
+    {
+      "id": "packages/shared/alm/work/al-work-queue-port.ts#releaseALWorkClaimsSerially",
+      "class": "transport-direct",
+      "stores": [
+        "alm-inbound-admission",
+        "alm-outbound-admission",
+        "alm-receipt-record"
+      ],
+      "count": 1,
+      "methods": [
+        "releaseEntries"
+      ],
+      "basis": "The ALM work queue port writes, claims or releases resource_inbox rows through the backend's own workQueue, outside PSqlAdmissionWorkBackend.write."
+    },
+    {
+      "id": "packages/shared/alm/work/al-work-queue-port.ts#reserveALWorkTimeouts",
+      "class": "transport-direct",
+      "stores": [
+        "alm-inbound-admission",
+        "alm-outbound-admission",
+        "alm-receipt-record"
+      ],
+      "count": 1,
+      "methods": [
+        "reserveTimeoutEntries"
+      ],
+      "basis": "The ALM work queue port writes, claims or releases resource_inbox rows through the backend's own workQueue, outside PSqlAdmissionWorkBackend.write."
+    },
+    {
+      "id": "packages/shared/alm/work/al-work-queue-port.ts#reservePendingALWork",
+      "class": "transport-direct",
+      "stores": [
+        "alm-inbound-admission",
+        "alm-outbound-admission",
+        "alm-receipt-record"
+      ],
+      "count": 1,
+      "methods": [
+        "reserveEntries"
+      ],
+      "basis": "The ALM work queue port writes, claims or releases resource_inbox rows through the backend's own workQueue, outside PSqlAdmissionWorkBackend.write."
+    },
+    {
+      "id": "packages/shared/queuebox/in-memory-queue-box.ts#InMemoryQueueBox.enqueueIfAbsent",
+      "class": "browser-or-memory",
+      "count": 1,
+      "methods": [
+        "writeIfAbsent"
+      ],
+      "basis": "The in-memory queue forwards enqueueIfAbsent to its own writeIfAbsent and writes no database."
+    },
+    {
+      "id": "packages/shared/queuebox/indexed-db-queue-box.ts#IndexedDbQueueBox.enqueueIfAbsent",
+      "class": "browser-or-memory",
+      "count": 1,
+      "methods": [
+        "writeIfAbsent"
+      ],
+      "basis": "The browser IndexedDB queue forwards enqueueIfAbsent to its own writeIfAbsent and holds no server database handle."
+    },
+    {
+      "id": "packages/shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts#releaseResourceInboxFailure",
+      "class": "queue-machinery",
+      "count": 1,
+      "methods": [
+        "releaseEntries"
+      ],
+      "basis": "The generic ResourceInbox dequeuer claims or releases queue rows for the worker that drives it, AppInbox's workers among them. Called by the ALM backend's queue on an incoming path, the write belongs to the three stores under review."
+    },
+    {
+      "id": "packages/shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts#releaseResourceInboxSuccesses",
+      "class": "queue-machinery",
+      "count": 1,
+      "methods": [
+        "releaseEntries"
+      ],
+      "basis": "The generic ResourceInbox dequeuer claims or releases queue rows for the worker that drives it, AppInbox's workers among them. Called by the ALM backend's queue on an incoming path, the write belongs to the three stores under review."
+    },
+    {
+      "id": "packages/shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts#reserveResourceInboxAttempts",
+      "class": "queue-machinery",
+      "count": 2,
+      "methods": [
+        "reserveEntries"
+      ],
+      "basis": "The generic ResourceInbox dequeuer claims or releases queue rows for the worker that drives it, AppInbox's workers among them. Called by the ALM backend's queue on an incoming path, the write belongs to the three stores under review."
+    },
+    {
+      "id": "packages/shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts#reserveResourceInboxFairness",
+      "class": "queue-machinery",
+      "count": 1,
+      "methods": [
+        "reserveOverdueRetryEntries"
+      ],
+      "basis": "The generic ResourceInbox dequeuer claims or releases queue rows for the worker that drives it, AppInbox's workers among them. Called by the ALM backend's queue on an incoming path, the write belongs to the three stores under review."
+    },
+    {
+      "id": "packages/shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts#reserveResourceInboxFinalizations",
+      "class": "queue-machinery",
+      "count": 1,
+      "methods": [
+        "reserveRetryExhaustionFinalizations"
+      ],
+      "basis": "The generic ResourceInbox dequeuer claims or releases queue rows for the worker that drives it, AppInbox's workers among them. Called by the ALM backend's queue on an incoming path, the write belongs to the three stores under review."
+    },
+    {
+      "id": "packages/shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts#reserveResourceInboxTimeouts",
+      "class": "queue-machinery",
+      "count": 1,
+      "methods": [
+        "reserveTimeoutEntries"
+      ],
+      "basis": "The generic ResourceInbox dequeuer claims or releases queue rows for the worker that drives it, AppInbox's workers among them. Called by the ALM backend's queue on an incoming path, the write belongs to the three stores under review."
+    },
+    {
+      "id": "packages/shared/services/queue-message-reader.ts#QueueMessageReader.writeIfAbsent",
+      "class": "queue-machinery",
+      "count": 1,
+      "methods": [
+        "writeIfAbsent"
+      ],
+      "basis": "QueueMessageReader writes a queue row for the inbox and outbox readers built on it, AppInbox's queue-entry writer among them; a caller on an incoming path reaches it through those readers, which the check does not follow."
     }
   ],
   "rowFamilies": [

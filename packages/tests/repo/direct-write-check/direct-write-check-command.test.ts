@@ -205,6 +205,7 @@ function baseRegistry() {
         sqlWriteFiles: [],
         nonTransactionHandleFeeds: [],
         repositoryWriteCallers: [],
+        queueWriteCallers: [],
         rowFamilies: []
     };
 }

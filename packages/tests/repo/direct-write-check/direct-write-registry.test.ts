@@ -206,6 +206,7 @@ function registryWith(overrides: RegistryOverrides): JsonObject {
         sqlWriteFiles: [],
         nonTransactionHandleFeeds: [],
         repositoryWriteCallers: [],
+        queueWriteCallers: [],
         rowFamilies: []
     };
 }

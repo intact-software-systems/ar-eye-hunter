@@ -12,6 +12,7 @@ import { computeDirectWriteCensusLines } from './compute-direct-write-census.mjs
 import { computeDirectWriteFindings } from './compute-direct-write-findings.mjs';
 import { toDirectWriteRegistry, validateDirectWriteRegistry } from './direct-write-registry.mjs';
 import { toRepositoryPath } from './direct-write-sites.mjs';
+import { computeQueueWriteFacts } from './queue-write-facts.mjs';
 import { computeRepositoryWriteFacts } from './repository-write-facts.mjs';
 import { computeSqlWriteFacts } from './sql-write-facts.mjs';
 import { computeTransactionOpenerFacts } from './transaction-opener-facts.mjs';
@@ -69,7 +70,8 @@ function computeDirectWriteFacts(project, scope) {
         ...computeAdmissionBackendFacts(project, scope),
         transactionOpeners: computeTransactionOpenerFacts(project, scope),
         ...computeSqlWriteFacts(project, scope),
-        repositoryWriteCallers: computeRepositoryWriteFacts(project, scope)
+        repositoryWriteCallers: computeRepositoryWriteFacts(project, scope),
+        queueWriteCallers: computeQueueWriteFacts(project, scope)
     };
 }
 

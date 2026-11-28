@@ -11,6 +11,7 @@ export const DIRECT_WRITE_FACT_SETS = [
     'sqlWriteFiles',
     'nonTransactionHandleFeeds',
     'repositoryWriteCallers',
+    'queueWriteCallers',
     'rowFamilies'
 ];
 export const DIRECT_WRITE_CLASSES = [
