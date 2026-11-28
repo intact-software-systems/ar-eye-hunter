@@ -818,6 +818,15 @@ declared per topic and type for every room, so a page that follows two rooms can
 the gap. The relay therefore fenced on the sender only, and a session that directs two rooms on one topic had each
 gap passed to both relays.
 
-- _Add the room to the gap_ (chosen). The gap gains the room's `contextId`, taken from the stream's messages, and
-  the relay fences on it. A small public addition to edge order, built with ruling 14.
+- _Add the room to the gap_ (chosen). The gap names the room of its stream, and the relay fences on it. A small
+  public addition to edge order, built with ruling 14.
 - _Leave it_ (not chosen). The case is rare and costs one needless sync request.
+
+How the room is named, ruled the same day when the design asked: as `roomRef`, the full `GroupRef`, a required
+field.
+
+- _`roomRef: GroupRef`_ (chosen). The sender already keys its streams by the full room ref, the relay fences its
+  messages by it, and one group id can exist in two scopes. It costs about 60 bytes more, and a stamped arrival
+  whose envelope names no room is dropped as `unwrapped`; the repository's sender never produces one.
+- _`contextId: string`_ (not chosen), the bare group id, as this ruling was first worded. No new drop path, but a
+  weaker fence than the message fence beside it.
