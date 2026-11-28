@@ -1,3 +1,4 @@
+import { BrowserDirectorOutputChannels } from '@shared-web/browser/director/browser-director-output-channels.ts';
 import { BrowserDirectorRelayTransport } from '@shared-web/browser/director/browser-director-relay-transport.ts';
 import type { RallarDirectorRelayEnvelope, RallarDirectorStatus } from '@shared-web/browser/director/rallar-director-facade.ts';
 import type {
@@ -37,7 +38,7 @@ const current: RallarDirectorStatus = {
     nowEpochMs: 0,
     appointment: { version: 1, mode: 'appointed-spa', sessionId: 'director', principalId: 'principal', epoch: 1, appointedAtEpochMs: 0, heartbeatTtlMs: 5_000 }
 };
-const envelopeInput = { current, topicId: 'room.director', typeId: 'output', payload: { revision: 1 }, ack: undefined };
+const envelopeInput = { current, topicId: 'room.director', typeId: 'output', payload: { revision: 1 } };
 const clientStatus: RallarDirectorStatus = { ...current, role: 'client', isDirector: false };
 const commandInput = {
     current: clientStatus,
@@ -55,7 +56,7 @@ describe('director delivery admission', () => {
         const ws = vi.fn(async () => createMessageDelivery('ws', { kind: 'admitted', durable: true, queuedAttempts: 1 }).handle);
         const transport = createTransport(rtc, ws);
         let completed = false;
-        const sending = transport.sendRoomEnvelope(envelopeInput).then((result) => {
+        const sending = transport.sendBestEffortRoomEnvelope(envelopeInput).then((result) => {
             completed = true;
             return result;
         });
@@ -89,7 +90,7 @@ describe('director delivery admission', () => {
                 return rtc.handle;
             }
         });
-        const result = await transport.sendRoomEnvelope({ ...envelopeInput, bestEffortFirst: 'ws' });
+        const result = await transport.sendBestEffortRoomEnvelope({ ...envelopeInput, bestEffortFirst: 'ws' });
         expect(result).toEqual({ status: 'sent', ws: ws.handle });
         expect(delivered).toEqual([{ carrier: 'ws', roomRef: current.roomRef }]);
     });
@@ -98,10 +99,10 @@ describe('director delivery admission', () => {
         const rtc = createMessageDelivery('rtc', { kind: 'admitted', durable: true, queuedAttempts: 1 });
         const ws = createMessageDelivery('ws', { kind: 'failed', detail: 'WS disconnected' });
         const options = { ...envelopeInput, bestEffortFirst: 'ws' as const };
-        expect(await createTransport(rtc, async () => ws.handle).sendRoomEnvelope(options))
+        expect(await createTransport(rtc, async () => ws.handle).sendBestEffortRoomEnvelope(options))
             .toEqual({ status: 'sent', ws: ws.handle, rtc: rtc.handle });
         const denied = createMessageDelivery('ws', { kind: 'refused', reason: 'unauthorized', detail: 'Room denied' });
-        expect(await createTransport(rtc, async () => denied.handle).sendRoomEnvelope(options))
+        expect(await createTransport(rtc, async () => denied.handle).sendBestEffortRoomEnvelope(options))
             .toEqual({ status: 'failed', ws: denied.handle, reason: 'Room denied' });
     });
 
@@ -111,17 +112,17 @@ describe('director delivery admission', () => {
             throw new Error('A down room WebSocket must not carry the heartbeat.');
         };
         const options = { ...envelopeInput, bestEffortFirst: 'ws' as const };
-        expect(await createTransport(rtc, ws, { isWebSocketDown: true }).sendRoomEnvelope(options))
+        expect(await createTransport(rtc, ws, { isWebSocketDown: true }).sendBestEffortRoomEnvelope(options))
             .toEqual({ status: 'sent', rtc: rtc.handle });
         const failed = createMessageDelivery('rtc', { kind: 'failed', detail: 'RTC failed' });
-        expect(await createTransport(failed, ws, { isWebSocketDown: true }).sendRoomEnvelope(options))
+        expect(await createTransport(failed, ws, { isWebSocketDown: true }).sendBestEffortRoomEnvelope(options))
             .toEqual({ status: 'failed', rtc: failed.handle, reason: 'RTC failed' });
     });
 
     it('falls back after failed RTC and reports WS refusal reason', async () => {
         const rtc = createMessageDelivery('rtc', { kind: 'failed', detail: 'RTC failed' });
         const ws = createMessageDelivery('ws', { kind: 'refused', reason: 'unauthorized', detail: 'Room denied' });
-        expect(await createTransport(rtc, async () => ws.handle).sendRoomEnvelope(envelopeInput)).toEqual({
+        expect(await createTransport(rtc, async () => ws.handle).sendBestEffortRoomEnvelope(envelopeInput)).toEqual({
             status: 'failed',
             rtc: rtc.handle,
             ws: ws.handle,
@@ -133,61 +134,63 @@ describe('director delivery admission', () => {
         vi.useFakeTimers();
         const rtc = createMessageDelivery('rtc', undefined);
         const ws = createMessageDelivery('ws', { kind: 'admitted', durable: true, queuedAttempts: 1 });
-        const sending = createTransport(rtc, async () => ws.handle).sendRoomEnvelope(envelopeInput);
+        const sending = createTransport(rtc, async () => ws.handle).sendBestEffortRoomEnvelope(envelopeInput);
         await vi.advanceTimersByTimeAsync(5_000);
         expect(await sending).toEqual({ status: 'sent', rtc: rtc.handle, ws: ws.handle });
         expect(vi.getTimerCount()).toBe(0);
     });
 });
 
-describe('director receipt output', () => {
-    const receiptInput = { ...envelopeInput, ack: 'all-logical-recipients' } as const;
+describe('director output', () => {
+    it('sends an unreceipted output as one best-effort room message on the relay\'s channel, with no carrier-pinned send', async () => {
+        const output = createMessageDelivery('rtc', { kind: 'admitted', durable: false, queuedAttempts: 1 });
+        const room = createRoomChannel(async () => output.handle);
+        const transport = createTransport(output, rejectCarrierSend, { rtcSend: rejectCarrierSend });
 
-    it('sends one room message over the RTC-with-WS-fallback strategy and returns its handle as the receipt', async () => {
+        expect(await transport.sendOutputEnvelope({ ...envelopeInput, channel: room.channel, ack: undefined }))
+            .toEqual({ status: 'sent', receipt: output.handle });
+        expect(room.sends).toEqual([[
+            expect.objectContaining({ protocol: 'rallar.director.relay.v1', typeId: 'output', payload: { revision: 1 } }),
+            { roomRef: current.roomRef, strategy: 'rtc-with-ws-fallback', reliability: 'best-effort', ack: 'none', ttlMs: 5_000 }
+        ]]);
+    });
+
+    it('sends a receipted output as one at-least-once room message that asks every recipient its receipt', async () => {
         const receipt = createMessageDelivery('rtc', { kind: 'admitted', durable: true, queuedAttempts: 1 });
         const room = createRoomChannel(async () => receipt.handle);
-        const transport = createTransport(createMessageDelivery('rtc', undefined), rejectCarrierSend, {
-            room: toRoomOperation(room),
-            rtcSend: rejectCarrierSend
-        });
+        const transport = createTransport(receipt, rejectCarrierSend, { rtcSend: rejectCarrierSend });
 
-        expect(await transport.sendRoomEnvelope(receiptInput)).toEqual({ status: 'sent', receipt: receipt.handle });
-        expect(room.open).toHaveBeenCalledWith({
-            topicId: 'room.director',
-            typeId: 'output',
-            roomRef: current.roomRef,
-            purpose: 'notification',
-            access: 'members'
-        });
-        expect(room.send).toHaveBeenCalledWith(
+        expect(await transport.sendOutputEnvelope({ ...envelopeInput, channel: room.channel, ack: 'all-logical-recipients' }))
+            .toEqual({ status: 'sent', receipt: receipt.handle });
+        expect(room.sends).toEqual([[
             expect.objectContaining({ protocol: 'rallar.director.relay.v1', typeId: 'output', payload: { revision: 1 } }),
-            { strategy: 'rtc-with-ws-fallback', reliability: 'at-least-once', ack: 'all-logical-recipients', ttlMs: 30_000 }
-        );
+            {
+                roomRef: current.roomRef,
+                strategy: 'rtc-with-ws-fallback',
+                reliability: 'at-least-once',
+                ack: 'all-logical-recipients',
+                ttlMs: 30_000
+            }
+        ]]);
     });
 
-    it('reports a refused receipt output with its reason and no second carrier send', async () => {
-        const receipt = createMessageDelivery('ws', { kind: 'refused', reason: 'unauthorized', detail: 'Room denied' });
-        const room = createRoomChannel(async () => receipt.handle);
-        const transport = createTransport(createMessageDelivery('rtc', undefined), rejectCarrierSend, {
-            room: toRoomOperation(room),
-            rtcSend: rejectCarrierSend
-        });
+    it.each([undefined, 'all-logical-recipients'] as const)('reports an output refused at admission as failed with its reason (ack %s)', async (ack) => {
+        const refused = createMessageDelivery('ws', { kind: 'refused', reason: 'unauthorized', detail: 'Room denied' });
+        const room = createRoomChannel(async () => refused.handle);
+        const transport = createTransport(refused, rejectCarrierSend, { rtcSend: rejectCarrierSend });
 
-        expect(await transport.sendRoomEnvelope(receiptInput)).toEqual({ status: 'failed', receipt: receipt.handle, reason: 'Room denied' });
+        expect(await transport.sendOutputEnvelope({ ...envelopeInput, channel: room.channel, ack }))
+            .toEqual({ status: 'failed', receipt: refused.handle, reason: 'Room denied' });
+        expect(room.sends).toEqual([[expect.objectContaining({ typeId: 'output' }), expect.objectContaining({ roomRef: current.roomRef })]]);
     });
 
-    it('keeps a best-effort output on the two-send path without a room channel', async () => {
-        const rtc = createMessageDelivery('rtc', { kind: 'admitted', durable: true, queuedAttempts: 1 });
-        const rtcSend = vi.fn(async () => rtc.handle);
-        const transport = createTransport(rtc, rejectCarrierSend, {
-            room: () => {
-                throw new Error('A best-effort output must not use the receipt channel.');
-            },
-            rtcSend
-        });
+    it('refuses an output from a session that is not the director without sending it', async () => {
+        const room = createRoomChannel(rejectCarrierSend);
+        const transport = createTransport(createMessageDelivery('rtc', undefined), rejectCarrierSend, { rtcSend: rejectCarrierSend });
 
-        expect(await transport.sendRoomEnvelope(envelopeInput)).toEqual({ status: 'sent', rtc: rtc.handle });
-        expect(rtcSend).toHaveBeenCalledWith(expect.objectContaining({ reliability: 'best-effort', ack: 'none', ttlMs: 5_000 }));
+        expect(await transport.sendOutputEnvelope({ ...envelopeInput, current: clientStatus, channel: room.channel, ack: undefined }))
+            .toMatchObject({ status: 'not-director' });
+        expect(room.sends).toEqual([]);
     });
 });
 
@@ -475,7 +478,10 @@ describe('director notification fence', () => {
             isWebSocketDown: () => false
         });
 
-        await transport.sendRoomEnvelope({ ...envelopeInput, ack: 'all-logical-recipients' });
+        const channel = new BrowserDirectorOutputChannels({ messages: facade.messages })
+            .open<OutputPayload>({ topicId: 'room.director', typeId: 'output' });
+
+        await transport.sendOutputEnvelope({ ...envelopeInput, channel, ack: 'all-logical-recipients' });
 
         expect(vi.mocked(mocks.apiMiddleware.middleware.rtcRxStreamer).enqueueOutboxIfAbsent.mock.calls[0][0].targets).toMatchObject({
             mode: 'multicast',
@@ -573,13 +579,22 @@ interface OutputPayload {
     readonly revision: number;
 }
 
+type RoomChannelSend = Parameters<RallarTypedMessageChannel<RallarDirectorRelayEnvelope<OutputPayload>>['send']>;
+
 interface RoomChannelDouble {
     readonly open: Mock<(definition: RallarRoomMessageChannelDefinition) => RallarTypedMessageChannel<RallarDirectorRelayEnvelope<OutputPayload>>>;
     readonly send: Mock<RallarTypedMessageChannel<RallarDirectorRelayEnvelope<OutputPayload>>['send']>;
+    readonly channel: RallarTypedMessageChannel<RallarDirectorRelayEnvelope<OutputPayload>>;
+    /** Every send's envelope and options, in order. */
+    readonly sends: RoomChannelSend[];
 }
 
 function createRoomChannel(send: RallarTypedMessageChannel<RallarDirectorRelayEnvelope<OutputPayload>>['send']): RoomChannelDouble {
-    const sendDouble = vi.fn<RallarTypedMessageChannel<RallarDirectorRelayEnvelope<OutputPayload>>['send']>(send);
+    const sends: RoomChannelSend[] = [];
+    const sendDouble = vi.fn<RallarTypedMessageChannel<RallarDirectorRelayEnvelope<OutputPayload>>['send']>((...args) => {
+        sends.push(args);
+        return send(...args);
+    });
     const channel: RallarTypedMessageChannel<RallarDirectorRelayEnvelope<OutputPayload>> = {
         send: sendDouble,
         sendRtc: rejectCarrierSend,
@@ -591,7 +606,7 @@ function createRoomChannel(send: RallarTypedMessageChannel<RallarDirectorRelayEn
         }
     };
     const open = vi.fn((_definition: RallarRoomMessageChannelDefinition) => channel);
-    return { open, send: sendDouble };
+    return { open, send: sendDouble, channel, sends };
 }
 
 function toRoomOperation(room: RoomChannelDouble): RallarMessagesOperations['room'] {

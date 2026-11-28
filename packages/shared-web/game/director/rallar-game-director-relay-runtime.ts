@@ -3,7 +3,8 @@ import type {
     RallarDirectorRelayClaim,
     RallarDirectorRelayHandle,
     RallarDirectorRelayMessage,
-    RallarDirectorRelaySendResult
+    RallarDirectorRelaySendResult,
+    RallarMessageOrderGap
 } from '@shared-web/browser/rallar.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { RallarGameEnvelope, RallarGameEnvelopeKind } from '../envelopes.ts';
@@ -217,6 +218,7 @@ export class RallarGameDirectorRelayRuntime<TInput, TIntent, TSnapshot, TEvent, 
                     handler: config.onEvent,
                     requireFreshDirectorSender: true
                 }),
+            onOutputGap: (gap) => this.startSyncOnGap(gap),
             onSnapshot: async (message) =>
                 await this.input.handleEnvelope({
                     message,
@@ -230,6 +232,23 @@ export class RallarGameDirectorRelayRuntime<TInput, TIntent, TSnapshot, TEvent, 
                     kind: 'sync-request',
                     handler: config.onSyncRequest
                 })
+        });
+    }
+
+    /**
+     * The stream's next event waits for the gap callback, so the sync request is started, not awaited. A gap the
+     * sender said is over, most often a lost unreceipted event, asks for nothing: the next snapshot repairs it, as it
+     * repairs a sync request that fails as a result value.
+     */
+    private startSyncOnGap(gap: RallarMessageOrderGap): void {
+        if (gap.reason === 'ended-at-sender') {
+            return;
+        }
+        void this.requestSync({ reason: 'event-order-gap' }).catch((error) => {
+            console.error(
+                `Failed to request a sync for Rallar Game match ${this.input.config.protocol} after event order gap ${gap.reason}:`,
+                error
+            );
         });
     }
 

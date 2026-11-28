@@ -526,9 +526,13 @@ Message ownership is concentrated under [`messages/`](./messages/):
     open send; its stream and record counts stay where the caps left them.
   - **Refused as `unsupported`**, at the definition
     ([`validate-edge-order-channel.ts`](./messages/edge-order/validate-edge-order-channel.ts)): a channel with a
-    durability other than `volatile`, because the order lives in memory only; `channel(...)` without a room,
-    because a stream belongs to one room; and `onOrderGap`, `orderGapWaitMs` or `orderEntryWindowMs` on a channel
-    that declares no order. At the send, before it takes a position
+    durability other than `volatile`, because the order lives in memory only, and `onOrderGap`, `orderGapWaitMs` or
+    `orderEntryWindowMs` on a channel that declares no order. `order` on `channel(...)`, whatever it names
+    (`validateRoomlessChannelOrder` in
+    [`browser-typed-message-channels.ts`](./messages/browser-typed-message-channels.ts)): only `room(...)` is
+    edge-ordered, and a `room(...)` definition that names no room is taken: each of its sends goes to the room it
+    names, or else to the page's default or current room.
+    At the send, before it takes a position
     ([`validate-edge-order-send.ts`](./messages/edge-order/validate-edge-order-send.ts)): `ack: 'group-leader'`
     and a `qos.ack` other than `receiver` or `none`, because a hop's or a leader's receipt does not say the
     recipients have the message, so the sender could call a send over that a recipient still waits for;
@@ -549,6 +553,15 @@ Message ownership is concentrated under [`messages/`](./messages/):
     window. Nothing is stored, so order restarts at a reload. A handler that
     never settles stops the later turns of its own stream, and, as a handler of any channel does, the deliveries
     of the carrier its message came over; a stream that arrives over the other carrier goes on.
+  - **First consumer.** The director relay's output type is edge-ordered.
+    [BrowserDirectorOutputChannels](./director/browser-director-output-channels.ts), one per page, declares each
+    relay's output channel with no room and `orderGapWaitMs` 3 000 ms, and fans each gap out to every live relay on
+    the page; a relay passes on to its config's `onOutputGap` a gap of its own topic and output type whose sender is
+    its appointed director. [`sendOutputEnvelope`](./director/browser-director-relay-transport.ts) sends each output
+    as one room message over `rtc-with-ws-fallback`, receipted (`at-least-once`, `all-logical-recipients`, 30 s) or
+    not (`best-effort`, `ack: 'none'`, 5 s), so both kinds share one stream. Rallar Game's match
+    ([`rallar-game-director-relay-runtime.ts`](../game/director/rallar-game-director-relay-runtime.ts)) asks the
+    director for a sync on a gap that is not `ended-at-sender`. Heartbeats and snapshots are not edge-ordered.
 - [`rallar-message-contracts.ts`](./messages/rallar-message-contracts.ts),
   [`rallar-message-selectors.ts`](./messages/rallar-message-selectors.ts), and
   [`to-rallar-message.ts`](./messages/to-rallar-message.ts) keep the public

@@ -76,12 +76,11 @@ describe('a director at its volatile bound (D78)', () => {
     it('has its own heartbeat refused for capacity, on the RTC handle and without an RTC copy', async () => {
         const director = createDirectorAtTheBound();
 
-        const result = await director.transport.sendRoomEnvelope({
+        const result = await director.transport.sendBestEffortRoomEnvelope({
             current: DIRECTOR_STATUS,
             topicId: 'room.director',
             typeId: 'room.director.heartbeat.v1',
-            payload: { sessionId: DIRECTOR_PEER_ID },
-            ack: undefined
+            payload: { sessionId: DIRECTOR_PEER_ID }
         });
 
         expect(result.status).toBe('failed');

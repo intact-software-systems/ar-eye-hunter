@@ -153,10 +153,16 @@ export function isRallarGameEnvelope(
 export function createRallarGameSequenceTracker(): RallarGameSequenceTracker {
     const lastSeqByKey = new Map<string, number>();
     const intentSequencesByKey = new Map<string, RallarGameIntentSequences>();
-    const rejectBySequence = <T>(envelope: RallarGameEnvelope<T>, key: string) =>
-        envelope.kind === 'intent'
+    const rejectBySequence = <T>(envelope: RallarGameEnvelope<T>, key: string) => {
+        // An event reaches a match only through the relay's edge-ordered output type, which hands each position of a
+        // stream over once and in send order; a second order kept here could only drop an event edge order released.
+        if (envelope.kind === 'event') {
+            return undefined;
+        }
+        return envelope.kind === 'intent'
             ? getIntentSequences(intentSequencesByKey, key).accept(envelope.seq)
             : rejectByOrderedSequence(lastSeqByKey.get(key), envelope.seq);
+    };
 
     return {
         accept<T>(
