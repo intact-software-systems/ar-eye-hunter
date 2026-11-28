@@ -293,11 +293,10 @@ orderings unless it says otherwise below: two lines are worded by the ordering, 
   so that expiry, read by one clock, no longer throws. The tear is narrowed, not closed. The error
   recorded here now means a slot still stored without its message row, or a message row that names
   another track or sequence: a stored record that is invalid. Or it is the one stated case that
-  still throws, which the inbound README's "A buffered copy that expires during a read." names: a
-  PostgreSQL commit (an admission's, a release's or a delivery completion's) that read a slot and
-  then lost the slot and its message row to the expiry sweep before its own clock reached their
-  expiry, which needs the database's clock ahead of the instance's by a difference nothing in the
-  tree bounds, and throws with no record invalid.
+  still throws, which the inbound README's "A buffered copy that expires during a read." names: an
+  admission's PostgreSQL commit that read a slot and then lost the slot and its message row to the
+  expiry sweep before its own clock reached their expiry, which needs the database's clock ahead of
+  the instance's by a difference nothing in the tree bounds, and throws with no record invalid.
 - **Lateness.** From a send's due instant to its offer: how late the load generator itself was.
 - **Copies written to the recipient's socket, of expected.** A copy is one expected recipient's
   share of a send, fourteen a send. It is "written" when the server wrote its frame to that

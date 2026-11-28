@@ -213,9 +213,12 @@ export interface ReadALInboundBufferedMessageInput {
  * both expired deleted them. The slot's own key, read again through `database`, decides: gone, the pair left together
  * and the chain read no slot (`undefined`); still there, the slot reads as having lost its row, and that is thrown as
  * corruption. The second read reaches the store everywhere but in a PostgreSQL commit, which answers a key it has read
- * from the row it recorded then: any of the three commits that re-read a slot (an admission's, a release's, a delivery
- * completion's) that read it and then lost both rows to the expiry sweep, its own clock still before their expiry,
- * still throws. That one stated case is not decided here.
+ * from the row it recorded then. So any commit there that re-reads a slot (one guarded by a track read, as an
+ * admission's and a bounded hold's end's are; one guarded by a slot read, as a release's and a resync rejection's are;
+ * or a delivery completion's write) and that read it and then lost both rows to the expiry sweep, its own clock still
+ * before their expiry, still throws. In a replay that loses an accepted message silently; in a delivery completion, a
+ * bounded hold's end or a resync rejection it ends the work row `non-retryable`, and a resync rejection's NACK is not
+ * written (those two consequences are read from the code, not run). That one stated case is not decided here.
  */
 export async function readALInboundBufferedMessage(
     input: ReadALInboundBufferedMessageInput
