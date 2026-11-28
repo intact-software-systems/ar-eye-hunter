@@ -126,6 +126,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
             'minSnapshotVersion',
             'qos',
             'maxRepairs',
+            'supersedenceKey',
             'toPeer',
             'observe',
             'replayOnCarrier'

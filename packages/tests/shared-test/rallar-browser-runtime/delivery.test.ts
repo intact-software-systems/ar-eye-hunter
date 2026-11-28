@@ -697,6 +697,30 @@ it('merges a stated repair budget into the typed send\'s QoS beside a stated ack
     expect(facade.records.typedSends[2][1]).not.toHaveProperty('qos');
 });
 
+it('requests latest-wins for a stated supersedence key in the one QoS, beside a stated ack and repair budget', async () => {
+    const runtime = await loadDeliveryRuntime();
+    await runtime.connect(connection);
+    const rtcSend = { ...send, carrier: 'rtc', ack: 'receiver' };
+    await runtime.sendMessage({ ...rtcSend, handleId: 'h-key', supersedenceKey: 'cursor' });
+    await runtime.sendMessage({
+        ...rtcSend,
+        handleId: 'h-all',
+        supersedenceKey: 'cursor',
+        maxRepairs: 1,
+        qos: { ack: { algo: 'receiver' } }
+    });
+    await runtime.sendMessage({ ...rtcSend, handleId: 'h-none', maxRepairs: 1 });
+
+    const supersedence = { algo: 'latest-wins', opts: { supersedenceKey: 'cursor' } };
+    const repair = { algo: 'retransmit', opts: { maxRepairs: 1 } };
+    expect(facade.records.typedSends.map(([, options]) => options?.qos)).toEqual([
+        { supersedence },
+        { ack: { algo: 'receiver' }, repair, supersedence },
+        { repair }
+    ]);
+    expect(facade.records.typedSends[2][1]?.qos).not.toHaveProperty('supersedence');
+});
+
 it('passes an exclusive claim on a named resource to the typed send as given, and neither without one', async () => {
     const runtime = await loadDeliveryRuntime();
     await runtime.connect(connection);
@@ -1021,6 +1045,32 @@ it('decodes a stated repair budget, and none without one', () => {
         }).left
     ).toEqual({
         message: 'messages.send names maxRepairs beside replayOnCarrier; a replay names only the handle and its carrier.'
+    });
+});
+
+it('decodes a stated supersedence key, and none without one', () => {
+    const send = {
+        kind: 'messages.send',
+        timeoutMs: 1_000,
+        connection: 'sender',
+        carrier: 'rtc',
+        typeId: 'alm.conformance',
+        handleId: 'handle-1',
+        payload: { n: 1 }
+    };
+
+    expect(decodeBlackBoxRallarMessageSendInput({ ...send, supersedenceKey: 'cursor' }).right)
+        .toMatchObject({ supersedenceKey: 'cursor' });
+    expect(decodeBlackBoxRallarMessageSendInput(send).right).toHaveProperty('supersedenceKey', undefined);
+    expect(
+        decodeBlackBoxRallarMessageSendInput({
+            connection: 'sender',
+            timeoutMs: 1_000,
+            supersedenceKey: 'cursor',
+            replayOnCarrier: { handleId: 'handle-1', carrier: 'ws' }
+        }).left
+    ).toEqual({
+        message: 'messages.send names supersedenceKey beside replayOnCarrier; a replay names only the handle and its carrier.'
     });
 });
 

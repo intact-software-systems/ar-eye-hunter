@@ -111,9 +111,16 @@ function validateOrdinaryMessagesSendCommand(command: RallarBlackBoxTestRecord):
             path,
             ownMessageFields: []
         }),
-        ...['connection', 'typeId', 'topicId', 'orderingKey', 'handleId', 'resourceId', 'principalId'].flatMap((key) =>
-            validateStringField(command, key, path)
-        ),
+        ...[
+            'connection',
+            'typeId',
+            'topicId',
+            'orderingKey',
+            'handleId',
+            'resourceId',
+            'principalId',
+            'supersedenceKey'
+        ].flatMap((key) => validateStringField(command, key, path)),
         ...validateEnumField({ record: command, key: 'carrier', path, allowed: values.messagesCarrier }),
         ...validateEnumField({ record: command, key: 'purpose', path, allowed: values.messagesPurpose }),
         ...validateMessagesPublicationField(command),

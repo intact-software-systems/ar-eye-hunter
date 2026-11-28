@@ -734,6 +734,36 @@ describe('ALM recipe commands', () => {
         }
     });
 
+    it('accepts a string supersedence key and refuses a number', () => {
+        const send = (supersedenceKey: RallarBlackBoxTestJsonValue) => ({
+            kind: 'messages.send',
+            commandId: 'send-supersedence-key',
+            carrier: 'rtc',
+            typeId: 'alm.conformance',
+            payload: { n: 1 },
+            supersedenceKey
+        });
+        const schemaResult = validateJsonSchema(
+            RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
+            recipeWithCommand('send-supersedence-key', send('cursor'))
+        );
+        expect(schemaResult.ok, schemaResult.ok ? undefined : formatJsonSchemaValidationErrors(schemaResult.errors)).toBe(true);
+        expect(validateRallarBlackBoxTestCommand(send('cursor')).ok).toBe(true);
+        const refusedBySchema = validateJsonSchema(
+            RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
+            recipeWithCommand('send-supersedence-key', send(7))
+        );
+        expect(refusedBySchema.ok).toBe(false);
+        if (!refusedBySchema.ok) {
+            expect(formatJsonSchemaValidationErrors(refusedBySchema.errors)).toContain('supersedenceKey');
+        }
+        const refused = validateRallarBlackBoxTestCommand(send(7));
+        expect(refused.ok).toBe(false);
+        if (!refused.ok) {
+            expect(refused.messages.join('\n')).toContain('messages.send.supersedenceKey');
+        }
+    });
+
     it('accepts a live channel\'s purpose and publication and refuses an unknown purpose or a policy the product refuses', () => {
         const publication = { cadenceMs: 500, retainNewest: 1, drain: { messages: 8, bytes: 65_536 } };
         const send = (fields: RallarBlackBoxTestRecord) => ({

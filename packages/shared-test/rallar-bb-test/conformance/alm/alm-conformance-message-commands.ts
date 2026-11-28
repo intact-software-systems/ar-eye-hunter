@@ -41,6 +41,8 @@ interface AlmConformanceSendDelivery {
     readonly seq?: number;
     /** Absent, the product's repair budget. */
     readonly maxRepairs?: number;
+    /** Absent, no supersedence. */
+    readonly supersedenceKey?: string;
     readonly minSnapshotVersion?: RallarBlackBoxTestMessagesSendCommand['minSnapshotVersion'];
     /** Absent, the send addresses its room. */
     readonly toPeer?: RallarBlackBoxTestMessagesSendCommand['toPeer'];
