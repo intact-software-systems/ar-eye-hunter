@@ -50,7 +50,7 @@ function runDirectWriteCheck({ root, base }) {
         );
     }
     const project = loadAnalysedProject(root);
-    const scope = toScope(root, read.registry);
+    const scope = toScope(root, read);
     const scopeIssues = validateScopeModules(project, scope);
     if (scopeIssues.length > 0) {
         return reportFailure(
@@ -68,7 +68,7 @@ function runDirectWriteCheck({ root, base }) {
     return 0;
 }
 
-/** The registry, then the review pins it must match; any issue stops the check before the analysis. */
+/** The registry, the review pins it must match, and the schema; any issue stops the check before the analysis. */
 function readValidatedRegistry(root) {
     const document = readOptionalText(root, REGISTRY_PATH);
     if (document === undefined) {
@@ -83,7 +83,11 @@ function readValidatedRegistry(root) {
     if (pins === undefined) {
         return { issues: [`${REVIEW_PINS_PATH} cannot be read as JSON`] };
     }
-    return { registry: read.registry, issues: validateDirectWriteReviewPins(read.registry, pins) };
+    const schema = readOptionalText(root, SCHEMA_PATH);
+    if (schema === undefined) {
+        return { issues: [`${SCHEMA_PATH} cannot be read`] };
+    }
+    return { registry: read.registry, schema, issues: validateDirectWriteReviewPins(read.registry, pins) };
 }
 
 function readOptionalText(root, repositoryPath) {
@@ -134,8 +138,7 @@ function loadAnalysedProject(root) {
     return project;
 }
 
-function toScope(root, registry) {
-    const schema = readFileSync(path.join(root, SCHEMA_PATH), 'utf8');
+function toScope(root, { registry, schema }) {
     return {
         root,
         wiringModules: registry.wiringModules,

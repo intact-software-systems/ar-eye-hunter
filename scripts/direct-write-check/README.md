@@ -93,6 +93,8 @@ Tests live under [`packages/tests/repo/direct-write-check/`](../../packages/test
 - Evasions by syntax: an opener or write called by element access (`sql['begin'](...)`) or through a bound or
   destructured method, a subclass of the PostgreSQL backend that does not repeat `implements`, and a re-export of a
   wiring module (`export ... from`).
+- A file outside `packages/**` and `apps/*/src` (for example `apps/api-v1/scripts/**`), a `.js` or `.mjs` file, and a
+  server app named in `BROWSER_APPS`: none is analysed.
 - The state of `main` itself: the check runs in the governance gate of each pull request at that pull request's head,
   not on a `main` push, so two pull requests that each pass alone can leave `main` with source and registry differing
   until the next pull request runs it.

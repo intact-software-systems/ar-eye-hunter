@@ -197,6 +197,18 @@ describe('direct-write check command', () => {
         expect(results[3]?.stderr).toContain(`direct-write.registry-invalid ${PINS_PATH} cannot be read as JSON`);
     });
 
+    it('fails with a finding, not a stack trace, when the schema it reads table names from is missing', () => {
+        const root = createTree(baseSources(), baseRegistry());
+        rmSync(path.join(root, 'apps/api-v1/prisma/schema.prisma'));
+
+        const result = runCheck(root);
+
+        expect(result.status).toBe(1);
+        expect(result.stderr).toBe(
+            'direct-write.registry-invalid apps/api-v1/prisma/schema.prisma cannot be read\nFAIL: direct-write check (1 finding)\n'
+        );
+    });
+
     it('prints each entry that differs from the base registry', () => {
         const root = createCommittedTree();
         const registry = baseRegistry();
