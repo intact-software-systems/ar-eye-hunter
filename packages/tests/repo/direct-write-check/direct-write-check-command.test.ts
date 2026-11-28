@@ -71,6 +71,9 @@ describe('direct-write check command', () => {
             `direct-write.unregistered admissionBackendWrites ${storePath}#ALOutboundResendStore.scheduleResend`
         );
         expect(result.stderr).toContain('the proposal must first say "This writes outside AppInbox"');
+        expect(result.stderr).toContain(
+            'Code for such a write follows only after the maintainer approves it; without that approval, remove the write.'
+        );
         expect(result.stderr).toContain('FAIL: direct-write check (1 finding)');
     });
 

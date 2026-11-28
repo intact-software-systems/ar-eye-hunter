@@ -2,7 +2,8 @@ import { DIRECT_WRITE_FACT_SETS } from './direct-write-registry.mjs';
 
 const UNREGISTERED_ADVICE =
     'If this write is on an incoming path, the proposal must first say "This writes outside AppInbox" ' +
-    '(convergent-service-writing.md, "Writes outside AppInbox"). Registering it records that it exists; ' +
+    '(convergent-service-writing.md, "Writes outside AppInbox"). Code for such a write follows only after the ' +
+    'maintainer approves it; without that approval, remove the write. Registering it records that it exists; ' +
     'it is not an approval.';
 const STALE_ADVICE = 'Remove the entry, or re-key it to the owner that now holds the write; neither changes a review.';
 
