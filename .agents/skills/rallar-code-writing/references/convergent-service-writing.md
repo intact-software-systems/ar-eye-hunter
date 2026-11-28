@@ -80,6 +80,12 @@ never implied. An incoming path is an HTTP request, a WebSocket frame, or a
 peer message that leads to a write. A database write includes a transport's
 own rows: deduplication, ordering, receipt, work, and outbox rows.
 
+This rule is about a server's database. A row a browser writes in its own
+IndexedDB is one session's local record and is outside it; the code standard's
+transaction policy governs it. Store code that both a browser and a server run
+is inside the rule wherever a change alters what the server writes to its
+database.
+
 A plan, decision record, question, or pull request that adds, moves, or widens
 such a write:
 
