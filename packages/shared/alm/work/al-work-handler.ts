@@ -776,7 +776,9 @@ export class ALWorkHandler<TSuccession = never> {
             result = await (turn.attempt ?? runClaim(claim, turn.runStartedAtMs, turn.deferObservation));
         }
         catch (error) {
-            result = toALWorkFailureOutcome(toError(error));
+            const failure = toError(error);
+            this.reportCorruptClaim(claim, failure);
+            result = toALWorkFailureOutcome(failure);
         }
         progress.runDurationMs += computeALWorkElapsedMs(runStartedAtMs, clock.nowMs());
         switch (result.status) {
@@ -803,6 +805,13 @@ export class ALWorkHandler<TSuccession = never> {
         const key = toKeyAsString(claim.entry.key);
         if (this.expeditedRunsLeft.has(key)) {
             this.expeditedRunsStarted.set(key, (this.expeditedRunsStarted.get(key) ?? 0) + 1);
+        }
+    }
+
+    /** A claim that ends on a corrupt record drops its work for good, an accepted message's among it; this is its trace. */
+    private reportCorruptClaim(claim: ALWorkClaim, error: Error): void {
+        if (error instanceof ALAdmissionCorruptionError) {
+            console.error('ALM work ended on a corrupt record', toKeyAsString(claim.entry.key), error);
         }
     }
 

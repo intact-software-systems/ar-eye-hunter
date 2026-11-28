@@ -29,6 +29,7 @@ import type {
     ALWorkRelease
 } from '@shared/alm/work/al-work-queue-port.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
@@ -128,6 +129,48 @@ describe('ALWorkHandler', () => {
         // two the flush wrote have an order relative to each other.
         expect(released.filter((entry) => entry !== 'c-3:completed')).toEqual(['c-1:non-retryable', 'c-2:retry']);
         expect(released).toContain('c-3:completed');
+    });
+
+    // A claim that ends on a corrupt record drops the work for good, an accepted message's among it; the line is the
+    // one trace an operator has of that. A designed end and a retried failure print nothing.
+    it('prints one line naming the row and the corruption when a claim ends on a corrupt record', async () => {
+        const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        onTestFinished(() => consoleErrorSpy.mockRestore());
+        const released: string[] = [];
+        const corruption = new ALAdmissionCorruptionError('stored-key', new TypeError('Buffered inbound ordering slot lost its canonical message'));
+        const port = fakePort({
+            claims: ['d-1', 'd-2', 'd-3'],
+            onRelease: (claim, outcome) => released.push(`${claim.entry.key.contextId}:${outcome.status}`)
+        });
+        const handler = new ALWorkHandler({
+            workerId: 'test-worker',
+            port,
+            queueEngine: createEngine(),
+            ownsQueueEngine: true,
+            clock: { nowMs: () => 1_000 },
+            pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
+            readNextReadyAtMs: async () => undefined,
+            selectReady: async (p, size) => toTestALWorkReadySelection(await p.claim({ maxCount: size, observedEntries: undefined })),
+            claimSuccessor: undefined,
+            runClaim: async (claim) => {
+                switch (claim.entry.key.contextId) {
+                    case 'd-1':
+                        throw corruption;
+                    case 'd-2':
+                        throw new NonRetryableException('Inbound buffered message is missing without durable completion evidence');
+                    default:
+                        throw new Error('transient');
+                }
+            },
+            diagnostics: undefined
+        });
+        onTestFinished(() => handler.dispose());
+
+        await handler.ready();
+
+        expect(released).toEqual(['d-1:non-retryable', 'd-2:non-retryable', 'd-3:retry']);
+        expect(consoleErrorSpy.mock.calls).toEqual([['ALM work ended on a corrupt record', toFakeALWorkKey('d-1'), corruption]]);
     });
 
     it('resolves ready() only once the batch its bootstrap started has settled', async () => {
