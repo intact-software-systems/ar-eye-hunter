@@ -8,7 +8,7 @@
 
 **Database writes on incoming paths**
 
-- Writes outside AppInbox added or altered (rows, incoming path, registry entry, the maintainer's approval quoted): None
+- Writes outside AppInbox added, moved or widened (rows, incoming path, registry entry, the maintainer's approval quoted): None
 
 ## Acceptance
 

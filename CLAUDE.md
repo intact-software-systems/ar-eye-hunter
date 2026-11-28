@@ -238,13 +238,16 @@ direct-mutation fallback.
 
 **A database write on an incoming path outside AppInbox is never implied.** A plan, decision
 record, question, or pull request that adds, moves, or widens one says "This writes outside
-AppInbox", names this rule as the one it departs from, lists the rows written and the path that
-writes them, states what AppInbox would cost instead or "not measured", and records the question
-put to the maintainer word for word with every option and the answer. Code follows only after the
-maintainer approves that statement. "As an existing store already does" is never a reason and never
-an approval. `npm run check:direct-writes`, a governance-gate phase, fails on a direct write that
-`docs/app-inbox-direct-write-registry.md` does not record; an entry there is a record that the
-write exists, not an approval.
+AppInbox", names the rule above as the one it departs from, lists the rows written and the path
+that writes them, states what AppInbox would cost instead or "not measured", and records the
+question put to the maintainer word for word with every option and the answer. Code for the write
+follows only after the maintainer has answered that question by approving the write. "As an
+existing store already does" is never a reason and never an approval. The canonical service
+reference owns the detail. `npm run check:direct-writes`, a governance-gate phase, fails on a
+direct write that `docs/app-inbox-direct-write-registry.md` does not record; an entry there is a
+record that the write exists, not an approval. The check sees only the write surfaces it computes
+(`scripts/direct-write-check/README.md` lists what it misses), so a passing check is not evidence
+that a change writes nothing outside AppInbox.
 
 ```text
 HTTP/WS mutation -> APP_INBOX -> read -> compute -> validate

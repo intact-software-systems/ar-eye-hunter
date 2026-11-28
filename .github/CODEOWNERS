@@ -1,3 +1,4 @@
 # A record of ownership. No branch protection is assumed to enforce it: the review that happens is the one in the
-# default-branch request that AGENTS.md requires for a change to this file, which quotes the file's whole diff.
+# default-branch commit and push requests that AGENTS.md requires for a change to the registry file named below, which
+# quote that file's whole diff.
 /docs/app-inbox-direct-write-registry.md @intact-software-systems

@@ -152,7 +152,8 @@ limit.
   commit, amend, merge, revert, cherry-pick, rebase, and squash operations.
   An operation that changes `docs/app-inbox-direct-write-registry.md` quotes
   that file's whole diff in the permission request, under its own heading, and
-  says in words whether any entry moved to approved.
+  says in words which entries were added, removed or given another class, and
+  whether any entry moved to approved.
   Editing files or working directly on the default branch, standing preferences,
   deadlines, or task-start approval do not count. Each default-branch commit
   requires a new permission request and approval; any content, message, input,
@@ -161,6 +162,10 @@ limit.
   without stating the exact remote, destination ref and refspec, resolved full
   old and new commit IDs, and whether the push is forced; asking for permission
   immediately before the push; and receiving explicit approval.
+  A push whose commit range changes `docs/app-inbox-direct-write-registry.md`
+  quotes that file's whole diff over that range in the permission request,
+  under its own heading, and says in words which entries were added, removed or
+  given another class, and whether any entry moved to approved.
   Working or committing on the default branch, standing publication
   preferences, authentication, deadlines, or task-start approval do not count.
   Each default-branch push requires a new permission request and approval.
@@ -207,12 +212,15 @@ limit.
   above as the one it departs from, lists the rows written and the path that
   writes them, states what AppInbox would cost instead or "not measured", and
   records the question put to the maintainer word for word with every option
-  and the answer. Code follows only after the maintainer approves that
-  statement. "As an existing store already does" is never a reason and never
-  an approval. The canonical service reference owns the detail.
-  `npm run check:direct-writes` fails on a direct write that
-  `docs/app-inbox-direct-write-registry.md` does not record; an entry there is
-  a record that the write exists, not an approval.
+  and the answer. Code for the write follows only after the maintainer has
+  answered that question by approving the write. "As an existing store already
+  does" is never a reason and never an approval. The canonical service
+  reference owns the detail. `npm run check:direct-writes` fails on a direct
+  write that `docs/app-inbox-direct-write-registry.md` does not record; an
+  entry there is a record that the write exists, not an approval. The check
+  sees only the write surfaces it computes
+  (`scripts/direct-write-check/README.md` lists what it misses), so a passing
+  check is not evidence that a change writes nothing outside AppInbox.
 - Authoritative persisted and shared contracts use mandatory fields by default;
   sparse input and migration shapes remain separate.
 

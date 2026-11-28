@@ -510,6 +510,50 @@ describe('authoritative mutation guidance integrity', () => {
             expect(guidance, filePath).not.toMatch(/outside AppInbox unless/iu);
         }
     });
+
+    it('states the direct-write registry rule for commits and pushes, and claims neither completeness nor approval', () => {
+        const agents = normalizeWhitespace(readRepo('AGENTS.md'));
+        const claude = normalizeWhitespace(readRepo('CLAUDE.md'));
+        const doctrine = normalizeWhitespace(readRepo(canonicalServiceWritingPath));
+        const publishing = normalizeWhitespace(readRepo('.agents/skills/publishing-plan-progress/SKILL.md'));
+        const registry = normalizeWhitespace(readRepo('docs/app-inbox-direct-write-registry.md'));
+        const docsIndex = normalizeWhitespace(readRepo('docs/README.md'));
+        const disclosure = 'says in words which entries were added, removed or given another class, ' +
+            'and whether any entry moved to approved.';
+        const codeAfterApproval = 'Code for the write follows only after the maintainer has answered that question by approving the write.';
+        const passingCheck = 'The check sees only the write surfaces it computes ' +
+            '(`scripts/direct-write-check/README.md` lists what it misses), so a passing check is not evidence that a ' +
+            'change writes nothing outside AppInbox.';
+
+        expectAll(agents, [
+            'An operation that changes `docs/app-inbox-direct-write-registry.md` quotes that file\'s whole diff in the ' +
+            `permission request, under its own heading, and ${disclosure}`,
+            'and receiving explicit approval. A push whose commit range changes ' +
+            '`docs/app-inbox-direct-write-registry.md` quotes that file\'s whole diff over that range in the permission ' +
+            `request, under its own heading, and ${disclosure}`,
+            codeAfterApproval,
+            passingCheck
+        ]);
+        expectAll(claude, [
+            'names the rule above as the one it departs from',
+            'never an approval. The canonical service reference owns the detail.',
+            codeAfterApproval,
+            passingCheck
+        ]);
+        expectAll(doctrine, [
+            codeAfterApproval,
+            'An approval covers the one write its question named and no other. An answer given before 2026-11-27 was ' +
+            'not asked under this section and is not an approval.',
+            'so a passing check is not evidence that a change writes nothing outside AppInbox. No entry is an approval or ' +
+            'a precedent; a store marked `under-review` has no ruling from the maintainer.'
+        ]);
+        expect(publishing).toContain('changes `docs/app-inbox-direct-write-registry.md`');
+        expect(registry).toContain('Without that approval, remove the write.');
+        for (const [filePath, guidance] of Object.entries({ agents, claude, doctrine, registry, docsIndex })) {
+            expect(guidance, filePath).not.toMatch(/An earlier answer covers|records every direct|lists every database write/iu);
+            expect(guidance, filePath).not.toContain('Code follows only after the maintainer approves that statement');
+        }
+    });
 });
 
 function readRepo(filePath: string): string {

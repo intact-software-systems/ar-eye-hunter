@@ -89,6 +89,11 @@ State the exact remote, destination ref and refspec, resolved full old and new c
 whether the push is forced. Recheck immediately after approval and push only that range. Commit and
 push approvals are independent. These gates do not apply to a non-default destination ref.
 
+A default-branch commit that changes `docs/app-inbox-direct-write-registry.md`, and a default-branch
+push whose commit range changes it, also quote that file's whole diff in the permission request,
+under its own heading, and say in words which entries were added, removed or given another class,
+and whether any entry moved to approved, as `AGENTS.md` requires.
+
 ## Validation evidence
 
 Report the exact commands that passed, failed, or were skipped and the current GitHub check state.

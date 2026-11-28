@@ -94,15 +94,19 @@ such a write:
 - records the question put to the maintainer word for word, with every option
   and the recommended one, and the answer word for word.
 
-Code follows only after the maintainer approves that statement. "As an
-existing store already does" is a description, never a reason and never an
-approval. An earlier answer covers the write it was asked about and no other.
+Code for the write follows only after the maintainer has answered that
+question by approving the write. "As an existing store already does" is a
+description, never a reason and never an approval. An approval covers the one
+write its question named and no other. An answer given before 2026-11-27 was
+not asked under this section and is not an approval.
 
-`docs/app-inbox-direct-write-registry.md` records every direct database write
-the source contains, and `npm run check:direct-writes` fails when the source
-and that registry differ. An entry is a record that the write exists. An entry
-marked `under review` has no ruling from the maintainer; it is not an approval
-and it is not precedent.
+`docs/app-inbox-direct-write-registry.md` records the direct-write surfaces
+that `npm run check:direct-writes` computes from the source, and the check
+fails when the two differ. The check does not see every direct write
+(`scripts/direct-write-check/README.md` lists what it misses), so a passing
+check is not evidence that a change writes nothing outside AppInbox. No entry
+is an approval or a precedent; a store marked `under-review` has no ruling from
+the maintainer.
 
 ## Specialized ResourceInbox transaction ownership
 
