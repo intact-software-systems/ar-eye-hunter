@@ -63,6 +63,7 @@ import { deliveryLifecycle } from './scenarios/delivery-lifecycle.ts';
 import { deliveryReload } from './scenarios/delivery-reload.ts';
 import { durableOptIn } from './scenarios/durable-opt-in.ts';
 import { durableTakeover } from './scenarios/durable-takeover.ts';
+import { edgeOrderAudiences } from './scenarios/edge-order/edge-order-audiences.ts';
 import { edgeOrderLateJoin } from './scenarios/edge-order/edge-order-late-join.ts';
 import { edgeOrderLossStream } from './scenarios/edge-order/edge-order-loss-stream.ts';
 import { edgeOrderReload } from './scenarios/edge-order/edge-order-reload.ts';
@@ -300,6 +301,7 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     fencedRejection,
     principalDelivery,
     fixedListDelivery,
+    edgeOrderAudiences,
     worldRouting,
     grantedRtcPrincipalDelivered,
     leaderConfirms,

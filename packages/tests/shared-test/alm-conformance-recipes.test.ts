@@ -104,7 +104,7 @@ const REPLY_THREE_AGENT_KEYS_BY_CARRIER = {
 const VOLATILE_BOUND_KEYS = ['capacity', 'capacity-age', 'capacity-tracks'] as const;
 
 /** The audiences run on every carrier, on the sender's principal twice and another principal once. */
-const AUDIENCE_KEYS = ['principal-delivery', 'fixed-list-delivery', 'world-routing'] as const;
+const AUDIENCE_KEYS = ['principal-delivery', 'fixed-list-delivery', 'edge-order-audiences', 'world-routing'] as const;
 
 /** The topic subscription cells run on every carrier, on four roles. */
 const FOUR_ROLE_KEYS = [
@@ -968,6 +968,7 @@ describe('alm-conformance recipe family', () => {
             ['smoke', 'full'],
             ['smoke', 'full'],
             ['smoke', 'full'],
+            ['full'],
             ['full'],
             ['full'],
             ['full'],

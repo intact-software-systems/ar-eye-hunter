@@ -121,6 +121,7 @@ describe('ALM run on an agent per role', () => {
                 ...(carrier === 'ws' ? ['server-ordered-entry'] : []),
                 'principal-delivery',
                 'fixed-list-delivery',
+                'edge-order-audiences',
                 'world-routing',
                 ...(carrier === 'rtc' ? ['granted-rtc-principal-delivered'] : [])
             ]);

@@ -70,6 +70,7 @@ export type AlmConformanceScenarioId =
     | 'delivery-reload'
     | 'durable-opt-in'
     | 'durable-takeover'
+    | 'edge-order-audiences'
     | 'edge-order-jitter-stream'
     | 'edge-order-late-join'
     | 'edge-order-loss-stream'

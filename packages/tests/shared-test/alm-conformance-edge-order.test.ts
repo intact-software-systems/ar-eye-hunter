@@ -491,3 +491,125 @@ describe('edge-order-unretried-loss-stream', () => {
         }
     );
 });
+
+describe('edge-order-audiences', () => {
+    const KEY = 'edge-order-audiences';
+    const SENDS = 7;
+    const LIST = { recipientPeers: ['receiver'] };
+    const PRINCIPAL = { scope: 'principal', principalId: '{auth.clientId}' };
+    /** Each recipient is inside one narrowed audience, whose two sends it receives, and outside the other. */
+    const NARROWED_BY_ROLE = { receiver: [2, 6], sibling: [3, 7] } as const;
+    const RECIPIENT_CELLS = ALM_CONFORMANCE_CARRIERS.flatMap((carrier) => (['receiver', 'sibling'] as const).map((role) => [carrier, role] as const));
+
+    function requireRecipient(cell: AlmConformanceScenario, role: keyof typeof NARROWED_BY_ROLE): RallarBlackBoxTestRecipe {
+        const recipe = role === 'receiver' ? cell.receiver : cell.sibling;
+        if (recipe === undefined) {
+            throw new Error(`${cell.scenarioKey} declares no ${role}.`);
+        }
+        return recipe;
+    }
+
+    it.each(ALM_CONFORMANCE_CARRIERS)('over %s runs in the full scope on the sender\'s principal twice, every page edge-ordered', (carrier) => {
+        const cell = requireCell(KEY, carrier);
+
+        expect(cell.tags).toEqual(['full']);
+        expect(cell.laneFamily).toBe('same-principal');
+        expect(cell.roles).toEqual(['sender', 'receiver', 'sibling']);
+        for (const recipe of [cell.sender, requireRecipient(cell, 'receiver'), requireRecipient(cell, 'sibling')]) {
+            expect(findCommand(recipe, 'connect')).toMatchObject({ kind: 'rtc.connect', rallar: { channelOrder: 'edge' } });
+        }
+    });
+
+    it.each(ALM_CONFORMANCE_CARRIERS)(
+        'over %s sends seven receipted sends that state no hop order: to the room, the receiver\'s list, the sender\'s principal',
+        (carrier) => {
+            const sends = toSends(requireCell(KEY, carrier).sender);
+
+            expect(sends.map((send) => send.payload)).toEqual(toNumbers(1, SENDS).map((seq) => ({ marker: KEY, seq })));
+            sends.forEach((send, index) => {
+                const seq = index + 1;
+                expect(send).toMatchObject({ reliability: 'at-least-once', ack: 'receiver' });
+                expect(send).not.toHaveProperty('orderingKey');
+                expect(send).not.toHaveProperty('seq');
+                if (seq === 2 || seq === 6) {
+                    expect(send).toMatchObject(LIST);
+                }
+                else if (seq === 3 || seq === 7) {
+                    expect(send).toMatchObject(PRINCIPAL);
+                }
+                else {
+                    expect(send).not.toHaveProperty('recipientPeers');
+                    expect(send).not.toHaveProperty('scope');
+                }
+            });
+        }
+    );
+
+    it.each(ALM_CONFORMANCE_CARRIERS)('over %s holds room send 4 while 5, 6 and 7 are acknowledged, then releases it and sees it acknowledged', (carrier) => {
+        const sender = requireCell(KEY, carrier).sender;
+        const faultCarriers = carrier === 'rtc-with-ws-fallback' ? ['rtc', 'ws'] : [carrier];
+        const names = [
+            'observe-acknowledged-3',
+            'send-4',
+            ...faultCarriers.map((faultCarrier) => `hold-message-4-${faultCarrier}`),
+            'send-5',
+            'observe-acknowledged-5',
+            'send-6',
+            'observe-acknowledged-6',
+            'send-7',
+            'observe-acknowledged-7',
+            ...faultCarriers.map((faultCarrier) => `release-message-4-${faultCarrier}`),
+            'observe-acknowledged-4'
+        ];
+        const places = names.map((name) => toPlace(sender, name));
+
+        expect(places).toEqual([...places].sort((left, right) => left - right));
+        for (const faultCarrier of faultCarriers) {
+            expect(findCommand(sender, `hold-message-4-${faultCarrier}`)).toMatchObject({
+                kind: 'fault.inject',
+                match: { msgId: `{resultCache.${sender.recipeId}-send-4.value.msgId}` },
+                remaining: 'until-cleared'
+            });
+        }
+        for (const seq of toNumbers(1, SENDS)) {
+            expect(findCommand(sender, `assert-acknowledged-${seq}`)).toMatchObject({ operator: 'equals', expected: 'acknowledged' });
+        }
+    });
+
+    it.each(RECIPIENT_CELLS)(
+        'over %s the %s held the room send that overtook, was handed the room stream and its own stream each in send order, and states no gap',
+        (carrier, role) => {
+            const cell = requireCell(KEY, carrier);
+            const recipient = requireRecipient(cell, role);
+            const typeId = toTypeId(KEY, carrier);
+            const [first, second] = NARROWED_BY_ROLE[role];
+            const outside = NARROWED_BY_ROLE[role === 'receiver' ? 'sibling' : 'receiver'];
+            const toOrdinal = (seq: number) => `resultCache.${recipient.recipeId}-received-seq-${seq}.value.event.history.ordinal`;
+
+            expect(findCommand(recipient, 'held-overtaking-send')).toMatchObject({
+                kind: 'wait',
+                match: { payloadFields: { 'data.kind': 'edge-order-arrival', 'data.outcome': 'held', 'data.typeId': typeId } }
+            });
+            for (const seq of [1, 4, 5, first, second]) {
+                expect(findCommand(recipient, `received-seq-${seq}`)).toMatchObject({
+                    match: { equals: { marker: KEY, seq }, payloadFields: { 'data.typeId': typeId } }
+                });
+            }
+            for (const seq of outside) {
+                expect(() => findCommand(recipient, `received-seq-${seq}`)).toThrow();
+            }
+            for (const [later, earlier] of [[4, 1], [5, 4], [second, first], [5, second]] as const) {
+                expect(findCommand(recipient, `assert-seq-${later}-after-seq-${earlier}`)).toMatchObject({
+                    kind: 'assert',
+                    operator: 'gte',
+                    source: toOrdinal(later),
+                    comparisonSource: toOrdinal(earlier)
+                });
+            }
+            expect(findCommand(recipient, 'received-5')).toMatchObject({ typeId, count: 5, absent: false });
+            expect(findCommand(recipient, 'received-5')).not.toHaveProperty('ascendingBy');
+            expect(findCommand(recipient, 'received-6')).toMatchObject({ count: 6, absent: true });
+            expect(findCommand(recipient, 'no-order-gap')).toMatchObject({ absent: true });
+        }
+    );
+});
