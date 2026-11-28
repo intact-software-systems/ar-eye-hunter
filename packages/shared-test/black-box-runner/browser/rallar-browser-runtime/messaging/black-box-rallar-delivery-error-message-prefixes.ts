@@ -15,6 +15,8 @@ export const BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES = {
      * `recipientPrincipalIds` list it could resolve to no live session.
      */
     peerUnresolved: 'Message peer unresolved',
+    /** A `messages.send` that observes `call-refused` whose call returned a handle instead of a validation refusal. */
+    sendNotRefused: 'Message send not refused',
     /** A `messages.reply` naming an arrival of its type the page does not hold among the last 16. */
     replyRequestUnreceived: 'Reply request not received'
 } as const;

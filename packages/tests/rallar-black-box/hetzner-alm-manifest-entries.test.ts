@@ -222,6 +222,9 @@ describe('ALM conformance hosted lane families', () => {
             'alm-ws-reply-undelivered',
             // The combined connect's one selector is the scenario topic's, so no hosted page hears a group-state delta.
             'alm-ws-server-originated',
+            // The call refusal cells' evidence is the local full lane's.
+            'alm-rtc-server-command-refused-at-call',
+            'alm-rtc-with-ws-fallback-server-command-refused-at-call',
             // A granted cell's grants name principals, which a hosted manifest's agents are not known by (D505).
             ...[
                 'granted-rtc-delivered',

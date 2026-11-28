@@ -230,6 +230,8 @@ export const facadeBehavior = {
             handler: RallarMessageHandler<RallarMessagePayload>
         ) => () => void
     >(),
+    /** The product's own check of a channel definition, which throws its validation error before any send. */
+    typedChannelOpen: vi.fn<(definition: RallarRoomMessageChannelDefinition) => void>(),
     typedSend: vi.fn<
         (
             payload: RallarMessagePayload,
@@ -314,6 +316,7 @@ const messages: BlackBoxBrowserMessagesDependency = {
         definition: RallarRoomMessageChannelDefinition
     ): RallarTypedMessageChannel<T> => {
         facadeRecords.typedChannelOpens.push(definition);
+        facadeBehavior.typedChannelOpen(definition);
         return createTypedChannelTestDouble<T>();
     },
     rtc: {

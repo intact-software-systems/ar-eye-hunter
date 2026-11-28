@@ -20,6 +20,7 @@ import {
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { readAlmReceiptRolesEntries } from '@shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-receipt-role-identity.ts';
+import { serverCommandRefusedAtCall } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/call-refusal/server-command-refused-at-call.ts';
 import { claimExpiresReclaims } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/claim/claim-expires-reclaims.ts';
 import { claimFirstWins } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/claim/claim-first-wins.ts';
 import { claimRefusedOnRtc } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/claim/claim-refused-on-rtc.ts';
@@ -150,6 +151,8 @@ const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
     { scenarioKey: 'claim-first-wins', carriers: claimFirstWins.carriers },
     { scenarioKey: 'claim-expires-reclaims', carriers: claimExpiresReclaims.carriers },
     { scenarioKey: 'claim-refused-on-rtc', carriers: claimRefusedOnRtc.carriers },
+    // The call refusal cells' lane evidence is local and the hosted full read's; manifest 18 stays as recorded.
+    { scenarioKey: 'server-command-refused-at-call', carriers: serverCommandRefusedAtCall.carriers },
     // The reply cells' lane evidence is local and the hosted full read's; manifests 18 and 22 stay as recorded.
     { scenarioKey: 'reply-correlated', carriers: replyCorrelated.carriers },
     { scenarioKey: 'reply-timeout-late', carriers: replyTimeoutLate.carriers },

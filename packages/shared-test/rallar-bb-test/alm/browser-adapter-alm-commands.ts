@@ -13,7 +13,9 @@ import type {
     RallarBlackBoxTestRecord,
     RallarBlackBoxTestSeverity
 } from '../rallar-black-box-test-contracts.ts';
+import { RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES } from '../schema/rallar-black-box-command-fields.ts';
 import { computeWaitDeadlineEpochMs } from '../wait/wait-for-event.ts';
+import { decodeAlmRuntimeRecord } from './decode-alm-runtime-record.ts';
 import {
     ALM_INVALID_RUNTIME_RESULT_CODE,
     decodeAlmDeliveryResultValue,
@@ -24,6 +26,7 @@ import {
     decodeAlmMessagesSendResultValue,
     decodeAlmReceivedMessageIdentity,
     decodeAlmStorageCountersResultValue,
+    requireAlmStringField,
     toAlmInvalidRuntimeResultError
 } from './decode-alm-runtime-result.ts';
 import {
@@ -39,7 +42,10 @@ import {
 } from './messages-received/to-alm-received-outcome.ts';
 import type {
     RallarBlackBoxTestFaultInjectResultValue,
-    RallarBlackBoxTestMessagesObserveResultValue
+    RallarBlackBoxTestMessagesCallRefusalResultValue,
+    RallarBlackBoxTestMessagesObserveResultValue,
+    RallarBlackBoxTestMessagesReplayResultValue,
+    RallarBlackBoxTestMessagesSendResultValue
 } from './rallar-black-box-alm-result-values.ts';
 import { resolveAlmControlReferences } from './resolve-alm-control-references.ts';
 import { resolveAlmFaultMatchReferences } from './resolve-alm-fault-match-references.ts';
@@ -125,6 +131,7 @@ const ALM_ERROR_CODES = {
     replayUnavailable: 'RALLAR_BLACK_BOX_ALM_REPLAY_UNAVAILABLE',
     rawControlUnavailable: 'RALLAR_BLACK_BOX_ALM_RAW_CONTROL_UNAVAILABLE',
     peerUnresolved: 'RALLAR_BLACK_BOX_ALM_PEER_UNRESOLVED',
+    sendNotRefused: 'RALLAR_BLACK_BOX_ALM_SEND_NOT_REFUSED',
     replyRequestUnreceived: 'RALLAR_BLACK_BOX_ALM_REPLY_REQUEST_UNRECEIVED',
     commandAborted: 'RALLAR_BLACK_BOX_ALM_COMMAND_ABORTED'
 } as const;
@@ -135,6 +142,7 @@ const ALM_PAGE_RUNTIME_ERROR_CODE_KEYS: readonly (keyof typeof BLACK_BOX_RALLAR_
     'replayUnavailable',
     'rawControlUnavailable',
     'peerUnresolved',
+    'sendNotRefused',
     'replyRequestUnreceived'
 ];
 
@@ -203,13 +211,53 @@ function sendAlmMessage(
         context: input.context,
         connection,
         topic: 'rallar.bb.messages.sent',
-        invoke: async (runtime) =>
-            'replayOnCarrier' in command
-                ? decodeAlmMessagesReplayResultValue(await runtime.sendMessage(send))
-                : decodeAlmMessagesSendResultValue(
-                    await runtime.sendMessage({ ...send, handleId: command.handleId ?? command.commandId })
-                )
+        invoke: (runtime) => readAlmSendResult(runtime, command, send)
     });
+}
+
+/** The send states what it observes, so a page that answers it with the other shape fails as an unusable result. */
+async function readAlmSendResult(
+    runtime: RallarBlackBoxBrowserRallarRuntime,
+    command: AlmBrowserCommandInput<'messages.send'>['command'],
+    send: RallarBlackBoxTestRecord
+): Promise<
+    | RallarBlackBoxTestMessagesReplayResultValue
+    | RallarBlackBoxTestMessagesSendResultValue
+    | RallarBlackBoxTestMessagesCallRefusalResultValue
+> {
+    if ('replayOnCarrier' in command) {
+        return decodeAlmMessagesReplayResultValue(await runtime.sendMessage(send));
+    }
+    const result = await runtime.sendMessage({ ...send, handleId: command.handleId ?? command.commandId });
+    return command.observe === 'call-refused'
+        ? decodeAlmMessagesCallRefusalResultValue(result)
+        : decodeAlmMessagesSendResultValue(result);
+}
+
+/** A send refused at its call names no message: only its handle, its carrier and each issue's path and code cross. */
+function decodeAlmMessagesCallRefusalResultValue(value: unknown): RallarBlackBoxTestMessagesCallRefusalResultValue {
+    const record = decodeAlmRuntimeRecord(value);
+    const path = 'messages.send call refusal result';
+    const carrier = RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesCarrier.find((known) => known === record.carrier);
+    const issues = record.callRefusal;
+    if (carrier === undefined) {
+        throw toAlmInvalidRuntimeResultError(`${path}.carrier`);
+    }
+    if (!Array.isArray(issues)) {
+        throw toAlmInvalidRuntimeResultError(`${path}.callRefusal`);
+    }
+    return {
+        handleId: requireAlmStringField(record, path, 'handleId'),
+        carrier,
+        callRefusal: issues.map((issue, index) => {
+            const stated = decodeAlmRuntimeRecord(issue);
+            const issuePath = `${path}.callRefusal.${index}`;
+            return {
+                path: requireAlmStringField(stated, issuePath, 'path'),
+                code: requireAlmStringField(stated, issuePath, 'code')
+            };
+        })
+    };
 }
 
 function submitAlmControl(

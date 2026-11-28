@@ -1419,3 +1419,44 @@ schema-and-capabilities.md the buffered-track cell's promoted wait.
 Verification:
 npx vitest run packages/tests/shared-test/alm-observation-regime.test.ts
 ```
+
+```text
+Title: messages.send may observe the refusal of its call
+Date: 2026-11-27
+Owner: ALM conformance lane
+
+Change type:
+- Compatible optional addition
+
+Affected schemas:
+- RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA (messages.send branch)
+- validateRallarBlackBoxTestCommand messages.send
+- RallarBlackBoxTestMessagesCallRefusalResultValue
+
+Old shape:
+A messages.send whose call the product refused with a validation error failed the command with
+RALLAR_BLACK_BOX_ALM_INVALID_COMMAND_INPUT, and only the error's name and message crossed the page boundary, so no
+recipe could read which issue the product refused the send with.
+
+New shape:
+messages.send may name observe: 'call-refused', its only value. The product's validation refusal of the call is then
+the command's value, { handleId, carrier, callRefusal: [{ path, code }] }, every issue in the product's order and
+without its message text; such a send opens no handle. A call that opens a handle fails the command with
+RALLAR_BLACK_BOX_ALM_SEND_NOT_REFUSED; any other failure fails it as it fails an ordinary send. Another value is
+refused by the schema, by command validation and by the page; observe beside replayOnCarrier by command validation
+and by the page.
+
+Migration:
+None: a send that names no observe validates, runs and reports as before. A recipe that names observe dispatched to
+an agent built before this change is refused at command validation as an unsupported field.
+
+Golden corpus updates:
+None.
+
+Prompt/documentation updates:
+schema-and-capabilities.md describes the field, its value and its failures; the messages.send capability description
+names observe call-refused.
+
+Verification:
+npx vitest run packages/tests/shared-test/alm-send-call-refusal-command.test.ts packages/tests/shared-test/rallar-browser-runtime/call-refusal-witness.test.ts packages/tests/shared-test/rallar-bb-test-alm-commands.test.ts
+```
