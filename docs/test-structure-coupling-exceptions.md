@@ -6186,6 +6186,36 @@ moved or changed test.
         "requiredConstraint": "Exactly one line, for the claim that threw ALAdmissionCorruptionError, carrying the fixed text, its work row's key and the error; none for a NonRetryableException or a retried failure.",
         "failureRationale": "The released outcomes are the same with or without the line, so only the log port shows that a corrupt end is reported and that a designed end, such as an expired copy's, is not reported as corrupt."
       }
+    },
+    {
+      "id": "ws-live-path-failed-publication-reported-once",
+      "domain": "WS server live-path room publication",
+      "owner": "Rallar realtime maintainers",
+      "summary": "A room send on an undeclared topic whose live notice fails to publish completes its delivery work with no copy written, and the server reports the failure in exactly one error line naming the topic and the message.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/websocket/router/rallar-server-ws-live-path-missed-copy.test.ts#completes the delivery work of a receipted send whose publication failed and writes no copy",
+      "coverageRelation": "The test makes the in-memory notice bus refuse the next publish, offers the send on a real two-instance cluster, and reads the sockets, the topic handler, the delivery work row and the console error port the router's publication writes to.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "console.error, the process log the router's live publication writes a failed publication to",
+        "observableEffect": "The single log line is the only trace an operator has of a room message that reached nobody: the router discards the failed result and the delivery work completes.",
+        "requiredConstraint": "Exactly one error line, naming the topic and the msgId, for one failed publication of one admitted message.",
+        "failureRationale": "Empty sockets and a completed work row look the same whether the loss was reported or silent; only the line on the log port shows it was reported."
+      }
+    },
+    {
+      "id": "ws-live-path-failed-unreceipted-publication-reported-once",
+      "domain": "WS server live-path room publication",
+      "owner": "Rallar realtime maintainers",
+      "summary": "An unreceipted at-least-once room send on an undeclared topic whose live notice fails to publish completes its delivery work with no copy written and no receipt, and the server reports the failure in exactly one error line naming the topic and the message.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/websocket/router/rallar-server-ws-live-path-missed-copy.test.ts#completes the delivery work of an unreceipted send whose publication failed and writes no copy",
+      "coverageRelation": "The test makes the in-memory notice bus refuse the next publish, offers the unreceipted send on a real two-instance cluster, and reads the sockets, the origin's receipts, the topic handler, the delivery work row and the console error port the router's publication writes to.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "console.error, the process log the router's live publication writes a failed publication to",
+        "observableEffect": "With no receipt to report it, the single log line is the only trace anyone has of a room message that reached nobody.",
+        "requiredConstraint": "Exactly one error line, naming the topic and the msgId, for one failed publication of one admitted message.",
+        "failureRationale": "Empty sockets, no receipt and a completed work row look the same whether the loss was reported or silent; only the line on the log port shows it was reported."
+      }
     }
   ],
   "entries": [
@@ -13140,6 +13170,28 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "The line is the requirement, ruled by the maintainer for R15, and nothing else observes it: the exact call list proves one line for the corrupt claim and none for the other two.",
       "semanticCoverage": "packages/tests/shared/alm/work/al-work-handler.test.ts#prints one line naming the row and the corruption when a claim ends on a corrupt record"
+    },
+    {
+      "id": "test-structure-coupling-79bbf89d6c9529cc",
+      "path": "packages/tests/shared-server/rallar-system/websocket/router/rallar-server-ws-live-path-missed-copy.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ws-live-path-failed-publication-reported-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar realtime maintainers",
+      "rationale": "The one line on the log port is the requirement itself: a failed live publication of an admitted message is reported once, and beyond the origin's eventual timed-out receipt nothing else records the loss.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/websocket/router/rallar-server-ws-live-path-missed-copy.test.ts#completes the delivery work of a receipted send whose publication failed and writes no copy"
+    },
+    {
+      "id": "test-structure-coupling-0a03d609fa2dd438",
+      "path": "packages/tests/shared-server/rallar-system/websocket/router/rallar-server-ws-live-path-missed-copy.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ws-live-path-failed-unreceipted-publication-reported-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar realtime maintainers",
+      "rationale": "The one line on the log port is the requirement itself: a failed live publication of an unreceipted message is reported once, and nothing else records the loss.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/websocket/router/rallar-server-ws-live-path-missed-copy.test.ts#completes the delivery work of an unreceipted send whose publication failed and writes no copy"
     }
   ]
 }

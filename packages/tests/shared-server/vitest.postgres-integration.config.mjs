@@ -50,6 +50,7 @@ export default {
             'packages/tests/relic-hunters/relic-game-publication.test.ts',
             'packages/tests/relic-hunters/relic-game-retention.test.ts',
             'packages/tests/shared-server/rallar-system/topology/replay/work/rtc-topology-coalesced-head-retention.test.ts',
+            'packages/tests/shared-server/rallar-system/websocket/router/rallar-server-ws-live-path-stored-copy-postgres.test.ts',
             ...topologyConcurrencyTests
         ]
     }
