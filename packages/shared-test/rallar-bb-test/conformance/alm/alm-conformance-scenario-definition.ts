@@ -73,6 +73,7 @@ export type AlmConformanceScenarioId =
     | 'edge-order-audiences'
     | 'edge-order-jitter-stream'
     | 'edge-order-late-join'
+    | 'edge-order-live-stream'
     | 'edge-order-loss-stream'
     | 'edge-order-reload'
     | 'edge-order-stream'

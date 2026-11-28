@@ -130,7 +130,11 @@ describe('the edge order lane cells', () => {
             expect(findCommand(receiver, 'no-order-gap')).toMatchObject({
                 kind: 'wait',
                 absent: true,
-                match: { kind: 'diagnostic', payloadFields: { 'data.kind': 'edge-order-gap', 'data.typeId': typeId } }
+                match: {
+                    kind: 'diagnostic',
+                    payloadFields: { 'data.kind': 'edge-order-gap', 'data.typeId': typeId },
+                    sinceCommandIdPrefix: `${receiver.recipeId}-`
+                }
             });
         }
     );
@@ -254,7 +258,10 @@ describe('edge-order-loss-stream', () => {
             expect(findCommand(receiver, `received-${LOSS_STREAM_SENDS + 1}`)).toMatchObject({ count: LOSS_STREAM_SENDS + 1, absent: true });
             expect(findCommand(receiver, 'no-order-gap')).toMatchObject({
                 absent: true,
-                match: { payloadFields: { 'data.kind': 'edge-order-gap', 'data.typeId': typeId } }
+                match: {
+                    payloadFields: { 'data.kind': 'edge-order-gap', 'data.typeId': typeId },
+                    sinceCommandIdPrefix: `${receiver.recipeId}-`
+                }
             });
         }
     );
@@ -386,7 +393,10 @@ describe('edge-order-late-join', () => {
             expect(findCommand(sender, `received-${secondRun + 1}`)).toMatchObject({ count: secondRun + 1, absent: true });
             expect(findCommand(sender, 'no-order-gap')).toMatchObject({
                 absent: true,
-                match: { payloadFields: { 'data.kind': 'edge-order-gap', 'data.typeId': typeId } }
+                match: {
+                    payloadFields: { 'data.kind': 'edge-order-gap', 'data.typeId': typeId },
+                    sinceCommandIdPrefix: `${sender.recipeId}-`
+                }
             });
         }
     );
@@ -617,7 +627,10 @@ describe('edge-order-audiences', () => {
             expect(findCommand(recipient, 'received-5')).toMatchObject({ typeId, count: 5, absent: false });
             expect(findCommand(recipient, 'received-5')).not.toHaveProperty('ascendingBy');
             expect(findCommand(recipient, 'received-6')).toMatchObject({ count: 6, absent: true });
-            expect(findCommand(recipient, 'no-order-gap')).toMatchObject({ absent: true });
+            expect(findCommand(recipient, 'no-order-gap')).toMatchObject({
+                absent: true,
+                match: { sinceCommandIdPrefix: `${recipient.recipeId}-` }
+            });
         }
     );
 });
@@ -698,10 +711,107 @@ describe('edge-order-supersedence', () => {
             expect(findCommand(receiver, 'gap-2-2')).not.toHaveProperty('absent');
             expect(findCommand(receiver, 'no-held-arrival')).toMatchObject({
                 absent: true,
-                match: { payloadFields: { 'data.kind': 'edge-order-arrival', 'data.outcome': 'held', 'data.typeId': typeId } }
+                match: {
+                    payloadFields: { 'data.kind': 'edge-order-arrival', 'data.outcome': 'held', 'data.typeId': typeId },
+                    sinceCommandIdPrefix: `${receiver.recipeId}-`
+                }
             });
             expect(findCommand(receiver, 'received-4')).toMatchObject({ count: 4, absent: true });
             expect(toPlace(receiver, 'received-3')).toBeLessThan(toPlace(receiver, 'no-held-arrival'));
+        }
+    );
+});
+
+describe('edge-order-live-stream', () => {
+    const KEY = 'edge-order-live-stream';
+    const PUBLICATION = { cadenceMs: 2000, retainNewest: 2, drain: { messages: 8, bytes: 65536 } };
+
+    /** A count of arrivals spans the sender's send budget, its RTC layout wait, and one cadence past `opportunity`. */
+    function toArrivalWindow(carrier: Carrier, opportunity: number) {
+        const timeoutMs = 28_000 + (carrier === 'ws' ? 0 : 90_000) + (opportunity + 1) * PUBLICATION.cadenceMs;
+        return { windowMs: timeoutMs - 1_000, timeoutMs };
+    }
+
+    it.each(ALM_CONFORMANCE_CARRIERS)('over %s runs in the full scope with both pages edge-ordered', (carrier) => {
+        const cell = requireCell(KEY, carrier);
+
+        expect(cell.tags).toEqual(['full']);
+        for (const recipe of [cell.sender, cell.receiver]) {
+            expect(findCommand(recipe, 'connect')).toMatchObject({ kind: 'rtc.connect', rallar: { channelOrder: 'edge' } });
+        }
+    });
+
+    it.each(ALM_CONFORMANCE_CARRIERS)('over %s publishes three live values on one stream, 1 and 2 with a lifetime that outlasts the cell', (carrier) => {
+        const sender = requireCell(KEY, carrier).sender;
+        const sends = toSends(sender);
+
+        expect(sends.map((send) => send.commandId)).toEqual([0, 1, 2].map((seq) => `${sender.recipeId}-send-${seq}`));
+        sends.forEach((send, seq) => {
+            expect(send).toMatchObject({ purpose: 'live', publication: PUBLICATION, resourceId: `alm-${KEY}` });
+            expect(send.payload).toEqual({ specimen: 'paced', seq });
+            expect(send).not.toHaveProperty('orderingKey');
+            expect(send).not.toHaveProperty('reliability');
+            expect(send).not.toHaveProperty('ack');
+        });
+        expect(sends[0]).not.toHaveProperty('ttlMs');
+        expect(sends[1]).toMatchObject({ ttlMs: 30000 });
+        expect(sends[2]).toMatchObject({ ttlMs: 30000 });
+    });
+
+    it.each(ALM_CONFORMANCE_CARRIERS)(
+        'over %s holds value 1 until value 2 is admitted and value 1 superseded, then releases it',
+        (carrier) => {
+            const sender = requireCell(KEY, carrier).sender;
+            const faultCarriers = carrier === 'rtc-with-ws-fallback' ? ['rtc', 'ws'] : [carrier];
+            const names = [
+                'observe-transport-accepted-0',
+                'send-1',
+                ...faultCarriers.map((faultCarrier) => `hold-message-1-${faultCarrier}`),
+                'send-2',
+                'observe-transport-accepted-2',
+                'observe-superseded-1',
+                ...faultCarriers.map((faultCarrier) => `release-message-1-${faultCarrier}`)
+            ];
+            const places = names.map((name) => toPlace(sender, name));
+
+            expect(places).toEqual([...places].sort((left, right) => left - right));
+            expect(findCommand(sender, 'assert-superseded-1')).toMatchObject({ operator: 'equals', expected: 'superseded' });
+        }
+    );
+
+    it.each(ALM_CONFORMANCE_CARRIERS)(
+        'over %s the receiver is handed values 0 and 2 in order, states value 1 as a hole its sender ended, and claims no late drop',
+        (carrier) => {
+            const receiver = requireCell(KEY, carrier).receiver;
+            const typeId = toTypeId(KEY, carrier);
+
+            expect(findCommand(receiver, 'received-1')).toMatchObject({ count: 1, absent: false, ...toArrivalWindow(carrier, 0) });
+            for (const seq of [0, 2]) {
+                expect(findCommand(receiver, `arrived-seq-${seq}`)).toMatchObject({
+                    match: { equals: { specimen: 'paced', seq }, payloadFields: { 'data.typeId': typeId } }
+                });
+            }
+            expect(findCommand(receiver, 'received-2')).toMatchObject({
+                count: 2,
+                absent: false,
+                ascendingBy: 'seq',
+                ...toArrivalWindow(carrier, 2)
+            });
+            expect(findCommand(receiver, 'gap-2-2')).toMatchObject({
+                kind: 'wait',
+                match: {
+                    payloadFields: {
+                        'data.kind': 'edge-order-gap',
+                        'data.typeId': typeId,
+                        'data.fromPosition': 2,
+                        'data.toPosition': 2,
+                        'data.reason': 'ended-at-sender'
+                    }
+                }
+            });
+            expect(findCommand(receiver, 'gap-2-2')).not.toHaveProperty('absent');
+            expect(findCommand(receiver, 'received-3')).toMatchObject({ count: 3, absent: true, windowMs: 4000 });
+            expect(JSON.stringify(receiver.commands)).not.toContain('"data.outcome":"late"');
         }
     );
 });

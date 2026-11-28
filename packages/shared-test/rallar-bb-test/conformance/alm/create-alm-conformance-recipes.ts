@@ -65,6 +65,7 @@ import { durableOptIn } from './scenarios/durable-opt-in.ts';
 import { durableTakeover } from './scenarios/durable-takeover.ts';
 import { edgeOrderAudiences } from './scenarios/edge-order/edge-order-audiences.ts';
 import { edgeOrderLateJoin } from './scenarios/edge-order/edge-order-late-join.ts';
+import { edgeOrderLiveStream } from './scenarios/edge-order/edge-order-live-stream.ts';
 import { edgeOrderLossStream } from './scenarios/edge-order/edge-order-loss-stream.ts';
 import { edgeOrderReload } from './scenarios/edge-order/edge-order-reload.ts';
 import { edgeOrderJitterStream, edgeOrderStream } from './scenarios/edge-order/edge-order-stream.ts';
@@ -260,6 +261,7 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     edgeOrderLateJoin,
     edgeOrderUnretriedLossStream,
     edgeOrderSupersedence,
+    edgeOrderLiveStream,
     ...crossCarrierDuplicate,
     notYetInSync,
     fallbackWithinDeadline,

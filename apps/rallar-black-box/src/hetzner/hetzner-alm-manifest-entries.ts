@@ -28,6 +28,7 @@ import { backpressureDeferred } from '@shared-test/rallar-bb-test/conformance/al
 import { backpressureHandsOver } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/congestion/backpressure-hands-over.ts';
 import { backpressureRefused } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/congestion/backpressure-refused.ts';
 import { edgeOrderLateJoin } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/edge-order/edge-order-late-join.ts';
+import { edgeOrderLiveStream } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/edge-order/edge-order-live-stream.ts';
 import { edgeOrderLossStream } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/edge-order/edge-order-loss-stream.ts';
 import { edgeOrderReload } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/edge-order/edge-order-reload.ts';
 import {
@@ -139,6 +140,7 @@ const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
     { scenarioKey: 'edge-order-late-join', carriers: edgeOrderLateJoin.carriers },
     { scenarioKey: 'edge-order-unretried-loss-stream', carriers: edgeOrderUnretriedLossStream.carriers },
     { scenarioKey: 'edge-order-supersedence', carriers: edgeOrderSupersedence.carriers },
+    { scenarioKey: 'edge-order-live-stream', carriers: edgeOrderLiveStream.carriers },
     // The membership fence cells' lane evidence is local and the hosted full read's; manifest 22 stays as recorded.
     { scenarioKey: 'fenced-delivery', carriers: fencedDelivery.carriers },
     // A combined recipe keeps only its first prologue, so the recipient that leaves here would miss every later cell.

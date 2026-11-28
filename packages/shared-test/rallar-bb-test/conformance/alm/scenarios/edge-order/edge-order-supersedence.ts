@@ -26,8 +26,9 @@ const ARRIVALS = 3;
  * A latest-wins send on an `order: 'edge'` channel leaves the position of the send it replaces as a hole no receiver
  * waits for. Send 1 is acknowledged, so the receiver enters the stream at its start. Send 2 is held at the sender, and
  * send 3, with the same supersedence key, settles it `superseded` and is acknowledged; send 4 follows the release. Send
- * 3 is stamped before send 2 is settled, and its stamp reads send 2, an open send of its own key, as a hole: the
- * receiver hands send 3 over at once, holds no arrival in the cell, and states position 2 as a gap its sender ended.
+ * 2 is a hole to send 3's stamp whether it is still open, as an earlier send of the same key, or already settled
+ * `superseded`: the receiver hands send 3 over at once, holds no arrival in the cell, and states position 2 as a gap its
+ * sender ended.
  *
  * The superseded send never leaves the page: a superseded copy that arrives after its replacement is dropped by ALM's
  * inbound admission before the sorter, which no hold at the sender can bring about.

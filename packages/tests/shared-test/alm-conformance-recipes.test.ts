@@ -305,6 +305,7 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'edge-order-late-join',
         'edge-order-unretried-loss-stream',
         'edge-order-supersedence',
+        'edge-order-live-stream',
         'ws-unicast-receipt',
         'server-command',
         'server-originated',
@@ -348,6 +349,7 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'edge-order-late-join',
         'edge-order-unretried-loss-stream',
         'edge-order-supersedence',
+        'edge-order-live-stream',
         'not-yet-in-sync-expires',
         'ws-unicast-receipt',
         'server-command-refused-at-call',
@@ -387,6 +389,7 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'edge-order-late-join',
         'edge-order-unretried-loss-stream',
         'edge-order-supersedence',
+        'edge-order-live-stream',
         'cross-carrier-duplicate-rtc-then-ws',
         'not-yet-in-sync-expires',
         'fallback-within-deadline',
@@ -802,8 +805,10 @@ describe('alm-conformance recipe family', () => {
                 const fairnessWindow = /-(own-share-under-inbound-sender|churn-bounded-tracks-receiver)-received-1$/
                     .test(command.commandId ?? '');
                 // The paced cells' windows span their opportunities and open their absence at the last expected
-                // arrival; pinned in alm-conformance-publication-scenarios.
-                const pacedWindow = /-paced-[a-z-]+-receiver-received-\d+$/.test(command.commandId ?? '');
+                // arrival; pinned in alm-conformance-publication-scenarios, and the edge-ordered live stream's in
+                // alm-conformance-edge-order.
+                const pacedWindow = /-(paced-[a-z-]+|edge-order-live-stream)-receiver-received-\d+$/
+                    .test(command.commandId ?? '');
                 if (durableOptInReceived1 || capacityReceived1 || fairnessWindow || pacedWindow) {
                     continue;
                 }
@@ -909,6 +914,7 @@ describe('alm-conformance recipe family', () => {
             'edge-order-late-join',
             'edge-order-unretried-loss-stream',
             'edge-order-supersedence',
+            'edge-order-live-stream',
             'cross-carrier-duplicate',
             'not-yet-in-sync',
             'receipt-exhausted-fallback',
@@ -956,6 +962,7 @@ describe('alm-conformance recipe family', () => {
             ['full'],
             ['full'],
             // The edge order cells after the swapped stream.
+            ['full'],
             ['full'],
             ['full'],
             ['full'],
