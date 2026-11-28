@@ -6171,6 +6171,21 @@ moved or changed test.
         "requiredConstraint": "Zero encodes when no two controls share a non-null proof identity.",
         "failureRationale": "The grouped result is the same whether or not the scan encodes content it never needs to compare, so only the absent encoder call shows honest traffic pays nothing. D606: a child that reuses one proof over up to 256 altered contents made a relay encode the signed content pairwise, about 90 ms per retried-copy grouping against about 1.2 ms; the encode count is the cost the scan owes and the only observable that tells a linear scan from a pairwise one."
       }
+    },
+    {
+      "id": "alm-work-corrupt-claim-prints-one-line",
+      "domain": "ALM work handling",
+      "owner": "Rallar shared maintainers",
+      "summary": "A work claim that ends on a corrupt record prints one line naming its work row and the corruption; a designed end and a retried failure print nothing.",
+      "semanticCoverage": "packages/tests/shared/alm/work/al-work-handler.test.ts#prints one line naming the row and the corruption when a claim ends on a corrupt record",
+      "coverageRelation": "The handler runs three claims that throw ALAdmissionCorruptionError, NonRetryableException and a plain error; the test reads their released outcomes and every call the handler made to its error log.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "console.error, the work handler's operator log",
+        "observableEffect": "An operator reads the line in the process's error output; a claim dropped as corrupt leaves no other trace.",
+        "requiredConstraint": "Exactly one line, for the claim that threw ALAdmissionCorruptionError, carrying the fixed text, its work row's key and the error; none for a NonRetryableException or a retried failure.",
+        "failureRationale": "The released outcomes are the same with or without the line, so only the log port shows that a corrupt end is reported and that a designed end, such as an expired copy's, is not reported as corrupt."
+      }
     }
   ],
   "entries": [
@@ -13114,6 +13129,17 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "The absent encode is the requirement itself: content is encoded only for two controls under one non-null proof, so honest controls cost nothing (D606).",
       "semanticCoverage": "packages/tests/shared/alm/inbound/control/is-al-same-receipt-statement-encode-count.test.ts#encodes nothing for honest controls: absent proofs, or pairwise different proofs"
+    },
+    {
+      "id": "test-structure-coupling-19463086df2a5723",
+      "path": "packages/tests/shared/alm/work/al-work-handler.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-work-corrupt-claim-prints-one-line",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The line is the requirement, ruled by the maintainer for R15, and nothing else observes it: the exact call list proves one line for the corrupt claim and none for the other two.",
+      "semanticCoverage": "packages/tests/shared/alm/work/al-work-handler.test.ts#prints one line naming the row and the corruption when a claim ends on a corrupt record"
     }
   ]
 }
