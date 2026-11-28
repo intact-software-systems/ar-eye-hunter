@@ -29,7 +29,7 @@ export const DIRECT_WRITE_CLASSES = [
 const REVIEW_FIELDS = ['review', 'answer', 'question', 'options', 'approval', 'recommended', 'answeredOn'];
 const UNDER_REVIEW_FIELDS = ['state', 'since', 'raised'];
 const ANSWER_FIELDS = ['answer', 'question', 'options', 'approval', 'recommended', 'costOfAppInbox', 'answeredOn'];
-const MODULE_LISTS = ['wiringModules', 'repositoryContractModules', 'keyModules'];
+const MODULE_LISTS = ['wiringModules', 'repositoryContractModules'];
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/u;
 
 export function toDirectWriteRegistry(markdown) {

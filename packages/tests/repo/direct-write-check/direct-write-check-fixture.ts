@@ -4,7 +4,6 @@ export interface DirectWriteFixtureScope {
     readonly root: string;
     readonly wiringModules: readonly string[];
     readonly repositoryContractModules: readonly string[];
-    readonly keyModules: readonly string[];
     readonly workTopicConstants: readonly { readonly path: string; readonly name: string; }[];
     readonly schemaTables: readonly string[];
 }
@@ -116,7 +115,6 @@ export function createDirectWriteFixture(sources: Readonly<Record<string, string
                 'packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts'
             ],
             repositoryContractModules: ['packages/shared-server/runtime-state/runtime-state-repository.ts'],
-            keyModules: ['packages/shared/alm/outbound/al-outbound-admission-keys.ts'],
             workTopicConstants: [{
                 path: 'packages/shared/alm/al-admission-work-backend.ts',
                 name: 'AL_ADMISSION_WORK_COMPLETED_RETENTION'

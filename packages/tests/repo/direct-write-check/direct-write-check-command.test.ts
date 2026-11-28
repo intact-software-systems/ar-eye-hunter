@@ -115,7 +115,7 @@ describe('direct-write check command', () => {
         writeFileSync(path.join(malformed, REGISTRY_PATH), '```app-inbox-direct-write-registry-v1\n{ "version": \n```\n');
         const missingModule = createTree(baseSources(), {
             ...baseRegistry(),
-            keyModules: ['packages/shared/alm/outbound/al-outbound-missing-keys.ts']
+            wiringModules: [BACKEND_PATH, 'packages/shared-server/al-runtime/postgres/create-p-sql-al-missing-stores.ts']
         });
 
         const malformedResult = runCheck(malformed);
@@ -126,7 +126,7 @@ describe('direct-write check command', () => {
         expect(`${malformedResult.stdout}${malformedResult.stderr}`).not.toContain('analysed');
         expect(missingModuleResult.status).toBe(1);
         expect(missingModuleResult.stderr).toContain(
-            'direct-write.registry-invalid keyModules names packages/shared/alm/outbound/al-outbound-missing-keys.ts, ' +
+            'direct-write.registry-invalid wiringModules names packages/shared-server/al-runtime/postgres/create-p-sql-al-missing-stores.ts, ' +
                 'which the analysed source does not hold'
         );
     });
@@ -173,7 +173,6 @@ function baseRegistry() {
         reviewCondition: 'Every under-review store is ruled on at the maintainer revisit.',
         wiringModules: [BACKEND_PATH, STORES_PATH],
         repositoryContractModules: [],
-        keyModules: [],
         workTopicConstants: [],
         stores: [{
             id: 'alm-inbound-admission',

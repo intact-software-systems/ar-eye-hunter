@@ -12,7 +12,7 @@ import {
 } from './direct-write-sites.mjs';
 
 const ADMISSION_PORT_NAMES = new Set(['ALAdmissionBackend', 'ALAdmissionWorkBackend']);
-const ADMISSION_PORT_PACKAGE = 'packages/shared/alm/';
+const ALM_PACKAGE = 'packages/shared/alm/';
 const ROW_KEY_BUILDER = /^toAL\w*(?:Key|Prefix)$/u;
 
 export function computeAdmissionBackendFacts(project, scope) {
@@ -121,7 +121,7 @@ function isAdmissionPortSymbol(symbol, scope) {
     return symbol !== undefined &&
         ADMISSION_PORT_NAMES.has(symbol.getName()) &&
         symbol.getDeclarations().some((declaration) =>
-            toRepositoryPath(declaration.getSourceFile(), scope.root).startsWith(ADMISSION_PORT_PACKAGE)
+            toRepositoryPath(declaration.getSourceFile(), scope.root).startsWith(ALM_PACKAGE)
         );
 }
 
@@ -140,14 +140,11 @@ function computeWiringImportFacts(project, scope) {
 }
 
 function computeRowFamilyFacts(project, scope) {
-    const keyModules = new Set(scope.keyModules);
     const topicConstants = new Map(scope.workTopicConstants.map((topic) => [topic.path, topic.name]));
     const facts = project.getSourceFiles().flatMap((sourceFile) => {
         const repositoryPath = toRepositoryPath(sourceFile, scope.root);
-        const keyBuilders = keyModules.has(repositoryPath)
-            ? sourceFile.getFunctions()
-                .filter((declaration) => declaration.isExported() && ROW_KEY_BUILDER.test(declaration.getName() ?? ''))
-                .map((declaration) => `${repositoryPath}#${declaration.getName()}`)
+        const keyBuilders = repositoryPath.startsWith(ALM_PACKAGE)
+            ? toKeyBuilderNames(sourceFile).map((name) => `${repositoryPath}#${name}`)
             : [];
         const topicName = topicConstants.get(repositoryPath);
         return [
@@ -156,6 +153,22 @@ function computeRowFamilyFacts(project, scope) {
         ];
     });
     return sortFacts(facts.map((id) => ({ id })));
+}
+
+/** Exported `toAL...Key` and `toAL...Prefix` builders, declared as functions or as function-valued constants. */
+function toKeyBuilderNames(sourceFile) {
+    const functions = sourceFile.getFunctions()
+        .filter((declaration) => declaration.isExported())
+        .map((declaration) => declaration.getName() ?? '');
+    const constants = sourceFile.getVariableStatements()
+        .filter((statement) => statement.isExported())
+        .flatMap((statement) => statement.getDeclarations())
+        .filter((declaration) => {
+            const initializer = declaration.getInitializer();
+            return Node.isArrowFunction(initializer) || Node.isFunctionExpression(initializer);
+        })
+        .map((declaration) => declaration.getName());
+    return [...functions, ...constants].filter((name) => ROW_KEY_BUILDER.test(name));
 }
 
 function toWorkTopicIds(sourceFile, repositoryPath, constantName) {

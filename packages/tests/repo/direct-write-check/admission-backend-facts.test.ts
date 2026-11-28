@@ -156,6 +156,28 @@ describe('admission backend facts', () => {
             { id: `${keysPath}#toALOutboundResendScheduleKey` }
         ]);
     });
+
+    it('records an exported key builder in any module under packages/shared/alm, declared as a function or an arrow', () => {
+        const facts = computeFixtureFacts({
+            ...ADMISSION_PORT_SOURCES,
+            'packages/shared/alm/outbound/admission/al-outbound-displayed-keys.ts': `
+                export function toALOutboundDisplayedRecipientKey(namespace: string, msgId: string): string { return namespace + msgId; }
+            `,
+            'packages/shared/alm/inbound/control/al-inbound-control-rows.ts': `
+                export const toALInboundControlAcksKey = (namespace: string, msgId: string): string => namespace + msgId;
+                const toALInboundControlPrivateKey = (namespace: string): string => namespace;
+                export const AL_INBOUND_CONTROL_LIMIT = toALInboundControlPrivateKey('limit').length;
+            `,
+            'packages/shared-web/browser/alm/al-browser-cache-keys.ts': `
+                export function toALBrowserCacheKey(namespace: string): string { return namespace; }
+            `
+        });
+
+        expect(facts.rowFamilies).toEqual([
+            { id: 'packages/shared/alm/inbound/control/al-inbound-control-rows.ts#toALInboundControlAcksKey' },
+            { id: 'packages/shared/alm/outbound/admission/al-outbound-displayed-keys.ts#toALOutboundDisplayedRecipientKey' }
+        ]);
+    });
 });
 
 function computeFixtureFacts(sources: Readonly<Record<string, string>>) {

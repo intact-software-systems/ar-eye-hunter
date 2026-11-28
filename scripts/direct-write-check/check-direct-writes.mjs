@@ -99,7 +99,6 @@ function toScope(root, registry) {
         root,
         wiringModules: registry.wiringModules,
         repositoryContractModules: registry.repositoryContractModules,
-        keyModules: registry.keyModules,
         workTopicConstants: registry.workTopicConstants,
         schemaTables: [...schema.matchAll(/^model\s+(\w+)\s*\{/gmu)].map((match) => match[1])
     };
@@ -108,7 +107,7 @@ function toScope(root, registry) {
 function validateScopeModules(project, scope) {
     const analysed = new Set(project.getSourceFiles().map((sourceFile) => toRepositoryPath(sourceFile, scope.root)));
     const named = [
-        ...['wiringModules', 'repositoryContractModules', 'keyModules'].flatMap((field) =>
+        ...['wiringModules', 'repositoryContractModules'].flatMap((field) =>
             scope[field].map((modulePath) => [field, modulePath])
         ),
         ...scope.workTopicConstants.map((topic) => ['workTopicConstants', topic.path])

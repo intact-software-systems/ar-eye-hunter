@@ -56,17 +56,17 @@ caller from an incoming path is visible.
 
 ## What the check computes
 
-| List                              | A surface is                                                                                               |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `admissionBackendImplementations` | a class implementing the ALM admission port, with whether it holds a PostgreSQL handle                     |
-| `admissionBackendConstructions`   | a construction of a PostgreSQL implementation, with the namespace text it is given                         |
-| `admissionBackendWrites`          | a `write` call whose receiver is the port or one of its implementations                                    |
-| `wiringImports`                   | a runtime import of one of `wiringModules`                                                                 |
-| `transactionOpeners`              | a call of `begin`, `transaction`, `savepoint` or `runInPSqlTransaction` that hands over a callback         |
-| `sqlWriteFiles`                   | a file holding an SQL write or row lock not tagged on a `PSqlSql` parameter named `transaction` or `tx`    |
-| `nonTransactionHandleFeeds`       | a root `PSqlSql` handle passed to a `transaction` parameter or to code declared in an `sqlWriteFiles` file |
-| `repositoryWriteCallers`          | a class or function that calls a write of `repositoryContractModules` on a root repository, or reaches one |
-| `rowFamilies`                     | an exported key builder of `keyModules`, or a work topic of `workTopicConstants`                           |
+| List                              | A surface is                                                                                                                                                               |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `admissionBackendImplementations` | a class implementing the ALM admission port, with whether it holds a PostgreSQL handle                                                                                     |
+| `admissionBackendConstructions`   | a construction of a PostgreSQL implementation, with the namespace text it is given                                                                                         |
+| `admissionBackendWrites`          | a `write` call whose receiver is the port or one of its implementations                                                                                                    |
+| `wiringImports`                   | a runtime import of one of `wiringModules`                                                                                                                                 |
+| `transactionOpeners`              | a call of `begin`, `transaction`, `savepoint` or `runInPSqlTransaction` that hands over a callback                                                                         |
+| `sqlWriteFiles`                   | a file holding an SQL write or row lock not tagged on a `PSqlSql` parameter named `transaction` or `tx`                                                                    |
+| `nonTransactionHandleFeeds`       | a root `PSqlSql` handle passed to a `transaction` parameter, or to code declared in an `sqlWriteFiles` file or in a file that itself feeds a root handle, to a fixed point |
+| `repositoryWriteCallers`          | a class or function that calls a write of `repositoryContractModules` on a root repository, or reaches one                                                                 |
+| `rowFamilies`                     | an exported `toAL...Key` or `toAL...Prefix` function or arrow under `packages/shared/alm`, or a work topic of `workTopicConstants`                                         |
 
 Identities are `path#owner` and never contain a line number. `scripts/direct-write-check/README.md` says what the check
 does not see.
@@ -93,11 +93,6 @@ review. A `basis` says what was read in the code, in one sentence.
     "packages/shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts",
     "packages/shared-server/app-data/app-data-repository.ts",
     "packages/shared-server/app-data/postgres/p-sql-app-data-repository.ts"
-  ],
-  "keyModules": [
-    "packages/shared/alm/outbound/admission/al-outbound-admission-keys.ts",
-    "packages/shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts",
-    "packages/shared/alm/receipt-record/al-receipt-record-keys.ts"
   ],
   "workTopicConstants": [
     {
@@ -1054,6 +1049,62 @@ review. A `basis` says what was read in the code, in one sentence.
       "basis": "A work type or topic the outbound store retains in the shared admission queue (AL_ADMISSION_WORK_COMPLETED_RETENTION)."
     },
     {
+      "id": "packages/shared/alm/inbound/al-inbound-canonical-message.ts#toALInboundMessageKey",
+      "class": "transport-direct",
+      "stores": [
+        "alm-inbound-admission"
+      ],
+      "basis": "An exported key builder of the inbound admission store: the canonical inbound message row in runtime_state_store."
+    },
+    {
+      "id": "packages/shared/alm/inbound/al-inbound-source-validation.ts#toALInboundMessageOwnerKey",
+      "class": "transport-direct",
+      "stores": [
+        "alm-inbound-admission"
+      ],
+      "basis": "An exported key builder of the inbound admission store: the message owner row of a sender and message in runtime_state_store."
+    },
+    {
+      "id": "packages/shared/alm/inbound/al-inbound-work-entry.ts#toALInboundWorkKey",
+      "class": "transport-direct",
+      "stores": [
+        "alm-inbound-admission"
+      ],
+      "basis": "An exported key builder of the inbound admission store: the AL_INBOUND work row in resource_inbox."
+    },
+    {
+      "id": "packages/shared/alm/inbound/control/al-inbound-control-rows.ts#toALInboundControlAcksKey",
+      "class": "transport-direct",
+      "stores": [
+        "alm-inbound-admission"
+      ],
+      "basis": "An exported key builder of the inbound admission store: the acknowledgement control row of a message in runtime_state_store."
+    },
+    {
+      "id": "packages/shared/alm/inbound/control/al-inbound-control-rows.ts#toALInboundControlNacksKey",
+      "class": "transport-direct",
+      "stores": [
+        "alm-inbound-admission"
+      ],
+      "basis": "An exported key builder of the inbound admission store: the negative-acknowledgement control row of a message in runtime_state_store."
+    },
+    {
+      "id": "packages/shared/alm/inbound/control/al-inbound-control-rows.ts#toALInboundControlOwnersKey",
+      "class": "transport-direct",
+      "stores": [
+        "alm-inbound-admission"
+      ],
+      "basis": "An exported key builder of the inbound admission store: the control owner index row of a message in runtime_state_store."
+    },
+    {
+      "id": "packages/shared/alm/inbound/control/al-inbound-control-rows.ts#toALInboundControlPendingKey",
+      "class": "transport-direct",
+      "stores": [
+        "alm-inbound-admission"
+      ],
+      "basis": "An exported key builder of the inbound admission store: the pending control row of a message in runtime_state_store."
+    },
+    {
       "id": "packages/shared/alm/outbound/admission/al-outbound-admission-keys.ts#toALOutboundControlHistoryKey",
       "class": "transport-direct",
       "stores": [
@@ -1174,6 +1225,38 @@ review. A `basis` says what was read in the code, in one sentence.
       "basis": "An exported key builder of the outbound admission store; each names one row family in runtime_state_store."
     },
     {
+      "id": "packages/shared/alm/outbound/al-outbound-canonical-message.ts#toALOutboundCanonicalKey",
+      "class": "transport-direct",
+      "stores": [
+        "alm-outbound-admission"
+      ],
+      "basis": "An exported key builder of the outbound admission store: the AL_OUTBOUND_MESSAGE canonical message row in resource_inbox."
+    },
+    {
+      "id": "packages/shared/alm/outbound/al-outbound-canonical-message.ts#toALOutboundIdentityKey",
+      "class": "transport-direct",
+      "stores": [
+        "alm-outbound-admission"
+      ],
+      "basis": "An exported key builder of the outbound admission store: the AL_OUTBOUND_IDENTITY row in resource_inbox."
+    },
+    {
+      "id": "packages/shared/alm/outbound/al-outbound-work-entry.ts#toALOutboundWorkKey",
+      "class": "transport-direct",
+      "stores": [
+        "alm-outbound-admission"
+      ],
+      "basis": "An exported key builder of the outbound admission store: the AL_OUTBOUND work row in resource_inbox."
+    },
+    {
+      "id": "packages/shared/alm/outbound/to-al-outbound-effect-id.ts#toALOutboundRepairRequesterKey",
+      "class": "transport-direct",
+      "stores": [
+        "alm-outbound-admission"
+      ],
+      "basis": "Named like a key builder, it keys the per-requester map inside the outbound store's repair-attempt row value, not a row of its own."
+    },
+    {
       "id": "packages/shared/alm/receipt-record/al-receipt-record-keys.ts#toALReceiptRecordConfirmationKey",
       "class": "transport-direct",
       "stores": [
@@ -1196,6 +1279,14 @@ review. A `basis` says what was read in the code, in one sentence.
         "alm-receipt-record"
       ],
       "basis": "An exported key builder of the receipt record; each names one row family in runtime_state_store."
+    },
+    {
+      "id": "packages/shared/alm/receipt-record/al-receipt-record-work-entry.ts#toALReceiptRecordWorkKey",
+      "class": "transport-direct",
+      "stores": [
+        "alm-receipt-record"
+      ],
+      "basis": "An exported key builder of the receipt record: the AL_RECEIPT_DEADLINE and AL_RECEIPT_ENDED work rows in resource_inbox."
     }
   ]
 }

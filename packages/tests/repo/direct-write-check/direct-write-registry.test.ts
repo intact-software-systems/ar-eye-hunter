@@ -188,7 +188,6 @@ function registryWith(overrides: RegistryOverrides): JsonObject {
         reviewCondition: 'Every under-review store is ruled on at the maintainer revisit.',
         wiringModules: ['packages/server/wiring.ts'],
         repositoryContractModules: ['packages/server/repository.ts'],
-        keyModules: ['packages/shared/keys.ts'],
         workTopicConstants: [{ path: 'packages/shared/topics.ts', name: 'WORK_TOPICS' }],
         stores: [
             {
