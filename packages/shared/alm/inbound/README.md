@@ -753,7 +753,7 @@ snapshot or one clock reading: each read drops an expired row against the clock 
 chain's slot read and its message read are separate statements. So a chain can read a slot just before that instant and
 its message row just after it, or after a writer that met both expired deleted them. The one function that resolves a
 slot's message, `readALInboundBufferedMessage`
-([`al-inbound-ordering-validation.ts`](./al-inbound-ordering-validation.ts)), decides that case: on an absent message
+([`al-inbound-ordering-validation.ts`](./al-inbound-ordering-validation.ts)), decides that case with the reads below: on an absent message
 row it reads the slot's own key once more through the same session or transaction, and a slot gone there left with its
 row, so the chain read no slot. Its three readers answer as a read made
 just after the expiry would: the track read (`readOrderingState`, behind the admission read, `readOrderingTrack`, and
@@ -777,11 +777,11 @@ Each commit that re-reads a slot then answers `conflict`, and its caller goes on
 admission at the socket and a retained admission's replay try again at once, three attempts in all, and commit against
 a track without the copy. A bounded hold's end hands its timer back (`retry`) and the timer's row runs again, where
 before it ended for good. A resync rejection hands its row back (`retry`), and the row ends one run later, as an
-expired copy's does, with no NACK written. A release and a delivery completion try again at once, find no slot, and end
+expired copy's does, with no NACK written (read from the code, not run). A release and a delivery completion try again at once, find no slot, and end
 in a `NonRetryableException` unless the track's position passed the message, as an expired copy's do. On IndexedDB the
-added read is the backend's own, so when the clock reaches the slot's own expiry between the commit's re-read and that
-read, the backend's existing removal of an expired row runs from inside the commit's callback, before what would have
-been the throw; it removes only a row already expired, guarded by the write token it read.
+added read is the backend's own, so when the clock reaches the slot's own expiry between the re-read through the
+session or transaction and that read, the backend's existing removal of an expired row runs from inside the commit's
+callback or the read session, before what would have been the throw; it removes only a row already expired, guarded by the write token it read.
 
 A slot still stored at the last read has lost its message row, which no write leaves, and throws
 `ALAdmissionCorruptionError`, as does a message row that names another track or sequence. Two faults of the same shape
