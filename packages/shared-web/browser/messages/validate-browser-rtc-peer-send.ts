@@ -31,7 +31,7 @@ export function validateBrowserRtcPeerSend<T>(
 ): readonly RallarValidationIssue[] {
     const { peer, resolved } = input;
     return [
-        ...validateBrowserPeerInput({ send: peer.send, roomRef: resolved.roomRef }),
+        ...validateBrowserPeerInput(peer.send),
         ...(peer.strategy === 'rtc-with-ws-fallback'
             ? input.inputValidator.validateWs(resolved)
             : []),

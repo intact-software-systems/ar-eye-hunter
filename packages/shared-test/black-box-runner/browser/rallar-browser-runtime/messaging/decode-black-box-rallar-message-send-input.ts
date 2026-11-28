@@ -36,13 +36,18 @@ type MessageSendOptions = Pick<
     'roomRef' | 'scope' | 'reliability' | 'ack' | 'durability' | 'onStorageUnavailable' | 'minSnapshotVersion' | 'qos'
 >;
 
+type MessageSendGuarantees = Pick<
+    BlackBoxRallarMessageSendInput,
+    'reliability' | 'durability' | 'onStorageUnavailable'
+>;
+
 type MessageSendAudience = Pick<
     BlackBoxRallarMessageSendInput,
     'toPeer' | 'principalId' | 'recipientPeers' | 'recipientPrincipalIds'
 >;
 
-/** Everything an ordinary send names but the channel it opens. */
-type MessageSendFields = Omit<BlackBoxRallarMessageSendInput, keyof BlackBoxRallarMessageChannel>;
+/** Everything an ordinary send names but the channel it opens and what the harness observes of it. */
+type MessageSendFields = Omit<BlackBoxRallarMessageSendInput, keyof BlackBoxRallarMessageChannel | 'observe'>;
 
 const MESSAGE_CARRIERS: readonly BlackBoxRallarMessageSendInput['carrier'][] = ['ws', 'rtc', 'rtc-with-ws-fallback'];
 const MESSAGE_SCOPES: readonly NonNullable<BlackBoxRallarMessageSendInput['scope']>[] = ['room', 'world', 'principal'];
@@ -57,6 +62,7 @@ const ON_STORAGE_UNAVAILABLE: readonly NonNullable<BlackBoxRallarMessageSendInpu
     'volatile'
 ];
 const REPLAY_CARRIERS: readonly ALDeliveryCarrier[] = ['ws', 'rtc'];
+const MESSAGE_SEND_OBSERVATIONS: readonly NonNullable<BlackBoxRallarMessageSendInput['observe']>[] = ['call-refused'];
 const MESSAGE_PEER_ROLES: readonly NonNullable<BlackBoxRallarMessageSendInput['toPeer']>[] = [
     'server',
     'receiver'
@@ -94,7 +100,8 @@ const REPLAY_REFUSED_FIELDS = [
     'minSnapshotVersion',
     'qos',
     'maxRepairs',
-    'toPeer'
+    'toPeer',
+    'observe'
 ] as const;
 
 type MessageSendCommandInput = BlackBoxRallarMessageSendInput | BlackBoxRallarMessageReplayInput;
@@ -133,9 +140,13 @@ function decodeReplaySend(
 function decodeOrdinarySend(
     value: BlackBoxRallarCommandRecord
 ): Either<BlackBoxRallarInputIssue, BlackBoxRallarMessageSendInput> {
+    const observe = decodeKnownSendOption(value.observe, MESSAGE_SEND_OBSERVATIONS, 'observe must be call-refused');
+    if (isInputIssue(observe)) {
+        return Either.ofLeft(observe);
+    }
     return decodeBlackBoxRallarMessageChannel(value).flatMap(
         (issue) => Either.ofLeft(issue),
-        (channel) => decodeMessageSendFields(value).mapRight((fields) => ({ ...fields, ...channel }))
+        (channel) => decodeMessageSendFields(value).mapRight((fields) => ({ ...fields, ...channel, observe }))
     );
 }
 
@@ -247,6 +258,32 @@ function decodeMessageSendOptions(
     record: BlackBoxRallarCommandRecord
 ): Either<BlackBoxRallarInputIssue, MessageSendOptions> {
     const scope = decodeKnownSendOption(record.scope, MESSAGE_SCOPES, 'scope must be room, world, or principal');
+    const minSnapshotVersion = decodeMessageSnapshotFloor(record.minSnapshotVersion);
+    const qos = decodeMessageQos(record.qos);
+    return decodeBlackBoxCommandRouting(record).flatMap(
+        (issue) => Either.ofLeft(issue),
+        (routing) => {
+            if (isInputIssue(scope)) {
+                return Either.ofLeft(scope);
+            }
+            return decodeMessageSendGuarantees(record).flatMap(
+                (issue) => Either.ofLeft(issue),
+                (guarantees) => {
+                    if (isInputIssue(minSnapshotVersion)) {
+                        return Either.ofLeft(minSnapshotVersion);
+                    }
+                    return isInputIssue(qos)
+                        ? Either.ofLeft(qos)
+                        : Either.ofRight({ ...routing, ...guarantees, scope, minSnapshotVersion, qos });
+                }
+            );
+        }
+    );
+}
+
+function decodeMessageSendGuarantees(
+    record: BlackBoxRallarCommandRecord
+): Either<BlackBoxRallarInputIssue, MessageSendGuarantees> {
     const reliability = decodeKnownSendOption(
         record.reliability,
         MESSAGE_RELIABILITIES,
@@ -262,40 +299,15 @@ function decodeMessageSendOptions(
         ON_STORAGE_UNAVAILABLE,
         'onStorageUnavailable must be refuse or volatile'
     );
-    const minSnapshotVersion = decodeMessageSnapshotFloor(record.minSnapshotVersion);
-    const qos = decodeMessageQos(record.qos);
-    return decodeBlackBoxCommandRouting(record).flatMap(
-        (issue) => Either.ofLeft(issue),
-        (routing) => {
-            if (isInputIssue(scope)) {
-                return Either.ofLeft(scope);
-            }
-            if (isInputIssue(reliability)) {
-                return Either.ofLeft(reliability);
-            }
-            if (isInputIssue(durability)) {
-                return Either.ofLeft(durability);
-            }
-            if (isInputIssue(onStorageUnavailable)) {
-                return Either.ofLeft(onStorageUnavailable);
-            }
-            if (isInputIssue(minSnapshotVersion)) {
-                return Either.ofLeft(minSnapshotVersion);
-            }
-            if (isInputIssue(qos)) {
-                return Either.ofLeft(qos);
-            }
-            return Either.ofRight({
-                ...routing,
-                scope,
-                reliability,
-                durability,
-                onStorageUnavailable,
-                minSnapshotVersion,
-                qos
-            });
-        }
-    );
+    if (isInputIssue(reliability)) {
+        return Either.ofLeft(reliability);
+    }
+    if (isInputIssue(durability)) {
+        return Either.ofLeft(durability);
+    }
+    return isInputIssue(onStorageUnavailable)
+        ? Either.ofLeft(onStorageUnavailable)
+        : Either.ofRight({ reliability, durability, onStorageUnavailable });
 }
 
 function decodeKnownSendOption<T extends string>(

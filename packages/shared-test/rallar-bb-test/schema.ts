@@ -781,6 +781,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         qos: messagesQosSchema,
         maxRepairs: { type: 'integer', minimum: 1 },
         toPeer: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesToPeer },
+        observe: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesSendObserve },
         replayOnCarrier: messagesReplaySchema
     })),
     'messages.observe': strictCommandSchema('messages.observe', {

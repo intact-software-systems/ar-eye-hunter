@@ -209,6 +209,23 @@ const WS_CLIENT_RELAY_REJECTION_TEST = 'packages/tests/shared/services/ws-queue-
 const WS_SEND_CARRIES_NO_PROOF =
     'A WS send carries no proof: the authenticated socket names its sender, and the server verifies only the proof a handed-over copy carries.';
 
+/** The browser's refusal of a room send routed in another room, which every strategy throws before any carrier. */
+const ROOM_SEND_NAMING_ANOTHER_ROOM_REFUSED_AT_THE_CALL = {
+    kind: 'unit-test',
+    testFile: BROWSER_MESSAGE_AUDIENCES_TEST,
+    testName:
+        'refuses a room send whose contextId names another room at the call on %s, before the connect and before either carrier',
+    because:
+        'A room send whose `contextId` is not its room id throws `context-room-mismatch` at `$.contextId`, connects nothing and admits on neither carrier.'
+} as const satisfies AlmCarrierProof;
+
+/** D82: no RTC receiver checks a frame's context against its room, so only the browser's own refusal stands there. */
+const RTC_RECEIVER_CHECKS_NO_ROOM_CONTEXT = {
+    kind: 'documented-limit',
+    document: 'docs/rallar-api-reference.md',
+    limit: 'a frame that did not pass this refusal is still delivered over RTC'
+} as const satisfies AlmCarrierProof;
+
 /**
  * Each capability whose outcome differs by carrier on purpose, or that a single carrier proves, and what proves each
  * cell. A scenario a cell names runs over exactly the carriers that name it: it takes them from here
@@ -312,6 +329,37 @@ export const ALM_CARRIER_MATRIX = {
             }
         }
     },
+    'room-send-naming-another-room': {
+        statement:
+            'A room send whose `contextId` is not its room id is refused at the call on every strategy; a modified client\'s frame is refused `unauthorized` by the WS server and is not checked by an RTC receiver.',
+        cells: {
+            ws: {
+                kind: 'stated',
+                outcome: { kind: 'refused', by: 'call', path: '$.contextId', code: 'context-room-mismatch' },
+                proofs: [
+                    ROOM_SEND_NAMING_ANOTHER_ROOM_REFUSED_AT_THE_CALL,
+                    {
+                        kind: 'unit-test',
+                        testFile:
+                            'packages/tests/shared-server/rallar-system/websocket/router/rallar-server-ws-room-route-context.test.ts',
+                        testName: 'refuses a %s whose route names another room than its groupRef as unauthorized',
+                        because:
+                            'The WS server refuses a client frame whose `route.contextId` names another room than its `groupRef` as `unauthorized`, whatever its audience.'
+                    }
+                ]
+            },
+            rtc: {
+                kind: 'stated',
+                outcome: { kind: 'refused', by: 'call', path: '$.contextId', code: 'context-room-mismatch' },
+                proofs: [ROOM_SEND_NAMING_ANOTHER_ROOM_REFUSED_AT_THE_CALL, RTC_RECEIVER_CHECKS_NO_ROOM_CONTEXT]
+            },
+            'rtc-with-ws-fallback': {
+                kind: 'stated',
+                outcome: { kind: 'refused', by: 'call', path: '$.contextId', code: 'context-room-mismatch' },
+                proofs: [ROOM_SEND_NAMING_ANOTHER_ROOM_REFUSED_AT_THE_CALL, RTC_RECEIVER_CHECKS_NO_ROOM_CONTEXT]
+            }
+        }
+    },
     'server-peer-unicast': {
         statement: 'A unicast to the server peer travels WS: the server is no RTC peer.',
         cells: {
@@ -323,23 +371,30 @@ export const ALM_CARRIER_MATRIX = {
             rtc: {
                 kind: 'stated',
                 outcome: { kind: 'refused', by: 'call', path: '$.peerId', code: 'unsupported' },
-                proofs: [{
-                    kind: 'unit-test',
-                    testFile: BROWSER_RTC_PEER_SEND_TEST,
-                    testName: 'refuses a send to the server on %s',
-                    because: 'The lane cannot witness a thrown call: the send throws before either carrier admits it.'
-                }]
+                proofs: [
+                    { kind: 'lane-cell', scenarioKey: 'server-command-refused-at-call' },
+                    {
+                        kind: 'unit-test',
+                        testFile: BROWSER_RTC_PEER_SEND_TEST,
+                        testName: 'refuses a send to the server on %s',
+                        because:
+                            'The send is admitted on neither carrier: the test reads both carriers\' admissions empty, and the refusal\'s message, which tells it from the product\'s other `$.peerId` refusals.'
+                    }
+                ]
             },
             'rtc-with-ws-fallback': {
                 kind: 'stated',
                 outcome: { kind: 'refused', by: 'call', path: '$.peerId', code: 'unsupported' },
-                proofs: [{
-                    kind: 'unit-test',
-                    testFile: BROWSER_RTC_PEER_SEND_TEST,
-                    testName: 'refuses a send to the server on %s',
-                    because:
-                        'The lane cannot witness a thrown call: the strategy does not route the send to WS, it throws.'
-                }]
+                proofs: [
+                    { kind: 'lane-cell', scenarioKey: 'server-command-refused-at-call' },
+                    {
+                        kind: 'unit-test',
+                        testFile: BROWSER_RTC_PEER_SEND_TEST,
+                        testName: 'refuses a send to the server on %s',
+                        because:
+                            'The strategy does not route the send to WS: the test reads both carriers\' admissions empty, and the refusal\'s message, which tells it from the product\'s other `$.peerId` refusals.'
+                    }
+                ]
             }
         }
     },
@@ -645,9 +700,17 @@ export const ALM_CARRIER_MATRIX = {
                             'The server delivers an outbox-fanned room broadcast to a room of 300 sessions, and no copy lists its audience.'
                     },
                     {
-                        kind: 'unproven',
-                        closedBy:
-                            'a server test that delivers a granted publication to more than 256 subscribed sessions; it waits for the merge of pull request 885, which changes the test file that holds the harness'
+                        kind: 'unit-test',
+                        testFile: 'apps/api-v1/test/services/ws-room-granted-delivery.test.ts',
+                        testName:
+                            'a granted publication reaches each of 257 subscribed sessions once, with no audience on the wire',
+                        because:
+                            'The server delivers a granted publication to each of 257 subscribed sessions once, and no copy lists its audience: each session\'s subscription generation is kept on the stored row beside the message, not in the frame.'
+                    },
+                    {
+                        kind: 'documented-limit',
+                        document: 'packages/shared/alm/receipt-record/README.md',
+                        limit: 'A send to more than 256 recipients is admitted and gets no receipt'
                     }
                 ]
             },

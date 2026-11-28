@@ -348,6 +348,7 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'edge-order-unretried-loss-stream',
         'not-yet-in-sync-expires',
         'ws-unicast-receipt',
+        'server-command-refused-at-call',
         'capacity',
         'capacity-age',
         ...REPLY_ADDRESSED_KEYS_BY_CARRIER.rtc,
@@ -390,6 +391,7 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'no-fallback-after-deadline',
         'ws-unicast-receipt',
         'unicast-fallback',
+        'server-command-refused-at-call',
         'capacity',
         'capacity-age',
         'capacity-tracks',
@@ -494,10 +496,17 @@ describe('alm-conformance recipe family', () => {
                 carrier === 'ws'
                     ? ['ws-unicast-receipt', 'server-command', ...VOLATILE_BOUND_KEYS, ...REPLY_ADDRESSED_KEYS_BY_CARRIER.ws]
                     : carrier === 'rtc'
-                    ? ['ws-unicast-receipt', 'capacity', 'capacity-age', ...REPLY_ADDRESSED_KEYS_BY_CARRIER.rtc]
+                    ? [
+                        'ws-unicast-receipt',
+                        'server-command-refused-at-call',
+                        'capacity',
+                        'capacity-age',
+                        ...REPLY_ADDRESSED_KEYS_BY_CARRIER.rtc
+                    ]
                     : [
                         'ws-unicast-receipt',
                         'unicast-fallback',
+                        'server-command-refused-at-call',
                         ...VOLATILE_BOUND_KEYS,
                         ...REPLY_ADDRESSED_KEYS_BY_CARRIER['rtc-with-ws-fallback']
                     ]
@@ -902,6 +911,7 @@ describe('alm-conformance recipe family', () => {
             'no-fallback-after-deadline',
             'ws-unicast-receipt',
             'unicast-fallback',
+            'server-command-refused-at-call',
             ...VOLATILE_BOUND_KEYS,
             ...REPLY_ADDRESSED_KEYS_BY_CARRIER['rtc-with-ws-fallback'],
             'granted-rtc-revoked-publisher',
@@ -943,6 +953,8 @@ describe('alm-conformance recipe family', () => {
             ['full'],
             // The edge order cells after the swapped stream.
             ['full'],
+            ['full'],
+            // The server command refused at its call, after the WS unicast receipt.
             ['full'],
             ['full'],
             ['full'],

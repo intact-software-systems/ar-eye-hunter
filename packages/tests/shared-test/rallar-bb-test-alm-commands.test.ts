@@ -2114,6 +2114,12 @@ describe('ALM browser adapter execution', () => {
                 code: 'RALLAR_BLACK_BOX_ALM_PEER_UNRESOLVED'
             },
             {
+                commandId: 'alm-receipts-send-not-refused',
+                message: `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.sendNotRefused}: messages.send h-1 ` +
+                    'observes a call refusal, and the call opened msg-1.',
+                code: 'RALLAR_BLACK_BOX_ALM_SEND_NOT_REFUSED'
+            },
+            {
                 commandId: 'alm-receipts-reply-request-unreceived',
                 message: `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.replyRequestUnreceived}: messages.reply names ` +
                     'no received alm.conformance message at index 3; the page holds 2.',

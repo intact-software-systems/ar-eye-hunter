@@ -1,4 +1,4 @@
-import { test } from 'bun:test';
+import { spyOn, test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { GroupPublicationAuthority } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
@@ -18,7 +18,7 @@ import { newALAckControlMessage, type ALReceiptPayload } from '@shared/al-contra
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { createInMemoryALReceiptRecordStores } from '@shared/alm/receipt-record/al-receipt-record-stores.ts';
+import { createInMemoryALReceiptRecordStores, type ALReceiptRecordStores } from '@shared/alm/receipt-record/al-receipt-record-stores.ts';
 import { ALReceiptRecord } from '@shared/alm/receipt-record/al-receipt-record.ts';
 import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { GroupTopicSubscription } from '@shared/api/group-publication/group-topic-subscriptions.ts';
@@ -72,6 +72,28 @@ const REVOKED_CAROL: Grants = { ...GRANTS, carol: undefined };
 /** Every session subscribes to the feed under its first generation. */
 const SUBSCRIBED: Subscriptions = { alice: 'client-generation-alice', bob: 'client-generation-bob', carol: 'client-generation-carol' };
 const UNSUBSCRIBED_CAROL: Subscriptions = { alice: SUBSCRIBED.alice, bob: SUBSCRIBED.bob };
+const ROOM_PRINCIPAL_IDS = ['alice', 'bob', 'carol'] as const;
+/** One past the 256 entries a wire collection holds. */
+const OVER_WIRE_LIMIT_SUBSCRIBER_IDS = Array.from({ length: 257 }, (_, index) => `subscriber-${String(index + 1).padStart(3, '0')}`);
+const OVER_WIRE_LIMIT_DELIVERIES = [
+    ['none', { reliability: 'best-effort', ack: 'none' }],
+    ['receiver', { reliability: 'at-least-once', ack: 'receiver' }]
+] as const;
+
+/** The room's authority reads. Each takes the next queued answer, the last one repeating; the room of `GRANTS` when none is queued. */
+interface RoomAuthorityReads {
+    readonly reads: RoomRead[];
+    readonly recheck: RecheckRead;
+    readonly readCount: () => number;
+    readonly readRoom: (ref: GroupRef) => Promise<GroupPublicationAuthority | undefined>;
+    /** The D498 re-check's read: `recheck.read` when set, else the next turn of `reads`. */
+    readonly readRecheckRoom: (ref: GroupRef) => Promise<GroupPublicationAuthority | undefined>;
+}
+
+interface RecheckRead {
+    /** When set, the D498 re-check reads this instead of taking its turn in `reads`. */
+    read: RoomRead | undefined;
+}
 
 interface GrantedDeliveryHarness {
     readonly service: WsQueueBoxServerService;
@@ -80,10 +102,8 @@ interface GrantedDeliveryHarness {
     readonly stores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
     /** The test's own reader of the receipt record the server counts its own publications in. */
     readonly record: ALReceiptRecord;
-    /** Each authority read takes the next answer; the last one repeats. */
     readonly reads: RoomRead[];
-    /** When set, the D498 re-check reads this instead of taking its turn in `reads`. */
-    recheckRead: RoomRead | undefined;
+    readonly recheck: RecheckRead;
     readonly readCount: () => number;
 }
 
@@ -252,7 +272,7 @@ test('two held granted rows for one session reach it in admission order however 
         harness.server.expectedConnections.expect({ id: 'bob', generationId: 'generation', expiresAtEpochMs: Date.now() + 60_000 });
         let rechecks = 0;
         // Each row's dequeue re-checks once; the first held re-check then answers after the second.
-        harness.recheckRead = async () => {
+        harness.recheck.read = async () => {
             rechecks += 1;
             if (rechecks === 3) {
                 await new Promise((resolve) => setTimeout(resolve, 40));
@@ -374,7 +394,7 @@ test('a run of granted rows for a missing room does not stop a members row\'s de
         const frames = addAudience(harness.server);
         const granted = Array.from({ length: 12 }, (_, index) => feedMessage({ senderId: 'alice', msgId: `missing-room-${index}` }));
         // Admission, dispatch and route read the room; every dequeue re-check then finds it gone.
-        harness.recheckRead = () => Promise.resolve(undefined);
+        harness.recheck.read = () => Promise.resolve(undefined);
         for (const message of granted) {
             await harness.service.acceptIncomingMessage(message, 'alice');
         }
@@ -383,7 +403,7 @@ test('a run of granted rows for a missing room does not stop a members row\'s de
                 .every((rows) => rows[0]?.status === EntityStatus.COMPLETED)
         );
         // The room is back for the members row, whose dequeue reads the room's live generations.
-        harness.recheckRead = undefined;
+        harness.recheck.read = undefined;
         const members = feedMessage({ senderId: 'alice', msgId: 'members-after-missing-room', topicId: MEMBERS_TOPIC });
 
         await harness.service.acceptIncomingMessage(members, 'alice');
@@ -758,6 +778,38 @@ test('a granted cluster row reads the publication authority once per dequeue att
     });
 });
 
+for (const [ack, delivery] of OVER_WIRE_LIMIT_DELIVERIES) {
+    test(`a granted publication reaches each of 257 subscribed sessions once, with no audience on the wire (${ack})`, async () => {
+        await withHarness({ fanout: 'outbox' }, async (harness) => {
+            const frames = new Map(
+                ['alice', 'bystander', ...OVER_WIRE_LIMIT_SUBSCRIBER_IDS].map((sessionId) => [sessionId, addConnection(harness.server, sessionId)])
+            );
+            const framesOf = (sessionId: string) => readOpenedFrames(frames, sessionId);
+            harness.reads.push(() => Promise.resolve(createOverWireLimitAuthority()));
+            const message: ALMessage = { ...feedMessage({ senderId: 'alice', msgId: `over-wire-limit-${ack}` }), delivery };
+            // No receipt opens for more than 256 recipients, and the server warns that it opened none.
+            const warning = ack === 'receiver' ? spyOn(console, 'warn').mockImplementation(() => {}) : undefined;
+            try {
+                assert.deepEqual((await harness.service.acceptIncomingMessage(message, 'alice')).right, { kind: 'admitted' });
+                await waitFor(() => OVER_WIRE_LIMIT_SUBSCRIBER_IDS.every((sessionId) => readDelivered(framesOf(sessionId), message) > 0));
+                await settle();
+            }
+            finally {
+                warning?.mockRestore();
+            }
+
+            const receivedOnce = OVER_WIRE_LIMIT_SUBSCRIBER_IDS.filter((sessionId) => readDelivered(framesOf(sessionId), message) === 1);
+            assert.deepEqual(receivedOnce, OVER_WIRE_LIMIT_SUBSCRIBER_IDS);
+            const copies = OVER_WIRE_LIMIT_SUBSCRIBER_IDS.flatMap((sessionId) => readCopies(framesOf(sessionId), message));
+            assert.equal(copies.every(({ targets }) => targets?.mode === 'broadcast' && targets.recipientPeerIds === undefined), true);
+            assert.equal(readDelivered(framesOf('alice'), message), 0);
+            assert.equal(readDelivered(framesOf('bystander'), message), 0);
+            assert.deepEqual(readReceipts(framesOf('alice')), []);
+            assert.deepEqual(readNackReasons(framesOf('alice'), message), []);
+        });
+    });
+}
+
 async function withHarness(
     input: GrantedDeliveryHarnessInput,
     body: (harness: GrantedDeliveryHarness) => Promise<void>
@@ -784,7 +836,36 @@ async function createHarness(input: GrantedDeliveryHarnessInput): Promise<Grante
     const stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
     const receiptRecordStores = createInMemoryALReceiptRecordStores('room-granted-delivery', Date.now);
     const grantedTopics = new WsGrantedTopicSet();
+    const roomReads = createRoomAuthorityReads();
+    const filters = input.withoutRecheck === true ? undefined : createRecipientEligibilityFilters(server, grantedTopics, roomReads);
+
+    const service = createGrantedDeliveryService({ server, stores, receiptRecordStores, grantedTopics, filters });
+    const router = createGrantedDeliveryRouter({ service, grantedTopics, roomReads, fanout: input.fanout });
+    if (input.cluster === true) {
+        await installQueueBoxPubSubBridge({
+            wsQBoxServerService: service,
+            bridge: new LoopbackBridge(),
+            channel: 'granted',
+            publisherId: 'publisher',
+            capturedRecipientEligibilityFilters: filters
+        });
+    }
+
+    return {
+        service,
+        router,
+        server,
+        stores,
+        record: new ALReceiptRecord({ ...receiptRecordStores, nowMs: Date.now }),
+        reads: roomReads.reads,
+        recheck: roomReads.recheck,
+        readCount: roomReads.readCount
+    };
+}
+
+function createRoomAuthorityReads(): RoomAuthorityReads {
     const reads: RoomRead[] = [];
+    const recheck: RecheckRead = { read: undefined };
     let readCount = 0;
     const readRoom = (ref: GroupRef) => {
         assert.deepEqual(ref, ROOM);
@@ -792,16 +873,32 @@ async function createHarness(input: GrantedDeliveryHarnessInput): Promise<Grante
         const next = reads.length > 1 ? reads.shift()! : reads[0];
         return next === undefined ? Promise.resolve(createAuthority(GRANTS)) : next();
     };
-    const readCurrentSnapshot = async (ref: GroupRef) => (await readRoom(ref))?.snapshot;
-    const readRecheckRoom = (ref: GroupRef) => harness.recheckRead?.() ?? readRoom(ref);
+    return {
+        reads,
+        recheck,
+        readCount: () => readCount,
+        readRoom,
+        readRecheckRoom: (ref) => recheck.read?.() ?? readRoom(ref)
+    };
+}
+
+/**
+ * The API's D498 re-check filters over the harness's reads: the durable one at the dequeue, and the local one at a send,
+ * which like the socket filter admits only sockets open here.
+ */
+function createRecipientEligibilityFilters(
+    server: JsonWebSocketServer,
+    grantedTopics: WsGrantedTopicSet,
+    roomReads: RoomAuthorityReads
+): WsCapturedRecipientEligibilityFilters {
     const filterOpenSessionIds = (sessionIds: readonly string[]) => sessionIds.filter((sessionId) => server.connections.get(sessionId)?.isOpen === true);
-    const filters: WsCapturedRecipientEligibilityFilters | undefined = input.withoutRecheck === true ? undefined : {
+    return {
         durable: (captured) =>
             filterDurablyLiveWsSessionIds({
                 ...captured,
                 grantedTopics,
                 serverPeerId: SERVER_PEER_ID,
-                readPublicationAuthority: readRecheckRoom,
+                readPublicationAuthority: roomReads.readRecheckRoom,
                 readPrincipalSessions: () => Promise.resolve(undefined),
                 nowEpochMs: Date.now()
             }),
@@ -811,12 +908,25 @@ async function createHarness(input: GrantedDeliveryHarnessInput): Promise<Grante
                 durableEligibleSessionIds: filterOpenSessionIds(captured.candidateSessionIds),
                 grantedTopics,
                 serverPeerId: SERVER_PEER_ID,
-                readPublicationAuthority: readRecheckRoom,
+                readPublicationAuthority: roomReads.readRecheckRoom,
                 nowEpochMs: Date.now()
             }),
         socket: (captured) => Promise.resolve(filterOpenSessionIds(captured.candidateSessionIds))
     };
-    const service = createDefaultWsQueueBoxServerService({
+}
+
+interface GrantedDeliveryServiceInput {
+    readonly server: JsonWebSocketServer;
+    readonly stores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
+    readonly receiptRecordStores: ALReceiptRecordStores;
+    readonly grantedTopics: WsGrantedTopicSet;
+    /** Absent in the half-wired composition, which has no D498 re-check port. */
+    readonly filters: WsCapturedRecipientEligibilityFilters | undefined;
+}
+
+/** The WS server of one instance, whose target resolver reads Alice, Bob and Carol in the room whatever a test queues. */
+function createGrantedDeliveryService({ server, stores, receiptRecordStores, grantedTopics, filters }: GrantedDeliveryServiceInput): WsQueueBoxServerService {
+    return createDefaultWsQueueBoxServerService({
         inboundVolatileStores: undefined,
         outbox: stores.workQueue,
         outboundStores: stores,
@@ -831,41 +941,34 @@ async function createHarness(input: GrantedDeliveryHarnessInput): Promise<Grante
         targetResolver: createWsServerTargetResolver(server, { findGroupSnapshotByRef: () => createSnapshot(GRANTS), grantedTopics }),
         capturedRecipientEligibilityFilters: filters
     });
+}
+
+interface GrantedDeliveryRouterInput {
+    readonly service: WsQueueBoxServerService;
+    readonly grantedTopics: WsGrantedTopicSet;
+    readonly roomReads: RoomAuthorityReads;
+    readonly fanout: RallarServerWsFanout;
+}
+
+/** The API's room authorizer and server-publish audience over the harness's reads, the granted feed and the members topic. */
+function createGrantedDeliveryRouter({ service, grantedTopics, roomReads, fanout }: GrantedDeliveryRouterInput): RallarServerWsRouter {
+    const readCurrentSnapshot = async (ref: GroupRef) => (await roomReads.readRoom(ref))?.snapshot;
     const router = new RallarServerWsRouter(service, {
         grantedTopics,
         authorizeRoomMessage: createApiV1RoomWsAuthorizer(
-            { readCurrentSnapshot, readCurrentPublicationAuthority: readRoom },
+            { readCurrentSnapshot, readCurrentPublicationAuthority: roomReads.readRoom },
             { readLifecyclePolicy: () => Promise.resolve({ status: 'absent' }) }
         ),
         readServerPublishAudience: createServerPublishRoomAudienceReader({
             readGroupSnapshot: readCurrentSnapshot,
-            readPublicationAuthority: readRoom,
+            readPublicationAuthority: roomReads.readRoom,
             nowEpochMs: Date.now
         })
     });
-    router.defineTopic({ topicId: FEED, scope: 'room', participation: 'granted', serverProducerIds: [PRODUCER], fanout: input.fanout });
-    router.defineTopic({ topicId: MEMBERS_TOPIC, scope: 'room', participation: 'members', fanout: input.fanout });
+    router.defineTopic({ topicId: FEED, scope: 'room', participation: 'granted', serverProducerIds: [PRODUCER], fanout });
+    router.defineTopic({ topicId: MEMBERS_TOPIC, scope: 'room', participation: 'members', fanout });
     router.install();
-    const harness: GrantedDeliveryHarness = {
-        service,
-        router,
-        server,
-        stores,
-        record: new ALReceiptRecord({ ...receiptRecordStores, nowMs: Date.now }),
-        reads,
-        recheckRead: undefined,
-        readCount: () => readCount
-    };
-    if (input.cluster === true) {
-        await installQueueBoxPubSubBridge({
-            wsQBoxServerService: service,
-            bridge: new LoopbackBridge(),
-            channel: 'granted',
-            publisherId: 'publisher',
-            capturedRecipientEligibilityFilters: filters
-        });
-    }
-    return harness;
+    return router;
 }
 
 function grantedReads(count: number, subscriptions: Subscriptions = SUBSCRIBED): RoomRead[] {
@@ -885,11 +988,13 @@ interface CreateAuthorityOptions {
     readonly subscriptions?: Subscriptions;
     /** A session's live client generation where it differs from the one its subscription asserts. */
     readonly reopenedGenerations?: Subscriptions;
+    /** The room's members, each a live session of the principal of the same name: Alice, Bob and Carol unless named. */
+    readonly principalIds?: readonly string[];
 }
 
 /** The room's snapshot with each subscribed session's live feed row, asserted by its one live client generation unless reopened. */
 function createAuthority(grants: Grants, options: CreateAuthorityOptions = {}): GroupPublicationAuthority {
-    const snapshot = createSnapshot(grants, options.snapshotVersion);
+    const snapshot = createSnapshot(grants, options.snapshotVersion, options.principalIds);
     const subscriptions = Object.entries(options.subscriptions ?? SUBSCRIBED);
     return {
         snapshot,
@@ -906,9 +1011,8 @@ function createAuthority(grants: Grants, options: CreateAuthorityOptions = {}): 
     };
 }
 
-/** Alice, Bob and Carol in the room, each a live session of the principal of the same name. */
-function createSnapshot(grants: Grants, snapshotVersion = 3): GroupSnapshot {
-    const principalIds = ['alice', 'bob', 'carol'];
+/** The room's members, each a live session of the principal of the same name, Alice its owner. */
+function createSnapshot(grants: Grants, snapshotVersion = 3, principalIds: readonly string[] = ROOM_PRINCIPAL_IDS): GroupSnapshot {
     const group = createTestGroup({ ...ROOM, snapshotVersion, presenceVersion: 1, activeMemberCount: principalIds.length });
     return {
         causalRevision: { groupRevision: snapshotVersion, presenceRevision: 1 },
@@ -947,6 +1051,22 @@ function createSnapshot(grants: Grants, snapshotVersion = 3): GroupSnapshot {
             .filter((entry): entry is [string, GroupPublicationTopicPermissions] => entry[1] !== undefined)
             .map(([principalId, permissions]) => ({ ...ROOM, principalId, topics: { [FEED]: permissions }, updated: group.updated }))
     };
+}
+
+/**
+ * Alice publishes and the 257 subscribers subscribe, each subscribed live. The bystander is a member that holds no grant,
+ * subscribed live too, so only the grant keeps it out.
+ */
+function createOverWireLimitAuthority(): GroupPublicationAuthority {
+    const subscriberGrants = OVER_WIRE_LIMIT_SUBSCRIBER_IDS.map((principalId) => [principalId, { publish: false, subscribe: true }] as const);
+    const sessionIds = ['alice', 'bystander', ...OVER_WIRE_LIMIT_SUBSCRIBER_IDS];
+    return createAuthority(
+        { alice: GRANTS.alice, ...Object.fromEntries(subscriberGrants) },
+        {
+            subscriptions: Object.fromEntries(sessionIds.map((sessionId) => [sessionId, `client-generation-${sessionId}`])),
+            principalIds: sessionIds
+        }
+    );
 }
 
 interface FeedMessageInput {
@@ -1027,9 +1147,22 @@ function openLateConnection(server: JsonWebSocketServer, sessionId: string): str
     return socket.sent;
 }
 
+/** The frames of a socket the test opened; an id it never opened is the test's own mistake, not an empty socket. */
+function readOpenedFrames(frames: ReadonlyMap<string, string[]>, sessionId: string): string[] {
+    const opened = frames.get(sessionId);
+    if (opened === undefined) {
+        throw new Error(`no socket was opened for ${sessionId}`);
+    }
+    return opened;
+}
+
 function readDelivered(frames: readonly string[], message: ALMessage): number {
+    return readCopies(frames, message).length;
+}
+
+function readCopies(frames: readonly string[], message: ALMessage): readonly ALMessage[] {
     return frames.map((frame) => decodePersistedALMessage(frame))
-        .filter((frame) => frame.route.topicId === message.route.topicId && frame.id.msgId === message.id.msgId).length;
+        .filter((frame) => frame.route.topicId === message.route.topicId && frame.id.msgId === message.id.msgId);
 }
 
 function readNackReasons(frames: readonly string[], message: ALMessage): readonly string[] {
