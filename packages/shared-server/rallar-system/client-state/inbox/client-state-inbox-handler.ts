@@ -228,7 +228,7 @@ export class ClientStateInboxHandler {
         const command = this.toAuthorisedWsDisconnectCommand(context, input);
         const read = await this.dependencies.mutationService.read(command);
         if (!read.session) {
-            const computed = this.measureMissingDisconnectComputation({
+            return await this.writeMissingSessionDisconnectOperation(context, {
                 commandInput: input,
                 command,
                 read,
@@ -237,11 +237,6 @@ export class ClientStateInboxHandler {
                 holderRead,
                 completionFacts
             });
-            return await this.dependencies.transactionWriter.writeComputedMutation(
-                context,
-                computed.completion,
-                async (transaction) => await this.writeMissingSessionDisconnect(transaction, computed)
-            );
         }
         const computed = this.measureMutationComputation({
             command,
@@ -425,6 +420,18 @@ export class ClientStateInboxHandler {
                         }
                     }
                 )
+        );
+    }
+
+    private async writeMissingSessionDisconnectOperation(
+        context: AppInboxMessageContext<AuthorisedWsClientMutationResult>,
+        input: MissingSessionDisconnectAttemptInput
+    ): Promise<AuthorisedWsClientMutationResult> {
+        const computed = this.measureMissingDisconnectComputation(input);
+        return await this.dependencies.transactionWriter.writeComputedMutation(
+            context,
+            computed.completion,
+            async (transaction) => await this.writeMissingSessionDisconnect(transaction, computed)
         );
     }
 
