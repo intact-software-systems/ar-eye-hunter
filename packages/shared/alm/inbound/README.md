@@ -753,9 +753,9 @@ snapshot or one clock reading: each read drops an expired row against the clock 
 chain's slot read and its message read are separate statements. So a chain can read a slot just before that instant and
 its message row just after it, or after a writer that met both expired deleted them. The one function that resolves a
 slot's message, `readALInboundBufferedMessage`
-([`al-inbound-ordering-validation.ts`](./al-inbound-ordering-validation.ts)), decides that case wherever its second read
-reaches the store: on an absent message row it reads the slot's own key once more through the same session or
-transaction, and a slot gone there left with its row, so the chain read no slot. Its three readers answer as a read made
+([`al-inbound-ordering-validation.ts`](./al-inbound-ordering-validation.ts)), decides that case: on an absent message
+row it reads the slot's own key once more through the same session or transaction, and a slot gone there left with its
+row, so the chain read no slot. Its three readers answer as a read made
 just after the expiry would: the track read (`readOrderingState`, behind the admission read, `readOrderingTrack`, and
 the guard of a commit on a track read, which an admission and a bounded hold's end commit on) leaves the slot out; the
 single-slot read (behind `readBufferedRelease`, the delivery completion's write, and the guard of a commit on a slot
@@ -763,29 +763,58 @@ read, which a release and a resync rejection commit on) answers `undefined`; and
 it takes for an absent next or predecessor slot, the lookup of a lower slot whose reach passes the predecessor included.
 A commit whose re-read meets a copy that expired by its clock therefore answers `conflict`.
 
-This narrows the tear to one stated case; it does not close it. A PostgreSQL commit answers a key it has already read
-from the row it recorded at that first read. So any commit there that re-reads a slot (one guarded by a track read, as
-an admission's and a bounded hold's end's are; one guarded by a slot read, as a release's and a resync rejection's are;
-or a delivery completion's write), and that read the slot and then lost the slot and its message row to the expiry sweep
-while its own clock was still before their expiry, finds the slot again and throws `ALAdmissionCorruptionError` with no
-stored record invalid. That needs the database's clock ahead of the instance's and the sweep inside that difference, and
-nothing in the tree measures or bounds the difference. At the socket the throw answers the sender nothing; in a replay
-it still ends the retained admission `non-retryable`, losing an accepted message silently; in a delivery completion it
-ends the delivery row the same way after the application was handed the message; in a bounded hold's end it ends the
-timer's row the same way, and that hold's end does not run again; in a resync rejection it ends the delivery row as a
-committed rejection does, but no resynchronization NACK is written, so the sender is not told. Those last two
-consequences are read from the code, not run. It threw before as well, and it is not decided in this change; a design
-for it is being written separately.
+A PostgreSQL commit cannot decide it by that read alone. It answers a key it has already read from the row it recorded
+at that first read, which is what keeps every row it writes conditional on the version its guard compared, so the
+expiry sweep, which deletes on the database's clock, can delete a copy's slot and message row between a commit's two
+reads while the instance's clock still reads both as live, and the commit's second read of the slot still finds it.
+So when the session or transaction still shows the slot, the reader reads the slot's key once more through the store's
+own backend, outside the commit: a slot gone there left with its row, and a slot still stored there is the throw. That
+answer only chooses between the two; no value the commit compares or writes comes from it. A message row that is
+present costs no further read, on any backend. The path that used to throw costs one point read of the slot's key, on
+PostgreSQL one autocommit `select` and no transaction; several slots torn in one track read issue theirs in one turn.
 
-Outside that case, a slot still there at the second read has lost its message row, which no write leaves, and still
-throws `ALAdmissionCorruptionError`, as does a message row that names another track or sequence. A message row that is
-present costs no second read. The contract
+Each commit that re-reads a slot then answers `conflict`, and its caller goes on as it does for any lost write. An
+admission at the socket and a retained admission's replay try again at once, three attempts in all, and commit against
+a track without the copy. A bounded hold's end hands its timer back (`retry`) and the timer's row runs again, where
+before it ended for good. A resync rejection hands its row back (`retry`), and the row ends one run later, as an
+expired copy's does, with no NACK written. A release and a delivery completion try again at once, find no slot, and end
+in a `NonRetryableException` unless the track's position passed the message, as an expired copy's do. On IndexedDB the
+added read is the backend's own, so when the clock reaches the slot's own expiry between the commit's re-read and that
+read, the backend's existing removal of an expired row runs from inside the commit's callback, before what would have
+been the throw; it removes only a row already expired, guarded by the write token it read.
+
+A slot still stored at the last read has lost its message row, which no write leaves, and throws
+`ALAdmissionCorruptionError`, as does a message row that names another track or sequence. Two faults of the same shape
+throw it too, with no stored record invalid and a second attempt that reads cleanly: a slot written again at the same
+sequence between the reads, since the last read decodes whatever the slot's key then holds; and an instance clock that
+steps back across the copy's expiry between two reads, so the message row reads absent by the clock and both slot reads
+find a live slot. Neither writes anything. At the socket the throw answers the sender nothing; in a replay it ends the
+retained admission `non-retryable`, so an accepted message is never admitted or delivered and its sender hears nothing
+more; in a release, a resync rejection, a bounded hold's end or a delivery completion it ends that work row the same
+way. An operator's prune of the runtime-state category cannot leave a slot without its message row: a page whose delete
+removes fewer rows than it read, because a row was rewritten after the page read, throws and rolls back whole
+([`admin-prune-page-worker.ts`](../../../shared-server/rallar-system/admin-operations/prune/admin-prune-page-worker.ts)).
+A work claim that ends on a corrupt record, these faults' among them, prints one line, `ALM work ended on a corrupt
+record`, naming its work row's key and the error ([`al-work-handler.ts`](../work/al-work-handler.ts)); a designed end,
+such as an expired copy's `NonRetryableException`, prints nothing. Two other reads still throw corruption for a message
+that only expired, so the line prints for them as well: a dispatch's read of its retained message
+(`readStoredDeliveryObservation`, [`al-inbound-admitted-delivery.ts`](./al-inbound-admitted-delivery.ts)) and the
+admission store's read of an admitted message's ingress source (`readMessageOwner`).
+
+The contract
 [`al-inbound-buffered-slot-expiry-contract.ts`](../../../tests/shared/alm/inbound/al-inbound-buffered-slot-expiry-contract.ts)
 pins each reader on memory, IndexedDB and PostgreSQL; an admission's commit, a release's commit and a delivery
-completion's write across the expiry by the clock on all three; and the four commits that lose the copy's rows to
-another writer during their re-read (an admission's, a release's, a resync rejection's and a delivery completion's):
-`conflict` on IndexedDB, and on PostgreSQL the remaining throw, as it stands. Memory has no such case: its writes queue.
-No case runs a bounded hold's end.
+completion's write across the expiry by the clock on all three; the four commits that lose the copy's rows to another
+writer during their re-read (an admission's, a release's, a resync rejection's and a delivery completion's), which
+answer `conflict` on IndexedDB and on PostgreSQL, the resync rejection's ordered delivery `retry` and the completion's
+`NonRetryableException`; and, on all three, a slot that outlives its message row inside each of the four commits, which
+still throws. Memory has no lost-rows case: its writes queue.
+[`al-inbound-swept-buffered-copy.test.ts`](../../../tests/shared-server/integration/postgres/al-inbound-swept-buffered-copy.test.ts)
+runs the sweep's own predicate on PostgreSQL with the instance's clock 10 s behind the database's: the torn admission
+answers `conflict` and its fresh attempt commits, the torn commit spends one autocommit read of the slot's key and no
+transaction, and its untorn twin none. A bounded hold's end is pinned in two halves: its guard is the admission's, which
+the contract runs, and its `retry` on a commit refused as `conflict` or `expired` is pinned on memory
+([`al-inbound-gap-renewal.test.ts`](../../../tests/shared/alm/inbound/gap-renewal/al-inbound-gap-renewal.test.ts)).
 
 **Under load.** Measured through the WS server on PostgreSQL, three instances with every statement, BEGIN and COMMIT
 delayed 5 ms, five publishers of receipted room sends that ask for hop order, one track each at 2 a second (D784,

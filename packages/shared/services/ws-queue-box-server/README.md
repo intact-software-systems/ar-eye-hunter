@@ -15,13 +15,10 @@ nothing: the [socket bridge](../../websocket/json-web-socket-server.ts) logs one
 and no NACK is written, and a client whose receipted send waits on its first hop
 offers the frame again. A throw there is a real fault, such as a stored row that
 fails its decoder or a buffered slot whose message row is lost or names another
-track or sequence, or the one stated case of a torn read that still throws, which
-the inbound README's "A buffered copy that expires during a read." names: an
-admission's PostgreSQL commit that read a slot and then lost it and its message
-row to the expiry sweep, with the database's clock ahead of the instance's by a
-difference nothing bounds. In a replay that throw still loses an accepted
-message silently. Outside that case, a buffered copy that expires while the
-admission reads it is no slot, not a throw.
+track or sequence, or one of the faults the inbound README's "A buffered copy
+that expires during a read." names. A buffered copy that expires while the
+admission reads it, or whose rows the expiry sweep deletes meanwhile, is no
+slot, not a throw.
 `dispose` unregisters ingress, stops the receipt record's worker and disposes both
 ALM runtimes. A supplied engine retains its other tasks. The record's rows,
 operations, clocks, pinned costs and stated limits are the
