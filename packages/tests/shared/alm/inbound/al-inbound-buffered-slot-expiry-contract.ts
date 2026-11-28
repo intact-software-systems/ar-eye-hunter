@@ -7,7 +7,8 @@ import type { ALAdmissionReadSession } from '@shared/alm/al-admission-work-backe
 import type { ALInboundDeliveryCompletion } from '@shared/alm/inbound/admission/al-inbound-delivery-progress.ts';
 import type {
     ALInboundAdmissionStore,
-    ALInboundBufferedReleaseReadDto
+    ALInboundBufferedReleaseReadDto,
+    ALInboundCommitBundle
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import {
     decodeALInboundBufferedSnapshot,
@@ -150,6 +151,21 @@ export function describeALInboundBufferedSlotExpiryContract(backend: ALInboundBu
                 .toEqual([4]);
         });
 
+        it('answers conflict for a release whose commit re-reads its slot across the expiry, and writes nothing', async () => {
+            const pair = await seedTrackPair(createStores, 3, []);
+            const tornRead = (await readRelease(pair.torn.stores.admissionStore, pair.trackKey, 3))!;
+            const lateRead = (await readRelease(pair.late.stores.admissionStore, pair.trackKey, 3))!;
+            expireBeforeMessageRead(pair);
+
+            const torn = await pair.torn.stores.admissionStore.commitBundle(toReleaseCommit(pair, tornRead));
+            pair.clock.nowMs = pair.expiresAtMs;
+            const late = await pair.late.stores.admissionStore.commitBundle(toReleaseCommit(pair, lateRead));
+
+            expect(torn).toBe('conflict');
+            expect(late).toBe('conflict');
+            await expectNothingWritten(pair);
+        });
+
         it('answers conflict for a delivery completion whose slot read crosses the expiry, and writes nothing', async () => {
             const pair = await seedTrackPair(createStores, 2, []);
             const tornRead = (await readRelease(pair.torn.stores.admissionStore, pair.trackKey, 2))!;
@@ -244,7 +260,6 @@ export function describeALInboundBufferedSlotExpiryContract(backend: ALInboundBu
     });
 }
 
-/** `lowerSeqs` are long-lived copies admitted between message 1 and the short-lived copy. */
 /** The three commits that re-read a buffered slot, as the case names read them. */
 const LOSING_COMMITS = ['an admission', 'a release', 'a delivery completion'] as const;
 
@@ -255,10 +270,7 @@ function toLosingCommitShortSeq(commit: LosingCommit): number {
     return commit === 'a delivery completion' ? 2 : 3;
 }
 
-/**
- * Reads what `commit` decides on, before any tear, and returns its write. A release's commit is the release read's
- * own observations with the slot's deletion, the shape every buffered release commits on.
- */
+/** Reads what `commit` decides on, before any tear, and returns its write. */
 async function readLosingCommit(
     pair: SeededTrackPair,
     commit: LosingCommit
@@ -272,14 +284,21 @@ async function readLosingCommit(
     if (commit === 'a delivery completion') {
         return async () => await store.commitDeliveryCompletion(toCompletion(pair, read));
     }
-    return async () =>
-        await store.commitBundle({
-            admissionExpiresAtMs: null,
-            senderId: read.snapshot.msg.id.senderId,
-            observations: read.observations,
-            mutations: [{ kind: 'delete-buffered', trackKey: pair.trackKey, seq: pair.shortSeq }],
-            durableEffects: []
-        });
+    return async () => await store.commitBundle(toReleaseCommit(pair, read));
+}
+
+/**
+ * Guarded by the release read's own observations, as every buffered release's commit is; its one mutation only keeps
+ * the bundle from being empty.
+ */
+function toReleaseCommit(pair: SeededTrackPair, read: ALInboundBufferedReleaseReadDto): ALInboundCommitBundle {
+    return {
+        admissionExpiresAtMs: null,
+        senderId: read.snapshot.msg.id.senderId,
+        observations: read.observations,
+        mutations: [{ kind: 'delete-buffered', trackKey: pair.trackKey, seq: pair.shortSeq }],
+        durableEffects: []
+    };
 }
 
 /** The commit wrote no slot for the next message and moved no delivery progress. */
@@ -289,6 +308,7 @@ async function expectNothingWritten(pair: SeededTrackPair): Promise<void> {
     expect((await readTrack(store, pair.trackKey)).deliveryProgress?.value?.completedThrough).toBe(1);
 }
 
+/** `lowerSeqs` are long-lived copies admitted between message 1 and the short-lived copy. */
 async function seedTrackPair(
     createStores: ALInboundBufferedSlotExpiryStoresFactory,
     shortSeq: number,
