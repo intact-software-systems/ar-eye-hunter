@@ -1348,6 +1348,22 @@ it changed. A `basis` says what was read in the code, in one sentence.
       "basis": "An exported key builder of the inbound admission store: the canonical inbound message row in runtime_state_store."
     },
     {
+      "id": "packages/shared/alm/inbound/al-inbound-ordering-validation.ts#toALInboundBufferedPrefix",
+      "class": "transport-direct",
+      "stores": [
+        "alm-inbound-admission"
+      ],
+      "basis": "An exported key builder of the inbound admission store: the prefix of every buffered ordering slot row of a namespace in runtime_state_store."
+    },
+    {
+      "id": "packages/shared/alm/inbound/al-inbound-ordering-validation.ts#toALInboundBufferedTrackPrefix",
+      "class": "transport-direct",
+      "stores": [
+        "alm-inbound-admission"
+      ],
+      "basis": "An exported key builder of the inbound admission store: the prefix of the buffered ordering slot rows of one track in runtime_state_store."
+    },
+    {
       "id": "packages/shared/alm/inbound/al-inbound-source-validation.ts#toALInboundMessageOwnerKey",
       "class": "transport-direct",
       "stores": [
