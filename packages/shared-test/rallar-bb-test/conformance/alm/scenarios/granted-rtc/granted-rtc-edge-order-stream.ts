@@ -18,8 +18,11 @@ import {
     toScenarioTypeId,
     toSendHandleId
 } from '../../alm-conformance-step-identities.ts';
-import { SUBSCRIPTION_COMMAND_TIMEOUT_MS } from '../../granted-topic/subscription-phase-budgets.ts';
-import { toEdgeOrderArrivalWait, toNoOrderGapWait } from '../edge-order/edge-order-commands.ts';
+import {
+    toEdgeOrderArrivalWait,
+    toHandedOverAfterAssertion,
+    toNoOrderGapWait
+} from '../edge-order/edge-order-commands.ts';
 import { toGrantedSend } from '../topic-subscription/to-granted-send.ts';
 import { SUBSCRIPTION_ABSENCE_MS } from '../topic-subscription/topic-subscription-budgets.ts';
 import { TOPIC_SUBSCRIPTION_SELECTOR } from '../topic-subscription/topic-subscription-commands.ts';
@@ -198,32 +201,9 @@ function toRtcArrival(wait: RallarBlackBoxTestWaitCommand): RallarBlackBoxTestWa
     return { ...wait, match: { ...wait.match, payloadFields: { 'data.transport': 'rtc' } } };
 }
 
-/**
- * The handler was given publication `later` after `earlier`: the page records an arrival when its handler runs, and
- * numbers what it records in that order.
- */
-function toHandedOverAfterAssertion(
-    receiver: AlmConformanceStepInput,
-    later: string,
-    earlier: string
-): RallarBlackBoxTestCommand {
-    return {
-        kind: 'assert',
-        commandId: toCommandId(receiver, `assert-${later}-after-${earlier}`),
-        source: toArrivalOrdinal(receiver, later),
-        operator: 'gte',
-        comparisonSource: toArrivalOrdinal(receiver, earlier),
-        timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS
-    };
-}
-
 /** The sender's session, read from the probe the receiver was given: recipient-b's stream can be held at its entry. */
 function toProbeSenderId(receiver: AlmConformanceStepInput): string {
     return `{resultCache.${toCommandId(receiver, `received-${ENTRY_PROBE}`)}.value.event.payload.senderId}`;
-}
-
-function toArrivalOrdinal(receiver: AlmConformanceStepInput, publication: string): string {
-    return `resultCache.${toCommandId(receiver, `received-${publication}`)}.value.event.history.ordinal`;
 }
 
 /**

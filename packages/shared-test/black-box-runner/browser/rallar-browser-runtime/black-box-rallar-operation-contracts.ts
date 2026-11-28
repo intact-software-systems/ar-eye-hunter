@@ -375,6 +375,8 @@ export interface BlackBoxRallarMessageSendInput {
     readonly qos: Required<Pick<ALQosPolicyRequest, 'ack'>> | undefined;
     /** Absent, the product's repair budget; stated, the typed send requests `retransmit` with it beside any `qos.ack`. */
     readonly maxRepairs: number | undefined;
+    /** Absent, no supersedence; stated, the typed send requests `latest-wins` with it beside any other QoS. */
+    readonly supersedenceKey: string | undefined;
     /** Absent, the send's value is its handle's; `call-refused`, only a validation refusal of the call is its value. */
     readonly observe: 'call-refused' | undefined;
 }

@@ -18,7 +18,9 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
             'send time. qos: { ack: { algo } } passes a QoS ack algorithm request (none, hop, subtree, receiver) to ' +
             'the product as given. maxRepairs (an integer of at least 1) states the retransmits each receiver\'s ' +
             'gap requests may draw, sent as qos.repair retransmit beside any qos.ack; absent, the product\'s repair ' +
-            'budget. durability (volatile, local-checkpoint, local-outbox, local-inbox) declares the ' +
+            'budget. supersedenceKey makes the send latest-wins, sent as qos.supersedence beside any qos.ack and ' +
+            'qos.repair, so it replaces the earlier open sends of the key. durability (volatile, local-checkpoint, ' +
+            'local-outbox, local-inbox) declares the ' +
             'typed channel\'s ' +
             'durability; absent, the send is volatile. onStorageUnavailable (refuse, volatile) declares what the ' +
             'channel does when its durable storage is unavailable; absent, it refuses. ' +

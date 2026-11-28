@@ -7,7 +7,6 @@ import {
     vi
 } from 'vitest';
 
-import { computeAlmConformanceQosDefaults } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/compute-alm-conformance-qos-defaults.ts';
 import { resolveBrowserALCheckpointStores } from '@shared-web/browser/al-runtime/browser-al-checkpoint-stores.ts';
 import { toBrowserSessionALInboundRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
 import {
@@ -54,7 +53,7 @@ describe('WS retained-work faults', () => {
         });
     });
 
-    it('supersedes held work through the real configured QoS normalizer and submits only its replacement', async () => {
+    it('supersedes held latest-wins work through the real QoS normalizer and submits only its replacement', async () => {
         const sessionId = crypto.randomUUID();
         configureBrowserALRuntimeStores(sessionId, { scope: defaultStateScope(), diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
         const faults = createScriptedTransportFaultPort();
@@ -79,7 +78,7 @@ describe('WS retained-work faults', () => {
             nowEpochMs: Date.now,
             workNowEpochMs: Date.now,
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
-            qosProvider: { defaultsForMessage: computeAlmConformanceQosDefaults },
+            qosProvider: {},
             submissionReadinessFaultPort: faults,
             outboundSettlements: (event) => registry.record(event),
             newConnectionRequestId: undefined,
@@ -136,7 +135,12 @@ describe('WS retained-work faults', () => {
                 marker: 'delivery-lifecycle',
                 specimen: 'supersedence'
             },
-            options: { ack: 'receiver', reliability: 'at-least-once', seq: 1 }
+            options: {
+                ack: 'receiver',
+                reliability: 'at-least-once',
+                seq: 1,
+                qos: { supersedence: { algo: 'latest-wins', opts: { supersedenceKey: 'delivery-lifecycle-supersedence' } } }
+            }
         });
         const replacement = newALMulticastMessage({
             createdAtEpochMs: Date.now(),
@@ -148,7 +152,12 @@ describe('WS retained-work faults', () => {
                 marker: 'delivery-lifecycle',
                 specimen: 'supersedence'
             },
-            options: { ack: 'receiver', reliability: 'at-least-once', seq: 2 }
+            options: {
+                ack: 'receiver',
+                reliability: 'at-least-once',
+                seq: 2,
+                qos: { supersedence: { algo: 'latest-wins', opts: { supersedenceKey: 'delivery-lifecycle-supersedence' } } }
+            }
         });
         const oldHandle = registry.open({ message: original, carrier: 'ws', readDeadlineEpochMs: Date.now });
         await service.enqueueOutboxIfAbsent(original);

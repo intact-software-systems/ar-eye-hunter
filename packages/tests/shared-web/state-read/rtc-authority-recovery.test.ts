@@ -19,7 +19,6 @@ import {
 import { requireBlackBoxRallarInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts';
 import { BlackBoxRallarDeliveryLedger } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/black-box-rallar-delivery-ledger.ts';
 import { BlackBoxRallarTypedChannels } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/black-box-rallar-typed-channels.ts';
-import { computeAlmConformanceQosDefaults } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/compute-alm-conformance-qos-defaults.ts';
 import { createBlackBoxRallarMessagingResourceController } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/create-black-box-rallar-messaging-resource-controller.ts';
 import { decodeBlackBoxRallarMessageSendInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/decode-black-box-rallar-message-send-input.ts';
 import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
@@ -473,6 +472,8 @@ function assembleSenderRemoval(stamped: GroupSnapshot): GroupSnapshot {
     }, (key, failure) => new Error(`${key}: ${failure}`));
 }
 
+const LATEST_WINS = { supersedence: { algo: 'latest-wins', opts: { supersedenceKey: 'delivery-lifecycle-supersedence' } } } as const;
+
 describe('latest-wins receiver delivery and independent ordering', () => {
     it.each(['ordered-latest', 'unsequenced-latest', 'ordinary-ordered'] as const)(
         'preserves independent latest-wins and ordered delivery contracts: %s',
@@ -500,7 +501,7 @@ describe('latest-wins receiver delivery and independent ordering', () => {
                 groups,
                 refresh: undefined,
                 faultPort: faults,
-                qosProvider: scenario === 'ordinary-ordered' ? undefined : { defaultsForMessage: computeAlmConformanceQosDefaults },
+                qosProvider: undefined,
                 outboundSettlements: undefined
             });
             const receiver = new NativeAuthorityEndpoint({
@@ -528,7 +529,7 @@ describe('latest-wins receiver delivery and independent ordering', () => {
                         reliability: 'at-least-once',
                         ack: 'receiver',
                         seq: scenario === 'unsequenced-latest' ? undefined : 1,
-                        qos: { ack: { algo: 'hop' } }
+                        qos: { ack: { algo: 'hop' }, ...(scenario === 'ordinary-ordered' ? {} : LATEST_WINS) }
                     }
                 }
             );
@@ -548,7 +549,7 @@ describe('latest-wins receiver delivery and independent ordering', () => {
                         reliability: 'at-least-once',
                         ack: 'receiver',
                         seq: scenario === 'unsequenced-latest' ? undefined : 2,
-                        qos: { ack: { algo: 'hop' } }
+                        qos: { ack: { algo: 'hop' }, ...(scenario === 'ordinary-ordered' ? {} : LATEST_WINS) }
                     }
                 }
             );
@@ -653,7 +654,7 @@ it('delivers the canonical generated supersedence specimen through the page deco
         groups: readableGroupStateSnapshotCache(),
         refresh: undefined,
         faultPort: faults,
-        qosProvider: { defaultsForMessage: computeAlmConformanceQosDefaults },
+        qosProvider: undefined,
         outboundSettlements: (event) => browserDeliveryComposition.deliveries.record(event)
     });
     const receiver = new NativeAuthorityEndpoint({

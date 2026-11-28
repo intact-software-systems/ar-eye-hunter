@@ -104,7 +104,7 @@ const REPLY_THREE_AGENT_KEYS_BY_CARRIER = {
 const VOLATILE_BOUND_KEYS = ['capacity', 'capacity-age', 'capacity-tracks'] as const;
 
 /** The audiences run on every carrier, on the sender's principal twice and another principal once. */
-const AUDIENCE_KEYS = ['principal-delivery', 'fixed-list-delivery', 'world-routing'] as const;
+const AUDIENCE_KEYS = ['principal-delivery', 'fixed-list-delivery', 'edge-order-audiences', 'world-routing'] as const;
 
 /** The topic subscription cells run on every carrier, on four roles. */
 const FOUR_ROLE_KEYS = [
@@ -304,6 +304,8 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'edge-order-reload',
         'edge-order-late-join',
         'edge-order-unretried-loss-stream',
+        'edge-order-supersedence',
+        'edge-order-live-stream',
         'ws-unicast-receipt',
         'server-command',
         'server-originated',
@@ -346,6 +348,8 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'edge-order-reload',
         'edge-order-late-join',
         'edge-order-unretried-loss-stream',
+        'edge-order-supersedence',
+        'edge-order-live-stream',
         'not-yet-in-sync-expires',
         'ws-unicast-receipt',
         'server-command-refused-at-call',
@@ -384,6 +388,8 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'edge-order-reload',
         'edge-order-late-join',
         'edge-order-unretried-loss-stream',
+        'edge-order-supersedence',
+        'edge-order-live-stream',
         'cross-carrier-duplicate-rtc-then-ws',
         'not-yet-in-sync-expires',
         'fallback-within-deadline',
@@ -799,8 +805,10 @@ describe('alm-conformance recipe family', () => {
                 const fairnessWindow = /-(own-share-under-inbound-sender|churn-bounded-tracks-receiver)-received-1$/
                     .test(command.commandId ?? '');
                 // The paced cells' windows span their opportunities and open their absence at the last expected
-                // arrival; pinned in alm-conformance-publication-scenarios.
-                const pacedWindow = /-paced-[a-z-]+-receiver-received-\d+$/.test(command.commandId ?? '');
+                // arrival; pinned in alm-conformance-publication-scenarios, and the edge-ordered live stream's in
+                // alm-conformance-edge-order.
+                const pacedWindow = /-(paced-[a-z-]+|edge-order-live-stream)-receiver-received-\d+$/
+                    .test(command.commandId ?? '');
                 if (durableOptInReceived1 || capacityReceived1 || fairnessWindow || pacedWindow) {
                     continue;
                 }
@@ -905,6 +913,8 @@ describe('alm-conformance recipe family', () => {
             'edge-order-reload',
             'edge-order-late-join',
             'edge-order-unretried-loss-stream',
+            'edge-order-supersedence',
+            'edge-order-live-stream',
             'cross-carrier-duplicate',
             'not-yet-in-sync',
             'receipt-exhausted-fallback',
@@ -954,6 +964,8 @@ describe('alm-conformance recipe family', () => {
             // The edge order cells after the swapped stream.
             ['full'],
             ['full'],
+            ['full'],
+            ['full'],
             // The server command refused at its call, after the WS unicast receipt.
             ['full'],
             ['full'],
@@ -968,6 +980,7 @@ describe('alm-conformance recipe family', () => {
             ['smoke', 'full'],
             ['smoke', 'full'],
             ['smoke', 'full'],
+            ['full'],
             ['full'],
             ['full'],
             ['full'],

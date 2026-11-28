@@ -1,17 +1,16 @@
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
 import { ALM_CONFORMANCE_CARRIERS } from '../../alm-conformance-carriers.ts';
-import { ALM_INBOUND_DIAGNOSTICS_TOPIC, toDiagnosticWait } from '../../alm-conformance-diagnostic-waits.ts';
 import { toAdmissionCommands, toSendCommand } from '../../alm-conformance-message-commands.ts';
-import { toPayloadWait, toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
+import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
-import { toScenarioTypeId } from '../../alm-conformance-step-identities.ts';
 import { STREAM_SENDS, toSequences } from '../fault-streams/ordered-stream.ts';
 import { toLossDroppedAssertion, toSeededLossCommand } from '../fault-streams/seeded-loss-stream.ts';
+import { toEdgeOrderGapWait, toEdgeOrderSendWait } from './edge-order-commands.ts';
 
 /**
  * The runs of sends the seeded loss of `seeded-loss-stream` takes over `ws`. A lost frame is gone there, so each send
@@ -71,14 +70,8 @@ function toUnretriedLossStreamSenderCommands(sender: AlmConformanceStepInput): r
  * every copy the page recorded.
  */
 function toNewestWinsReceiverCommands(receiver: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
-    const lastSend = toPayloadWait({
-        step: receiver,
-        name: 'received-last-send',
-        payload: { marker: receiver.scenarioId, seq: STREAM_SENDS },
-        absent: false
-    });
     return [
-        { ...lastSend, match: { ...lastSend.match, payloadFields: { 'data.typeId': toScenarioTypeId(receiver) } } },
+        toEdgeOrderSendWait(receiver, 'received-last-send', STREAM_SENDS),
         ...(receiver.input.carrier === 'ws' ? toSeedLostSendCommands(receiver) : [
             toReceivedCommand({
                 ...receiver,
@@ -106,18 +99,10 @@ function toSeedLostSendCommands(receiver: AlmConformanceStepInput): readonly Ral
         }),
         toReceivedCommand({ ...receiver, index: WS_ARRIVING_SENDS + 1, count: WS_ARRIVING_SENDS + 1, absent: true }),
         ...WS_LOST_SEND_RUNS.map(([from, to]) =>
-            toDiagnosticWait({
-                step: receiver,
-                name: `gap-${from}-${to}`,
-                topic: ALM_INBOUND_DIAGNOSTICS_TOPIC,
-                payloadFields: {
-                    'data.kind': 'edge-order-gap',
-                    'data.typeId': toScenarioTypeId(receiver),
-                    'data.fromPosition': from,
-                    'data.toPosition': to,
-                    'data.reason': 'ended-at-sender'
-                },
-                historyFrom: 'cell'
+            toEdgeOrderGapWait(receiver, `gap-${from}-${to}`, {
+                fromPosition: from,
+                toPosition: to,
+                reason: 'ended-at-sender'
             })
         )
     ];

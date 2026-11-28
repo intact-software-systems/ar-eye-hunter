@@ -31,8 +31,20 @@ describe('ALM lifecycle recipe evidence', () => {
                     !Array.isArray(command.payload) && 'specimen' in command.payload && command.payload.specimen === 'supersedence'
                 );
             expect(replaceable).toHaveLength(2);
-            expect(replaceable.map((command) => ({ ack: command.ack, seq: command.seq, orderingKey: command.orderingKey })))
-                .toEqual([{ ack: 'receiver', seq: undefined, orderingKey: undefined }, { ack: 'receiver', seq: undefined, orderingKey: undefined }]);
+            // The key is the cell's type id, so no other cell or carrier on a shared connect supersedes these specimens.
+            const replaceableSend = {
+                ack: 'receiver',
+                seq: undefined,
+                orderingKey: undefined,
+                supersedenceKey: `probe.${carrier}.delivery-lifecycle.supersedence`
+            };
+            expect(replaceable.map(({ ack, seq, orderingKey, supersedenceKey }) => ({ ack, seq, orderingKey, supersedenceKey })))
+                .toEqual([replaceableSend, replaceableSend]);
+            expect(
+                scenario!.sender.commands.filter(isRallarBlackBoxTestMessagesSendCommand)
+                    .filter((command) => !replaceable.includes(command))
+                    .map((command) => command.supersedenceKey)
+            ).toEqual([undefined, undefined]);
             expectReplacementSubmittedAfterRelease(scenario!.sender.commands);
             expectNoSingleAcknowledgedObserve(scenario!.sender.commands);
             expectReceiptsAfterSupersedeRelease(scenario!.sender.commands);

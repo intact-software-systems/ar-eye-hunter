@@ -205,9 +205,10 @@ that refusal fails the step.
 `messages.send` takes `carrier` (`ws`, `rtc`, `rtc-with-ws-fallback`), `typeId`
 and `payload`, and optionally `connection`, `topicId`, `purpose`, `publication`, `roomRef`, `scope`, `principalId`,
 `recipientPeers`, `recipientPrincipalIds`, `reliability`, `ack`, `ownership`, `resourceId`, `durability`,
-`onStorageUnavailable`, `ttlMs`, `orderingKey`, `seq`, `handleId`, `minSnapshotVersion`, `qos`, `maxRepairs`, `toPeer`
-and `observe`. It returns `{ handleId, msgId, carrier, status, reason?, traceId, corrId }`: the handle's `traceId`, the
-trace the page minted for this send, and its `corrId`, the send's own `msgId` unless the send named one.
+`onStorageUnavailable`, `ttlMs`, `orderingKey`, `seq`, `handleId`, `minSnapshotVersion`, `qos`, `maxRepairs`,
+`supersedenceKey`, `toPeer` and `observe`. It returns `{ handleId, msgId, carrier, status, reason?, traceId, corrId }`:
+the handle's `traceId`, the trace the page minted for this send, and its `corrId`, the send's own `msgId` unless the
+send named one.
 `orderingKey` and `seq` pass to the product send: a room send that names `orderingKey` without `seq` is sequenced by
 the page's outbound from the track's head, which both carriers of the session share, and a stated `seq` at or below
 that head is refused `unsupported` before any carrier, so a recipe that states sequences states each one above the
@@ -296,12 +297,16 @@ logical algorithm.
 page sends it as `qos: { repair: { algo: 'retransmit', opts: { maxRepairs } } }`, beside a stated `qos.ack` in the
 same request. Absent, the product's repair budget applies.
 
+`supersedenceKey` is a string that makes the send latest-wins: it replaces the earlier open sends of the same key. The
+page sends it as `qos: { supersedence: { algo: 'latest-wins', opts: { supersedenceKey } } }`, beside a stated `qos.ack`
+and `maxRepairs` in the same request. Absent, the send requests no supersedence.
+
 A replay is the other shape of `messages.send`: it names `replayOnCarrier:
 { handleId, carrier }` (`carrier` is `ws` or `rtc`), optionally `connection`, and
 nothing else a send would. `carrier`, `typeId`, `topicId`, `payload`, `purpose`, `publication`, `roomRef`,
 `scope`, `principalId`, `recipientPeers`, `recipientPrincipalIds`, `reliability`, `ack`, `ownership`, `resourceId`,
 `durability`, `onStorageUnavailable`, `ttlMs`, `orderingKey`, `seq`, `handleId`, `minSnapshotVersion`, `qos`,
-`maxRepairs` and `toPeer` are each refused beside it, by the control validator and by
+`maxRepairs`, `supersedenceKey` and `toPeer` are each refused beside it, by the control validator and by
 the page, because the replayed envelope already fixes them. It is a harness
 capability, not a product path: the product falls back to its second carrier only
 after an `unroutable` verdict or a `refused` `unsupported` one (an ack algorithm the

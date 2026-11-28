@@ -341,13 +341,21 @@ export function toTypedSendOptions(
     };
 }
 
-/** A stated repair budget travels in the one QoS request the send carries, beside a stated `qos.ack`. */
+/** A stated repair budget and supersedence key travel in the one QoS request the send carries, beside `qos.ack`. */
 function toQosOption(
-    send: Pick<BlackBoxRallarMessageSendInput, 'qos' | 'maxRepairs'>
+    send: Pick<BlackBoxRallarMessageSendInput, 'qos' | 'maxRepairs' | 'supersedenceKey'>
 ): Pick<RallarTypedMessageSendOptions<RallarMessagePayload>, 'qos'> {
-    const { qos, maxRepairs } = send;
-    if (maxRepairs === undefined) {
-        return qos === undefined ? {} : { qos };
+    const { qos, maxRepairs, supersedenceKey } = send;
+    if (qos === undefined && maxRepairs === undefined && supersedenceKey === undefined) {
+        return {};
     }
-    return { qos: { ...qos, repair: { algo: 'retransmit', opts: { maxRepairs } } } };
+    return {
+        qos: {
+            ...qos,
+            ...(maxRepairs === undefined ? {} : { repair: { algo: 'retransmit', opts: { maxRepairs } } }),
+            ...(supersedenceKey === undefined
+                ? {}
+                : { supersedence: { algo: 'latest-wins', opts: { supersedenceKey } } })
+        }
+    };
 }

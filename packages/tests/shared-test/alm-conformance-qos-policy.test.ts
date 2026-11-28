@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import { computeAlmConformanceQosDefaults } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/compute-alm-conformance-qos-defaults.ts';
 import { computeFallbackDisposition } from '@shared-web/browser/messages/browser-rallar-message-dispatch.ts';
 import {
     AL_RTC_OVERLAY_CAPABILITIES,
@@ -13,54 +12,16 @@ import { normalizeALQosPolicy, resolveALQosNormalizationInput } from '@shared/al
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { computeALOutboundAckRefusal } from '@shared/alm/outbound/admission/compute-al-outbound-ack-refusal.ts';
 
-const room = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
-const specimen = newALMulticastMessage({
+const roomSend = newALMulticastMessage({
     createdAtEpochMs: Date.now(),
     senderId: 'sender',
-    route: { topicId: 'room.lifecycle', contextId: 'room', resourceId: 'old' },
-    groupRef: room,
+    route: { topicId: 'room.lifecycle', contextId: 'room', resourceId: 'room-send' },
+    groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
     typeId: 'alm.lifecycle',
-    resource: {
-        marker: 'delivery-lifecycle',
-        specimen: 'supersedence'
-    }
+    resource: {}
 });
-const provider = { defaultsForMessage: computeAlmConformanceQosDefaults };
 
 describe('black-box conformance QoS policy', () => {
-    it('uses one collision-safe slot per sender, application, workspace, room and message type', () => {
-        const selected = normalizeALQosPolicy(specimen, resolveALQosNormalizationInput(specimen, { direction: 'outbound' }, provider));
-        expect(selected.effective.supersedence).toEqual({
-            algo: 'latest-wins',
-            opts: { supersedenceKey: '["sender","app","workspace","room","alm.lifecycle"]' }
-        });
-        const variants: ALMessage[] = [
-            { ...specimen, id: { ...specimen.id, senderId: 'other' } },
-            { ...specimen, payload: { ...specimen.payload, typeId: 'other' } },
-            ...[
-                { ...room, applicationId: 'other' },
-                { ...room, workspaceId: 'other' },
-                { ...room, groupId: 'other' },
-                { ...room, applicationId: 'app/workspace', workspaceId: 'room', groupId: '' }
-            ].map((groupRef): ALMessage => ({ ...specimen, targets: { mode: 'multicast', groupRef } }))
-        ];
-        const keys = [specimen, ...variants].map((message) =>
-            computeAlmConformanceQosDefaults(message, { direction: 'outbound' })?.supersedence?.opts.supersedenceKey
-        );
-        expect(keys.every((key) => key !== undefined)).toBe(true);
-        expect(new Set(keys).size).toBe(keys.length);
-    });
-    it('keeps ordinary facade, ordinary messages, inbound and unscoped traffic on the default policy', () => {
-        expect(normalizeALQosPolicy(specimen).effective.supersedence.algo).toBe('none');
-        expect(computeAlmConformanceQosDefaults(specimen, { direction: 'inbound' })).toBeUndefined();
-        expect(computeAlmConformanceQosDefaults({ ...specimen, targets: undefined }, { direction: 'outbound' })).toBeUndefined();
-        for (const resource of ['null', '[]', '{}', 'not-json', '{"marker":"delivery-lifecycle"}', '{"marker":"ordinary","specimen":"supersedence"}']) {
-            const message = { ...specimen, payload: { ...specimen.payload, resource } };
-            const selected = normalizeALQosPolicy(message, resolveALQosNormalizationInput(message, { direction: 'outbound' }, provider));
-            expect(selected.effective.supersedence.algo).toBe('none');
-        }
-    });
-
     // The rtc overlay declares receiver (S2c-ii), so every strategy settles the receiver send on its first carrier.
     it.each(
         [
@@ -69,7 +30,7 @@ describe('black-box conformance QoS policy', () => {
             { strategy: 'rtc-with-ws-fallback', legs: ['rtc', 'ws'], outcome: { carrier: 'rtc', verdict: ADMITTED } }
         ] as const
     )('keeps receiver on the $strategy room send and settles it on the carrier that supports it', ({ legs, outcome }) => {
-        const message = { ...specimen, delivery: { reliability: 'at-least-once', ack: 'receiver' } } as const;
+        const message = { ...roomSend, delivery: { reliability: 'at-least-once', ack: 'receiver' } } as const;
         const admissions = legs.map((carrier) => toLegAdmission(message, carrier));
         const settled = admissions.find((admission, index) =>
             index === admissions.length - 1 || computeFallbackDisposition(admission.verdict, undefined, 0) !== 'retry'
@@ -92,8 +53,8 @@ function toLegAdmission(message: ALMessage, carrier: ALDeliveryCarrier) {
     return { carrier, algo: policy.effective.ack.algo, verdict };
 }
 
-/** Both carriers declare receiver: each composition root installs its carrier capabilities under the provider. */
+/** Both carriers declare receiver: each composition root installs its carrier capabilities under the application provider. */
 function toCarrierNormalizationInput(message: ALMessage, carrier: ALDeliveryCarrier) {
     const capabilities = carrier === 'ws' ? AL_WS_CLIENT_CAPABILITIES : AL_RTC_OVERLAY_CAPABILITIES;
-    return resolveALQosNormalizationInput(message, { direction: 'outbound' }, toALCarrierQosInputProvider(capabilities, provider));
+    return resolveALQosNormalizationInput(message, { direction: 'outbound' }, toALCarrierQosInputProvider(capabilities, undefined));
 }

@@ -41,6 +41,11 @@ interface AlmConformanceSendDelivery {
     readonly seq?: number;
     /** Absent, the product's repair budget. */
     readonly maxRepairs?: number;
+    /**
+     * Absent, no supersedence. A name within the cell: the send's key is the cell's type id and this name, so no other
+     * cell or carrier on a shared connect replaces the cell's sends.
+     */
+    readonly supersedenceKey?: string;
     readonly minSnapshotVersion?: RallarBlackBoxTestMessagesSendCommand['minSnapshotVersion'];
     /** Absent, the send addresses its room. */
     readonly toPeer?: RallarBlackBoxTestMessagesSendCommand['toPeer'];
@@ -107,7 +112,7 @@ const OBSERVE_TIMEOUT_BASE_MS = 2_000;
 export function toSendCommand(send: AlmConformanceSendInput): RallarBlackBoxTestMessagesSendCommand {
     const input = send.input;
     const typeId = toScenarioTypeId(send);
-    const { commandTimeoutMs, ...delivery } = send.delivery;
+    const { commandTimeoutMs, supersedenceKey, ...delivery } = send.delivery;
     return {
         kind: 'messages.send',
         commandId: toCommandId(send, `send-${send.index}`),
@@ -122,7 +127,8 @@ export function toSendCommand(send: AlmConformanceSendInput): RallarBlackBoxTest
             input.deadlineMs
         ),
         ...(input.carrier === 'ws' ? {} : { roomRef: toRoomRef(input.group) }),
-        ...delivery
+        ...delivery,
+        ...(supersedenceKey === undefined ? {} : { supersedenceKey: `${typeId}.${supersedenceKey}` })
     };
 }
 
