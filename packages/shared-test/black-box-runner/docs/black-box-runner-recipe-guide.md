@@ -584,7 +584,10 @@ Rules:
 Examples: `tests/api-v1/api-v1-cluster-instance-loss.json`,
 `tests/api-v1/api-v1-cluster-database-session-loss.json`,
 `tests/api-v1/api-v1-cluster-subscriber-instance-loss.json`, which crashes the
-server that holds a subscriber's socket and reads how the receipt ends, and
+server that holds a subscriber's socket and reads how the receipt ends,
+`tests/api-v1/api-v1-cluster-subscriber-server-stop.json`, its reference, which
+stops that server with `mode: graceful` and reads the subscriber leave the
+roster and the next receipt complete, and
 `tests/api-v1/api-v1-cluster-publisher-instance-loss.json`, which crashes the
 server that admitted a receipted broadcast and reads that the publisher,
 reconnected to a survivor, receives the complete receipt for it, counted by the

@@ -103,7 +103,7 @@
         "transport": "messages.rtc",
         "typeId": "{messageTypeId}",
         "topicId": "{topicId}",
-        "contextId": "{applicationId}:{workspaceId}:{roomId}",
+        "contextId": "{roomId}",
         "timeoutMs": 15000
       }
     },
@@ -134,7 +134,7 @@
         "transport": "messages.rtc",
         "typeId": "{messageTypeId}",
         "topicId": "{topicId}",
-        "contextId": "{applicationId}:{workspaceId}:{roomId}",
+        "contextId": "{roomId}",
         "timeoutMs": 15000
       }
     }
@@ -190,7 +190,7 @@
         "send": {
           "typeId": "{messageTypeId}",
           "topicId": "{topicId}",
-          "contextId": "{applicationId}:{workspaceId}:{roomId}",
+          "contextId": "{roomId}",
           "roomRef": {
             "applicationId": "{applicationId}",
             "workspaceId": "{workspaceId}",
@@ -232,7 +232,7 @@
         "send": {
           "typeId": "{messageTypeId}",
           "topicId": "{topicId}",
-          "contextId": "{applicationId}:{workspaceId}:{roomId}",
+          "contextId": "{roomId}",
           "roomRef": {
             "applicationId": "{applicationId}",
             "workspaceId": "{workspaceId}",
