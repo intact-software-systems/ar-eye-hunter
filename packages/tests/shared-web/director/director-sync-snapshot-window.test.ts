@@ -194,11 +194,11 @@ describe('the director\'s answer to a burst of sync requests', () => {
         room.client.stop();
 
         room.director.relay.stop();
+        expect(vi.getTimerCount()).toBe(0);
         await vi.advanceTimersByTimeAsync(250);
         await settleTurns();
 
         expect(readSentSnapshots(room.director.page)).toEqual([]);
-        expect(vi.getTimerCount()).toBe(0);
     });
 
     it('sends no snapshot and leaves no window timer once the appointment moved to another session inside the window', async () => {
