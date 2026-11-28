@@ -14,6 +14,7 @@ import {
     decodeALInboundBufferedSnapshot,
     decodeALInboundOrderingSnapshot
 } from '@shared/alm/inbound/al-inbound-ordering-validation.ts';
+import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 
 import {
     createInboundTestMessage,
@@ -31,12 +32,11 @@ export interface ALInboundBufferedSlotExpiryBackend {
     readonly label: string;
     readonly createStores: ALInboundBufferedSlotExpiryStoresFactory;
     /**
-     * What a commit's second read of a slot answers once another writer has deleted the slot and its message row
-     * after the commit read the slot: the store as it is then (`store`); the row the commit recorded at its first read
-     * (`recorded`, PostgreSQL's commit, which answers a key it has read from that observation); or nothing, since no
-     * other writer runs inside a commit (`serialized`, memory, whose writes queue one behind another).
+     * Whether another writer can delete the slot and its message row after a commit read the slot: yes, and the
+     * reader's last read of the slot's key reaches the store as it is then (`store`); or no other writer runs inside a
+     * commit (`serialized`, memory, whose writes queue one behind another).
      */
-    readonly commitSlotReread: 'store' | 'recorded' | 'serialized';
+    readonly commitSlotReread: 'store' | 'serialized';
 }
 
 /** How long the short-lived copy lives: its slot and its message row, which no other work names, expire together. */
@@ -65,9 +65,9 @@ interface SeededTrackPair {
  * A read chain that read a buffered copy's slot and then finds the copy's message row expired, or deleted by a writer
  * that met it expired, must answer as a read made just after the expiry: the copy is gone. Before, every such chain
  * failed with `ALAdmissionCorruptionError`, and the operation it served -- an innocent message's admission, its replay,
- * a release or a delivery -- died with it. One stated case still throws and is pinned as it stands: a PostgreSQL
- * commit whose re-read loses the copy's rows to another writer. A slot that outlives its message row is a real fault and
- * still throws.
+ * a release or a delivery -- died with it. That holds inside a commit too, where another writer deletes the copy's
+ * rows between the commit's read of the slot and its read of the message row. A slot that outlives its message row is
+ * a real fault and still throws, in a read and inside every commit.
  */
 export function describeALInboundBufferedSlotExpiryContract(backend: ALInboundBufferedSlotExpiryBackend): void {
     const { label, createStores, commitSlotReread } = backend;
@@ -215,10 +215,12 @@ export function describeALInboundBufferedSlotExpiryContract(backend: ALInboundBu
 
         // Each commit that re-reads a slot, by its guard: an admission's lists its track; a release's, a resync
         // rejection's and a delivery completion's read the slot by its key. A writer that met the copy's slot and
-        // message row expired deletes both between the commit's slot read and its message read.
+        // message row expired deletes both between the commit's slot read and its message read. A PostgreSQL commit
+        // answers a key it has read from the row it recorded then, so only a read through the store itself can tell.
         for (const commit of LOSING_COMMITS) {
             if (commitSlotReread === 'store') {
-                it(`answers conflict for ${commit} whose commit loses the copy's rows to another writer during its re-read`, async () => {
+                const answer = commit === 'a resync rejection' ? 'answers conflict, and the rejection retry,' : 'answers conflict';
+                it(`${answer} for ${commit} whose commit loses the copy's rows to another writer during its re-read`, async () => {
                     const pair = await seedTrackPair(createStores, toLosingCommitShortSeq(commit), []);
                     const write = await readLosingCommit(pair, commit);
                     deleteCopyBeforeMessageRead(pair);
@@ -228,21 +230,34 @@ export function describeALInboundBufferedSlotExpiryContract(backend: ALInboundBu
                     await expectNothingWritten(pair);
                 });
             }
-            // A known remaining throw, pinned as it stands, not as wanted: a PostgreSQL commit answers a key it has read
-            // from the row it recorded then, so its second read of the slot still finds the slot the expiry sweep
-            // deleted with its message row while the instance's own clock was still before their expiry. In a replay
-            // this throw still loses an accepted message silently. It is not decided in this change.
-            if (commitSlotReread === 'recorded') {
-                it(`still throws for ${commit} whose commit loses the copy's rows to another writer during its re-read (known remaining case)`, async () => {
-                    const pair = await seedTrackPair(createStores, toLosingCommitShortSeq(commit), []);
-                    const write = await readLosingCommit(pair, commit);
+            it(`still refuses as corrupt, inside ${commit}'s commit, a slot that outlives its message row`, async () => {
+                const pair = await seedTrackPair(createStores, toLosingCommitShortSeq(commit), []);
+                await outliveMessageRow(pair.torn, pair);
+                const write = await readLosingCommit(pair, commit);
+                expireBeforeMessageRead(pair);
+
+                await expect(write()).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+            });
+        }
+
+        // The completion runs after the application was handed the message. Its own read before the write still finds
+        // the copy; the tear falls inside the write. A fresh attempt then finds no slot and no position past it.
+        if (commitSlotReread === 'store') {
+            it('ends a delivery completion whose write loses the copy\'s rows to another writer as a missing copy, not as corrupt', async () => {
+                const pair = await seedTrackPair(createStores, 2, []);
+                const store = pair.torn.stores.admissionStore;
+                const commitDeliveryCompletion = store.commitDeliveryCompletion.bind(store);
+                vi.spyOn(store, 'commitDeliveryCompletion').mockImplementationOnce(async (completion) => {
                     deleteCopyBeforeMessageRead(pair);
-
-                    await expect(write()).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
-
-                    await expectNothingWritten(pair);
+                    return await commitDeliveryCompletion(completion);
                 });
-            }
+
+                const completing = createInboundTestOrderedDelivery(store).complete(createOrderedMessage(2));
+
+                await expect(completing).rejects.toBeInstanceOf(NonRetryableException);
+                await expect(completing).rejects.toThrow('Inbound buffered message is missing without durable completion evidence');
+                await expectNothingWritten(pair);
+            });
         }
 
         it('still refuses as corrupt a slot that outlives its message row', async () => {
