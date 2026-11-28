@@ -1,6 +1,6 @@
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import type { RuntimeStateGuardedBatchDelete } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
-import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
+import { requireConditionalWrite } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import { createTransactionBoundPSqlRuntimeStateRepository } from '../../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
 
 /**
@@ -11,12 +11,11 @@ export async function writeWsConnectionHolderReleased(
     transaction: PSqlSql,
     release: RuntimeStateGuardedBatchDelete
 ): Promise<void> {
-    const result = await createTransactionBoundPSqlRuntimeStateRepository(transaction).deleteIfRevision(
-        release.namespace,
-        release.key,
-        release.expectedRevision
+    requireConditionalWrite(
+        await createTransactionBoundPSqlRuntimeStateRepository(transaction).deleteIfRevision(
+            release.namespace,
+            release.key,
+            release.expectedRevision
+        )
     );
-    if (result.status === 'conflict') {
-        throw new RuntimeStateWriteConflictError();
-    }
 }
