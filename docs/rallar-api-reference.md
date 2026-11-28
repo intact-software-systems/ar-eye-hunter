@@ -695,8 +695,23 @@ the director's ACK is the receipt. The result is `sent` once that ACK arrives,
 within 30 s; a send the carrier refuses `no-leader` returns
 `status: 'no-director'`. Before it sends, the relay itself returns
 `no-director` when no director is appointed, `stale-director` when the
-appointed director is not fresh, and `not-director` when the local session is
-the director. `sendIntent(intent, { resourceId, ttlMs })` claims that resource
+appointed director is not fresh, and `not-director` from `sendIntent(...)` when
+the local session is the director.
+
+The director answers a burst of sync requests with one snapshot per 250 ms
+window. The first request opens the window, and every request that comes in
+while it is open is answered by the one snapshot the relay reads with
+`readSnapshot` when the window closes; `onSyncRequest` still runs once per
+request. On the director's own page `requestSync(...)` sends no sync request:
+it joins the same window and returns `sent`, and returns `not-director` only
+when the relay config has no `readSnapshot`. The snapshot comes from the relay's
+`readSnapshot`, so in Rallar Game, whose `readSnapshot` reads none for a
+session that holds no role or only a spectator's, it is sent only while the
+director's session holds a non-spectator role in the room. A relay stopped
+inside the window, or one whose appointment moved to another session, sends
+nothing when it closes.
+
+`sendIntent(intent, { resourceId, ttlMs })` claims that resource
 for the intent (D176, see Exclusive Ownership): the intent goes out as
 `ownership: 'exclusive'` on that `resourceId` with that `ttlMs`, over WS, and an
 intent whose resource another session holds returns `status: 'held-by-other'`
@@ -2082,13 +2097,16 @@ minted in memory; a reload or another tab is a new one. Positions count from 1.
 **Gaps.** `onOrderGap(gap)` is called once for each run of positions the page
 gave up, in the stream's turn: after the handlers of the message before the gap
 and before those of the message after it. The `gap` is a
-`RallarMessageOrderGap`: `topicId`, `typeId`, `senderId`, `stream`,
+`RallarMessageOrderGap`: `topicId`, `typeId`, `senderId`, `roomRef`, `stream`,
 `fromPosition` and `toPosition` (both included), and `reason`. What the
 callback throws or rejects with is logged and does not stop the stream. Without
 `onOrderGap`, a gap is stated in the inbound diagnostics and counted in
 `readUsage()` only. The latest `onOrderGap` declared for a topic and type
-stands for every room on the page, and a gap names no room: its `senderId` and
-`stream` say whose messages were lost.
+stands for every room on the page, so the gap names the room, sender and
+stream whose messages were lost: `roomRef`, `senderId` and `stream`. A stream
+is per channel, sender and room, so one stream id that reaches the page in two
+rooms is two streams. A stamped arrival whose envelope names no room belongs
+to no stream and is dropped as `unwrapped`.
 
 | Reason                  | What happened                                                                                                                                                          |
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -2219,8 +2237,8 @@ output send names the director's room. How the relay sends outputs is in
 Director above, and what the match does with them is in Optional Match Support.
 In the code, `TOutput` is the application's output type, `topicId` and
 `outputTypeId` are the relay config's, and `notifyRelays(gap)` passes the gap
-to the `onOutputGap` of each of the page's relays whose director sent the lost
-outputs.
+to the `onOutputGap` of each of the page's relays of the gap's room whose
+director sent the lost outputs.
 
 ```ts
 const outputs = rallar.messages.room<RallarDirectorRelayEnvelope<TOutput>>({

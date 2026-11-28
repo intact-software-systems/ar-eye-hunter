@@ -151,25 +151,38 @@ describe('RallarGameDirectorRelayRuntime', () => {
         [
             {
                 failure: 'throws',
+                matchId: 'match-7',
                 requestSync: () => {
                     throw new Error('No admitted room presence.');
-                }
+                },
+                expected: 'Failed to request a sync for Rallar Game match match-7 (test.game.v1) in room room-1 after event order gap channel-wait-cap:'
             },
-            { failure: 'rejects', requestSync: () => Promise.reject(new Error('No admitted room presence.')) }
+            {
+                failure: 'rejects',
+                matchId: 'match-7',
+                requestSync: () => Promise.reject(new Error('No admitted room presence.')),
+                expected: 'Failed to request a sync for Rallar Game match match-7 (test.game.v1) in room room-1 after event order gap channel-wait-cap:'
+            },
+            {
+                failure: 'rejects with no match id',
+                matchId: undefined,
+                requestSync: () => Promise.reject(new Error('No admitted room presence.')),
+                expected: 'Failed to request a sync for Rallar Game match (no match id) (test.game.v1) in room room-1 after event order gap channel-wait-cap:'
+            }
         ] as const
-    )('logs a sync request that $failure on an event order gap once and returns normally', async ({ requestSync }) => {
+    )('logs a sync request that $failure on an event order gap once and returns normally', async ({ matchId, requestSync, expected }) => {
         const logged: LoggedError[] = [];
         const consoleError = vi.spyOn(console, 'error').mockImplementation((message: string, error: Error) => {
             logged.push({ message, error });
         });
-        const onOutputGap = startGapRuntime(requestSync);
+        const onOutputGap = startGapRuntime(requestSync, matchId);
 
         try {
             await expect(Promise.resolve(onOutputGap(toOutputGap('channel-wait-cap')))).resolves.toBeUndefined();
             await new Promise((resolve) => setTimeout(resolve, 0));
 
             expect(logged).toEqual([{
-                message: expect.stringMatching(/test\.game\.v1.*channel-wait-cap/u),
+                message: expected,
                 error: expect.objectContaining({ message: 'No admitted room presence.' })
             }]);
         }
@@ -189,10 +202,11 @@ interface LoggedError {
 }
 
 /** A started client runtime's gap callback, whose relay answers a sync request with `requestSync`. */
-function startGapRuntime(requestSync: SyncRequestDouble): NonNullable<PayloadRelayConfig['onOutputGap']> {
+function startGapRuntime(requestSync: SyncRequestDouble, matchId?: string): NonNullable<PayloadRelayConfig['onOutputGap']> {
     let relayConfig: PayloadRelayConfig | undefined;
     const runtime = createPublishingRuntime(vi.fn(), {
         isDirector: false,
+        matchId,
         relay: { requestSync: requestSync as PayloadRelayHandle['requestSync'] },
         recordConfig: (config) => {
             relayConfig = config;
@@ -211,6 +225,7 @@ type PayloadRelayConfig = RallarDirectorRelayConfig<RallarGameEnvelope<Payload>,
 
 interface PublishingRuntimeOptions {
     readonly isDirector: boolean;
+    readonly matchId?: string;
     readonly relay: Partial<PayloadRelayHandle>;
     recordConfig(config: PayloadRelayConfig): void;
 }
@@ -225,6 +240,7 @@ function createPublishingRuntime(
     }) as RallarGameRallarFacade['director']['createRelay'];
     const config = toTestDouble<RallarGameMatchConfig<Payload, Payload, Payload, Payload, Payload>>({
         protocol: 'test.game.v1',
+        matchId: options.matchId,
         topicId: 'game.topic',
         rallar: toTestDouble<RallarGameRallarFacade>({
             director: toTestDouble<RallarGameRallarFacade['director']>({
