@@ -1,6 +1,6 @@
 import type { ALAdmissionWorkBackend } from '../../al-admission-work-backend.ts';
 import { ALAdmissionBackendConflictError } from '../../ALAdmissionBackendConflictError.ts';
-import { decodeALInboundDeliveryProgress } from '../al-inbound-ordering-validation.ts';
+import { decodeALInboundDeliveryProgress, toALInboundBufferedTrackPrefix } from '../al-inbound-ordering-validation.ts';
 import type { ALInboundDeliveredMarkerIndex, ALInboundIndexedMarker } from './al-inbound-delivered-marker-index.ts';
 
 /**
@@ -15,7 +15,8 @@ export type ALInboundDeliveredMarkersReport = (markers: number) => void;
 export interface EvictALInboundDeliveredMarkersPastCapInput {
     readonly backend: ALAdmissionWorkBackend;
     readonly deliveredPrefix: string;
-    readonly bufferedPrefix: string;
+    /** The store's namespace, under which a marker's track keeps its buffered slots. */
+    readonly namespace: string;
     readonly index: ALInboundDeliveredMarkerIndex;
     readonly maxMarkers: number;
     readonly nowMs: number;
@@ -86,7 +87,10 @@ async function removeUnlessLive(
         if (current.expireAtTimestamp > marker.expireAtTimestamp) {
             return current.expireAtTimestamp;
         }
-        const buffered = await transaction.list(`${input.bufferedPrefix}${marker.trackKey}:`, () => true);
+        const buffered = await transaction.list(
+            toALInboundBufferedTrackPrefix(input.namespace, marker.trackKey),
+            () => true
+        );
         if (buffered.length > 0) {
             return 'kept';
         }

@@ -7,24 +7,35 @@ import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.t
 import { createALInboundAdmissionStore, type ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 
-import { readInboundTestAdmission } from '../../../../shared/alm/inbound-runtime-test-fixture.ts';
+import {
+    readInboundTestAdmission,
+    type InboundTestBackendStores
+} from '../../../../shared/alm/inbound-runtime-test-fixture.ts';
+
+/** The inbound runtime's store pair over `sql` in `namespace`, and the backend it is built over, as the server composes them. */
+export function createPostgresInboundBackendStores(sql: PSqlSql, namespace: string): InboundTestBackendStores {
+    const backend = new PSqlAdmissionWorkBackend({ sql, namespace, nowMs: Date.now });
+    return {
+        backend,
+        stores: {
+            admissionStore: createALInboundAdmissionStore({
+                nowMs: Date.now,
+                namespace,
+                backend,
+                orderingTrackTtlMs: 60_000,
+                supersedenceTrackTtlMs: 60_000,
+                retention: normalizeALRuntimeStoreRetention(),
+                maxOrderingTracks: undefined,
+                maxDeliveredMarkers: undefined
+            }),
+            workQueue: backend.workQueue
+        }
+    };
+}
 
 /** The inbound runtime's store pair over `sql` in `namespace`, as the server composes it; pairs of one namespace share rows. */
 export function createPostgresInboundRuntimeStores(sql: PSqlSql, namespace: string): ALInboundRuntimeStores {
-    const backend = new PSqlAdmissionWorkBackend({ sql, namespace, nowMs: Date.now });
-    return {
-        admissionStore: createALInboundAdmissionStore({
-            nowMs: Date.now,
-            namespace,
-            backend,
-            orderingTrackTtlMs: 60_000,
-            supersedenceTrackTtlMs: 60_000,
-            retention: normalizeALRuntimeStoreRetention(),
-            maxOrderingTracks: undefined,
-            maxDeliveredMarkers: undefined
-        }),
-        workQueue: backend.workQueue
-    };
+    return createPostgresInboundBackendStores(sql, namespace).stores;
 }
 
 /** An inbound admission store over `sql` in `namespace`, as the server composes one; stores of one namespace share rows. */
