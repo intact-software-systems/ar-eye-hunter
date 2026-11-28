@@ -159,7 +159,12 @@ export class ALInboundDurableEffectStore {
     ): Promise<ALInboundResolvedDeliverySnapshot | undefined> {
         return stored === undefined
             ? undefined
-            : await readALInboundBufferedMessage({ database: session, namespace: this.namespace, stored });
+            : await readALInboundBufferedMessage({
+                database: session,
+                backend: this.backend,
+                namespace: this.namespace,
+                stored
+            });
     }
 
     private async readOrderingPredecessor(

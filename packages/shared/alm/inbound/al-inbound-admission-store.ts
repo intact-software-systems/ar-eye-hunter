@@ -679,7 +679,12 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         );
         const resolved = await Promise.all(
             stored.map(async (entry) =>
-                await readALInboundBufferedMessage({ database, namespace: this.namespace, stored: entry.value })
+                await readALInboundBufferedMessage({
+                    database,
+                    backend: this.backend,
+                    namespace: this.namespace,
+                    stored: entry.value
+                })
             )
         );
         const buffered = resolved.filter((snapshot) => snapshot !== undefined);
@@ -706,7 +711,12 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         const stored = await database.read(slot.key, (value) => decodeALInboundBufferedSnapshot(value, slot));
         return stored === undefined
             ? undefined
-            : await readALInboundBufferedMessage({ database, namespace: this.namespace, stored });
+            : await readALInboundBufferedMessage({
+                database,
+                backend: this.backend,
+                namespace: this.namespace,
+                stored
+            });
     }
 
     async readBufferedRelease(
