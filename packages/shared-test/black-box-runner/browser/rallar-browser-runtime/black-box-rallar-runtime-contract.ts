@@ -20,6 +20,7 @@ import type {
     BlackBoxRallarFormationRuntime,
     BlackBoxRallarHealthDiagnostics,
     BlackBoxRallarHealthInput,
+    BlackBoxRallarMessageCallRefusalDiagnostics,
     BlackBoxRallarMessageReplayDiagnostics,
     BlackBoxRallarMessageSendDiagnostics,
     BlackBoxRallarReplyDiagnostics,
@@ -84,7 +85,11 @@ export interface BlackBoxRallarRuntime {
     ): Promise<BlackBoxRallarWsSendDiagnostics>;
     sendMessage(
         input: unknown
-    ): Promise<BlackBoxRallarMessageSendDiagnostics | BlackBoxRallarMessageReplayDiagnostics>;
+    ): Promise<
+        | BlackBoxRallarMessageSendDiagnostics
+        | BlackBoxRallarMessageCallRefusalDiagnostics
+        | BlackBoxRallarMessageReplayDiagnostics
+    >;
     observeDelivery(input: unknown): Promise<BlackBoxRallarDeliveryObservation>;
     cancelDelivery(input: unknown): Promise<BlackBoxRallarDeliveryObservation>;
     readReceipts(input: unknown): Promise<BlackBoxRallarDeliveryObservation>;

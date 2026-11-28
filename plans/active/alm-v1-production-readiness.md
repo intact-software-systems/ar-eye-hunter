@@ -3,7 +3,8 @@
 Read four times. Twice on 2026-11-26: at `main` `1d19596` with pull request #885 at `8dece84`
 (draft), and again at `main` `704a01a`. Twice on 2026-11-27: at `main` `bc84d58`, which recorded
 only that #923 and #927 had merged, and at `main` `e30b2c9`, after #885 and the pull requests of
-that day had merged. Section 2 says what each reading covers.
+that day had merged. What #943, #948 and #949 changed was read again at `main` `5593e6a` the same
+day. Section 2 says what each reading covers.
 
 This file answers three questions: where ALM stands, what is left before it can be called a
 reliable part of the Rallar product, and in what order to do it. It is a written multi-slice spec
@@ -57,19 +58,19 @@ it:
    campaign has not run, and no latency or memory level is set (D643). The last hosted 50-agent
    delivery runs failed, on a cause that is fixed in code and has no hosted read.
 5. **Security has open rulings.** Any room member can still deliver an unreceipted RTC room send
-   under another session's id (D759). The WS server now refuses a room send whose
-   `route.contextId` names another room, whatever its audience (#937, D82). No RTC receiver
-   checks it, and the browser's refusal at the call is ruled and not on `main` yet (S3).
-6. **Carrier parity is uneven where it matters most.** The carrier matrix is on `main` (#922): 22
-   capabilities by three carriers, each cell a typed outcome with its proof, and 8 proofs marked
-   `unproven`, of the 16 it merged with (checked in the matrix file at `e30b2c9`). Most
+   under another session's id (D759). The WS server now refuses a room send whose `route.contextId`
+   names another room, whatever its audience (#937, D82). Since #943 the browser refuses such a send
+   at the call, on every carrier; no RTC receiver checks it, a stated limit (S3).
+6. **Carrier parity is uneven where it matters most.** The carrier matrix is on `main` (#922): 23
+   capabilities by three carriers, each cell a typed outcome with its proof, and 7 proofs marked
+   `unproven`, of the 16 it merged with (checked in the matrix file at `5593e6a`). Most
    differences between WS and RTC follow from what each
    carrier is and should stay. The ones that do not sit on the hand-over of `rtc-with-ws-fallback`,
    the default strategy (section 5.7).
-7. **The product contract is not adopted.** The ten completion criteria carry no "met" mark, dozens
-   of rulings are recorded as provisional or made on the maintainer's behalf, there is no
-   version or upgrade policy beyond "deploy web and API together", and no game uses a capability
-   delivered after Release 8.
+7. **The product contract is not adopted.** Each of the ten completion criteria carries a mark
+   since #950, one met and nine partial; dozens of rulings are recorded as provisional or made
+   on the maintainer's behalf, there is no version or upgrade policy beyond "deploy web and API
+   together", and no game uses a capability delivered after Release 8.
 
 The plan in section 7 covers each. Landing #885 is done, and so are the three verdict fixes T2,
 T3 and the server half of S3. Section 7 holds the two slices the maintainer chose on
@@ -93,15 +94,15 @@ measurement comments on #885 and the tree; where a description and the tree disa
 is followed. A statement that rests on this reading names its pull request or says "checked at
 `e30b2c9`". No figure was measured for it.
 
-| Document                                              | Role                                                       | State                                                                     |
-| ----------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `playground/alm/alm-improvement-plan.md`              | Delivery roadmap, decision record D1 to D789               | Current in its rows; header, release map and matrix are stale             |
-| `playground/alm/alm-complete-product-description.md`  | Product contract and completion criteria                   | Current in its blocks; no criterion marked met                            |
-| `playground/alm/alm-publication-qos-addendum.md`      | Publication QoS and pub/sub, Slices 1 to 9, later outcomes | Complete for its advertised modes; adoption owed                          |
-| `playground/alm/alm-qos-product-plan.md`              | Durability tiers and storage budgets                       | Delivered (P1, I2a, I2b); four later outcomes open                        |
-| `playground/alm/alm-first-hosted-campaign-targets.md` | Targets of the first hosted campaign (D643)                | Ruled; not started                                                        |
-| `plans/backlog.md`                                    | Future outcomes, 237 lines, most of them ALM               | Current                                                                   |
-| `plans/active/edge-ordered-room-sends.md`             | Another author's plan for edge order (#914, #925)          | Slices 1 to 5 on `main` (#916, #929, #915); its ruling 6 open (section 7) |
+| Document                                              | Role                                                       | State                                                                              |
+| ----------------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `playground/alm/alm-improvement-plan.md`              | Delivery roadmap, decision record D1 to D789               | Current in its rows; header, release map and matrix read again at `e30b2c9` (#950) |
+| `playground/alm/alm-complete-product-description.md`  | Product contract and completion criteria                   | Current in its blocks; each criterion marked (#950)                                |
+| `playground/alm/alm-publication-qos-addendum.md`      | Publication QoS and pub/sub, Slices 1 to 9, later outcomes | Complete for its advertised modes; adoption owed                                   |
+| `playground/alm/alm-qos-product-plan.md`              | Durability tiers and storage budgets                       | Delivered (P1, I2a, I2b); four later outcomes open                                 |
+| `playground/alm/alm-first-hosted-campaign-targets.md` | Targets of the first hosted campaign (D643)                | Ruled; not started                                                                 |
+| `plans/backlog.md`                                    | Future outcomes, 237 lines, most of them ALM               | Current                                                                            |
+| `plans/active/edge-ordered-room-sends.md`             | Another author's plan for edge order (#914, #925)          | Slices 1 to 5 on `main` (#916, #929, #915); its ruling 6 open (section 7)          |
 
 The pull requests this plan followed while they were open are all merged; section 4 lists them.
 The decision record has no row D764 to D769 (checked at `e30b2c9`). Rows D787 to D789 are added
@@ -161,13 +162,15 @@ After Release 16, in the order D642 ruled:
 | Three verdicts: a reply wait, a room send's route, a granted unicast         | #930, #937, #939, D787 to D789                 |
 | Edge order, slices 1 to 5 (another plan's work)                              | #916, #929, #915                               |
 
-The roadmap's requirement-to-evidence matrix marks 27 of 30 rows resolved, one delivered and two
-partial (F9 and PC10, both the schema-mismatch reclaim). It was last baselined before Release 9 and
-has no row for Releases 9 to 16.
+The roadmap's requirement-to-evidence matrix marks its seventeen F rows and three Q rows as
+written at Release 8 (nineteen resolved, F9 partial) and its ten PC rows as the product
+description marks them. Since #950 it also holds one row per addendum slice for Releases 9 to 16,
+each `Delivered`, and says that its requirement rows name slices of Releases 2 to 8 only.
 
 ## 4. What merged
 
-Everything this plan followed while it was open is on `main` at `e30b2c9` (checked in `git log`).
+Everything this plan followed while it was open is on `main` at `e30b2c9` (checked in `git log`),
+and the last three lines below at `5593e6a`.
 Each line says what the pull request delivered. Section 5 says what each left.
 
 - **#923** (`6bae949`). Publication workload family, first slice: one parameterised point, a
@@ -207,6 +210,13 @@ Each line says what the pull request delivered. Section 5 says what each left.
   `e30b2c9` it still called the edge-order sender as it was before #929, which merged a minute
   earlier, so `npm run typecheck:tests` failed on `main` in two of its files; #944 (`e8620c0`)
   repaired both the same day.
+- **#948** (`4a36256`). This plan's correction: what merged on 2026-11-27, the figures on #885's
+  tree, and the next two slices.
+- **#943** (`619f63e`). Verdict S3, the call half: the browser refuses a room send whose
+  `contextId` is not its room before any carrier, on every strategy. No RTC receiver checks the
+  context, a stated limit. It adds one row to the carrier matrix.
+- **#949** (`5593e6a`). A server test delivers a granted publication to 257 subscribed sessions
+  over WS, which closes one `unproven` proof of the carrier matrix (T4).
 
 Edge order slices 2 to 4 merged the same day as #916 (`4f453e2`), which that plan records.
 
@@ -536,35 +546,36 @@ Notes on the rows that need them:
 
 ### 5.2 Security and trust
 
-| Id | Item                                                                              | Source              | Class   |
-| -- | --------------------------------------------------------------------------------- | ------------------- | ------- |
-| S1 | Unreceipted RTC room sends are unsigned and forgeable by any member               | D590, D759          | Decide  |
-| S2 | A member can fail another member's ordered receipted send                         | D759                | Decide  |
-| S3 | A room send routed in another room: refused by the WS server, not yet at the call | D82, D788, #937     | Blocker |
-| S4 | Forged receipt statements flood a relay and can evict true controls               | D600, D602, D705    | Should  |
-| S5 | Granted payloads are readable by relays                                           | D520                | Should  |
-| S6 | Revocation reaches RTC peers in 20 to 60 s                                        | D515, D498          | Should  |
-| S7 | The WS server's inbound stores are not capped; rate limits are unmarked           | product description | Blocker |
-| S8 | A reconnect's generation decision is not fenced at commit                         | D531                | Should  |
-| S9 | Native hosts cannot sign a granted publication                                    | D513                | Later   |
+| Id | Item                                                                         | Source                | Class   |
+| -- | ---------------------------------------------------------------------------- | --------------------- | ------- |
+| S1 | Unreceipted RTC room sends are unsigned and forgeable by any member          | D590, D759            | Decide  |
+| S2 | A member can fail another member's ordered receipted send                    | D759                  | Decide  |
+| S3 | A room send routed in another room: refused by the WS server and at the call | D82, D788, #937, #943 | Closed  |
+| S4 | Forged receipt statements flood a relay and can evict true controls          | D600, D602, D705      | Should  |
+| S5 | Granted payloads are readable by relays                                      | D520                  | Should  |
+| S6 | Revocation reaches RTC peers in 20 to 60 s                                   | D515, D498            | Should  |
+| S7 | The WS server's inbound stores are not capped; rate limits are unmarked      | product description   | Blocker |
+| S8 | A reconnect's generation decision is not fenced at commit                    | D531                  | Should  |
+| S9 | Native hosts cannot sign a granted publication                               | D513                  | Later   |
 
 - **S1, S2.** `ack: none`, `hop` and `subtree` sends carry no publisher proof. A forged copy that
   takes an ordered send's sequence makes the origin's copy end `receipt-exhausted`. The backlog
   names the step: sign every ordinary RTC room send, a classification change on the same wire
   shape. Cost on the record: 179 bytes a frame and sign and verify time measured on a desktop only.
-- **S3.** The server half is done. The maintainer ruled on 2026-11-27: equality on the server,
-  for every shape. `decode-rallar-server-ws-ingress.ts` now refuses `unauthorized` any room send
-  whose `route.contextId` is not its room, a unicast, a multicast, a room broadcast or a
-  principal broadcast, before the room authorizer and any store write, and a black-box recipe
-  pins it (#937, D788; checked at `e30b2c9`). It narrows a public option: over WS a room send's
-  `contextId` must be its room id, which is the default. #937 found that no RTC peer checks the
-  context, so a recipient over RTC still reads a room broadcast's `roomId` from a foreign one.
-  The maintainer ruled on that the same day: refuse at the call. The browser refuses a room send
-  whose `contextId` is not its room before any carrier, on every strategy; no check is added at
-  an RTC receiver, and that is a stated limit. It is built on the branch
-  `claude/alm-room-send-context-at-the-call` (#943, a draft), and the row stays a
-  Blocker until it is on `main`. Also left by #937: the server's own `ws.publish` is not bound
-  by the rule, and all four production builders use the room id.
+- **S3.** The server half is done. The maintainer ruled on 2026-11-27: equality on the server, for
+  every shape. `decode-rallar-server-ws-ingress.ts` now refuses `unauthorized` any room send whose
+  `route.contextId` is not its room, a unicast, a multicast, a room broadcast or a principal
+  broadcast, before the room authorizer and any store write, and a black-box recipe pins it (#937,
+  D788; checked at `e30b2c9`). It narrows a public option: over WS a room send's `contextId` must be
+  its room id, which is the default. #937 found that no RTC peer checks the context, so a recipient
+  over RTC still reads a room broadcast's `roomId` from a foreign one. The maintainer ruled on that
+  the same day: refuse at the call. The browser refuses a room send whose `contextId` is not its
+  room before any carrier, on every strategy; no check is added at an RTC receiver, and that is a
+  stated limit. It is on `main` (#943), which closes the row. What S3 leaves is that limit: a frame
+  that did not pass the refusal at the call, a modified client's or one an earlier release stored
+  and this one retries, is still delivered over RTC; the WS server refuses both. Also left by #937:
+  the server's own `ws.publish` is not bound by the rule, and all four production builders use the
+  room id.
 - **S4.** Relay-side verification was declined (S8ii-R1) at one verify per forwarded control per
   level. The origin counts only what verifies, so the cost is availability, not truth.
 - **S5.** No code closes this before 1.0. The contract says so: a topic that needs
@@ -745,22 +756,28 @@ Notes on the rows that need them:
 
 ### 5.6 Product surface, documents and adoption
 
-| Id  | Item                                                                      | Source                               | Class   |
-| --- | ------------------------------------------------------------------------- | ------------------------------------ | ------- |
-| A1  | The contracts are not adopted                                             | addendum §6, §9                      | Blocker |
-| A2  | No criterion of the product description is marked met                     | product description                  | Blocker |
-| A3  | Rulings recorded as provisional or made for the maintainer                | D513 to D641, D717, D783             | Decide  |
-| A4  | No consumer for anything delivered after Release 8                        | roadmap                              | Blocker |
-| A5  | No developer documentation outside `playground/`                          | none exists                          | Blocker |
-| A6  | Stale statements in current documents                                     | below                                | Should  |
-| A7  | A client cannot learn a topic's fanout or participation before it sends   | D482, D517                           | Blocker |
-| A8  | Public surface leftovers                                                  | backlog                              | Should  |
-| A9  | Replies travel over WS only and do not survive a reload                   | D441 to D446                         | Later   |
-| A10 | Incoming database writes outside AppInbox are neither confirmed nor moved | D770, D779, the review of 2026-11-27 | Decide  |
+| Id  | Item                                                                            | Source                               | Class   |
+| --- | ------------------------------------------------------------------------------- | ------------------------------------ | ------- |
+| A1  | The contracts are not adopted                                                   | addendum §6, §9                      | Blocker |
+| A2  | Each criterion of the product description carries a mark: one met, nine partial | product description, #950            | Closed  |
+| A3  | Rulings recorded as provisional or made for the maintainer                      | D513 to D641, D717, D783             | Decide  |
+| A4  | No consumer for anything delivered after Release 8                              | roadmap                              | Blocker |
+| A5  | No developer documentation outside `playground/`                                | none exists                          | Blocker |
+| A6  | Stale statements in current documents                                           | below, #950                          | Closed  |
+| A7  | A client cannot learn a topic's fanout or participation before it sends         | D482, D517                           | Blocker |
+| A8  | Public surface leftovers                                                        | backlog                              | Should  |
+| A9  | Replies travel over WS only and do not survive a reload                         | D441 to D446                         | Later   |
+| A10 | Incoming database writes outside AppInbox are neither confirmed nor moved       | D770, D779, the review of 2026-11-27 | Decide  |
 
 - **A1.** The addendum asks for a scope, default and cutover decision, a truthful security and
   revocation contract, the requirement-to-evidence matrix for the advertised modes, and current
   measured capacity. It records none as taken.
+- **A2.** Closed by #950. Each criterion states what is evidenced and what is not, read at
+  `e8620c0`. Met: 4. Partial: 1 (7 `unproven` proofs, a full scope that gates nothing), 2 (S1), 3
+  (an unreceipted at-least-once send, and what #939 left), 5 (the durable send's pin rose past D87's
+  budget in #869 with no decision row; met once a row accepts 11 or the extra read is removed), 6
+  (no RTC receiver checks a room send's context, a stated limit), 7 (no game sends `world`), 8 (S7),
+  9 (T1, A9) and 10 (C2). A mark changes in the pull request that closes the item named beside it.
 - **A3.** PL9 to PL25, PL27 and PL28 (Slice 3); every Slice 4 ruling; builder calls in Slices 5 to
   7; D607 to D641, ruled by the controller; D645's window split; D717, D719 and D757; D783; and
   D770, the record written outside AppInbox, which the maintainer revisits before 1.0 (decision
@@ -773,24 +790,25 @@ Notes on the rows that need them:
   No product topic is `granted` at all (D483). The consumers of those are an example, the Recipe
   Console and the lane. The roadmap's own rule, that each release changes a game, stopped at
   Release 9.
-- **A6.** `docs/README.md` says the roadmap is "Releases 1 to 11" (checked at `e30b2c9`) and is
-  left for the documents slice. Also stale: the roadmap's header date, its release map ("thirty PRs in ten releases") and its matrix; row D740,
-  cut off at a `||` inside a code span by the table formatter; the standing direction that
-  "cryptographic proof of the original sender is outside this roadmap", which D758 overtook; the
-  product description's header and its "acceptance authority" paragraph, which the campaign
-  document contradicts; the QoS plan's "two persistence tiers today"; the addendum's "proposed
-  requirements" framing; the keep-set in `plans/README.md`, which names four ALM documents where
-  five exist; the lane table in `CLAUDE.md` (D636); and the product description's line that a
-  director command can arrive twice after a fallback "because AL dedup is per carrier lane",
-  which the inbound README contradicts: one session's inbound store is shared by both carriers.
-  Four more since the merges of 2026-11-27 (checked at `e30b2c9`): the room-send cell's README
-  says no unordered run has been made on the build with the receipt record, and sixteen were,
-  published only in a comment on #885; the carrier matrix's `closedBy` for the over-256 proof,
-  and the test that pins it, still wait "for the merge of pull request 885"; the status line of
-  `plans/active/edge-ordered-room-sends.md` says its slices 1 and 5 wait in #915 and #929, and
-  its roadmap and findings hold nothing of slice 5, which #929 lists as owed to it; and
-  `alm-publication-workload.md` says churn "needs a ruling on what churns", which the ruling of
-  2026-11-27 gave (P1).
+- **A6.** Closed by #950, documents only. It read the roadmap's header, release map and matrix again
+  through Release 16 and added the S9-ii row and one matrix row per addendum slice; restated row
+  D740 from #888, because the table formatter had cut it at a `||` before its first commit and no
+  git object holds the lost text; corrected the standing direction on the original sender's proof
+  (D512, D758), the sentence in `docs/README.md`, the keep-set in `plans/README.md` (five
+  documents), the `postgres-integration` row of `CLAUDE.md` and its missing `e2e-live-recipes` row,
+  the product description's header, its "acceptance authority" paragraph and its line on a director
+  command after a fallback, the QoS plan's "two persistence tiers today", the addendum's "proposed
+  requirements" framing, and the room-send cell's README and the receipt record's on the runs made
+  on #885's heads. It also found the durable send's pin stated as 10 `al-admission` operations in
+  three documents where the test pins 11 since #869, and corrected them. What it left, each with its
+  owner: the status line of `plans/active/edge-ordered-room-sends.md`, corrected by #941; and the
+  churn sentence of `alm-publication-workload.md`, rewritten by the seeded-loss pull request (P1).
+  Found and not corrected, with no owner yet: the roadmap still says each release changes a game
+  (A4); it still says Release 1's assessment "lives in `pr-521-code-assessment.md`", a file the tree
+  no longer holds; its row D161 still lists an `all-refused` lane cell, and the tree holds none; the
+  product description's fourteen `PARTIAL` markers were not read again; the durable send's pin rose
+  past D87's budget in #869 with no decision row; and the formatter still cuts a table row at a raw
+  `||` in a code span, so write `\|\|` there.
 - **A7.** It is a Blocker because it is a parity defect as well as a convenience. The WS server
   refuses a live publication on an `outbox` topic as `unsupported` while RTC infers a grant from
   a channel declaration or a cached snapshot, so the same send gets a carrier-dependent answer.
@@ -869,7 +887,7 @@ These should be closed:
 | T1 | The hand-over of `rtc-with-ws-fallback` does not keep one lifecycle       | D525, D64, D700          | Blocker |
 | T2 | A granted `receiver` unicast to a non-holder read `acknowledged` over RTC | D553, D789, #939         | Closed  |
 | T3 | A reply wait that cannot be answered ran to its timeout                   | D441 to D446, D787, #930 | Closed  |
-| T4 | The carrier matrix holds 8 proofs marked `unproven`                       | #922, #934               | Blocker |
+| T4 | The carrier matrix holds 7 proofs marked `unproven`                       | #922, #934, #949         | Blocker |
 | T5 | The fallback strategy refuses a send to the server peer at the call       | #922                     | Decide  |
 | T6 | A left member's room send is not stated rejected at its RTC origin        | #922                     | Should  |
 
@@ -912,12 +930,11 @@ These should be closed:
   request on another topic, is kept by the reply slot and read by no wait.
 - **T4.** Delivered by #922: `ALM_CARRIER_MATRIX` states 22 capabilities by three carriers, each
   cell a typed outcome with its proofs or a `not-applicable` with its reason. It merged with 20;
-  #930 and #939 added one row each. The conformance
-  catalogue reads its carriers and its carrier verdict facts from the matrix, and the lane fails an
-  un-narrowed full run whose plan leaves out a cell the matrix names. It merged with 16 proofs
-  marked `unproven`. What remains is 8, in 7 cells (checked in the matrix file at `e30b2c9`).
-  Each names what closes it, and `packages/tests/shared-test/alm-carrier-matrix.test.ts` pins the
-  list.
+  #930, #939 and #943 added one row each. The conformance catalogue reads its carriers and its
+  carrier verdict facts from the matrix, and the lane fails an un-narrowed full run whose plan
+  leaves out a cell the matrix names. It merged with 16 proofs marked `unproven`. What remains is 7,
+  in 6 cells (checked in the matrix file at `5593e6a`). Each names what closes it, and
+  `packages/tests/shared-test/alm-carrier-matrix.test.ts` pins the list.
   - Three wait on one lifecycle or one ordering track across the hand-over, and close with T1:
     `ordered-gap-repair`, `repair-budget-exhausted` and `snapshot-floor-catch-up`, each over the
     fallback strategy.
@@ -925,13 +942,11 @@ These should be closed:
     fallback strategy wait on T6: neither can be built as a mirror of `fenced-rejection`, because
     of the hold T6 describes. The third is a receipted send under the fallback strategy, which is
     handed to WS when a receiver's fence ends its receipt; it waits on T6 and then on T1.
-  - Two are on granted publications, a preview capability in section 6. A receipted publication
+  - One is on a granted publication, a preview capability in section 6. A receipted publication
     under the fallback strategy whose sender has not read its revoke is handed to WS when its
-    receipt runs out, and the server refuses it there; that chain closes with T1. A granted
-    publication to more than 256 subscribed sessions over `ws` needs a server test. Its harness
-    is in a test file #885 changed, and it waited on that merge. It no longer does: nothing
-    blocks the test. The proof's `closedBy`, and the test's pinned list, still name the merge
-    (checked at `e30b2c9`), so the pull request that adds the test restates both.
+    receipt runs out, and the server refuses it there; that chain closes with T1. The other
+    granted proof, a publication to more than 256 subscribed sessions over `ws`, is closed by a
+    server test (#949).
 
   The other eight are closed, none by a product change (#934). Lane cells closed two: `reply-correlated`
   runs over `rtc`, and `repair-exhausted` over `ws`. Unit tests closed six: the `$.scope` path of
@@ -1018,8 +1033,9 @@ Where each stands at `e30b2c9`. Criterion 8 gained its sentence on A10 on 2026-1
 maintainer's ruling that the revisit happens before ALM is completed; no other criterion is changed,
 and none is met in full.
 
-1. _Scope is named._ Not ruled (decision 4). The matrix states 22 capabilities. 8 proofs in 7
-   cells are `unproven`, two of them on granted publications, a preview capability (T4).
+1. _Scope is named._ Not ruled (decision 4). The matrix states 23 capabilities. 7 proofs in 6
+   cells are `unproven`, one of them on a granted publication, a preview capability (T4; checked
+   at `5593e6a`).
 2. _No silent loss or duplication._ Open. Of the Blockers in 5.1 and 5.7, R2 is closed (#885); R1,
    R3, R15, T1 and T4 are open. T2 and T3, both Should, are closed (#939, #930). R1 is not read
    closed: see the acceptance lines in section 7.
@@ -1029,26 +1045,27 @@ and none is met in full.
    ends `timed-out` (D779).
 5. _The first rung is passed._ Open. The workload family has two local points (#923, #933) and
    nothing hosted.
-6. _The trust contract is written._ Open. S3: the server half is closed (#937); the refusal at the
-   call is ruled and not on `main` (#943, a draft). S7 is open. S1 and S2 are not ruled
-   (decision 3).
+6. _The trust contract is written._ Open. S3 is closed: the server half by #937, the refusal at the
+   call by #943; no RTC receiver checks the context, a stated limit. S7 is open. S1 and S2 are not
+   ruled (decision 3).
 7. _There is an upgrade rule._ Open, unchanged.
-8. _It is adopted._ Open. Of A3's list, D784 is now the maintainer's own ruling. A10 is not ruled,
-   no AppInbox-backed count is measured and the direct-write guard is not built.
+8. _It is adopted._ Open. Of A3's list, D784 is now the maintainer's own ruling. The completion
+   criteria are marked (#950): one met, nine partial. A10 is not ruled, no AppInbox-backed count is
+   measured and the direct-write guard is not on `main`.
 
 ## 7. The plan
 
 Six milestones. A and D can start now; B and C run beside each other; E needs B and C; F needs
 all.
 
-| Milestone            | Outcome                                                                       | Closes                          | State at `e30b2c9`                                                   |
-| -------------------- | ----------------------------------------------------------------------------- | ------------------------------- | -------------------------------------------------------------------- |
-| A. In flight         | #885 on `main`, as #923 and #927 are; documents state the truth               | R2, A6                          | #885 is on `main` and R2 is closed. A6 is open.                      |
-| B. Reliability       | No Blocker left in 5.1; each Decide ruled; one lifecycle across the hand-over | R1, R3 to R19, T1 to T3, T5, T6 | T2 and T3 are closed. R1 is narrowed. The rest are open.             |
-| C. A lane that gates | Full scope required on three carriers; no `unproven` proof in a 1.0 mode      | G1 to G3, G6, G9, T4            | Open. 8 of the matrix's 16 `unproven` proofs remain.                 |
-| D. Trust             | Authorization debts closed; signing ruled; server limits enforced             | S1 to S8                        | S3 is closed on the WS server; its refusal at the call is to follow. |
-| E. Measured envelope | Workload family past its first point, probes, first rung, levels set          | P1 to P12, G4                   | The family has its second local point. Nothing hosted.               |
-| F. Product           | Upgrade rule, runbook, guide, a consumer per mode, adoption                   | C1 to C6, A1 to A8, G5          | Open.                                                                |
+| Milestone            | Outcome                                                                       | Closes                          | State at `e30b2c9`                                             |
+| -------------------- | ----------------------------------------------------------------------------- | ------------------------------- | -------------------------------------------------------------- |
+| A. In flight         | #885 on `main`, as #923 and #927 are; documents state the truth               | R2, A6                          | Done: #885 is on `main`, R2 is closed and A6 is closed (#950). |
+| B. Reliability       | No Blocker left in 5.1; each Decide ruled; one lifecycle across the hand-over | R1, R3 to R19, T1 to T3, T5, T6 | T2 and T3 are closed. R1 is narrowed. The rest are open.       |
+| C. A lane that gates | Full scope required on three carriers; no `unproven` proof in a 1.0 mode      | G1 to G3, G6, G9, T4            | Open. 7 of the matrix's 16 `unproven` proofs remain (#949).    |
+| D. Trust             | Authorization debts closed; signing ruled; server limits enforced             | S1 to S8                        | S3 is closed, on the WS server and at the call (#937, #943).   |
+| E. Measured envelope | Workload family past its first point, probes, first rung, levels set          | P1 to P12, G4                   | The family has its second local point. Nothing hosted.         |
+| F. Product           | Upgrade rule, runbook, guide, a consumer per mode, adoption                   | C1 to C6, A1 to A8, G5          | Open. A2 and A6 are closed (#950).                             |
 
 ### The next two slices
 
@@ -1116,10 +1133,11 @@ gone from the roster within 90 s and ended once; a recipe that suspends a server
 lease reads it fenced and its clients present again elsewhere; the gates the changed path
 selects are green with no constant touched.
 
-**Beside them**, started the same day because they meet other files: the documents of queue
-item 1; from queue item 2, the server test of a granted publication to more than 256
-subscribed sessions and the call-time refusal witness, neither of which needs a ruling; and
-seeded loss, the first pull request of queue item 5.
+**Beside them**, started the same day because they meet other files: the documents, which are
+done (#950); from queue item 1, the server test of a granted publication to more than 256
+subscribed sessions, now on `main` (#949), and the call-time refusal witness, neither of which
+needs a ruling; and
+seeded loss, the first pull request of queue item 4.
 
 ### What remains of ordered room sends under load
 
@@ -1229,55 +1247,44 @@ AppInbox-backed count is measured before the revisit.
 
 ### The queue after the two slices
 
-Outcome-shaped, in the order proposed at the first reading; the merges changed no order. Three
-items are gone: the three verdict fixes S3, T2 and T3 are on `main` (#937, #939, #930), and the
-torn read and the crashed server's presence are the next two slices above. Each
-remaining item says what unblocks it and which files it meets. Any item that changes browser
-code also meets the two bundle budgets, which had 0.869 and 0.861 KiB of headroom when #929
-measured them (P9).
+Outcome-shaped, in the order proposed at the first reading; the merges changed no order. Four items
+are gone: the documents and the completion-criteria marks are done (#950, closing A6 and A2), the
+three verdict fixes S3, T2 and T3 are on `main` (#937 and #943, #939, #930), and the torn read and
+the crashed server's presence are the next two slices above. Each remaining item says what unblocks
+it and which files it meets. Any item that changes browser code also meets the two bundle budgets,
+which had 0.869 and 0.861 KiB of headroom when #929 measured them (P9).
 
-In flight and not a queue item: the refusal at the call of a room send routed in another room
-(S3), built on the branch `claude/alm-room-send-context-at-the-call` (#943, a draft).
-It meets `packages/shared-web/browser/messages/` (the sender,
+The refusal at the call of a room send routed in another room (S3), in flight at the last
+reading, is on `main` (#943). It changed `packages/shared-web/browser/messages/` (the sender,
 `create-browser-unicast-message.ts` and `validate-browser-rtc-peer-send.ts`), the carrier
-matrix and its test, `docs/rallar-api-reference.md`, two READMEs and eight black-box examples
-(read from the branch at `a368ec9` on 2026-11-27). It adds one row to the matrix.
+matrix and its test, `docs/rallar-api-reference.md`, two READMEs and eight black-box examples,
+and added one row to the matrix.
 
-1. **Documents state the truth (A6, A2).** Documents only. Refresh the roadmap's header, release
-   map and matrix through Release 16; restore D740; correct the standing direction and the
-   sentence in `docs/README.md`; mark each
-   completion criterion met, partial or open with its evidence; add the fifth document to the
-   keep-set; and correct the stale statements A6 lists from the merges of 2026-11-27.
-   Unblocked by: nothing. Meets: `playground/alm/alm-improvement-plan.md`,
-   `playground/alm/alm-complete-product-description.md`, `docs/README.md`, `plans/README.md` and
-   `CLAUDE.md`. The correction that added rows D787 to D789 touched the first two and
-   `plans/backlog.md`.
-2. **The lane's four intermittents (G2), then start the count (G1), with the matrix's unproven
+1. **The lane's four intermittents (G2), then start the count (G1), with the matrix's unproven
    proofs (T4).** Rule the in-sync readiness signal and the stored-cancel diagnostic (decisions 8
-   and 9); attribute the durable-store slowdown with timing on the direct admission path (P4).
-   The unproven proofs that need no product change are closed, all but one (T4): the server test
-   of a granted publication to more than 256 subscribed sessions, which waited on #885 and no
-   longer does. A
-   call-time refusal witness in the harness is still to build; it closes no `unproven` proof.
-   #934 names one more cheap step: the control-server reload model replays `repair-exhausted`
-   over `rtc` alone. Unblocked by: decisions 8 and 9 for two of the four cells; nothing for the
-   over-256 test. Meets: `packages/shared-test/rallar-bb-test/conformance/alm/` and
-   `packages/tests/shared-test/alm-carrier-matrix.test.ts`, which the branch in flight also
-   changes; and `apps/rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts` if decision
-   8 picks a pre-start phase in the hosted combiner.
-3. **Fallback continuity (T1).** Design first, because R5 needs a protocol change. The acceptance
-   is a lane family over `rtc-with-ws-fallback` in which a hand-over mid-stream keeps order,
-   settles every receipt, and survives a reload. It closes four of the matrix's unproven proofs,
-   and a fifth once T6 has traced the hold. Unblocked by: its design. Meets:
-   `packages/shared-web/browser/messages/browser-rallar-message-dispatch.ts`, which #929 changed
-   and which sits in the folder the branch in flight changes; the rest is the design's to name.
-4. **The server-peer send and the left member's send (T5, T6).** T5 follows decision 16. T6 traces
+   and 9); attribute the durable-store slowdown with timing on the direct admission path (P4). The
+   unproven proofs that need no product change are closed (T4), the last of them, a granted
+   publication to more than 256 subscribed sessions, by a server test (#949). A call-time refusal
+   witness in the harness is still to build; it closes no `unproven` proof. #934 names one more
+   cheap step: the control-server reload model replays `repair-exhausted` over `rtc` alone.
+   Unblocked by: decisions 8 and 9 for two of the four cells. Meets:
+   `packages/shared-test/rallar-bb-test/conformance/alm/` and
+   `packages/tests/shared-test/alm-carrier-matrix.test.ts`, which #943 and #949 also changed; and
+   `apps/rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts` if decision 8 picks a
+   pre-start phase in the hosted combiner.
+2. **Fallback continuity (T1).** Design first, because R5 needs a protocol change. The acceptance is
+   a lane family over `rtc-with-ws-fallback` in which a hand-over mid-stream keeps order, settles
+   every receipt, and survives a reload. It closes four of the matrix's unproven proofs, and a fifth
+   once T6 has traced the hold. Unblocked by: its design. Meets:
+   `packages/shared-web/browser/messages/browser-rallar-message-dispatch.ts`, which #929 changed and
+   which sits in the folder #943 changed; the rest is the design's to name.
+3. **The server-peer send and the left member's send (T5, T6).** T5 follows decision 16. T6 traces
    how a `pending-authority` hold ends, then states one end at the origin and adds the left-sender
    cell over the RTC carriers. Unblocked by: decision 16 for T5; nothing for T6's trace. Meets:
    `packages/shared-web/browser/messages/create-browser-unicast-message.ts`, which holds
-   `validateBrowserPeerServer` and which the branch in flight changes (T5); the matrix's
-   `left-sender-send` row and its test (T6).
-5. **The rest of the publication workload family (P1).** In the order ruled on 2026-11-27:
+   `validateBrowserPeerServer` and which #943 changed (T5); the matrix's `left-sender-send` row and
+   its test (T6).
+4. **The rest of the publication workload family (P1).** In the order ruled on 2026-11-27:
    seeded loss, then membership churn, then subscription churn. After them: a rate above the
    publication cadence, reported before it is gated, with the
    stage's lateness measured (P12); the clock offset between machines; the games' frame sizes
@@ -1290,19 +1297,19 @@ matrix and its test, `docs/rallar-api-reference.md`, two READMEs and eight black
    `packages/shared-test/rallar-bb-test/docs/alm-publication-workload.md`. #933 changed no
    product behaviour and no browser bundle; outside the test packages it added one file, the
    histogram merge in `packages/shared/measurement/`.
-6. **Sign every ordinary RTC room send (S1, S2)**, if decision 3 says so, with a phone timing.
+5. **Sign every ordinary RTC room send (S1, S2)**, if decision 3 says so, with a phone timing.
    Unblocked by: decision 3. Meets: `packages/shared/multicast/publication/`, where #939 changed
    the signed-publication carrier, and the bundle budgets.
-7. **Topic-policy advertisement (A7).** A client learns a topic's fanout and participation before
+6. **Topic-policy advertisement (A7).** A client learns a topic's fanout and participation before
    it sends, so both carriers give the same answer at the send. Unblocked by: nothing known. Its
    files are not read for this reading.
-8. **The hosted fault step and the first rung (P1).** Unblocked by: the campaign's go-ahead
-   (decision 13) and the hosted manifest of item 5. Its files are not read for this reading.
-9. **The upgrade rule, the reclaim and the rehearsal (C1, C2, G5).** Unblocked by: decision 5.
+7. **The hosted fault step and the first rung (P1).** Unblocked by: the campaign's go-ahead
+   (decision 13) and the hosted manifest of item 4. Its files are not read for this reading.
+8. **The upgrade rule, the reclaim and the rehearsal (C1, C2, G5).** Unblocked by: decision 5.
    Its files are not read for this reading.
-10. **A consumer per 1.0 mode (A4)** and the developer guide, limits page and runbook (A5, C3).
-    Unblocked by: decision 4, which names the 1.0 modes. Meets: the two games' apps, and new
-    documents outside `playground/`.
+9. **A consumer per 1.0 mode (A4)** and the developer guide, limits page and runbook (A5, C3).
+   Unblocked by: decision 4, which names the 1.0 modes. Meets: the two games' apps, and new
+   documents outside `playground/`.
 
 ## 8. Decisions for the maintainer
 
