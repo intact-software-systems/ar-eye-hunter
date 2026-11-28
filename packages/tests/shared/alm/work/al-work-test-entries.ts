@@ -133,7 +133,7 @@ export function createEngine(): InboxOutboxEngine {
 }
 
 /** A port whose every flush is kept whole, so a pin can count the batches and read their order. */
-export function recordingPort(claims: readonly string[], flushes: ALWorkRelease[][]): ALWorkQueuePort {
+export function createRecordingPort(claims: readonly string[], flushes: ALWorkRelease[][]): ALWorkQueuePort {
     return {
         ...fakePort({ claims, onRelease: () => {} }),
         releaseAll: async (releases) => {

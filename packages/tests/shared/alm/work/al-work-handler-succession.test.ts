@@ -19,7 +19,7 @@ import type { ALWorkOutcome, ALWorkRelease } from '@shared/alm/work/al-work-queu
 
 import {
     createEngine,
-    recordingPort,
+    createRecordingPort,
     toFakeALWorkClaim,
     toTestALWorkReadySelection
 } from './al-work-test-entries.ts';
@@ -310,7 +310,7 @@ function createSuccessionDependencies<TSuccession>(
 ): ALWorkHandlerDependencies<TSuccession> {
     return {
         workerId: 'successor-worker',
-        port: recordingPort(claims, flushes),
+        port: createRecordingPort(claims, flushes),
         queueEngine: createEngine(),
         ownsQueueEngine: false,
         clock: { nowMs: () => 1_000 },

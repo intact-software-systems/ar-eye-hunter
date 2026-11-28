@@ -33,10 +33,10 @@ import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import {
     collectProbe,
     createEngine,
+    createRecordingPort,
     fakePort,
     newWorkEntry,
     readTestALWorkReadyAtMs,
-    recordingPort,
     toFakeALWorkClaim,
     toFakeALWorkKey,
     toTestALWorkReadySelection
@@ -547,7 +547,7 @@ describe('ALWorkHandler', () => {
 
     it('flushes one batch of mixed outcomes in a single releaseAll, in claim order', async () => {
         const flushes: ALWorkRelease[][] = [];
-        const port = recordingPort(['flush-1', 'flush-2', 'flush-3'], flushes);
+        const port = createRecordingPort(['flush-1', 'flush-2', 'flush-3'], flushes);
         const handler = new ALWorkHandler({
             workerId: 'flush-worker',
             port,
@@ -582,7 +582,7 @@ describe('ALWorkHandler', () => {
 
     it('settles the running claim and releases unstarted work when disposed', async () => {
         const flushes: ALWorkRelease[][] = [];
-        const port = recordingPort(['abort-1', 'abort-2'], flushes);
+        const port = createRecordingPort(['abort-1', 'abort-2'], flushes);
         const claimEntered = Promise.withResolvers<void>();
         const finishClaim = Promise.withResolvers<void>();
         onTestFinished(() => finishClaim.resolve());
@@ -622,7 +622,7 @@ describe('ALWorkHandler', () => {
         const log: (string | ALWorkDiagnostics)[] = [];
         const handler = new ALWorkHandler({
             workerId: 'start-worker',
-            port: recordingPort(['start-1', 'start-2'], []),
+            port: createRecordingPort(['start-1', 'start-2'], []),
             queueEngine: createEngine(),
             ownsQueueEngine: false,
             clock: { nowMs: () => 1_000 },
@@ -659,7 +659,7 @@ describe('ALWorkHandler', () => {
         onTestFinished(() => finishClaim.resolve());
         const handler = new ALWorkHandler({
             workerId: 'aborted-worker',
-            port: recordingPort(['aborted-1', 'aborted-2'], []),
+            port: createRecordingPort(['aborted-1', 'aborted-2'], []),
             queueEngine: createEngine(),
             ownsQueueEngine: false,
             clock: { nowMs: () => 1_000 },
@@ -698,7 +698,7 @@ describe('ALWorkHandler', () => {
         const runBatch = async (failure: 'release' | 'selection'): Promise<ALWorkDiagnostics[]> => {
             const events: ALWorkDiagnostics[] = [];
             const port: ALWorkQueuePort = {
-                ...recordingPort(['failed-1'], []),
+                ...createRecordingPort(['failed-1'], []),
                 releaseAll: async () => {
                     if (failure === 'release') {
                         throw new Error('release storage unavailable');
@@ -739,7 +739,7 @@ describe('ALWorkHandler', () => {
         const flushes: ALWorkRelease[][] = [];
         const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
         const port: ALWorkQueuePort = {
-            ...recordingPort([], flushes),
+            ...createRecordingPort([], flushes),
             finalizeExhausted: async () => [toFakeALWorkClaim('stranded-finalization')]
         };
         const handler = new ALWorkHandler({
@@ -1376,7 +1376,7 @@ describe('ALWorkHandler', () => {
         const events: ALStorageEvent[] = [];
         const handler = new ALWorkHandler({
             workerId: 'storage-worker',
-            port: recordingPort([], []),
+            port: createRecordingPort([], []),
             queueEngine: createEngine(),
             ownsQueueEngine: false,
             clock: { nowMs: () => 1_000 },
@@ -1419,7 +1419,7 @@ describe('ALWorkHandler', () => {
         storageHealth.recordFailure({ cause: 'quota', detail: 'QuotaExceededError: full' });
         const handler = new ALWorkHandler({
             workerId: 'storage-worker',
-            port: recordingPort(['w-1'], []),
+            port: createRecordingPort(['w-1'], []),
             queueEngine: createEngine(),
             ownsQueueEngine: false,
             clock: { nowMs: () => 2_000 },
