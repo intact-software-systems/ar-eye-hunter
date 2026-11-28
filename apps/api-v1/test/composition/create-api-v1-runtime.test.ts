@@ -109,6 +109,26 @@ test('real runtime commits a party notice through AppInbox and sends only to its
     }
 });
 
+test('real runtime records a connect under the stream id it holds its liveness lease under', async () => {
+    const fixture = await createFixture();
+    try {
+        const alice = await connectAccount(fixture.runtime, 'alice', fixture.releases);
+        const holderId = fixture.runtime.rtcTopologyDelivery.publisherStreamId;
+
+        const page = await fixture.runtime.clientStateService.connectionHolders.readHolderPage({
+            holderId,
+            afterKey: null,
+            limit: 10
+        });
+
+        assert.deepEqual(page.records.map((entry) => entry.record.connection.generationId), [alice.connection.generationId]);
+        assert.deepEqual(page.records.map((entry) => entry.record.holderId), [holderId]);
+    }
+    finally {
+        await fixture.stop();
+    }
+});
+
 test('real runtime resubscribing either PostgreSQL listener resyncs unchanged authenticated sockets only', async () => {
     const fixture = await createFixture();
     try {
@@ -244,6 +264,7 @@ async function connectAccount(runtime: ApiV1Runtime, principalId: string, releas
         authSession: session,
         generationId,
         ticketDigest,
+        holderId: runtime.rtcTopologyDelivery.publisherStreamId,
         input,
         traceId: `connect-${principalId}`
     });

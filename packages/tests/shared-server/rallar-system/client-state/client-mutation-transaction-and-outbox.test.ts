@@ -28,6 +28,7 @@ import {
 } from './app-client-inbox-mutation-test-harness.ts';
 import { createRollbackHarness, processRollbackMutation } from './client-mutation-rollback-test-harness.ts';
 import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from './client-state-test-runtime.ts';
+import { LIVE_WS_CONNECTION_HOLDER_LEASES } from './connection-holder/test-support/test-ws-connection-holder.ts';
 import { createClientMutationTransactionBoundaryFixture } from './create-client-mutation-transaction-boundary-fixture.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
@@ -239,7 +240,8 @@ function createRetryHarness(): RetryHarness {
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: results,
                 database,
-                clientStateService: createRetryClientState(state, durable)
+                clientStateService: createRetryClientState(state, durable),
+                holderLeases: LIVE_WS_CONNECTION_HOLDER_LEASES
             },
             {
                 finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,

@@ -22,6 +22,7 @@ import {
     type ClientExpiredSessionPageInput,
     type ClientStateWritten
 } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+import { decodeWsConnectionHolderRecordEntry } from '@shared-server/rallar-system/client-state/connection-holder/ws-connection-holder-record.ts';
 import type {
     ClientAuthorisedWsSessionDisconnectAppInboxPayload
 } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
@@ -51,6 +52,7 @@ import type {
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
+import { ClientStateRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts';
 import { CLIENT_STATE_SESSIONS_NAMESPACE } from '@shared-server/rallar-system/client-state/persistence/client-state-runtime-namespaces.ts';
 import type { ClientSessionExpiryCandidate } from '@shared-server/rallar-system/presence/session-expiry.ts';
 import {
@@ -91,6 +93,7 @@ import {
     requireWrite
 } from './client-mutation-compute-test-fixtures.ts';
 import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from './client-state-test-runtime.ts';
+import { TEST_WS_CONNECTION_HOLDER_ID } from './connection-holder/test-support/test-ws-connection-holder.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 const NOW_EPOCH_MS = 1_000;
@@ -139,7 +142,6 @@ describe('ClientStateInboxHandler phases', () => {
             data: {}
         });
         const lifecycle = {
-            kind: 'disconnect',
             facts: {
                 scope: {
                     kind: 'client',
@@ -162,7 +164,8 @@ describe('ClientStateInboxHandler phases', () => {
                     clientInstanceId: 'browser'
                 },
                 sessionId: 'session-1'
-            }, false)
+            }, false),
+            holderRead: null
         } as const;
         const completionFacts = { entry: context.entry, completedAtEpochMs: 4_000, finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS };
         const computed = computeClientMutationOperation({
@@ -186,6 +189,42 @@ describe('ClientStateInboxHandler phases', () => {
         ).toThrow(/lifecycleComputed/);
     });
 
+    it('records the holder as one effect after the lifecycle row, nothing over the same record, and refuses another', () => {
+        const input = authorisedConnectOperationInput();
+        const recorded = computeAuthorisedWsConnectOperation(input);
+        const effects = recorded.outcome === 'completed' ? recorded.runtimeBatch.effects : [];
+        const holderIndex = effects.findIndex((effect) => effect.effectId === 'ws-connection-holder');
+        const holder = effects[holderIndex];
+        if (holder === undefined || holder.operation !== 'insert') {
+            throw new Error('Expected the connect to insert its holder record');
+        }
+        const stored = decodeWsConnectionHolderRecordEntry({
+            key: holder.key,
+            value: holder.value,
+            expireAtTimestamp: holder.expireAtTimestamp,
+            updatedTimestamp: '2026-08-05T12:00:00.000Z',
+            revision: 0
+        });
+        const replay = computeAuthorisedWsConnectOperation({ ...input, holderRead: stored });
+        const otherConnection = { ...stored.record.connection, displayName: 'Mallory' };
+
+        expect(effects[holderIndex - 1]?.effectId).toBe('ws-session-lifecycle');
+        expect(stored.record).toEqual({
+            version: 1,
+            holderId: input.holderId,
+            connection: input.connection,
+            expireAtEpochMs: holder.expireAtTimestamp
+        });
+        expect(replay.outcome === 'completed' ? replay.runtimeBatch.effects.map((effect) => effect.effectId) : [])
+            .toEqual(effects.filter((effect) => effect !== holder).map((effect) => effect.effectId));
+        expect(() =>
+            computeAuthorisedWsConnectOperation({
+                ...input,
+                holderRead: { ...stored, record: { ...stored.record, connection: otherConnection } }
+            })
+        ).toThrow(ClientStateRepositoryInvariantCorruptionError);
+    });
+
     it('computes and validates an authorised connect without yielding to the event loop', () => {
         const input = authorisedConnectOperationInput();
         let sentinelFired = false;
@@ -207,21 +246,43 @@ describe('ClientStateInboxHandler phases', () => {
 
     it.each(
         [
-            { generationClosed: false, ticketPresent: true, label: 'active', status: 'ok' },
-            { generationClosed: true, ticketPresent: true, label: 'inactive', status: 'inactive' },
-            { generationClosed: false, ticketPresent: false, label: 'ticket-rejected', status: 'ticket-rejected' }
+            { generationClosed: false, ticketPresent: true, holderLive: true, label: 'active', status: 'ok' },
+            { generationClosed: true, ticketPresent: true, holderLive: true, label: 'inactive', status: 'inactive' },
+            {
+                generationClosed: false,
+                ticketPresent: true,
+                holderLive: false,
+                label: 'lost-holder inactive',
+                status: 'inactive'
+            },
+            {
+                generationClosed: false,
+                ticketPresent: false,
+                holderLive: true,
+                label: 'ticket-rejected',
+                status: 'ticket-rejected'
+            },
+            {
+                generationClosed: false,
+                ticketPresent: false,
+                holderLive: false,
+                label: 'lost-holder ticket-rejected',
+                status: 'ticket-rejected'
+            }
         ] as const
     )('keeps every authorised connect $label path read-compute-validate-write ordered', async ({
         generationClosed,
         ticketPresent,
+        holderLive,
         status
     }) => {
-        const fixture = createHandlerFixture({ generationClosed, sessionPresent: true, ticketPresent });
+        const fixture = createHandlerFixture({ generationClosed, sessionPresent: true, ticketPresent, holderLive });
         const context = createContext<AuthorisedWsClientMutationResult>(
             toAuthorisedWsClientConnectEnqueue({
                 authSession: SESSION,
                 generationId: CONNECTION.generationId,
                 ticketDigest: TICKET_DIGEST,
+                holderId: TEST_WS_CONNECTION_HOLDER_ID,
                 traceId: 'trace-client-state-inbox-handler',
                 input: {
                     ...SCOPE,
@@ -233,7 +294,7 @@ describe('ClientStateInboxHandler phases', () => {
         );
 
         const result = await fixture.handler.processAuthorisedWsConnect(
-            { connection: CONNECTION, ticketDigest: TICKET_DIGEST },
+            { connection: CONNECTION, ticketDigest: TICKET_DIGEST, holderId: TEST_WS_CONNECTION_HOLDER_ID },
             context
         );
 
@@ -242,6 +303,7 @@ describe('ClientStateInboxHandler phases', () => {
             status === 'ok'
                 ? [
                     'completion.read',
+                    'holder-lease.read',
                     'connect.read',
                     'mutation.compute',
                     'mutation.validate',
@@ -253,6 +315,7 @@ describe('ClientStateInboxHandler phases', () => {
                 ]
                 : [
                     'completion.read',
+                    'holder-lease.read',
                     'connect.read',
                     'mutation.compute',
                     'mutation.validate',
@@ -292,6 +355,7 @@ describe('ClientStateInboxHandler phases', () => {
                 ? [
                     'completion.read',
                     'lifecycle.read',
+                    'holder.read',
                     'domain.read',
                     'mutation.compute',
                     'mutation.validate',
@@ -305,6 +369,7 @@ describe('ClientStateInboxHandler phases', () => {
                 : [
                     'completion.read',
                     'lifecycle.read',
+                    'holder.read',
                     'domain.read',
                     'mutation.compute',
                     'mutation.validate',
@@ -555,6 +620,8 @@ interface HandlerFixtureOptions {
     readonly expiryCandidates?: readonly ClientSessionExpiryCandidate[];
     readonly failFirstExpiryTransactionAtWrite?: number;
     readonly generationClosed: boolean;
+    /** Whether the connect's holder reads a live lease; every holder does unless the case names the fence. */
+    readonly holderLive?: boolean;
     readonly nextAfterKey?: string | null;
     readonly sessionPresent: boolean;
 }
@@ -579,6 +646,18 @@ function createHandlerFixture(options: HandlerFixtureOptions): ClientHandlerFixt
     const handler = new ClientStateInboxHandler({
         finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         mutationService: createHandlerMutationService(options, { actions, writesByTransaction, runtimeRepository }),
+        connectionHolders: {
+            readGenerationRecord: async () => {
+                actions.push('holder.read');
+                return null;
+            }
+        },
+        holderLeases: {
+            readHolderLease: async (holderId) => {
+                actions.push('holder-lease.read');
+                return { holderId, live: options.holderLive ?? true };
+            }
+        },
         sessionGenerationLifecycle: {
             read: async (identity) => {
                 actions.push('lifecycle.read');
@@ -667,6 +746,7 @@ function createHandlerMutationService(
             return {
                 ticket: await readHandlerTicket(runtimeRepository, ticketClaim.ticketDigest, options.ticketPresent ?? true),
                 lifecycle: lifecycleRead(lifecycle, options.generationClosed),
+                holder: null,
                 mutation: readMutation(command)
             };
         },

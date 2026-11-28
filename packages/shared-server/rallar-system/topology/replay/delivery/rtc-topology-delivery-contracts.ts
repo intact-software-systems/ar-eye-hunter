@@ -49,6 +49,12 @@ export type RtcTopologyDeliveryStreamLeaseRenewalResult =
     | Readonly<{ status: 'renewed'; stream: RtcTopologyDeliveryStream; }>
     | Readonly<{ status: 'lease-lost'; }>;
 
+export interface RtcTopologyDeliveryStreamLease {
+    readonly streamId: string;
+    /** Judged on the database clock by the statement that read it. */
+    readonly live: boolean;
+}
+
 export type RtcTopologyDeliveryAppendResult =
     | Readonly<{ status: 'appended'; entry: RtcTopologyDeliveryLogEntry; }>
     | Readonly<{ status: 'existing'; entry: RtcTopologyDeliveryLogEntry; }>

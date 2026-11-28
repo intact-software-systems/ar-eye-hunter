@@ -17,6 +17,7 @@ import type { ClientSessionExpiryCandidate } from '../presence/session-expiry.ts
 import type { ClientStateEventStore } from '../state-events/client-state-event-store.ts';
 import type { StateEventListQuery } from '../state-events/state-event-listing.ts';
 import type { WsSessionGenerationLifecycleService } from '../websocket/ws-session-generation-lifecycle.ts';
+import type { WsConnectionHolderRecordReader } from './connection-holder/ws-connection-holder-record-reader.ts';
 import type {
     ClientAuthorisedWsConnectRead,
     ClientAuthorisedWsConnectReadInput,
@@ -65,6 +66,8 @@ export type ClientStateWritten = Readonly<{
 
 export type ClientStateService = Readonly<{
     sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
+    /** The record of which process holds each socket generation, read outside any transaction. */
+    connectionHolders: WsConnectionHolderRecordReader;
     listSnapshots(scope: ClientScope): Promise<readonly ClientSnapshot[]>;
     readSnapshot(ref: ClientPrincipalRef): Promise<ClientSnapshot | undefined>;
     readPresenceSnapshot(ref: ClientPrincipalRef): Promise<ClientPresenceSnapshot | undefined>;

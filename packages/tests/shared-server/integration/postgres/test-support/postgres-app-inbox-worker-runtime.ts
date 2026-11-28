@@ -7,11 +7,13 @@ import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import type { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import type { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import type { WsConnectionHolderLeaseReader } from '@shared-server/rallar-system/client-state/connection-holder/ws-connection-holder-lease.ts';
 import type { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import type { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import type { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
+import { LIVE_WS_CONNECTION_HOLDER_LEASES } from '../../../rallar-system/client-state/connection-holder/test-support/test-ws-connection-holder.ts';
 import type { PersistedAppInboxAttempt } from './postgres-app-inbox-attempt-observation.ts';
 import { createPostgresAppInboxWorkerServices } from './postgres-app-inbox-worker-services.ts';
 import { waitForPostgresWorkerBarrier, type WorkerBarrier } from './postgres-worker-barrier.ts';
@@ -56,6 +58,8 @@ export function createPostgresAppInboxWorkerRuntime(
         barrier?: WorkerBarrier;
         beforeTopologyConfigRead?: (primitive: TopologyReadBarrierPrimitive) => Promise<void>;
         beforeMutationTransaction?: () => Promise<void>;
+        /** Absent: every holder reads live, for tests that are not about the connect's fence. */
+        holderLeases?: WsConnectionHolderLeaseReader;
         trace: PostgresAppInboxWorkerTrace;
     }>
 ): PostgresAppInboxWorkerRuntime {
@@ -74,6 +78,7 @@ export function createPostgresAppInboxWorkerRuntime(
         ...input,
         finishedRetentionMs: input.finishedRetentionMs ?? TEST_APP_INBOX_FINISHED_RETENTION_MS,
         newLaneConcurrency: input.newLaneConcurrency ?? 1,
+        holderLeases: input.holderLeases ?? LIVE_WS_CONNECTION_HOLDER_LEASES,
         flightEntryListener: (settlement) => flightSettlements.push(settlement),
         transactionSql: transactionGate.sql
     });

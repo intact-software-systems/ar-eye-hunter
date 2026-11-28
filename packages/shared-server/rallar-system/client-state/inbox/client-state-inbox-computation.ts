@@ -5,7 +5,10 @@ import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import type { RuntimeStateGuardedBatchWrite } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import type {
+    RuntimeStateGuardedBatchDelete,
+    RuntimeStateGuardedBatchWrite
+} from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type { AppInboxExecutionMetadata } from '../../app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxCommand } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import {
@@ -47,6 +50,12 @@ import {
     type ClientExpiredSessionPageInput,
     type ClientStateWritten
 } from '../client-state-service-contracts.ts';
+import type { WsConnectionHolderLease } from '../connection-holder/ws-connection-holder-lease.ts';
+import {
+    computeWsConnectionHolderRecorded,
+    computeWsConnectionHolderReleased,
+    type WsConnectionHolderRecordEntry
+} from '../connection-holder/ws-connection-holder-record.ts';
 import type {
     ClientMutationCommand,
     ClientMutationComputed,
@@ -66,17 +75,12 @@ import type {
 } from './client-state-inbox-result-codec.ts';
 import { computeAuthorisedWsConnectRuntimeBatch } from './compute-authorised-ws-connect-runtime-batch.ts';
 
-type ClientMutationLifecycleInput =
-    | Readonly<{
-        kind: 'connect';
-        facts: WsSessionGenerationGuardFacts;
-        read: WsSessionGenerationLifecycleRead;
-    }>
-    | Readonly<{
-        kind: 'disconnect';
-        facts: WsSessionGenerationCloseFacts;
-        read: WsSessionGenerationLifecycleRead;
-    }>;
+/** An authorised WebSocket disconnect's close high-water and the holder record it releases. */
+interface ClientMutationDisconnectLifecycleInput {
+    readonly facts: WsSessionGenerationCloseFacts;
+    readonly read: WsSessionGenerationLifecycleRead;
+    readonly holderRead: WsConnectionHolderRecordEntry | null;
+}
 
 export type ClientMutationOperationComputed =
     | Readonly<{
@@ -87,6 +91,8 @@ export type ClientMutationOperationComputed =
         outcome: 'completed';
         mutation: Exclude<ClientMutationComputed, { outcome: 'idempotency-conflict'; }>;
         lifecycleComputed: WsSessionGenerationLifecycleComputed | undefined;
+        /** The disconnect's delete of its generation's holder record, written after the lifecycle row. */
+        holderRelease: RuntimeStateGuardedBatchDelete | null;
         durableResult: ClientStateWritten;
         completion: AppInboxCompletionComputed<ClientStateWritten>;
         writes: readonly ClientMutationComputedWrite[];
@@ -96,10 +102,10 @@ export type ClientMutationOperationComputed =
 export type AuthorisedWsConnectOperationComputed =
     | Extract<ClientMutationOperationComputed, { outcome: 'idempotency-conflict'; }>
     | Readonly<
-        & Extract<ClientMutationOperationComputed, { outcome: 'completed'; }>
+        & Omit<Extract<ClientMutationOperationComputed, { outcome: 'completed'; }>, 'holderRelease'>
         & {
             ticketConsumption: AuthWsTicketConsumption;
-            /** The ticket, lifecycle and client rows, all written by this one statement. */
+            /** The ticket, lifecycle, holder-record and client rows, all written by this one statement. */
             runtimeBatch: RuntimeStateGuardedBatchWrite;
         }
     >
@@ -108,6 +114,8 @@ export type AuthorisedWsConnectOperationComputed =
 
 export interface InactiveAuthorisedWsConnectComputed {
     readonly outcome: 'inactive';
+    /** Why the connect writes no presence; the durable result does not carry it. */
+    readonly reason: 'generation-closed' | 'holder-lease-lost';
     readonly ticketConsumption: AuthWsTicketConsumption;
     readonly durableResult: InactiveAuthorisedWsSessionResult;
     readonly completion: AppInboxCompletionComputed<InactiveAuthorisedWsSessionResult>;
@@ -122,6 +130,7 @@ export interface TicketRejectedAuthorisedWsConnectComputed {
 
 export interface MissingSessionDisconnectComputed {
     readonly lifecycleComputed: WsSessionGenerationLifecycleComputed;
+    readonly holderRelease: RuntimeStateGuardedBatchDelete | null;
     readonly durableResult: InactiveAuthorisedWsSessionResult;
     readonly completion: AppInboxCompletionComputed<InactiveAuthorisedWsSessionResult>;
 }
@@ -151,14 +160,14 @@ export interface ComputeClientMutationOperationInput {
     readonly command: ClientMutationCommand;
     readonly read: ClientMutationRead;
     readonly completionFacts: AppInboxCompletionFacts;
-    readonly lifecycle: ClientMutationLifecycleInput | undefined;
+    readonly lifecycle: ClientMutationDisconnectLifecycleInput | undefined;
 }
 
 interface AssertClientMutationOperationInput {
     readonly command: ClientMutationCommand;
     readonly read: ClientMutationRead;
     readonly completionFacts: AppInboxCompletionFacts;
-    readonly lifecycle: ClientMutationLifecycleInput | undefined;
+    readonly lifecycle: ClientMutationDisconnectLifecycleInput | undefined;
     readonly computed: ClientMutationOperationComputed;
 }
 
@@ -170,6 +179,9 @@ export interface ComputeAuthorisedWsConnectOperationInput {
     readonly read: ClientMutationRead;
     readonly lifecycleFacts: WsSessionGenerationFacts;
     readonly lifecycleRead: WsSessionGenerationLifecycleRead;
+    readonly holderId: string;
+    readonly holderLease: WsConnectionHolderLease;
+    readonly holderRead: WsConnectionHolderRecordEntry | null;
     readonly completionFacts: AppInboxCompletionFacts;
 }
 
@@ -181,6 +193,9 @@ interface AssertAuthorisedWsConnectOperationInput {
     readonly read: ClientMutationRead;
     readonly lifecycleFacts: WsSessionGenerationFacts;
     readonly lifecycleRead: WsSessionGenerationLifecycleRead;
+    readonly holderId: string;
+    readonly holderLease: WsConnectionHolderLease;
+    readonly holderRead: WsConnectionHolderRecordEntry | null;
     readonly completionFacts: AppInboxCompletionFacts;
     readonly computed: AuthorisedWsConnectOperationComputed;
 }
@@ -189,6 +204,7 @@ export interface ComputeMissingSessionDisconnectInput {
     readonly commandInput: ClientAuthorisedWsSessionDisconnectAppInboxPayload;
     readonly lifecycleFacts: WsSessionGenerationCloseFacts;
     readonly lifecycleRead: WsSessionGenerationLifecycleRead;
+    readonly holderRead: WsConnectionHolderRecordEntry | null;
     readonly completionFacts: AppInboxCompletionFacts;
 }
 
@@ -196,6 +212,7 @@ interface AssertMissingSessionDisconnectInput {
     readonly commandInput: ClientAuthorisedWsSessionDisconnectAppInboxPayload;
     readonly lifecycleFacts: WsSessionGenerationCloseFacts;
     readonly lifecycleRead: WsSessionGenerationLifecycleRead;
+    readonly holderRead: WsConnectionHolderRecordEntry | null;
     readonly completionFacts: AppInboxCompletionFacts;
     readonly computed: MissingSessionDisconnectComputed;
 }
@@ -224,22 +241,15 @@ export function computeClientMutationOperation(
     if (mutation.outcome === 'idempotency-conflict') {
         return { outcome: 'idempotency-conflict', mutation };
     }
-    const lifecycleComputed = input.lifecycle?.kind === 'connect'
-        ? computeWsSessionConnectGuard(
-            input.lifecycle.facts,
-            input.lifecycle.read
-        )
-        : input.lifecycle?.kind === 'disconnect'
-        ? computeWsSessionGenerationClosed(
-            input.lifecycle.facts,
-            input.lifecycle.read
-        )
-        : undefined;
+    const lifecycleComputed = input.lifecycle === undefined
+        ? undefined
+        : computeWsSessionGenerationClosed(input.lifecycle.facts, input.lifecycle.read);
     const durableResult = toClientStateWritten(mutation);
     return {
         outcome: 'completed',
         mutation,
         lifecycleComputed,
+        holderRelease: computeWsConnectionHolderReleased(input.lifecycle?.holderRead ?? null),
         durableResult,
         completion: computeCompletion(input.completionFacts, durableResult),
         writes: requiresClientWrite(mutation) ? [mutation] : [],
@@ -272,8 +282,19 @@ export function computeAuthorisedWsConnectOperation(
     }
     const ticketConsumption = computeAuthWsTicketConsumption(input.ticketRead);
     if (isWsSessionGenerationClosed(input.lifecycleFacts, input.lifecycleRead)) {
-        return computeInactiveConnect(input, ticketConsumption);
+        return computeInactiveConnect(input, { reason: 'generation-closed', ticketConsumption });
     }
+    if (!isHolderLeaseLive(input)) {
+        return computeInactiveConnect(input, { reason: 'holder-lease-lost', ticketConsumption });
+    }
+    return computeAcceptedConnect(input, ticketConsumption);
+}
+
+/** A connect whose ticket, generation and holder all admit it: its mutation and every row its batch writes. */
+function computeAcceptedConnect(
+    input: ComputeAuthorisedWsConnectOperationInput,
+    ticketConsumption: AuthWsTicketConsumption
+): AuthorisedWsConnectOperationComputed {
     const mutation = computeClientMutation({ command: input.command, read: input.read });
     if (mutation.outcome === 'idempotency-conflict') {
         return { outcome: 'idempotency-conflict', mutation };
@@ -300,6 +321,12 @@ export function computeAuthorisedWsConnectOperation(
         runtimeBatch: computeAuthorisedWsConnectRuntimeBatch({
             ticketConsumption,
             lifecycleComputed,
+            holderRecorded: computeWsConnectionHolderRecorded({
+                holderId: input.holderId,
+                connection: input.connection,
+                expireAtEpochMs: lifecycleGuardFacts.expireAtEpochMs,
+                current: input.holderRead
+            }),
             writes
         })
     };
@@ -324,7 +351,7 @@ function computeTicketRejectedConnect(
 
 function computeInactiveConnect(
     input: ComputeAuthorisedWsConnectOperationInput,
-    ticketConsumption: AuthWsTicketConsumption
+    inactive: Pick<InactiveAuthorisedWsConnectComputed, 'reason' | 'ticketConsumption'>
 ): InactiveAuthorisedWsConnectComputed {
     const durableResult = {
         status: 'inactive',
@@ -333,10 +360,19 @@ function computeInactiveConnect(
     } as const;
     return {
         outcome: 'inactive',
-        ticketConsumption,
+        reason: inactive.reason,
+        ticketConsumption: inactive.ticketConsumption,
         durableResult,
         completion: computeCompletion(input.completionFacts, durableResult)
     };
+}
+
+/** A connect names a holder that must still hold its lease, so that a survivor can end what it holds. */
+function isHolderLeaseLive(input: ComputeAuthorisedWsConnectOperationInput): boolean {
+    if (input.holderLease.holderId !== input.holderId) {
+        throw new TypeError('Authorised WebSocket connect read another holder\'s lease');
+    }
+    return input.holderLease.live;
 }
 
 export function assertAuthorisedWsConnectOperation(
@@ -375,6 +411,7 @@ export function computeMissingSessionDisconnect(
     } as const;
     return {
         lifecycleComputed,
+        holderRelease: computeWsConnectionHolderReleased(input.holderRead),
         durableResult,
         completion: computeCompletion(input.completionFacts, durableResult)
     };

@@ -34,6 +34,10 @@ import type {
     WsSessionHighWaterIdentity
 } from '../../websocket/ws-session-generation-computation.ts';
 import type {
+    WsConnectionHolderRecordEntry,
+    WsConnectionHolderRecordRef
+} from '../connection-holder/ws-connection-holder-record.ts';
+import type {
     ClientMutationIdempotencyRecord,
     ClientMutationReceipt
 } from '../persistence/client-state-persistence-contracts.ts';
@@ -247,12 +251,17 @@ export type ClientAuthorisedWsConnectReadInput = Readonly<{
     command: ClientMutationCommand;
     ticketClaim: AuthWsTicketConsumptionClaim;
     lifecycle: WsSessionHighWaterIdentity;
+    holder: WsConnectionHolderRecordRef;
 }>;
 
-/** An authorised WebSocket connect's ticket, close high-water and mutation rows, read by one point statement. */
+/**
+ * An authorised WebSocket connect's ticket, close high-water, holder record and mutation rows, read by one point
+ * statement. The holder record is the live one under the command's holder, or null.
+ */
 export type ClientAuthorisedWsConnectRead = Readonly<{
     ticket: AuthWsTicketConsumptionRead;
     lifecycle: WsSessionGenerationLifecycleRead;
+    holder: WsConnectionHolderRecordEntry | null;
     mutation: ClientMutationRead;
 }>;
 

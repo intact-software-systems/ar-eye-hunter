@@ -15,6 +15,7 @@ import type { ConnectGroupPresenceSessionRequest, StateScope } from '@shared/api
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 
+import { TEST_WS_CONNECTION_HOLDER_ID } from '../client-state/connection-holder/test-support/test-ws-connection-holder.ts';
 import {
     delayEntry,
     groupPresenceFacts,
@@ -80,6 +81,8 @@ describe('AppInbox websocket close convergence', () => {
             )?.activeSessions ?? []
         ).toEqual([]);
 
+        expect(await readHeldGenerations(harness)).toEqual([]);
+
         await releaseEntry(harness.queue, connectEntry);
         await processNext(harness.reader);
         expect(
@@ -90,6 +93,7 @@ describe('AppInbox websocket close convergence', () => {
                 })
             )?.activeSessions ?? []
         ).toEqual([]);
+        expect(await readHeldGenerations(harness)).toEqual([]);
     });
 
     it('rolls back a group connect when cleanup commits after its lifecycle read', async () => {
@@ -147,6 +151,7 @@ describe('AppInbox websocket close convergence', () => {
             input: facts.input
         });
         await processNext(harness.reader);
+        const heldWhileOpen = await readHeldGenerations(harness);
         await enqueueClientClose(harness.client, facts);
         await processNext(harness.reader);
 
@@ -156,6 +161,14 @@ describe('AppInbox websocket close convergence', () => {
         });
         expect(snapshot?.isOnline).toBe(false);
         expect(snapshot?.activeSessions).toEqual([]);
+        expect(heldWhileOpen).toEqual([facts.generationId]);
+        expect(await readHeldGenerations(harness)).toEqual([]);
+        expect(
+            await harness.clientState.connectionHolders.readGenerationRecord({
+                sessionId: harness.authSession.sessionId,
+                generationId: facts.generationId
+            })
+        ).toBeNull();
     });
 
     it('processes disconnect before delayed connect without an orphan active client', async () => {
@@ -183,6 +196,7 @@ describe('AppInbox websocket close convergence', () => {
         });
         expect(snapshot?.isOnline ?? false).toBe(false);
         expect(snapshot?.activeSessions ?? []).toEqual([]);
+        expect(await readHeldGenerations(harness)).toEqual([]);
         expect(await queuedTypes(harness.queue)).toContain(
             AppInboxType.CLIENT_AUTHORISED_WS_DISCONNECT
         );
@@ -328,6 +342,25 @@ describe('AppInbox websocket close convergence', () => {
         }
     );
 
+    it('lets an older socket\'s close release only its own generation\'s holder record', async () => {
+        const harness = await createHarness();
+        const older = closeFacts(harness.authSession, 'client-holder-a', 90);
+        const newer = closeFacts(harness.authSession, 'client-holder-b', 100);
+
+        for (const facts of [older, newer]) {
+            await harness.startAuthorisedWsConnect({
+                authSession: facts.authSession,
+                generationId: facts.generationId,
+                input: facts.input
+            });
+            await processNext(harness.reader);
+        }
+        await enqueueClientClose(harness.client, older);
+        await processNext(harness.reader);
+
+        expect(await readHeldGenerations(harness)).toEqual([newer.generationId]);
+    });
+
     it('does not let an older close disconnect a newer active client generation', async () => {
         const harness = await createHarness();
         const older = closeFacts(harness.authSession, 'client-generation-a', 70);
@@ -469,4 +502,14 @@ async function activeGroupSessionCount(
     return (await harness.groups.listAllPresenceSessions()).filter(
         (session) => session.groupId === groupId && session.disconnectedAtEpochMs === null
     ).length;
+}
+
+/** The generations the harness's connects recorded under their holder, as a survivor would page them. */
+async function readHeldGenerations(harness: AppInboxWsCloseHarness): Promise<readonly string[]> {
+    const page = await harness.clientState.connectionHolders.readHolderPage({
+        holderId: TEST_WS_CONNECTION_HOLDER_ID,
+        afterKey: null,
+        limit: 100
+    });
+    return page.records.map((entry) => entry.record.connection.generationId);
 }

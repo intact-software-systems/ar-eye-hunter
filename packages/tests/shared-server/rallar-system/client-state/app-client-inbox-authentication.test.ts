@@ -39,6 +39,7 @@ import {
     readEntries
 } from './app-client-inbox-mutation-test-harness.ts';
 import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from './client-state-test-runtime.ts';
+import { LIVE_WS_CONNECTION_HOLDER_LEASES } from './connection-holder/test-support/test-ws-connection-holder.ts';
 import { createClientStateServiceFixture } from './create-client-state-service-fixture.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
@@ -160,7 +161,8 @@ describe('AppClientInbox authentication', () => {
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: results,
                 database,
-                clientStateService: createClientStateServiceFixture()
+                clientStateService: createClientStateServiceFixture(),
+                holderLeases: LIVE_WS_CONNECTION_HOLDER_LEASES
             },
             {
                 finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
@@ -233,7 +235,8 @@ describe('AppClientInbox authentication', () => {
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: new TestResourceInboxResults(),
                 database: createAppInboxTestDatabase(queue, new TestResourceInboxResults()),
-                clientStateService: createClientStateServiceFixture()
+                clientStateService: createClientStateServiceFixture(),
+                holderLeases: LIVE_WS_CONNECTION_HOLDER_LEASES
             },
             {
                 finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
@@ -305,7 +308,8 @@ describe('AppClientInbox authentication', () => {
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: new TestResourceInboxResults(),
                 database: createAppInboxTestDatabase(queue, new TestResourceInboxResults()),
-                clientStateService: createClientStateServiceFixture()
+                clientStateService: createClientStateServiceFixture(),
+                holderLeases: LIVE_WS_CONNECTION_HOLDER_LEASES
             },
             {
                 finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
@@ -403,7 +407,8 @@ describe('AppClientInbox authentication', () => {
                     runtimeRepository,
                     clientStateEventStore: new InMemoryClientStateEventStore(),
                     serviceId: 'server-12345678'
-                })
+                }),
+                holderLeases: LIVE_WS_CONNECTION_HOLDER_LEASES
             },
             {
                 finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
@@ -529,7 +534,8 @@ async function createRevokedAuthorityRetryHarness(nowEpochMs: () => number): Pro
                 runtimeRepository,
                 clientStateEventStore: new InMemoryClientStateEventStore(),
                 serviceId: 'server-12345678'
-            })
+            }),
+            holderLeases: LIVE_WS_CONNECTION_HOLDER_LEASES
         },
         {
             finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,

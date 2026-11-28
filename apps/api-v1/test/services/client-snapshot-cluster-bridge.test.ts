@@ -23,6 +23,7 @@ import {
     createPostgresAppInboxWorkerTrace
 } from '../../../../packages/tests/shared-server/integration/postgres/test-support/postgres-app-inbox-worker-runtime.ts';
 import { putAuthorisedWsTestTicket } from '../../../../packages/tests/shared-server/rallar-system/client-state/authorised-ws-test-ticket.ts';
+import { TEST_WS_CONNECTION_HOLDER_ID } from '../../../../packages/tests/shared-server/rallar-system/client-state/connection-holder/test-support/test-ws-connection-holder.ts';
 import { attachTestWebSocket } from '../../../../packages/tests/shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../../../packages/tests/shared/websocket/test-web-socket.ts';
 import {
@@ -199,6 +200,7 @@ async function commitClientSnapshot(sql: PSqlSql, recipient: SnapshotRecipient):
             authSession,
             generationId: 'generation',
             ticketDigest,
+            holderId: TEST_WS_CONNECTION_HOLDER_ID,
             traceId: 'trace-client-snapshot-cluster-bridge',
             input: {
                 ...recipient.scope,

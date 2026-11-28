@@ -4,11 +4,15 @@ import assert from 'node:assert/strict';
 
 import { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
 import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
+import type { ToAuthorisedWsClientConnectEnqueueInput } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
 import { InMemoryRallarCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { toRoomGuestCredential } from '@shared-server/rallar-system/auth/credentials/room-guest-credential.ts';
+import { TEST_WS_CONNECTION_HOLDER_ID } from '../../../../packages/tests/shared-server/rallar-system/client-state/connection-holder/test-support/test-ws-connection-holder.ts';
 import {
     constructApiV1RouteInstallers,
     type ApiV1RouteInstallerOperations,
@@ -16,10 +20,10 @@ import {
     type ApiV1RouteInstallerTopology,
     type CreateApiV1RouteInstallersInput
 } from '../../src/composition/create-api-v1-route-installers.ts';
-import { toRoomGuestCredential } from '@shared-server/rallar-system/auth/credentials/room-guest-credential.ts';
-import { createGroupStateRouteSnapshotWithMember, TEST_GROUP_SCOPE } from '../group-state/group-state-route-test-runtime.ts';
-import { createClientSnapshot } from '../client-state/client-state-route-test-runtime.ts';
 import { authenticationRequired } from '../../src/services/request-auth-service.ts';
+import { createClientSnapshot } from '../client-state/client-state-route-test-runtime.ts';
+import { createGroupStateRouteSnapshotWithMember, TEST_GROUP_SCOPE } from '../group-state/group-state-route-test-runtime.ts';
+import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
 
 test('route installers mount representative API and websocket behavior in order', async () => {
     const app = new Hono();
@@ -66,12 +70,22 @@ test('route installers mount representative API and websocket behavior in order'
     assert.equal((await app.request('/api/crdt/catch-up', { method: 'POST' })).status, 401);
     const eventPath = '/api/state/apps/app/workspaces/workspace/groups/lobby/event';
     assert.equal((await app.request(eventPath)).status, 401);
-    assert.equal((await app.request(eventPath + '/requests/event-authority-request-01', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'leave-queue' })
-    })).status, 401);
-    assert.equal((await app.request('/api/state/apps/app/workspaces/workspace/temporary-rooms/requests/temporary-authority-01', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
-    })).status, 403);
+    assert.equal(
+        (await app.request(eventPath + '/requests/event-authority-request-01', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'leave-queue' })
+        })).status,
+        401
+    );
+    assert.equal(
+        (await app.request('/api/state/apps/app/workspaces/workspace/temporary-rooms/requests/temporary-authority-01', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: '{}'
+        })).status,
+        403
+    );
     const movePath = '/api/state/apps/app/workspaces/workspace/group-moves';
     assert.equal((await app.request(movePath)).status, 401);
     assert.equal((await app.request(`${movePath}/requests/request-1`, { method: 'POST' })).status, 401);
@@ -90,9 +104,13 @@ test('a guest self-read follows the current seat when another replica remembers 
     const room = { ...TEST_GROUP_SCOPE, groupId: 'market' };
     const guest = await toRoomGuestCredential(room, 'a1'.repeat(32));
     const snapshot = createGroupStateRouteSnapshotWithMember('market', guest.clientId, 'active');
-    const admitted = { ...snapshot, members: snapshot.members.map(member => ({
-        ...member, guestLease: { admittedAtEpochMs: 1, expiresAtEpochMs: 60_000 }
-    })) };
+    const admitted = {
+        ...snapshot,
+        members: snapshot.members.map((member) => ({
+            ...member,
+            guestLease: { admittedAtEpochMs: 1, expiresAtEpochMs: 60_000 }
+        }))
+    };
     const absent = { ...snapshot, members: [] };
     let current: typeof snapshot = admitted;
     let previous: typeof snapshot = absent;
@@ -109,7 +127,9 @@ test('a guest self-read follows the current seat when another replica remembers 
         }
     };
     const app = new Hono();
-    for (const install of constructApiV1RouteInstallers({ ...input, runtime }, TEST_OPERATIONS).rest) install(app);
+    for (const install of constructApiV1RouteInstallers({ ...input, runtime }, TEST_OPERATIONS).rest) {
+        install(app);
+    }
     const path = '/api/state/apps/' + room.applicationId + '/workspaces/' + room.workspaceId + '/clients/' + guest.clientId;
     const headers = { authorization: 'Bearer ' + guest.accessToken, 'x-client-id': guest.clientId };
     assert.equal((await app.request(path, { headers })).status, 200);
@@ -118,11 +138,68 @@ test('a guest self-read follows the current seat when another replica remembers 
     assert.equal((await app.request(path, { headers })).status, 403);
 });
 
+test('the installed websocket route waits for the runtime readiness and names the runtime delivery stream as holder', async () => {
+    const enqueued: ToAuthorisedWsClientConnectEnqueueInput[] = [];
+    let ready = (): void => undefined;
+    const readiness = new Promise<void>((resolve) => {
+        ready = resolve;
+    });
+    const input = createInput();
+    const runtime: ApiV1RouteInstallerRuntime = {
+        ...input.runtime,
+        rtcTopologyDelivery: { publisherStreamId: INSTALLED_HOLDER_ID },
+        readiness,
+        appClientInboxService: {
+            ...input.runtime.appClientInboxService,
+            writeAuthorisedWsClientConnect: async (connect) => {
+                enqueued.push(connect);
+                return Either.ofRight({ status: 'inactive', sessionId: connect.authSession.sessionId, generationId: connect.generationId });
+            }
+        }
+    };
+    const app = createTracedApiTestApp();
+    constructApiV1RouteInstallers({ ...input, runtime }, TICKETED_WS_OPERATIONS).webSocket(app);
+
+    const response = app.request('http://localhost/api/ws/session-1?ticket=ticket-1', {
+        headers: { upgrade: 'websocket' }
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const enqueuedBeforeReadiness = enqueued.length;
+    ready();
+
+    assert.equal(enqueuedBeforeReadiness, 0);
+    assert.equal((await response).status, 409);
+    assert.deepEqual(enqueued.map((connect) => connect.holderId), [INSTALLED_HOLDER_ID]);
+});
+
+const INSTALLED_HOLDER_ID = '00000000-0000-4000-8000-0000000000b2';
+
 const TEST_OPERATIONS: ApiV1RouteInstallerOperations<ApiV1RouteInstallerRuntime> = {
     requireApiAuthSession: rejectUnauthenticated,
     readWsConnectTicket: rejectUnusedOperation,
     readWsConnectSession: rejectUnusedOperation,
     upgradeWebSocket: rejectUnusedOperation
+};
+
+/** A live ticket and session for `session-1`, so an upgrade request reaches the connect it enqueues. */
+const TICKETED_WS_OPERATIONS: ApiV1RouteInstallerOperations<ApiV1RouteInstallerRuntime> = {
+    ...TEST_OPERATIONS,
+    readWsConnectTicket: async (ticketDigest) => ({
+        ticketDigest,
+        accessTokenDigest: 'access-token-digest',
+        sessionId: 'session-1',
+        clientId: 'player',
+        issuedAtEpochMs: 1,
+        expiresAtEpochMs: Number.MAX_SAFE_INTEGER
+    }),
+    readWsConnectSession: async (sessionId) => ({
+        clientId: 'player',
+        username: 'player',
+        sessionId,
+        accessTokenDigest: 'access-token-digest',
+        issuedAtEpochMs: 1,
+        expiresAtEpochMs: Number.MAX_SAFE_INTEGER
+    })
 };
 
 function createInput(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRuntime, ApiV1RouteInstallerTopology> {
@@ -209,6 +286,8 @@ function createAuthentication(): CreateApiV1RouteInstallersInput['authentication
 function createRuntime(): ApiV1RouteInstallerRuntime {
     return {
         wsQBoxServerService: { socket: new JsonWebSocketServer() },
+        rtcTopologyDelivery: { publisherStreamId: TEST_WS_CONNECTION_HOLDER_ID },
+        readiness: Promise.resolve(),
         viewWatches: { mutate: { submit: rejectUnusedOperation } },
         ...createAuthRuntime(),
         appClientInboxService: {

@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { TEST_WS_CONNECTION_HOLDER_ID } from '../../../../packages/tests/shared-server/rallar-system/client-state/connection-holder/test-support/test-ws-connection-holder.ts';
 import { decodeApiV1Configuration } from '../../src/configuration/decode-api-v1-configuration.ts';
 import { registerWsRoutes } from '../../src/routes/ws-routes.ts';
 import { installApiHttpMiddleware } from '../../src/services/install-api-http-middleware.ts';
@@ -57,6 +58,8 @@ function createTimedApp(events: RallarTimingEvent[]): Hono {
     app.post('/api/auth/login/requests/:requestId', (c) => c.json({ ok: true }));
     registerWsRoutes(app, {
         serverPeerId: 'test-server',
+        holderId: TEST_WS_CONNECTION_HOLDER_ID,
+        readiness: Promise.resolve(),
         socketServer: new JsonWebSocketServer(),
         appClientInboxService: {
             writeAuthorisedWsClientConnect: rejectUnusedDependency,

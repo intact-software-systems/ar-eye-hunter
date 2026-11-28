@@ -13,6 +13,7 @@ import type { ClientStateService } from '@shared-server/rallar-system/client-sta
 import type { ClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 
+import { createWsConnectionHolderRecordReader } from '@shared-server/rallar-system/client-state/connection-holder/ws-connection-holder-record-reader.ts';
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { emptyRead, requireWrite } from './client-mutation-compute-test-fixtures.ts';
 import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from './client-state-test-runtime.ts';
@@ -112,6 +113,10 @@ function createTimedClientStateServiceFixture(): TimedClientStateServiceFixture 
         sessionGenerationLifecycle: createWsSessionGenerationLifecycleService(
             new FakeRuntimeStateRepository()
         ),
+        connectionHolders: createWsConnectionHolderRecordReader({
+            repository: new FakeRuntimeStateRepository(),
+            nowMs: Date.now
+        }),
         listSnapshots: async () => [],
         readSnapshot: async () => undefined,
         readPresenceSnapshot: async () => undefined,

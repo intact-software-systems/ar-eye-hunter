@@ -754,5 +754,13 @@ export const GROWTH_SURFACES: readonly GrowthSurface[] = [
             sweepMs: RUNTIME_STATE_SWEEP_MS
         },
         readers: [toNamespaceCount('server-ws-qbox:*:receipt:record')]
+    },
+    {
+        id: 91,
+        name: 'runtime_state_store client-state ws-connection-holders (not in the survey)',
+        owner: 'packages/shared-server/rallar-system/client-state/connection-holder/ws-connection-holder-record.ts',
+        // A disconnect deletes its record; the record of a process lost without closing waits for its generation's expiry.
+        classification: { growthClass: 'ttl-beyond-run', ttlMs: 30 * DAY_MS },
+        readers: [toNamespaceCount('client-state:ws-connection-holders')]
     }
 ];

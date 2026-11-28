@@ -32,6 +32,7 @@ import {
     requireRightSnapshot
 } from './app-client-inbox-mutation-test-harness.ts';
 import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from './client-state-test-runtime.ts';
+import { LIVE_WS_CONNECTION_HOLDER_LEASES } from './connection-holder/test-support/test-ws-connection-holder.ts';
 import { createClientStateServiceFixture } from './create-client-state-service-fixture.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
@@ -52,7 +53,8 @@ function createClientInboxServiceForRegistration(): AppClientInboxService {
             resourceInboxRepository: queue,
             resourceInboxResultsRepository: results,
             database: createAppInboxTestDatabase(queue, results),
-            clientStateService: createClientStateServiceFixture()
+            clientStateService: createClientStateServiceFixture(),
+            holderLeases: LIVE_WS_CONNECTION_HOLDER_LEASES
         },
         {
             finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
@@ -99,7 +101,8 @@ describe('AppClientInbox mutation processing', () => {
                         read: vi.fn(async () => {
                             throw new NonRetryableException('Client principal update failed');
                         })
-                    }
+                    },
+                    holderLeases: LIVE_WS_CONNECTION_HOLDER_LEASES
                 },
                 {
                     finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
@@ -155,7 +158,8 @@ function createMutationProcessingHarness(): MutationProcessingHarness {
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: results,
                 database: database,
-                clientStateService: createAutoAuthorizingClientStateService(runtimeRepository, database)
+                clientStateService: createAutoAuthorizingClientStateService(runtimeRepository, database),
+                holderLeases: LIVE_WS_CONNECTION_HOLDER_LEASES
             },
             {
                 finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,

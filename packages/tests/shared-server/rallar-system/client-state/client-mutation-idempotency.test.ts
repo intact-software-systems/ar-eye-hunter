@@ -41,6 +41,7 @@ import { CLIENT_MUTATION_TEST_SCOPE, clientMutationPrincipalRef } from './client
 import { CLIENT_MUTATION_SERVICE_SCOPE, toClientPrincipalRef } from './client-state-service-test-fixtures.ts';
 import { createClientStateTestDriver } from './client-state-test-runtime.ts';
 import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from './client-state-test-runtime.ts';
+import { LIVE_WS_CONNECTION_HOLDER_LEASES } from './connection-holder/test-support/test-ws-connection-holder.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 describe('client mutation idempotency compute', () => {
@@ -148,7 +149,8 @@ function createAppInboxIdempotencyHarness(): AppInboxIdempotencyHarness {
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: results,
                 database: database,
-                clientStateService: createAutoAuthorizingClientStateService(runtimeRepository, database)
+                clientStateService: createAutoAuthorizingClientStateService(runtimeRepository, database),
+                holderLeases: LIVE_WS_CONNECTION_HOLDER_LEASES
             },
             {
                 finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,

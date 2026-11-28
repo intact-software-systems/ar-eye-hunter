@@ -2,6 +2,7 @@ import { computeRuntimeStateGuardedBatchWrite } from '../../../runtime-state/gua
 import type {
     RuntimeStateGuardedBatchEffect,
     RuntimeStateGuardedBatchGuard,
+    RuntimeStateGuardedBatchInsert,
     RuntimeStateGuardedBatchWrite
 } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { validateRuntimeStateGuardedBatch } from '../../../runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
@@ -16,12 +17,15 @@ import { CLIENT_STATE_PRINCIPALS_NAMESPACE } from '../persistence/client-state-r
 export interface ComputeAuthorisedWsConnectRuntimeBatchInput {
     readonly ticketConsumption: AuthWsTicketConsumption;
     readonly lifecycleComputed: WsSessionGenerationLifecycleComputed;
+    /** The holder record's insert, or null when the same record is already live. */
+    readonly holderRecorded: RuntimeStateGuardedBatchInsert | null;
     readonly writes: readonly ClientMutationComputedWrite[];
 }
 
 /**
  * Every runtime row an authorised connect writes, as one guarded batch: the principal's compare-and-set guards it
- * when the connect writes the principal, otherwise the ticket's guarded delete does; every other row is an effect.
+ * when the connect writes the principal, otherwise the ticket's guarded delete does; every other row is an effect,
+ * the holder record directly after the lifecycle row.
  */
 export function computeAuthorisedWsConnectRuntimeBatch(
     input: ComputeAuthorisedWsConnectRuntimeBatchInput
@@ -38,6 +42,7 @@ export function computeAuthorisedWsConnectRuntimeBatch(
     const effects: RuntimeStateGuardedBatchEffect[] = [
         ...(principal === undefined ? [] : [{ ...ticket, effectId: 'ws-ticket' }]),
         ...(lifecycle === null ? [] : [{ ...lifecycle.descriptor, effectId: 'ws-session-lifecycle' }]),
+        ...(input.holderRecorded === null ? [] : [{ ...input.holderRecorded, effectId: 'ws-connection-holder' }]),
         ...clientRows
             .filter((row) => row !== principal)
             .map((row) => ({ ...toClientRuntimeRow(row), effectId: `client:${row.namespace}` })),

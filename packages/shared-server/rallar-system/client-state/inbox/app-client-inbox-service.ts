@@ -25,6 +25,7 @@ import type {
     ClientStateService,
     ClientStateWritten
 } from '../client-state-service-contracts.ts';
+import type { WsConnectionHolderLeaseReader } from '../connection-holder/ws-connection-holder-lease.ts';
 import {
     toClientMutationIssuedSessionAuthority,
     toClientMutationSystemAuthority
@@ -77,6 +78,8 @@ export namespace AppClientInboxService {
         readonly resourceInboxResultsRepository: AppInboxResultRepository;
         readonly database: PSqlSql;
         readonly clientStateService: ClientStateService;
+        /** The lease of the process an authorised connect names as its holder. */
+        readonly holderLeases: WsConnectionHolderLeaseReader;
     }
 
     export interface Config {
@@ -131,6 +134,8 @@ export class AppClientInboxService {
         this.handler = new ClientStateInboxHandler({
             mutationService: dependencies.clientStateService,
             sessionGenerationLifecycle: dependencies.clientStateService.sessionGenerationLifecycle,
+            connectionHolders: dependencies.clientStateService.connectionHolders,
+            holderLeases: dependencies.holderLeases,
             expiryCandidates: dependencies.clientStateService,
             expiryContinuationWriter: {
                 write: writeAppOutboxInsert

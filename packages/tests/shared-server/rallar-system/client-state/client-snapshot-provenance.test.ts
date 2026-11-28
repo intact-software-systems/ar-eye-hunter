@@ -63,6 +63,7 @@ import {
 } from './app-client-inbox-mutation-test-harness.ts';
 import { connectCommand, emptyRead } from './client-mutation-compute-test-fixtures.ts';
 import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from './client-state-test-runtime.ts';
+import { LIVE_WS_CONNECTION_HOLDER_LEASES } from './connection-holder/test-support/test-ws-connection-holder.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 vi.mock('@shared/api/state-snapshot-page.ts', async (importOriginal) => {
@@ -544,7 +545,8 @@ function createProducer(options: { readonly collideOnRequestId?: string; readonl
         resourceInboxRepository: queue,
         resourceInboxResultsRepository: results,
         database,
-        clientStateService: clientState
+        clientStateService: clientState,
+        holderLeases: LIVE_WS_CONNECTION_HOLDER_LEASES
     }, {
         finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         serviceId: 'producer-server',

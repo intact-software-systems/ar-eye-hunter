@@ -26,6 +26,9 @@ import {
     timeClientStateMutationPhase,
     type ClientStateMutationTiming
 } from '../client-state-service-timing.ts';
+import { writeWsConnectionHolderReleased } from '../connection-holder/write-ws-connection-holder-released.ts';
+import type { WsConnectionHolderLeaseReader } from '../connection-holder/ws-connection-holder-lease.ts';
+import type { WsConnectionHolderRecordReader } from '../connection-holder/ws-connection-holder-record-reader.ts';
 import { toClientMutationCommand, type ClientMutationPersistedFacts } from '../mutation/client-mutation-command.ts';
 import type {
     ClientMutationCommand,
@@ -94,6 +97,8 @@ export namespace ClientStateInboxHandler {
     export interface Input {
         readonly mutationService: ClientStateMutationService;
         readonly sessionGenerationLifecycle: Pick<WsSessionGenerationLifecycleService, 'read' | 'write'>;
+        readonly connectionHolders: Pick<WsConnectionHolderRecordReader, 'readGenerationRecord'>;
+        readonly holderLeases: WsConnectionHolderLeaseReader;
         readonly expiryCandidates: Pick<ClientStateService, 'readExpiredSessionPage'>;
         readonly expiryContinuationWriter: ClientExpiryContinuationWriter;
         readonly snapshotObserver: Pick<ClientStateService, 'observeSnapshot'>;
@@ -140,15 +145,17 @@ export class ClientStateInboxHandler {
         ticketConnect: ClientAuthorisedWsTicketConnectAppInboxPayload,
         context: AppInboxMessageContext<AuthorisedWsClientMutationResult>
     ): Promise<AuthorisedWsClientMutationResult> {
-        const { connection } = ticketConnect;
+        const { connection, holderId } = ticketConnect;
         const completionFacts = this.dependencies.transactionWriter.readCompletionFacts(context);
         const ticketClaim = toAuthWsTicketConsumptionClaim(ticketConnect, context.message.id.ts);
         const lifecycleFacts = toWsSessionGenerationFacts(connection);
         const command = this.toAuthorisedWsConnectCommand(context, connection);
+        const holderLease = await this.dependencies.holderLeases.readHolderLease(holderId);
         const read = await this.dependencies.mutationService.readAuthorisedWsConnect({
             command,
             ticketClaim,
-            lifecycle: lifecycleFacts
+            lifecycle: lifecycleFacts,
+            holder: { holderId, sessionId: connection.authSession.sessionId, generationId: connection.generationId }
         });
         const computed = this.measureAuthorisedConnectComputation({
             connection,
@@ -158,18 +165,22 @@ export class ClientStateInboxHandler {
             read: read.mutation,
             lifecycleFacts,
             lifecycleRead: read.lifecycle,
+            holderId,
+            holderLease,
+            holderRead: read.holder,
             completionFacts
         });
         if (computed.outcome === 'idempotency-conflict') {
             throwClientMutationIdempotencyConflict(command, computed.mutation);
         }
-        return await this.writeAuthorisedConnectOperation(context, computed);
+        return await this.writeAuthorisedConnectOperation(context, computed, holderId);
     }
 
     /** The ticket's guarded delete is the first write of every connect that presented a live ticket. */
     private async writeAuthorisedConnectOperation(
         context: AppInboxMessageContext<AuthorisedWsClientMutationResult>,
-        computed: Exclude<AuthorisedWsConnectOperationComputed, { outcome: 'idempotency-conflict'; }>
+        computed: Exclude<AuthorisedWsConnectOperationComputed, { outcome: 'idempotency-conflict'; }>,
+        holderId: string
     ): Promise<AuthorisedWsClientMutationResult> {
         switch (computed.outcome) {
             case 'ticket-rejected':
@@ -183,6 +194,12 @@ export class ClientStateInboxHandler {
                     async () => {}
                 );
             case 'inactive':
+                if (computed.reason === 'holder-lease-lost') {
+                    console.warn('Authorised WebSocket connect names a holder without a live lease', {
+                        ...computed.durableResult,
+                        holderId
+                    });
+                }
                 return await this.dependencies.transactionWriter.writeComputedMutation(
                     context,
                     computed.completion,
@@ -204,29 +221,28 @@ export class ClientStateInboxHandler {
         const completionFacts = this.dependencies.transactionWriter.readCompletionFacts(context);
         const lifecycleFacts = toAuthorisedWsDisconnectLifecycleFacts(input);
         const lifecycleRead = await this.dependencies.sessionGenerationLifecycle.read(lifecycleFacts);
+        const holderRead = await this.dependencies.connectionHolders.readGenerationRecord({
+            sessionId: input.connection.authSession.sessionId,
+            generationId: input.connection.generationId
+        });
         const command = this.toAuthorisedWsDisconnectCommand(context, input);
         const read = await this.dependencies.mutationService.read(command);
         if (!read.session) {
-            const computed = this.measureMissingDisconnectComputation({
+            return await this.writeMissingSessionDisconnectOperation(context, {
                 commandInput: input,
                 command,
                 read,
                 lifecycleFacts,
                 lifecycleRead,
+                holderRead,
                 completionFacts
             });
-            return await this.dependencies.transactionWriter.writeComputedMutation(
-                context,
-                computed.completion,
-                async (transaction) =>
-                    await this.dependencies.sessionGenerationLifecycle.write(transaction, computed.lifecycleComputed)
-            );
         }
         const computed = this.measureMutationComputation({
             command,
             read,
             completionFacts,
-            lifecycle: { kind: 'disconnect', facts: lifecycleFacts, read: lifecycleRead }
+            lifecycle: { facts: lifecycleFacts, read: lifecycleRead, holderRead }
         });
         if (computed.outcome === 'idempotency-conflict') {
             throwClientMutationIdempotencyConflict(command, computed.mutation);
@@ -359,7 +375,10 @@ export class ClientStateInboxHandler {
         return computed;
     }
 
-    /** The connect's guarded batch is its first write: the ticket, lifecycle and client rows in one statement. */
+    /**
+     * The connect's guarded batch is its first write: the ticket, lifecycle, holder-record and client rows in one
+     * statement.
+     */
     private async writeAuthorisedConnectMutation(
         context: AppInboxMessageContext<AuthorisedWsClientMutationResult>,
         computed: Extract<AuthorisedWsConnectOperationComputed, { outcome: 'completed'; }>
@@ -396,12 +415,38 @@ export class ClientStateInboxHandler {
                                 computed.lifecycleComputed
                             );
                         }
+                        if (computed.holderRelease !== null) {
+                            await writeWsConnectionHolderReleased(transaction, computed.holderRelease);
+                        }
                         for (const mutation of computed.writes) {
                             await this.dependencies.mutationService.write(transaction, mutation);
                         }
                     }
                 )
         );
+    }
+
+    private async writeMissingSessionDisconnectOperation(
+        context: AppInboxMessageContext<AuthorisedWsClientMutationResult>,
+        input: MissingSessionDisconnectAttemptInput
+    ): Promise<AuthorisedWsClientMutationResult> {
+        const computed = this.measureMissingDisconnectComputation(input);
+        return await this.dependencies.transactionWriter.writeComputedMutation(
+            context,
+            computed.completion,
+            async (transaction) => await this.writeMissingSessionDisconnect(transaction, computed)
+        );
+    }
+
+    /** A disconnect whose session row is gone still closes its generation and releases its holder record. */
+    private async writeMissingSessionDisconnect(
+        transaction: PSqlSql,
+        computed: MissingSessionDisconnectComputed
+    ): Promise<void> {
+        await this.dependencies.sessionGenerationLifecycle.write(transaction, computed.lifecycleComputed);
+        if (computed.holderRelease !== null) {
+            await writeWsConnectionHolderReleased(transaction, computed.holderRelease);
+        }
     }
 
     private async writeExpiredSessionsOperation(

@@ -100,6 +100,18 @@ interface StateWriteTopologyServiceInput extends StateWriteDomainServiceInput {
     readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
 }
 
+/**
+ * The workload sends no authorised WebSocket connect, the only command that reads a holder's lease, so this reader is
+ * construction plumbing and refuses rather than answering for a lease it never read. It names its type through the
+ * service, not the lease module: both sides of a comparison run this harness, and a base that predates the lease has
+ * neither that module nor this dependency, which its service then ignores.
+ */
+const UNEXERCISED_HOLDER_LEASES: AppClientInboxService.Dependencies['holderLeases'] = {
+    readHolderLease: async (holderId) => {
+        throw new Error(`The state-write workload sends no authorised WebSocket connect; it read holder ${holderId}.`);
+    }
+};
+
 export function createStateWriteServiceRuntime(input: CreateStateWriteServiceRuntimeInput): StateWriteServiceRuntime {
     const { sql, serviceId, context, timing } = input;
     const nowEpochMs = Date.now;
@@ -123,7 +135,8 @@ export function createStateWriteServiceRuntime(input: CreateStateWriteServiceRun
     const client = new AppClientInboxService(
         {
             ...appInboxDependencies,
-            clientStateService: clientState
+            clientStateService: clientState,
+            holderLeases: UNEXERCISED_HOLDER_LEASES
         },
         {
             serviceId,

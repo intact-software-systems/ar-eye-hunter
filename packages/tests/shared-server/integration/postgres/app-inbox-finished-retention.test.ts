@@ -17,6 +17,7 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
 import { putAuthorisedWsTestTicket } from '../../rallar-system/client-state/authorised-ws-test-ticket.ts';
+import { TEST_WS_CONNECTION_HOLDER_ID } from '../../rallar-system/client-state/connection-holder/test-support/test-ws-connection-holder.ts';
 import {
     createRuntimeStatePostgresSql,
     requirePostgresClient,
@@ -283,6 +284,7 @@ async function connect(
             authSession,
             generationId: `${label}-generation`,
             ticketDigest,
+            holderId: TEST_WS_CONNECTION_HOLDER_ID,
             traceId: 'trace-app-inbox-finished-retention',
             input: { ...harness.scope, clientInstanceId: 'browser', connectedAtEpochMs: nowEpochMs }
         })

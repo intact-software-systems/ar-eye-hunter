@@ -21,6 +21,7 @@ import { TestResourceInbox, TestResourceInboxResults } from '../app-inbox/test-s
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from '../client-state/client-state-test-runtime.ts';
+import { LIVE_WS_CONNECTION_HOLDER_LEASES } from '../client-state/connection-holder/test-support/test-ws-connection-holder.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../client-state/test-disconnected-session-retention.ts';
 
 const TEST_SERVICE_ID = 'rallar-middleware-test';
@@ -187,7 +188,8 @@ export function createRallarMiddlewareTestRuntime(
                     resourceInboxRepository: inbox,
                     resourceInboxResultsRepository: results,
                     database,
-                    clientStateService
+                    clientStateService,
+                    holderLeases: LIVE_WS_CONNECTION_HOLDER_LEASES
                 },
                 {
                     finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,

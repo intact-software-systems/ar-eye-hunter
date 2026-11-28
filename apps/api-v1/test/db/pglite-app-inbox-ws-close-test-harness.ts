@@ -32,6 +32,10 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { putAuthorisedWsTestTicket } from '../../../../packages/tests/shared-server/rallar-system/client-state/authorised-ws-test-ticket.ts';
+import {
+    LIVE_WS_CONNECTION_HOLDER_LEASES,
+    TEST_WS_CONNECTION_HOLDER_ID
+} from '../../../../packages/tests/shared-server/rallar-system/client-state/connection-holder/test-support/test-ws-connection-holder.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/client-state/test-disconnected-session-retention.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
@@ -127,6 +131,7 @@ export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql): Promis
             void client.writeAuthorisedWsClientConnect({
                 ...input,
                 ticketDigest,
+                holderId: TEST_WS_CONNECTION_HOLDER_ID,
                 traceId: 'trace-pglite-app-inbox-ws-close-harness'
             });
             return await waitForNewPGliteQueueEntry(reader, sql, queued);
@@ -216,7 +221,8 @@ function createPGliteStateInboxConsumers(input: PGliteStateInboxConsumerInput): 
             resourceInboxRepository: input.resourceInbox.entries,
             resourceInboxResultsRepository: input.resourceResults,
             database: input.sql,
-            clientStateService: input.clientState
+            clientStateService: input.clientState,
+            holderLeases: LIVE_WS_CONNECTION_HOLDER_LEASES
         },
         {
             finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
