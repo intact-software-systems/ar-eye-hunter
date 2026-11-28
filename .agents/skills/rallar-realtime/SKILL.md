@@ -115,6 +115,13 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
   bounded number or exact set of active sessions/peers.
 - Prefer `rallar.realtime.room<T>(...)` for app/game room traffic before wiring `rtc.waitForRoomLane`, `readyPeerIds`, and `realtime.sendJson` manually.
 - Prefer `rallar.messages.room<T>(...)` when important room-scoped messages need typed RTC/WS fallback behavior.
+- Choose `order: 'edge'` on a room channel when one sender page's send order
+  matters to page receivers (moves, commands, a director's events); both ends
+  declare it, and it holds per page in memory only. Choose `orderingKey` (hop
+  order) for a server-authored stream, an order that must survive a sender
+  reload, or a granted topic that needs a recorded entry position. Choose
+  neither for latest-value state the app already compares. See "Edge Order" in
+  `docs/rallar-api-reference.md`.
 - Room handles scope sends, peer selection, and readiness; their receive
   callbacks remain topic/type or lane listeners and are not automatically
   room-filtered. Validate message targets from `message.raw.targets` with

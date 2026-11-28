@@ -83,7 +83,7 @@ function toDirectorMembers(
     return members;
 }
 
-function toDirectorAppointment(appointment: DirectorAppointmentFixture) {
+export function toDirectorAppointment(appointment: DirectorAppointmentFixture) {
     return {
         version: 1,
         mode: 'appointed-spa' as const,
