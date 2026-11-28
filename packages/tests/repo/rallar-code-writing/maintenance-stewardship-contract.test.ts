@@ -475,6 +475,7 @@ interface EvaluationSuite {
     readonly suiteId: string;
     readonly scenarios: readonly {
         readonly id: string;
+        readonly title: string;
         readonly critical: boolean;
         readonly primarySkill: string;
         readonly pressures: readonly string[];
