@@ -248,6 +248,38 @@ describe('AdminPrunePageWorker', () => {
         expect(repository.writtenEntries).toEqual([]);
     });
 
+    // A page that deleted a message row and kept the buffered slot naming it, because the slot was rewritten after the
+    // page read, would leave the slot stored without its row.
+    it('rolls the page back whole when a row moved between its read and its delete', async () => {
+        const repository = new MemoryPruneRepository(['1', '2', '3']);
+        repository.rewrittenRowIds.add('1');
+        const work = new AdminPrunePageWorker({
+            database: repository.database,
+            repository,
+            serviceId: 'server-1',
+            pageSize: 2,
+            now: () => NOW,
+            readAuthority: () => Promise.resolve({ allowed: true, code: 'allowed' })
+        });
+        const entry = createReservedEntry({
+            kind: 'page',
+            jobId: 'prune-moved-row',
+            category: 'runtime-state',
+            capturedAtEpochMs: NOW,
+            expireAtEpochMs: NOW + 60_000,
+            pageSize: 2,
+            afterCursor: null,
+            pageIndex: 0,
+            appData: null
+        });
+
+        await expect(work.processReservedEntry(entry)).rejects.toThrow('Admin prune page changed before delete');
+        expect(repository.deleted).toEqual([]);
+        expect(repository.progressWrites).toBe(0);
+        expect(repository.writtenEntries).toEqual([]);
+        expect(repository.finished).toEqual([]);
+    });
+
     it('does not write or wake when current page authority is denied', async () => {
         const repository = new MemoryPruneRepository(['1', '2', '3']);
         let wakeCount = 0;
@@ -555,6 +587,8 @@ class MemoryPruneRepository implements AdminPrunePageRepository {
     rejectCommit = false;
     rejectOutbox = false;
     rejectProgressOnce = false;
+    /** Rewritten after the page read, so the delete, which matches each row on its read revision, skips them. */
+    readonly rewrittenRowIds = new Set<string>();
 
     private readonly candidates: readonly Readonly<{ rowId: string; revisionToken: string; }>[];
 
@@ -599,8 +633,10 @@ class MemoryPruneRepository implements AdminPrunePageRepository {
 
     deletePage(_transaction: never, deletion: AdminPrunePageDelete) {
         this.calls.push('delete');
-        this.deleted.push(...deletion.candidates.map((candidate) => candidate.rowId));
-        return Promise.resolve(deletion.candidates.length);
+        const deleted = deletion.candidates.map((candidate) => candidate.rowId)
+            .filter((rowId) => !this.rewrittenRowIds.has(rowId));
+        this.deleted.push(...deleted);
+        return Promise.resolve(deleted.length);
     }
 
     writeOutbox(_transaction: never, computed: AppOutboxInsert) {

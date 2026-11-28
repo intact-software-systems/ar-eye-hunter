@@ -15,7 +15,8 @@ import {
 
 const RUN_ID = `al-inbound-buffered-slot-expiry-${crypto.randomUUID()}`;
 
-// A chain's slot read and its message read are separate statements here, so they see the store at two moments.
+// A chain's slot read and its message read are separate statements here, so they see the store at two moments, and a
+// commit answers a key it has read from the row it recorded then: its last read of a slot goes through the store.
 describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL inbound buffered slot expiry', () => {
     let sql: PostgresSql | undefined;
 
@@ -38,6 +39,6 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL inb
     describeALInboundBufferedSlotExpiryContract({
         label: 'PostgreSQL',
         createStores: async (namespace) => createPostgresInboundBackendStores(sql!, `${RUN_ID}-${namespace}`),
-        commitSlotReread: 'recorded'
+        commitSlotReread: 'store'
     });
 });

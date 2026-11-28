@@ -755,7 +755,9 @@ describe('a receiver holding a recorded track at its start (the bounded hold)', 
         expect(gapControls(fixture).filter((control) => control.gapRequestNumber === 4)).toEqual([]);
     });
 
-    it('runs its last timer again when the end\'s commit is refused as expired, and then enters', async () => {
+    // A commit refused as `conflict` is also what a PostgreSQL commit answers when another writer deleted a buffered
+    // copy's rows between its reads of them.
+    it.each(['expired', 'conflict'] as const)('runs its last timer again when the end\'s commit is refused as %s, and then enters', async (refusal) => {
         const fixture = createRenewalFixture('memory');
         for (const seq of [2, 3]) {
             await fixture.runtime.admitIncomingMessage(recordedMessage(seq), INBOUND_TEST_SOURCE);
@@ -768,7 +770,7 @@ describe('a receiver holding a recorded track at its start (the bounded hold)', 
         const { renewal, diagnostics } = createDirectRenewal(fixture, {
             commitBundle: async (bundle) => {
                 refusals -= 1;
-                return refusals >= 0 ? 'expired' as const : await admissionStore.commitBundle(bundle);
+                return refusals >= 0 ? refusal : await admissionStore.commitBundle(bundle);
             }
         });
 
