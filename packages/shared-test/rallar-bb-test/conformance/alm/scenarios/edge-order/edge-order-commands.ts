@@ -6,7 +6,7 @@ import type {
 import { ASSERT_TIMEOUT_MS, toBudgetMs } from '../../alm-conformance-budgets.ts';
 import { ALM_INBOUND_DIAGNOSTICS_TOPIC, toDiagnosticWait } from '../../alm-conformance-diagnostic-waits.ts';
 import { toAdmissionCommands, toSendCommand } from '../../alm-conformance-message-commands.ts';
-import type { AlmConformanceSendAudience } from '../../alm-conformance-receipt-commands.ts';
+import type { AlmConformanceRoomSendAudience } from '../../alm-conformance-receipt-commands.ts';
 import { toPayloadWait, toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId, toScenarioTypeId } from '../../alm-conformance-step-identities.ts';
@@ -21,7 +21,7 @@ export interface EdgeOrderSendFacts {
     /** Absent, the browser's lifetime of 30 s. */
     readonly ttlMs?: number;
     /** Absent, the room. */
-    readonly audience?: Exclude<AlmConformanceSendAudience, Readonly<{ toPeer: 'receiver'; }>>;
+    readonly audience?: AlmConformanceRoomSendAudience;
 }
 
 /** An arrival the receiver did not hand over at once, as its `edge-order-arrival` states it. */
@@ -39,7 +39,10 @@ type EdgeOrderEvent =
     | { readonly kind: 'edge-order-arrival'; readonly outcome: EdgeOrderArrivalOutcome; readonly absent: boolean; }
     | { readonly kind: 'edge-order-gap'; readonly gap: EdgeOrderGap | undefined; readonly absent: boolean; };
 
-/** One at-least-once, receipted room send with no ordering key; its number names it and its payload. */
+/**
+ * One at-least-once, receipted send on the room channel with no ordering key, to the whole room unless
+ * `facts.audience` narrows it; its number names it and its payload.
+ */
 export function toEdgeOrderSendCommands(
     sender: AlmConformanceStepInput,
     seq: number,

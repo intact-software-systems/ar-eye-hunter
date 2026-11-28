@@ -545,36 +545,44 @@ describe('edge-order-audiences', () => {
         }
     );
 
-    it.each(ALM_CONFORMANCE_CARRIERS)('over %s holds room send 4 while 5, 6 and 7 are acknowledged, then releases it and sees it acknowledged', (carrier) => {
-        const sender = requireCell(KEY, carrier).sender;
-        const faultCarriers = carrier === 'rtc-with-ws-fallback' ? ['rtc', 'ws'] : [carrier];
-        const names = [
-            'observe-acknowledged-3',
-            'send-4',
-            ...faultCarriers.map((faultCarrier) => `hold-message-4-${faultCarrier}`),
-            'send-5',
-            'observe-acknowledged-5',
-            'send-6',
-            'observe-acknowledged-6',
-            'send-7',
-            'observe-acknowledged-7',
-            ...faultCarriers.map((faultCarrier) => `release-message-4-${faultCarrier}`),
-            'observe-acknowledged-4'
-        ];
-        const places = names.map((name) => toPlace(sender, name));
+    it.each(ALM_CONFORMANCE_CARRIERS)(
+        'over %s sends 1 to 3 before it waits for them, holds room send 4 while 5, 6 and 7 are acknowledged, then releases it and sees it acknowledged',
+        (carrier) => {
+            const sender = requireCell(KEY, carrier).sender;
+            const faultCarriers = carrier === 'rtc-with-ws-fallback' ? ['rtc', 'ws'] : [carrier];
+            const names = [
+                'send-1',
+                'send-2',
+                'send-3',
+                'observe-acknowledged-1',
+                'observe-acknowledged-2',
+                'observe-acknowledged-3',
+                'send-4',
+                ...faultCarriers.map((faultCarrier) => `hold-message-4-${faultCarrier}`),
+                'send-5',
+                'observe-acknowledged-5',
+                'send-6',
+                'observe-acknowledged-6',
+                'send-7',
+                'observe-acknowledged-7',
+                ...faultCarriers.map((faultCarrier) => `release-message-4-${faultCarrier}`),
+                'observe-acknowledged-4'
+            ];
+            const places = names.map((name) => toPlace(sender, name));
 
-        expect(places).toEqual([...places].sort((left, right) => left - right));
-        for (const faultCarrier of faultCarriers) {
-            expect(findCommand(sender, `hold-message-4-${faultCarrier}`)).toMatchObject({
-                kind: 'fault.inject',
-                match: { msgId: `{resultCache.${sender.recipeId}-send-4.value.msgId}` },
-                remaining: 'until-cleared'
-            });
+            expect(places).toEqual([...places].sort((left, right) => left - right));
+            for (const faultCarrier of faultCarriers) {
+                expect(findCommand(sender, `hold-message-4-${faultCarrier}`)).toMatchObject({
+                    kind: 'fault.inject',
+                    match: { msgId: `{resultCache.${sender.recipeId}-send-4.value.msgId}` },
+                    remaining: 'until-cleared'
+                });
+            }
+            for (const seq of toNumbers(1, SENDS)) {
+                expect(findCommand(sender, `assert-acknowledged-${seq}`)).toMatchObject({ operator: 'equals', expected: 'acknowledged' });
+            }
         }
-        for (const seq of toNumbers(1, SENDS)) {
-            expect(findCommand(sender, `assert-acknowledged-${seq}`)).toMatchObject({ operator: 'equals', expected: 'acknowledged' });
-        }
-    });
+    );
 
     it.each(RECIPIENT_CELLS)(
         'over %s the %s held the room send that overtook, was handed the room stream and its own stream each in send order, and states no gap',

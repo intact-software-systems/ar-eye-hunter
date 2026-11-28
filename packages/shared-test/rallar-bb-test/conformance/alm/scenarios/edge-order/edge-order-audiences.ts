@@ -3,7 +3,7 @@ import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-tes
 import { ALM_CONFORMANCE_CARRIERS } from '../../alm-conformance-carriers.ts';
 import { toHeldMessageFaultCommands, toHeldSendCommands } from '../../alm-conformance-fault-commands.ts';
 import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
-import { ALM_CONFORMANCE_SAME_PRINCIPAL_ROLES } from '../../alm-conformance-roles.ts';
+import { ALM_CONFORMANCE_SAME_PRINCIPAL_ROLES, type AlmConformanceRole } from '../../alm-conformance-roles.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
@@ -26,15 +26,16 @@ const OVERTAKING_SEND = 5;
 /** Every arrival a recipient is handed: three room sends and the two of its narrowed audience. */
 const ARRIVALS = 5;
 
-const LIST: EdgeOrderSendFacts = { audience: { recipientPeers: ['receiver'] } };
-const PRINCIPAL: EdgeOrderSendFacts = { audience: { scope: 'principal', principalId: '{auth.clientId}' } };
+/** A narrowed audience one recipient is inside and the other outside, and the two sends to it. */
+interface NarrowedStream {
+    readonly facts: EdgeOrderSendFacts;
+    readonly sends: readonly [first: number, second: number];
+}
 
-/** Sends 2 and 6 list the receiver alone; sends 3 and 7 go to the sender's principal, its sibling. */
-const FACTS_BY_SEQ: ReadonlyMap<number, EdgeOrderSendFacts> = new Map([
-    [2, LIST],
-    [3, PRINCIPAL],
-    [6, LIST],
-    [7, PRINCIPAL]
+/** The fixed list names the receiver alone; the sender's principal reaches its other session, the sibling, alone. */
+const NARROWED_STREAMS: ReadonlyMap<AlmConformanceRole, NarrowedStream> = new Map([
+    ['receiver', { facts: { audience: { recipientPeers: ['receiver'] } }, sends: [2, 6] }],
+    ['sibling', { facts: { audience: { scope: 'principal', principalId: '{auth.clientId}' } }, sends: [3, 7] }]
 ]);
 
 /**
@@ -59,11 +60,14 @@ export const edgeOrderAudiences: AlmConformanceScenarioDefinition = {
 
 function toAudienceStreamSenderCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const held = { ...sender, index: HELD_SEND };
+    const streams = [...NARROWED_STREAMS.values()];
+    const beforeHold = [1, ...streams.map((stream) => stream.sends[0])];
+    const whileHeld = [OVERTAKING_SEND, ...streams.map((stream) => stream.sends[1])];
     return [
-        ...[1, 2, 3].flatMap((seq) => toAudienceSendCommands(sender, seq)),
-        ...[1, 2, 3].flatMap((seq) => toSettledStateCommands({ ...sender, index: seq }, 'acknowledged')),
+        ...beforeHold.flatMap((seq) => toAudienceSendCommands(sender, seq)),
+        ...beforeHold.flatMap((seq) => toSettledStateCommands({ ...sender, index: seq }, 'acknowledged')),
         ...toHeldSendCommands(held, toAudienceSendCommands(sender, HELD_SEND)),
-        ...[OVERTAKING_SEND, 6, 7].flatMap((seq) => [
+        ...whileHeld.flatMap((seq) => [
             ...toAudienceSendCommands(sender, seq),
             ...toSettledStateCommands({ ...sender, index: seq }, 'acknowledged')
         ]),
@@ -72,13 +76,15 @@ function toAudienceStreamSenderCommands(sender: AlmConformanceStepInput): readon
     ];
 }
 
+/** A send to no narrowed stream goes to the room. */
 function toAudienceSendCommands(sender: AlmConformanceStepInput, seq: number): readonly RallarBlackBoxTestCommand[] {
-    return toEdgeOrderSendCommands(sender, seq, FACTS_BY_SEQ.get(seq));
+    const stream = [...NARROWED_STREAMS.values()].find((candidate) => candidate.sends.includes(seq));
+    return toEdgeOrderSendCommands(sender, seq, stream?.facts);
 }
 
-/** The receiver is handed sends 2 and 6 of the fixed list, the sibling sends 3 and 7 of the principal. */
+/** Each recipient is handed the room's stream and the narrowed stream it is inside. */
 function toAudienceStreamRecipientCommands(recipient: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
-    const [first, second] = recipient.role === 'receiver' ? [2, 6] : [3, 7];
+    const [first, second] = toNarrowedStream(recipient.role).sends;
     const handedOver: ReadonlyArray<readonly [later: number, earlier: number]> = [
         [HELD_SEND, 1],
         [OVERTAKING_SEND, HELD_SEND],
@@ -97,4 +103,12 @@ function toAudienceStreamRecipientCommands(recipient: AlmConformanceStepInput): 
         toReceivedCommand({ ...recipient, index: ARRIVALS + 1, count: ARRIVALS + 1, absent: true }),
         toNoOrderGapWait(recipient)
     ];
+}
+
+function toNarrowedStream(role: AlmConformanceRole): NarrowedStream {
+    const stream = NARROWED_STREAMS.get(role);
+    if (stream === undefined) {
+        throw new Error(`edge-order-audiences has no narrowed stream for the ${role} role.`);
+    }
+    return stream;
 }

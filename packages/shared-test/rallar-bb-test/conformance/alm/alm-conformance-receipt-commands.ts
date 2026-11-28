@@ -62,13 +62,16 @@ export type AlmConformanceSendAudience =
     | Readonly<{ recipientPrincipalIds: NonNullable<RallarBlackBoxTestMessagesSendCommand['recipientPrincipalIds']>; }>
     | Readonly<{ toPeer: 'receiver'; }>;
 
+/** Who a send on the room channel reaches: any audience but an addressed send's. */
+export type AlmConformanceRoomSendAudience = Exclude<AlmConformanceSendAudience, Readonly<{ toPeer: 'receiver'; }>>;
+
 interface AlmConformanceAudienceSendInput {
     readonly sender: AlmConformanceStepInput;
     readonly ttlMs: number;
     /** `all-logical-recipients` asks every session of the frozen audience, `group-leader` the room's leader alone. */
     readonly ack: Extract<RallarBlackBoxTestMessagesSendCommand['ack'], 'all-logical-recipients' | 'group-leader'>;
     /** Absent, every live session of the room; a room send, so never an addressed one. */
-    readonly audience?: Exclude<AlmConformanceSendAudience, Readonly<{ toPeer: 'receiver'; }>>;
+    readonly audience?: AlmConformanceRoomSendAudience;
     /** Absent, the send claims nothing: it is `shared` on a resource the product mints. */
     readonly claim?: AlmConformanceSendClaim;
 }
