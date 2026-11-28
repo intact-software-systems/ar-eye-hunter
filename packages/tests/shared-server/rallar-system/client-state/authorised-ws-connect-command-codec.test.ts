@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { classifyAppInboxError } from '@shared-server/rallar-system/app-inbox/app-inbox-error-classification.ts';
-import type { ClientAuthorisedWsSessionConnectAppInboxPayload } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
+import type {
+    ClientAuthorisedWsSessionConnectAppInboxPayload,
+    ClientAuthorisedWsTicketConnectAppInboxPayload
+} from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
 import {
     decodeClientAuthorisedWsSessionDisconnectAppInboxPayload,
     decodeClientAuthorisedWsTicketConnectAppInboxPayload
@@ -42,7 +45,7 @@ describe('the stored authorised WebSocket connect command', () => {
     it('refuses a previous build\'s holder-less connect, or an empty holder, as a malformed command', () => {
         const previousBuild = { connection: CONNECTION, ticketDigest: 'ticket-digest' };
         for (const stored of [previousBuild, { ...previousBuild, holderId: '' }]) {
-            const decoding = (): unknown => decodeClientAuthorisedWsTicketConnectAppInboxPayload(stored);
+            const decoding = (): ClientAuthorisedWsTicketConnectAppInboxPayload => decodeClientAuthorisedWsTicketConnectAppInboxPayload(stored);
             expect(decoding, JSON.stringify(Object.keys(stored))).toThrow(TypeError);
             expect(classifyAppInboxError(captureError(decoding))).toMatchObject({
                 kind: 'terminal',
@@ -60,12 +63,15 @@ describe('the stored authorised WebSocket connect command', () => {
     });
 });
 
-function captureError(run: () => unknown): unknown {
+function captureError(run: () => ClientAuthorisedWsTicketConnectAppInboxPayload): Error {
     try {
         run();
     }
     catch (error) {
-        return error;
+        if (error instanceof Error) {
+            return error;
+        }
+        throw new TypeError('The decoder threw a non-Error value');
     }
     throw new Error('Expected the decoder to throw');
 }

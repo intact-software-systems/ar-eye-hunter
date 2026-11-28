@@ -6,7 +6,8 @@ import {
     decodeWsConnectionHolderRecordEntry,
     toWsConnectionHolderGenerationKeySuffix,
     toWsConnectionHolderKeyPrefix,
-    toWsConnectionHolderRecordKey
+    toWsConnectionHolderRecordKey,
+    type WsConnectionHolderRecord
 } from '@shared-server/rallar-system/client-state/connection-holder/ws-connection-holder-record.ts';
 import type { ClientAuthorisedWsSessionConnectAppInboxPayload } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
 import { ClientStateRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts';
@@ -36,12 +37,14 @@ const CONNECTION: ClientAuthorisedWsSessionConnectAppInboxPayload = {
     expiresAtEpochMs: 1_700_000_060_000
 };
 
-const STORED_VALUE = JSON.stringify({
+const STORED_RECORD: WsConnectionHolderRecord = {
     version: 1,
     holderId: HOLDER_ID,
     connection: CONNECTION,
     expireAtEpochMs: EXPIRE_AT_EPOCH_MS
-});
+};
+
+const STORED_VALUE = JSON.stringify(STORED_RECORD);
 
 const STORED_KEY = `holder=${HOLDER_ID}:session=session-1:generation=generation-1`;
 
@@ -96,7 +99,6 @@ describe('a stored WebSocket connection holder record', () => {
     });
 
     it('refuses a row whose key and value disagree, whose expiry differs, or whose shape is unknown', () => {
-        const value = JSON.parse(STORED_VALUE) as Record<string, unknown>;
         const corrupt: readonly Partial<RuntimeStateEntry>[] = [
             { key: `holder=00000000-0000-4000-8000-0000000000a2:session=session-1:generation=generation-1` },
             { key: `holder=${HOLDER_ID}:session=session-2:generation=generation-1` },
@@ -104,10 +106,10 @@ describe('a stored WebSocket connection holder record', () => {
             { key: `holder=${HOLDER_ID}:session=session-1` },
             { key: `holder=${HOLDER_ID}:session=session%2D1:generation=generation-1` },
             { expireAtTimestamp: EXPIRE_AT_EPOCH_MS + 1 },
-            { value: JSON.stringify({ ...value, version: 2 }) },
-            { value: JSON.stringify({ ...value, extra: true }) },
+            { value: JSON.stringify({ ...STORED_RECORD, version: 2 }) },
+            { value: JSON.stringify({ ...STORED_RECORD, extra: true }) },
             { value: JSON.stringify({ version: 1, holderId: HOLDER_ID, connection: CONNECTION }) },
-            { value: JSON.stringify({ ...value, connection: { ...CONNECTION, generationId: 7 } }) },
+            { value: JSON.stringify({ ...STORED_RECORD, connection: { ...CONNECTION, generationId: 7 } }) },
             { value: '[]' }
         ];
         for (const fields of corrupt) {
