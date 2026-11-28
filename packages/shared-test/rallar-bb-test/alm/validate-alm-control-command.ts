@@ -111,17 +111,14 @@ function validateOrdinaryMessagesSendCommand(command: RallarBlackBoxTestRecord):
             path,
             ownMessageFields: []
         }),
-        ...validateStringField(command, 'connection', path),
-        ...validateEnumField({ record: command, key: 'carrier', path, allowed: values.messagesCarrier }),
-        ...validateStringField(command, 'typeId', path),
-        ...validateEnumField({ record: command, key: 'purpose', path, allowed: values.messagesPurpose }),
-        ...validateMessagesPublicationField(command),
-        ...['topicId', 'orderingKey', 'handleId', 'resourceId'].flatMap((key) =>
+        ...['connection', 'typeId', 'topicId', 'orderingKey', 'handleId', 'resourceId', 'principalId'].flatMap((key) =>
             validateStringField(command, key, path)
         ),
+        ...validateEnumField({ record: command, key: 'carrier', path, allowed: values.messagesCarrier }),
+        ...validateEnumField({ record: command, key: 'purpose', path, allowed: values.messagesPurpose }),
+        ...validateMessagesPublicationField(command),
         ...validateObjectField(command, 'roomRef', path),
         ...validateEnumField({ record: command, key: 'scope', path, allowed: values.messagesScope }),
-        ...validateStringField(command, 'principalId', path),
         ...validateRecipientPeersField(command),
         ...validateRecipientPrincipalIdsField(command),
         ...validateEnumField({ record: command, key: 'ownership', path, allowed: values.messagesOwnership }),
@@ -135,6 +132,7 @@ function validateOrdinaryMessagesSendCommand(command: RallarBlackBoxTestRecord):
             allowed: values.messagesOnStorageUnavailable
         }),
         ...validateEnumField({ record: command, key: 'toPeer', path, allowed: values.messagesToPeer }),
+        ...validateEnumField({ record: command, key: 'observe', path, allowed: values.messagesSendObserve }),
         ...validateIntegerField({ record: command, key: 'ttlMs', path, minimum: 0 }),
         ...validateIntegerField({ record: command, key: 'maxRepairs', path, minimum: 1 }),
         ...validateNumberField(command, 'seq', path),
