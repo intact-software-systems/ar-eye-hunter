@@ -133,15 +133,18 @@ function toWriteStatements(text, tables) {
     return statements;
 }
 
+/** A table name, optionally schema-qualified and optionally double-quoted in either part; the table is the group. */
+const TABLE_NAME = String.raw`(?:"?[a-z_][a-z0-9_]*"?\s*\.\s*)?"?([a-z_][a-z0-9_]*)"?`;
+const ALIAS = String.raw`(?:as\s+"?[a-z_][a-z0-9_]*"?\s+|"?[a-z_][a-z0-9_]*"?\s+)?`;
 const WRITE_PATTERNS = [
-    ['insert', /\binsert\s+into\s+([a-z_][a-z0-9_]*)/giu],
-    ['update', /\bupdate\s+([a-z_][a-z0-9_]*)\s+(?:as\s+[a-z_][a-z0-9_]*\s+|[a-z_][a-z0-9_]*\s+)?set\b/giu],
-    ['delete', /\bdelete\s+from\s+([a-z_][a-z0-9_]*)/giu],
-    ['truncate', /\btruncate\s+(?:table\s+)?([a-z_][a-z0-9_]*)/giu],
-    ['merge', /\bmerge\s+into\s+([a-z_][a-z0-9_]*)/giu]
+    ['insert', new RegExp(String.raw`\binsert\s+into\s+${TABLE_NAME}`, 'giu')],
+    ['update', new RegExp(String.raw`\bupdate\s+${TABLE_NAME}\s+${ALIAS}set\b`, 'giu')],
+    ['delete', new RegExp(String.raw`\bdelete\s+from\s+${TABLE_NAME}`, 'giu')],
+    ['truncate', new RegExp(String.raw`\btruncate\s+(?:table\s+)?${TABLE_NAME}`, 'giu')],
+    ['merge', new RegExp(String.raw`\bmerge\s+into\s+${TABLE_NAME}`, 'giu')]
 ];
 const WRITE_KEYWORD = /\b(?:insert\s+into|update|delete\s+from|truncate|merge\s+into)\b/iu;
-const LOCK_PATTERN = /\bfor\s+(?:no\s+key\s+)?update(?:\s+of\s+([a-z_][a-z0-9_]*))?/giu;
+const LOCK_PATTERN = new RegExp(String.raw`\bfor\s+(?:no\s+key\s+)?update(?:\s+of\s+${TABLE_NAME})?`, 'giu');
 
 /**
  * A feed's own file becomes a write target in turn, so a root handle passed to code that feeds it into a write is a

@@ -61,6 +61,30 @@ describe('SQL write facts', () => {
         ]);
     });
 
+    it('records a schema table written or locked under a schema-qualified or double-quoted name', () => {
+        const facts = computeFixtureFacts({
+            'packages/shared-server/rallar-system/websocket/on-ws-display-frame.ts': `
+                import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
+                export async function onWsDisplayFrame(sql: PSqlSql, key: string): Promise<void> {
+                    await sql\`insert into public.runtime_state_store (store_key) values (\${key})\`;
+                    await sql\`delete from "runtime_state_store" where store_key = \${key}\`;
+                    await sql\`update "public"."app_data_store" as stored set value = '{}' where key = \${key}\`;
+                    await sql\`select id from resource_inbox for update of "resource_inbox"\`;
+                }
+            `
+        });
+
+        expect(facts.sqlWriteFiles).toEqual([{
+            id: 'packages/shared-server/rallar-system/websocket/on-ws-display-frame.ts',
+            statements: [
+                'delete:runtime_state_store',
+                'insert:runtime_state_store',
+                'lock:resource_inbox',
+                'update:app_data_store'
+            ]
+        }]);
+    });
+
     it('ignores a select, prose naming no table, and a write tagged on a tx parameter', () => {
         const facts = computeFixtureFacts({
             'packages/shared-server/topology/read-topology.ts': `
