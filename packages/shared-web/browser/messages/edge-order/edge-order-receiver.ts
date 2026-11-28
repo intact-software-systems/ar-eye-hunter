@@ -17,7 +17,7 @@ import type { RallarMessageOrderGap } from '@shared-web/browser/messages/rallar-
 
 export namespace EdgeOrderReceiver {
     export interface Arrival<Message> {
-        /** The channel the message came on and its sender; with the stamp's stream they name the stream. */
+        /** The channel the message came on, its sender and its room; with the stamp's stream they name the stream. */
         readonly origin: Omit<EdgeOrderStreamOrigin, 'stream'>;
         readonly stamp: EdgeOrderStamp;
         /** The waits that stand for the channel now: the stream follows them from this arrival on. */
@@ -30,7 +30,7 @@ export namespace EdgeOrderReceiver {
     /** Both ports are called inside `accept` or a wake, one stream's messages in position order, and must not throw. */
     export interface Dependencies<Message> {
         readonly timers: Timers;
-        handOver(message: Message): void;
+        handOver(message: Message, origin: EdgeOrderStreamOrigin): void;
         reportGap(gap: RallarMessageOrderGap): void;
     }
 
@@ -223,7 +223,7 @@ export class EdgeOrderReceiver<Message> {
         stream.nextPosition = position + 1;
         this.heldMessages -= 1;
         if (held.expiresAtMs > nowMs) {
-            this.dependencies.handOver(held.message);
+            this.dependencies.handOver(held.message, stream.origin);
             return;
         }
         this.expiredMessages += 1;

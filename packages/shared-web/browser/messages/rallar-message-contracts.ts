@@ -46,7 +46,7 @@ export type RallarMessageOrderGapReason =
 
 /**
  * The positions `fromPosition` to `toPosition`, both included, of one sender page's edge-ordered stream that this page
- * did not hand over. A stream belongs to one room: the one its messages carry.
+ * did not hand over. A stream belongs to one room, and the gap names it.
  */
 export interface RallarMessageOrderGap {
     /** The channel's topic; its type where the channel declared no topic. */
@@ -54,6 +54,8 @@ export interface RallarMessageOrderGap {
     readonly typeId: string;
     /** The sender's session, as `RallarMessage.senderId` gives it. */
     readonly senderId: string;
+    /** The room the stream's messages name. */
+    readonly roomRef: GroupRef;
     readonly stream: string;
     readonly fromPosition: number;
     readonly toPosition: number;

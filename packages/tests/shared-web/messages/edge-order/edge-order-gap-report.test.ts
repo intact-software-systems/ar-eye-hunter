@@ -8,6 +8,8 @@ import type {
 import {
     createEdgeOrderPage,
     EDGE_ORDER_TEST_MOVES,
+    EDGE_ORDER_TEST_ROOM,
+    readEdgeOrderDrops,
     type EdgeOrderPage,
     type EdgeOrderTestMove
 } from './edge-order-page-fixture.ts';
@@ -61,7 +63,7 @@ afterEach(() => {
 });
 
 describe('an edge-ordered room channel: the gap report', () => {
-    it('gives each gap to onOrderGap once, with the sender, the stream, the positions and the reason', async () => {
+    it('gives each gap to onOrderGap once, with the sender, the room, the stream, the positions and the reason', async () => {
         const pages = createGapPages();
         const sent = await sendMoves(pages.alice, 6, [2, 3, 5]);
 
@@ -70,11 +72,12 @@ describe('an edge-ordered room channel: the gap report', () => {
         }
 
         const stream = JSON.parse(sent[0].payload.resource).edgeOrder.stream;
-        expect(pages.gaps).toEqual([
+        const gaps = [
             {
                 topicId: 'room.moves',
                 typeId: 'game.move',
                 senderId: 'alice-session',
+                roomRef: EDGE_ORDER_TEST_ROOM,
                 stream,
                 fromPosition: 2,
                 toPosition: 3,
@@ -84,12 +87,29 @@ describe('an edge-ordered room channel: the gap report', () => {
                 topicId: 'room.moves',
                 typeId: 'game.move',
                 senderId: 'alice-session',
+                roomRef: EDGE_ORDER_TEST_ROOM,
                 stream,
                 fromPosition: 5,
                 toPosition: 5,
                 reason: 'ended-at-sender'
             }
+        ];
+        expect(pages.gaps).toEqual(gaps);
+        expect(readEdgeOrderDrops(pages.bob)).toEqual(gaps.map((gap) => ({ kind: 'edge-order-gap', ...gap })));
+    });
+
+    it('drops a stamped arrival whose envelope names no room, as one it cannot sort, and keeps no stream for it', async () => {
+        const pages = createGapPages();
+        const [sent] = await sendMoves(pages.alice, 1);
+        const roomless = { ...sent, targets: { mode: 'unicast', toPeerId: 'bob-session' } } as const;
+
+        await pages.bob.deliver('ws', roomless);
+
+        expect(pages.seen).toEqual([]);
+        expect(readEdgeOrderDrops(pages.bob)).toEqual([
+            expect.objectContaining({ kind: 'edge-order-arrival', outcome: 'unwrapped', msgId: sent.id.msgId, stream: null, position: null })
         ]);
+        expect(pages.bob.messages.readUsage().edgeOrder).toMatchObject({ streams: 0, heldMessages: 0 });
     });
 
     it('reports a gap in the stream\'s turn: after the message before it and before the message after it', async () => {

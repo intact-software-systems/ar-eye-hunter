@@ -10,6 +10,7 @@ import {
     type ALMessageTrace,
     type ALMessageTraceOrNull
 } from '../../al-contracts/trace/to-al-message-trace.ts';
+import type { GroupRef } from '../../api/group-types.ts';
 import type { Either } from '../../resilience/Either.ts';
 import type { ALWorkOutcome } from '../work/al-work-queue-port.ts';
 import type { ALInboundDurableEffect } from './al-inbound-admission-store.ts';
@@ -192,9 +193,10 @@ export type ALInboundRuntimeDiagnosticsEvent =
             /**
              * An admitted arrival on a channel its receiver declared edge-ordered that was not handed over at once.
              * `held`, an earlier position of its stream is still missing, so it waits its turn. The others are
-             * dropped: `unwrapped`, it carried no valid stamp, so its sender's channel was not declared edge-ordered;
-             * `late`, its stream had already passed its position; `duplicate`, its position was already held;
-             * `expired`, it arrived past its own deadline. The stream and position are null for `unwrapped`.
+             * dropped: `unwrapped`, it carried no valid stamp, so its sender's channel was not declared edge-ordered,
+             * or it named no room; `late`, its stream had already passed its position; `duplicate`, its position was
+             * already held; `expired`, it arrived past its own deadline. The stream and position are null for
+             * `unwrapped`.
              */
             kind: 'edge-order-arrival';
             msgId: string;
@@ -216,6 +218,7 @@ export type ALInboundRuntimeDiagnosticsEvent =
         topicId: string;
         typeId: string;
         senderId: string;
+        roomRef: GroupRef;
         stream: string;
         fromPosition: number;
         toPosition: number;

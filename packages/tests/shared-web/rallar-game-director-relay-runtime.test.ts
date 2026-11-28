@@ -279,6 +279,7 @@ function toOutputGap(reason: RallarMessageOrderGapReason): RallarMessageOrderGap
         topicId: 'game.topic',
         typeId: 'event',
         senderId: 'director-session',
+        roomRef: { applicationId: 'test', workspaceId: 'default', groupId: 'room-1' },
         stream: 'director-stream',
         fromPosition: 2,
         toPosition: 2,

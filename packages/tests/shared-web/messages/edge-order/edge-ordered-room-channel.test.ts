@@ -372,6 +372,7 @@ describe('an edge-ordered room channel: gaps and drops', () => {
                 topicId: 'room.moves',
                 typeId: 'game.move',
                 senderId: 'alice-session',
+                roomRef: EDGE_ORDER_TEST_ROOM,
                 stream,
                 fromPosition: 2,
                 toPosition: 2,
