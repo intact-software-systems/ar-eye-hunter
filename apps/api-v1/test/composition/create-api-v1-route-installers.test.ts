@@ -4,9 +4,11 @@ import assert from 'node:assert/strict';
 
 import { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
 import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
+import type { ToAuthorisedWsClientConnectEnqueueInput } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
 import { InMemoryRallarCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { toRoomGuestCredential } from '@shared-server/rallar-system/auth/credentials/room-guest-credential.ts';
@@ -21,6 +23,7 @@ import {
 import { authenticationRequired } from '../../src/services/request-auth-service.ts';
 import { createClientSnapshot } from '../client-state/client-state-route-test-runtime.ts';
 import { createGroupStateRouteSnapshotWithMember, TEST_GROUP_SCOPE } from '../group-state/group-state-route-test-runtime.ts';
+import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
 
 test('route installers mount representative API and websocket behavior in order', async () => {
     const app = new Hono();
@@ -135,11 +138,68 @@ test('a guest self-read follows the current seat when another replica remembers 
     assert.equal((await app.request(path, { headers })).status, 403);
 });
 
+test('the installed websocket route waits for the runtime readiness and names the runtime delivery stream as holder', async () => {
+    const enqueued: ToAuthorisedWsClientConnectEnqueueInput[] = [];
+    let ready = (): void => undefined;
+    const readiness = new Promise<void>((resolve) => {
+        ready = resolve;
+    });
+    const input = createInput();
+    const runtime: ApiV1RouteInstallerRuntime = {
+        ...input.runtime,
+        rtcTopologyDelivery: { publisherStreamId: INSTALLED_HOLDER_ID },
+        readiness,
+        appClientInboxService: {
+            ...input.runtime.appClientInboxService,
+            writeAuthorisedWsClientConnect: async (connect) => {
+                enqueued.push(connect);
+                return Either.ofRight({ status: 'inactive', sessionId: connect.authSession.sessionId, generationId: connect.generationId });
+            }
+        }
+    };
+    const app = createTracedApiTestApp();
+    constructApiV1RouteInstallers({ ...input, runtime }, TICKETED_WS_OPERATIONS).webSocket(app);
+
+    const response = app.request('http://localhost/api/ws/session-1?ticket=ticket-1', {
+        headers: { upgrade: 'websocket' }
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const enqueuedBeforeReadiness = enqueued.length;
+    ready();
+
+    assert.equal(enqueuedBeforeReadiness, 0);
+    assert.equal((await response).status, 409);
+    assert.deepEqual(enqueued.map((connect) => connect.holderId), [INSTALLED_HOLDER_ID]);
+});
+
+const INSTALLED_HOLDER_ID = '00000000-0000-4000-8000-0000000000b2';
+
 const TEST_OPERATIONS: ApiV1RouteInstallerOperations<ApiV1RouteInstallerRuntime> = {
     requireApiAuthSession: rejectUnauthenticated,
     readWsConnectTicket: rejectUnusedOperation,
     readWsConnectSession: rejectUnusedOperation,
     upgradeWebSocket: rejectUnusedOperation
+};
+
+/** A live ticket and session for `session-1`, so an upgrade request reaches the connect it enqueues. */
+const TICKETED_WS_OPERATIONS: ApiV1RouteInstallerOperations<ApiV1RouteInstallerRuntime> = {
+    ...TEST_OPERATIONS,
+    readWsConnectTicket: async (ticketDigest) => ({
+        ticketDigest,
+        accessTokenDigest: 'access-token-digest',
+        sessionId: 'session-1',
+        clientId: 'player',
+        issuedAtEpochMs: 1,
+        expiresAtEpochMs: Number.MAX_SAFE_INTEGER
+    }),
+    readWsConnectSession: async (sessionId) => ({
+        clientId: 'player',
+        username: 'player',
+        sessionId,
+        accessTokenDigest: 'access-token-digest',
+        issuedAtEpochMs: 1,
+        expiresAtEpochMs: Number.MAX_SAFE_INTEGER
+    })
 };
 
 function createInput(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRuntime, ApiV1RouteInstallerTopology> {
