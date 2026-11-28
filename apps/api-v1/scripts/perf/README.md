@@ -193,6 +193,14 @@ behavior cannot be mixed with corrected-harness samples, even though both use
 schema `rallar.api-v1.state-write.v6`. The repaired boundary does not establish
 a production speedup or waive a failed comparison.
 
+The base role runs the candidate's harness, so the harness may import only modules the base also
+has. `bun build --no-bundle` does not resolve imports; a missing module fails only when the
+benchmark starts. A dependency that only the candidate's services take is supplied from inside this
+directory and is ignored by a base service that predates it. The WebSocket connection holder's
+lease reader is one: the workload sends no authorised WebSocket connect, so
+`create-state-write-service-runtime.ts` passes a reader that refuses if it is ever called, and
+neither role reads a lease.
+
 After the measured phase, the harness queries completed `APP_INBOX` rows/results,
 production idempotency receipts, and final `APP_OUTBOX`/`WS_OUTBOX` rows from
 `resource_inbox` through an uninstrumented admin SQL stack.

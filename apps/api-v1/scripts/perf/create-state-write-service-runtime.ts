@@ -32,7 +32,6 @@ import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import defaults from '../../resources/configuration/defaults-config.json' with { type: 'json' };
-import { createApiV1WsConnectionHolderLeases } from '../../src/composition/create-api-v1-ws-connection-holder-leases.ts';
 import { toApiV1PostgresClient } from '../../src/db/api-v1-database-lifecycle.ts';
 import {
     createInstrumentedStateWriteSql,
@@ -101,6 +100,18 @@ interface StateWriteTopologyServiceInput extends StateWriteDomainServiceInput {
     readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
 }
 
+/**
+ * The workload sends no authorised WebSocket connect, the only command that reads a holder's lease, so this reader is
+ * construction plumbing and refuses rather than answering for a lease it never read. It names its type through the
+ * service, not the lease module: both sides of a comparison run this harness, and a base that predates the lease has
+ * neither that module nor this dependency, which its service then ignores.
+ */
+const UNEXERCISED_HOLDER_LEASES: AppClientInboxService.Dependencies['holderLeases'] = {
+    readHolderLease: async (holderId) => {
+        throw new Error(`The state-write workload sends no authorised WebSocket connect; it read holder ${holderId}.`);
+    }
+};
+
 export function createStateWriteServiceRuntime(input: CreateStateWriteServiceRuntimeInput): StateWriteServiceRuntime {
     const { sql, serviceId, context, timing } = input;
     const nowEpochMs = Date.now;
@@ -125,7 +136,7 @@ export function createStateWriteServiceRuntime(input: CreateStateWriteServiceRun
         {
             ...appInboxDependencies,
             clientStateService: clientState,
-            holderLeases: createApiV1WsConnectionHolderLeases(instrumentedSql)
+            holderLeases: UNEXERCISED_HOLDER_LEASES
         },
         {
             serviceId,
