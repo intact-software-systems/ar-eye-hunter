@@ -658,7 +658,7 @@ describe('edge-order-supersedence', () => {
             expect(send).not.toHaveProperty('orderingKey');
             expect(send).not.toHaveProperty('seq');
             if (KEYED_SENDS.includes(index + 1)) {
-                expect(send).toMatchObject({ supersedenceKey: 'cursor' });
+                expect(send).toMatchObject({ supersedenceKey: `${toTypeId(KEY, carrier)}.cursor` });
             }
             else {
                 expect(send).not.toHaveProperty('supersedenceKey');

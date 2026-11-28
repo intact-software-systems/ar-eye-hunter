@@ -31,7 +31,13 @@ describe('ALM lifecycle recipe evidence', () => {
                     !Array.isArray(command.payload) && 'specimen' in command.payload && command.payload.specimen === 'supersedence'
                 );
             expect(replaceable).toHaveLength(2);
-            const replaceableSend = { ack: 'receiver', seq: undefined, orderingKey: undefined, supersedenceKey: 'delivery-lifecycle-supersedence' };
+            // The key is the cell's type id, so no other cell or carrier on a shared connect supersedes these specimens.
+            const replaceableSend = {
+                ack: 'receiver',
+                seq: undefined,
+                orderingKey: undefined,
+                supersedenceKey: `probe.${carrier}.delivery-lifecycle.supersedence`
+            };
             expect(replaceable.map(({ ack, seq, orderingKey, supersedenceKey }) => ({ ack, seq, orderingKey, supersedenceKey })))
                 .toEqual([replaceableSend, replaceableSend]);
             expect(

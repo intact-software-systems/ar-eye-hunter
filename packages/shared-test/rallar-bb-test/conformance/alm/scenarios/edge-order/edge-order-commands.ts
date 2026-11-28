@@ -22,7 +22,7 @@ export interface EdgeOrderSendFacts {
     readonly ttlMs?: number;
     /** Absent, the room. */
     readonly audience?: AlmConformanceRoomSendAudience;
-    /** Absent, the send replaces no earlier send and no later send replaces it. */
+    /** Absent, the send replaces no earlier send and no later send replaces it; a name within the cell's key. */
     readonly supersedenceKey?: string;
 }
 

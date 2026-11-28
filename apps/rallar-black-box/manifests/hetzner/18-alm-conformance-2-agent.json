@@ -1762,7 +1762,7 @@
             "handleId": "alm-ws-delivery-lifecycle-send-3",
             "timeoutMs": 10000,
             "ack": "receiver",
-            "supersedenceKey": "delivery-lifecycle-supersedence"
+            "supersedenceKey": "alm.conformance.ws.delivery-lifecycle.supersedence"
           },
           {
             "kind": "messages.observe",
@@ -1833,7 +1833,7 @@
             "handleId": "alm-ws-delivery-lifecycle-send-4",
             "timeoutMs": 10000,
             "ack": "receiver",
-            "supersedenceKey": "delivery-lifecycle-supersedence"
+            "supersedenceKey": "alm.conformance.ws.delivery-lifecycle.supersedence"
           },
           {
             "kind": "messages.observe",
@@ -4734,7 +4734,7 @@
               "groupId": "hetzner-headless-room"
             },
             "ack": "receiver",
-            "supersedenceKey": "delivery-lifecycle-supersedence"
+            "supersedenceKey": "alm.conformance.rtc.delivery-lifecycle.supersedence"
           },
           {
             "kind": "messages.observe",
@@ -4810,7 +4810,7 @@
               "groupId": "hetzner-headless-room"
             },
             "ack": "receiver",
-            "supersedenceKey": "delivery-lifecycle-supersedence"
+            "supersedenceKey": "alm.conformance.rtc.delivery-lifecycle.supersedence"
           },
           {
             "kind": "messages.observe",
@@ -8199,7 +8199,7 @@
               "groupId": "hetzner-headless-room"
             },
             "ack": "receiver",
-            "supersedenceKey": "delivery-lifecycle-supersedence"
+            "supersedenceKey": "alm.conformance.rtc-with-ws-fallback.delivery-lifecycle.supersedence"
           },
           {
             "kind": "messages.observe",
@@ -8275,7 +8275,7 @@
               "groupId": "hetzner-headless-room"
             },
             "ack": "receiver",
-            "supersedenceKey": "delivery-lifecycle-supersedence"
+            "supersedenceKey": "alm.conformance.rtc-with-ws-fallback.delivery-lifecycle.supersedence"
           },
           {
             "kind": "messages.observe",

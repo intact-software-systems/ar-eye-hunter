@@ -22,8 +22,8 @@ import {
 } from '../alm-conformance-scenario-definition.ts';
 import { toSettledStateCommands } from '../to-settled-state-commands.ts';
 
-/** One key for the cell: both specimens share its sender, room and type, so the replacement supersedes the old. */
-const SUPERSEDENCE_KEY = 'delivery-lifecycle-supersedence';
+/** Both specimens go out under this one name of the cell's key, so the replacement supersedes the old. */
+const SUPERSEDENCE_KEY = 'supersedence';
 
 export const deliveryLifecycle: AlmConformanceScenarioDefinition = {
     scenarioId: 'delivery-lifecycle',
