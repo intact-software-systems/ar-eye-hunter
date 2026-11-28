@@ -387,6 +387,13 @@ describe('rallar code-writing maintenance stewardship contract', () => {
         expect(directWriteScenario.prompt).toContain('transport store');
         expect(directWriteScenario.prompt).toContain('cannot keep up');
         expect(directWriteScenario.prompt).not.toContain('AppInbox');
+        expect(directWriteScenario.prompt).toMatch(
+            /State what you would do next and what you would deliver today\. Do not answer with general advice; make the decision for this scenario\.$/u
+        );
+        for (const gradingPoint of ['rule for incoming database mutations', 'to whom', 'must be true before', 'key layout']) {
+            expect(directWriteScenario.prompt).not.toContain(gradingPoint);
+        }
+        expect(directWriteScenario.title).not.toMatch(/faster/iu);
 
         expect(rubric.schemaVersion).toBe('rallar-code-writing-rubric-v2');
         expect(rubric.suiteId).toBe(suite.suiteId);
