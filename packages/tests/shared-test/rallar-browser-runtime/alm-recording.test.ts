@@ -26,6 +26,7 @@ import {
     resetFacade
 } from './browser-rallar-runtime-test-harness.ts';
 import { CrdtDocumentTestDouble } from './crdt-document-test-double.ts';
+import { requireMessageSendHandle } from './require-message-send-handle.ts';
 
 const CONNECTION = {
     connection: 'alm-recording',
@@ -315,14 +316,16 @@ it('retains delivery results, retry outcomes and receipts with ALM recording Off
         await runtime.close();
     });
     await runtime.connect({ ...CONNECTION, rallar: { ...CONNECTION.rallar, almDiagnostics: false } });
-    const sent = await runtime.sendMessage({
-        connection: 'alm-recording',
-        carrier: 'ws',
-        typeId: 'test.delivery',
-        payload: { text: 'test' },
-        handleId: 'receipt',
-        timeoutMs: 100
-    });
+    const sent = requireMessageSendHandle(
+        await runtime.sendMessage({
+            connection: 'alm-recording',
+            carrier: 'ws',
+            typeId: 'test.delivery',
+            payload: { text: 'test' },
+            handleId: 'receipt',
+            timeoutMs: 100
+        })
+    );
     expect(sent).toMatchObject({ handleId: 'receipt', carrier: 'ws', status: 'queued' });
     for (
         const attempt of [

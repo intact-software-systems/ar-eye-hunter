@@ -53,6 +53,7 @@ import type {
     GroupSnapshot,
     GroupStateCausalRevision
 } from '@shared/api/group-types.ts';
+import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 import type { HeldTopologyReshapeReason } from '@shared/api/topology-plan/topology-reshape-gate.ts';
 import type {
     RallarCrdtDocumentHealth,
@@ -374,6 +375,15 @@ export interface BlackBoxRallarMessageSendInput {
     readonly qos: Required<Pick<ALQosPolicyRequest, 'ack'>> | undefined;
     /** Absent, the product's repair budget; stated, the typed send requests `retransmit` with it beside any `qos.ack`. */
     readonly maxRepairs: number | undefined;
+    /** Absent, the send's value is its handle's; `call-refused`, only a validation refusal of the call is its value. */
+    readonly observe: 'call-refused' | undefined;
+}
+
+/** A send its call refused opens no handle: it reports the refusal's issues, in order, without their message text. */
+export interface BlackBoxRallarMessageCallRefusalDiagnostics {
+    readonly handleId: string;
+    readonly carrier: BlackBoxRallarMessageSendInput['carrier'];
+    readonly callRefusal: readonly Pick<RallarValidationIssue, 'path' | 'code'>[];
 }
 
 /** A harness floor: `aboveCurrentBy` resolves against the sender's room version at send time. */

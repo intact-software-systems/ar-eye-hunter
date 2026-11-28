@@ -130,6 +130,7 @@ export type AlmConformanceScenarioId =
     | 'seeded-loss-stream'
     | 'seeded-loss-unreceipted-stream'
     | 'server-command'
+    | 'server-command-refused-at-call'
     | 'server-ordered-entry'
     | 'server-originated'
     | 'storage-unavailable'

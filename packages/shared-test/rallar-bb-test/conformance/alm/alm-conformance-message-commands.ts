@@ -55,6 +55,8 @@ interface AlmConformanceSendDelivery {
     readonly ownership?: RallarBlackBoxTestMessagesSendCommand['ownership'];
     /** Absent, the product mints a fresh resource for the send. */
     readonly resourceId?: string;
+    /** Absent, the send's value is its handle's; `call-refused`, only the product's refusal of the call is. */
+    readonly observe?: RallarBlackBoxTestMessagesSendCommand['observe'];
 }
 
 interface AlmConformanceSendInput extends AlmConformanceMessageStepInput {
@@ -88,7 +90,10 @@ interface AlmConformanceResultAssertionInput {
     readonly expected: ApiJsonValue;
 }
 
-/** One fact a scenario reads from the observation of its first send: the assertion name, the field, how and what. */
+/**
+ * One fact a scenario reads from a result of its first send, its observation or, for a call refusal, the send itself:
+ * the assertion name, the field, how and what.
+ */
 export type AlmConformanceVerdictFact = readonly [
     name: string,
     field: string,

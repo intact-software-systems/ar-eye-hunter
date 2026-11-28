@@ -2,12 +2,16 @@
 
 Review date: 2026-09-05
 
-Reviewed source: `cfcc9a6c7` (`main` after PR #731; markers refreshed 2026-10-29, originally
-written against `02d65ac4a`)
+Reviewed source: `cfcc9a6c7` (`main` after PRs #731 and #729; markers refreshed 2026-10-29, originally
+written against `02d65ac4a`). That was the last reading of the whole document. Since then a
+pull request has restated the blocks it knew its change touched, and not every change was
+caught: #869 moved the durable send's pin and left this document's line, corrected on
+2026-11-27. A block is no more current than the last pull request that changed it.
 
 Related documents: [delivery roadmap](./alm-improvement-plan.md),
-[persistence and performance QoS plan](./alm-qos-product-plan.md), and
-[publication QoS and pub/sub addendum](./alm-publication-qos-addendum.md). The per-slice design
+[persistence and performance QoS plan](./alm-qos-product-plan.md),
+[publication QoS and pub/sub addendum](./alm-publication-qos-addendum.md), and
+[first hosted campaign targets](./alm-first-hosted-campaign-targets.md). The per-slice design
 proposals, the static audit, the assessments and the S2 diagnosis were deleted after Release 8
 completed and are in git history before `cfcc9a6c7`.
 
@@ -717,9 +721,11 @@ ruling 6; the director relay's WS unicast is gone since S3c-ii). A per-send
 receipted best-effort send is a contradiction; with an explicit `ack` the
 caller's ack wins (R-S3a-2). A WebSocket frame accepted by the browser API or an
 RTC payload accepted by `RTCDataChannel.send` is not a logical delivery receipt.
-A director command can reach the director twice after a fallback, because AL
-dedup is per carrier lane: relay commands are at-least-once, and the game's
-sequence tracker refuses the copy (S3c-ii, R-S3c-ii-4). The relay addresses a
+A director command that falls back to WS is not delivered twice by the fallback:
+the session's one inbound store is shared by both carriers (D20, D54), so the
+second copy meets its first admission and is answered `duplicate`. Relay
+commands are still at-least-once, and the game's sequence tracker refuses a
+repeated command (S3c-ii, R-S3c-ii-4). The relay addresses a
 command to the director by role (`ack: 'group-leader'`, D167) and reports it
 `sent` only when the director's receipt arrives, waiting at most 30 s.
 A command the typed send refuses at validation becomes a `failed` result with
@@ -1115,7 +1121,7 @@ and zero non-probe `al-work` IndexedDB operations: a unit pin per direction, and
 the `volatile-default` conformance scenario on both pages of every carrier over a
 reset window, with the durable owners' idle probes (`work-page`, `work-probe`)
 reported beside the zero. The `durable-opt-in` scenario shows the opt-in pays for
-storage; one durable send spends 10 `al-admission` and
+storage; one durable send spends 11 `al-admission` and
 9 `al-work` operations, and the storage snapshot's durable figures are
 unchanged while the volatile default adds 0 rows. A volatile admission reads no IndexedDB and takes no
 Web Lock, so it completes within the caller's microtask turn: a burst loop of
@@ -1178,7 +1184,8 @@ identity survives fallback and repair, and so does trace identity (I1b-i).
   The browser validates `corrId` as a non-empty string of at most 128 UTF-8 bytes.
 - The delivery handle carries `corrId` and `replyToMsgId` and
   `awaitReply<T>({ timeoutMs, signal? })`, which never throws and resolves
-  `replied` with the reply message, `timeout`, `aborted` or `undelivered`, each
+  `replied` with the reply message, `timeout`, `aborted`, `undelivered` or
+  `unanswerable` with its issues, each
   with the request's lifecycle. The timeout is required. Three clocks stay
   independent: the ACK timeout ends one receipt attempt, the message deadline
   ends the request's lifetime, and the reply timeout ends only the caller's wait.
@@ -1187,6 +1194,9 @@ identity survives fallback and repair, and so does trace identity (I1b-i).
   `acknowledged` (or `transport-accepted` where no receipt is awaited), and also
   when the request's deadline lapses during the wait. A reply that arrives after
   the deadline is still matched and kept, so a later `awaitReply` resolves `replied`.
+  A wait on a request whose topic WS cannot carry resolves `unanswerable` at
+  once and arms no timer; its issue is the `$.topicId` one the responder's
+  `reply()` would be refused with (D787).
 - Each browser delivery-registry entry owns one reply slot, so the registry's
   retention bounds it (60 s after the terminal state, 512 entries; an entry with
   an open reply wait is spared by the age rule). The first accepted reply is
@@ -1210,13 +1220,16 @@ identity survives fallback and repair, and so does trace identity (I1b-i).
   its local companion as the fallback. The conformance `reply` family
   (`reply-correlated`, `reply-timeout-late`, `reply-first-wins`,
   `reply-undelivered`) proves the outcomes over the WS carrier and the
-  RTC-with-WS-fallback strategy; a wrong responder is pinned at the matcher's unit level.
+  RTC-with-WS-fallback strategy; `reply-correlated` runs over `rtc` too, where
+  the request rides RTC and the reply comes back over WS; a wrong responder is
+  pinned at the matcher's unit level.
 
 **Limits of I1a:** replies travel over WS only. A request may travel on any
 carrier, but a reply that arrives over RTC is never matched; when the page
 subscribes to its type over RTC it is dropped with `reply-late` (cause
 `unobserved`), even while the request is awaited. A request
-on a topic that WS cannot carry cannot be replied to. A room reply routes in the
+on a topic that WS cannot carry cannot be replied to, and its reply wait
+resolves `unanswerable` at the call (D787). A room reply routes in the
 room's id, not in a request's custom `contextId`. There is one reply per request,
 no registered response schema (the caller validates), and no reply wait that
 survives a reload.
@@ -1596,47 +1609,133 @@ anchored by
 [`live-rtc-three-browser-coverage.test.ts`](../../packages/tests/rallar-black-box/live-rtc-three-browser-coverage.test.ts).
 The current browser workload is a base for extending ALM storage and lifecycle
 instrumentation, not evidence that those completion requirements already pass.
-The conformance lane (roadmap F1) becomes the acceptance authority: one scenario
-catalog run over both carriers in the per-push Playwright lane, the Release
-Gate's Postgres lane, and the Hetzner manifests on `main`.
+The conformance lane (roadmap F1) is the acceptance authority for carrier
+conformance: one scenario catalog run over `ws`, `rtc` and
+`rtc-with-ws-fallback`. Its `smoke` scope is the required `alm-smoke` lane of
+the Release Gate, on the in-memory API. Its `full` scope runs on the PostgreSQL
+API as an observation nothing waits for (D702). Hosted runs are guidance, not
+acceptance (D434); the
+[first hosted campaign targets](./alm-first-hosted-campaign-targets.md) state
+what the first hosted campaign must show (D643).
 
 ## Product completion criteria
 
 ALM is product-complete when all of the following are true. Every capability is
 in scope by roadmap decision D5.
 
+Each criterion carries a mark read on `e8620c06c` (`main` after PR #944) on 2026-11-27. **Met**:
+every clause has evidence in the tree. **Partial**: the mark names evidence for part of the
+criterion and what it found unevidenced; it is not a clause-by-clause reading. **Open**: there is
+no evidence either way. The roadmap's
+[requirement matrix](./alm-improvement-plan.md#requirement-to-evidence-matrix) holds the evidence
+by release.
+
 1. The same scenario suite runs over RTC and WS and produces equivalent logical
    admission, ordering, reliability, ACK, repair, expiry, and terminal outcomes.
+
+   **Partial.** Evidenced: one scenario catalog runs over `ws`, `rtc` and
+   `rtc-with-ws-fallback` and asserts the same logical outcome on every carrier a scenario names
+   (`tests/playwright/rallar-black-box/full-stack-alm-conformance.spec.ts`), and its `smoke`
+   scope is required (D702). Not evidenced: 7 proofs of the carrier matrix are `unproven`
+   (`packages/shared-test/rallar-bb-test/conformance/alm/carrier-matrix/alm-carrier-matrix.ts`),
+   and the `full` scope is an observation that gates nothing (D702).
 2. Every live/persisted envelope and control message is bounded, decoded, and
    identity-bound before admitted-state mutation. Pure compute/validate and
    immutable write/send candidates preserve the same decisions across carriers.
+
+   **Partial.** Evidenced: one envelope decoder with the resource ceilings at every ingress
+   (`decodeALMessageValue`), the control decoder (`decodeALControlMessage`) and the
+   persisted-envelope decoders on every stored row. Not evidenced: the origin of an RTC room
+   send that asks no logical receipt. It is unsigned, so a room member can deliver content
+   under another session's id (D759, limit 1). Whether every ordinary RTC room send is signed
+   is open: decision 3 of `plans/active/alm-v1-production-readiness.md`.
 3. At-least-once cannot be selected without an effective receipt strategy, and
    data-channel drops cannot be reported as successful sends. Partial progress
    and non-delivery uncertainty remain visible, including after cancellation.
+
+   **Partial.** Evidenced: the handle lifecycle (S1, #570), receipted audiences (S2c, #591 and
+   #595), the purpose's receipt and the fallback inside the deadline (S3a to S3c-ii, #597 to
+   #606). Not evidenced: an explicit at-least-once send with `ack: 'none'` is accepted and
+   retried without a receipt ("At-least-once", above); and a granted unicast whose grant holder
+   the room authority does not admit reads `acknowledged` with zero recipients (D789).
 4. Volatile ALM send/receive/retry performs zero AL-owned IndexedDB work on the
    common path, including reliable volatile policy when selected, and a
    `local-checkpoint` send performs none on its send path.
+
+   **Met.** A volatile send and a volatile inbound message spend 0 `al-admission` and 0
+   non-probe `al-work` operations, and a `local-checkpoint` send spends none on its send path,
+   pinned in `packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts`; the required
+   `volatile-default` scenario reads the same zero for a receipted send on both pages of every
+   carrier. Stated beside the zero: the durable owners' idle probes, and a room send that names
+   an ordering key, which is sequenced on the durable lane whatever its durability (D529).
 5. Durable messages have one existing QueueBox/ResourceInbox work owner and bounded indexed queries;
    transaction/row/byte budgets do not grow with unrelated messages or old
    sessions, and each durability tier meets its recorded storage budget.
+
+   **Partial.** Evidenced: one work owner per side on the QueueBox port
+   (`packages/shared/alm/work/al-work-queue-port.ts`; F2, #559) and one durable owner per
+   session (`packages/shared/alm/work/al-durable-work-ownership.ts`; I2a-ii, #630); index-range
+   reads bounded by `maxToRead` (`packages/shared/queuebox/indexed-db-queue-box-store.ts`); an
+   ended session's rows purged
+   (`packages/tests/shared-web/al-runtime/browser-al-runtime-stores.test.ts`); and each tier's
+   storage cost pinned as an exact count
+   (`packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts`). Not evidenced: that
+   each durability tier meets its recorded storage budget. The durable send's `al-admission`
+   pin is 11 since #869, one above the 10 that D87 recorded and said may only fall, and no
+   decision row records the rise. A decision row that accepts 11 as the budget, or the extra
+   read removed, makes this criterion met. Stated beside it: no store orders RESERVED rows by
+   lease end, so past one page a lapsed lease is advertised late (`plans/backlog.md`); and "do
+   not grow with unrelated messages" rests on the bounded reads, with no pin of its own.
 6. Room multicast requires matching server-provided room authority, preserves
    bounded evidence catch-up/bootstrap and optimistic room progress, enforces
    authoritative membership fencing on every room send, respects required
    snapshot floors, and freezes the reliable intended audience at admission.
+
+   **Partial.** Evidenced: a reliable room send's audience is frozen at admission on both
+   carriers (S2c-ii, #595), and every room send carries the roster fence and is refused
+   `membership-fenced` past it (R2, #642); and a room send whose `contextId` names another
+   room is refused at the call on every carrier (#943) and by the WS server (#937, D788), read
+   at `5593e6a7a`. Not evidenced: no RTC receiver checks that context, so a frame that did not
+   pass the refusal at the call, a modified client's or one an earlier release stored and this
+   one retries, is still delivered over RTC; that is a stated limit (#943).
 7. Every target/ACK mode, including principal, world, all, and fixed audiences
    and the group-leader mode, has one documented semantic proven by the
    conformance lane over both carriers and exercised by one of the two games. A
    guarantee a carrier cannot provide rejects explicitly.
+
+   **Partial.** Evidenced: principal, fixed-list and `world` sends run in the lane over three
+   carriers (the `same-principal` family, D161), the leader ACK over three (the `leader-ack`
+   family, D169), and the games send to a principal and to the group leader (D162, D167,
+   D168). Not evidenced: no game sends a `world` broadcast, and a client's `all` is refused at
+   the call, which unit tests pin and no lane cell witnesses (row D161 lists an `all-refused`
+   cell; the tree holds none).
 8. Ordering, diagnostic, control, retry, repair, and storage work is bounded and
    has clean resync/terminal behavior, aggregate memory bounds, and bounded
    audience/snapshot paging without an accidental room-size restriction.
+
+   **Partial.** Evidenced: the browser session's four bounds and bounded retention (V1a, #649),
+   backpressure as a congestion input (V1b-i, #650), the 15, 30 and 50 agent runs (V1c, #652
+   to #694) and the 75-minute run (V1d, #698). Not evidenced: bounds on the WS server, whose
+   memory pair is unbudgeted (`packages/shared/alm/inbound/README.md`) and for which no
+   per-topic or per-sender rate limit is marked built ("Resource and abuse limits", above).
 9. One message identity and lifecycle spans transport fallback; correlation,
    tracing, staged outcomes, and payload-safe observability work across retry,
    repair, restart, and every carrier attempt.
+
+   **Partial.** Evidenced: one envelope, identity, deadline and trace across a fallback (S3b,
+   #604; I1b-i), and reply correlation on the handle (I1a). Not evidenced: a durable RTC
+   message resumed after a reload has no handle and never hands over (D64); a handed-over
+   message leaves its ordering and supersedence track on the first carrier ("Transport
+   selection and parity", above); and replies travel over WS only (D441 to D446).
 10. Runtime disposal, multi-tab claims, quota/eviction, blocked upgrades, and
     restart are deterministic and externally observable. Recovery reports its
     outcome and freshness, and no tier degrades without a typed outcome or a
     note on the handle.
+
+    **Partial.** Evidenced: one durable owner per session, typed storage outcomes and one
+    recovery outcome per store per connect (I2a, #629 and #630), and the checkpoint restore
+    (I2b, #640). Not evidenced: a browser store whose schema differs is refused and kept, and
+    nothing reclaims it (D663).
 
 ## Complete-product summary
 

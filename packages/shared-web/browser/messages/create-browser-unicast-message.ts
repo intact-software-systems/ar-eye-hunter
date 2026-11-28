@@ -35,11 +35,6 @@ export interface CreateBrowserUnicastMessageInput<T> {
     readonly actions: ALActions | undefined;
 }
 
-export interface ValidateBrowserPeerInput<T> {
-    readonly send: RallarWsSendInput<T>;
-    readonly roomRef: GroupRef | undefined;
-}
-
 export interface ValidateBrowserPeerServerInput {
     readonly peerId: string | undefined;
     readonly strategy: BrowserPeerSendStrategy;
@@ -83,18 +78,11 @@ export function createBrowserUnicastMessage<T>(
     );
 }
 
-export function validateBrowserPeerInput<T>(
-    input: ValidateBrowserPeerInput<T>
-): readonly RallarValidationIssue[] {
-    const { send } = input;
+export function validateBrowserPeerInput<T>(send: RallarWsSendInput<T>): readonly RallarValidationIssue[] {
     if (send.peerId === undefined) {
         return [];
     }
-    return [
-        ...validatePeerId(send.peerId),
-        ...validatePeerCarriage(send),
-        ...validatePeerContext(send.contextId, input.roomRef)
-    ];
+    return [...validatePeerId(send.peerId), ...validatePeerCarriage(send)];
 }
 
 export function validateBrowserPeerServer(
@@ -115,6 +103,20 @@ export function validateBrowserPeerServer(
         code: 'unsupported',
         message: 'A peer-addressed send needs a server that names its peer id; this server names none.'
     }];
+}
+
+/** The WS server refuses a room send routed in another room (D82); the browser refuses it first, on every carrier. */
+export function validateRoomContext(
+    contextId: string | undefined,
+    roomRef: GroupRef | undefined
+): readonly RallarValidationIssue[] {
+    return roomRef === undefined || contextId === undefined || contextId === roomRef.groupId
+        ? []
+        : [{
+            path: '$.contextId',
+            code: 'context-room-mismatch',
+            message: 'A room send routes in the room it names: contextId must equal the room id.'
+        }];
 }
 
 function validatePeerId(peerId: string): readonly RallarValidationIssue[] {
@@ -153,17 +155,4 @@ function validatePeerCarriage<T>(send: RallarWsSendInput<T>): readonly RallarVal
         });
     }
     return issues;
-}
-
-function validatePeerContext(
-    contextId: string | undefined,
-    roomRef: GroupRef | undefined
-): readonly RallarValidationIssue[] {
-    return roomRef === undefined || contextId === undefined || contextId === roomRef.groupId
-        ? []
-        : [{
-            path: '$.contextId',
-            code: 'context-room-mismatch',
-            message: 'A peer-addressed send routes in the room it names: contextId must equal the room id.'
-        }];
 }
