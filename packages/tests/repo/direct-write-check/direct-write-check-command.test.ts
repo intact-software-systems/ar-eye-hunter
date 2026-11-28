@@ -194,10 +194,7 @@ describe('direct-write check command', () => {
     });
 
     it('prints each entry that differs from the base registry', () => {
-        const root = createTree(baseSources(), baseRegistry());
-        git(root, ['init', '--quiet']);
-        git(root, ['add', '.']);
-        git(root, ['-c', 'user.name=fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--quiet', '-m', 'base']);
+        const root = createCommittedTree();
         const registry = baseRegistry();
         writeTree(root, {
             [REGISTRY_PATH]: toRegistryDocument({
@@ -211,10 +208,44 @@ describe('direct-write check command', () => {
         const result = runCheck(root, 'HEAD');
 
         expect(result.status).toBe(0);
-        expect(result.stdout).toContain('against HEAD: +0 -1 ~0');
+        expect(result.stdout).toMatch(/^against the merge base of HEAD and HEAD \([0-9a-f]{12}\): \+0 -1 ~0$/mu);
         expect(result.stdout).toContain(
             `- transactionOpeners ${WRITER_PATH}#AppInboxTransactionWriter.inTransaction (app-inbox)`
         );
+    });
+
+    it('prints a change to a list that decides what the check computes', () => {
+        const root = createCommittedTree();
+        writeTree(root, {
+            [REGISTRY_PATH]: toRegistryDocument({
+                ...baseRegistry(),
+                wiringModules: [BACKEND_PATH],
+                workTopicConstants: [{ path: INBOUND_PATH, name: 'AL_INBOUND_TOPICS' }]
+            })
+        });
+
+        const result = runCheck(root, 'HEAD');
+
+        expect(result.status).toBe(0);
+        expect(result.stdout).toMatch(/: \+1 -1 ~0$/mu);
+        expect(result.stdout).toContain(`- scope wiringModules ${STORES_PATH}`);
+        expect(result.stdout).toContain(`+ scope workTopicConstants ${INBOUND_PATH}#AL_INBOUND_TOPICS`);
+    });
+
+    it('compares with the merge base, so an entry the base branch gained since is not shown as removed', () => {
+        const root = createCommittedTree();
+        git(root, ['branch', 'feature']);
+        const registry = baseRegistry();
+        writeTree(root, {
+            [REGISTRY_PATH]: toRegistryDocument({ ...registry, wiringModules: [...registry.wiringModules, INBOUND_PATH] })
+        });
+        commitAll(root, 'base branch moves on');
+        git(root, ['checkout', '--quiet', 'feature']);
+
+        const result = runCheck(root, 'main');
+
+        expect(result.status).toBe(0);
+        expect(result.stdout).toMatch(/^against the merge base of main and HEAD \([0-9a-f]{12}\): \+0 -0 ~0$/mu);
     });
 });
 
@@ -323,6 +354,18 @@ function toRegistryDocument(registry: object): string {
 
 function runCheck(root: string, base = 'origin/main') {
     return spawnSync(process.execPath, [commandPath, '--root', root, '--base', base], { cwd: root, encoding: 'utf8' });
+}
+
+function createCommittedTree(): string {
+    const root = createTree(baseSources(), baseRegistry());
+    git(root, ['init', '--quiet', '--initial-branch', 'main']);
+    commitAll(root, 'base');
+    return root;
+}
+
+function commitAll(root: string, message: string): void {
+    git(root, ['add', '.']);
+    git(root, ['-c', 'user.name=fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--quiet', '-m', message]);
 }
 
 function git(root: string, args: readonly string[]): void {

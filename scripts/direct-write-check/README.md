@@ -41,8 +41,10 @@ governance-gate phase. An entry in the registry records that a write exists; it 
   one ts-morph project over the `.ts`, `.tsx`, `.mts` and `.cts` files of `packages/**` and of every `apps/*/src`
   except the five browser apps it names in `BROWSER_APPS` (so a new app is analysed until it is named there), without
   `packages/tests`, `shared-test`, `shared-rtc-bench`, declaration and test files; it computes the fact sets and
-  reports every difference. On success it prints the registry census and the entries that differ from the base branch
-  (`--base`, default `origin/main`; a missing base prints `base not available` and does not fail).
+  reports every difference. On success it prints the registry census, then every entry and every value of
+  `wiringModules`, `repositoryContractModules` and `workTopicConstants` that differs from the registry at the merge
+  base of `--base` (default `origin/main`) and `HEAD`; a base it cannot resolve prints `base not available` and does not
+  fail.
 - [direct-write-registry.mjs](./direct-write-registry.mjs) owns the block format: `toDirectWriteRegistry` reads the one
   fenced block and `validateDirectWriteRegistry` returns every issue, including the rules that keep an `under-review`
   store free of any answer, dated the day the three stores were found, and an `approved` one complete.

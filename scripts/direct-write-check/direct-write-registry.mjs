@@ -14,6 +14,8 @@ export const DIRECT_WRITE_FACT_SETS = [
     'queueWriteCallers',
     'rowFamilies'
 ];
+/** The registry lists that decide what the check computes, rather than what it found. */
+export const DIRECT_WRITE_SCOPE_LISTS = ['wiringModules', 'repositoryContractModules', 'workTopicConstants'];
 export const DIRECT_WRITE_CLASSES = [
     'app-inbox',
     'queue-machinery',

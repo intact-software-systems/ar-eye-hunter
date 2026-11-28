@@ -1,6 +1,9 @@
-import { DIRECT_WRITE_FACT_SETS } from './direct-write-registry.mjs';
+import { DIRECT_WRITE_FACT_SETS, DIRECT_WRITE_SCOPE_LISTS } from './direct-write-registry.mjs';
 
-/** The census the gate prints on success, and every entry that differs from the base branch's registry. */
+/**
+ * The census the gate prints on success, then every entry, and every value of a list that decides what the check
+ * computes, that differs from the registry at the base.
+ */
 export function computeDirectWriteCensusLines(registry, base) {
     const stores = registry.stores ?? [];
     const underReview = stores.filter((store) => store.review?.state === 'under-review').length;
@@ -11,15 +14,33 @@ export function computeDirectWriteCensusLines(registry, base) {
     if (base.kind === 'unavailable') {
         return [census, `against ${base.label}: base not available`];
     }
-    const differences = ['stores', ...DIRECT_WRITE_FACT_SETS].flatMap((listName) =>
-        computeListDifferences(listName, registry[listName] ?? [], base.registry[listName] ?? [])
-    );
+    const differences = [
+        ...DIRECT_WRITE_SCOPE_LISTS.flatMap((listName) =>
+            computeScopeDifferences(listName, registry[listName] ?? [], base.registry[listName] ?? [])
+        ),
+        ...['stores', ...DIRECT_WRITE_FACT_SETS].flatMap((listName) =>
+            computeListDifferences(listName, registry[listName] ?? [], base.registry[listName] ?? [])
+        )
+    ];
     const count = (marker) => differences.filter((line) => line.startsWith(marker)).length;
     return [
         census,
         `against ${base.label}: +${count('+ ')} -${count('- ')} ~${count('~ ')}`,
         ...differences
     ];
+}
+
+function computeScopeDifferences(listName, values, baseValues) {
+    const current = new Set(values.map(toScopeValue));
+    const previous = new Set(baseValues.map(toScopeValue));
+    return [
+        ...[...current].filter((value) => !previous.has(value)).map((value) => `+ scope ${listName} ${value}`),
+        ...[...previous].filter((value) => !current.has(value)).map((value) => `- scope ${listName} ${value}`)
+    ];
+}
+
+function toScopeValue(value) {
+    return typeof value === 'string' ? value : `${value.path}#${value.name}`;
 }
 
 function computeListDifferences(listName, entries, baseEntries) {

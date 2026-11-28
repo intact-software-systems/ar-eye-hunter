@@ -158,17 +158,20 @@ function validateScopeModules(project, scope) {
         .map(([field, modulePath]) => `${field} names ${modulePath}, which the analysed source does not hold`);
 }
 
+/** The registry where this branch left the base, so entries the base gained since are not shown as removed. */
 function readBaseRegistry(root, base) {
-    const verified = spawnSync('git', ['rev-parse', '--verify', '--quiet', `${base}^{commit}`], {
-        cwd: root,
-        encoding: 'utf8'
-    });
-    if (verified.status !== 0) {
+    const mergeBase = spawnSync('git', ['merge-base', base, 'HEAD'], { cwd: root, encoding: 'utf8' });
+    if (mergeBase.status !== 0) {
         return { kind: 'unavailable', label: base };
     }
-    const shown = spawnSync('git', ['show', `${base}:${REGISTRY_PATH}`], { cwd: root, encoding: 'utf8' });
+    const commit = mergeBase.stdout.trim();
+    const shown = spawnSync('git', ['show', `${commit}:${REGISTRY_PATH}`], { cwd: root, encoding: 'utf8' });
     const read = shown.status === 0 ? toDirectWriteRegistry(shown.stdout) : { kind: 'invalid' };
-    return { kind: 'available', label: base, registry: read.kind === 'parsed' ? read.registry : {} };
+    return {
+        kind: 'available',
+        label: `the merge base of ${base} and HEAD (${commit.slice(0, 12)})`,
+        registry: read.kind === 'parsed' ? read.registry : {}
+    };
 }
 
 function readArguments(args) {
